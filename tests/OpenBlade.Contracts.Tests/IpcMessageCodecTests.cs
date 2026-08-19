@@ -74,6 +74,39 @@ public sealed class IpcMessageCodecTests
             new ManualOverride<PerformancePreset>(
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent)),
+        new SetHyperBoostRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true),
+        new SetCoolingPadFanIntentRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            CoolingPadFanIntent.Default),
+        new SetCoolingDemandLeaseRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CoolingDemandLevel(6_000),
+            TtlMilliseconds: 5_000),
+        new ReleaseCoolingDemandLeaseRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid()),
+        new SetCoolingDemandApiEnabledRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true),
+        new SetCoolingPadLightingSyncRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: false),
+        new SetCoolingPadLightingSyncRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: false)
+        {
+            AcknowledgeRecovery = true,
+        },
         new CyclePerformanceShortcutRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -379,16 +412,22 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortySevenBatteryContracts_RoundTripExactShape()
+    public async Task VersionFourteenBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
-            new HashSet<PerformancePreset>(),
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode>(),
             new HashSet<LightingEffect>(),
             new HashSet<int> { 80 },
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: false)
         {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots = SpecialKeySlotSet.All,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -437,14 +476,18 @@ public sealed class IpcMessageCodecTests
             ControllerDetectionWarning = null,
             ExternalChanges = [DeviceSubsystem.Fans, DeviceSubsystem.Lighting],
             Capabilities = capabilities,
-            ConfirmedState = new ConfirmedDeviceState(null, null, confirmed, null),
+            ConfirmedState = new ConfirmedDeviceState(null, FanMode.Automatic, confirmed, null)
+            {
+                HyperBoostActive = true,
+            },
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
             Profiles = profiles,
             BatteryPolicyOverride = BatteryPolicy.Create(75),
             BatteryProtectionOverride = false,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.ModelScoped,
         };
 
-        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -460,13 +503,54 @@ public sealed class IpcMessageCodecTests
             DeviceFeatureAccess.ObservedOnly,
             roundTrip.Capabilities.LampArrayLightingAccess);
         Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            roundTrip.Capabilities.HyperBoostAccess);
+        Assert.Equal(
+            FirmwareCompatibilityStatus.ModelScoped,
+            roundTrip.FirmwareCompatibility);
+        Assert.Equal(
+            capabilities.HyperBoostBaseModes,
+            roundTrip.Capabilities.HyperBoostBaseModes);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            roundTrip.Capabilities.CoolingPadSupportAccess);
+        Assert.Equal(
             capabilities.ObservedPowerSourceBehaviors,
             roundTrip.Capabilities.ObservedPowerSourceBehaviors);
         Assert.Equal(desired, roundTrip.DesiredState.Battery);
         Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
+        Assert.True(roundTrip.ConfirmedState.HyperBoostActive);
         Assert.Equal(profiles, roundTrip.Profiles);
         Assert.Equal(BatteryPolicy.Create(75), roundTrip.BatteryPolicyOverride);
         Assert.False(roundTrip.BatteryProtectionOverride);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsInconsistentHyperBoostReadback()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    HyperBoostAccess = DeviceFeatureAccess.ReadOnly,
+                },
+                ConfirmedState = new ConfirmedDeviceState(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    null,
+                    null)
+                {
+                    HyperBoostActive = true,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -560,6 +644,44 @@ public sealed class IpcMessageCodecTests
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_LegacyStatusOmittingHyperBoostBaseModesFailsClosed()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+                {
+                    HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                    HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                        DeviceFeatureAccess.ObservedOnly,
+                        DeviceFeatureAccess.ReadWrite,
+                        DeviceFeatureAccess.ObservedOnly),
+                },
+            });
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        byte[] framed = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framed);
+        JsonObject root = Assert.IsType<JsonObject>(JsonNode.Parse(
+            Encoding.UTF8.GetString(framed, sizeof(int), payloadLength)));
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(
+            status["capabilities"]);
+        Assert.True(capabilities.Remove("hyperBoostBaseModes"));
+
+        ServiceStatusEvent legacy = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Null(legacy.Status.Capabilities!.HyperBoostBaseModes);
     }
 
     [Fact]
@@ -726,7 +848,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -757,6 +879,88 @@ public sealed class IpcMessageCodecTests
                 Capabilities = DeviceCapabilities.Unavailable() with
                 {
                     SpecialKeyBindingsAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownHyperBoostAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    HyperBoostAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsInvalidHyperBoostBaseModeAccess()
+    {
+        foreach (DeviceCapabilities capabilities in new[]
+        {
+            DeviceCapabilities.Unavailable() with
+            {
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    (DeviceFeatureAccess)999,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+        })
+        {
+            ServiceServerFrame frame = new ServiceStatusEvent(
+                OpenBladeIpc.ProtocolVersion,
+                CreateStatus() with { Capabilities = capabilities });
+
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                IpcMessageCodec.WriteServerFrameAsync(
+                    new MemoryStream(),
+                    frame,
+                    CancellationToken.None));
+        }
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownCoolingPadSupportAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    CoolingPadSupportAccess = (DeviceFeatureAccess)999,
                 },
             });
 
@@ -1000,6 +1204,41 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(
                 stream,
                 new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.Empty),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsLeaseShorterThanControlCadenceWindow()
+    {
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                stream,
+                new SetCoolingDemandLeaseRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    new CoolingDemandLevel(6_000),
+                    TtlMilliseconds: 1_000),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsLightingEnableCombinedWithRecoveryAcknowledgement()
+    {
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                stream,
+                new SetCoolingPadLightingSyncRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    Enabled: true)
+                {
+                    AcknowledgeRecovery = true,
+                },
                 CancellationToken.None));
     }
 
@@ -1689,6 +1928,126 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task CoolingPadStatus_RoundTripsDesiredComputedAndLeaseState()
+    {
+        var expectedPad = new CoolingPadStatus(
+            CoolingPadConnectionState.PresentExact,
+            new CoolingPadCapabilities(
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                SupportsIntentPersistence: true,
+                CoolingDemandApiAccess.IntentOnly)
+            {
+                ActiveFanModeObservationAccess = DeviceFeatureAccess.ReadOnly,
+            },
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.SmartCurve,
+                CoolingPadFanIntent.Default.FixedDemand,
+                CoolingPadSmartCurve.Default),
+            new CoolingDemandLevel(7_250),
+            AppliedDemand: null,
+            ConfiguredFanTarget: new CoolingPadFanTarget(2200),
+            ConfiguredFanTargetIsFresh: true,
+            Ownership: CoolingPadControlOwnershipState.Unowned,
+            CoolingDemandApiEnabled: true,
+            ActiveDemandLeases: 2,
+            LightingSyncEnabled: true,
+            LightingSyncState: CoolingPadLightingSyncState.WaitingForFrame,
+            Message: "Computed only.")
+        {
+            ConfirmedActiveFanControlMode =
+                CoolingPadActiveFanControlMode.Automatic,
+            PlannedFanTarget = CoolingPadFanTarget.FromDemand(
+                new CoolingDemandLevel(7_250)),
+        };
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot expected = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+            },
+            CoolingPad = expectedPad,
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(expectedPad, actual.CoolingPad);
+    }
+
+    [Fact]
+    public async Task CoolingPadStatus_RoundTripsDurableLightingRecoveryState()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        var expectedPad = new CoolingPadStatus(
+            CoolingPadConnectionState.PresentExact,
+            new CoolingPadCapabilities(
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                SupportsIntentPersistence: true,
+                CoolingDemandApiAccess.IntentOnly),
+            CoolingPadFanIntent.Default,
+            ComputedDemand: null,
+            AppliedDemand: null,
+            ConfiguredFanTarget: null,
+            ConfiguredFanTargetIsFresh: false,
+            Ownership: CoolingPadControlOwnershipState.Unowned,
+            CoolingDemandApiEnabled: false,
+            ActiveDemandLeases: 0,
+            LightingSyncEnabled: false,
+            LightingSyncState: CoolingPadLightingSyncState.Faulted,
+            Message: "Manual preset recovery is required.")
+        {
+            LightingRecoveryRequired = true,
+        };
+        ServiceStatusSnapshot expected = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
+            },
+            CoolingPad = expectedPad,
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(expectedPad, actual.CoolingPad);
+        Assert.True(actual.CoolingPad!.LightingRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task CoolingPadStatus_RequiresMachineScopedSupportCapability()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        var pad = new CoolingPadStatus(
+            CoolingPadConnectionState.Absent,
+            new CoolingPadCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                SupportsIntentPersistence: true,
+                CoolingDemandApiAccess.IntentOnly),
+            CoolingPadFanIntent.Default,
+            ComputedDemand: null,
+            AppliedDemand: null,
+            ConfiguredFanTarget: null,
+            ConfiguredFanTargetIsFresh: false,
+            Ownership: CoolingPadControlOwnershipState.Unowned,
+            CoolingDemandApiEnabled: false,
+            ActiveDemandLeases: 0,
+            LightingSyncEnabled: false,
+            LightingSyncState: CoolingPadLightingSyncState.Unavailable,
+            Message: "Absent.");
+
+        await AssertStatusWriteRejectedAsync(baseline with { CoolingPad = pad });
+    }
+
+    [Fact]
     public async Task WriteServerFrameAsync_RejectsOversizedAdvisoryAtSixtyFourKiBFrameLimit()
     {
         ServiceStatusSnapshot status = CreateStatus() with
@@ -1911,6 +2270,7 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
         Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
         Assert.Equal(expected.BatteryHealth, actual.BatteryHealth);
+        Assert.Equal(expected.CoolingPad, actual.CoolingPad);
         Assert.Equal(
             expected.KeyboardDriverModeActive,
             actual.KeyboardDriverModeActive);

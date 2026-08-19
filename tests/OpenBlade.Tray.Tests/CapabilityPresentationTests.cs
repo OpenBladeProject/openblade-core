@@ -11,6 +11,117 @@ public sealed class CapabilityPresentationTests
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
 
     [Fact]
+    public void MainWindow_HyperBoostUsesCapabilityGatedConfirmedToggle()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "HyperBoostCard");
+        string presentation = card.ToString();
+
+        Assert.Equal(
+            "{Binding IsHyperBoostVisible}",
+            Attribute(card, "AnimatedVisibility.IsVisible"));
+        XElement toggle = Assert.Single(
+            card.Descendants(),
+            element => element.Name.LocalName == "ToggleSwitch");
+        Assert.Equal("{Binding HyperBoostActive, Mode=OneWay}", Attribute(toggle, "IsOn"));
+        Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
+        Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindow_CoolingPadSeparatesDemandApiFromGatedLightingSync()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "CoolingPadCard");
+        string presentation = card.ToString();
+
+        Assert.Equal(
+            "{Binding IsCoolingPadVisible}",
+            Attribute(card, "AnimatedVisibility.IsVisible"));
+        XElement demandToggle = NamedElement(
+            document,
+            "ToggleSwitch",
+            "CoolingDemandApiToggle");
+        Assert.Equal(
+            "{Binding CoolingDemandApiEnabled, Mode=OneWay}",
+            Attribute(demandToggle, "IsOn"));
+        Assert.Equal(
+            "{Binding CanToggleCoolingDemandApi}",
+            Attribute(demandToggle, "IsEnabled"));
+        Assert.Equal("OnCoolingDemandApiToggled", Attribute(demandToggle, "Toggled"));
+        XElement fanSelector = NamedElement(
+            document,
+            "ComboBox",
+            "CoolingPadFanModeSelector");
+        Assert.Equal(
+            "{Binding AvailableCoolingPadFanModeOptions}",
+            Attribute(fanSelector, "ItemsSource"));
+        Assert.Equal(
+            "OnCoolingPadFanModeSelectionChanged",
+            Attribute(fanSelector, "SelectionChanged"));
+        XElement fixedSlider = NamedElement(
+            document,
+            "Slider",
+            "CoolingPadFixedDemandSlider");
+        Assert.Equal(
+            "{Binding CanEditCoolingPadFixedDemand}",
+            Attribute(fixedSlider, "IsEnabled"));
+        Assert.Equal("500", Attribute(fixedSlider, "Minimum"));
+        Assert.Equal("3200", Attribute(fixedSlider, "Maximum"));
+        Assert.Equal("50", Attribute(fixedSlider, "StepFrequency"));
+        Assert.Equal(
+            "{Binding CoolingPadFixedTargetRpm, Mode=OneWay}",
+            Attribute(fixedSlider, "Value"));
+        Assert.Equal(
+            "OnCoolingPadFixedDemandCommit",
+            Attribute(fixedSlider, "PointerCaptureLost"));
+        XElement combinedTemperatureToggle = NamedElement(
+            document,
+            "ToggleSwitch",
+            "CoolingPadCombinedTemperatureToggle");
+        Assert.Equal(
+            "{Binding CoolingPadUseHigherTemperatureForBoth, Mode=OneWay}",
+            Attribute(combinedTemperatureToggle, "IsOn"));
+        Assert.Equal(
+            "{Binding CanEditCoolingPadSmartCurve}",
+            Attribute(combinedTemperatureToggle, "IsEnabled"));
+        Assert.Equal(
+            "OnCoolingPadCombinedTemperatureToggled",
+            Attribute(combinedTemperatureToggle, "Toggled"));
+        Assert.Contains("{Binding CoolingPadCpuCurveEditorPoints}", presentation);
+        Assert.Contains("{Binding CoolingPadGpuCurveEditorPoints}", presentation);
+        Assert.Contains("OnCoolingPadCurvePointCommit", presentation);
+        Assert.Contains("Minimum=\"500\"", presentation);
+        Assert.Contains("Maximum=\"3200\"", presentation);
+        Assert.Contains("StepFrequency=\"50\"", presentation);
+        Assert.Contains("{Binding CoolingPadDemandLabel}", presentation);
+        Assert.Contains("{Binding CoolingPadLightingSyncDescription}", presentation);
+        XElement lightingToggle = NamedElement(
+            document,
+            "ToggleSwitch",
+            "CoolingPadLightingSyncToggle");
+        Assert.Equal(
+            "{Binding CoolingPadLightingSyncEnabled, Mode=OneWay}",
+            Attribute(lightingToggle, "IsOn"));
+        Assert.Equal(
+            "{Binding CanToggleCoolingPadLightingSync}",
+            Attribute(lightingToggle, "IsEnabled"));
+        Assert.Equal(
+            "OnCoolingPadLightingSyncToggled",
+            Attribute(lightingToggle, "Toggled"));
+        Assert.Contains(
+            "{Binding IsCoolingPadLightingRecoveryRequired}",
+            presentation);
+        Assert.Contains(
+            "{Binding CanAcknowledgeCoolingPadLightingRecovery}",
+            presentation);
+        Assert.Contains(
+            "OnCoolingPadLightingRecoveryAcknowledged",
+            presentation);
+    }
+
+    [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -289,14 +400,14 @@ public sealed class CapabilityPresentationTests
             .Where(element => element.Name.LocalName == "Slider"
                 && Attribute(element, "Tag") == "{x:Bind Mode=OneTime}")
             .ToArray();
-        Assert.Equal(2, curveSliders.Length);
+        Assert.Equal(4, curveSliders.Length);
         Assert.All(curveSliders, slider => Assert.Equal("120", Attribute(slider, "MinWidth")));
         XElement[] curveLists = curveSliders
             .Select(slider => slider.Ancestors().First(element =>
                 element.Name.LocalName == "ItemsControl"))
             .Distinct()
             .ToArray();
-        Assert.Equal(2, curveLists.Length);
+        Assert.Equal(4, curveLists.Length);
         Assert.All(curveLists, list => Assert.Equal(
             "{StaticResource FanCurveItemContainerStyle}",
             Attribute(list, "ItemContainerStyle")));
@@ -311,7 +422,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(26, animated.Length);
+        Assert.Equal(31, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -367,6 +478,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsManualFanCurveVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsCoolingPadSmartCurveVisible",
                 StringComparison.Ordinal) is true);
         XElement[] gamingModePolicies = animated
             .Where(element => element.Descendants().Any(descendant =>
@@ -623,6 +738,7 @@ public sealed class CapabilityPresentationTests
         [
             "GpuCoreClockOffsetSlider",
             "GpuMemoryClockOffsetSlider",
+            "CoolingPadFixedDemandSlider",
             "FixedFanSpeedSlider",
             "DashboardChargeLimitSlider",
             "DashboardLightingBrightnessSlider",
@@ -988,11 +1104,14 @@ public sealed class CapabilityPresentationTests
         XElement[] retainedDropdowns = document.Descendants()
             .Where(element => element.Name.LocalName == "ComboBox")
             .ToArray();
-        Assert.Equal(2, retainedDropdowns.Length);
+        Assert.Equal(3, retainedDropdowns.Length);
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "AutomationProperties.Name") == "Profile to review");
         Assert.Contains(retainedDropdowns, element =>
             Attribute(element, "SelectionChanged") == "OnSpecialKeyActionSelectionChanged");
+        Assert.Contains(retainedDropdowns, element =>
+            Attribute(element, "SelectionChanged") ==
+                "OnCoolingPadFanModeSelectionChanged");
     }
 
     [Fact]

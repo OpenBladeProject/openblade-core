@@ -16,6 +16,20 @@ builder.Services.AddSingleton(new PersistentOverrideStore(
     Path.Combine(machineDataDirectory, "manual-overrides.json")));
 builder.Services.AddSingleton(new ServiceRunMarkerStore(
     Path.Combine(machineDataDirectory, "service-running.json")));
+var hyperBoostOwnershipJournalStore = new HyperBoostOwnershipJournalStore(
+    Path.Combine(machineDataDirectory, "hyperboost-ownership.json"));
+var coolingPadFanOwnershipJournalStore = new CoolingPadFanOwnershipJournalStore(
+    Path.Combine(machineDataDirectory, "cooling-pad-fan-ownership.json"));
+builder.Services.AddSingleton<IHyperBoostOwnershipJournalStore>(
+    hyperBoostOwnershipJournalStore);
+builder.Services.AddSingleton<ICoolingPadFanOwnershipJournalStore>(
+    coolingPadFanOwnershipJournalStore);
+builder.Services.AddSingleton<IServiceOwnershipJournalCleaner>(
+    new CompositeServiceOwnershipJournalCleaner(
+    [
+        hyperBoostOwnershipJournalStore,
+        coolingPadFanOwnershipJournalStore,
+    ]));
 builder.Services.AddSingleton<IUserConfigurationRepository>(provider =>
     new UserConfigurationRepository(
         machineDataDirectory,
@@ -36,7 +50,7 @@ builder.Services.AddSingleton<IStatusSubscriptionHub>(
 builder.Services.AddSingleton<LowPowerGate>();
 builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();
 builder.Services.AddSingleton<IDisplayBrightnessHidController, DisplayBrightnessHidController>();
-builder.Services.AddSingleton<IServiceControlRuntime, ServiceControlRuntime>();
+builder.Services.AddServiceControlRuntime();
 builder.Services.AddSingleton<IServiceShutdownSignal, HostServiceShutdownSignal>();
 builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddHostedService<Worker>();

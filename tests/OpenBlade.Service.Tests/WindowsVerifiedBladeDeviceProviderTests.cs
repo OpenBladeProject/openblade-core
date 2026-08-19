@@ -1482,6 +1482,34 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ModelScopedFirmwareNeedsNoOverrideAndPreservesRenderer()
+    {
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(
+                BatteryValidationProbeClassification.Ready,
+                BatteryValidationFirmwareCompatibility.ModelScoped),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(new FakeLightingPort()));
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                77,
+                ReactiveLightingDuration.Medium),
+            default);
+
+        Assert.Equal(FirmwareCompatibilityStatus.ModelScoped, provider.FirmwareCompatibility);
+        Assert.True(provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+
+        provider.SetAllowUntestedFirmware(false);
+
+        Assert.Equal(FirmwareCompatibilityStatus.ModelScoped, provider.FirmwareCompatibility);
+        Assert.True(provider.TryGetOwnedKeyTriggeredLightingDevice(out _));
+    }
+
+    [Fact]
     public async Task UnknownProbeAfterUntestedAdmission_FailsClosedAndDisablesCleanly()
     {
         int probeCount = 0;

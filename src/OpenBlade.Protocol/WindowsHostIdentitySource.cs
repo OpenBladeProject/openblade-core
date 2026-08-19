@@ -191,6 +191,24 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
     internal static bool IsExactRz090528WindowsHost() =>
         IsRz090528WindowsHost(allowUntestedFirmware: false);
 
+    internal static bool IsRz090581WindowsHost(bool allowUntestedFirmware)
+    {
+        var registry = new WindowsRegistryValueSource();
+        var compatibilityPolicy = new FirmwareCompatibilityPolicy
+        {
+            AllowUntestedFirmware = allowUntestedFirmware,
+        };
+        return new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            ProductionIdentity,
+            compatibilityPolicy).ReadExactIdentity() is
+        {
+            Evidence: not null,
+            Failure: null,
+        };
+    }
+
     internal static bool IsRz090528WindowsHost(bool allowUntestedFirmware)
     {
         var registry = new WindowsRegistryValueSource();

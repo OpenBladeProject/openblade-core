@@ -16,7 +16,12 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
     {
         string path = Path.Combine(directory, "profiles.json");
         var runtime = new RecordingRuntime(path);
-        var coordinator = CreateCoordinator(path, runtime, new RecordingLogger());
+        var journalCleaner = new RecordingOwnershipJournalCleaner();
+        var coordinator = CreateCoordinator(
+            path,
+            runtime,
+            new RecordingLogger(),
+            ownershipJournalCleaner: journalCleaner);
 
         bool started = await coordinator.InitializeAsync(CancellationToken.None);
 
@@ -33,6 +38,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.Equal(1, runtime.ObserveCount);
         Assert.True(runtime.ProfileFileExistedDuringInitialize);
         Assert.Equal(PowerSource.PluggedIn, runtime.InitialPowerSource);
+        Assert.Equal(1, journalCleaner.ClearCount);
     }
 
     [Fact]
@@ -45,11 +51,13 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             ServiceStartupKind.Normal,
             await runMarker.BeginRunAsync(CancellationToken.None));
         var runtime = new RecordingRuntime(path);
+        var journalCleaner = new RecordingOwnershipJournalCleaner();
         var coordinator = CreateCoordinator(
             path,
             runtime,
             new RecordingLogger(),
-            runMarker);
+            runMarker,
+            journalCleaner);
 
         Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
 
@@ -65,6 +73,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
                 "RestoreLighting",
             ],
             runtime.Calls);
+        Assert.Equal(0, journalCleaner.ClearCount);
     }
 
     [Fact]
@@ -153,7 +162,8 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         string path,
         IServiceControlRuntime runtime,
         ILogger logger,
-        ServiceRunMarkerStore? runMarkerStore = null)
+        ServiceRunMarkerStore? runMarkerStore = null,
+        IServiceOwnershipJournalCleaner? ownershipJournalCleaner = null)
     {
         string directory = Path.GetDirectoryName(path)!;
         var store = new BatteryConfigurationStore(
@@ -165,9 +175,24 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
             runMarkerStore ?? new ServiceRunMarkerStore(
                 Path.Combine(directory, "service-running.json")),
+            ownershipJournalCleaner
+                ?? UnavailableHyperBoostOwnershipJournalStore.Instance,
             runtime,
             new FixedPowerStateProvider(),
             logger);
+    }
+
+    private sealed class RecordingOwnershipJournalCleaner
+        : IServiceOwnershipJournalCleaner
+    {
+        internal int ClearCount { get; private set; }
+
+        public Task ClearAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ClearCount++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingRuntime(string profilePath) : IServiceControlRuntime

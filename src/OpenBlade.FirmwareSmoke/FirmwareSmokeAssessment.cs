@@ -183,6 +183,16 @@ public static class FirmwareSmokeAssessment
             "post-update");
     }
 
+    internal static FirmwareSmokeReport CompareUnchangedInstalledGeneration(
+        FirmwareSmokeSnapshot baseline,
+        FirmwareSmokeSnapshot current) =>
+        CompareSnapshots(
+            baseline,
+            current,
+            new HashSet<FirmwareComponent>(),
+            new HashSet<FirmwareComponent>(),
+            "installed-generation");
+
     public static FirmwareSmokeReport CompareRehearsal(
         FirmwareSmokeSnapshot baseline,
         FirmwareSmokeSnapshot current,
@@ -443,6 +453,13 @@ public static class FirmwareSmokeAssessment
     {
         FirmwareSmokeCapabilityExpectation expected = ExpectedCapabilities(
             snapshot.TargetModel);
+        string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
+            snapshot.TargetModel,
+            snapshot.Firmware.Bios);
+        string expectedCoolingPadSupportAccess = ExpectedCoolingPadSupportAccess(
+            snapshot.TargetModel);
+        HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
+            ExpectedHyperBoostBaseModes(snapshot.TargetModel, snapshot.Firmware.Bios);
         var checks = new List<FirmwareSmokeCheck>
         {
             Check(
@@ -567,6 +584,30 @@ public static class FirmwareSmokeAssessment
                     StringComparison.Ordinal),
                 expected.LampArrayLightingAccess,
                 snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost",
+                "HyperBoost access matches captured model and firmware evidence",
+                string.Equals(
+                    snapshot.Capabilities.HyperBoostAccess ?? "Unavailable",
+                    expectedHyperBoostAccess,
+                    StringComparison.Ordinal),
+                expectedHyperBoostAccess,
+                snapshot.Capabilities.HyperBoostAccess ?? "Unavailable"),
+            Check(
+                "capabilities.hyper-boost-base-modes",
+                "HyperBoost base-mode access matches direct-transition evidence",
+                snapshot.Capabilities.HyperBoostBaseModes == expectedHyperBoostBaseModes,
+                HyperBoostBaseModeSummary(expectedHyperBoostBaseModes),
+                HyperBoostBaseModeSummary(snapshot.Capabilities.HyperBoostBaseModes)),
+            Check(
+                "capabilities.cooling-pad-support",
+                "Cooling-pad support matches the exact laptop model",
+                string.Equals(
+                    snapshot.Capabilities.CoolingPadSupportAccess ?? "Unavailable",
+                    expectedCoolingPadSupportAccess,
+                    StringComparison.Ordinal),
+                expectedCoolingPadSupportAccess,
+                snapshot.Capabilities.CoolingPadSupportAccess ?? "Unavailable"),
             Check(
                 "readback.performance",
                 "Performance readback is available",
@@ -740,6 +781,9 @@ public static class FirmwareSmokeAssessment
         $"SpecialKeys={capabilities.SpecialKeyBindingsAccess ?? "Unavailable"}; " +
         $"WritableSpecialKeySlots={capabilities.WritableSpecialKeySlots ?? "Unavailable"}; " +
         $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
+        $"HyperBoost={capabilities.HyperBoostAccess ?? "Unavailable"}; " +
+        $"HyperBoostBases={HyperBoostBaseModeSummary(capabilities.HyperBoostBaseModes)}; " +
+        $"CoolingPadSupport={capabilities.CoolingPadSupportAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
         $"Laptop={capabilities.OneShotLaptopControls.Count}; " +
@@ -768,6 +812,15 @@ public static class FirmwareSmokeAssessment
         && string.Equals(
             left.LampArrayLightingAccess,
             right.LampArrayLightingAccess,
+            StringComparison.Ordinal)
+        && string.Equals(
+            left.HyperBoostAccess,
+            right.HyperBoostAccess,
+            StringComparison.Ordinal)
+        && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+        && string.Equals(
+            left.CoolingPadSupportAccess,
+            right.CoolingPadSupportAccess,
             StringComparison.Ordinal)
         && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
@@ -809,6 +862,40 @@ public static class FirmwareSmokeAssessment
                 SpecialKeySlotSet.None.ToString(),
                 "Unavailable"),
         };
+
+    private static string ExpectedHyperBoostAccess(
+        string modelNumber,
+        string biosVersion) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
+                DeviceFeatureAccess.ReadWrite.ToString(),
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber or
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                DeviceFeatureAccess.ObservedOnly.ToString(),
+            _ => "Unavailable",
+        };
+
+    private static string ExpectedCoolingPadSupportAccess(string modelNumber) =>
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? DeviceFeatureAccess.ObservedOnly.ToString()
+                : "Unavailable";
+
+    private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
+        string modelNumber,
+        string biosVersion) =>
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
+            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
+                ? new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly)
+                : null;
+
+    private static string HyperBoostBaseModeSummary(
+        HyperBoostBaseModeCapabilities? capabilities) => capabilities is null
+            ? "Unavailable"
+            : $"Silent={capabilities.Silent},Balanced={capabilities.Balanced},Performance={capabilities.Performance}";
 
     private static string List<T>(IReadOnlyList<T> values) =>
         values.Count == 0 ? "None" : string.Join(", ", values);

@@ -688,6 +688,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         battery,
                         lightingRead.State)
                     {
+                        HyperBoostActive = performanceFan.HyperBoostActive,
                         CustomPerformance = customPerformance,
                         GpuClockOffsets = gpuOffsets,
                         LogoLighting = logo,
@@ -808,51 +809,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
-        public async Task<string?> ReadMcuVersionAsync(
-            CancellationToken cancellationToken)
-        {
-            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
-                if (opened.Value is not { } port)
-                {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
-                    return null;
-                }
-
-                await using (port.ConfigureAwait(false))
-                {
-                    if (opened.Failure is not null)
-                    {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
-                    }
-
-                    return port.SupportsMcuVersionQuery
-                        ? await port.QueryMcuVersionAsync(cancellationToken)
-                            .ConfigureAwait(false)
-                        : null;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw new OperationCanceledException(cancellationToken);
-            }
-            catch (ObjectDisposedException)
-            {
-                throw;
-            }
-            catch
-            {
-                return null;
-            }
-            finally
-            {
-                hardwareOperationGate.Release();
-            }
-        }
-
         public async Task<Rz090581CapabilityDiagnostics?>
             ReadRz090581CapabilityDiagnosticsAsync(
                 CancellationToken cancellationToken)
@@ -878,6 +834,51 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     return port.SupportsRz090581CapabilityDiagnosticsQuery
                         ? await port.QueryRz090581CapabilityDiagnosticsAsync(
                             cancellationToken).ConfigureAwait(false)
+                        : null;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        public async Task<string?> ReadMcuVersionAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    return null;
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    }
+
+                    return port.SupportsMcuVersionQuery
+                        ? await port.QueryMcuVersionAsync(cancellationToken)
+                            .ConfigureAwait(false)
                         : null;
                 }
             }
@@ -1040,6 +1041,32 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 customPerformance: null,
                 gpuClockOffsets: null,
                 cancellationToken);
+
+        public async Task SetHyperBoostAsync(
+            bool enabled,
+            CancellationToken cancellationToken)
+            => await SetHyperBoostAsync(
+                enabled,
+                PerformancePreset.Balanced,
+                cancellationToken).ConfigureAwait(false);
+
+        public async Task SetHyperBoostAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken)
+        {
+            if (batteryFactory.Capabilities.HyperBoostAccess
+                != DeviceFeatureAccess.ReadWrite)
+            {
+                await RejectProductionWrite("HyperBoost control is not admitted.")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await ExecuteProductionWriteAsync(
+                port => port.SetHyperBoostAsync(enabled, baseMode, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         public Task SetPerformanceAsync(
             PerformancePreset value,

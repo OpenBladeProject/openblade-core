@@ -19,6 +19,12 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
+[JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
+[JsonDerivedType(typeof(SetCoolingPadFanIntentRequest), "setCoolingPadFanIntent")]
+[JsonDerivedType(typeof(SetCoolingDemandLeaseRequest), "setCoolingDemandLease")]
+[JsonDerivedType(typeof(ReleaseCoolingDemandLeaseRequest), "releaseCoolingDemandLease")]
+[JsonDerivedType(typeof(SetCoolingDemandApiEnabledRequest), "setCoolingDemandApiEnabled")]
+[JsonDerivedType(typeof(SetCoolingPadLightingSyncRequest), "setCoolingPadLightingSync")]
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
@@ -87,6 +93,47 @@ public sealed record SetPerformanceOverrideRequest(
     Guid RequestId,
     PerformanceOverride? Value)
     : ServiceRequest(Version, RequestId);
+
+public sealed record SetHyperBoostRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingPadFanIntentRequest(
+    int Version,
+    Guid RequestId,
+    CoolingPadFanIntent Intent)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingDemandLeaseRequest(
+    int Version,
+    Guid RequestId,
+    Guid LeaseId,
+    CoolingDemandLevel Demand,
+    int TtlMilliseconds)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReleaseCoolingDemandLeaseRequest(
+    int Version,
+    Guid RequestId,
+    Guid LeaseId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingDemandApiEnabledRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingPadLightingSyncRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId)
+{
+    public bool AcknowledgeRecovery { get; init; }
+}
 
 public sealed record CyclePerformanceShortcutRequest(
     int Version,
@@ -292,6 +339,8 @@ public sealed record ServiceStatusSnapshot(
     public BatteryPolicy? BatteryPolicyOverride { get; init; }
 
     public bool? BatteryProtectionOverride { get; init; }
+
+    public CoolingPadStatus? CoolingPad { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

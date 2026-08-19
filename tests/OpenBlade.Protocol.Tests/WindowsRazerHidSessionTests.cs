@@ -666,6 +666,67 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Null(shortResult.Diagnostic);
     }
 
+    [Fact]
+    public async Task NumberedFeatureReportUsesConfiguredIdForSetAndGet()
+    {
+        const byte reportId = 0x05;
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken,
+            Task<HidFeatureIoResult>> set = (_, _, buffer, _, _) =>
+            {
+                Assert.Equal(reportId, buffer[0]);
+                return Task.FromResult(SetSuccessResult());
+            };
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken,
+            Task<HidFeatureIoResult>> get = (_, _, buffer, _, _) =>
+            {
+                Assert.Equal(reportId, buffer[0]);
+                byte[] response = Response(1, 0x0D, 0x81, [0x01, 0x05, 0x2A]);
+                response[0] = reportId;
+                response.CopyTo(buffer, 0);
+                return Task.FromResult(new HidFeatureIoResult(
+                    new NativeIoCompletion(true, 90, 0),
+                    WasSubmitted: true,
+                    Termination: HidFeatureTermination.Completed));
+            };
+        var io = new ScriptedIo(set, get);
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            featureReportId: reportId);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(0x0D, 0x81, [0x01, 0x05, 0x00], 3),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Null(result.Failure);
+        Assert.Equal([0x01, 0x05, 0x2A], result.Value.ToArray());
+        Assert.Equal([reportId, reportId], io.Calls.Select(call => call.Buffer[0]));
+    }
+
+    [Fact]
+    public async Task NumberedFeatureReportRejectsMismatchedResponseId()
+    {
+        const byte reportId = 0x05;
+        var io = new ScriptedIo(
+            SetSuccess(),
+            GetSuccess(1, 0x0D, 0x81, [0x01, 0x05, 0x2A]));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            featureReportId: reportId);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(0x0D, 0x81, [0x01, 0x05, 0x00], 3),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(
+            HidProtocolValidationFailure.ReportId,
+            result.Diagnostic?.ProtocolValidationFailure);
+    }
+
     [Theory]
     [InlineData(89, 0, HidSessionFailureKind.NativeIoFailure)]
     [InlineData(90, 1, HidSessionFailureKind.NativeIoFailure)]
@@ -1535,7 +1596,8 @@ public sealed class WindowsRazerHidSessionTests
         List<string>? events = null,
         Action? disposeBound = null,
         TimeSpan featureReportSettleDelay = default,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict)
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        byte featureReportId = 0)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(
@@ -1545,7 +1607,8 @@ public sealed class WindowsRazerHidSessionTests
             time ?? TimeProvider.System,
             lease,
             policy,
-            featureReportSettleDelay);
+            featureReportSettleDelay,
+            featureReportId);
     }
 
     private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)

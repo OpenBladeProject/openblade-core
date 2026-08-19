@@ -14,7 +14,18 @@ internal readonly record struct HidHandleIdentity(
     ushort ProductId,
     ushort UsagePage,
     ushort Usage,
-    ushort FeatureReportByteLength);
+    ushort FeatureReportByteLength,
+    ushort? VersionNumber = null)
+{
+    internal bool MatchesExpected(HidHandleIdentity expected) =>
+        VendorId == expected.VendorId
+        && ProductId == expected.ProductId
+        && UsagePage == expected.UsagePage
+        && Usage == expected.Usage
+        && FeatureReportByteLength == expected.FeatureReportByteLength
+        && (expected.VersionNumber is null
+            || VersionNumber == expected.VersionNumber);
+}
 
 internal readonly record struct HidCandidateOpenResult(
     OpenedCandidateHandle? Candidate,

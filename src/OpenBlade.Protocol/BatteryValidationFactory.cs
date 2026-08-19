@@ -543,7 +543,8 @@ public static class BatteryValidationFactory
                 AdapterPowerState.UsbCPower100W,
                 AdapterPowerState.FullPower280W,
             },
-            Rz090528CommandSessionGate.Shared);
+            sharedCommandGate: Rz090528CommandSessionGate.Shared,
+            hyperBoostAccess: DeviceFeatureAccess.ObservedOnly);
     }
 
     internal static ProductionBatteryReadEvidence
@@ -567,13 +568,24 @@ public static class BatteryValidationFactory
 
     internal static IProductionLightingPortFactory
         CreateWindowsProductionLightingForService(
-            FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy)
+        => CreateWindowsProductionLightingForService(
+            compatibilityPolicy,
+            UnavailableKeyboardLightingFrameObserver.Instance);
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsProductionLightingForService(
+        FirmwareCompatibilityPolicy compatibilityPolicy,
+        IKeyboardLightingFrameObserver frameObserver)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        ArgumentNullException.ThrowIfNull(frameObserver);
         return WindowsHostIdentitySource.IsRz090528WindowsHost(
                 allowUntestedFirmware: true)
             ? CreateWindowsRz090528ProductionLighting(compatibilityPolicy)
-            : ProductionLightingFactory.CreateWindows(compatibilityPolicy);
+            : ProductionLightingFactory.CreateWindows(
+                compatibilityPolicy,
+                frameObserver);
     }
 
     internal static IProductionLightingPortFactory
@@ -914,6 +926,69 @@ public static class BatteryValidationFactory
             powerSourceOnly: true);
     }
 
+    internal static IPerformanceFanDiscriminatorQueryRunner
+        CreateWindowsRz090581Bios400HyperBoostObservationQuery()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory);
+        return new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            hyperBoostObservationOnly: true);
+    }
+
+    internal static IValidationActorFactory
+        CreateWindowsRz090581Bios400CoolingPadFanGetterActorFactory()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                Array.AsReadOnly(new[] { "4.00" })));
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Strict,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x0F43,
+                UsagePage: 0x000C,
+                Usage: 0x0001,
+                FeatureReportByteLength: RazerReport.ReportLength + 1,
+                VersionNumber: WindowsCoolingPadDiscoverySource.VersionNumber));
+        return new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Strict,
+            featureReportSettleDelay: TimeSpan.FromMilliseconds(20),
+            featureReportId: 0x05);
+    }
+
     public static IPerformanceFanSetterValidationRunner
         CreateWindowsPerformanceFanSetterValidation()
     {
@@ -929,6 +1004,62 @@ public static class BatteryValidationFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout);
+    }
+
+    public static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400HyperBoostSetterValidation()
+        => CreateWindowsRz090581Bios400HyperBoostSetterValidationCore();
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400GuardedHyperBoostSetterValidation()
+        => CreateWindowsRz090581Bios400HyperBoostSetterValidation();
+
+    private static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400HyperBoostSetterValidationCore()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                Array.AsReadOnly(new[] { "4.00" })));
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Strict,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02E0,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: RazerReport.ReportLength + 1));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        var safetyGate = new PadPresentHyperBoostSafetyGate(
+            new WindowsCoolingPadDiscoverySource(native),
+            ProductionCoolingPadFactory.CreateWindows(),
+            DefaultExchangeTimeout);
+        return new PerformanceFanSetterValidationRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            safetyGate: safetyGate);
     }
 
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
@@ -1546,4 +1677,8 @@ public static class BatteryValidationFactory
             exclusivityPolicy,
             TemporaryFullChargeValidationFeatureReportSettleDelay);
     }
+
+    internal static ICoolingPadPhysicalPresenceSource
+        CreateWindowsCoolingPadPhysicalPresenceSource() =>
+        new WindowsCoolingPadPhysicalPresenceSource(new WindowsHidNative());
 }

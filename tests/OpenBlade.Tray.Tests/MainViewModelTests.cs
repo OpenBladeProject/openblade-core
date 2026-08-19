@@ -3819,6 +3819,437 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task HyperBoostObservation_IsVisibleWithoutAddingMutablePerformanceOption()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsHyperBoostVisible);
+
+        Assert.True(viewModel.IsHyperBoostVisible);
+        Assert.False(viewModel.IsHyperBoostWritable);
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.DoesNotContain(
+            viewModel.AvailablePerformancePresets,
+            preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+        });
+        await WaitUntilAsync(() => !viewModel.IsHyperBoostVisible);
+
+        Assert.False(viewModel.IsHyperBoostVisible);
+    }
+
+    [Fact]
+    public async Task HyperBoostReadWrite_UsesConfirmedToggleWithoutAddingPerformancePreset()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = false,
+            },
+            CoolingPad = CreateCoolingPadStatus(),
+        });
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+
+        Assert.Contains(
+            "fresh opaque-zero compatibility observation",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "Direct Quiet and Performance transitions are implemented",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "only Balanced is admitted",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "does not confirm active mode",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+
+        await viewModel.SetHyperBoostEnabledAsync(true, default);
+
+        Assert.True(client.HyperBoostEnabled);
+        Assert.True(viewModel.HyperBoostActive);
+        Assert.Contains(
+            "Keep the cooling pad set to Auto",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            viewModel.AvailablePerformancePresets,
+            preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task ObservedDirectHyperBoostBaseRemainsDisabled(
+        PerformancePreset selectedBase)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = selectedBase,
+                Fans = FanMode.Automatic,
+            },
+            CoolingPad = CreateCoolingPadStatus(),
+        });
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == selectedBase);
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Contains(
+            "implemented but remain ObservedOnly and unvalidated",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoolingPadStatus_ShowsComputedNotAppliedAndTogglesDemandApi()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with { CoolingPad = CreateCoolingPadStatus() });
+        await WaitUntilAsync(() => viewModel.IsCoolingPadVisible);
+
+        Assert.Equal("Connected", viewModel.CoolingPadConnectionLabel);
+        Assert.Equal("Auto", viewModel.CoolingPadFanModeLabel);
+        Assert.Equal(
+            "No host demand computed; active mode unknown",
+            viewModel.CoolingPadDemandLabel);
+        Assert.True(viewModel.CanToggleCoolingDemandApi);
+        Assert.Contains(
+            "planning and integration testing",
+            viewModel.CoolingDemandApiDescription,
+            StringComparison.Ordinal);
+        Assert.True(viewModel.CanEditCoolingPadFanIntent);
+        Assert.True(viewModel.CanEditCoolingPadFixedDemand);
+
+        Assert.True(await viewModel.SetCoolingPadFanModeAsync(
+            CoolingPadFanMode.Fixed,
+            default));
+        Assert.True(await viewModel.SetCoolingPadFixedTargetAsync(2_200, default));
+
+        Assert.Equal(CoolingPadFanMode.Fixed, client.CoolingPadFanIntent!.Mode);
+        Assert.Equal(6_875, client.CoolingPadFanIntent.FixedDemand.BasisPoints);
+        Assert.Equal(2_200, viewModel.CoolingPadFixedTargetRpm);
+        Assert.Equal(
+            "2,200 RPM planned (68.8%; not applied)",
+            viewModel.CoolingPadDemandLabel);
+        Assert.True(viewModel.IsCoolingPadFixedDemandVisible);
+
+        Assert.True(await viewModel.SetCoolingDemandApiEnabledAsync(true, default));
+
+        Assert.True(client.CoolingDemandApiEnabled);
+        Assert.True(viewModel.CoolingDemandApiEnabled);
+    }
+
+    [Fact]
+    public async Task CoolingPadStatus_ShowsAcknowledgedTargetWithoutClaimingPhysicalRpm()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        CoolingDemandLevel applied = new(6_875);
+        client.Publish(baseline with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                coolingDemandApiAccess: CoolingDemandApiAccess.AppliedControl) with
+            {
+                Capabilities = CreateCoolingPadStatus().Capabilities with
+                {
+                    FanControlAccess = DeviceFeatureAccess.ReadWrite,
+                    CoolingDemandApiAccess = CoolingDemandApiAccess.AppliedControl,
+                },
+                ComputedDemand = applied,
+                AppliedDemand = applied,
+                PlannedFanTarget = CoolingPadFanTarget.FromDemand(applied),
+                Ownership = CoolingPadControlOwnershipState.Owned,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsCoolingPadVisible);
+
+        Assert.Equal(
+            "2,200 RPM last acknowledged host target (68.8%); active mode and physical RPM are not read back",
+            viewModel.CoolingPadDemandLabel);
+        Assert.DoesNotContain(
+            "not applied",
+            viewModel.CoolingPadDemandLabel,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoolingPadSmartCurve_UpdatesPlannedCpuPointsAndSensorPolicy()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with { CoolingPad = CreateCoolingPadStatus() });
+        await WaitUntilAsync(() => viewModel.IsCoolingPadVisible);
+
+        Assert.True(await viewModel.SetCoolingPadFanModeAsync(
+            CoolingPadFanMode.SmartCurve,
+            default));
+        Assert.True(viewModel.IsCoolingPadSmartCurveVisible);
+        Assert.True(viewModel.CanEditCoolingPadSmartCurve);
+
+        CoolingPadCurveEditorPoint first = viewModel.CoolingPadCpuCurveEditorPoints[0];
+        Assert.True(await viewModel.SetCoolingPadCurvePointAsync(
+            first,
+            1_200,
+            default));
+
+        Assert.Equal(CoolingPadFanMode.SmartCurve, client.CoolingPadFanIntent!.Mode);
+        Assert.Equal(
+            1_200,
+            CoolingPadFanTarget.FromDemand(
+                client.CoolingPadFanIntent.SmartCurve.Cpu[0].Demand).Rpm);
+        Assert.Equal(1_200, viewModel.CoolingPadCpuCurveEditorPoints[0].TargetRpm);
+
+        Assert.True(await viewModel.SetCoolingPadUseHigherTemperatureForBothAsync(
+            true,
+            default));
+        Assert.True(client.CoolingPadFanIntent.SmartCurve.UseHigherTemperatureForBoth);
+        Assert.True(viewModel.CoolingPadUseHigherTemperatureForBoth);
+    }
+
+    [Fact]
+    public async Task CoolingPadFanIntent_IsReadOnlyWhileHyperBoostIsActive()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+            },
+            CoolingPad = CreateCoolingPadStatus(),
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+
+        Assert.False(viewModel.CanEditCoolingPadFanIntent);
+        Assert.False(viewModel.CanEditCoolingPadSmartCurve);
+        Assert.False(await viewModel.SetCoolingPadFanModeAsync(
+            CoolingPadFanMode.Fixed,
+            default));
+        Assert.Null(client.CoolingPadFanIntent);
+    }
+
+    [Fact]
+    public async Task CoolingPadFanIntent_AllowsAutoCorrectionWhileHyperBoostIsActive()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        CoolingPadStatus pad = CreateCoolingPadStatus() with
+        {
+            DesiredFanIntent = new CoolingPadFanIntent(
+                CoolingPadFanMode.Fixed,
+                new CoolingDemandLevel(6_875),
+                CoolingPadSmartCurve.Default),
+        };
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+            },
+            CoolingPad = pad,
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+
+        Assert.True(viewModel.CanEditCoolingPadFanIntent);
+        Assert.False(viewModel.CanEditCoolingPadFixedDemand);
+        Assert.False(await viewModel.SetCoolingPadFanModeAsync(
+            CoolingPadFanMode.SmartCurve,
+            default));
+        Assert.False(await viewModel.SetCoolingPadFixedTargetAsync(2_200, default));
+        Assert.Null(client.CoolingPadFanIntent);
+        Assert.True(await viewModel.SetCoolingPadFanModeAsync(
+            CoolingPadFanMode.Automatic,
+            default));
+        Assert.Equal(
+            CoolingPadFanMode.Automatic,
+            client.CoolingPadFanIntent!.Mode);
+        Assert.False(viewModel.CanEditCoolingPadFanIntent);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_UsesCapabilityAndDynamicLightingGate()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                lightingSyncAccess: DeviceFeatureAccess.ReadWrite),
+        });
+        await WaitUntilAsync(() => viewModel.CanToggleCoolingPadLightingSync);
+
+        Assert.True(await viewModel.SetCoolingPadLightingSyncEnabledAsync(
+            true,
+            default));
+        Assert.True(client.CoolingPadLightingSyncEnabled);
+
+        client.Publish(client.CurrentStatus! with
+        {
+            KeyboardLightingControlMode =
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+        });
+        await WaitUntilAsync(() => viewModel.UseWindowsDynamicLighting);
+
+        Assert.True(viewModel.CanToggleCoolingPadLightingSync);
+        Assert.Contains(
+            "Windows Dynamic Lighting",
+            viewModel.CoolingPadLightingSyncDescription,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_ExplainsRemainingWholeStripGates()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                lightingSyncAccess: DeviceFeatureAccess.ObservedOnly),
+        });
+        await WaitUntilAsync(() => viewModel.CoolingPadStatus is not null);
+
+        Assert.Contains("Whole-strip", viewModel.CoolingPadLightingSyncDescription);
+        Assert.Contains("cadence", viewModel.CoolingPadLightingSyncDescription);
+        Assert.DoesNotContain(
+            "physical LED ordering",
+            viewModel.CoolingPadLightingSyncDescription,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadLightingSyncState.WaitingForPad, "waiting for the exact cooling pad")]
+    [InlineData(CoolingPadLightingSyncState.WaitingForFrame, "waiting for a fresh")]
+    [InlineData(CoolingPadLightingSyncState.Mirroring, "mirroring confirmed")]
+    [InlineData(CoolingPadLightingSyncState.Suppressed, "lighting is suppressed")]
+    [InlineData(CoolingPadLightingSyncState.Delegated, "does not own keyboard lighting")]
+    [InlineData(CoolingPadLightingSyncState.Faulted, "will not retry automatically")]
+    public async Task CoolingPadLightingSync_DescribesLiveCoordinatorState(
+        CoolingPadLightingSyncState state,
+        string expected)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                lightingSyncAccess: DeviceFeatureAccess.ReadWrite) with
+            {
+                LightingSyncEnabled = true,
+                LightingSyncState = state,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CoolingPadStatus?.LightingSyncState == state);
+
+        Assert.Contains(
+            expected,
+            viewModel.CoolingPadLightingSyncDescription,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CoolingPadLightingSync_DisabledFaultRequiresRecoveryBeforeReenable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            CoolingPad = CreateCoolingPadStatus(
+                lightingSyncAccess: DeviceFeatureAccess.ReadWrite) with
+            {
+                LightingSyncEnabled = false,
+                LightingSyncState = CoolingPadLightingSyncState.Faulted,
+                LightingRecoveryRequired = true,
+                Message = "Pad handback remains unconfirmed.",
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.CoolingPadStatus?.LightingSyncState
+                == CoolingPadLightingSyncState.Faulted);
+
+        Assert.False(viewModel.CanToggleCoolingPadLightingSync);
+        Assert.True(viewModel.IsCoolingPadLightingRecoveryRequired);
+        Assert.True(viewModel.CanAcknowledgeCoolingPadLightingRecovery);
+        Assert.Contains(
+            "acknowledge recovery",
+            viewModel.CoolingPadLightingSyncDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(await viewModel.SetCoolingPadLightingSyncEnabledAsync(
+            true,
+            default));
+        Assert.Null(client.CoolingPadLightingSyncEnabled);
+
+        Assert.True(await viewModel.AcknowledgeCoolingPadLightingRecoveryAsync(default));
+        Assert.True(client.CoolingPadLightingRecoveryAcknowledged);
+        await WaitUntilAsync(() => !viewModel.IsCoolingPadLightingRecoveryRequired);
+    }
+
+    [Fact]
     public async Task PartialSpecialKeyAdmission_EnablesOnlyM3ThroughM5()
     {
         var client = new FakeServiceClient();
@@ -5861,12 +6292,16 @@ public sealed class MainViewModelTests
             Capabilities = baseline.Capabilities! with
             {
                 SupportsPlaybackMuteIndicator = true,
+                CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
             },
         });
         await WaitUntilAsync(
             () => viewModel.Capabilities.SupportsPlaybackMuteIndicator);
 
         Assert.True(viewModel.Capabilities.SupportsPlaybackMuteIndicator);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            viewModel.Capabilities.CoolingPadSupportAccess);
     }
 
     [Fact]
@@ -7843,6 +8278,30 @@ public sealed class MainViewModelTests
             ServiceVersion: "0.1.0-test");
     }
 
+    private static CoolingPadStatus CreateCoolingPadStatus(
+        DeviceFeatureAccess lightingSyncAccess = DeviceFeatureAccess.ObservedOnly,
+        CoolingDemandApiAccess coolingDemandApiAccess =
+            CoolingDemandApiAccess.IntentOnly) => new(
+        CoolingPadConnectionState.PresentExact,
+        new CoolingPadCapabilities(
+            DeviceFeatureAccess.ObservedOnly,
+            DeviceFeatureAccess.ObservedOnly,
+            DeviceFeatureAccess.ObservedOnly,
+            lightingSyncAccess,
+            SupportsIntentPersistence: true,
+            coolingDemandApiAccess),
+        CoolingPadFanIntent.Default,
+        ComputedDemand: null,
+        AppliedDemand: null,
+        ConfiguredFanTarget: null,
+        ConfiguredFanTargetIsFresh: false,
+        Ownership: CoolingPadControlOwnershipState.Unowned,
+        CoolingDemandApiEnabled: false,
+        ActiveDemandLeases: 0,
+        LightingSyncEnabled: false,
+        LightingSyncState: CoolingPadLightingSyncState.Disabled,
+        Message: "Observed only.");
+
     private static (
         ServiceStatusSnapshot Status,
         GpuClockOffsetSettings LegacyOffsets) CreateLegacyGpuTuningStatus(string message)
@@ -7957,6 +8416,12 @@ public sealed class MainViewModelTests
         public bool? BatteryProtectionEnabled { get; private set; }
         public BatteryPolicy? BatteryPolicy { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
+        public bool? HyperBoostEnabled { get; private set; }
+        public CoolingPadFanIntent? CoolingPadFanIntent { get; private set; }
+        public bool? CoolingDemandApiEnabled { get; private set; }
+
+        public bool? CoolingPadLightingSyncEnabled { get; private set; }
+        public bool CoolingPadLightingRecoveryAcknowledged { get; private set; }
         public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -8085,6 +8550,97 @@ public sealed class MainViewModelTests
             MutationOperations.Add(value is null
                 ? "performance:<clear>"
                 : $"performance:{value.Value}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetHyperBoostAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            HyperBoostEnabled = enabled;
+            if (CurrentStatus?.ConfirmedState is { } confirmed)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    ConfirmedState = confirmed with { HyperBoostActive = enabled },
+                };
+            }
+            MutationOperations.Add($"hyperBoost:{enabled}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            CoolingDemandApiEnabled = enabled;
+            if (CurrentStatus?.CoolingPad is { } pad)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    CoolingPad = pad with { CoolingDemandApiEnabled = enabled },
+                };
+            }
+            MutationOperations.Add($"coolingDemandApi:{enabled}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent intent,
+            CancellationToken token)
+        {
+            CoolingPadFanIntent = intent;
+            if (CurrentStatus?.CoolingPad is { } pad)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    CoolingPad = pad with { DesiredFanIntent = intent },
+                };
+            }
+            MutationOperations.Add($"coolingPadFanIntent:{intent.Mode}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            CoolingPadLightingSyncEnabled = enabled;
+            if (CurrentStatus?.CoolingPad is { } pad)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    CoolingPad = pad with
+                    {
+                        LightingSyncEnabled = enabled,
+                        LightingSyncState = enabled
+                            ? CoolingPadLightingSyncState.Mirroring
+                            : CoolingPadLightingSyncState.Disabled,
+                    },
+                };
+            }
+            MutationOperations.Add($"coolingPadLightingSync:{enabled}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+            CancellationToken token)
+        {
+            CoolingPadLightingRecoveryAcknowledged = true;
+            if (CurrentStatus?.CoolingPad is { } pad)
+            {
+                CurrentStatus = CurrentStatus with
+                {
+                    CoolingPad = pad with
+                    {
+                        LightingRecoveryRequired = false,
+                        LightingSyncEnabled = false,
+                        LightingSyncState = CoolingPadLightingSyncState.Disabled,
+                    },
+                };
+                Publish(CurrentStatus);
+            }
+            MutationOperations.Add("coolingPadLightingRecovery:acknowledged");
             return MutateAsync(token);
         }
 

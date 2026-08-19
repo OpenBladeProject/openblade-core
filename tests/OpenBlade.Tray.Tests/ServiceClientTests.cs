@@ -247,6 +247,21 @@ public sealed class ServiceClientTests
             await client.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
                 timeout.Token),
+            await client.SetHyperBoostAsync(true, timeout.Token),
+            await client.SetCoolingPadFanIntentAsync(
+                CoolingPadFanIntent.Default,
+                timeout.Token),
+            await client.SetCoolingDemandLeaseAsync(
+                Guid.Parse("5e34d536-1f97-45f3-b967-95bc66ed92ef"),
+                new CoolingDemandLevel(6_000),
+                TimeSpan.FromSeconds(5),
+                timeout.Token),
+            await client.ReleaseCoolingDemandLeaseAsync(
+                Guid.Parse("5e34d536-1f97-45f3-b967-95bc66ed92ef"),
+                timeout.Token),
+            await client.SetCoolingDemandApiEnabledAsync(true, timeout.Token),
+            await client.SetCoolingPadLightingSyncAsync(false, timeout.Token),
+            await client.AcknowledgeCoolingPadLightingRecoveryAsync(timeout.Token),
             await client.CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 timeout.Token),
@@ -294,6 +309,29 @@ public sealed class ServiceClientTests
             observed,
             request => Assert.IsType<UpdateProfilesRequest>(request),
             request => Assert.IsType<SetPerformanceOverrideRequest>(request),
+            request => Assert.True(Assert.IsType<SetHyperBoostRequest>(request).Enabled),
+            request => Assert.Equal(
+                CoolingPadFanIntent.Default,
+                Assert.IsType<SetCoolingPadFanIntentRequest>(request).Intent),
+            request =>
+            {
+                SetCoolingDemandLeaseRequest lease =
+                    Assert.IsType<SetCoolingDemandLeaseRequest>(request);
+                Assert.Equal(6_000, lease.Demand.BasisPoints);
+                Assert.Equal(5_000, lease.TtlMilliseconds);
+            },
+            request => Assert.IsType<ReleaseCoolingDemandLeaseRequest>(request),
+            request => Assert.True(
+                Assert.IsType<SetCoolingDemandApiEnabledRequest>(request).Enabled),
+            request => Assert.False(
+                Assert.IsType<SetCoolingPadLightingSyncRequest>(request).Enabled),
+            request =>
+            {
+                SetCoolingPadLightingSyncRequest acknowledge =
+                    Assert.IsType<SetCoolingPadLightingSyncRequest>(request);
+                Assert.False(acknowledge.Enabled);
+                Assert.True(acknowledge.AcknowledgeRecovery);
+            },
             request => Assert.Equal(
                 PerformanceShortcutSource.DedicatedButton,
                 Assert.IsType<CyclePerformanceShortcutRequest>(request).Source),
@@ -348,7 +386,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(19, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(26, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -1036,7 +1074,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 19; index++)
+        for (int index = 0; index < 26; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

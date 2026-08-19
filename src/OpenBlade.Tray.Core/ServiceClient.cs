@@ -103,6 +103,84 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 : new PerformanceOverride(value.Value, value.Lifetime),
             token);
 
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
+    public Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken token) => SendMutationAsync(
+            new SetCoolingPadFanIntentRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                intent),
+            token);
+
+    public Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CoolingDemandLevel demand,
+        TimeSpan lifetime,
+        CancellationToken token)
+    {
+        if (lifetime < TimeSpan.FromSeconds(1)
+            || lifetime > TimeSpan.FromSeconds(30))
+        {
+            throw new ArgumentOutOfRangeException(nameof(lifetime));
+        }
+
+        return SendMutationAsync(
+            new SetCoolingDemandLeaseRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                leaseId,
+                demand,
+                checked((int)lifetime.TotalMilliseconds)),
+            token);
+    }
+
+    public Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CancellationToken token) => SendMutationAsync(
+            new ReleaseCoolingDemandLeaseRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                leaseId),
+            token);
+
+    public Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetCoolingDemandApiEnabledRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
+    public Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetCoolingPadLightingSyncRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
+    public Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+        CancellationToken token) => SendMutationAsync(
+            new SetCoolingPadLightingSyncRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: false)
+            {
+                AcknowledgeRecovery = true,
+            },
+            token);
+
     public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token) => SendMutationAsync(

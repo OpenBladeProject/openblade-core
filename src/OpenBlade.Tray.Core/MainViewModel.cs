@@ -45,6 +45,10 @@ public sealed record LightingDirectionOption(
     LightingDirection Value,
     string Label);
 
+public sealed record CoolingPadFanModeOption(
+    CoolingPadFanMode Value,
+    string Label);
+
 public sealed record ProfileValuePresentation(
     string Text,
     string SettingName,
@@ -137,6 +141,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryOptions =>
         CurrentLocalizedOptions.FunctionKeyPrimaryModes;
+
+    private static readonly IReadOnlyList<CoolingPadFanModeOption>
+        CoolingPadFanModeOptions =
+    [
+        new(CoolingPadFanMode.Automatic, "Auto"),
+        new(CoolingPadFanMode.Fixed, "Fixed"),
+        new(CoolingPadFanMode.SmartCurve, "Smart Fan Curve"),
+    ];
 
     private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
         Enum.GetValues<LightingEffect>()
@@ -301,6 +313,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private FanControlSettings? pendingFanControl;
     private bool isFanControlOperationInProgress;
     private bool isPerformanceOperationInProgress;
+    private bool isHyperBoostOperationInProgress;
+    private bool hyperBoostActive;
+    private CoolingPadStatus? coolingPadStatus;
     private bool isLightingOperationInProgress;
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
@@ -319,6 +334,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ManualFanCurve.Default.Cpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
     private IReadOnlyList<FanCurveEditorPoint> gpuFanCurveEditorPoints =
         ManualFanCurve.Default.Gpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
+    private IReadOnlyList<CoolingPadCurveEditorPoint> coolingPadCpuCurveEditorPoints =
+        CoolingPadSmartCurve.Default.Cpu
+            .Select(point => new CoolingPadCurveEditorPoint(point))
+            .ToArray();
+    private IReadOnlyList<CoolingPadCurveEditorPoint> coolingPadGpuCurveEditorPoints =
+        CoolingPadSmartCurve.Default.Gpu
+            .Select(point => new CoolingPadCurveEditorPoint(point))
+            .ToArray();
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
     private long chargeLimitEditorRevision;
@@ -972,6 +995,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1275,6 +1299,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(ShowOpenBladeKeyboardLightingControls));
                 Notify(nameof(CanSetLightingRefreshRate));
                 Notify(nameof(CanReapplyChangedSettings));
+                Notify(nameof(CanToggleCoolingPadLightingSync));
+                Notify(nameof(CoolingPadLightingSyncDescription));
             }
         }
     }
@@ -1345,6 +1371,66 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return accepted;
+    }
+
+    public async Task<bool> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (!CanToggleCoolingDemandApi)
+        {
+            return false;
+        }
+
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetCoolingDemandApiEnabledAsync(enabled, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (CoolingPadStatus is { } status)
+                    {
+                        CoolingPadStatus = status with
+                        {
+                            CoolingDemandApiEnabled = enabled,
+                            ActiveDemandLeases = enabled
+                                ? status.ActiveDemandLeases
+                                : 0,
+                        };
+                    }
+                },
+                cancellationToken);
+        }
+        return accepted;
+    }
+
+    public async Task<bool> SetCoolingPadLightingSyncEnabledAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (!CanToggleCoolingPadLightingSync)
+        {
+            return false;
+        }
+
+        return await RunOperationAsync(
+            token => serviceClient.SetCoolingPadLightingSyncAsync(enabled, token),
+            cancellationToken);
+    }
+
+    public async Task<bool> AcknowledgeCoolingPadLightingRecoveryAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!CanAcknowledgeCoolingPadLightingRecovery)
+        {
+            return false;
+        }
+
+        return await RunOperationAsync(
+            token => serviceClient.AcknowledgeCoolingPadLightingRecoveryAsync(token),
+            cancellationToken);
     }
 
     public async Task<bool> SetFirmwareCompatibilityOverrideAsync(
@@ -1897,6 +1983,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyTrayHoverLabel();
@@ -2068,6 +2155,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
+            Notify(nameof(CanToggleHyperBoost));
         }
     }
 
@@ -2142,7 +2230,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanEditFanControl =>
         CanRequestHardwareControl
-        && !IsFanControlOperationInProgress;
+        && !IsFanControlOperationInProgress
+        && !HyperBoostActive;
 
     public bool CanChangeFanMode =>
         CanEditFanControl
@@ -2150,7 +2239,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || SelectedFanModeOption is null);
 
     public bool CanEditPerformance =>
-        CanRequestHardwareControl && !IsPerformanceOperationInProgress;
+        CanRequestHardwareControl
+        && !IsPerformanceOperationInProgress
+        && !HyperBoostActive;
 
     public bool CanEditGpuClockTuning =>
         CanToggleGpuClockTuning
@@ -2446,6 +2537,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(IsHyperBoostVisible));
+            Notify(nameof(IsHyperBoostWritable));
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
@@ -2458,6 +2553,433 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool HasOneShotLaptopControls => Capabilities.OneShotLaptopControls.Count > 0;
+
+    public bool IsHyperBoostVisible => Capabilities.HyperBoostAccess is not null;
+
+    public bool IsHyperBoostWritable =>
+        Capabilities.HyperBoostAccess == DeviceFeatureAccess.ReadWrite;
+
+    public bool HyperBoostActive
+    {
+        get => hyperBoostActive;
+        private set
+        {
+            if (hyperBoostActive != value)
+            {
+                SetField(ref hyperBoostActive, value);
+                Notify(nameof(CanToggleHyperBoost));
+                Notify(nameof(HyperBoostDescription));
+                Notify(nameof(CanEditPerformance));
+                Notify(nameof(CanEditFanControl));
+                Notify(nameof(CanEditCoolingPadFanIntent));
+                Notify(nameof(CanEditCoolingPadFixedDemand));
+                Notify(nameof(CanEditCoolingPadSmartCurve));
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsHyperBoostOperationInProgress
+    {
+        get => isHyperBoostOperationInProgress;
+        private set
+        {
+            if (isHyperBoostOperationInProgress != value)
+            {
+                SetField(ref isHyperBoostOperationInProgress, value);
+                Notify(nameof(CanToggleHyperBoost));
+            }
+        }
+    }
+
+    public bool CanToggleHyperBoost =>
+        CanRequestHardwareControl
+        && IsHyperBoostWritable
+        && !IsHyperBoostOperationInProgress
+        && (HyperBoostActive
+            || ActivePowerSource == PowerSource.PluggedIn
+                && (Capabilities.HyperBoostBaseModes
+                        ?.AccessFor(SelectedPerformance)
+                    ?? (SelectedPerformance == PerformancePreset.Balanced
+                        ? Capabilities.HyperBoostAccess
+                        : null)) == DeviceFeatureAccess.ReadWrite
+                && SelectedFanMode == FanMode.Automatic
+                && (CoolingPadStatus is
+                {
+                    Connection: CoolingPadConnectionState.PresentExact,
+                    DesiredFanIntent.Mode: CoolingPadFanMode.Automatic,
+                }));
+
+    public string HyperBoostDescription => IsHyperBoostWritable
+        ? HyperBoostActive
+            ? "Active. Keep the cooling pad set to Auto while HyperBoost is on."
+            : "The cooling pad unlocks HyperBoost as an additional mode. Direct Quiet and Performance transitions are implemented but remain ObservedOnly and unvalidated; only Balanced is admitted. Before enabling it, select Auto intent for the supported pad; a fresh opaque-zero compatibility observation, Automatic laptop fans, and the full-power adapter are also required. The opaque value can occur during Fixed control and does not confirm active mode."
+        : "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.";
+
+    public CoolingPadStatus? CoolingPadStatus
+    {
+        get => coolingPadStatus;
+        private set
+        {
+            if (coolingPadStatus != value)
+            {
+                CoolingPadSmartCurve? previousCurve =
+                    coolingPadStatus?.DesiredFanIntent.SmartCurve;
+                SetField(ref coolingPadStatus, value);
+                CoolingPadSmartCurve? currentCurve =
+                    value?.DesiredFanIntent.SmartCurve;
+                if (currentCurve is not null
+                    && !currentCurve.Equals(previousCurve))
+                {
+                    ApplyCoolingPadSmartCurve(currentCurve);
+                }
+                Notify(nameof(IsCoolingPadVisible));
+                Notify(nameof(CoolingPadConnectionLabel));
+                Notify(nameof(CoolingPadFanModeLabel));
+                Notify(nameof(SelectedCoolingPadFanModeOption));
+                Notify(nameof(CanEditCoolingPadFanIntent));
+                Notify(nameof(CanEditCoolingPadFixedDemand));
+                Notify(nameof(IsCoolingPadFixedDemandVisible));
+                Notify(nameof(CoolingPadFixedTargetRpm));
+                Notify(nameof(CanEditCoolingPadSmartCurve));
+                Notify(nameof(IsCoolingPadSmartCurveVisible));
+                Notify(nameof(CoolingPadUseHigherTemperatureForBoth));
+                Notify(nameof(CoolingPadDemandLabel));
+                Notify(nameof(CoolingPadDescription));
+                Notify(nameof(CoolingDemandApiEnabled));
+                Notify(nameof(CanToggleCoolingDemandApi));
+                Notify(nameof(CoolingDemandApiDescription));
+                Notify(nameof(CoolingPadLightingSyncEnabled));
+                Notify(nameof(CanToggleCoolingPadLightingSync));
+                Notify(nameof(IsCoolingPadLightingRecoveryRequired));
+                Notify(nameof(CanAcknowledgeCoolingPadLightingRecovery));
+                Notify(nameof(CoolingPadLightingSyncDescription));
+            }
+        }
+    }
+
+    public bool IsCoolingPadVisible => CoolingPadStatus is not null;
+
+    public string CoolingPadConnectionLabel => CoolingPadStatus?.Connection switch
+    {
+        CoolingPadConnectionState.PresentExact => "Connected",
+        CoolingPadConnectionState.Absent => "Not connected",
+        CoolingPadConnectionState.Ambiguous => "Multiple matches",
+        CoolingPadConnectionState.ObservationFailed => "Check failed",
+        _ => "Not checked",
+    };
+
+    public string CoolingPadFanModeLabel => CoolingPadStatus?.DesiredFanIntent.Mode switch
+    {
+        CoolingPadFanMode.Automatic => "Auto",
+        CoolingPadFanMode.Fixed => "Fixed",
+        CoolingPadFanMode.SmartCurve => "Smart Fan Curve",
+        _ => UnavailableLabel,
+    };
+
+    public IReadOnlyList<CoolingPadFanModeOption> AvailableCoolingPadFanModeOptions =>
+        CoolingPadFanModeOptions;
+
+    public CoolingPadFanModeOption? SelectedCoolingPadFanModeOption =>
+        CoolingPadFanModeOptions.FirstOrDefault(
+            option => option.Value == CoolingPadStatus?.DesiredFanIntent.Mode);
+
+    public bool CanEditCoolingPadFanIntent =>
+        IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && ((!HyperBoostActive && latestStatus?.WritesBlocked != true)
+            || CoolingPadStatus?.DesiredFanIntent.Mode
+                != CoolingPadFanMode.Automatic)
+        && CoolingPadStatus?.Capabilities.SupportsIntentPersistence == true;
+
+    public bool CanEditCoolingPadFixedDemand =>
+        CanEditCoolingPadFanIntent
+        && !HyperBoostActive
+        && latestStatus?.WritesBlocked != true;
+
+    public bool IsCoolingPadFixedDemandVisible =>
+        CoolingPadStatus?.DesiredFanIntent.Mode == CoolingPadFanMode.Fixed;
+
+    public bool CanEditCoolingPadSmartCurve =>
+        CanEditCoolingPadFanIntent
+        && !HyperBoostActive
+        && latestStatus?.WritesBlocked != true;
+
+    public bool IsCoolingPadSmartCurveVisible =>
+        CoolingPadStatus?.DesiredFanIntent.Mode == CoolingPadFanMode.SmartCurve;
+
+    public IReadOnlyList<CoolingPadCurveEditorPoint> CoolingPadCpuCurveEditorPoints =>
+        coolingPadCpuCurveEditorPoints;
+
+    public IReadOnlyList<CoolingPadCurveEditorPoint> CoolingPadGpuCurveEditorPoints =>
+        coolingPadGpuCurveEditorPoints;
+
+    public bool CoolingPadUseHigherTemperatureForBoth =>
+        CoolingPadStatus?.DesiredFanIntent.SmartCurve.UseHigherTemperatureForBoth
+            ?? CoolingPadSmartCurve.Default.UseHigherTemperatureForBoth;
+
+    public double CoolingPadFixedTargetRpm =>
+        CoolingPadFanTarget.FromDemand(
+            CoolingPadStatus?.DesiredFanIntent.FixedDemand
+                ?? CoolingPadFanIntent.Default.FixedDemand).Rpm;
+
+    public string CoolingPadDemandLabel => CoolingPadStatus switch
+    {
+        {
+            Ownership: CoolingPadControlOwnershipState.Owned,
+            AppliedDemand: { } applied,
+        } =>
+            $"{CoolingPadFanTarget.FromDemand(applied).Rpm:N0} RPM last acknowledged host target ({applied.BasisPoints / 100d:0.#}%); active mode and physical RPM are not read back",
+        { ComputedDemand: { } demand, PlannedFanTarget: { } target } =>
+            $"{target.Rpm:N0} RPM planned ({demand.BasisPoints / 100d:0.#}%; not applied)",
+        _ => "No host demand computed; active mode unknown",
+    };
+
+    public string CoolingPadDescription => CoolingPadStatus?.Message
+        ?? "Cooling-pad support has not been observed.";
+
+    public bool CoolingDemandApiEnabled =>
+        CoolingPadStatus?.CoolingDemandApiEnabled == true;
+
+    public bool CanToggleCoolingDemandApi =>
+        IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && CoolingPadStatus?.Capabilities.CoolingDemandApiAccess is
+            CoolingDemandApiAccess.IntentOnly
+                or CoolingDemandApiAccess.AppliedControl;
+
+    public string CoolingDemandApiDescription =>
+        CoolingPadStatus?.Capabilities.CoolingDemandApiAccess switch
+        {
+            CoolingDemandApiAccess.AppliedControl =>
+                "Local clients submit normalized, expiring demand floors that OpenBlade applies through the admitted cooling-pad controller.",
+            CoolingDemandApiAccess.IntentOnly =>
+                "Local clients can submit normalized, expiring demand floors for planning and integration testing. OpenBlade does not apply them to the pad yet.",
+            _ => "The third-party cooling demand API is unavailable on this machine.",
+        };
+
+    public bool CoolingPadLightingSyncEnabled =>
+        CoolingPadStatus?.LightingSyncEnabled == true;
+
+    public bool IsCoolingPadLightingRecoveryRequired =>
+        CoolingPadStatus?.LightingRecoveryRequired == true;
+
+    public bool CanAcknowledgeCoolingPadLightingRecovery =>
+        IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && IsCoolingPadLightingRecoveryRequired
+        && !CoolingPadLightingSyncEnabled;
+
+    public bool CanToggleCoolingPadLightingSync =>
+        IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && CoolingPadStatus?.Capabilities.LightingSyncAccess
+            == DeviceFeatureAccess.ReadWrite
+        && (CoolingPadStatus.LightingSyncState
+                != CoolingPadLightingSyncState.Faulted
+            || CoolingPadLightingSyncEnabled)
+        && (!UseWindowsDynamicLighting || CoolingPadLightingSyncEnabled);
+
+    public string CoolingPadLightingSyncDescription =>
+        IsCoolingPadLightingRecoveryRequired
+            ? "Restore the cooling pad's prior lighting preset manually, then acknowledge recovery. OpenBlade will not write to the pad during acknowledgement."
+            : UseWindowsDynamicLighting
+            ? "Keyboard sync is unavailable while Windows Dynamic Lighting owns the keyboard."
+            : CoolingPadStatus?.Capabilities.LightingSyncAccess
+                == DeviceFeatureAccess.ReadWrite
+                ? CoolingPadStatus.LightingSyncState switch
+                {
+                    CoolingPadLightingSyncState.WaitingForPad =>
+                        "Whole-strip sync is enabled and waiting for the exact cooling pad.",
+                    CoolingPadLightingSyncState.WaitingForFrame =>
+                        "Whole-strip sync is ready and waiting for a fresh OpenBlade keyboard frame.",
+                    CoolingPadLightingSyncState.Mirroring =>
+                        "Whole-strip sync is mirroring confirmed OpenBlade keyboard frames.",
+                    CoolingPadLightingSyncState.Suppressed =>
+                        "Whole-strip sync is paused while lighting is suppressed.",
+                    CoolingPadLightingSyncState.Delegated =>
+                        "Whole-strip sync is delegated because OpenBlade does not own keyboard lighting.",
+                    CoolingPadLightingSyncState.Faulted =>
+                        "Whole-strip sync stopped after an uncertain pad operation and will not retry automatically.",
+                    _ => "Mirror OpenBlade keyboard frames to the cooling pad.",
+                }
+                : "Whole-strip keyboard sync is mapped but remains disabled until reversible OpenBlade frame lifecycle, cadence, reconnect/resume, and controller handoff are validated.";
+
+    public async Task<bool> SetCoolingPadFanModeAsync(
+        CoolingPadFanMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (!CanEditCoolingPadFanIntent
+            || !Enum.IsDefined(mode)
+            || (HyperBoostActive || latestStatus?.WritesBlocked == true)
+                && mode != CoolingPadFanMode.Automatic
+            || CoolingPadStatus is not { } status)
+        {
+            return false;
+        }
+
+        CoolingPadFanIntent current = status.DesiredFanIntent;
+        return await SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(mode, current.FixedDemand, current.SmartCurve),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> SetCoolingPadFixedTargetAsync(
+        double rpm,
+        CancellationToken cancellationToken)
+    {
+        if (!CanEditCoolingPadFixedDemand
+            || !double.IsFinite(rpm)
+            || rpm != Math.Truncate(rpm)
+            || rpm is < CoolingPadFanTarget.MinimumRpm
+                or > CoolingPadFanTarget.MaximumRpm
+            || (int)rpm % CoolingPadFanTarget.StepRpm != 0
+            || CoolingPadStatus is not { } status)
+        {
+            return false;
+        }
+
+        var target = new CoolingPadFanTarget((int)rpm);
+        CoolingPadFanIntent current = status.DesiredFanIntent;
+        return await SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.Fixed,
+                target.ToDemand(),
+                current.SmartCurve),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> SetCoolingPadCurvePointAsync(
+        CoolingPadCurveEditorPoint point,
+        double rpm,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        if (!CanEditCoolingPadSmartCurve
+            || !double.IsFinite(rpm)
+            || rpm != Math.Truncate(rpm)
+            || rpm is < CoolingPadFanTarget.MinimumRpm
+                or > CoolingPadFanTarget.MaximumRpm
+            || (int)rpm % CoolingPadFanTarget.StepRpm != 0
+            || CoolingPadStatus is not { } status)
+        {
+            return false;
+        }
+
+        bool cpu = CoolingPadCpuCurveEditorPoints.Contains(point);
+        IReadOnlyList<CoolingPadCurveEditorPoint> source = cpu
+            ? CoolingPadCpuCurveEditorPoints
+            : CoolingPadGpuCurveEditorPoints.Contains(point)
+                ? CoolingPadGpuCurveEditorPoints
+                : throw new ArgumentException(
+                    "The cooling-pad curve point does not belong to the active editor.",
+                    nameof(point));
+        int index = source.ToList().IndexOf(point);
+        int minimum = index == 0
+            ? CoolingPadFanTarget.MinimumRpm
+            : source[index - 1].TargetRpm;
+        int maximum = index == source.Count - 1
+            ? CoolingPadFanTarget.MaximumRpm
+            : source[index + 1].TargetRpm;
+        int targetRpm = Math.Clamp((int)rpm, minimum, maximum);
+        CoolingPadCurvePoint[] updated = source
+            .Select((value, position) => position == index
+                ? new CoolingPadCurvePoint(
+                    value.TemperatureCelsius,
+                    new CoolingPadFanTarget(targetRpm).ToDemand())
+                : value.ToValue())
+            .ToArray();
+        CoolingPadSmartCurve current = status.DesiredFanIntent.SmartCurve;
+        var curve = new CoolingPadSmartCurve(
+            cpu ? updated : current.Cpu,
+            cpu ? current.Gpu : updated,
+            current.UseHigherTemperatureForBoth);
+        bool accepted = await SetCoolingPadSmartCurveAsync(
+            curve,
+            cancellationToken).ConfigureAwait(false);
+        if (!accepted)
+        {
+            ApplyCoolingPadSmartCurve(current);
+        }
+        return accepted;
+    }
+
+    public async Task<bool> SetCoolingPadUseHigherTemperatureForBothAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (!CanEditCoolingPadSmartCurve
+            || CoolingPadStatus is not { } status)
+        {
+            return false;
+        }
+
+        CoolingPadSmartCurve current = status.DesiredFanIntent.SmartCurve;
+        return await SetCoolingPadSmartCurveAsync(
+            new CoolingPadSmartCurve(current.Cpu, current.Gpu, enabled),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<bool> SetCoolingPadSmartCurveAsync(
+        CoolingPadSmartCurve curve,
+        CancellationToken cancellationToken)
+    {
+        CoolingPadFanIntent current = CoolingPadStatus!.DesiredFanIntent;
+        return SetCoolingPadFanIntentAsync(
+            new CoolingPadFanIntent(
+                CoolingPadFanMode.SmartCurve,
+                current.FixedDemand,
+                curve),
+            cancellationToken);
+    }
+
+    private async Task<bool> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken cancellationToken)
+    {
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetCoolingPadFanIntentAsync(intent, token),
+            cancellationToken).ConfigureAwait(false);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (CoolingPadStatus is { } status)
+                    {
+                        CoolingPadStatus = status with
+                        {
+                            DesiredFanIntent = intent,
+                            ComputedDemand = intent.Mode switch
+                            {
+                                CoolingPadFanMode.Automatic => null,
+                                CoolingPadFanMode.Fixed => intent.FixedDemand,
+                                _ => null,
+                            },
+                            PlannedFanTarget = intent.Mode == CoolingPadFanMode.Fixed
+                                ? CoolingPadFanTarget.FromDemand(intent.FixedDemand)
+                                : null,
+                        };
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return accepted;
+    }
+
+    private void ApplyCoolingPadSmartCurve(CoolingPadSmartCurve curve)
+    {
+        coolingPadCpuCurveEditorPoints = curve.Cpu
+            .Select(point => new CoolingPadCurveEditorPoint(point))
+            .ToArray();
+        coolingPadGpuCurveEditorPoints = curve.Gpu
+            .Select(point => new CoolingPadCurveEditorPoint(point))
+            .ToArray();
+        Notify(nameof(CoolingPadCpuCurveEditorPoints));
+        Notify(nameof(CoolingPadGpuCurveEditorPoints));
+        Notify(nameof(CoolingPadUseHigherTemperatureForBoth));
+    }
 
     public bool HasKeyboardLaptopControls =>
         SupportsFunctionKeyPrimary || SupportsGamingMode;
@@ -4483,6 +5005,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         UpdateOneShotReadbacks(status);
+        HyperBoostActive = confirmed?.HyperBoostActive is true;
+        CoolingPadStatus = status.CoolingPad;
         SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
@@ -5368,6 +5892,39 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return ApplyGpuClockTuningAsync(
             new GpuClockTuningSettings(enabled, CurrentGpuClockOffsets),
             token);
+    }
+
+    public async Task SetHyperBoostEnabledAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        if (!CanToggleHyperBoost || enabled == HyperBoostActive)
+        {
+            throw new InvalidOperationException("HyperBoost control is unavailable.");
+        }
+
+        IsHyperBoostOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetHyperBoostAsync(
+                    enabled,
+                    cancellationToken),
+                token,
+                result =>
+                {
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        HyperBoostActive = enabled;
+                    }
+                }).ConfigureAwait(false);
+        }
+        finally
+        {
+            await dispatcher.InvokeAsync(
+                () => IsHyperBoostOperationInProgress = false,
+                CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     public Task SetGpuClockOffsetsAsync(
@@ -9024,6 +9581,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || capabilities.ChargeLimits.Count > 0
         || capabilities.SupportsBatteryProtectionOff
         || capabilities.SupportsTemporaryFullCharge
+        || capabilities.HyperBoostAccess is not null
+        || capabilities.CoolingPadSupportAccess is not null
         || capabilities.LogoLightingModes.Count > 0
         || capabilities.OneShotLaptopControls.Count > 0;
 
@@ -9055,6 +9614,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasLightingCapability));
         Notify(nameof(CanControlLighting));
         Notify(nameof(CanSetLightingRefreshRate));
+        Notify(nameof(CanToggleCoolingDemandApi));
+        Notify(nameof(CoolingDemandApiDescription));
+        Notify(nameof(CanEditCoolingPadFanIntent));
+        Notify(nameof(CanEditCoolingPadFixedDemand));
+        Notify(nameof(CanEditCoolingPadSmartCurve));
         Notify(nameof(IsLightingControlUnavailable));
         Notify(nameof(IsLightingControlUnavailableNoticeVisible));
         Notify(nameof(LightingControlUnavailableMessage));

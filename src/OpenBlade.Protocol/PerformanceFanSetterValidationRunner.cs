@@ -8,6 +8,9 @@ public enum PerformanceFanValidationTarget
     Fixed5400,
     BatterySaver,
     BatteryBalanced,
+    HyperBoost,
+    HyperBoostFromSilent,
+    HyperBoostFromPerformance,
 }
 
 public enum PerformanceFanValidationFailure
@@ -32,6 +35,8 @@ public enum PerformanceFanValidationFailure
     FixedFanRpmReadFailed,
     FixedFanRpmOutOfRange,
     Canceled,
+    BaselineNotBalanced,
+    BaselineNotRequiredBaseMode,
 }
 
 public sealed record PerformanceFanThermalPair(
@@ -55,10 +60,182 @@ public sealed record PerformanceFanSetterValidationResult(
     bool ManualRecoveryRequired,
     PerformanceFanValidationFailure Failure)
 {
+    internal bool FullPowerAdapterConfirmed { get; init; }
+
+    internal bool CoolingPadPresentConfirmed { get; init; }
+
+    internal bool CoolingPadOpaqueZeroConfirmed { get; init; }
+
+    internal PerformanceFanValidationSafetyFailure SafetyFailure { get; init; }
+
+    internal bool BaselineBalancedConfirmed { get; init; }
+
+    internal bool BaselineRequiredBaseModeConfirmed { get; init; }
+
+    internal bool BalancedIntermediaryObserved { get; init; }
+
     public bool Success => Failure == PerformanceFanValidationFailure.None
         && ApplyAcknowledged
         && CandidateConfirmed
         && Restored;
+}
+
+internal enum PerformanceFanValidationSafetyFailure
+{
+    None,
+    AdapterPowerReadFailed,
+    FullPowerAdapterRequired,
+    CoolingPadAbsent,
+    CoolingPadAmbiguous,
+    CoolingPadObservationFailed,
+    CoolingPadQueryFailed,
+    CoolingPadOpaqueZeroRequired,
+    Canceled,
+}
+
+internal readonly record struct PerformanceFanValidationSafetyGateResult(
+    bool FullPowerAdapterConfirmed,
+    bool CoolingPadPresentConfirmed,
+    bool CoolingPadOpaqueZeroConfirmed,
+    PerformanceFanValidationSafetyFailure Failure)
+{
+    internal bool Success => Failure == PerformanceFanValidationSafetyFailure.None
+        && FullPowerAdapterConfirmed
+        && CoolingPadPresentConfirmed
+        && CoolingPadOpaqueZeroConfirmed;
+}
+
+internal interface IPerformanceFanValidationSafetyGate
+{
+    Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class PadPresentHyperBoostSafetyGate(
+    ICoolingPadDiscoverySource discovery,
+    IProductionCoolingPadPortFactory portFactory,
+    TimeSpan exchangeTimeout) : IPerformanceFanValidationSafetyGate
+{
+    private readonly ICoolingPadDiscoverySource discovery = discovery
+        ?? throw new ArgumentNullException(nameof(discovery));
+    private readonly IProductionCoolingPadPortFactory portFactory = portFactory
+        ?? throw new ArgumentNullException(nameof(portFactory));
+    private readonly TimeSpan exchangeTimeout = ValidateTimeout(exchangeTimeout);
+
+    public async Task<PerformanceFanValidationSafetyGateResult> ValidateAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(session);
+
+        if (!context.TryAllocateTransaction(out byte transactionId))
+        {
+            return Failure(PerformanceFanValidationSafetyFailure.AdapterPowerReadFailed);
+        }
+
+        var adapter = new AdapterPowerCommandClient(session, exchangeTimeout);
+        HidSessionResult<OpenBlade.Contracts.AdapterPowerState> power =
+            await adapter.QueryAsync(transactionId, cancellationToken).ConfigureAwait(false);
+        if (power.Failure is not null)
+        {
+            return Failure(cancellationToken.IsCancellationRequested
+                ? PerformanceFanValidationSafetyFailure.Canceled
+                : PerformanceFanValidationSafetyFailure.AdapterPowerReadFailed);
+        }
+
+        if (power.Value != OpenBlade.Contracts.AdapterPowerState.FullPower280W)
+        {
+            return Failure(PerformanceFanValidationSafetyFailure.FullPowerAdapterRequired);
+        }
+
+        OpenBlade.Contracts.CoolingPadConnectionState connection = discovery.Observe();
+        if (connection != OpenBlade.Contracts.CoolingPadConnectionState.PresentExact)
+        {
+            return Failure(connection switch
+            {
+                OpenBlade.Contracts.CoolingPadConnectionState.Absent =>
+                    PerformanceFanValidationSafetyFailure.CoolingPadAbsent,
+                OpenBlade.Contracts.CoolingPadConnectionState.Ambiguous =>
+                    PerformanceFanValidationSafetyFailure.CoolingPadAmbiguous,
+                _ => PerformanceFanValidationSafetyFailure.CoolingPadObservationFailed,
+            }, fullPowerConfirmed: true);
+        }
+
+        HidSessionResult<IProductionCoolingPadPort> opened =
+            await portFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+        if (opened.Failure is not null || opened.Value is null)
+        {
+            return Failure(
+                cancellationToken.IsCancellationRequested
+                    ? PerformanceFanValidationSafetyFailure.Canceled
+                    : PerformanceFanValidationSafetyFailure.CoolingPadQueryFailed,
+                fullPowerConfirmed: true,
+                padPresentConfirmed: true);
+        }
+
+        IProductionCoolingPadPort port = opened.Value;
+        HidSessionResult<CoolingPadFanObservation> observation;
+        try
+        {
+            observation = await port.ObserveFanAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await port.DisposeAsync().AsTask()
+                    .WaitAsync(exchangeTimeout, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                observation = new(default, HidSessionFailureKind.NativeIoFailure);
+            }
+        }
+
+        if (observation.Failure is not null)
+        {
+            return Failure(
+                cancellationToken.IsCancellationRequested
+                    ? PerformanceFanValidationSafetyFailure.Canceled
+                    : PerformanceFanValidationSafetyFailure.CoolingPadQueryFailed,
+                fullPowerConfirmed: true,
+                padPresentConfirmed: true);
+        }
+
+        if (observation.Value.OpaqueValue != 0)
+        {
+            return Failure(
+                PerformanceFanValidationSafetyFailure.CoolingPadOpaqueZeroRequired,
+                fullPowerConfirmed: true,
+                padPresentConfirmed: true);
+        }
+
+        return new(
+            FullPowerAdapterConfirmed: true,
+            CoolingPadPresentConfirmed: true,
+            CoolingPadOpaqueZeroConfirmed: true,
+            PerformanceFanValidationSafetyFailure.None);
+    }
+
+    private static TimeSpan ValidateTimeout(TimeSpan timeout)
+    {
+        RazerCommandSessionTimeout.Validate(timeout);
+        return timeout;
+    }
+
+    private static PerformanceFanValidationSafetyGateResult Failure(
+        PerformanceFanValidationSafetyFailure failure,
+        bool fullPowerConfirmed = false,
+        bool padPresentConfirmed = false) => new(
+        FullPowerAdapterConfirmed: fullPowerConfirmed,
+        CoolingPadPresentConfirmed: padPresentConfirmed,
+        CoolingPadOpaqueZeroConfirmed: false,
+        failure);
 }
 
 public interface IPerformanceFanSetterValidationRunner
@@ -91,6 +268,7 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly int fixedFanMaximumSamples;
     private readonly int fixedFanStateCheckEverySamples;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly IPerformanceFanValidationSafetyGate? safetyGate;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -102,7 +280,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         PendingDisposalRegistry? pendingDisposals = null,
         TimeSpan? fixedFanSampleInterval = null,
         int fixedFanMaximumSamples = DefaultFixedFanMaximumSamples,
-        int fixedFanStateCheckEverySamples = DefaultFixedFanStateCheckEverySamples)
+        int fixedFanStateCheckEverySamples = DefaultFixedFanStateCheckEverySamples,
+        IPerformanceFanValidationSafetyGate? safetyGate = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -134,6 +313,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.fixedFanMaximumSamples = fixedFanMaximumSamples;
         this.fixedFanStateCheckEverySamples = fixedFanStateCheckEverySamples;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        this.safetyGate = safetyGate;
     }
 
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -194,10 +374,67 @@ internal sealed class PerformanceFanSetterValidationRunner
                 return state.ToResult();
             }
 
+            if (IsHyperBoostTarget(target)
+                && baseline.State != RequiredHyperBoostBaseline(target))
+            {
+                state.Failure = target == PerformanceFanValidationTarget.HyperBoost
+                    ? PerformanceFanValidationFailure.BaselineNotBalanced
+                    : PerformanceFanValidationFailure.BaselineNotRequiredBaseMode;
+                return state.ToResult();
+            }
+
             if (baseline.State == ExpectedState(target))
             {
                 state.Failure = PerformanceFanValidationFailure.TargetAlreadyActive;
                 return state.ToResult();
+            }
+
+            if (safetyGate is not null)
+            {
+                PairRead confirmedBaseline = await ReadPairAsync(
+                    context,
+                    actor.Session,
+                    cancellationToken).ConfigureAwait(false);
+                if (!confirmedBaseline.Success)
+                {
+                    state.Failure = confirmedBaseline.PairMismatch
+                        ? PerformanceFanValidationFailure.BaselinePairMismatch
+                        : MapCancellation(
+                            confirmedBaseline.Failure,
+                            cancellationToken,
+                            PerformanceFanValidationFailure.BaselineReadFailed);
+                    return state.ToResult();
+                }
+
+                if (confirmedBaseline.State != RequiredHyperBoostBaseline(target)
+                    || confirmedBaseline.Pair != baseline.Pair)
+                {
+                    state.Failure = PerformanceFanValidationFailure.BaselinePairMismatch;
+                    return state.ToResult();
+                }
+
+                state.BaselineRequiredBaseModeConfirmed = true;
+                state.BaselineBalancedConfirmed =
+                    confirmedBaseline.State == ThermalModeState.BalancedAutomatic;
+
+                PerformanceFanValidationSafetyGateResult safety =
+                    await safetyGate.ValidateAsync(
+                        context,
+                        actor.Session,
+                        cancellationToken).ConfigureAwait(false);
+                state.FullPowerAdapterConfirmed = safety.FullPowerAdapterConfirmed;
+                state.CoolingPadPresentConfirmed = safety.CoolingPadPresentConfirmed;
+                state.CoolingPadOpaqueZeroConfirmed =
+                    safety.CoolingPadOpaqueZeroConfirmed;
+                state.SafetyFailure = safety.Failure;
+                if (!safety.Success)
+                {
+                    state.Failure = safety.Failure ==
+                        PerformanceFanValidationSafetyFailure.Canceled
+                            ? PerformanceFanValidationFailure.Canceled
+                            : PerformanceFanValidationFailure.OpenFailed;
+                    return state.ToResult();
+                }
             }
 
             state.ApplyAttempted = true;
@@ -221,6 +458,12 @@ internal sealed class PerformanceFanSetterValidationRunner
                     return state.ToResult();
                 }
 
+                if (IsHyperBoostTarget(target)
+                    && IsBalancedAutomaticPayload(payload))
+                {
+                    state.BalancedIntermediaryObserved = true;
+                }
+
                 TimeSpan interCommandDelay = FixedInterCommandDelay(target, index);
                 if (interCommandDelay > TimeSpan.Zero)
                 {
@@ -233,7 +476,11 @@ internal sealed class PerformanceFanSetterValidationRunner
 
             state.ApplyAcknowledged = true;
             PairRead candidate = await ReadPairAsync(
-                context, actor.Session, cancellationToken).ConfigureAwait(false);
+                context,
+                actor.Session,
+                cancellationToken,
+                allowHyperBoost: IsHyperBoostTarget(target))
+                .ConfigureAwait(false);
             if (!candidate.Success)
             {
                 state.IndeterminatePartialWrite = true;
@@ -353,7 +600,8 @@ internal sealed class PerformanceFanSetterValidationRunner
     private async Task<PairRead> ReadPairAsync(
         ValidationRunContext context,
         IRazerCommandSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowHyperBoost = false)
     {
         byte[][] responses = new byte[2][];
         for (byte thermalId = 1; thermalId <= 2; thermalId++)
@@ -383,7 +631,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             responses[0],
             responses[1],
             out ThermalModeState state);
-        return pairMatches && IsAdmittedValidationState(state)
+        return pairMatches && IsAdmittedValidationState(state, allowHyperBoost)
             ? new(
                 responses[0],
                 responses[1],
@@ -394,13 +642,16 @@ internal sealed class PerformanceFanSetterValidationRunner
             : new(responses[0], responses[1], null, null, null, true);
     }
 
-    private static bool IsAdmittedValidationState(ThermalModeState state) => state is
-        ThermalModeState.BalancedAutomatic
-        or ThermalModeState.SilentAutomatic
-        or ThermalModeState.PerformanceAutomatic
-        or ThermalModeState.FixedMaximum
-        or ThermalModeState.BatterySaverAutomatic
-        or ThermalModeState.BatteryBalancedAutomatic;
+    private static bool IsAdmittedValidationState(
+        ThermalModeState state,
+        bool allowHyperBoost) => state is
+            ThermalModeState.BalancedAutomatic
+            or ThermalModeState.SilentAutomatic
+            or ThermalModeState.PerformanceAutomatic
+            or ThermalModeState.FixedMaximum
+            or ThermalModeState.BatterySaverAutomatic
+            or ThermalModeState.BatteryBalancedAutomatic
+        || allowHyperBoost && state == ThermalModeState.HyperBoostObserved;
 
     private async Task<PerformanceFanValidationFailure> ValidateFixedFanRpmAsync(
         ValidationRunContext context,
@@ -575,6 +826,12 @@ internal sealed class PerformanceFanSetterValidationRunner
                 [[0x01, 0x01, 0x03, 0x00], [0x01, 0x02, 0x03, 0x00]],
             PerformanceFanValidationTarget.BatteryBalanced =>
                 [[0x01, 0x01, 0x06, 0x00], [0x01, 0x02, 0x06, 0x00]],
+            PerformanceFanValidationTarget.HyperBoost =>
+                [[0x01, 0x01, 0x07, 0x00], [0x01, 0x02, 0x07, 0x00]],
+            PerformanceFanValidationTarget.HyperBoostFromSilent =>
+                [[0x01, 0x01, 0x07, 0x00], [0x01, 0x02, 0x07, 0x00]],
+            PerformanceFanValidationTarget.HyperBoostFromPerformance =>
+                [[0x01, 0x01, 0x07, 0x00], [0x01, 0x02, 0x07, 0x00]],
             // Synapse writes mode 00 + fixed flag 01, then 54 (5400 RPM / 100).
             // The independent 0D/82 query normalizes this to mode 04 + flag 01.
             PerformanceFanValidationTarget.Fixed5400 =>
@@ -606,6 +863,13 @@ internal sealed class PerformanceFanSetterValidationRunner
             ? TimeSpan.Zero
             : ThermalWriteTiming.MaximumInterCommandDelay(completedCommandIndex);
 
+    private static bool IsBalancedAutomaticPayload(ReadOnlySpan<byte> payload) =>
+        payload.Length == 4
+        && payload[0] == 0x01
+        && payload[1] is 0x01 or 0x02
+        && payload[2] == 0x00
+        && payload[3] == 0x00;
+
     private static ThermalModeState ExpectedState(
         PerformanceFanValidationTarget target) => target switch
         {
@@ -617,6 +881,29 @@ internal sealed class PerformanceFanSetterValidationRunner
                 ThermalModeState.BatterySaverAutomatic,
             PerformanceFanValidationTarget.BatteryBalanced =>
                 ThermalModeState.BatteryBalancedAutomatic,
+            PerformanceFanValidationTarget.HyperBoost =>
+                ThermalModeState.HyperBoostObserved,
+            PerformanceFanValidationTarget.HyperBoostFromSilent =>
+                ThermalModeState.HyperBoostObserved,
+            PerformanceFanValidationTarget.HyperBoostFromPerformance =>
+                ThermalModeState.HyperBoostObserved,
+            _ => throw new ArgumentOutOfRangeException(nameof(target)),
+        };
+
+    private static bool IsHyperBoostTarget(PerformanceFanValidationTarget target) =>
+        target is PerformanceFanValidationTarget.HyperBoost
+            or PerformanceFanValidationTarget.HyperBoostFromSilent
+            or PerformanceFanValidationTarget.HyperBoostFromPerformance;
+
+    private static ThermalModeState RequiredHyperBoostBaseline(
+        PerformanceFanValidationTarget target) => target switch
+        {
+            PerformanceFanValidationTarget.HyperBoost =>
+                ThermalModeState.BalancedAutomatic,
+            PerformanceFanValidationTarget.HyperBoostFromSilent =>
+                ThermalModeState.SilentAutomatic,
+            PerformanceFanValidationTarget.HyperBoostFromPerformance =>
+                ThermalModeState.PerformanceAutomatic,
             _ => throw new ArgumentOutOfRangeException(nameof(target)),
         };
 
@@ -671,6 +958,13 @@ internal sealed class PerformanceFanSetterValidationRunner
         internal bool Restored { get; set; }
         internal bool IndeterminatePartialWrite { get; set; }
         internal bool ManualRecoveryRequired { get; set; }
+        internal bool FullPowerAdapterConfirmed { get; set; }
+        internal bool CoolingPadPresentConfirmed { get; set; }
+        internal bool CoolingPadOpaqueZeroConfirmed { get; set; }
+        internal PerformanceFanValidationSafetyFailure SafetyFailure { get; set; }
+        internal bool BaselineBalancedConfirmed { get; set; }
+        internal bool BaselineRequiredBaseModeConfirmed { get; set; }
+        internal bool BalancedIntermediaryObserved { get; set; }
         internal PerformanceFanValidationFailure Failure { get; set; }
 
         internal PerformanceFanSetterValidationResult ToResult() => new(
@@ -688,6 +982,15 @@ internal sealed class PerformanceFanSetterValidationRunner
             Restored,
             IndeterminatePartialWrite,
             ManualRecoveryRequired,
-            Failure);
+            Failure)
+        {
+            FullPowerAdapterConfirmed = FullPowerAdapterConfirmed,
+            CoolingPadPresentConfirmed = CoolingPadPresentConfirmed,
+            CoolingPadOpaqueZeroConfirmed = CoolingPadOpaqueZeroConfirmed,
+            SafetyFailure = SafetyFailure,
+            BaselineBalancedConfirmed = BaselineBalancedConfirmed,
+            BaselineRequiredBaseModeConfirmed = BaselineRequiredBaseModeConfirmed,
+            BalancedIntermediaryObserved = BalancedIntermediaryObserved,
+        };
     }
 }

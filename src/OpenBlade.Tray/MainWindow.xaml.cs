@@ -71,6 +71,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingWindowsPowerModeSelection;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
+    private bool changingHyperBoost;
+    private bool changingCoolingPadFanIntent;
+    private bool changingCoolingDemandApi;
+    private bool changingCoolingPadLightingSync;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -2170,6 +2174,252 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             toggle.IsOn = ViewModel.IsGpuClockTuningEnabled;
             changingGpuClockTuning = false;
+        }
+    }
+
+    private async void OnHyperBoostToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleHyperBoostToggledAsync(sender),
+            nameof(OnHyperBoostToggled));
+
+    private async Task HandleHyperBoostToggledAsync(object sender)
+    {
+        if (changingHyperBoost
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.HyperBoostActive)
+        {
+            return;
+        }
+
+        changingHyperBoost = true;
+        try
+        {
+            await ViewModel.SetHyperBoostEnabledAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.HyperBoostActive;
+            changingHyperBoost = false;
+        }
+    }
+
+    private async void OnCoolingDemandApiToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleCoolingDemandApiToggledAsync(sender),
+            nameof(OnCoolingDemandApiToggled));
+
+    private async Task HandleCoolingDemandApiToggledAsync(object sender)
+    {
+        if (changingCoolingDemandApi
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.CoolingDemandApiEnabled)
+        {
+            return;
+        }
+
+        changingCoolingDemandApi = true;
+        try
+        {
+            await ViewModel.SetCoolingDemandApiEnabledAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.CoolingDemandApiEnabled;
+            changingCoolingDemandApi = false;
+        }
+    }
+
+    private async void OnCoolingPadLightingSyncToggled(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleCoolingPadLightingSyncToggledAsync(sender),
+            nameof(OnCoolingPadLightingSyncToggled));
+
+    private async Task HandleCoolingPadLightingSyncToggledAsync(object sender)
+    {
+        if (changingCoolingPadLightingSync
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.CoolingPadLightingSyncEnabled)
+        {
+            return;
+        }
+
+        changingCoolingPadLightingSync = true;
+        try
+        {
+            await ViewModel.SetCoolingPadLightingSyncEnabledAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.CoolingPadLightingSyncEnabled;
+            changingCoolingPadLightingSync = false;
+        }
+    }
+
+    private async void OnCoolingPadLightingRecoveryAcknowledged(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => ViewModel.AcknowledgeCoolingPadLightingRecoveryAsync(
+                CancellationToken.None),
+            nameof(OnCoolingPadLightingRecoveryAcknowledged));
+
+    private async void OnCoolingPadFanModeSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingCoolingPadFanIntent
+            || Volatile.Read(ref disposed) != 0
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || selector.SelectedItem is not CoolingPadFanModeOption selected
+            || selected.Value == ViewModel.CoolingPadStatus?.DesiredFanIntent.Mode)
+        {
+            return;
+        }
+
+        changingCoolingPadFanIntent = true;
+        try
+        {
+            await ViewModel.SetCoolingPadFanModeAsync(
+                selected.Value,
+                CancellationToken.None);
+        }
+        finally
+        {
+            selector.SelectedItem = ViewModel.SelectedCoolingPadFanModeOption;
+            changingCoolingPadFanIntent = false;
+        }
+    }
+
+    private async void OnCoolingPadFixedDemandCommit(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (sender is Slider slider)
+        {
+            await CommitCoolingPadFixedDemandAsync(slider);
+        }
+    }
+
+    private async void OnCoolingPadFixedDemandKeyUp(
+        object sender,
+        Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        if (sender is Slider slider
+            && args.Key is Windows.System.VirtualKey.Left
+                or Windows.System.VirtualKey.Right
+                or Windows.System.VirtualKey.PageUp
+                or Windows.System.VirtualKey.PageDown
+                or Windows.System.VirtualKey.Home
+                or Windows.System.VirtualKey.End)
+        {
+            await CommitCoolingPadFixedDemandAsync(slider);
+        }
+    }
+
+    private async Task CommitCoolingPadFixedDemandAsync(Slider slider)
+    {
+        if (changingCoolingPadFanIntent || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        changingCoolingPadFanIntent = true;
+        try
+        {
+            await ViewModel.SetCoolingPadFixedTargetAsync(
+                slider.Value,
+                CancellationToken.None);
+        }
+        finally
+        {
+            slider.Value = ViewModel.CoolingPadFixedTargetRpm;
+            changingCoolingPadFanIntent = false;
+        }
+    }
+
+    private async void OnCoolingPadCurvePointCommit(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (sender is Slider { Tag: CoolingPadCurveEditorPoint point } slider)
+        {
+            await CommitCoolingPadCurvePointAsync(point, slider.Value);
+        }
+    }
+
+    private async void OnCoolingPadCurvePointKeyUp(
+        object sender,
+        Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        if (sender is Slider { Tag: CoolingPadCurveEditorPoint point } slider
+            && args.Key is Windows.System.VirtualKey.Left
+                or Windows.System.VirtualKey.Right
+                or Windows.System.VirtualKey.PageUp
+                or Windows.System.VirtualKey.PageDown
+                or Windows.System.VirtualKey.Home
+                or Windows.System.VirtualKey.End)
+        {
+            await CommitCoolingPadCurvePointAsync(point, slider.Value);
+        }
+    }
+
+    private async Task CommitCoolingPadCurvePointAsync(
+        CoolingPadCurveEditorPoint point,
+        double rpm)
+    {
+        if (changingCoolingPadFanIntent || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        changingCoolingPadFanIntent = true;
+        try
+        {
+            await ViewModel.SetCoolingPadCurvePointAsync(
+                point,
+                rpm,
+                CancellationToken.None);
+        }
+        finally
+        {
+            changingCoolingPadFanIntent = false;
+        }
+    }
+
+    private async void OnCoolingPadCombinedTemperatureToggled(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (changingCoolingPadFanIntent
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.CoolingPadUseHigherTemperatureForBoth)
+        {
+            return;
+        }
+
+        changingCoolingPadFanIntent = true;
+        try
+        {
+            await ViewModel.SetCoolingPadUseHigherTemperatureForBothAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.CoolingPadUseHigherTemperatureForBoth;
+            changingCoolingPadFanIntent = false;
         }
     }
 

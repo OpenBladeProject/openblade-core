@@ -1,6 +1,7 @@
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -425,6 +426,75 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
         result["performance.gpuOverclock.enableDisableObserved"] =
             capabilities.GpuOverclock?.SupportsEnableDisable == true;
+        result["performance.hyperBoost.observed"] =
+            capabilities.HyperBoostAccess is not null;
+        result["performance.hyperBoost.read"] =
+            capabilities.HyperBoostAccess is
+                DeviceFeatureAccess.ReadOnly or DeviceFeatureAccess.ReadWrite;
+        result["performance.hyperBoost.write"] =
+            capabilities.HyperBoostAccess == DeviceFeatureAccess.ReadWrite;
+        foreach (PerformancePreset baseMode in new[]
+        {
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+        })
+        {
+            DeviceFeatureAccess? access = capabilities.HyperBoostBaseModes
+                ?.AccessFor(baseMode);
+            result[$"performance.hyperBoost.base.{baseMode}.observed"] = access is not null;
+            result[$"performance.hyperBoost.base.{baseMode}.write"] =
+                access == DeviceFeatureAccess.ReadWrite;
+        }
+        result["coolingPad.support.observed"] =
+            capabilities.CoolingPadSupportAccess is not null;
+        result["coolingPad.support.write"] =
+            capabilities.CoolingPadSupportAccess == DeviceFeatureAccess.ReadWrite;
+        CoolingPadFanControlEvidenceGates coolingPadFanEvidence =
+            CoolingPadFanControlEvidenceGates.Current;
+        CoolingPadFanControlImplementationGates coolingPadFanImplementation =
+            CoolingPadFanControlImplementationGates.Current;
+        result["coolingPad.fan.hostControl2200.observed"] =
+            coolingPadFanEvidence.HostControl2200PairPhysicallyValidated;
+        result["coolingPad.fan.handback.write"] =
+            coolingPadFanEvidence.OpenBladeHandbackValidated;
+        result["coolingPad.fan.fullRange.write"] =
+            coolingPadFanEvidence.FullTargetRangeValidated;
+        result["coolingPad.fan.smartCurveCadence.write"] =
+            coolingPadFanEvidence.SmartCurveCadenceValidated;
+        result["coolingPad.fan.lifecycle.write"] =
+            coolingPadFanEvidence.DisconnectReconnectValidated
+            && coolingPadFanEvidence.LowPowerLifecycleValidated
+            && coolingPadFanEvidence.CrashRecoveryValidated;
+        result["coolingPad.fan.hyperBoostInterlock.write"] =
+            coolingPadFanEvidence.HyperBoostInterlockValidated;
+        result["coolingPad.fan.evidence.write"] =
+            coolingPadFanEvidence.WriteAdmitted;
+        result["coolingPad.fan.implementation.write"] =
+            coolingPadFanImplementation.WriteAvailable;
+        result["coolingPad.fan.write"] =
+            coolingPadFanEvidence.WriteAdmitted
+            && coolingPadFanImplementation.WriteAvailable;
+        CoolingPadLightingEvidenceGates coolingPadLightingEvidence =
+            CoolingPadLightingEvidenceGates.CurrentObservedWholeStrip;
+        result["coolingPad.lighting.gate.exactIdentityGeometry"] =
+            coolingPadLightingEvidence.ExactIdentityAndGeometryReviewed;
+        result["coolingPad.lighting.gate.wholeStripProjection"] =
+            coolingPadLightingEvidence.WholeStripProjectionResolved;
+        result["coolingPad.lighting.gate.displayOffOracle"] =
+            coolingPadLightingEvidence.DisplayOffOracleObserved;
+        result["coolingPad.lighting.gate.reversibleFrameLifecycle"] =
+            coolingPadLightingEvidence.OpenBladeReversibleFrameLifecycleValidated;
+        result["coolingPad.lighting.gate.frameCadence"] =
+            coolingPadLightingEvidence.FrameCadenceValidated;
+        result["coolingPad.lighting.gate.disconnectReconnect"] =
+            coolingPadLightingEvidence.DisconnectReconnectValidated;
+        result["coolingPad.lighting.gate.sleepResume"] =
+            coolingPadLightingEvidence.SleepResumeValidated;
+        result["coolingPad.lighting.gate.controllerHandoff"] =
+            coolingPadLightingEvidence.ControllerHandoffValidated;
+        result["coolingPad.lighting.evidence.write"] =
+            coolingPadLightingEvidence.WriteAdmitted;
         result["laptop.specialKeyBindings.observed"] =
             capabilities.SpecialKeyBindingsAccess is not null;
         result["laptop.specialKeyBindings.write"] =
@@ -469,6 +539,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        CoolingPadStatus? coolingPad = status.CoolingPad;
         var configuration = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["status.revision"] = status.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -515,6 +586,48 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
             ["confirmed.fans"] = EnumOrUnavailable(confirmed?.Fans),
+            ["confirmed.hyperBoostActive"] = BoolOrUnavailable(
+                confirmed?.HyperBoostActive),
+            ["coolingPad.connection"] =
+                coolingPad?.Connection.ToString() ?? "Unavailable",
+            ["coolingPad.fanObservationAccess"] =
+                coolingPad?.Capabilities.FanObservationAccess.ToString() ?? "Unavailable",
+            ["coolingPad.fanControlAccess"] =
+                coolingPad?.Capabilities.FanControlAccess.ToString() ?? "Unavailable",
+            ["coolingPad.activeFanModeObservationAccess"] =
+                coolingPad?.Capabilities.ActiveFanModeObservationAccess.ToString()
+                    ?? "Unavailable",
+            ["coolingPad.confirmedActiveFanMode"] =
+                coolingPad?.ConfirmedActiveFanControlMode?.ToString() ?? "Unavailable",
+            ["coolingPad.configuredFanTargetRpm"] = NumberOrUnavailable(
+                coolingPad?.ConfiguredFanTarget?.Rpm),
+            ["coolingPad.configuredFanTargetFresh"] = BoolOrUnavailable(
+                coolingPad?.ConfiguredFanTargetIsFresh),
+            ["coolingPad.plannedFanTargetRpm"] = NumberOrUnavailable(
+                coolingPad?.PlannedFanTarget?.Rpm),
+            ["coolingPad.desiredFanMode"] =
+                coolingPad?.DesiredFanIntent.Mode.ToString() ?? "Unavailable",
+            ["coolingPad.computedDemandBasisPoints"] = NumberOrUnavailable(
+                coolingPad?.ComputedDemand?.BasisPoints),
+            ["coolingPad.appliedDemandBasisPoints"] = NumberOrUnavailable(
+                coolingPad?.AppliedDemand?.BasisPoints),
+            ["coolingPad.ownership"] =
+                coolingPad?.Ownership.ToString() ?? "Unavailable",
+            ["coolingPad.coolingDemandApiAccess"] =
+                coolingPad?.Capabilities.CoolingDemandApiAccess.ToString()
+                    ?? "Unavailable",
+            ["coolingPad.coolingDemandApiEnabled"] =
+                coolingPad?.CoolingDemandApiEnabled.ToString() ?? "Unavailable",
+            ["coolingPad.activeDemandLeases"] = NumberOrUnavailable(
+                coolingPad?.ActiveDemandLeases),
+            ["coolingPad.lightingSyncAccess"] =
+                coolingPad?.Capabilities.LightingSyncAccess.ToString() ?? "Unavailable",
+            ["coolingPad.lightingSyncEnabled"] =
+                coolingPad?.LightingSyncEnabled.ToString() ?? "Unavailable",
+            ["coolingPad.lightingSyncState"] =
+                coolingPad?.LightingSyncState.ToString() ?? "Unavailable",
+            ["coolingPad.lightingRecoveryRequired"] =
+                coolingPad?.LightingRecoveryRequired.ToString() ?? "Unavailable",
             ["confirmed.battery.chargeLimitPercent"] = NumberOrUnavailable(
                 confirmed?.Battery?.ChargeLimitPercent),
             ["confirmed.battery.protectionEnabled"] = BoolOrUnavailable(
@@ -546,6 +659,16 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.WritableSpecialKeySlots.ToString(),
             ["capability.lampArrayLightingAccess"] =
                 capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostAccess"] =
+                capabilities.HyperBoostAccess?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Silent"] =
+                capabilities.HyperBoostBaseModes?.Silent.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Balanced"] =
+                capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Performance"] =
+                capabilities.HyperBoostBaseModes?.Performance.ToString() ?? "Unavailable",
+            ["capability.coolingPadSupportAccess"] =
+                capabilities.CoolingPadSupportAccess?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(

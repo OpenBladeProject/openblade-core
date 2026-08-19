@@ -50,6 +50,7 @@ public sealed partial class MainViewModel
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
+        && left.CoolingPad == right.CoolingPad
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private static bool CapabilitiesEqual(
@@ -64,6 +65,9 @@ public sealed partial class MainViewModel
             && left.CpuPowerLimit == right.CpuPowerLimit
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
+            && left.HyperBoostAccess == right.HyperBoostAccess
+            && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+            && left.CoolingPadSupportAccess == right.CoolingPadSupportAccess
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess

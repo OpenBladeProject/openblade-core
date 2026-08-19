@@ -7,6 +7,29 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added confirmed HyperBoost control for the exact `RZ09-0581`. The
+  currently admitted transition starts directly from confirmed Balanced
+  performance with Automatic laptop fans and requires the exact Razer Laptop
+  Cooling Pad, full-power 280 W adapter, fresh one-sided opaque-zero pad
+  observation, and paired mode-7 readback. OpenBlade restores an owned
+  transition directly to its confirmed starting base without routing Quiet or
+  Performance through Balanced. Direct Quiet and Performance paths are
+  implemented but remain observed-only until their dedicated validations pass.
+  HyperBoost on the `RZ09-0528` is observed-only.
+- Added an RZ09-0581 cooling-pad card with saved Auto, Fixed, and Smart Fan
+  Curve intent, editable CPU and GPU curve points, 500 to 3200 RPM planned
+  Fixed targets in 50 RPM steps, and an opt-in local demand API. The service
+  exposes planned targets only and keeps production pad fan writes disabled
+  until the remaining ownership, handback, lifecycle, and range evidence is
+  reviewed.
+- Added typed protocol and dormant service support for the pad's one-by-18 RGB
+  frames and brightness. Whole-strip sync projects the keyboard to one uniform
+  color and keeps production writes disabled until reversible effect handback,
+  cadence, reconnect, sleep and resume, and controller-handoff evidence passes.
+- Added installed-stack FirmwareSmoke arm and verify phases for HyperBoost low
+  power and unexpected-exit recovery. They verify one exact-base restoration
+  without initiating sleep or stopping the service.
+
 - Added GPU-specific VBIOS update comparison for exact supported Blade models.
   OpenBlade now carries the installed NVIDIA adapter identity through service
   status and diagnostics, selects only the matching official Razer VBIOS
@@ -41,6 +64,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Bound satisfied HyperBoost, cooling-pad fan, and whole-strip lighting
+  admission gates to reviewed artifacts and hashes. Incomplete gates remain
+  closed and cannot increase hardware access without matching evidence.
+- Advanced service IPC from 47 to 48, the profile schema from 14 to 15, and the
+  FirmwareSmoke snapshot schema from 8 to 10 for the new typed capabilities,
+  preferences, and validation state.
+
 - Made production admission model-scoped by default for the exact supported
   laptop and SKU. Validated BIOS versions remain provenance, while explicit
   firmware-specific capability gates can still require exact versions. On the
@@ -62,6 +92,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
   lighting refresh-rate preference. Migrated configurations default to 30 Hz.
 
 ### Fixed
+
+- Restored only OpenBlade-owned HyperBoost to its confirmed starting base
+  before low power or shutdown, left externally observed mode 7 unchanged, and
+  latched indeterminate outcomes without retry. Keyboard and fan cleanup still
+  run if restoration fails.
+- Kept cooling-pad fan and lighting ownership fail closed across transaction
+  exhaustion, disconnects, low power, shutdown, handback failures, and
+  unexpected exits. Recovery remains visible and uncertain writes are not
+  retried automatically.
 
 - Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
   response while keeping Windows Offline authoritative for battery power and

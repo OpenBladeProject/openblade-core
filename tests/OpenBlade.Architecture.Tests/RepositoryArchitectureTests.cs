@@ -27,6 +27,7 @@ public sealed class RepositoryArchitectureTests
                 !pair.Key.EndsWith("WindowsHidEnumerator.cs")
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
+                && !pair.Key.EndsWith("ProductionCoolingPadFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
                 && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
@@ -43,6 +44,7 @@ public sealed class RepositoryArchitectureTests
                 "BatteryValidationFactory.cs",
                 "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
+                "ProductionCoolingPadFactory.cs",
                 "ProductionLightingFactory.cs",
             ],
             composition);

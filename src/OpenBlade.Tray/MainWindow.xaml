@@ -631,6 +631,291 @@
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
+                            <Border x:Name="HyperBoostCard"
+                                    Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostVisible}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="HyperBoost"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{Binding HyperBoostDescription}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="10"
+                                                VerticalAlignment="Center">
+                                        <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                      IsActive="{Binding IsHyperBoostOperationInProgress}"
+                                                      AutomationProperties.Name="Applying HyperBoost" />
+                                        <ToggleSwitch x:Name="HyperBoostToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      MinWidth="0"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{Binding HyperBoostActive, Mode=OneWay}"
+                                                      IsEnabled="{Binding CanToggleHyperBoost}"
+                                                      AutomationProperties.Name="HyperBoost"
+                                                      Toggled="OnHyperBoostToggled" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border x:Name="CoolingPadCard"
+                                    Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCoolingPadVisible}">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Cooling pad"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding CoolingPadDescription}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding CoolingPadConnectionLabel}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Fan intent"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding CoolingPadDemandLabel}"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="CoolingPadFanModeSelector"
+                                                  Grid.Column="1"
+                                                  MinWidth="155"
+                                                  IsEnabled="{Binding CanEditCoolingPadFanIntent}"
+                                                  ItemsSource="{Binding AvailableCoolingPadFanModeOptions}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{Binding SelectedCoolingPadFanModeOption, Mode=OneWay}"
+                                                  local:StableComboBoxSelection.Anchor="{Binding SelectedCoolingPadFanModeOption, Mode=OneWay}"
+                                                  AutomationProperties.Name="Cooling-pad fan intent"
+                                                  SelectionChanged="OnCoolingPadFanModeSelectionChanged" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="20"
+                                          Visibility="Collapsed"
+                                          local:AnimatedVisibility.IsVisible="{Binding IsCoolingPadFixedDemandVisible}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="Fixed speed"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Stored intent only; the pad is not written."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <Grid Grid.Column="1" ColumnSpacing="12" VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="CoolingPadFixedDemandSlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="500"
+                                                    Maximum="3200"
+                                                    StepFrequency="50"
+                                                    SmallChange="50"
+                                                    LargeChange="250"
+                                                    SnapsTo="StepValues"
+                                                    IsThumbToolTipEnabled="True"
+                                                    IsEnabled="{Binding CanEditCoolingPadFixedDemand}"
+                                                    Value="{Binding CoolingPadFixedTargetRpm, Mode=OneWay}"
+                                                    AutomationProperties.Name="Cooling-pad fixed speed"
+                                                    PointerCaptureLost="OnCoolingPadFixedDemandCommit"
+                                                    KeyUp="OnCoolingPadFixedDemandKeyUp" />
+                                            <TextBlock Grid.Column="1"
+                                                       Style="{StaticResource InlineCardSliderValueStyle}">
+                                                <Run Text="{Binding CoolingPadFixedTargetRpm}" />
+                                                <Run Text=" RPM" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Grid>
+                                    <StackPanel Spacing="12"
+                                                Visibility="Collapsed"
+                                                local:AnimatedVisibility.IsVisible="{Binding IsCoolingPadSmartCurveVisible}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Use the hotter CPU/GPU reading for both curves"
+                                                           Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="Stored Smart Fan Curve intent only; the pad is not written."
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Name="CoolingPadCombinedTemperatureToggle"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          Grid.Column="1"
+                                                          MinWidth="0"
+                                                          OffContent=""
+                                                          OnContent=""
+                                                          HorizontalAlignment="Right"
+                                                          IsEnabled="{Binding CanEditCoolingPadSmartCurve}"
+                                                          IsOn="{Binding CoolingPadUseHigherTemperatureForBoth, Mode=OneWay}"
+                                                          AutomationProperties.Name="Use hotter CPU or GPU temperature for both cooling-pad curves"
+                                                          Toggled="OnCoolingPadCombinedTemperatureToggled" />
+                                        </Grid>
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Expander Header="CPU curve"
+                                                      IsExpanded="True"
+                                                      HorizontalContentAlignment="Stretch">
+                                                <ItemsControl ItemsSource="{Binding CoolingPadCpuCurveEditorPoints}"
+                                                              HorizontalContentAlignment="Stretch"
+                                                              IsEnabled="{Binding CanEditCoolingPadSmartCurve}"
+                                                              ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="local:CoolingPadCurveEditorPoint">
+                                                            <Grid ColumnSpacing="10"
+                                                                  Margin="0,5"
+                                                                  HorizontalAlignment="Stretch">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="44" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="78" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}"
+                                                                           VerticalAlignment="Center" />
+                                                                <Slider Grid.Column="1"
+                                                                        MinWidth="120"
+                                                                        Minimum="500"
+                                                                        Maximum="3200"
+                                                                        StepFrequency="50"
+                                                                        SnapsTo="StepValues"
+                                                                        Tag="{x:Bind Mode=OneTime}"
+                                                                        Value="{Binding TargetRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                                        PointerCaptureLost="OnCoolingPadCurvePointCommit"
+                                                                        KeyUp="OnCoolingPadCurvePointKeyUp" />
+                                                                <TextBlock Grid.Column="2"
+                                                                           Text="{Binding TargetLabel}"
+                                                                           HorizontalAlignment="Right"
+                                                                           VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Expander>
+                                            <Expander Grid.Column="1"
+                                                      Header="GPU curve"
+                                                      IsExpanded="True"
+                                                      HorizontalContentAlignment="Stretch">
+                                                <ItemsControl ItemsSource="{Binding CoolingPadGpuCurveEditorPoints}"
+                                                              HorizontalContentAlignment="Stretch"
+                                                              IsEnabled="{Binding CanEditCoolingPadSmartCurve}"
+                                                              ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="local:CoolingPadCurveEditorPoint">
+                                                            <Grid ColumnSpacing="10"
+                                                                  Margin="0,5"
+                                                                  HorizontalAlignment="Stretch">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="44" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="78" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}"
+                                                                           VerticalAlignment="Center" />
+                                                                <Slider Grid.Column="1"
+                                                                        MinWidth="120"
+                                                                        Minimum="500"
+                                                                        Maximum="3200"
+                                                                        StepFrequency="50"
+                                                                        SnapsTo="StepValues"
+                                                                        Tag="{x:Bind Mode=OneTime}"
+                                                                        Value="{Binding TargetRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                                        PointerCaptureLost="OnCoolingPadCurvePointCommit"
+                                                                        KeyUp="OnCoolingPadCurvePointKeyUp" />
+                                                                <TextBlock Grid.Column="2"
+                                                                           Text="{Binding TargetLabel}"
+                                                                           HorizontalAlignment="Right"
+                                                                           VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Expander>
+                                        </Grid>
+                                    </StackPanel>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Third-party cooling demand API"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding CoolingDemandApiDescription}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="CoolingDemandApiToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      Grid.Column="1"
+                                                      MinWidth="0"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{Binding CoolingDemandApiEnabled, Mode=OneWay}"
+                                                      IsEnabled="{Binding CanToggleCoolingDemandApi}"
+                                                      AutomationProperties.Name="Third-party cooling demand API"
+                                                      Toggled="OnCoolingDemandApiToggled" />
+                                    </Grid>
+                                    <StackPanel Spacing="8">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                            <TextBlock Text="Sync keyboard lighting"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding CoolingPadLightingSyncDescription}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch x:Name="CoolingPadLightingSyncToggle"
+                                                          Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                          Grid.Column="1"
+                                                          MinWidth="0"
+                                                          OffContent=""
+                                                          OnContent=""
+                                                          IsOn="{Binding CoolingPadLightingSyncEnabled, Mode=OneWay}"
+                                                          IsEnabled="{Binding CanToggleCoolingPadLightingSync}"
+                                                          AutomationProperties.Name="Sync keyboard lighting to cooling pad"
+                                                          Toggled="OnCoolingPadLightingSyncToggled" />
+                                        </Grid>
+                                        <Button Content="I restored the pad preset"
+                                                HorizontalAlignment="Left"
+                                                IsEnabled="{Binding CanAcknowledgeCoolingPadLightingRecovery}"
+                                                Visibility="Collapsed"
+                                                local:AnimatedVisibility.IsVisible="{Binding IsCoolingPadLightingRecoveryRequired}"
+                                                AutomationProperties.Name="Acknowledge cooling pad lighting recovery"
+                                                Click="OnCoolingPadLightingRecoveryAcknowledged" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">

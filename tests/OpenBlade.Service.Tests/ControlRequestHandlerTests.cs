@@ -18,6 +18,39 @@ public sealed class ControlRequestHandlerTests
             new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
+            new SetCoolingPadFanIntentRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                CoolingPadFanIntent.Default),
+            new SetCoolingDemandLeaseRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new CoolingDemandLevel(5_000),
+                TtlMilliseconds: 2_000),
+            new ReleaseCoolingDemandLeaseRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Guid.NewGuid()),
+            new SetCoolingDemandApiEnabledRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
+            new SetCoolingPadLightingSyncRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: false),
+            new SetCoolingPadLightingSyncRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: false)
+            {
+                AcknowledgeRecovery = true,
+            },
             new CyclePerformanceShortcutRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -91,6 +124,10 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
+            "SetHyperBoost",
+            "SetCoolingPadFanIntent", "SetCoolingDemandLease",
+            "ReleaseCoolingDemandLease", "SetCoolingDemandApiEnabled",
+            "SetCoolingPadLightingSync", "AcknowledgeCoolingPadLightingRecovery",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
@@ -191,6 +228,7 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Status.PerformanceOverride);
         Assert.Null(response.Status.FanOverride);
         Assert.Null(response.Status.LightingOverride);
+        Assert.Null(response.Status.CoolingPad);
         Assert.Equal(["GetStatus"], runtime.Calls);
     }
 
@@ -245,6 +283,30 @@ public sealed class ControlRequestHandlerTests
 
         Assert.True(response.Success);
         Assert.Equal(1, authority.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ActivatesExactInteractiveSessionIdentity()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(4, runtime.LastActivatedSessionId);
     }
 
     [Fact]
@@ -377,6 +439,8 @@ public sealed class ControlRequestHandlerTests
 
         public Exception? ActivationFailure { get; init; }
 
+        public int? LastActivatedSessionId { get; private set; }
+
         public Task ActivateUserAsync(
             SecurityIdentifier userSid,
             CancellationToken cancellationToken) => ActivationFailure is null
@@ -387,6 +451,16 @@ public sealed class ControlRequestHandlerTests
             SecurityIdentifier userSid,
             Func<bool> stillControlsSession,
             CancellationToken cancellationToken) => ActivateUserAsync(userSid, cancellationToken);
+
+        public Task ActivateUserAsync(
+            SecurityIdentifier userSid,
+            int sessionId,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            LastActivatedSessionId = sessionId;
+            return ActivateUserAsync(userSid, stillControlsSession, cancellationToken);
+        }
 
         public ServiceStatusSnapshot GetStatus()
         {
@@ -411,6 +485,70 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>
             Record("SetPerformanceOverride");
+
+        public Task<ControlOperationResult> SetHyperBoostAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetHyperBoost");
+        }
+
+        public Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+            CoolingPadFanIntent intent,
+            CancellationToken token)
+        {
+            Assert.Equal(CoolingPadFanIntent.Default, intent);
+            return Record("SetCoolingPadFanIntent");
+        }
+
+        public Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+            string userSid,
+            int sessionId,
+            Guid leaseId,
+            CoolingDemandLevel demand,
+            int ttlMilliseconds,
+            CancellationToken token)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(userSid));
+            Assert.Equal(1, sessionId);
+            Assert.NotEqual(Guid.Empty, leaseId);
+            Assert.Equal(5_000, demand.BasisPoints);
+            Assert.Equal(2_000, ttlMilliseconds);
+            return Record("SetCoolingDemandLease");
+        }
+
+        public Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+            string userSid,
+            int sessionId,
+            Guid leaseId,
+            CancellationToken token)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(userSid));
+            Assert.Equal(1, sessionId);
+            Assert.NotEqual(Guid.Empty, leaseId);
+            return Record("ReleaseCoolingDemandLease");
+        }
+
+        public Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetCoolingDemandApiEnabled");
+        }
+
+        public Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.False(enabled);
+            return Record("SetCoolingPadLightingSync");
+        }
+
+        public Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+            CancellationToken token) =>
+            Record("AcknowledgeCoolingPadLightingRecovery");
 
         public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,

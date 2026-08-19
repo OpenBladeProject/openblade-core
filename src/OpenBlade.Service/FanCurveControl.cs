@@ -331,22 +331,78 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     }
 }
 
-public sealed class ServiceFanCurveLoop(
-    IServiceControlRuntime runtime,
-    ILogger logger)
+public sealed class ServiceFanCurveLoop
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
+    private readonly IServiceControlRuntime runtime;
+    private readonly ILogger logger;
+    private readonly TimeProvider timeProvider;
+    private readonly TimeSpan interval;
+
+    public ServiceFanCurveLoop(
+        IServiceControlRuntime runtime,
+        ILogger logger)
+        : this(runtime, logger, TimeProvider.System, Interval)
+    {
+    }
+
+    internal ServiceFanCurveLoop(
+        IServiceControlRuntime runtime,
+        ILogger logger,
+        TimeProvider timeProvider,
+        TimeSpan interval)
+    {
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.timeProvider = timeProvider
+            ?? throw new ArgumentNullException(nameof(timeProvider));
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval));
+        }
+        this.interval = interval;
+    }
 
     public async Task RunAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(Interval);
+        Task request = runtime.WaitForCoolingPadReconciliationRequestAsync(
+            stoppingToken);
+        Task periodic = Task.Delay(interval, timeProvider, stoppingToken);
+        long? lastRun = null;
         try
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            while (true)
             {
+                _ = await Task.WhenAny(periodic, request)
+                    .ConfigureAwait(false);
+                if (request.IsCompleted)
+                {
+                    await request.ConfigureAwait(false);
+                    request = runtime.WaitForCoolingPadReconciliationRequestAsync(
+                        stoppingToken);
+                }
+                else
+                {
+                    await periodic.ConfigureAwait(false);
+                }
+
+                if (lastRun is { } previous)
+                {
+                    TimeSpan elapsed = timeProvider.GetElapsedTime(previous);
+                    TimeSpan remaining = interval - elapsed;
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        await Task.Delay(remaining, timeProvider, stoppingToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+
                 try
                 {
-                    await runtime.MaintainFanCurveAsync(stoppingToken);
+                    await runtime.MaintainFanCurveAsync(stoppingToken)
+                        .ConfigureAwait(false);
+                    await runtime.MaintainCoolingPadAsync(stoppingToken)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -354,8 +410,11 @@ public sealed class ServiceFanCurveLoop(
                 }
                 catch (Exception exception)
                 {
-                    logger.LogWarning(exception, "Manual fan-curve maintenance failed.");
+                    logger.LogWarning(exception, "Fan-curve maintenance failed.");
                 }
+
+                lastRun = timeProvider.GetTimestamp();
+                periodic = Task.Delay(interval, timeProvider, stoppingToken);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

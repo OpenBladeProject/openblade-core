@@ -52,8 +52,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     [Theory]
     [InlineData("3.01", true)]
     [InlineData("4.00", true)]
-    [InlineData("4.01", false)]
-    public async Task Opener_RequiresSupportedFirmwareWhenIdentityIsMarkedTested(
+    [InlineData("4.01", true)]
+    public async Task Opener_AcceptsValidatedAndModelScopedFirmware(
         string biosVersion,
         bool expectedToOpen)
     {
@@ -63,6 +63,9 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
             new ScriptedHost(ExactHost with
             {
                 Evidence = ExactHost.Evidence!.Value with { BiosVersion = biosVersion },
+                FirmwareCompatibility = biosVersion == "4.01"
+                    ? HostFirmwareCompatibility.ModelScoped
+                    : HostFirmwareCompatibility.Tested,
             }),
             new ScriptedGuard(),
             native,

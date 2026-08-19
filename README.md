@@ -35,10 +35,33 @@ an explicit firmware-specific restriction.
 | Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` |
 | Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` |
 
+## Feature status
+
+HyperBoost is read/write on the exact `RZ09-0581` from the validated
+Balanced and Automatic-fan baseline. It requires the full-power 280 W adapter,
+the exact Razer Laptop Cooling Pad, a fresh one-sided opaque-zero compatibility
+observation, and paired mode-7 readback. OpenBlade restores an owned transition
+directly to its confirmed starting base without routing Quiet or Performance
+through Balanced. Direct Quiet and Performance transitions are implemented but
+remain observed-only pending their dedicated hardware validations. HyperBoost
+on the `RZ09-0528` is also observed-only.
+
+On the `RZ09-0581`, OpenBlade discovers the exact `1532:0F43` cooling pad
+and can store Auto, Fixed, or Smart Fan Curve intent. Fixed plans cover 500 to
+3200 RPM in 50 RPM steps, while Smart Fan Curve and the local demand API report
+planned targets only. Pad fan writes remain disabled until the remaining
+ownership, handback, lifecycle, and range validations pass.
+
+The pad's 1-by-18 RGB and brightness protocols and a uniform whole-strip
+keyboard projection are implemented behind closed production gates. Pad
+lighting remains disabled until reversible effect handback, cadence,
+disconnect/reconnect, sleep/resume, and controller-handoff evidence is reviewed.
+
 ## What it controls
 
 - AC, USB-C, and battery profiles with automatic power-source switching
 - Power modes, fan behavior, NVIDIA GPU clock offsets, and battery charge limits
+- RZ09-0581 cooling-pad discovery, saved fan plans, and an intent-only demand API
 - Keyboard and lid-logo lighting, including streamed effects and a playback
   mute indicator
 - Display profiles, brightness behavior, function-row behavior, and M1 through

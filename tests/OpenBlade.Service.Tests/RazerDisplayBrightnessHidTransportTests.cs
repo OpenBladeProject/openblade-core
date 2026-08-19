@@ -63,10 +63,11 @@ public sealed class RazerDisplayBrightnessHidTransportTests
             constructors,
             candidate => candidate.GetParameters().Length == longest);
 
-        Assert.Equal(12, longest);
-        Assert.Equal(
-            typeof(IDisplayBrightnessHidController),
-            constructor.GetParameters()[^1].ParameterType);
+        Assert.Equal(13, longest);
+        Assert.Contains(
+            constructor.GetParameters(),
+            parameter => parameter.ParameterType ==
+                typeof(IDisplayBrightnessHidController));
 
         string program = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(),

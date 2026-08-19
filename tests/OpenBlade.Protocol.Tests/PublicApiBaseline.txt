@@ -9,6 +9,7 @@ type static class OpenBlade.Protocol.BatteryValidationFactory
   method static OpenBlade.Protocol.ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
   method static OpenBlade.Protocol.IPerformanceFanDiscriminatorQueryRunner CreateWindowsPerformanceFanDiscriminatorQuery()
   method static OpenBlade.Protocol.IPerformanceFanSetterValidationRunner CreateWindowsPerformanceFanSetterValidation()
+  method static OpenBlade.Protocol.IPerformanceFanSetterValidationRunner CreateWindowsRz090581Bios400HyperBoostSetterValidation()
   method static OpenBlade.Protocol.IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
   method static OpenBlade.Protocol.ITemporaryFullChargeQueryRunFactory CreateWindowsTemporaryFullChargeQuery()
   method static OpenBlade.Protocol.ITemporaryFullChargeValidationRunFactory CreateWindowsTemporaryFullChargeValidation()
@@ -139,6 +140,12 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   method virtual System.Boolean Equals(OpenBlade.Protocol.ControllerPresenceObservation other)
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
+type static class OpenBlade.Protocol.CoolingPadDiscoveryFactory
+  method static OpenBlade.Protocol.ICoolingPadDiscoverySource CreateWindows()
+type struct OpenBlade.Protocol.CoolingPadFanObservation
+  ctor (System.Byte opaqueValue)
+  method System.Byte get_OpaqueValue()
+  property System.Byte OpaqueValue { get; }
 type enum OpenBlade.Protocol.DriverModeRestoreOutcome
   field System.Int32 value__
   field const OpenBlade.Protocol.DriverModeRestoreOutcome Failed = 4
@@ -302,6 +309,8 @@ type interface OpenBlade.Protocol.IBladeDevice
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PowerTransitionDeviceStateReadResult> ReadStateForPowerTransitionAsync(System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<System.Byte> StepKeyboardBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadLightingStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(System.Threading.CancellationToken cancellationToken)
@@ -315,6 +324,8 @@ type interface OpenBlade.Protocol.IBladeDevice
   method virtual System.Threading.Tasks.Task<System.String> ReadMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IControllerPresenceMonitor
   method abstract OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type interface OpenBlade.Protocol.ICoolingPadDiscoverySource
+  method abstract OpenBlade.Contracts.CoolingPadConnectionState Observe()
 type interface OpenBlade.Protocol.IFanRpmQueryPort
   interface System.IAsyncDisposable
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.FanRpmReadings>> QueryAsync(System.Threading.CancellationToken cancellationToken)
@@ -350,6 +361,8 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Boolean get_SupportsMcuVersionQuery()
   method virtual System.Boolean get_SupportsRz090581CapabilityDiagnosticsQuery()
   method virtual System.Boolean get_SupportsStartupAnimationQuery()
+  method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.Rz090581CapabilityDiagnostics> QueryRz090581CapabilityDiagnosticsAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> QueryFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryGamingModeAsync(System.Threading.CancellationToken cancellationToken)
@@ -366,6 +379,11 @@ type interface OpenBlade.Protocol.IProductionBatteryPortFactory
   method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionBatteryPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+type interface OpenBlade.Protocol.IProductionCoolingPadPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.CoolingPadFanObservation>> ObserveFanAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IProductionCoolingPadPortFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionCoolingPadPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IProductionLightingPort
   interface System.IAsyncDisposable
   method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
@@ -547,6 +565,8 @@ type enum OpenBlade.Protocol.PerformanceFanValidationFailure
   field System.Int32 value__
   field const OpenBlade.Protocol.PerformanceFanValidationFailure ApplyWriteIndeterminate = 9
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineFixedSpeedCannotBeRestored = 7
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineNotBalanced = 20
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineNotRequiredBaseMode = 21
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselinePairMismatch = 6
   field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineReadFailed = 5
   field const OpenBlade.Protocol.PerformanceFanValidationFailure Canceled = 19
@@ -571,6 +591,9 @@ type enum OpenBlade.Protocol.PerformanceFanValidationTarget
   field const OpenBlade.Protocol.PerformanceFanValidationTarget BatteryBalanced = 5
   field const OpenBlade.Protocol.PerformanceFanValidationTarget BatterySaver = 4
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Fixed5400 = 3
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget HyperBoost = 6
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget HyperBoostFromPerformance = 8
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget HyperBoostFromSilent = 7
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Performance = 2
   field const OpenBlade.Protocol.PerformanceFanValidationTarget Silent = 1
 type struct OpenBlade.Protocol.PowerTransitionDeviceStateReadResult
@@ -607,11 +630,13 @@ type struct OpenBlade.Protocol.ProductionPerformanceFanState
   interface System.IEquatable<OpenBlade.Protocol.ProductionPerformanceFanState>
   ctor (System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, System.Nullable<OpenBlade.Contracts.FanMode> Fans)
   method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
+  method System.Boolean get_HyperBoostActive()
   method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
   method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, out System.Nullable<OpenBlade.Contracts.FanMode> Fans)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_HyperBoostActive(System.Boolean value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -620,6 +645,7 @@ type struct OpenBlade.Protocol.ProductionPerformanceFanState
   method static System.Boolean op_Inequality(OpenBlade.Protocol.ProductionPerformanceFanState left, OpenBlade.Protocol.ProductionPerformanceFanState right)
   method virtual System.Boolean Equals(OpenBlade.Protocol.ProductionPerformanceFanState other)
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
+  property System.Boolean HyperBoostActive { get; init; }
   property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
 type sealed class OpenBlade.Protocol.RazerProtocolException

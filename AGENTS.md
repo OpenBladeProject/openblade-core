@@ -22,15 +22,17 @@ files or components and inspect the combined diff before verification.
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
-only for an exact model and SKU backed by sanitized, reviewed capture evidence.
-Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule.
-Never copy a command from another model, expose raw firmware commands, or
-weaken exact-device checks to make a feature appear supported.
+only for an exact model backed by sanitized, reviewed capture evidence. The
+captured BIOS is provenance, not a runtime allowlist: later BIOS versions share
+the model admission unless the capability declares an explicit, reviewed
+firmware restriction. Never copy a command from another model, expose raw
+firmware commands, or weaken exact-device checks to make a feature appear
+supported.
 
 Production support is exact-device scoped. Current admitted targets include the
-Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`); neither
-model's device-specific assumptions may be copied to the other.
+Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`) on their
+documented firmware baselines; neither model's device-specific assumptions may
+be copied to the other.
 
 ## Codebase map
 
@@ -98,13 +100,7 @@ model's device-specific assumptions may be copied to the other.
    restore lighting automatically.
 6. Keep queues bounded, cancellations observable, writes atomic, and native
    handles deterministically released. Do not add a kernel driver or depend on
-   Synapse components. As an optional integration, the RZ09-0581 native-
-   brightness path may use only its exact admitted, signed Razer `02E0` driver
-   stack when that stack is already installed or separately provisioned. Keep
-   WMI fallback available and never generalize the stack to another model or
-   build. Developer export tooling does not authorize installer bundling or
-   publication without the corresponding redistribution authorization, notice,
-   hashes, and signature validation.
+   Synapse components.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
@@ -225,16 +221,6 @@ unrelated worktrees and checkout changes.
     the branch. For a merged pull request, also prove that the branch tip is
     reachable from `origin/main`. If any safety check fails, report the blocker
     instead of silently leaving cleanup incomplete or deleting uncertain work.
-    A worktree that initialized `captures` needs submodule-aware removal. First
-    ensure no long-lived process uses the worktree as its current directory and
-    prove both the parent worktree and `captures` are clean. Then run
-    `git -C <worktree> submodule deinit -f -- captures`, followed by
-    `git worktree remove --force <worktree>`; plain removal still rejects a
-    worktree that contained a submodule. If Git unregisters the worktree but
-    Windows leaves an empty directory locked, do not delete the branch yet:
-    identify and restart only the verified locking process from its intended
-    working directory, prove the residual directory is empty and unregistered,
-    then remove that exact directory.
     After any successful branch merge, also update the primary non-linked-
     worktree checkout to the latest `main` with `git pull --ff-only origin main`;
     this synchronization is the required exception to the landing-checkout
@@ -360,10 +346,8 @@ administrator elevation.
      match their staged hashes. On failure, restore the complete previous
      payload or leave both processes stopped; never launch a partial payload.
    - After a successful report, the normal-integrity parent starts the
-     unchanged installed Session Agent hidden with `-WorkingDirectory` set to
-     the installation directory, confirms that it remains alive with the
-     expected shared-DLL versions, then starts the installed tray from that same
-     working directory.
+     unchanged installed Session Agent hidden, confirms that it remains alive
+     with the expected shared-DLL versions, then starts the installed tray.
 5. Do not start the long-lived tray or Session Agent from the elevated child.
    They inherit elevation, Computer Use cannot inspect them normally, and the
    parent `-Wait` can remain blocked on the elevated process tree until those

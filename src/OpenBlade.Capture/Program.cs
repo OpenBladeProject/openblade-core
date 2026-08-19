@@ -291,6 +291,278 @@ if (args.Length == 1 && args[0].Equals(
     }
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0581-02e0-bios-4.00-hyperboost-state",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("ReadOnly=True");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactDevice
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("QueryAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    IPerformanceFanDiscriminatorQueryRunner runner =
+        BatteryValidationFactory
+            .CreateWindowsRz090581Bios400HyperBoostObservationQuery();
+    var command = new PerformanceFanDiscriminatorQueryCommand(
+        runner.RunAsync,
+        Console.Out,
+        new DeviceIdentity("RZ09-0581", 0x1532, 0x02E0, "4.00"));
+    return await command.RunAsync([], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0581-bios-4.00-cooling-pad-fan-getters",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactPad = GpuClockOffsetValidationEnvironment
+        .HasOneExactCoolingPadControlCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("TargetHost=RZ09-0581 BIOS 4.00");
+    Console.WriteLine("TargetPad=1532:0F43 report 05");
+    Console.WriteLine("ReadOnly=True");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine("FanObservationSemantics=OpaqueByte");
+    Console.WriteLine("FanObservationHasAssignedUnits=False");
+    Console.WriteLine("ConfiguredTargetReadbackConfirmed=False");
+    Console.WriteLine("TachometerReadbackConfirmed=False");
+    Console.WriteLine("ActiveModeReadbackConfirmed=False");
+    Console.WriteLine("CoolingModeQueryAttempted=True");
+    Console.WriteLine("CoolingModeSelectors=Firmware(0),Synapse(1)");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("QueryAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    bool success = true;
+    foreach (CoolingPadFanGetterKind kind in Enum.GetValues<CoolingPadFanGetterKind>())
+    {
+        IGetterCandidateProbeRunner runner =
+            CoolingPadFanGetterProbeFactory.CreateWindows(kind);
+        HidSessionResult<GetterCandidateProbeSnapshot> result =
+            await runner.RunAsync(CancellationToken.None);
+        string prefix = kind.ToString();
+        Console.WriteLine(
+            $"{prefix}Failure={result.Failure?.ToString() ?? "None"}");
+        if (result.Diagnostic is { } diagnostic)
+        {
+            Console.WriteLine($"{prefix}FailurePhase={diagnostic.Phase}");
+            Console.WriteLine(
+                $"{prefix}NativeWin32Error=" +
+                $"{diagnostic.NativeWin32Error?.ToString() ?? "None"}");
+            Console.WriteLine(
+                $"{prefix}TransferredBytes=" +
+                $"{diagnostic.TransferredByteCount?.ToString() ?? "None"}");
+            Console.WriteLine(
+                $"{prefix}ProtocolValidation=" +
+                $"{diagnostic.ProtocolValidationFailure?.ToString() ?? "None"}");
+        }
+
+        if (result.Value is { } snapshot && result.Failure is null)
+        {
+            Console.WriteLine($"{prefix}Response={snapshot.ResponsePayloadHex}");
+        }
+        else
+        {
+            success = false;
+        }
+    }
+
+    Console.WriteLine($"Success={success}");
+    return success ? 0 : 2;
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "correlate-cooling-pad-fan-button",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactPad = GpuClockOffsetValidationEnvironment
+        .HasOneExactCoolingPadControlCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool usbCaptureInactive =
+        GpuClockOffsetValidationEnvironment.IsUsbCaptureInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Keep one exact read-only pad session open; record opaque 0D/81 and stored configuration banks 0/1 at Low, Medium, High, and Low return");
+    Console.WriteLine("SetterCommandsReachable=False");
+    Console.WriteLine("ActiveModeReadbackConfirmed=False");
+    Console.WriteLine("TachometerReadbackConfirmed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    Console.WriteLine($"UsbCaptureInactive={usbCaptureInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive
+        || !usbCaptureInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadFanButtonCorrelationCommand(
+        CoolingPadFanButtonCorrelationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+CoolingPadFanBoundaryKind? coolingPadFanBoundary = args.Length == 0
+    ? null
+    : args[0].Equals(
+        "validate-cooling-pad-fan-disconnect-reconnect",
+        StringComparison.OrdinalIgnoreCase)
+        ? CoolingPadFanBoundaryKind.DisconnectReconnect
+        : args[0].Equals(
+            "validate-cooling-pad-fan-low-power-resume",
+            StringComparison.OrdinalIgnoreCase)
+            ? CoolingPadFanBoundaryKind.LowPowerResume
+            : null;
+if (coolingPadFanBoundary is { } fanBoundary)
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactPad = GpuClockOffsetValidationEnvironment
+        .HasOneExactCoolingPadControlCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool usbCaptureInactive =
+        GpuClockOffsetValidationEnvironment.IsUsbCaptureInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine($"Boundary={fanBoundary}");
+    Console.WriteLine(
+        "Action=Apply the exact 2200 RPM host-control plan once; confirm it physically; close the pad handle; cross the selected lifecycle boundary; reopen one exact handle; confirm retained 2200 before any new write; release once; confirm physically");
+    Console.WriteLine(
+        "RequiredRecovery=No retry. If any state is uncertain, restore Auto through Synapse; power-cycle pad USB and 12 V if it sleeps or flashes red");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine("ActiveModeReadbackConfirmed=False");
+    Console.WriteLine("PhysicalRpmReadbackConfirmed=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    Console.WriteLine($"UsbCaptureInactive={usbCaptureInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive
+        || !usbCaptureInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadFanBoundaryValidationCommand(
+        CoolingPadFanBoundaryValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(
+        fanBoundary,
+        args[1..],
+        CancellationToken.None);
+}
+
+CoolingPadLightingBoundaryKind? coolingPadLightingBoundary = args.Length == 0
+    ? null
+    : args[0].Equals(
+        "validate-cooling-pad-lighting-disconnect-reconnect",
+        StringComparison.OrdinalIgnoreCase)
+        ? CoolingPadLightingBoundaryKind.DisconnectReconnect
+        : args[0].Equals(
+            "validate-cooling-pad-lighting-low-power-resume",
+            StringComparison.OrdinalIgnoreCase)
+            ? CoolingPadLightingBoundaryKind.LowPowerResume
+            : args[0].Equals(
+                "validate-cooling-pad-lighting-controller-handoff",
+                StringComparison.OrdinalIgnoreCase)
+                ? CoolingPadLightingBoundaryKind.ControllerHandoff
+                : null;
+if (coolingPadLightingBoundary is { } lightingBoundary)
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactPad = GpuClockOffsetValidationEnvironment
+        .HasOneExactCoolingPadControlCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool usbCaptureInactive =
+        GpuClockOffsetValidationEnvironment.IsUsbCaptureInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine($"Boundary={lightingBoundary}");
+    Console.WriteLine(CoolingPadLightingBoundaryValidationCommand.PreflightAction);
+    Console.WriteLine(CoolingPadLightingBoundaryValidationCommand.PreflightRecovery);
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    Console.WriteLine($"UsbCaptureInactive={usbCaptureInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive
+        || !usbCaptureInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadLightingBoundaryValidationCommand(
+        CoolingPadLightingBoundaryValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(
+        lightingBoundary,
+        args[1..],
+        CancellationToken.None);
+}
+
 if (args.Length is >= 1 and <= 3
     && (args[0].Equals(
             "probe-special-keys",
@@ -1545,6 +1817,653 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    "query-rz09-0581-02e0-bios-4.00-hyperboost-recovery",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("ReadOnly=True");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost || !exactDevice || !synapseInactive || !openBladeServiceInactive)
+    {
+        Console.WriteLine("QueryAttempted=False");
+        return 2;
+    }
+
+    var runner = new HyperBoostRecoveryRunner(ProductionBatteryFactory.CreateWindows());
+    var command = new HyperBoostRecoveryCommand(
+        runner.QueryAsync,
+        runner.RestoreBalancedAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunQueryAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "restore-rz09-0581-02e0-bios-4.00-hyperboost-balanced",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("Action=Restore Balanced only from freshly confirmed HyperBoost");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost || !exactDevice || !synapseInactive || !openBladeServiceInactive)
+    {
+        Console.WriteLine("RestoreAttempted=False");
+        return 2;
+    }
+
+    var runner = new HyperBoostRecoveryRunner(ProductionBatteryFactory.CreateWindows());
+    var command = new HyperBoostRecoveryCommand(
+        runner.QueryAsync,
+        runner.RestoreBalancedAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunRestoreAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0581-02e0-bios-4.00-hyperboost",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("RequiredPad=1532:0F43 rev 0200 Auto");
+    Console.WriteLine("RequiredAdapter=FullPower280W");
+    Console.WriteLine(
+        "PadObservation=Fresh opaque zero required as a conservative compatibility gate; it does not confirm Auto, active mode, target, or RPM");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactDevice
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    IPerformanceFanSetterValidationRunner runner =
+        BatteryValidationFactory
+            .CreateWindowsRz090581Bios400GuardedHyperBoostSetterValidation();
+    var command = new PerformanceFanSetterValidationCommand(
+        runner.RunAsync,
+        Console.Out,
+        allowHyperBoost: true);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0
+    && (args[0].Equals(
+            "validate-rz09-0581-02e0-bios-4.00-hyperboost-from-quiet",
+            StringComparison.OrdinalIgnoreCase)
+        || args[0].Equals(
+            "validate-rz09-0581-02e0-bios-4.00-hyperboost-from-performance",
+            StringComparison.OrdinalIgnoreCase)))
+{
+    bool quiet = args[0].EndsWith("from-quiet", StringComparison.OrdinalIgnoreCase);
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    string baseMode = quiet ? "Quiet" : "Performance";
+    Console.WriteLine("Target=RZ09-0581 1532:02E0 BIOS 4.00");
+    Console.WriteLine("RequiredPad=1532:0F43 rev 0200 Auto");
+    Console.WriteLine("RequiredAdapter=FullPower280W");
+    Console.WriteLine(
+        "PadObservation=Fresh opaque zero required as a conservative compatibility gate; it does not confirm Auto, active mode, target, or RPM");
+    Console.WriteLine(
+        $"Action=Require exact {baseMode} + Automatic baseline; write one HyperBoost pair; read back mode 7; restore {baseMode} directly; read back the exact baseline");
+    Console.WriteLine("BalancedIntermediaryAllowed=False");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactDevice
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    IPerformanceFanSetterValidationRunner runner =
+        BatteryValidationFactory
+            .CreateWindowsRz090581Bios400GuardedHyperBoostSetterValidation();
+    var command = new PerformanceFanSetterValidationCommand(
+        runner.RunAsync,
+        Console.Out,
+        allowHyperBoost: true,
+        allowDirectHyperBoostBaseModes: true);
+    string target = quiet
+        ? "hyperboost-from-quiet"
+        : "hyperboost-from-performance";
+    return await command.RunAsync(
+        [target, .. args[1..]],
+        CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-fixed-write-once",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine("Action=One Fixed 2200 write; no automatic cleanup write");
+    Console.WriteLine("RequiredRecovery=Restore Auto through Synapse");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadFixedWriteTrialCommand(
+        CoolingPadFixedWriteTrialRunner.CreateWindows().RunAsync,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-host-control-once",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine("Action=One Synapse-Auto-state write immediately followed by one host-demand 2200 write");
+    Console.WriteLine("RequiredRecovery=Physically assess, then restore the Auto UI state through Synapse");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadHostControlWriteTrialCommand(
+        CoolingPadHostControlWriteTrialRunner.CreateWindows().RunAsync,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-lighting-lifecycle",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Query brightness; submit one uniform 123456 frame; set brightness 0 once; restore the exact baseline brightness once");
+    Console.WriteLine(
+        "RequiredRecovery=Restore the prior lighting preset through Synapse or the physical lighting button");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadLightingLifecycleValidationCommand(
+        CoolingPadLightingLifecycleValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-lighting-cadence",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Query brightness; submit 200 identical whole-strip 123456 frames at no more than 20 fps; restore the exact baseline brightness once");
+    Console.WriteLine(
+        "RequiredRecovery=Restore the prior lighting preset through Synapse or the physical lighting button");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadLightingCadenceValidationCommand(
+        CoolingPadLightingCadenceValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-lighting-handback",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Confirm a distinctive physical preset; query brightness; submit one uniform 123456 frame; restore the exact baseline brightness once; close the pad handle; check whether the prior preset resumes");
+    Console.WriteLine(
+        "RequiredRecovery=If the prior preset does not resume, restore it through Synapse or the physical lighting button");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadLightingHandbackValidationCommand(
+        CoolingPadLightingHandbackValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-fan-cadence",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Acquire host control at 500 RPM; submit seven 1 Hz target updates; physically confirm cadence; submit one release request");
+    Console.WriteLine(
+        "ReadbackBoundary=Physical confirmation only; active mode and physical RPM cannot be read independently");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadFanCadenceValidationCommand(
+        CoolingPadFanCadenceValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-fan-lifecycle",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Acquire host control at 500 RPM; update once to 3200 RPM; update once to 2200 RPM; submit one release request");
+    Console.WriteLine(
+        "ReadbackBoundary=Physical confirmation only; active mode and physical RPM cannot be read independently");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    var command = new CoolingPadFanLifecycleValidationCommand(
+        CoolingPadFanLifecycleValidationRunner.CreateWindows().RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && (
+    args[0].Equals(
+        "validate-cooling-pad-fan-crash-arm",
+        StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals(
+        "validate-cooling-pad-fan-crash-recover",
+        StringComparison.OrdinalIgnoreCase)))
+{
+    bool recoverPhase = args[0].EndsWith(
+        "-recover",
+        StringComparison.OrdinalIgnoreCase);
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine($"Phase={(recoverPhase ? "Recover" : "Arm")}");
+    Console.WriteLine(
+        "Action=Apply Fixed 2200 and leave an exact-build marker after the " +
+        "handle closes, or confirm the originating process exited and submit " +
+        "one physically confirmed release request");
+    Console.WriteLine(
+        "ReadbackBoundary=Physical confirmation only; active mode and physical RPM cannot be read independently");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    CoolingPadFanCrashValidationRunner runner =
+        CoolingPadFanCrashValidationRunner.CreateWindows();
+    var command = new CoolingPadFanCrashValidationCommand(
+        runner.ArmAsync,
+        runner.RecoverAsync,
+        Console.In,
+        Console.Out);
+    return recoverPhase
+        ? await command.RunRecoveryAsync(args[1..], CancellationToken.None)
+        : await command.RunArmAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-fan-hyperboost-interlock",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactRz090581ProtocolCollection();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine(
+        "Target=RZ09-0581 1532:02E0 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Acquire Fixed 2200; physically confirm; release once; physically confirm handback; then run guarded HyperBoost apply/readback/Balanced restoration");
+    Console.WriteLine(
+        "ReadbackBoundary=Pad control is physically confirmed; laptop HyperBoost and Balanced restoration use paired typed readback");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactDevice
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    CoolingPadFanCrashValidationRunner fanRunner =
+        CoolingPadFanCrashValidationRunner.CreateWindows();
+    IPerformanceFanSetterValidationRunner hyperBoostRunner =
+        BatteryValidationFactory
+            .CreateWindowsRz090581Bios400GuardedHyperBoostSetterValidation();
+    var command = new CoolingPadHyperBoostInterlockValidationCommand(
+        fanRunner.ArmAsync,
+        fanRunner.RecoverAsync,
+        hyperBoostRunner.RunAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-cooling-pad-fan-physical-button-ownership",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool exactHost =
+        GpuClockOffsetValidationEnvironment.IsExactRz090581Bios400Host();
+    IReadOnlyList<HidInterfaceInfo> padCollections =
+        WindowsHidEnumerator.FindCollections(0x1532, 0x0F43);
+    bool exactPad = padCollections.Count(collection =>
+        collection.UsagePage == 0x000C
+        && collection.Usage == 0x0001
+        && collection.FeatureReportByteLength == 91
+        && collection.VersionNumber == 0x0200) == 1;
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool openBladeServiceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine("Target=RZ09-0581 BIOS 4.00; pad 1532:0F43 rev 0200");
+    Console.WriteLine(
+        "Action=Acquire Fixed 2200; physically confirm; press the pad fan button once; confirm whether host ownership retains 2200; release once only from the retained state");
+    Console.WriteLine(
+        "ReadbackBoundary=Physical confirmation only; active mode and physical RPM cannot be read independently");
+    Console.WriteLine("RetryAllowed=False");
+    Console.WriteLine("ProductionAdmitted=False");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactPad={exactPad}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={openBladeServiceInactive}");
+    if (!exactHost
+        || !exactPad
+        || !synapseInactive
+        || !openBladeServiceInactive)
+    {
+        Console.WriteLine("ValidationAttempted=False");
+        return 2;
+    }
+
+    CoolingPadFanCrashValidationRunner runner =
+        CoolingPadFanCrashValidationRunner.CreateWindows();
+    var command = new CoolingPadFanPhysicalButtonOwnershipValidationCommand(
+        runner.ArmAsync,
+        runner.RecoverAsync,
+        Console.In,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     "validate-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {
@@ -1661,6 +2580,70 @@ Console.WriteLine(
     GpuClockOffsetValidationEnvironment.Rz090581Bios400Confirmation);
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0581-02e0-bios-4.00-performance");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0581-02e0-bios-4.00-hyperboost-state");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-from-quiet " +
+    "--confirm-target " +
+    PerformanceFanSetterValidationCommand.HyperBoostFromQuietConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-from-performance " +
+    "--confirm-target " +
+    PerformanceFanSetterValidationCommand.HyperBoostFromPerformanceConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-lifecycle --confirm-target " +
+    CoolingPadLightingLifecycleValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-cadence --confirm-target " +
+    CoolingPadLightingCadenceValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-handback --confirm-target " +
+    CoolingPadLightingHandbackValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-cadence --confirm-target " +
+    CoolingPadFanCadenceValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-lifecycle --confirm-target " +
+    CoolingPadFanLifecycleValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-crash-arm --confirm-target " +
+    CoolingPadFanCrashValidationCommand.ArmConfirmation +
+    " --marker <private-marker-path>");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-crash-recover --confirm-target " +
+    CoolingPadFanCrashValidationCommand.RecoveryConfirmation +
+    " --marker <private-marker-path>");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-hyperboost-interlock " +
+    "--confirm-target " +
+    CoolingPadHyperBoostInterlockValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-physical-button-ownership " +
+    "--confirm-target " +
+    CoolingPadFanPhysicalButtonOwnershipValidationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture correlate-cooling-pad-fan-button --confirm-target " +
+    CoolingPadFanButtonCorrelationCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-disconnect-reconnect " +
+    "--confirm-target " +
+    CoolingPadFanBoundaryValidationCommand.DisconnectReconnectConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fan-low-power-resume " +
+    "--confirm-target " +
+    CoolingPadFanBoundaryValidationCommand.LowPowerResumeConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-disconnect-reconnect " +
+    "--confirm-target " +
+    CoolingPadLightingBoundaryValidationCommand.DisconnectReconnectConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-low-power-resume " +
+    "--confirm-target " +
+    CoolingPadLightingBoundaryValidationCommand.LowPowerResumeConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-lighting-controller-handoff " +
+    "--confirm-target " +
+    CoolingPadLightingBoundaryValidationCommand.ControllerHandoffConfirmation);
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");
@@ -1725,6 +2708,16 @@ Console.WriteLine(
     "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
     "--confirm-target " +
     PerformanceFanSetterValidationCommand.ExactTargetConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost " +
+    "hyperboost --confirm-target " +
+    PerformanceFanSetterValidationCommand.HyperBoostExactTargetConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-fixed-write-once " +
+    "--confirm-target " + CoolingPadFixedWriteTrialCommand.Confirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-cooling-pad-host-control-once " +
+    "--confirm-target " + CoolingPadHostControlWriteTrialCommand.Confirmation);
 Console.WriteLine(
     "  OpenBlade.Capture validate-lighting --confirm-target " +
     LightingValidationCommand.ExactTargetConfirmation +

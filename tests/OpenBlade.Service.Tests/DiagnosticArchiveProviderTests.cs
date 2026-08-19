@@ -22,6 +22,12 @@ public sealed class DiagnosticArchiveProviderTests
             {
                 SupportsKeyboardBrightness = true,
                 SupportsPlaybackMuteIndicator = true,
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ObservedOnly),
+                CoolingPadSupportAccess = DeviceFeatureAccess.ObservedOnly,
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
                 WritableSpecialKeySlots =
                     SpecialKeySlotSet.M3
@@ -138,6 +144,33 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly.ToString(),
             configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.hyperBoostAccess").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.hyperBoostBase.Silent").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.hyperBoostBase.Balanced").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.hyperBoostBase.Performance").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement
+                .GetProperty("capability.coolingPadSupportAccess")
+                .GetString());
+        Assert.Equal(
+            "Unavailable",
+            configuration.RootElement
+                .GetProperty("coolingPad.plannedFanTargetRpm")
+                .GetString());
+        Assert.Equal(
+            "Unavailable",
+            configuration.RootElement
+                .GetProperty("coolingPad.lightingRecoveryRequired")
+                .GetString());
         using JsonDocument capabilities = JsonDocument.Parse(
             await ReadEntryAsync(archive, "capabilities.json"));
         Assert.True(
@@ -166,6 +199,87 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("performance.hyperBoost.observed").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("performance.hyperBoost.read").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("performance.hyperBoost.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.base.Silent.observed")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.base.Silent.write")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.base.Balanced.observed")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("performance.hyperBoost.base.Performance.observed")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("coolingPad.support.observed").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("coolingPad.support.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("coolingPad.fan.hostControl2200.observed")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("coolingPad.fan.handback.write").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("coolingPad.fan.fullRange.write").GetBoolean());
+        Assert.False(
+            capabilities.RootElement
+                .GetProperty("coolingPad.fan.smartCurveCadence.write")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("coolingPad.fan.lifecycle.write").GetBoolean());
+        Assert.False(
+            capabilities.RootElement
+                .GetProperty("coolingPad.fan.hyperBoostInterlock.write")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement
+                .GetProperty("coolingPad.fan.evidence.write")
+                .GetBoolean());
+        Assert.True(
+            capabilities.RootElement
+                .GetProperty("coolingPad.fan.implementation.write")
+                .GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("coolingPad.fan.write").GetBoolean());
+        Assert.True(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.exactIdentityGeometry")
+            .GetBoolean());
+        Assert.True(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.wholeStripProjection")
+            .GetBoolean());
+        Assert.True(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.displayOffOracle")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.reversibleFrameLifecycle")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.frameCadence")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.disconnectReconnect")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.sleepResume")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.gate.controllerHandoff")
+            .GetBoolean());
+        Assert.False(capabilities.RootElement
+            .GetProperty("coolingPad.lighting.evidence.write")
+            .GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

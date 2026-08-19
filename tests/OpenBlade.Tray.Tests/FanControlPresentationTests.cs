@@ -36,4 +36,22 @@ public sealed class FanControlPresentationTests
         Assert.Contains(nameof(FanCurveEditorPoint.SpeedRpm), changed);
         Assert.Contains(nameof(FanCurveEditorPoint.SpeedLabel), changed);
     }
+
+    [Fact]
+    public void CoolingPadCurvePoint_UsesPlannedTargetRangeAndStep()
+    {
+        var point = new CoolingPadCurveEditorPoint(new CoolingPadCurvePoint(
+            60,
+            new CoolingDemandLevel(6_875)));
+        List<string?> changed = [];
+        point.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        point.TargetRpm = 2_226;
+
+        Assert.Equal(2_250, point.TargetRpm);
+        Assert.Equal("2,250 RPM", point.TargetLabel);
+        Assert.Equal(2_250, CoolingPadFanTarget.FromDemand(point.ToValue().Demand).Rpm);
+        Assert.Contains(nameof(CoolingPadCurveEditorPoint.TargetRpm), changed);
+        Assert.Contains(nameof(CoolingPadCurveEditorPoint.TargetLabel), changed);
+    }
 }

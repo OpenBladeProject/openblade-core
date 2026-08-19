@@ -156,6 +156,25 @@ public enum LightingRefreshRate
     SixtyHz,
 }
 
+public sealed record HyperBoostBaseModeCapabilities(
+    DeviceFeatureAccess Silent,
+    DeviceFeatureAccess Balanced,
+    DeviceFeatureAccess Performance)
+{
+    public DeviceFeatureAccess? AccessFor(PerformancePreset preset) => preset switch
+    {
+        PerformancePreset.Silent => Silent,
+        PerformancePreset.Balanced => Balanced,
+        PerformancePreset.Performance => Performance,
+        _ => null,
+    };
+
+    internal bool IsWellFormed =>
+        Enum.IsDefined(Silent)
+        && Enum.IsDefined(Balanced)
+        && Enum.IsDefined(Performance);
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -177,6 +196,17 @@ public sealed record DeviceCapabilities(
     public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
+
+    public DeviceFeatureAccess? HyperBoostAccess { get; init; }
+
+    public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
+
+    /// <summary>
+    /// Indicates that this laptop model is known to support the Razer Laptop
+    /// Cooling Pad integration. Access to individual pad operations remains
+    /// independently capability-gated.
+    /// </summary>
+    public DeviceFeatureAccess? CoolingPadSupportAccess { get; init; }
 
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
@@ -215,6 +245,21 @@ public sealed record DeviceCapabilities(
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
         && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
         && (GpuOverclock is null || GpuOverclock.IsWellFormed)
+        && (HyperBoostAccess is null || Enum.IsDefined(HyperBoostAccess.Value))
+        && (HyperBoostBaseModes is null
+            || HyperBoostAccess is not null
+                && HyperBoostBaseModes.IsWellFormed
+                && HyperBoostBaseModes.Silent <= HyperBoostAccess.Value
+                && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
+                && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value
+                && (HyperBoostBaseModes.Silent != DeviceFeatureAccess.ReadWrite
+                    || PerformancePresets.Contains(PerformancePreset.Silent))
+                && (HyperBoostBaseModes.Balanced != DeviceFeatureAccess.ReadWrite
+                    || PerformancePresets.Contains(PerformancePreset.Balanced))
+                && (HyperBoostBaseModes.Performance != DeviceFeatureAccess.ReadWrite
+                    || PerformancePresets.Contains(PerformancePreset.Performance)))
+        && (CoolingPadSupportAccess is null
+            || Enum.IsDefined(CoolingPadSupportAccess.Value))
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()
@@ -294,6 +339,8 @@ public sealed record ConfirmedDeviceState(
     ConfirmedBatteryState? Battery,
     LightingSettings? Lighting)
 {
+    public bool HyperBoostActive { get; init; }
+
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 
     public GpuClockOffsetCapabilities? GpuClockOffsets { get; init; }

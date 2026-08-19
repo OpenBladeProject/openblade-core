@@ -49,9 +49,37 @@ internal static class ServiceComposition
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             CreateProductionBatteryFactory(
                 provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+        services.AddSingleton<IProductionCoolingPadPortFactory>(_ =>
+            ProductionCoolingPadFactory.CreateWindows());
+        services.AddSingleton<WindowsVerifiedCoolingPadProvider>(provider =>
+            new WindowsVerifiedCoolingPadProvider(
+                provider.GetRequiredService<IProductionCoolingPadPortFactory>(),
+                CoolingPadDiscoveryFactory.CreateWindows(),
+                WindowsHostIdentitySource.IsRz090581WindowsHost(
+                    allowUntestedFirmware: true),
+                TimeProvider.System,
+                WindowsVerifiedCoolingPadProvider.DefaultObservationInterval,
+                provider.GetService<LowPowerGate>()));
+        services.AddSingleton<IVerifiedCoolingPadProvider>(provider =>
+            provider.GetRequiredService<WindowsVerifiedCoolingPadProvider>());
+        services.AddSingleton<ICoolingPadLightingSessionOwner>(provider =>
+            provider.GetRequiredService<WindowsVerifiedCoolingPadProvider>()
+                .CreateLightingSessionOwner());
+        services.AddSingleton<ICoolingPadLightingSink>(provider =>
+            new ProviderCoolingPadLightingSink(
+                provider.GetRequiredService<ICoolingPadLightingSessionOwner>()));
+        services.AddSingleton<ICoolingPadLightingCoordinator>(provider =>
+            CoolingPadLightingCoordinatorFactory.CreateWindows(
+                provider.GetRequiredService<ICoolingPadLightingSink>()));
+        services.AddSingleton<IKeyboardLightingFrameObserver>(provider =>
+            provider.GetRequiredService<ICoolingPadLightingCoordinator>());
+        services.AddSingleton<ICoolingPadLightingRuntimeCoordinator>(provider =>
+            new ProtocolCoolingPadLightingRuntimeCoordinator(
+                provider.GetRequiredService<ICoolingPadLightingCoordinator>()));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
             CreateProductionLightingFactory(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                provider.GetRequiredService<IKeyboardLightingFrameObserver>()));
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
@@ -61,6 +89,11 @@ internal static class ServiceComposition
                 provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
+        services.AddSingleton<ICoolingPadFanRuntimeCoordinator>(provider =>
+            CreateCoolingPadFanRuntimeCoordinator(
+                provider.GetRequiredService<WindowsVerifiedCoolingPadProvider>(),
+                provider.GetService<ICoolingPadFanOwnershipJournalStore>()
+                    ?? UnavailableCoolingPadFanOwnershipJournalStore.Instance));
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
         {
             FirmwareCompatibilityPolicy compatibilityPolicy =
@@ -76,6 +109,55 @@ internal static class ServiceComposition
                 compatibilityPolicy: compatibilityPolicy,
                 gpuActivitySource: new WindowsGpuActivitySource());
         });
+        return services;
+    }
+
+    private static ICoolingPadFanRuntimeCoordinator
+        CreateCoolingPadFanRuntimeCoordinator(
+            WindowsVerifiedCoolingPadProvider provider,
+            ICoolingPadFanOwnershipJournalStore journalStore)
+    {
+        CoolingPadFanControlEvidenceGates evidence =
+            CoolingPadFanControlEvidenceGates.Current;
+        CoolingPadFanControlImplementationGates implementation =
+            CoolingPadFanControlImplementationGates.Current;
+        return evidence.WriteAdmitted && implementation.WriteAvailable
+            ? AdmittedCoolingPadFanRuntimeCoordinator.CreateForProduction(
+                provider,
+                journalStore)
+            : UnavailableCoolingPadFanRuntimeCoordinator.Instance;
+    }
+
+    internal static IServiceCollection AddServiceControlRuntime(
+        this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<IServiceControlRuntime>(provider =>
+            new ServiceControlRuntime(
+                provider.GetRequiredService<BatteryConfigurationStore>(),
+                provider.GetRequiredService<PersistentOverrideStore>(),
+                provider.GetRequiredService<IPowerStateProvider>(),
+                provider.GetRequiredService<IStatusSubscriptionHub>(),
+                provider.GetRequiredService<IVerifiedBladeDeviceProvider>(),
+                provider.GetRequiredService<DiagnosticHistory>(),
+                provider.GetRequiredService<LowPowerGate>(),
+                provider.GetRequiredService<IControllerPresenceMonitor>(),
+                provider.GetRequiredService<IFirmwareVersionSource>(),
+                static (delay, token) => Task.Delay(delay, token),
+                provider.GetRequiredService<ProfileSetValidator>(),
+                userConfigurationRepository:
+                    provider.GetRequiredService<IUserConfigurationRepository>(),
+                displayBrightnessHidController:
+                    provider.GetRequiredService<IDisplayBrightnessHidController>(),
+                coolingPadProvider:
+                    provider.GetRequiredService<IVerifiedCoolingPadProvider>(),
+                coolingPadLightingCoordinator:
+                    provider.GetRequiredService<ICoolingPadLightingRuntimeCoordinator>(),
+                coolingPadFanCoordinator:
+                    provider.GetRequiredService<ICoolingPadFanRuntimeCoordinator>(),
+                hyperBoostOwnershipJournalStore:
+                    provider.GetService<IHyperBoostOwnershipJournalStore>()
+                        ?? UnavailableHyperBoostOwnershipJournalStore.Instance));
         return services;
     }
 
@@ -122,11 +204,20 @@ internal static class ServiceComposition
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(
         FirmwareCompatibilityPolicy compatibilityPolicy)
+        => CreateProductionLightingFactory(
+            compatibilityPolicy,
+            UnavailableKeyboardLightingFrameObserver.Instance);
+
+    internal static IProductionLightingPortFactory CreateProductionLightingFactory(
+        FirmwareCompatibilityPolicy compatibilityPolicy,
+        IKeyboardLightingFrameObserver frameObserver)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
+        ArgumentNullException.ThrowIfNull(frameObserver);
         return CreateProductionLightingFactory(
             () => BatteryValidationFactory.CreateWindowsProductionLightingForService(
-                compatibilityPolicy),
+                compatibilityPolicy,
+                frameObserver),
             () => ProductionLightingFactory.CreateWindowsReadOnly(
                 compatibilityPolicy));
     }

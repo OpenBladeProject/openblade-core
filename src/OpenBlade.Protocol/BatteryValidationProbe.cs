@@ -312,7 +312,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 featureLengthMatches +=
                     handleIdentity.FeatureReportByteLength == exactIdentity.FeatureReportByteLength ? 1 : 0;
 
-                if (handleIdentity == exactIdentity)
+                if (handleIdentity.MatchesExpected(exactIdentity))
                 {
                     exactMatches.Add(candidate);
                     fallbackExactMatches += usedAccessFallback ? 1 : 0;

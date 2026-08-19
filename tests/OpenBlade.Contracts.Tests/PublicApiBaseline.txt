@@ -197,6 +197,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
   method OpenBlade.Contracts.GpuClockOffsetCapabilities get_GpuClockOffsets()
   method OpenBlade.Contracts.LightingSettings get_Lighting()
+  method System.Boolean get_HyperBoostActive()
   method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
   method System.Nullable<OpenBlade.Contracts.LogoLightingMode> get_LogoLighting()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
@@ -205,6 +206,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
   method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
   method System.Void set_GpuClockOffsets(OpenBlade.Contracts.GpuClockOffsetCapabilities value)
+  method System.Void set_HyperBoostActive(System.Boolean value)
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LogoLighting(System.Nullable<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
@@ -218,6 +220,7 @@ type sealed class OpenBlade.Contracts.ConfirmedDeviceState
   property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
   property OpenBlade.Contracts.GpuClockOffsetCapabilities GpuClockOffsets { get; init; }
   property OpenBlade.Contracts.LightingSettings Lighting { get; init; }
+  property System.Boolean HyperBoostActive { get; init; }
   property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoLighting { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
@@ -267,6 +270,225 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type enum OpenBlade.Contracts.CoolingDemandApiAccess
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingDemandApiAccess AppliedControl = 2
+  field const OpenBlade.Contracts.CoolingDemandApiAccess IntentOnly = 1
+  field const OpenBlade.Contracts.CoolingDemandApiAccess Unavailable = 0
+type struct OpenBlade.Contracts.CoolingDemandLevel
+  interface System.IEquatable<OpenBlade.Contracts.CoolingDemandLevel>
+  ctor (System.Int32 basisPoints)
+  field const System.Int32 MaximumBasisPoints = 10000
+  field const System.Int32 MinimumBasisPoints = 0
+  method System.Double get_Fraction()
+  method System.Int32 get_BasisPoints()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.CoolingDemandLevel FromPercent(System.Int32 percent)
+  method static OpenBlade.Contracts.CoolingDemandLevel Max(OpenBlade.Contracts.CoolingDemandLevel left, OpenBlade.Contracts.CoolingDemandLevel right)
+  method static OpenBlade.Contracts.CoolingDemandLevel get_Maximum()
+  method static OpenBlade.Contracts.CoolingDemandLevel get_Zero()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingDemandLevel left, OpenBlade.Contracts.CoolingDemandLevel right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingDemandLevel left, OpenBlade.Contracts.CoolingDemandLevel right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingDemandLevel other)
+  property OpenBlade.Contracts.CoolingDemandLevel Maximum { get; }
+  property OpenBlade.Contracts.CoolingDemandLevel Zero { get; }
+  property System.Double Fraction { get; }
+  property System.Int32 BasisPoints { get; }
+type enum OpenBlade.Contracts.CoolingPadActiveFanControlMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadActiveFanControlMode Automatic = 0
+  field const OpenBlade.Contracts.CoolingPadActiveFanControlMode Fixed = 1
+  field const OpenBlade.Contracts.CoolingPadActiveFanControlMode HostControlled = 2
+type sealed class OpenBlade.Contracts.CoolingPadCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadCapabilities>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess FanObservationAccess, OpenBlade.Contracts.DeviceFeatureAccess FanControlAccess, OpenBlade.Contracts.DeviceFeatureAccess LightingAccess, OpenBlade.Contracts.DeviceFeatureAccess LightingSyncAccess, System.Boolean SupportsIntentPersistence, OpenBlade.Contracts.CoolingDemandApiAccess CoolingDemandApiAccess)
+  method OpenBlade.Contracts.CoolingDemandApiAccess get_CoolingDemandApiAccess()
+  method OpenBlade.Contracts.CoolingPadCapabilities <Clone>$()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_ActiveFanModeObservationAccess()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_FanControlAccess()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_FanObservationAccess()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_LightingAccess()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_LightingSyncAccess()
+  method System.Boolean get_IsWellFormed()
+  method System.Boolean get_SupportsIntentPersistence()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess FanObservationAccess, out OpenBlade.Contracts.DeviceFeatureAccess FanControlAccess, out OpenBlade.Contracts.DeviceFeatureAccess LightingAccess, out OpenBlade.Contracts.DeviceFeatureAccess LightingSyncAccess, out System.Boolean SupportsIntentPersistence, out OpenBlade.Contracts.CoolingDemandApiAccess CoolingDemandApiAccess)
+  method System.Void set_ActiveFanModeObservationAccess(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_CoolingDemandApiAccess(OpenBlade.Contracts.CoolingDemandApiAccess value)
+  method System.Void set_FanControlAccess(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_FanObservationAccess(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_LightingAccess(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_LightingSyncAccess(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_SupportsIntentPersistence(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadCapabilities left, OpenBlade.Contracts.CoolingPadCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadCapabilities left, OpenBlade.Contracts.CoolingPadCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadCapabilities other)
+  property OpenBlade.Contracts.CoolingDemandApiAccess CoolingDemandApiAccess { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess ActiveFanModeObservationAccess { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess FanControlAccess { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess FanObservationAccess { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess LightingAccess { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess LightingSyncAccess { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Boolean SupportsIntentPersistence { get; init; }
+type enum OpenBlade.Contracts.CoolingPadConnectionState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadConnectionState Absent = 1
+  field const OpenBlade.Contracts.CoolingPadConnectionState Ambiguous = 3
+  field const OpenBlade.Contracts.CoolingPadConnectionState ObservationFailed = 4
+  field const OpenBlade.Contracts.CoolingPadConnectionState PresentExact = 2
+  field const OpenBlade.Contracts.CoolingPadConnectionState Unavailable = 0
+type enum OpenBlade.Contracts.CoolingPadControlOwnershipState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadControlOwnershipState Indeterminate = 2
+  field const OpenBlade.Contracts.CoolingPadControlOwnershipState Owned = 1
+  field const OpenBlade.Contracts.CoolingPadControlOwnershipState Unowned = 0
+type sealed class OpenBlade.Contracts.CoolingPadCurvePoint
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadCurvePoint>
+  ctor (System.Int32 temperatureCelsius, OpenBlade.Contracts.CoolingDemandLevel demand)
+  method OpenBlade.Contracts.CoolingDemandLevel get_Demand()
+  method OpenBlade.Contracts.CoolingPadCurvePoint <Clone>$()
+  method System.Int32 get_TemperatureCelsius()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadCurvePoint left, OpenBlade.Contracts.CoolingPadCurvePoint right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadCurvePoint left, OpenBlade.Contracts.CoolingPadCurvePoint right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadCurvePoint other)
+  property OpenBlade.Contracts.CoolingDemandLevel Demand { get; }
+  property System.Int32 TemperatureCelsius { get; }
+type sealed class OpenBlade.Contracts.CoolingPadFanIntent
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadFanIntent>
+  ctor (OpenBlade.Contracts.CoolingPadFanMode mode, OpenBlade.Contracts.CoolingDemandLevel fixedDemand, OpenBlade.Contracts.CoolingPadSmartCurve smartCurve)
+  method OpenBlade.Contracts.CoolingDemandLevel get_FixedDemand()
+  method OpenBlade.Contracts.CoolingPadFanIntent <Clone>$()
+  method OpenBlade.Contracts.CoolingPadFanMode get_Mode()
+  method OpenBlade.Contracts.CoolingPadSmartCurve get_SmartCurve()
+  method System.Boolean get_IsWellFormed()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.CoolingPadFanIntent get_Default()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadFanIntent left, OpenBlade.Contracts.CoolingPadFanIntent right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadFanIntent left, OpenBlade.Contracts.CoolingPadFanIntent right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadFanIntent other)
+  property OpenBlade.Contracts.CoolingDemandLevel FixedDemand { get; }
+  property OpenBlade.Contracts.CoolingPadFanIntent Default { get; }
+  property OpenBlade.Contracts.CoolingPadFanMode Mode { get; }
+  property OpenBlade.Contracts.CoolingPadSmartCurve SmartCurve { get; }
+  property System.Boolean IsWellFormed { get; }
+type enum OpenBlade.Contracts.CoolingPadFanMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadFanMode Automatic = 0
+  field const OpenBlade.Contracts.CoolingPadFanMode Fixed = 1
+  field const OpenBlade.Contracts.CoolingPadFanMode SmartCurve = 2
+type struct OpenBlade.Contracts.CoolingPadFanTarget
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadFanTarget>
+  ctor (System.Int32 rpm)
+  field const System.Int32 MaximumRpm = 3200
+  field const System.Int32 MinimumRpm = 500
+  field const System.Int32 StepRpm = 50
+  method OpenBlade.Contracts.CoolingDemandLevel ToDemand()
+  method System.Int32 get_Rpm()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.CoolingPadFanTarget FromDemand(OpenBlade.Contracts.CoolingDemandLevel demand)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadFanTarget left, OpenBlade.Contracts.CoolingPadFanTarget right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadFanTarget left, OpenBlade.Contracts.CoolingPadFanTarget right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadFanTarget other)
+  property System.Int32 Rpm { get; }
+type enum OpenBlade.Contracts.CoolingPadLightingSyncState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Delegated = 5
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Disabled = 1
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Faulted = 6
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Mirroring = 3
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Suppressed = 4
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState Unavailable = 0
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState WaitingForFrame = 7
+  field const OpenBlade.Contracts.CoolingPadLightingSyncState WaitingForPad = 2
+type sealed class OpenBlade.Contracts.CoolingPadSmartCurve
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadSmartCurve>
+  ctor (System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> cpu, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> gpu, System.Boolean useHigherTemperatureForBoth)
+  method OpenBlade.Contracts.CoolingDemandLevel InterpolateCpu(System.Int32 temperatureCelsius)
+  method OpenBlade.Contracts.CoolingDemandLevel InterpolateGpu(System.Int32 temperatureCelsius)
+  method System.Boolean get_UseHigherTemperatureForBoth()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> get_Cpu()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> get_Gpu()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method static OpenBlade.Contracts.CoolingPadSmartCurve get_Default()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadSmartCurve other)
+  property OpenBlade.Contracts.CoolingPadSmartCurve Default { get; }
+  property System.Boolean UseHigherTemperatureForBoth { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> Cpu { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> Gpu { get; }
+type sealed class OpenBlade.Contracts.CoolingPadStatus
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadStatus>
+  ctor (OpenBlade.Contracts.CoolingPadConnectionState Connection, OpenBlade.Contracts.CoolingPadCapabilities Capabilities, OpenBlade.Contracts.CoolingPadFanIntent DesiredFanIntent, System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> ComputedDemand, System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> AppliedDemand, System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> ConfiguredFanTarget, System.Boolean ConfiguredFanTargetIsFresh, OpenBlade.Contracts.CoolingPadControlOwnershipState Ownership, System.Boolean CoolingDemandApiEnabled, System.Int32 ActiveDemandLeases, System.Boolean LightingSyncEnabled, OpenBlade.Contracts.CoolingPadLightingSyncState LightingSyncState, System.String Message)
+  method OpenBlade.Contracts.CoolingPadCapabilities get_Capabilities()
+  method OpenBlade.Contracts.CoolingPadConnectionState get_Connection()
+  method OpenBlade.Contracts.CoolingPadControlOwnershipState get_Ownership()
+  method OpenBlade.Contracts.CoolingPadFanIntent get_DesiredFanIntent()
+  method OpenBlade.Contracts.CoolingPadLightingSyncState get_LightingSyncState()
+  method OpenBlade.Contracts.CoolingPadStatus <Clone>$()
+  method System.Boolean get_ConfiguredFanTargetIsFresh()
+  method System.Boolean get_CoolingDemandApiEnabled()
+  method System.Boolean get_IsWellFormed()
+  method System.Boolean get_LightingRecoveryRequired()
+  method System.Boolean get_LightingSyncEnabled()
+  method System.Int32 get_ActiveDemandLeases()
+  method System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> get_AppliedDemand()
+  method System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> get_ComputedDemand()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadActiveFanControlMode> get_ConfirmedActiveFanControlMode()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> get_ConfiguredFanTarget()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> get_PlannedFanTarget()
+  method System.String get_Message()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CoolingPadConnectionState Connection, out OpenBlade.Contracts.CoolingPadCapabilities Capabilities, out OpenBlade.Contracts.CoolingPadFanIntent DesiredFanIntent, out System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> ComputedDemand, out System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> AppliedDemand, out System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> ConfiguredFanTarget, out System.Boolean ConfiguredFanTargetIsFresh, out OpenBlade.Contracts.CoolingPadControlOwnershipState Ownership, out System.Boolean CoolingDemandApiEnabled, out System.Int32 ActiveDemandLeases, out System.Boolean LightingSyncEnabled, out OpenBlade.Contracts.CoolingPadLightingSyncState LightingSyncState, out System.String Message)
+  method System.Void set_ActiveDemandLeases(System.Int32 value)
+  method System.Void set_AppliedDemand(System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> value)
+  method System.Void set_Capabilities(OpenBlade.Contracts.CoolingPadCapabilities value)
+  method System.Void set_ComputedDemand(System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> value)
+  method System.Void set_ConfiguredFanTarget(System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> value)
+  method System.Void set_ConfiguredFanTargetIsFresh(System.Boolean value)
+  method System.Void set_ConfirmedActiveFanControlMode(System.Nullable<OpenBlade.Contracts.CoolingPadActiveFanControlMode> value)
+  method System.Void set_Connection(OpenBlade.Contracts.CoolingPadConnectionState value)
+  method System.Void set_CoolingDemandApiEnabled(System.Boolean value)
+  method System.Void set_DesiredFanIntent(OpenBlade.Contracts.CoolingPadFanIntent value)
+  method System.Void set_LightingRecoveryRequired(System.Boolean value)
+  method System.Void set_LightingSyncEnabled(System.Boolean value)
+  method System.Void set_LightingSyncState(OpenBlade.Contracts.CoolingPadLightingSyncState value)
+  method System.Void set_Message(System.String value)
+  method System.Void set_Ownership(OpenBlade.Contracts.CoolingPadControlOwnershipState value)
+  method System.Void set_PlannedFanTarget(System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadStatus left, OpenBlade.Contracts.CoolingPadStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadStatus left, OpenBlade.Contracts.CoolingPadStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadStatus other)
+  property OpenBlade.Contracts.CoolingPadCapabilities Capabilities { get; init; }
+  property OpenBlade.Contracts.CoolingPadConnectionState Connection { get; init; }
+  property OpenBlade.Contracts.CoolingPadControlOwnershipState Ownership { get; init; }
+  property OpenBlade.Contracts.CoolingPadFanIntent DesiredFanIntent { get; init; }
+  property OpenBlade.Contracts.CoolingPadLightingSyncState LightingSyncState { get; init; }
+  property System.Boolean ConfiguredFanTargetIsFresh { get; init; }
+  property System.Boolean CoolingDemandApiEnabled { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Boolean LightingRecoveryRequired { get; init; }
+  property System.Boolean LightingSyncEnabled { get; init; }
+  property System.Int32 ActiveDemandLeases { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> AppliedDemand { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingDemandLevel> ComputedDemand { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadActiveFanControlMode> ConfirmedActiveFanControlMode { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> ConfiguredFanTarget { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadFanTarget> PlannedFanTarget { get; init; }
+  property System.String Message { get; init; }
 type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -442,6 +664,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
+  method OpenBlade.Contracts.HyperBoostBaseModeCapabilities get_HyperBoostBaseModes()
   method OpenBlade.Contracts.SpecialKeySlotSet get_WritableSpecialKeySlots()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
@@ -456,17 +679,22 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_OneShotLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> get_PerformancePresets()
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_CoolingPadSupportAccess()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_HyperBoostAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
   method System.String get_KeyboardLightingLayoutId()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
+  method System.Void set_CoolingPadSupportAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
   method System.Void set_CpuVoltageOptimizer(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceCapabilities value)
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_HyperBoostAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
+  method System.Void set_HyperBoostBaseModes(OpenBlade.Contracts.HyperBoostBaseModeCapabilities value)
   method System.Void set_KeyboardLightingLayoutId(System.String value)
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
@@ -495,6 +723,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.CustomPerformanceCapabilities CustomPerformance { get; init; }
   property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
   property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
+  property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
@@ -509,6 +738,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> CoolingPadSupportAccess { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> HyperBoostAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
   property System.String KeyboardLightingLayoutId { get; init; }
@@ -891,6 +1122,27 @@ type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
   property OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz { get; init; }
   property System.Boolean IsWellFormed { get; }
   property System.Boolean SupportsEnableDisable { get; init; }
+type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.HyperBoostBaseModeCapabilities>
+  ctor (OpenBlade.Contracts.DeviceFeatureAccess Silent, OpenBlade.Contracts.DeviceFeatureAccess Balanced, OpenBlade.Contracts.DeviceFeatureAccess Performance)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Balanced()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Performance()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Silent()
+  method OpenBlade.Contracts.HyperBoostBaseModeCapabilities <Clone>$()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> AccessFor(OpenBlade.Contracts.PerformancePreset preset)
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceFeatureAccess Silent, out OpenBlade.Contracts.DeviceFeatureAccess Balanced, out OpenBlade.Contracts.DeviceFeatureAccess Performance)
+  method System.Void set_Balanced(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Performance(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Silent(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.HyperBoostBaseModeCapabilities left, OpenBlade.Contracts.HyperBoostBaseModeCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.HyperBoostBaseModeCapabilities left, OpenBlade.Contracts.HyperBoostBaseModeCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.HyperBoostBaseModeCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Balanced { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
@@ -1223,7 +1475,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 47
+  field const System.Int32 ProtocolVersion = 48
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1533,6 +1785,22 @@ type sealed class OpenBlade.Contracts.ReapplyChangedSettingsRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ReapplyChangedSettingsRequest left, OpenBlade.Contracts.ReapplyChangedSettingsRequest right)
   method virtual OpenBlade.Contracts.ReapplyChangedSettingsRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.ReapplyChangedSettingsRequest other)
+type sealed class OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Guid LeaseId)
+  method System.Guid get_LeaseId()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Guid LeaseId)
+  method System.Void set_LeaseId(System.Guid value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest left, OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest left, OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest right)
+  method virtual OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ReleaseCoolingDemandLeaseRequest other)
+  property System.Guid LeaseId { get; init; }
 type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   interface System.IEquatable<OpenBlade.Contracts.ResolvedSetting<T>>
   ctor (T Value, OpenBlade.Contracts.SettingValueSource Source)
@@ -1715,6 +1983,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
+  method OpenBlade.Contracts.CoolingPadStatus get_CoolingPad()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method OpenBlade.Contracts.DisplayBrightnessHidAvailability get_DisplayBrightnessHidAvailability()
@@ -1762,6 +2031,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
   method System.Void set_ControllerDetectionWarning(System.String value)
+  method System.Void set_CoolingPad(OpenBlade.Contracts.CoolingPadStatus value)
   method System.Void set_DesiredState(OpenBlade.Contracts.DesiredDeviceState value)
   method System.Void set_DeviceVerified(System.Boolean value)
   method System.Void set_DisplayBrightnessHidAvailability(OpenBlade.Contracts.DisplayBrightnessHidAvailability value)
@@ -1799,6 +2069,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
   property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
+  property OpenBlade.Contracts.CoolingPadStatus CoolingPad { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
   property OpenBlade.Contracts.DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability { get; init; }
@@ -1872,6 +2143,79 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.SetBatteryProtectionRequest left, OpenBlade.Contracts.SetBatteryProtectionRequest right)
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Enabled)
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest left, OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest left, OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest right)
+  method virtual OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCoolingDemandApiEnabledRequest other)
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetCoolingDemandLeaseRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCoolingDemandLeaseRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Guid LeaseId, OpenBlade.Contracts.CoolingDemandLevel Demand, System.Int32 TtlMilliseconds)
+  method OpenBlade.Contracts.CoolingDemandLevel get_Demand()
+  method System.Guid get_LeaseId()
+  method System.Int32 get_TtlMilliseconds()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Guid LeaseId, out OpenBlade.Contracts.CoolingDemandLevel Demand, out System.Int32 TtlMilliseconds)
+  method System.Void set_Demand(OpenBlade.Contracts.CoolingDemandLevel value)
+  method System.Void set_LeaseId(System.Guid value)
+  method System.Void set_TtlMilliseconds(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCoolingDemandLeaseRequest left, OpenBlade.Contracts.SetCoolingDemandLeaseRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCoolingDemandLeaseRequest left, OpenBlade.Contracts.SetCoolingDemandLeaseRequest right)
+  method virtual OpenBlade.Contracts.SetCoolingDemandLeaseRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCoolingDemandLeaseRequest other)
+  property OpenBlade.Contracts.CoolingDemandLevel Demand { get; init; }
+  property System.Guid LeaseId { get; init; }
+  property System.Int32 TtlMilliseconds { get; init; }
+type sealed class OpenBlade.Contracts.SetCoolingPadFanIntentRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCoolingPadFanIntentRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CoolingPadFanIntent Intent)
+  method OpenBlade.Contracts.CoolingPadFanIntent get_Intent()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CoolingPadFanIntent Intent)
+  method System.Void set_Intent(OpenBlade.Contracts.CoolingPadFanIntent value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCoolingPadFanIntentRequest left, OpenBlade.Contracts.SetCoolingPadFanIntentRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCoolingPadFanIntentRequest left, OpenBlade.Contracts.SetCoolingPadFanIntentRequest right)
+  method virtual OpenBlade.Contracts.SetCoolingPadFanIntentRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCoolingPadFanIntentRequest other)
+  property OpenBlade.Contracts.CoolingPadFanIntent Intent { get; init; }
+type sealed class OpenBlade.Contracts.SetCoolingPadLightingSyncRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCoolingPadLightingSyncRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Enabled)
+  method System.Boolean get_AcknowledgeRecovery()
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Enabled)
+  method System.Void set_AcknowledgeRecovery(System.Boolean value)
+  method System.Void set_Enabled(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCoolingPadLightingSyncRequest left, OpenBlade.Contracts.SetCoolingPadLightingSyncRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCoolingPadLightingSyncRequest left, OpenBlade.Contracts.SetCoolingPadLightingSyncRequest right)
+  method virtual OpenBlade.Contracts.SetCoolingPadLightingSyncRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCoolingPadLightingSyncRequest other)
+  property System.Boolean AcknowledgeRecovery { get; init; }
   property System.Boolean Enabled { get; init; }
 type sealed class OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest
   base OpenBlade.Contracts.ServiceRequest
@@ -1955,6 +2299,22 @@ type sealed class OpenBlade.Contracts.SetFullChargeOverrideRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.SetFullChargeOverrideRequest left, OpenBlade.Contracts.SetFullChargeOverrideRequest right)
   method virtual OpenBlade.Contracts.SetFullChargeOverrideRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFullChargeOverrideRequest other)
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetHyperBoostRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetHyperBoostRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Enabled)
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetHyperBoostRequest left, OpenBlade.Contracts.SetHyperBoostRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetHyperBoostRequest left, OpenBlade.Contracts.SetHyperBoostRequest right)
+  method virtual OpenBlade.Contracts.SetHyperBoostRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetHyperBoostRequest other)
   property System.Boolean Enabled { get; init; }
 type sealed class OpenBlade.Contracts.SetKeyboardLightingControlModeRequest
   base OpenBlade.Contracts.ServiceRequest

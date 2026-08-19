@@ -48,6 +48,53 @@ public sealed class FanCurveEditorPoint : INotifyPropertyChanged
     public FanCurvePoint ToValue() => new(TemperatureCelsius, SpeedRpm);
 }
 
+public sealed class CoolingPadCurveEditorPoint : INotifyPropertyChanged
+{
+    private int targetRpm;
+
+    public CoolingPadCurveEditorPoint(CoolingPadCurvePoint value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        TemperatureCelsius = value.TemperatureCelsius;
+        targetRpm = CoolingPadFanTarget.FromDemand(value.Demand).Rpm;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public int TemperatureCelsius { get; }
+
+    public string TemperatureLabel => $"{TemperatureCelsius}\u00B0C";
+
+    public int TargetRpm
+    {
+        get => targetRpm;
+        set
+        {
+            int normalized = Math.Clamp(
+                (int)Math.Round(
+                    value / (double)CoolingPadFanTarget.StepRpm,
+                    MidpointRounding.AwayFromZero)
+                    * CoolingPadFanTarget.StepRpm,
+                CoolingPadFanTarget.MinimumRpm,
+                CoolingPadFanTarget.MaximumRpm);
+            if (targetRpm == normalized)
+            {
+                return;
+            }
+
+            targetRpm = normalized;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TargetRpm)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TargetLabel)));
+        }
+    }
+
+    public string TargetLabel => $"{TargetRpm:N0} RPM";
+
+    public CoolingPadCurvePoint ToValue() => new(
+        TemperatureCelsius,
+        new CoolingPadFanTarget(TargetRpm).ToDemand());
+}
+
 public static class FanModePresentation
 {
     private static readonly FanMode[] Order =

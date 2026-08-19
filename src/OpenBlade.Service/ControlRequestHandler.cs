@@ -95,6 +95,7 @@ public sealed class ControlRequestHandler
             {
                 await runtime.ActivateUserAsync(
                     client.UserSid,
+                    client.SessionId,
                     () => ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
                         == SessionControlAccess.Active,
                     cancellationToken);
@@ -130,6 +131,41 @@ public sealed class ControlRequestHandler
                 await runtime.SetPerformanceConfigurationOverrideAsync(
                     set.Value,
                     cancellationToken)),
+            SetHyperBoostRequest set => Result(
+                request.RequestId,
+                await runtime.SetHyperBoostAsync(set.Enabled, cancellationToken)),
+            SetCoolingPadFanIntentRequest set => Result(
+                request.RequestId,
+                await runtime.SetCoolingPadFanIntentAsync(set.Intent, cancellationToken)),
+            SetCoolingDemandLeaseRequest set => Result(
+                request.RequestId,
+                await runtime.SetCoolingDemandLeaseAsync(
+                    client.UserSid.Value,
+                    client.SessionId,
+                    set.LeaseId,
+                    set.Demand,
+                    set.TtlMilliseconds,
+                    cancellationToken)),
+            ReleaseCoolingDemandLeaseRequest release => Result(
+                request.RequestId,
+                await runtime.ReleaseCoolingDemandLeaseAsync(
+                    client.UserSid.Value,
+                    client.SessionId,
+                    release.LeaseId,
+                    cancellationToken)),
+            SetCoolingDemandApiEnabledRequest set => Result(
+                request.RequestId,
+                await runtime.SetCoolingDemandApiEnabledAsync(
+                    set.Enabled,
+                    cancellationToken)),
+            SetCoolingPadLightingSyncRequest set => Result(
+                request.RequestId,
+                set.AcknowledgeRecovery
+                    ? await runtime.AcknowledgeCoolingPadLightingRecoveryAsync(
+                        cancellationToken)
+                    : await runtime.SetCoolingPadLightingSyncAsync(
+                        set.Enabled,
+                        cancellationToken)),
             CyclePerformanceShortcutRequest cycle => Result(
                 request.RequestId,
                 await runtime.CyclePerformanceShortcutAsync(
@@ -298,6 +334,7 @@ public sealed class ControlRequestHandler
             AllowUntestedFirmware = false,
             KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
             PerformanceShortcutPreview = null,
+            CoolingPad = null,
             ControlAccess = access,
         };
     }

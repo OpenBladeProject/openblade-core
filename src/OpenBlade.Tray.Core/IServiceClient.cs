@@ -42,6 +42,56 @@ public interface IServiceClient : IServiceStatusWatcher
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "HyperBoost control is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingPadFanIntentAsync(
+        CoolingPadFanIntent intent,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad fan intent is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CoolingDemandLevel demand,
+        TimeSpan lifetime,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "External cooling demand is unavailable."));
+
+    Task<ControlOperationResult> ReleaseCoolingDemandLeaseAsync(
+        Guid leaseId,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "No matching cooling-demand lease was active."));
+
+    Task<ControlOperationResult> SetCoolingDemandApiEnabledAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The cooling-demand API is unavailable."));
+
+    Task<ControlOperationResult> SetCoolingPadLightingSyncAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad lighting synchronization is unavailable."));
+
+    Task<ControlOperationResult> AcknowledgeCoolingPadLightingRecoveryAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Cooling-pad lighting recovery acknowledgement is unavailable."));
+
     Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token);

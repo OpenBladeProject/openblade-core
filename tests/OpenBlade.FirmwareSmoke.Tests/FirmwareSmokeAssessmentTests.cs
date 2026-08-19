@@ -6,6 +6,19 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 public sealed class FirmwareSmokeAssessmentTests
 {
     [Fact]
+    public void CompareUnchangedInstalledGeneration_AcceptsGreenExactSnapshot()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.True(report.Succeeded);
+    }
+
+    [Fact]
     public void HealthyBaselineHasNoFailures()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
@@ -28,6 +41,86 @@ public sealed class FirmwareSmokeAssessmentTests
             inventory);
         Assert.Contains("Thunderbolt=Unavailable (ObservedOnly)", inventory);
         Assert.Contains("Touchpad=Unavailable (ObservedOnly)", inventory);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.cooling-pad-support").Outcome);
+    }
+
+    [Fact]
+    public void Rz090581Bios400RequiresReadWriteHyperBoostCapability()
+    {
+        FirmwareSmokeSnapshot admitted = CreateSnapshot("1.6.0.0") with
+        {
+            Firmware = new FirmwareIdentity("4.00", "1.04", "1.6.0.0", "98.3.5c.40.3d"),
+            Capabilities = CreateSnapshot("1.6.0.0").Capabilities with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite,
+                    DeviceFeatureAccess.ObservedOnly),
+            },
+        };
+
+        FirmwareSmokeReport admittedReport =
+            FirmwareSmokeAssessment.ValidateBaseline(admitted);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                admittedReport.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                admittedReport.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
+
+        FirmwareSmokeReport missingReport = FirmwareSmokeAssessment.ValidateBaseline(
+            admitted with
+            {
+                Capabilities = admitted.Capabilities with { HyperBoostAccess = null },
+            });
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                missingReport.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+
+        FirmwareSmokeReport missingBaseModesReport =
+            FirmwareSmokeAssessment.ValidateBaseline(
+                admitted with
+                {
+                    Capabilities = admitted.Capabilities with
+                    {
+                        HyperBoostBaseModes = null,
+                    },
+                });
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                missingBaseModesReport.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
+    }
+
+    [Fact]
+    public void Rz090581FirmwareUsesModelScopedHyperBoostCapability()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
     }
 
     [Fact]
@@ -39,6 +132,9 @@ public sealed class FirmwareSmokeAssessmentTests
             Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
+                HyperBoostAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+                HyperBoostBaseModes = null,
+                CoolingPadSupportAccess = null,
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
                 LightingEffects =
                 [
@@ -131,6 +227,11 @@ public sealed class FirmwareSmokeAssessmentTests
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.lamp-array").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.cooling-pad-support").Outcome);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(
@@ -601,6 +702,12 @@ public sealed class FirmwareSmokeAssessmentTests
                 expected.Capabilities.GpuOverclock,
                 actual.Capabilities.GpuOverclock);
             Assert.Equal(
+                expected.Capabilities.HyperBoostAccess,
+                actual.Capabilities.HyperBoostAccess);
+            Assert.Equal(
+                expected.Capabilities.CoolingPadSupportAccess,
+                actual.Capabilities.CoolingPadSupportAccess);
+            Assert.Equal(
                 expected.Capabilities.ObservedPowerSourceBehaviors,
                 actual.Capabilities.ObservedPowerSourceBehaviors);
             Assert.Equal(expected.Controls, actual.Controls);
@@ -677,7 +784,15 @@ public sealed class FirmwareSmokeAssessmentTests
             CpuPowerLimit: null,
             CpuVoltageOptimizer: null,
             GpuOverclock: null,
-            ObservedPowerSourceBehaviors: []),
+            ObservedPowerSourceBehaviors: [],
+            HyperBoostAccess: DeviceFeatureAccess.ReadWrite.ToString(),
+            CoolingPadSupportAccess: DeviceFeatureAccess.ObservedOnly.ToString())
+        {
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+        },
         new FirmwareSmokeControlState(
             "Balanced",
             "Automatic",

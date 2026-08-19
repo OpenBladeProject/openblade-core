@@ -98,9 +98,59 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         Assert.Equal(1, session.DisposeCount);
     }
 
+    [Fact]
+    public async Task HyperBoostObservationOnly_SendsStrictThermalPair()
+    {
+        var session = new RecordingSession();
+
+        HidSessionResult<PerformanceFanDiscriminatorSnapshot> result =
+            await Runner(session, hyperBoostObservationOnly: true).RunAsync(default);
+
+        Assert.Null(result.Failure);
+        Assert.Equal([1, 2], session.TransactionIds);
+        Assert.All(session.Commands, command =>
+        {
+            Assert.Equal(0x0D, command.ClassId);
+            Assert.Equal(0x82, command.CommandId);
+            Assert.Equal(4, command.ExpectedPayloadLength);
+            Assert.NotNull(command.PayloadValidator);
+        });
+        Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[0].Arguments.ToArray());
+        Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
+        Assert.True(session.Commands[0].PayloadValidator!(
+            new byte[] { 0x01, 0x01, 0x07, 0x00 }));
+        Assert.True(session.Commands[1].PayloadValidator!(
+            new byte[] { 0x01, 0x02, 0x07, 0x00 }));
+        Assert.False(session.Commands[0].PayloadValidator!(
+            new byte[] { 0x01, 0x02, 0x07, 0x00 }));
+        Assert.False(session.Commands[1].PayloadValidator!(
+            new byte[] { 0x01, 0x02, 0x07, 0x01 }));
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
+    public void NarrowedQuerySets_AreMutuallyExclusive()
+    {
+        var session = new RecordingSession();
+
+        Assert.Throws<ArgumentException>(() => new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            new ActorFactory(new ValidationActor(
+                session,
+                new UnsupportedBatteryCommands(),
+                new UnsupportedTemporaryCommands())),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5),
+            new PendingDisposalRegistry(),
+            powerSourceOnly: true,
+            hyperBoostObservationOnly: true));
+    }
+
     private static PerformanceFanDiscriminatorQueryRunner Runner(
         IRazerCommandSession session,
-        bool powerSourceOnly = false) => new(
+        bool powerSourceOnly = false,
+        bool hyperBoostObservationOnly = false) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -110,7 +160,8 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5),
         new PendingDisposalRegistry(),
-        powerSourceOnly);
+        powerSourceOnly,
+        hyperBoostObservationOnly);
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
     {

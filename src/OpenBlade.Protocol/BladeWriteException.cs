@@ -18,4 +18,6 @@ public sealed class BladeWriteException : Exception
     }
 
     public WriteSubmissionState SubmissionState { get; }
+
+    internal HidSessionFailureKind? FailureKind { get; init; }
 }

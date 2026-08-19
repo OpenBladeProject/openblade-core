@@ -6,6 +6,10 @@ internal sealed class TrustedFixtureHashRegistry
     [
         "12D41086349900514F2D8CB87073A90FD751CB1DF964A1D8D0B8C320B7F0FABC",
     ];
+    private static readonly string[] HyperBoostProductionApprovedSha256Hashes =
+    [
+        "3DBE55C2E2972EE2C97FE5DC5D7A53D7F175CF37EB954E95C16E67589401010D",
+    ];
     private readonly HashSet<string> trustedSha256Hashes;
 
     private TrustedFixtureHashRegistry(IEnumerable<string> sha256Hashes)
@@ -15,6 +19,9 @@ internal sealed class TrustedFixtureHashRegistry
 
     public static TrustedFixtureHashRegistry Production { get; } =
         FromSha256Hex(ProductionApprovedSha256Hashes);
+
+    public static TrustedFixtureHashRegistry HyperBoostProduction { get; } =
+        FromSha256Hex(HyperBoostProductionApprovedSha256Hashes);
 
     public static TrustedFixtureHashRegistry FromSha256Hex(IEnumerable<string> sha256Hashes)
     {

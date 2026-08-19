@@ -139,6 +139,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         {
             ValidateLighting(lighting, "last-known");
         }
+
+        if (preferences.CoolingPadFanIntent is { IsWellFormed: false })
+        {
+            throw Invalid("The cooling-pad fan intent is invalid.");
+        }
     }
 
     public void ValidatePerformanceFanCombination(
