@@ -688,6 +688,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("Laptop performance", Attribute(performance, "AccessibleName"));
         Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
         Assert.Equal(
+            "OnWindowsPowerModeSelectorLoaded",
+            Attribute(windowsPowerMode, "Loaded"));
+        Assert.Equal(
             "{Binding AvailableWindowsPowerModeOptions}",
             Attribute(windowsPowerMode, "ItemsSource"));
         Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
@@ -946,6 +949,21 @@ public sealed class CapabilityPresentationTests
                 name);
             Assert.Equal("Label", Attribute(usage, "DisplayMemberPath"));
         }
+    }
+
+    [Fact]
+    public void MainWindow_WindowsPowerModeSelectionFollowsViewModelNotifications()
+    {
+        string source = ReadTraySource("MainWindow.xaml.cs");
+
+        Assert.Contains(
+            "args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
+            source,
+            StringComparison.Ordinal);
     }
 
     [Fact]
