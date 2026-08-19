@@ -69,6 +69,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingWindowsPowerModeSelection;
+    private ResponsiveChoiceSelector? windowsPowerModeSelector;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
     private bool changingFanSelection;
@@ -832,6 +833,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (Volatile.Read(ref disposed) != 0)
         {
             return;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                SynchronizeWindowsPowerModeSelection();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(SynchronizeWindowsPowerModeSelection);
+            }
         }
 
         if (args.PropertyName == nameof(MainViewModel.Theme))
@@ -1803,6 +1816,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        windowsPowerModeSelector = selector;
         changingWindowsPowerModeSelection = true;
         try
         {
@@ -1812,6 +1826,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             changingWindowsPowerModeSelection = false;
+        }
+    }
+
+    private void OnWindowsPowerModeSelectorLoaded(object sender, RoutedEventArgs args)
+    {
+        if (sender is ResponsiveChoiceSelector selector)
+        {
+            windowsPowerModeSelector = selector;
+            SynchronizeWindowsPowerModeSelection();
+        }
+    }
+
+    private void SynchronizeWindowsPowerModeSelection()
+    {
+        if (Volatile.Read(ref disposed) == 0
+            && windowsPowerModeSelector is { } selector)
+        {
+            selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;
         }
     }
 

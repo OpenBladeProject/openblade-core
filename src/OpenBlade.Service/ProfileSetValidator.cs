@@ -120,6 +120,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateLightingPowerPolicy(profiles.Battery.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.UsbC.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.LightingPowerPolicy);
+        ValidateWindowsPowerModes(profiles.WindowsPowerModes);
     }
 
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
@@ -202,14 +203,27 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
-        if (profile.WindowsPowerMode is { } windowsPowerMode
-            && !Enum.IsDefined(windowsPowerMode))
-        {
-            throw Invalid($"The {name} Windows power mode is undefined.");
-        }
         if (!profile.BatteryProtectionEnabled.HasValue)
         {
             throw Invalid($"The {name} profile battery protection setting is missing.");
+        }
+    }
+
+    private static void ValidateWindowsPowerModes(
+        WindowsPowerModeAssociations associations)
+    {
+        if (associations is null)
+        {
+            throw Invalid("The Windows power mode associations are missing.");
+        }
+        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        {
+            if (associations.ForPerformance(performance) is { } windowsPowerMode
+                && !Enum.IsDefined(windowsPowerMode))
+            {
+                throw Invalid(
+                    $"The Windows power mode associated with {performance} is undefined.");
+            }
         }
     }
 

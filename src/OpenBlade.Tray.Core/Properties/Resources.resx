@@ -654,6 +654,12 @@
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>Keeps the current Windows setting.</value>
   </data>
+  <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
+    <value>Used whenever {0} is selected. {1}</value>
+  </data>
+  <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
+    <value>Leaves the Windows setting unchanged whenever {0} is selected.</value>
+  </data>
   <data name="Keyboard" xml:space="preserve">
     <value>Keyboard</value>
   </data>

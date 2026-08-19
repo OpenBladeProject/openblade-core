@@ -76,17 +76,23 @@ public sealed class WindowsPowerModeAutomationCoordinator : IAsyncDisposable
 
         lock (sync)
         {
+            // FixedMaximum reports no firmware performance preset. Keep the
+            // association stored, then reconcile when a preset is confirmed again.
             if (status.ControlAccess != SessionControlAccess.Active
+                || !status.DeviceVerified
+                || status.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
                 || status.ActivePowerSource is not (
-                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+                || status.ConfirmedState?.Performance is not { } performance)
             {
                 MarkUnavailableCore();
                 return WindowsPowerModeAutomationObservation.IgnoredUnavailable;
             }
 
             PowerSource source = status.ActivePowerSource;
-            WindowsPowerMode? requested = status.Profiles.ForPowerSource(source).WindowsPowerMode;
-            var target = new Target(ToSupply(source), requested);
+            WindowsPowerMode? requested =
+                status.Profiles.WindowsPowerModes.ForPerformance(performance);
+            var target = new Target(ToSupply(source), performance, requested);
             if (lastObservedTarget == target)
             {
                 return WindowsPowerModeAutomationObservation.AlreadyObserved;
@@ -261,5 +267,8 @@ public sealed class WindowsPowerModeAutomationCoordinator : IAsyncDisposable
         Dc,
     }
 
-    private sealed record Target(PowerSupply Supply, WindowsPowerMode? Mode);
+    private sealed record Target(
+        PowerSupply Supply,
+        PerformancePreset Performance,
+        WindowsPowerMode? Mode);
 }

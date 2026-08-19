@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 9;
+    public const int CurrentSchemaVersion = 10;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -34,7 +34,9 @@ public static class ProfileExportSerializer
         DateTimeOffset exportedAtUtc)
     {
         ArgumentNullException.ThrowIfNull(profiles);
+        profiles = ClearLegacyWindowsPowerModes(profiles);
         ValidateBatteryProtection(profiles);
+        ValidateWindowsPowerModes(profiles.WindowsPowerModes);
         if (string.IsNullOrWhiteSpace(applicationVersion))
         {
             throw new ArgumentException(
@@ -70,6 +72,7 @@ public static class ProfileExportSerializer
             7 => DeserializeVersion7(json),
             8 => DeserializeVersion8(json),
             9 => DeserializeVersion9(json),
+            10 => DeserializeVersion10(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -138,30 +141,90 @@ public static class ProfileExportSerializer
         ProfileSet profiles = ClearLegacyWindowsPowerModes(
             NormalizeLegacyGpuClockTuning(
                 NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
+        profiles = profiles with
+        {
+            WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged,
+        };
         ValidateBatteryProtection(profiles);
         return profiles;
     }
 
     private static ProfileSet DeserializeVersion8(string json)
     {
-        ProfileSet profiles = NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        ProfileSet profiles = MigrateLegacyWindowsPowerModes(
+            NormalizeLegacyGpuClockTuning(
+                NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
         ValidateBatteryProtection(profiles);
         return profiles;
     }
 
     private static ProfileSet DeserializeVersion9(string json)
     {
-        ProfileSet profiles = NormalizeLegacyGpuClockTuning(
-            NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles));
+        ProfileSet profiles = MigrateLegacyWindowsPowerModes(
+            NormalizeLegacyGpuClockTuning(
+                NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
         ValidateBatteryProtection(profiles);
         return profiles;
+    }
+
+    private static ProfileSet DeserializeVersion10(string json)
+    {
+        RequireCurrentWindowsPowerModes(json);
+        ProfileSet profiles = ClearLegacyWindowsPowerModes(
+            NormalizeLegacyGpuClockTuning(
+                NormalizeAudioMeterDecay(DeserializeDocument(json).Profiles)));
+        ValidateBatteryProtection(profiles);
+        ValidateWindowsPowerModes(profiles.WindowsPowerModes);
+        return profiles;
+    }
+
+    private static void RequireCurrentWindowsPowerModes(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("profiles", out JsonElement profiles)
+            || profiles.ValueKind != JsonValueKind.Object
+            || !profiles.TryGetProperty("windowsPowerModes", out _))
+        {
+            throw new InvalidDataException(
+                "The profile file is missing Windows power mode associations.");
+        }
     }
 
     private static ProfileSet NormalizeLegacyProfile(ProfileSet profiles) =>
         ClearLegacyWindowsPowerModes(
             NormalizeLegacyBatteryProtection(
-                NormalizeLegacyGpuClockTuning(NormalizeAudioMeterDecay(profiles))));
+                NormalizeLegacyGpuClockTuning(NormalizeAudioMeterDecay(profiles)))) with
+        {
+            WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged,
+        };
+
+    private static ProfileSet MigrateLegacyWindowsPowerModes(ProfileSet profiles)
+    {
+        WindowsPowerModeAssociations associations =
+            WindowsPowerModeAssociations.LeaveUnchanged;
+        PowerProfile[] legacyProfiles =
+        [
+            profiles.PluggedIn,
+            profiles.Battery,
+            profiles.UsbC,
+        ];
+        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        {
+            PowerProfile[] matching = legacyProfiles
+                .Where(profile => profile.Performance == performance)
+                .ToArray();
+            WindowsPowerMode? mode = matching.Length > 0
+                && matching.All(profile => profile.WindowsPowerMode == matching[0].WindowsPowerMode)
+                    ? matching[0].WindowsPowerMode
+                    : null;
+            associations = associations.WithPerformance(performance, mode);
+        }
+
+        return ClearLegacyWindowsPowerModes(profiles) with
+        {
+            WindowsPowerModes = associations,
+        };
+    }
 
     private static ProfileSet ClearLegacyWindowsPowerModes(ProfileSet profiles) => profiles with
     {
@@ -186,6 +249,23 @@ public static class ProfileExportSerializer
         {
             throw new InvalidDataException(
                 "The profile file is missing a battery protection setting.");
+        }
+    }
+
+    private static void ValidateWindowsPowerModes(
+        WindowsPowerModeAssociations associations)
+    {
+        if (associations is null)
+        {
+            throw new InvalidDataException(
+                "The profile file is missing Windows power mode associations.");
+        }
+        if (Enum.GetValues<PerformancePreset>().Any(performance =>
+                associations.ForPerformance(performance) is { } mode
+                && !Enum.IsDefined(mode)))
+        {
+            throw new InvalidDataException(
+                "The profile file contains an undefined Windows power mode association.");
         }
     }
 
