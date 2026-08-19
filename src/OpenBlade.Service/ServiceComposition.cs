@@ -214,9 +214,20 @@ internal static class ServiceComposition
     {
         ArgumentNullException.ThrowIfNull(createValidation);
         ArgumentNullException.ThrowIfNull(createAdmitted);
-        return CreateProductionBatteryFactory(
-            validationBuildEnabled ? createValidation : createAdmitted,
-            createReadOnly);
+        if (!validationBuildEnabled)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
+        }
+
+        try
+        {
+            return createValidation();
+        }
+        catch (Exception exception) when (exception is
+            UnvalidatedCommandException or JsonException)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
+        }
     }
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>

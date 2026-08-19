@@ -51,7 +51,10 @@ Balanced and Automatic-fan baseline with an admitted 280 W or 330 W full-power
 adapter. Its reviewed evidence covers immediate restoration, sustained no-load
 and Steel Nomad operation, adapter transition, Modern Standby recovery, and
 unexpected-exit recovery. Physical pad absence is checked independently before
-the write and throughout validations that require continuous absence.
+the write and throughout validations that require continuous absence. Because
+this host did not deliver a suspend callback before Modern Standby, OpenBlade
+conservatively exits only its owned HyperBoost session whenever the display
+turns off; display-off is not presented as proof that sleep began.
 
 On the `RZ09-0581`, OpenBlade discovers the exact `1532:0F43` cooling pad
 and can store Auto, Fixed, or Smart Fan Curve intent. Fixed plans cover 500 to

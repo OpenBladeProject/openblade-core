@@ -353,7 +353,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before Modern Standby display-off fallback");
+            "before display-off safety boundary");
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -480,7 +480,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             "before low power").Concat(
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(3),
-                    "before Modern Standby display-off fallback"))
+                    "before display-off safety boundary"))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(

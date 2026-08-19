@@ -132,8 +132,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         }
         if (this.allowPadlessHyperBoostLifecycleValidation
             && (this.hyperBoostAccess != DeviceFeatureAccess.ReadWrite
-                || this.hyperBoostWithoutCoolingPadAccess
-                    != DeviceFeatureAccess.ObservedOnly
+                || this.hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
                 || this.hyperBoostBaseModes?.Balanced
                     != DeviceFeatureAccess.ReadWrite
                 || !ProductionBatteryPort.HasHyperBoostCommandSet(
@@ -141,7 +141,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 || this.hyperBoostEligibility is null))
         {
             throw new UnvalidatedCommandException(
-                "Developer pad-less lifecycle validation requires exact observed-only pad-less evidence and the admitted HyperBoost command set.");
+                "Developer pad-less lifecycle validation requires exact pad-less evidence and the admitted HyperBoost command set.");
         }
         if (this.hyperBoostBaseModes?.Silent == DeviceFeatureAccess.ReadWrite
             && !ProductionBatteryPort.HasPerformancePair(

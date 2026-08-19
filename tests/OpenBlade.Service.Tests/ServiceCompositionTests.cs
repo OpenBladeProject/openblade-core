@@ -58,6 +58,37 @@ public sealed class ServiceCompositionTests
     }
 
     [Fact]
+    public void ValidationFactoryFailureFallsBackToAdmittedFactoryBeforeReadOnly()
+    {
+        var admitted = new StubProductionBatteryFactory(DeviceCapabilities.SafeTargetDefaults());
+        var readOnly = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory selected =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled: true,
+                () => throw new UnvalidatedCommandException("validation unavailable"),
+                () => admitted,
+                () => readOnly);
+
+        Assert.Same(admitted, selected);
+    }
+
+    [Fact]
+    public void ValidationAndAdmissionFailureFallsBackToReadOnlyFactory()
+    {
+        var readOnly = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory selected =
+            ServiceComposition.CreateProductionBatteryFactory(
+                validationBuildEnabled: true,
+                () => throw new UnvalidatedCommandException("validation unavailable"),
+                () => throw new UnvalidatedCommandException("admission unavailable"),
+                () => readOnly);
+
+        Assert.Same(readOnly, selected);
+    }
+
+    [Fact]
     public void ProductionLightingFactoryFallbackCatchesAdmissionFailureOnly()
     {
         var fallback = new StubProductionLightingFactory(DeviceCapabilities.Unavailable());

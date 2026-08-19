@@ -7,11 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Restored OpenBlade-owned HyperBoost at the display-off boundary used to enter
-  Modern Standby when Windows omits the registered suspend callback. The
-  fallback does not treat display-off as a full suspend, does not change
-  externally owned or indeterminate HyperBoost, and never re-enables the mode
-  after display-on.
+- End OpenBlade-owned HyperBoost whenever the display turns off on the exact
+  admitted host. Display-off is explicitly a conservative safety boundary, not
+  proof that Modern Standby sleep began; the path does not release unrelated
+  ownership, change externally owned or indeterminate HyperBoost, or re-enable
+  the mode after display-on.
 
 ### Added
 
@@ -32,7 +32,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and FullPower330W-to-USB-C100W transition. Each run confirmed paired mode 7,
   exact Balanced restoration, and post-restoration pad absence. Installed
   unexpected-exit recovery also passed with one journal-backed restoration.
-  After adding the Modern Standby display-off fallback, installed sleep/resume
+  After adding the conservative display-off safety boundary, installed
+  sleep/resume
   recovery passed with one exact Balanced restoration and no retry. The
   reviewed manifest now admits pad-less production control for this exact
   host, baseline, and adapter set.

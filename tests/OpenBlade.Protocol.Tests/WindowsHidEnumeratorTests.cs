@@ -136,6 +136,54 @@ public sealed class WindowsHidEnumeratorTests
         Assert.Equal(CoolingPadConnectionState.Ambiguous, source.Observe());
     }
 
+    [Fact]
+    public void CoolingPadDiscovery_AllowsExactControlCollectionBesideSiblingCollections()
+    {
+        DiagnosticNative native = new();
+        native.Add(
+            @"\\?\hid#vid_1532&pid_0f43&mi_00#control",
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+        native.Add(
+            @"\\?\hid#vid_1532&pid_0f43&mi_01#input",
+            new HidHandleIdentity(0x1532, 0x0F43, 1, 2, 64, 0x0200));
+
+        Assert.Equal(
+            CoolingPadConnectionState.PresentExact,
+            new WindowsCoolingPadDiscoverySource(native).Observe());
+        Assert.Equal(
+            CoolingPadConnectionState.PresentExact,
+            new WindowsHyperBoostEligibilitySource(native).ObserveCoolingPad());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CoolingPadDiscovery_AllowsUnreadableInputSiblingBesideExactControlCollection(
+        bool openFailure)
+    {
+        DiagnosticNative native = new();
+        const string control = @"\\?\hid#vid_1532&pid_0f43&mi_00#control";
+        const string sibling = @"\\?\hid#vid_1532&pid_0f43&mi_01#input";
+        native.Add(
+            control,
+            new HidHandleIdentity(0x1532, 0x0F43, 12, 1, 91, 0x0200));
+        native.Add(
+            sibling,
+            new HidHandleIdentity(0x1532, 0x0F43, 1, 2, 64, 0x0200));
+        if (openFailure)
+        {
+            native.OpenFailures.Add(sibling);
+        }
+        else
+        {
+            native.ReadFailures.Add(sibling);
+        }
+
+        Assert.Equal(
+            CoolingPadConnectionState.PresentExact,
+            new WindowsCoolingPadDiscoverySource(native).Observe());
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

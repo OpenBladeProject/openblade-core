@@ -273,15 +273,15 @@ internal sealed class ProductionBatteryPort :
         }
         if (allowPadlessHyperBoostLifecycleValidation
             && (hyperBoostAccess != DeviceFeatureAccess.ReadWrite
-                || hyperBoostWithoutCoolingPadAccess
-                    != DeviceFeatureAccess.ObservedOnly
+                || hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
                 || hyperBoostBaseModes?.Balanced
                     != DeviceFeatureAccess.ReadWrite
                 || this.hyperBoostEligibility is null
                 || !HasHyperBoostCommandSet(this.hyperBoostCatalog)))
         {
             throw new UnvalidatedCommandException(
-                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, observed-only production access, and an independent eligibility gate.");
+                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, pad-less evidence, and an independent eligibility gate.");
         }
         if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!HasHyperBoostCommandSet(this.hyperBoostCatalog)

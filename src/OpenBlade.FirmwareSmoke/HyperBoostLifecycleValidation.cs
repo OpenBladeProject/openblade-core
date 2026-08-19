@@ -467,7 +467,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         string[] boundaries = scenario == HyperBoostLifecycleScenario.LowPower
             ? [
                 "before low power",
-                "before Modern Standby display-off fallback",
+                "before display-off safety boundary",
             ]
             : ["before unexpected-exit recovery"];
         int attempts = diagnostics.Count(entry =>

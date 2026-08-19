@@ -259,7 +259,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Fact]
-    public async Task DisplayOff_RestoresOwnedHyperBoostBeforeLightingSuppression()
+    public async Task DisplayOff_EndsOwnedHyperBoostBeforeLightingSuppression()
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);

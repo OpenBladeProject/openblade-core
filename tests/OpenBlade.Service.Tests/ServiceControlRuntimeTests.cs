@@ -2095,7 +2095,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task DisplayOffFallback_RestoresOwnedHyperBoostExactlyOnce()
+    public async Task DisplayOffSafetyBoundary_RestoresOwnedHyperBoostExactlyOnce()
     {
         TestContext context = await CreateOwnedHyperBoostContextAsync();
         int hyperBoostWrites = context.Device.HyperBoostSetCalls;
@@ -2112,7 +2112,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains(
             context.History.Snapshot().CommandResults,
             entry => entry.Detail?.Contains(
-                "before Modern Standby display-off fallback",
+                "before display-off safety boundary",
                 StringComparison.Ordinal) == true);
 
         await context.Runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
@@ -2124,7 +2124,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task DisplayOffFallback_DoesNotRestoreExternallyObservedHyperBoost()
+    public async Task DisplayOffSafetyBoundary_DoesNotRestoreExternallyObservedHyperBoost()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
@@ -2151,7 +2151,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task DisplayOffFallback_IndeterminateRestoreIsNotRetried()
+    public async Task DisplayOffSafetyBoundary_IndeterminateRestoreIsNotRetried()
     {
         TestContext context = await CreateOwnedHyperBoostContextAsync();
         context.Device.HyperBoostFailure = new BladeWriteException(
@@ -2173,6 +2173,54 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task PadlessLifecycleValidation_InvalidScenarioIsRejectedBeforeBuildAccess()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        var request = new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            (PadlessHyperBoostLifecycleScenario)int.MaxValue,
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64));
+
+        ControlOperationResult result = await context.Runtime
+            .ValidatePadlessHyperBoostLifecycleAsync(request, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("scenario is invalid", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public void PadlessLifecycleValidation_UnavailableDeviceDoesNotConsumeRunId()
+    {
+        var claimedRuns = new HashSet<Guid>();
+        Guid runId = Guid.NewGuid();
+
+        Assert.Equal(
+            PadlessHyperBoostLifecycleRunClaim.DeviceUnavailable,
+            ServiceControlRuntime.ClaimPadlessLifecycleRun(
+                claimedRuns,
+                runId,
+                validationDeviceAvailable: false));
+        Assert.Empty(claimedRuns);
+        Assert.Equal(
+            PadlessHyperBoostLifecycleRunClaim.Claimed,
+            ServiceControlRuntime.ClaimPadlessLifecycleRun(
+                claimedRuns,
+                runId,
+                validationDeviceAvailable: true));
+        Assert.Equal(
+            PadlessHyperBoostLifecycleRunClaim.AlreadyUsed,
+            ServiceControlRuntime.ClaimPadlessLifecycleRun(
+                claimedRuns,
+                runId,
+                validationDeviceAvailable: true));
     }
 
     [Fact]

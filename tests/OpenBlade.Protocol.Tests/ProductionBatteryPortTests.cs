@@ -881,6 +881,23 @@ public sealed class ProductionBatteryPortTests
             port.Capabilities.HyperBoostWithoutCoolingPadAccess);
     }
 
+    [Fact]
+    public async Task LifecycleValidation_RemainsAvailableAfterPadlessWritesAreAdmitted()
+    {
+        await using var port = CreateHyperBoostPort(
+            new ScriptedSession(),
+            new StubHyperBoostEligibility(CoolingPadConnectionState.Absent),
+            padlessAccess: DeviceFeatureAccess.ReadWrite,
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+            allowPadlessHyperBoostLifecycleValidation: true);
+
+        Assert.IsAssignableFrom<IPadlessHyperBoostLifecycleValidationPort>(port);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            port.Capabilities.HyperBoostWithoutCoolingPadAccess);
+    }
+
     [Theory]
     [InlineData(CoolingPadConnectionState.Absent)]
     [InlineData(CoolingPadConnectionState.Ambiguous)]

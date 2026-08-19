@@ -325,6 +325,13 @@ public interface IServiceControlRuntime
         Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 }
 
+internal enum PadlessHyperBoostLifecycleRunClaim
+{
+    Claimed,
+    DeviceUnavailable,
+    AlreadyUsed,
+}
+
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
@@ -3036,6 +3043,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!Enum.IsDefined(request.Scenario))
+        {
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The pad-less HyperBoost lifecycle validation scenario is invalid."));
+        }
         PadlessHyperBoostLifecycleValidationBuildIdentity build =
             PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent();
         if (!build.Matches(
@@ -3055,6 +3068,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             expectedOwnershipGeneration: null,
             request,
             token);
+    }
+
+    internal static PadlessHyperBoostLifecycleRunClaim ClaimPadlessLifecycleRun(
+        HashSet<Guid> claimedRuns,
+        Guid validationRunId,
+        bool validationDeviceAvailable)
+    {
+        ArgumentNullException.ThrowIfNull(claimedRuns);
+        if (!validationDeviceAvailable)
+        {
+            return PadlessHyperBoostLifecycleRunClaim.DeviceUnavailable;
+        }
+
+        return claimedRuns.Add(validationRunId)
+            ? PadlessHyperBoostLifecycleRunClaim.Claimed
+            : PadlessHyperBoostLifecycleRunClaim.AlreadyUsed;
     }
 
     private async Task<ControlOperationResult> SetHyperBoostCoreAsync(
@@ -3276,14 +3305,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "HyperBoost control is unavailable right now.");
             }
 
-            if (lifecycleValidation is not null
-                && (!padlessHyperBoostLifecycleValidationRuns.Add(
-                        lifecycleValidation.ValidationRunId)
-                    || device is not IPadlessHyperBoostLifecycleValidationDevice))
+            if (lifecycleValidation is not null)
             {
-                return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    "This lifecycle validation run was already used or the exact validation-only device path is unavailable.");
+                PadlessHyperBoostLifecycleRunClaim claim = ClaimPadlessLifecycleRun(
+                    padlessHyperBoostLifecycleValidationRuns,
+                    lifecycleValidation.ValidationRunId,
+                    device is IPadlessHyperBoostLifecycleValidationDevice);
+                if (claim != PadlessHyperBoostLifecycleRunClaim.Claimed)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        claim == PadlessHyperBoostLifecycleRunClaim.DeviceUnavailable
+                            ? "The exact validation-only device path is unavailable. The lifecycle validation run was not consumed."
+                            : "This lifecycle validation run was already used.");
+                }
             }
 
             writeBaseline = current;
@@ -3395,13 +3430,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedHyperBoostRequiresCoolingPad = enabled
                 && enableUsedPresentPadEligibility;
 
+            string resultMessage = enabled
+                ? ownedHyperBoostRequiresCoolingPad
+                    ? "HyperBoost is active through the pad-present path. Keep the cooling pad set to Auto while it remains active."
+                    : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
+                : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored.";
+            if (lifecycleValidation is not null)
+            {
+                resultMessage += lifecycleValidation.Scenario switch
+                {
+                    PadlessHyperBoostLifecycleScenario.LowPower =>
+                        " The low-power lifecycle validation scenario is armed.",
+                    PadlessHyperBoostLifecycleScenario.UnexpectedExit =>
+                        " The unexpected-exit lifecycle validation scenario is armed.",
+                    _ => " The lifecycle validation scenario is armed.",
+                };
+            }
+
             var result = new ControlOperationResult(
                 ControlOperationStatus.Applied,
-                enabled
-                    ? ownedHyperBoostRequiresCoolingPad
-                        ? "HyperBoost is active through the pad-present path. Keep the cooling pad set to Auto while it remains active."
-                        : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
-                    : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored.");
+                resultMessage);
             history.RecordSummary(result.Status, result.Message);
             PublishIfChanged(current with
             {
@@ -6652,7 +6700,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         EnsureInitialized();
         return RestoreOwnedHyperBoostForLifecycleCoreAsync(
-            "Modern Standby display-off fallback",
+            "display-off safety boundary",
             cancellationToken);
     }
 

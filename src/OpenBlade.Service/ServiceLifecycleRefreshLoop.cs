@@ -128,10 +128,11 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             else
                             {
-                                // Some Modern Standby systems begin their sleep session at
-                                // display-off without delivering the registered suspend callback.
-                                // Restore only OpenBlade-owned HyperBoost here; treating display-off
-                                // as a full suspend would incorrectly release unrelated ownership.
+                                // Display-off is not proof that Modern Standby sleep began. It is
+                                // nevertheless the conservative boundary for ending only an
+                                // OpenBlade-owned HyperBoost session, because this exact host did not
+                                // deliver a suspend callback before entering Modern Standby. Do not
+                                // release unrelated ownership or treat this as full low-power entry.
                                 await runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
                                     stoppingToken);
                                 await runtime.SetLightingSuppressionAsync(
