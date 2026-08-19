@@ -1223,7 +1223,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 47
+  field const System.Int32 ProtocolVersion = 48
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1397,12 +1397,14 @@ type sealed class OpenBlade.Contracts.ProfileSet
   method OpenBlade.Contracts.PowerProfile get_PluggedIn()
   method OpenBlade.Contracts.PowerProfile get_UsbC()
   method OpenBlade.Contracts.ProfileSet <Clone>$()
+  method OpenBlade.Contracts.WindowsPowerModeAssociations get_WindowsPowerModes()
   method System.Void Deconstruct(out OpenBlade.Contracts.PowerProfile PluggedIn, out OpenBlade.Contracts.PowerProfile Battery, out OpenBlade.Contracts.PowerProfile UsbC, out OpenBlade.Contracts.BatteryPolicy BatteryPolicy, out OpenBlade.Contracts.LightingPowerPolicy LightingPowerPolicy)
   method System.Void set_Battery(OpenBlade.Contracts.PowerProfile value)
   method System.Void set_BatteryPolicy(OpenBlade.Contracts.BatteryPolicy value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
   method System.Void set_PluggedIn(OpenBlade.Contracts.PowerProfile value)
   method System.Void set_UsbC(OpenBlade.Contracts.PowerProfile value)
+  method System.Void set_WindowsPowerModes(OpenBlade.Contracts.WindowsPowerModeAssociations value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -1415,6 +1417,7 @@ type sealed class OpenBlade.Contracts.ProfileSet
   property OpenBlade.Contracts.PowerProfile Battery { get; init; }
   property OpenBlade.Contracts.PowerProfile PluggedIn { get; init; }
   property OpenBlade.Contracts.PowerProfile UsbC { get; init; }
+  property OpenBlade.Contracts.WindowsPowerModeAssociations WindowsPowerModes { get; init; }
 type sealed class OpenBlade.Contracts.PulseReactiveKeyRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.PulseReactiveKeyRequest>
@@ -2303,3 +2306,36 @@ type enum OpenBlade.Contracts.WindowsPowerMode
   field const OpenBlade.Contracts.WindowsPowerMode Balanced = 1
   field const OpenBlade.Contracts.WindowsPowerMode BestPerformance = 2
   field const OpenBlade.Contracts.WindowsPowerMode BestPowerEfficiency = 0
+type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
+  interface System.IEquatable<OpenBlade.Contracts.WindowsPowerModeAssociations>
+  ctor (System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom)
+  method OpenBlade.Contracts.WindowsPowerModeAssociations <Clone>$()
+  method OpenBlade.Contracts.WindowsPowerModeAssociations WithPerformance(OpenBlade.Contracts.PerformancePreset performance, System.Nullable<OpenBlade.Contracts.WindowsPowerMode> windowsPowerMode)
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> ForPerformance(OpenBlade.Contracts.PerformancePreset performance)
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Balanced()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatteryBalanced()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatterySaver()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Custom()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Performance()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Silent()
+  method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom)
+  method System.Void set_Balanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_BatteryBalanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_BatterySaver(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Silent(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.WindowsPowerModeAssociations get_LeaveUnchanged()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.WindowsPowerModeAssociations left, OpenBlade.Contracts.WindowsPowerModeAssociations right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.WindowsPowerModeAssociations left, OpenBlade.Contracts.WindowsPowerModeAssociations right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.WindowsPowerModeAssociations other)
+  property OpenBlade.Contracts.WindowsPowerModeAssociations LeaveUnchanged { get; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent { get; init; }

@@ -393,12 +393,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private DisplayProfileSettings? activeProfileDraftDisplay;
     private LaptopBehaviorProfileSettings? activeProfileDraftLaptopBehavior;
     private bool? activeProfileDraftBatteryProtectionEnabled;
-    private bool hasActiveProfileDraftWindowsPowerMode;
-    private WindowsPowerMode? activeProfileDraftWindowsPowerMode;
+    private WindowsPowerModeAssociations? activeProfileDraftWindowsPowerModes;
     private BatteryPolicy? pendingBatteryPolicy;
     private LaptopBehaviorProfileSettings? activeProfileOriginalLaptopBehavior;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private UiLanguagePreference languagePreference = UiLanguagePreference.FollowSystem;
     private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
@@ -945,14 +945,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
 
+            // Update the backing state before draft notifications so every
+            // dependent property observes one coherent power-source snapshot.
+            activePowerSource = value;
+
             if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && activeProfileDraftSource is { } draftSource
                 && draftSource != value)
             {
-                ClearActiveProfileDraft();
+                WindowsPowerModeAssociations? windowsPowerModes =
+                    activeProfileDraftWindowsPowerModes;
+                ClearActiveProfileDraftCore();
+                if (windowsPowerModes is not null)
+                {
+                    activeProfileDraftSource = value;
+                    activeProfileDraftWindowsPowerModes = windowsPowerModes;
+                }
+                NotifyActiveProfileDraft();
             }
 
-            SetField(ref activePowerSource, value);
+            Notify(nameof(ActivePowerSource));
             if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
             {
                 SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
@@ -1717,22 +1729,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<WindowsPowerModeOption> AvailableWindowsPowerModeOptions =>
         WindowsPowerModeOptions;
 
+    private WindowsPowerModeAssociations PresentedWindowsPowerModes =>
+        activeProfileDraftWindowsPowerModes ?? Profiles.WindowsPowerModes;
+
     public WindowsPowerModeOption SelectedWindowsPowerModeOption
     {
         get
         {
-            WindowsPowerMode? selected = ActivePowerSource is
-                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
-                ? hasActiveProfileDraftWindowsPowerMode
-                    ? activeProfileDraftWindowsPowerMode
-                    : GetProfile(ActivePowerSource).WindowsPowerMode
-                : null;
+            WindowsPowerMode? selected =
+                PresentedWindowsPowerModes.ForPerformance(SelectedPerformance);
             return WindowsPowerModeOptions.First(option => option.Value == selected);
         }
     }
 
     public string SelectedWindowsPowerModeDescription =>
-        SelectedWindowsPowerModeOption.Description;
+        SelectedWindowsPowerModeOption.Value is null
+            ? TrayText.Format(
+                "Leaves the Windows setting unchanged whenever {0} is selected.",
+                PerformancePresetPresentation.Label(SelectedPerformance))
+            : TrayText.Format(
+                "Used whenever {0} is selected. {1}",
+                PerformancePresetPresentation.Label(SelectedPerformance),
+                SelectedWindowsPowerModeOption.Description);
 
     public bool CanEditWindowsPowerMode =>
         CanMutate && HasConfirmedPowerSource;
@@ -1888,6 +1906,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref selectedPerformance, value);
             Notify(nameof(ActivePerformanceLabel));
             Notify(nameof(SelectedPerformanceOption));
+            Notify(nameof(SelectedWindowsPowerModeOption));
+            Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(IsSilentSelected));
             Notify(nameof(IsBalancedSelected));
             Notify(nameof(IsPerformanceSelected));
@@ -2943,7 +2963,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || activeProfileDraftGpuClockTuning is not null
         || activeProfileDraftFans is not null
         || activeProfileDraftFanControl is not null
-        || hasActiveProfileDraftWindowsPowerMode;
+        || activeProfileDraftWindowsPowerModes is not null;
 
     public bool HasLightingProfileDraft => activeProfileDraftLighting is not null
         || activeProfileDraftLightingPowerPolicy is not null;
@@ -2978,10 +2998,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
-        MarkActiveProfileDraft(
-            ActivePowerSource,
-            windowsPowerMode: mode,
-            windowsPowerModeSpecified: true);
+        WindowsPowerModeAssociations updated = PresentedWindowsPowerModes
+            .WithPerformance(SelectedPerformance, mode);
+        MarkActiveProfileDraft(ActivePowerSource, windowsPowerModes: updated);
     }
 
     public bool HasGlobalBatteryPolicyDraft => pendingBatteryPolicy is not null;
@@ -3144,11 +3163,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     };
 
     public string SavedActiveProfileSummary => activeProfileDraftSource is { } source
-        ? FormatPowerProfile(GetProfile(source))
+        ? FormatPowerProfile(GetProfile(source), Profiles.WindowsPowerModes)
         : string.Empty;
 
     public string PendingActiveProfileSummary => GetActiveProfileDraft() is { } draft
-        ? FormatPowerProfile(draft)
+        ? FormatPowerProfile(draft, PresentedWindowsPowerModes)
         : string.Empty;
 
     public void RecordDisplayProfileChange(
@@ -3740,6 +3759,43 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ArgumentNullException.ThrowIfNull(value);
             Theme = value.Preference;
+        }
+    }
+
+    public UiLanguagePreference LanguagePreference
+    {
+        get => languagePreference;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (languagePreference == value)
+            {
+                return;
+            }
+
+            SetField(ref languagePreference, value);
+            Notify(nameof(SelectedLanguageOption));
+        }
+    }
+
+    public IReadOnlyList<UiLanguagePreferenceOption> LanguageSelectionOptions { get; } =
+    [
+        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow system")),
+        new(UiLanguagePreference.English, "English"),
+        new(UiLanguagePreference.SimplifiedChinese, "简体中文"),
+        new(UiLanguagePreference.Russian, "Русский"),
+    ];
+
+    public UiLanguagePreferenceOption SelectedLanguageOption
+    {
+        get => LanguageSelectionOptions.Single(option => option.Preference == LanguagePreference);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            LanguagePreference = value.Preference;
         }
     }
 
@@ -6963,9 +7019,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ?? profile.LaptopBehavior,
             BatteryProtectionEnabled = activeProfileDraftBatteryProtectionEnabled
                 ?? profile.BatteryProtectionEnabled,
-            WindowsPowerMode = hasActiveProfileDraftWindowsPowerMode
-                ? activeProfileDraftWindowsPowerMode
-                : profile.WindowsPowerMode,
         };
         return NormalizeLegacyGpuClockTuning(draft);
     }
@@ -6986,13 +7039,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? throw new InvalidOperationException("No active profile draft exists.");
         PowerProfile draft = GetActiveProfileDraft()
             ?? throw new InvalidOperationException("No active profile draft exists.");
-        return source switch
+        ProfileSet profiles = source switch
         {
             PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
             PowerSource.Battery => Profiles with { Battery = draft },
             PowerSource.UsbC => Profiles with { UsbC = draft },
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
+        return profiles with { WindowsPowerModes = PresentedWindowsPowerModes };
     }
 
     private ProfileSet CreateProfileSetWithActiveDraft(ProfileDraftGroup group)
@@ -7011,9 +7065,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ?? saved.GpuClockTuning,
                 Fans = activeProfileDraftFans ?? saved.Fans,
                 FanControl = activeProfileDraftFanControl ?? saved.FanControl,
-                WindowsPowerMode = hasActiveProfileDraftWindowsPowerMode
-                    ? activeProfileDraftWindowsPowerMode
-                    : saved.WindowsPowerMode,
             },
             ProfileDraftGroup.Lighting => saved with
             {
@@ -7034,22 +7085,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     ?? saved.GpuClockTuning,
                 Fans = activeProfileDraftFans ?? saved.Fans,
                 FanControl = activeProfileDraftFanControl ?? saved.FanControl,
-                WindowsPowerMode = hasActiveProfileDraftWindowsPowerMode
-                    ? activeProfileDraftWindowsPowerMode
-                    : saved.WindowsPowerMode,
                 LaptopBehavior = activeProfileDraftLaptopBehavior
                     ?? saved.LaptopBehavior,
             },
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
         draft = NormalizeLegacyGpuClockTuning(draft);
-        return source switch
+        ProfileSet profiles = source switch
         {
             PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
             PowerSource.Battery => Profiles with { Battery = draft },
             PowerSource.UsbC => Profiles with { UsbC = draft },
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
+        return group is ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop
+            ? profiles with { WindowsPowerModes = PresentedWindowsPowerModes }
+            : profiles;
     }
 
     private ProfileSet CreateLegacyProfileEditorDraft() => new(
@@ -7073,7 +7124,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Fans = UsbCFanModeEditor,
             Lighting = UsbCLightingEditor,
         },
-        BatteryPolicy.Create(ProfileChargeLimitEditor));
+        BatteryPolicy.Create(ProfileChargeLimitEditor))
+    {
+        WindowsPowerModes = Profiles.WindowsPowerModes,
+    };
 
     private void MarkActiveProfileDraft(
         PowerSource source,
@@ -7089,8 +7143,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LaptopBehaviorProfileSettings? laptopBehavior = null,
         LaptopBehaviorProfileSettings? previousLaptopBehavior = null,
         bool? batteryProtectionEnabled = null,
-        WindowsPowerMode? windowsPowerMode = null,
-        bool windowsPowerModeSpecified = false)
+        WindowsPowerModeAssociations? windowsPowerModes = null)
     {
         if (source != ActivePowerSource
             || source is not (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
@@ -7111,8 +7164,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             activeProfileDraftDisplay = null;
             activeProfileDraftLaptopBehavior = null;
             activeProfileDraftBatteryProtectionEnabled = null;
-            hasActiveProfileDraftWindowsPowerMode = false;
-            activeProfileDraftWindowsPowerMode = null;
             activeProfileOriginalDisplay = previousDisplay;
             activeProfileOriginalLaptopBehavior = previousLaptopBehavior;
         }
@@ -7141,11 +7192,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? activeProfileDraftLaptopBehavior;
         activeProfileDraftBatteryProtectionEnabled = batteryProtectionEnabled
             ?? activeProfileDraftBatteryProtectionEnabled;
-        if (windowsPowerModeSpecified)
-        {
-            hasActiveProfileDraftWindowsPowerMode = true;
-            activeProfileDraftWindowsPowerMode = windowsPowerMode;
-        }
+        activeProfileDraftWindowsPowerModes = windowsPowerModes
+            ?? activeProfileDraftWindowsPowerModes;
 
         PowerProfile saved = GetProfile(source);
         if (activeProfileDraftPerformance == saved.Performance)
@@ -7182,11 +7230,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             activeProfileDraftBatteryProtectionEnabled = null;
         }
-        if (hasActiveProfileDraftWindowsPowerMode
-            && activeProfileDraftWindowsPowerMode == saved.WindowsPowerMode)
+        if (activeProfileDraftWindowsPowerModes == Profiles.WindowsPowerModes)
         {
-            hasActiveProfileDraftWindowsPowerMode = false;
-            activeProfileDraftWindowsPowerMode = null;
+            activeProfileDraftWindowsPowerModes = null;
         }
         DisplayProfileSettings savedDisplay =
             saved.Display ?? DisplayProfileSettings.Unconfigured();
@@ -7219,7 +7265,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && activeProfileDraftDisplay is null
             && activeProfileDraftLaptopBehavior is null
             && activeProfileDraftBatteryProtectionEnabled is null
-            && !hasActiveProfileDraftWindowsPowerMode)
+            && activeProfileDraftWindowsPowerModes is null)
         {
             activeProfileDraftSource = null;
         }
@@ -7234,6 +7280,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return;
         }
 
+        ClearActiveProfileDraftCore();
+        NotifyActiveProfileDraft();
+    }
+
+    private void ClearActiveProfileDraftCore()
+    {
         activeProfileDraftSource = null;
         activeProfileDraftPerformance = null;
         activeProfileDraftCustomPerformance = null;
@@ -7245,11 +7297,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         activeProfileDraftDisplay = null;
         activeProfileDraftLaptopBehavior = null;
         activeProfileDraftBatteryProtectionEnabled = null;
-        hasActiveProfileDraftWindowsPowerMode = false;
-        activeProfileDraftWindowsPowerMode = null;
+        activeProfileDraftWindowsPowerModes = null;
         activeProfileOriginalDisplay = null;
         activeProfileOriginalLaptopBehavior = null;
-        NotifyActiveProfileDraft();
     }
 
     private void ClearActiveProfileDraft(ProfileDraftGroup group)
@@ -7262,8 +7312,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 activeProfileDraftGpuClockTuning = null;
                 activeProfileDraftFans = null;
                 activeProfileDraftFanControl = null;
-                hasActiveProfileDraftWindowsPowerMode = false;
-                activeProfileDraftWindowsPowerMode = null;
+                activeProfileDraftWindowsPowerModes = null;
                 break;
             case ProfileDraftGroup.Lighting:
                 activeProfileDraftLighting = null;
@@ -7279,8 +7328,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 activeProfileDraftGpuClockTuning = null;
                 activeProfileDraftFans = null;
                 activeProfileDraftFanControl = null;
-                hasActiveProfileDraftWindowsPowerMode = false;
-                activeProfileDraftWindowsPowerMode = null;
+                activeProfileDraftWindowsPowerModes = null;
                 activeProfileDraftLaptopBehavior = null;
                 activeProfileOriginalLaptopBehavior = null;
                 break;
@@ -7646,11 +7694,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             FormatPerformanceProfile(profile),
             FanModePresentation.Label(profile.Fans));
 
-    private static string FormatPowerProfile(PowerProfile profile) =>
+    private static string FormatPowerProfile(
+        PowerProfile profile,
+        WindowsPowerModeAssociations windowsPowerModes) =>
         TrayText.Format(
             "Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}",
             FormatPerformanceProfile(profile),
-            FormatWindowsPowerMode(profile.WindowsPowerMode),
+            FormatWindowsPowerMode(windowsPowerModes.ForPerformance(profile.Performance)),
             FanModePresentation.Label(profile.Fans),
             FormatLightingProfile(profile.Lighting),
             FormatDisplayProfile(profile.Display),
@@ -7813,15 +7863,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 : confirmedLaptopBehavior;
         ProfilePresentation saved = CreateProfilePresentation(
             savedProfile,
+            Profiles.WindowsPowerModes,
             profileName,
             savedLaptopBehaviorFallback);
-        if (activeProfileDraftSource != source || GetActiveProfileDraft() is not { } draft)
+        PowerProfile draft = activeProfileDraftSource == source
+            ? GetActiveProfileDraft() ?? savedProfile
+            : savedProfile;
+        if (activeProfileDraftSource != source
+            && activeProfileDraftWindowsPowerModes is null)
         {
             return saved;
         }
 
         ProfilePresentation pending = CreateProfilePresentation(
             draft,
+            PresentedWindowsPowerModes,
             profileName,
             confirmedLaptopBehavior);
         return new ProfilePresentation(
@@ -7865,6 +7921,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static ProfilePresentation CreateProfilePresentation(
         PowerProfile profile,
+        WindowsPowerModeAssociations windowsPowerModes,
         string profileName,
         LaptopBehaviorProfileSettings laptopBehaviorFallback)
     {
@@ -7883,7 +7940,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? laptopBehaviorFallback.GamingModeEnabled;
         return new ProfilePresentation(
             Value(TrayText.Get("Laptop performance"), FormatPerformanceProfile(profile)),
-            Value(TrayText.Get("Windows power mode"), FormatWindowsPowerMode(profile.WindowsPowerMode)),
+            Value(
+                TrayText.Get("Windows power mode"),
+                FormatWindowsPowerMode(windowsPowerModes.ForPerformance(profile.Performance))),
             Value(TrayText.Get("GPU tuning"), FormatGpuClockOffsets(profile)),
             Value(TrayText.Get("Fans"), FormatFanControl(profile)),
             Value(

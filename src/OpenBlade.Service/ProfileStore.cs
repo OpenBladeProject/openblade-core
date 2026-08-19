@@ -8,7 +8,8 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 14;
+    internal const int CurrentSchemaVersion = 15;
+    internal const int LegacyWindowsPowerModeSchemaVersion = 14;
     internal const int LatestSupportedSchemaVersion = 13;
     internal const int PreviousSchemaVersion = 12;
     internal const int FormerSchemaVersion = 11;
@@ -24,6 +25,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     internal const int LegacySchemaVersion = 1;
     internal const int BatteryProtectionProfileSchemaVersion = 11;
     internal const int WindowsPowerModeProfileSchemaVersion = 12;
+    internal const int PerformanceWindowsPowerModeProfileSchemaVersion = 15;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -44,6 +46,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             profiles,
             out _,
             batteryProtectionDefault: null);
+        profiles = ClearLegacyWindowsPowerModes(profiles);
         validator.Validate(profiles);
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(
             new ProfileDocument(CurrentSchemaVersion, profiles),
@@ -100,14 +103,24 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
-        if (!parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
+        if (parsed.RootElement.ValueKind != JsonValueKind.Object
+            || !parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
             || !versionElement.TryGetInt32(out schemaVersion))
         {
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
+        if (schemaVersion == CurrentSchemaVersion
+            && (!parsed.RootElement.TryGetProperty("profiles", out JsonElement profilesElement)
+                || profilesElement.ValueKind != JsonValueKind.Object
+                || !profilesElement.TryGetProperty("windowsPowerModes", out _)))
+        {
+            throw new InvalidDataException(
+                "The profile document is missing Windows power mode associations.");
+        }
 
         ProfileSet profiles;
         if (schemaVersion is CurrentSchemaVersion
+            or LegacyWindowsPowerModeSchemaVersion
             or LatestSupportedSchemaVersion
             or PreviousSchemaVersion
             or FormerSchemaVersion
@@ -138,7 +151,21 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 protectionDefault);
             if (schemaVersion < WindowsPowerModeProfileSchemaVersion)
             {
-                profiles = ClearLegacyWindowsPowerModes(profiles);
+                profiles = ClearLegacyWindowsPowerModes(profiles) with
+                {
+                    WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged,
+                };
+            }
+            else if (schemaVersion < PerformanceWindowsPowerModeProfileSchemaVersion)
+            {
+                ValidateLegacyWindowsPowerModes(profiles);
+                profiles = MigrateLegacyWindowsPowerModes(profiles);
+            }
+            else
+            {
+                ProfileSet normalized = ClearLegacyWindowsPowerModes(profiles);
+                migrated |= normalized != profiles;
+                profiles = normalized;
             }
             migrated |= schemaVersion != CurrentSchemaVersion;
         }
@@ -159,10 +186,14 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                     BatteryProtectionEnabled = legacyBatteryProtectionDefault,
                 },
                 document.Profiles.BatteryPolicy);
-            profiles = NormalizeLegacyBatteryProfile(
-                migratedProfiles,
-                out _,
-                legacyBatteryProtectionDefault);
+            profiles = ClearLegacyWindowsPowerModes(
+                NormalizeLegacyBatteryProfile(
+                    migratedProfiles,
+                    out _,
+                    legacyBatteryProtectionDefault)) with
+            {
+                WindowsPowerModes = WindowsPowerModeAssociations.LeaveUnchanged,
+            };
             migrated = true;
         }
         else
@@ -269,6 +300,51 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
                 BatteryProtectionEnabled = batteryProtectionDefault.Value,
             }
             : profile;
+
+    private static ProfileSet MigrateLegacyWindowsPowerModes(ProfileSet profiles)
+    {
+        WindowsPowerModeAssociations associations =
+            WindowsPowerModeAssociations.LeaveUnchanged;
+        PowerProfile[] legacyProfiles =
+        [
+            profiles.PluggedIn,
+            profiles.Battery,
+            profiles.UsbC,
+        ];
+        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        {
+            PowerProfile[] matching = legacyProfiles
+                .Where(profile => profile.Performance == performance)
+                .ToArray();
+            WindowsPowerMode? mode = matching.Length > 0
+                && matching.All(profile => profile.WindowsPowerMode == matching[0].WindowsPowerMode)
+                    ? matching[0].WindowsPowerMode
+                    : null;
+            associations = associations.WithPerformance(performance, mode);
+        }
+
+        return ClearLegacyWindowsPowerModes(profiles) with
+        {
+            WindowsPowerModes = associations,
+        };
+    }
+
+    private static void ValidateLegacyWindowsPowerModes(ProfileSet profiles)
+    {
+        foreach ((string name, PowerProfile profile) in new[]
+        {
+            ("plugged-in", profiles.PluggedIn),
+            ("battery", profiles.Battery),
+            ("USB-C", profiles.UsbC),
+        })
+        {
+            if (profile.WindowsPowerMode is { } mode && !Enum.IsDefined(mode))
+            {
+                throw new InvalidDataException(
+                    $"The legacy {name} Windows power mode is undefined.");
+            }
+        }
+    }
 
     private static ProfileSet ClearLegacyWindowsPowerModes(ProfileSet profiles) => profiles with
     {

@@ -54,6 +54,36 @@ public sealed class InstallerWindowTests
         });
     }
 
+    [Theory]
+    [InlineData("zh-CN", "安装 OpenBlade")]
+    [InlineData("ru-RU", "Установить OpenBlade")]
+    public void SupportedCultureLoadsTranslatedInstallerResources(
+        string cultureName,
+        string expected)
+    {
+        RunWithUiCulture(cultureName, () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowReady(installed: false);
+
+            Assert.Equal(expected, window.ReadyHeading.Text);
+        });
+    }
+
+    [Theory]
+    [InlineData("zh-CN")]
+    [InlineData("ru-RU")]
+    public void SupportedCultureSuccessActionsExposeUniqueAccessKeys(string cultureName)
+    {
+        RunWithUiCulture(cultureName, () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false);
+
+            AssertUniqueAccessKeys(window.LaunchButton, window.SuccessCloseButton);
+        });
+    }
+
     [Fact]
     public void WindowLoadsResourcesAndRendersEveryInteractiveState()
     {
@@ -165,7 +195,7 @@ public sealed class InstallerWindowTests
     }
 
     [Fact]
-    public void PseudoLocalizationSnapshotsRenderEveryCriticalInstallerState()
+    public void LocalizationSnapshotsRenderEveryCriticalInstallerState()
     {
         string? outputDirectory = Environment.GetEnvironmentVariable(
             "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR");
@@ -179,6 +209,9 @@ public sealed class InstallerWindowTests
         Assert.False(
             string.IsNullOrWhiteSpace(snapshotState),
             "Set OPENBLADE_LOCALIZATION_SNAPSHOT_STATE so each state renders in a fresh testhost process.");
+        string snapshotCulture = Environment.GetEnvironmentVariable(
+                "OPENBLADE_LOCALIZATION_LANGUAGE")
+            ?? "qps-ploc";
         RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         Directory.CreateDirectory(outputDirectory);
         switch (snapshotState)
@@ -256,7 +289,7 @@ public sealed class InstallerWindowTests
             Action<InstallerWindow> showState,
             Func<InstallerWindow, FrameworkElement[]> selectActiveActions)
         {
-            RunWithUiCulture("qps-ploc", () =>
+            RunWithUiCulture(snapshotCulture, () =>
             {
                 InstallerWindow window = new(
                     new OpenBladeBootstrapperApplication(),

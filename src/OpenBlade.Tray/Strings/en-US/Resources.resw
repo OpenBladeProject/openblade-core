@@ -22,7 +22,7 @@
     <value>Shut down completely</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation </value>
+    <value>Choose whether keyboard lighting, hotkeys, profiles, and automation should keep running in the background.</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>OpenBlade could not shut down</value>
@@ -734,7 +734,7 @@ Not closeable:
     <value>Settings</value>
   </data>
   <data name="MainWindow_Shutdown_Content" xml:space="preserve">
-    <value>This stops the app, display helper, and hardware service. </value>
+    <value>This stops the app, display helper, and hardware service. Reopen OpenBlade and use Start service in troubleshooting to turn it back on.</value>
   </data>
   <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
     <value>OpenBlade could not shut down</value>
@@ -752,19 +752,19 @@ Not closeable:
     <value>OpenBlade service is already running</value>
   </data>
   <data name="MainWindow_Start_Button" xml:space="preserve">
-    <value>Start OpenBlade</value>
+    <value>Start service</value>
   </data>
   <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
     <value>OpenBlade could not start</value>
   </data>
   <data name="MainWindow_Start_Starting" xml:space="preserve">
-    <value>Starting OpenBlade</value>
+    <value>Starting service</value>
   </data>
   <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Start OpenBlade minimized</value>
   </data>
-  <data name="MainWindow_StartOpenBladeButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Start OpenBlade</value>
+  <data name="MainWindow_StartServiceButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start service</value>
   </data>
   <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Startup animation</value>
@@ -1520,8 +1520,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
     <value>Start minimized</value>
   </data>
-  <data name="MainWindow_TextBlockStartOpenBlade.Text" xml:space="preserve">
-    <value>Start OpenBlade</value>
+  <data name="MainWindow_TextBlockStartService.Text" xml:space="preserve">
+    <value>Start service</value>
   </data>
   <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
     <value>Startup</value>
@@ -1704,7 +1704,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Manual only</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>OpenBlade can check GitHub for a new release once per day when </value>
+    <value>OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings.</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
     <value>Use daily checks</value>
@@ -1880,13 +1880,19 @@ OpenBlade did not retry any stop request.</value>
   <data name="TrayDashboardWindow_WindowTitle" xml:space="preserve">
     <value>OpenBlade quick controls</value>
   </data>
-  <data name="TrayIconMenu_DoubleClick" xml:space="preserve">
-    <value>Double-click</value>
-  </data>
   <data name="TrayIconMenu_Exit" xml:space="preserve">
     <value>Exit</value>
   </data>
   <data name="TrayIconMenu_Open" xml:space="preserve">
     <value>Open</value>
+  </data>
+  <data name="MainWindow_ResponsiveChoiceSelectorAppLanguage.AccessibleName" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockAppLanguage.Text" xml:space="preserve">
+    <value>App language</value>
+  </data>
+  <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
+    <value>Use your Windows display language, or choose a language. Restart OpenBlade to apply changes.</value>
   </data>
 </root>

@@ -557,6 +557,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("StartOpenBladeResult.AlreadyRunning", window, StringComparison.Ordinal);
         Assert.Contains("OpenBlade service is already running", window, StringComparison.Ordinal);
         Assert.Contains("StartOpenBladeProgressRing.IsActive", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeProgressRing.Visibility", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("StartOpenBladeProgressRing.Opacity", window, StringComparison.Ordinal);
+        Assert.Contains("StartOpenBladeButtonLabel.Opacity", window, StringComparison.Ordinal);
         Assert.Contains("MainWindow_Start_Starting", window, StringComparison.Ordinal);
         Assert.Contains("MainWindow_Start_Button", window, StringComparison.Ordinal);
         Assert.Contains("SessionAgentLauncher.TryStopSibling()", app, StringComparison.Ordinal);
@@ -1114,7 +1117,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'--property:PublishTrimmed=false'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugType=None'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:DebugSymbols=false'", publish, StringComparison.Ordinal);
-        Assert.Contains("'--property:SatelliteResourceLanguages=en-US'", publish, StringComparison.Ordinal);
+        Assert.Contains(
+            "'--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU'",
+            publish,
+            StringComparison.Ordinal);
         Assert.Contains("'--property:PublishSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:EnableCompressionInSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains(
@@ -1976,6 +1982,14 @@ public sealed class WinUiShellContractTests
             "Application.Current.Resources[",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "[ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]",
+            capture,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
+            capture,
+            StringComparison.Ordinal);
         int activate = app.IndexOf("snapshotMainWindow.Activate()", StringComparison.Ordinal);
         int initialLayoutDrain = app.IndexOf(
             "await WaitForSnapshotLayoutAsync()",
@@ -1992,6 +2006,48 @@ public sealed class WinUiShellContractTests
             app,
             StringComparison.Ordinal);
         Assert.Contains("foreach ($trayPage", capture, StringComparison.Ordinal);
+        Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
+        Assert.Contains(
+            "ShowLocalizationSnapshotSettingsAppearance()",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SettingsAppearanceSection.StartBringIntoView()",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "? new Windows.Graphics.SizeInt32(1920, 1000)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ": new Windows.Graphics.SizeInt32(1120, 820)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshotMainWindow.AppWindow.Resize(snapshotSize)",
+            app,
+            StringComparison.Ordinal);
+        int perPageResize = app.IndexOf(
+            "snapshotMainWindow.AppWindow.Resize(snapshotSize)",
+            pageLoop,
+            StringComparison.Ordinal);
+        int pageSelection = app.IndexOf(
+            "snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination)",
+            pageLoop,
+            StringComparison.Ordinal);
+        Assert.True(pageLoop < perPageResize && perPageResize < pageSelection);
+        int appearanceSnapshot = window.IndexOf(
+            "internal void ShowLocalizationSnapshotSettingsAppearance()",
+            StringComparison.Ordinal);
+        int nextSnapshotMember = window.IndexOf(
+            "internal bool HasLocalizedCheckNowButton",
+            appearanceSnapshot,
+            StringComparison.Ordinal);
+        Assert.True(appearanceSnapshot >= 0 && appearanceSnapshot < nextSnapshotMember);
+        Assert.DoesNotContain(
+            "AppWindow.Resize",
+            window[appearanceSnapshot..nextSnapshotMember],
+            StringComparison.Ordinal);
         Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage",
             capture,
@@ -1999,12 +2055,34 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void AppAppliesPersistedLanguageBeforeWinUiResourcesLoad()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        Assert.Contains("static App()", app, StringComparison.Ordinal);
+        Assert.Contains("ApplyLocalizationPreference();", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "UiPreferenceStore.CreateDefault().LoadLanguagePreference()",
+            app,
+            StringComparison.Ordinal);
+
+        int environment = app.IndexOf(
+            "string? language = RequestedLocalizationLanguage()",
+            StringComparison.Ordinal);
+        int preference = app.IndexOf(
+            "UiPreferenceStore.CreateDefault().LoadLanguagePreference()",
+            StringComparison.Ordinal);
+        int resourceOverride = app.IndexOf(
+            "ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage",
+            StringComparison.Ordinal);
+        Assert.True(environment >= 0 && environment < preference);
+        Assert.True(preference < resourceOverride);
+    }
+
+    [Fact]
     public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        Assert.Contains("Environment.SpecialFolder.LocalApplicationData", source, StringComparison.Ordinal);
-        Assert.Contains("\"OpenBlade\"", source, StringComparison.Ordinal);
-        Assert.Contains("\"preferences.json\"", source, StringComparison.Ordinal);
+        Assert.Contains("UiPreferenceStore.CreateDefault()", source, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PropertyChanged += OnViewModelPropertyChanged", source, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PropertyChanged -= OnViewModelPropertyChanged", source, StringComparison.Ordinal);
         Assert.Contains("preferenceSaveQueue.Enqueue", source, StringComparison.Ordinal);
@@ -2016,6 +2094,18 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "LabFeaturesEnabled: ViewModel.LabFeaturesEnabled",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "initialLanguage = preferences.EffectiveLanguage",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.LanguagePreference = initialLanguage",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Language: ViewModel.LanguagePreference",
             source,
             StringComparison.Ordinal);
         Assert.Contains("\"preference save queue\"", source, StringComparison.Ordinal);
@@ -2650,10 +2740,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemInformation.DoubleClickTime", trayHost, StringComparison.Ordinal);
         Assert.Contains("System.Drawing.Point cursorPosition = Cursor.Position", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Open", trayHost, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "TrayIconMenu_DoubleClick",
             trayHost,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("ShortcutKeyDisplayString", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
         Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);

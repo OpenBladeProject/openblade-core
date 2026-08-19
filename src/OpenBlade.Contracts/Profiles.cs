@@ -11,15 +11,56 @@ public enum PerformancePreset
 }
 
 /// <summary>
-/// The Windows 11 user-configured power mode requested by an OpenBlade profile.
-/// This is separate from both the laptop performance preset and legacy Windows
-/// power schemes.
+/// The Windows 11 user-configured power mode associated with a laptop
+/// performance preset. This is separate from legacy Windows power schemes.
 /// </summary>
 public enum WindowsPowerMode
 {
     BestPowerEfficiency,
     Balanced,
     BestPerformance,
+}
+
+public sealed record WindowsPowerModeAssociations(
+    WindowsPowerMode? Silent,
+    WindowsPowerMode? Balanced,
+    WindowsPowerMode? Performance,
+    WindowsPowerMode? BatterySaver,
+    WindowsPowerMode? BatteryBalanced,
+    WindowsPowerMode? Custom)
+{
+    public static WindowsPowerModeAssociations LeaveUnchanged { get; } = new(
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+
+    public WindowsPowerMode? ForPerformance(PerformancePreset performance) =>
+        performance switch
+        {
+            PerformancePreset.Silent => Silent,
+            PerformancePreset.Balanced => Balanced,
+            PerformancePreset.Performance => Performance,
+            PerformancePreset.BatterySaver => BatterySaver,
+            PerformancePreset.BatteryBalanced => BatteryBalanced,
+            PerformancePreset.Custom => Custom,
+            _ => throw new ArgumentOutOfRangeException(nameof(performance)),
+        };
+
+    public WindowsPowerModeAssociations WithPerformance(
+        PerformancePreset performance,
+        WindowsPowerMode? windowsPowerMode) => performance switch
+        {
+            PerformancePreset.Silent => this with { Silent = windowsPowerMode },
+            PerformancePreset.Balanced => this with { Balanced = windowsPowerMode },
+            PerformancePreset.Performance => this with { Performance = windowsPowerMode },
+            PerformancePreset.BatterySaver => this with { BatterySaver = windowsPowerMode },
+            PerformancePreset.BatteryBalanced => this with { BatteryBalanced = windowsPowerMode },
+            PerformancePreset.Custom => this with { Custom = windowsPowerMode },
+            _ => throw new ArgumentOutOfRangeException(nameof(performance)),
+        };
 }
 
 public enum CustomPerformanceLevel
@@ -462,9 +503,11 @@ public sealed record PowerProfile(
     // normalized and validated with an explicit value.
     public bool? BatteryProtectionEnabled { get; init; }
 
-    // Null leaves the current user's Windows 11 power-mode preference unchanged.
-    // The Session Agent applies a configured value because the preference is
-    // scoped to the interactive user rather than LocalSystem.
+    // Retained only to deserialize profile schemas that stored Windows power
+    // mode by power source. Current schemas clear this after migrating the
+    // value into ProfileSet.WindowsPowerModes.
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public WindowsPowerMode? WindowsPowerMode { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
@@ -639,6 +682,11 @@ public sealed record ProfileSet(
     BatteryPolicy BatteryPolicy,
     LightingPowerPolicy? LightingPowerPolicy = null)
 {
+    // The Session Agent applies the configured association because Windows
+    // power mode is scoped to the interactive user rather than LocalSystem.
+    public WindowsPowerModeAssociations WindowsPowerModes { get; init; } =
+        WindowsPowerModeAssociations.LeaveUnchanged;
+
     // Retained only as the schema 4 migration source. New documents store the
     // policy on each PowerProfile and normalize this property to null.
     [System.Text.Json.Serialization.JsonIgnore]

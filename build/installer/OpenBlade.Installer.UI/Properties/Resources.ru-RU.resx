@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="_Cancel" xml:space="preserve">
+    <value>_Отмена</value>
+  </data>
+  <data name="_Close" xml:space="preserve">
+    <value>_Закрыть</value>
+  </data>
+  <data name="_Install" xml:space="preserve">
+    <value>_Установить</value>
+  </data>
+  <data name="_Launch OpenBlade" xml:space="preserve">
+    <value>За_пустить OpenBlade</value>
+  </data>
+  <data name="_Open log" xml:space="preserve">
+    <value>_Открыть журнал</value>
+  </data>
+  <data name="_Overwrite" xml:space="preserve">
+    <value>_Перезаписать</value>
+  </data>
+  <data name="_Repair" xml:space="preserve">
+    <value>_Восстановить</value>
+  </data>
+  <data name="_Uninstall" xml:space="preserve">
+    <value>_Удалить</value>
+  </data>
+  <data name="Activating OpenBlade files…" xml:space="preserve">
+    <value>Активация файлов OpenBlade…</value>
+  </data>
+  <data name="Another OpenBlade {0} installer build is already registered. {1}" xml:space="preserve">
+    <value>Уже зарегистрирована другая сборка установщика OpenBlade {0}. {1}</value>
+  </data>
+  <data name="Applying the requested changes…" xml:space="preserve">
+    <value>Выполнение запрошенных изменений…</value>
+  </data>
+  <data name="Applying OpenBlade changes…" xml:space="preserve">
+    <value>Применение изменений OpenBlade…</value>
+  </data>
+  <data name="Cancel _setup" xml:space="preserve">
+    <value>Отменить _установку</value>
+  </data>
+  <data name="Cancel setup?" xml:space="preserve">
+    <value>Отменить установку?</value>
+  </data>
+  <data name="Cancellation requested; waiting for safe rollback." xml:space="preserve">
+    <value>Запрошена отмена; ожидание безопасного отката.</value>
+  </data>
+  <data name="Cancelling and restoring the previous state…" xml:space="preserve">
+    <value>Отмена и восстановление предыдущего состояния…</value>
+  </data>
+  <data name="Checking the OpenBlade service…" xml:space="preserve">
+    <value>Проверка службы OpenBlade…</value>
+  </data>
+  <data name="Checking this PC…" xml:space="preserve">
+    <value>Проверка этого компьютера…</value>
+  </data>
+  <data name="Committing OpenBlade files…" xml:space="preserve">
+    <value>Завершение записи файлов OpenBlade…</value>
+  </data>
+  <data name="Complete" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="Copying {0}…" xml:space="preserve">
+    <value>Копирование {0}…</value>
+  </data>
+  <data name="Creating OpenBlade shortcuts…" xml:space="preserve">
+    <value>Создание ярлыков OpenBlade…</value>
+  </data>
+  <data name="Help" xml:space="preserve">
+    <value>Справка</value>
+  </data>
+  <data name="Hide _details" xml:space="preserve">
+    <value>Скрыть _подробности</value>
+  </data>
+  <data name="Install OpenBlade" xml:space="preserve">
+    <value>Установить OpenBlade</value>
+  </data>
+  <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
+    <value>Установить на этот компьютер службу OpenBlade, Session Agent и приложение в области уведомлений.</value>
+  </data>
+  <data name="Installer cleanup required" xml:space="preserve">
+    <value>Требуется очистка установщика</value>
+  </data>
+  <data name="Installing OpenBlade" xml:space="preserve">
+    <value>Установка OpenBlade</value>
+  </data>
+  <data name="Installing the OpenBlade service…" xml:space="preserve">
+    <value>Установка службы OpenBlade…</value>
+  </data>
+  <data name="Installing required Windows components…" xml:space="preserve">
+    <value>Установка необходимых компонентов Windows…</value>
+  </data>
+  <data name="Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again." xml:space="preserve">
+    <value>Его кэшированный установщик недоступен, поэтому программа установки не может безопасно восстановить или удалить его. Используйте средство восстановления установщика Windows перед повторной попыткой.</value>
+  </data>
+  <data name="Keep _working" xml:space="preserve">
+    <value>_Продолжить работу</value>
+  </data>
+  <data name="Maintenance" xml:space="preserve">
+    <value>Обслуживание</value>
+  </data>
+  <data name="Newer version installed" xml:space="preserve">
+    <value>Установлена более новая версия</value>
+  </data>
+  <data name="OpenBlade" xml:space="preserve">
+    <value>OpenBlade</value>
+  </data>
+  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
+    <value>OpenBlade {0} уже установлен. Запустите этот установщик в интерактивном режиме, чтобы подтвердить перезапись.</value>
+  </data>
+  <data name="OpenBlade {0} is installed" xml:space="preserve">
+    <value>OpenBlade {0} установлен</value>
+  </data>
+  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
+    <value>OpenBlade {0} установлен. Этот установщик содержит версию {1}. Перезаписать более новую версию?</value>
+  </data>
+  <data name="OpenBlade is installed" xml:space="preserve">
+    <value>OpenBlade установлен</value>
+  </data>
+  <data name="OpenBlade is ready" xml:space="preserve">
+    <value>OpenBlade готов к работе</value>
+  </data>
+  <data name="OpenBlade Setup" xml:space="preserve">
+    <value>Установка OpenBlade</value>
+  </data>
+  <data name="OpenBlade setup could not inspect the installed state." xml:space="preserve">
+    <value>Программе установки OpenBlade не удалось проверить состояние установленной версии.</value>
+  </data>
+  <data name="OpenBlade setup could not prepare the requested action." xml:space="preserve">
+    <value>Программе установки OpenBlade не удалось подготовить запрошенное действие.</value>
+  </data>
+  <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
+    <value>Программе установки OpenBlade не удалось подготовить запрошенное действие: {0}</value>
+  </data>
+  <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
+    <value>Программа установки OpenBlade обнаружила {0} связанных регистраций установщика. Установка остановлена до внесения изменений, поскольку запуск одного устаревшего пакета может рекурсивно запустить остальные. По возможности используйте команду «Удалить» для каждой зарегистрированной записи OpenBlade. Если дубликаты останутся, воспользуйтесь средством восстановления установщика Windows перед повторным запуском этого установщика.</value>
+  </data>
+  <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
+    <value>OpenBlade установлен, но его не удалось запустить: {0}</value>
+  </data>
+  <data name="OpenBlade was removed" xml:space="preserve">
+    <value>OpenBlade удалён</value>
+  </data>
+  <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
+    <value>OpenBlade безопасно остановится, после чего будет восстановлено предыдущее состояние установки.</value>
+  </data>
+  <data name="Preparing OpenBlade files…" xml:space="preserve">
+    <value>Подготовка файлов OpenBlade…</value>
+  </data>
+  <data name="Preparing Windows uninstall support…" xml:space="preserve">
+    <value>Подготовка поддержки удаления Windows…</value>
+  </data>
+  <data name="Preparing…" xml:space="preserve">
+    <value>Подготовка…</value>
+  </data>
+  <data name="Reading the current installation…" xml:space="preserve">
+    <value>Чтение текущей установки…</value>
+  </data>
+  <data name="Recording installer ownership…" xml:space="preserve">
+    <value>Регистрация владения установщиком…</value>
+  </data>
+  <data name="Registering Dynamic Lighting…" xml:space="preserve">
+    <value>Регистрация Dynamic Lighting…</value>
+  </data>
+  <data name="Remove saved _profiles and settings" xml:space="preserve">
+    <value>Удалить сохранённые _профили и параметры</value>
+  </data>
+  <data name="Removing an earlier OpenBlade registration…" xml:space="preserve">
+    <value>Удаление регистрации более ранней версии OpenBlade…</value>
+  </data>
+  <data name="Removing Dynamic Lighting registration…" xml:space="preserve">
+    <value>Удаление регистрации Dynamic Lighting…</value>
+  </data>
+  <data name="Removing OpenBlade" xml:space="preserve">
+    <value>Удаление OpenBlade</value>
+  </data>
+  <data name="Removing OpenBlade {0}" xml:space="preserve">
+    <value>Удаление OpenBlade {0}</value>
+  </data>
+  <data name="Removing OpenBlade files…" xml:space="preserve">
+    <value>Удаление файлов OpenBlade…</value>
+  </data>
+  <data name="Removing OpenBlade shortcuts…" xml:space="preserve">
+    <value>Удаление ярлыков OpenBlade…</value>
+  </data>
+  <data name="Removing saved OpenBlade data…" xml:space="preserve">
+    <value>Удаление сохранённых данных OpenBlade…</value>
+  </data>
+  <data name="Removing the OpenBlade service…" xml:space="preserve">
+    <value>Удаление службы OpenBlade…</value>
+  </data>
+  <data name="Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps." xml:space="preserve">
+    <value>Восстановление перезапишет установленные файлы файлами из этого установщика. Также можно удалить OpenBlade, сохранив профили. Чтобы удалить и профили, закройте установщик и удалите зарегистрированную запись OpenBlade в разделе «Установленные приложения» Windows.</value>
+  </data>
+  <data name="Repair the installed files, or remove OpenBlade from this PC." xml:space="preserve">
+    <value>Восстановить установленные файлы или удалить OpenBlade с этого компьютера.</value>
+  </data>
+  <data name="Repairing OpenBlade" xml:space="preserve">
+    <value>Восстановление OpenBlade</value>
+  </data>
+  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
+    <value>Заменить более новую версию OpenBlade?</value>
+  </data>
+  <data name="Resolve existing OpenBlade installers" xml:space="preserve">
+    <value>Разрешение конфликтов установщиков OpenBlade</value>
+  </data>
+  <data name="Restoring the previous installation state…" xml:space="preserve">
+    <value>Восстановление предыдущего состояния установки…</value>
+  </data>
+  <data name="Run this installer interactively and choose Repair or Uninstall." xml:space="preserve">
+    <value>Запустите этот установщик в интерактивном режиме и выберите «Восстановить» или «Удалить».</value>
+  </data>
+  <data name="Run this installer normally to install, repair, or remove OpenBlade." xml:space="preserve">
+    <value>Запустите этот установщик обычным способом, чтобы установить, восстановить или удалить OpenBlade.</value>
+  </data>
+  <data name="Saved profiles and settings were also removed." xml:space="preserve">
+    <value>Сохранённые профили и параметры также удалены.</value>
+  </data>
+  <data name="See the setup log for more information." xml:space="preserve">
+    <value>Подробнее см. в журнале установки.</value>
+  </data>
+  <data name="Setup" xml:space="preserve">
+    <value>Установка</value>
+  </data>
+  <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
+    <value>Для этого состояния программа установки не может безопасно выбрать единственного владельца обслуживания. Сначала используйте раздел «Установленные приложения» Windows, чтобы восстановить или удалить зарегистрированный пакет.</value>
+  </data>
+  <data name="Setup completed successfully." xml:space="preserve">
+    <value>Установка успешно завершена.</value>
+  </data>
+  <data name="Setup could not finish" xml:space="preserve">
+    <value>Не удалось завершить установку</value>
+  </data>
+  <data name="Setup details" xml:space="preserve">
+    <value>Сведения об установке</value>
+  </data>
+  <data name="Setup failed" xml:space="preserve">
+    <value>Сбой установки</value>
+  </data>
+  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
+    <value>Сбой установки с кодом 0x{0:X8}.</value>
+  </data>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>Сбой установки: {0}</value>
+  </data>
+  <data name="Setup progress" xml:space="preserve">
+    <value>Ход установки</value>
+  </data>
+  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
+    <value>Установка отменена, предыдущее состояние восстановлено.</value>
+  </data>
+  <data name="Show _details" xml:space="preserve">
+    <value>Показать _подробности</value>
+  </data>
+  <data name="Stopping OpenBlade components…" xml:space="preserve">
+    <value>Остановка компонентов OpenBlade…</value>
+  </data>
+  <data name="The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again." xml:space="preserve">
+    <value>Маркер владения зарегистрированным установщиком OpenBlade отсутствует или имеет неверный формат. Используйте средство восстановления установщика Windows перед повторной попыткой.</value>
+  </data>
+  <data name="The setup command is unavailable." xml:space="preserve">
+    <value>Команда установки недоступна.</value>
+  </data>
+  <data name="Version {0}" xml:space="preserve">
+    <value>Версия {0}</value>
+  </data>
+  <data name="Windows could not open the requested path: {0}" xml:space="preserve">
+    <value>Windows не удалось открыть указанный путь: {0}</value>
+  </data>
+  <data name="Working" xml:space="preserve">
+    <value>Выполняется</value>
+  </data>
+  <data name="Your saved profiles and settings were kept." xml:space="preserve">
+    <value>Сохранённые профили и параметры оставлены на компьютере.</value>
+  </data>
+</root>

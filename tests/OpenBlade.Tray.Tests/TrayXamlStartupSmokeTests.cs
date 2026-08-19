@@ -30,6 +30,22 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task SimplifiedChineseDashboardCompiledXamlLoads() =>
+        RunTraySmokeAsync(
+            "--xaml-startup-smoke",
+            "OpenBlade-xaml-zh-CN-smoke",
+            localizationLanguage: "zh-CN");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task RussianDashboardCompiledXamlLoads() =>
+        RunTraySmokeAsync(
+            "--xaml-startup-smoke",
+            "OpenBlade-xaml-ru-RU-smoke",
+            localizationLanguage: "ru-RU");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task ResponsiveChoiceSelectorPreservesAuthoritativeSelection() =>
         RunTraySmokeAsync(
             "--responsive-choice-selector-smoke",

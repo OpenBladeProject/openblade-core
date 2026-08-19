@@ -87,6 +87,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await store.LoadAsync();
 
         Assert.Equal(ThemePreference.FollowWindows, preferences.Theme);
+        Assert.Equal(UiLanguagePreference.FollowSystem, preferences.EffectiveLanguage);
         Assert.True(preferences.LiveReadingsEnabled);
         Assert.Equal(
             LiveReadingsCadence.EveryTwoSeconds,
@@ -133,6 +134,53 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.All(
             preferences.EffectiveSpecialKeyBindings,
             binding => Assert.Equal(SpecialKeyActionKind.Default, binding.Action.Kind));
+    }
+
+    [Theory]
+    [InlineData(UiLanguagePreference.FollowSystem)]
+    [InlineData(UiLanguagePreference.English)]
+    [InlineData(UiLanguagePreference.SimplifiedChinese)]
+    [InlineData(UiLanguagePreference.Russian)]
+    public async Task LanguagePreference_RoundTripsThroughAsyncAndStartupReads(
+        UiLanguagePreference preference)
+    {
+        string path = Path.Combine(directory, "preferences.json");
+        var store = new UiPreferenceStore(path);
+
+        await store.SaveAsync(UiPreferences.Default with { Language = preference });
+
+        Assert.Equal(preference, (await store.LoadAsync()).EffectiveLanguage);
+        Assert.Equal(preference, store.LoadLanguagePreference());
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal(preference.ToString(), document.RootElement.GetProperty("language").GetString());
+    }
+
+    [Fact]
+    public async Task LanguagePreference_UnknownNumericValueFallsBackWithoutDroppingOtherPreferences()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, """{"theme":"Dark","language":999}""");
+        var store = new UiPreferenceStore(path);
+
+        UiPreferences preferences = await store.LoadAsync();
+
+        Assert.Equal(ThemePreference.Dark, preferences.Theme);
+        Assert.Equal(UiLanguagePreference.FollowSystem, preferences.EffectiveLanguage);
+        Assert.Equal(UiLanguagePreference.FollowSystem, store.LoadLanguagePreference());
+    }
+
+    [Fact]
+    public async Task LoadLanguagePreference_MissingOrMalformedFileFallsBackToSystem()
+    {
+        string path = Path.Combine(directory, "preferences.json");
+        var store = new UiPreferenceStore(path);
+        Assert.Equal(UiLanguagePreference.FollowSystem, store.LoadLanguagePreference());
+
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, "{ definitely not json }");
+
+        Assert.Equal(UiLanguagePreference.FollowSystem, store.LoadLanguagePreference());
     }
 
     [Fact]

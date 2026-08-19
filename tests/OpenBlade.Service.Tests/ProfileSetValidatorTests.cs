@@ -16,7 +16,9 @@ public sealed class ProfileSetValidatorTests
 
         ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles with
         {
-            PluggedIn = profiles.PluggedIn with { WindowsPowerMode = mode },
+            WindowsPowerModes = profiles.WindowsPowerModes.WithPerformance(
+                PerformancePreset.Balanced,
+                mode),
         });
     }
 
@@ -28,13 +30,12 @@ public sealed class ProfileSetValidatorTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
             ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles with
             {
-                Battery = profiles.Battery with
-                {
-                    WindowsPowerMode = (WindowsPowerMode)999,
-                },
+                WindowsPowerModes = profiles.WindowsPowerModes.WithPerformance(
+                    PerformancePreset.BatterySaver,
+                    (WindowsPowerMode)999),
             }));
 
-        Assert.Contains("Windows power mode is undefined", exception.Message);
+        Assert.Contains("Windows power mode associated with BatterySaver is undefined", exception.Message);
     }
 
     [Theory]

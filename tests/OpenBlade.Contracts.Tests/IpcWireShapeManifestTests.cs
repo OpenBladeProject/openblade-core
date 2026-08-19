@@ -26,8 +26,8 @@ public sealed class IpcWireShapeManifestTests
             StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
-            46 => "1A292DBFD856840037DB7E36B99FADD41D3E7AE31F29BB3AB1474B750E7BA3C9",
-            47 => "C6DAB13365964AA394654A7F10D76EBF2E947D4C3D68BCE277FB94116D1558D2",
+            47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
+            48 => "58A76CD37F81343893C4BF353FEFB02DA5024F1484F98E5D1A1B0EE9F5BC67DF",
             _ => null,
         };
 

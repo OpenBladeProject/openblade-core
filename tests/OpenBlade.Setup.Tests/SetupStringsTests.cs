@@ -29,6 +29,18 @@ public sealed class SetupStringsTests
         Assert.NotEqual("Uninstall OpenBlade", localized);
     }
 
+    [Theory]
+    [InlineData("zh-CN", "卸载 OpenBlade")]
+    [InlineData("ru-RU", "Удаление OpenBlade")]
+    public void Get_SupportedCultureUsesTranslatedResource(
+        string cultureName,
+        string expected)
+    {
+        using CultureScope culture = new(cultureName);
+
+        Assert.Equal(expected, SetupStrings.Get("Uninstall OpenBlade"));
+    }
+
     [Fact]
     public void Format_PreservesInvariantDiagnosticArgument()
     {

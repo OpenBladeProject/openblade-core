@@ -688,6 +688,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("Laptop performance", Attribute(performance, "AccessibleName"));
         Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
         Assert.Equal(
+            "OnWindowsPowerModeSelectorLoaded",
+            Attribute(windowsPowerMode, "Loaded"));
+        Assert.Equal(
             "{Binding AvailableWindowsPowerModeOptions}",
             Attribute(windowsPowerMode, "ItemsSource"));
         Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
@@ -919,7 +922,7 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(23, usages.Length);
+        Assert.Equal(24, usages.Length);
         Assert.All(usages, usage =>
         {
             Assert.NotNull(Attribute(usage, "ItemsSource"));
@@ -949,6 +952,21 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_WindowsPowerModeSelectionFollowsViewModelNotifications()
+    {
+        string source = ReadTraySource("MainWindow.xaml.cs");
+
+        Assert.Contains(
+            "args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindow_ExtendsResponsiveChoicesToRemainingSmallOptionPickers()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -968,6 +986,7 @@ public sealed class CapabilityPresentationTests
             "Display color profile",
             "Live readings refresh interval",
             "App theme",
+            "App language",
             "App accent color",
             "Update channel",
             "Update check interval",
@@ -1088,7 +1107,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            16,
+            17,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -1129,12 +1148,22 @@ public sealed class CapabilityPresentationTests
         _ = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ResponsiveChoiceSelector"
             && Attribute(element, "AccessibleName") == "App theme");
+        XElement language = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ResponsiveChoiceSelector"
+            && Attribute(element, "AccessibleName") == "App language");
+        Assert.Equal(
+            "{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}",
+            Attribute(language, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
+            Attribute(language, "SelectedItem"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
                  {
                      "Live readings refresh interval",
                      "App theme",
+                     "App language",
                      "App accent color",
                      "Update channel",
                      "Update check interval",
@@ -1324,17 +1353,25 @@ public sealed class CapabilityPresentationTests
         XElement startService = NamedElement(document, "Button", "StartOpenBladeButton");
         Assert.Contains(troubleshooting.Descendants(), element => ReferenceEquals(element, startService));
         Assert.Equal("OnStartOpenBlade", Attribute(startService, "Click"));
-        Assert.Equal("Start OpenBlade", Attribute(startService, "AutomationProperties.Name"));
-        Assert.Contains(startService.Descendants(), element =>
-            element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Start OpenBlade");
+        Assert.Equal("Start service", Attribute(startService, "AutomationProperties.Name"));
+        XElement startLabel = NamedElement(
+            document,
+            "TextBlock",
+            "StartOpenBladeButtonLabel");
+        Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startLabel));
+        Assert.Equal("Start service", Attribute(startLabel, "Text"));
+        Assert.Equal("1", Attribute(startLabel, "Opacity"));
         XElement startProgress = NamedElement(
             document,
             "ProgressRing",
             "StartOpenBladeProgressRing");
         Assert.Contains(startService.Descendants(), element => ReferenceEquals(element, startProgress));
+        Assert.Same(startLabel.Parent, startProgress.Parent);
+        Assert.Equal("Grid", startProgress.Parent?.Name.LocalName);
         Assert.Equal("False", Attribute(startProgress, "IsActive"));
-        Assert.Equal("0", Attribute(startProgress, "Opacity"));
+        Assert.Equal("Collapsed", Attribute(startProgress, "Visibility"));
+        Assert.Equal("Center", Attribute(startProgress, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(startProgress, "VerticalAlignment"));
         Assert.Equal("Polite", Attribute(startService, "AutomationProperties.LiveSetting"));
         Assert.Contains(
             "ViewModel.IsServiceUnavailable",
@@ -1388,6 +1425,8 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
+        Assert.DoesNotContain(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "Ellipse");
         XElement settingsPage = NamedElement(document, "ScrollViewer", "SettingsPage");
         XElement aboutPage = NamedElement(document, "ScrollViewer", "AboutPage");
         XElement settingsUpdates = NamedElement(

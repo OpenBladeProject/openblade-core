@@ -109,10 +109,10 @@ public sealed class MainViewModelTests
             Revision = 2,
             Profiles = initial.Profiles with
             {
-                PluggedIn = initial.Profiles.PluggedIn with
-                {
-                    WindowsPowerMode = WindowsPowerMode.Balanced,
-                },
+                WindowsPowerModes = initial.Profiles.WindowsPowerModes
+                    .WithPerformance(
+                        PerformancePreset.Balanced,
+                        WindowsPowerMode.Balanced),
             },
         });
         await WaitUntilAsync(() =>
@@ -144,6 +144,9 @@ public sealed class MainViewModelTests
             ],
             viewModel.AvailableWindowsPowerModeOptions.Select(option => option.Description));
         Assert.Null(viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Equal(
+            "Leaves the Windows setting unchanged whenever Balanced is selected.",
+            viewModel.SelectedWindowsPowerModeDescription);
 
         viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
 
@@ -151,19 +154,163 @@ public sealed class MainViewModelTests
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
             viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains("Balanced", viewModel.SelectedWindowsPowerModeDescription);
         Assert.Equal("Leave unchanged", viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text);
         Assert.True(viewModel.PluggedInProfilePresentation.WindowsPowerMode.IsPending);
         Assert.Equal(
             "Best performance",
             viewModel.PluggedInProfilePresentation.WindowsPowerMode.PendingText);
+        Assert.True(viewModel.UsbCProfilePresentation.WindowsPowerMode.IsPending);
+        Assert.Equal(
+            "Best performance",
+            viewModel.UsbCProfilePresentation.WindowsPowerMode.PendingText);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
-            client.LastProfiles?.PluggedIn.WindowsPowerMode);
+            client.LastProfiles?.WindowsPowerModes.Balanced);
+        Assert.Null(client.LastProfiles?.PluggedIn.WindowsPowerMode);
         Assert.False(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_DraftFollowsLaptopPresetAndKeepsOtherAssociations()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            client.LastProfiles?.WindowsPowerModes.Balanced);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.WindowsPowerModes.Performance);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_DraftSurvivesPowerSourceTransition()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        var draftNotifications = new ConcurrentQueue<(PowerSource Source, bool HasDraft)>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasActiveProfileDraft))
+            {
+                draftNotifications.Enqueue(
+                    (viewModel.ActivePowerSource, viewModel.HasActiveProfileDraft));
+            }
+        };
+        client.Publish(initial with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.NotEmpty(draftNotifications);
+        Assert.All(
+            draftNotifications,
+            notification =>
+            {
+                Assert.Equal(PowerSource.UsbC, notification.Source);
+                Assert.True(notification.HasDraft);
+            });
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            client.LastProfiles?.WindowsPowerModes.Balanced);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_MaximumFansEditsDesiredPresetAssociation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        ProfileSet profiles = initial.Profiles with
+        {
+            WindowsPowerModes = initial.Profiles.WindowsPowerModes.WithPerformance(
+                PerformancePreset.Balanced,
+                WindowsPowerMode.BestPerformance),
+        };
+        client.Publish(initial with
+        {
+            Profiles = profiles,
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.True(viewModel.CanEditWindowsPowerMode);
+
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Equal(
+            WindowsPowerMode.Balanced,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+    }
+
+    [Fact]
+    public async Task WindowsPowerMode_UnknownSourceStillShowsStoredAssociation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            Profiles = initial.Profiles with
+            {
+                WindowsPowerModes = initial.Profiles.WindowsPowerModes.WithPerformance(
+                    PerformancePreset.Balanced,
+                    WindowsPowerMode.BestPerformance),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            WindowsPowerMode.BestPerformance,
+            viewModel.SelectedWindowsPowerModeOption.Value);
+        Assert.Contains("Balanced", viewModel.SelectedWindowsPowerModeDescription);
+        Assert.False(viewModel.CanEditWindowsPowerMode);
     }
 
     [Fact]
@@ -7664,6 +7811,45 @@ public sealed class MainViewModelTests
         Assert.Contains(
             viewModel.ThemeSelectionOptions,
             option => option.Label == "Follow Windows");
+    }
+
+    [Fact]
+    public async Task LanguagePreference_OffersSystemEnglishChineseAndRussianChoices()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        viewModel.SelectedLanguageOption = viewModel.LanguageSelectionOptions.Single(option =>
+            option.Preference == UiLanguagePreference.Russian);
+
+        Assert.Equal(UiLanguagePreference.Russian, viewModel.LanguagePreference);
+        Assert.Equal("Русский", viewModel.SelectedLanguageOption.Label);
+        Assert.Equal(
+            Enum.GetValues<UiLanguagePreference>(),
+            viewModel.LanguageSelectionOptions.Select(option => option.Preference));
+        Assert.Contains(nameof(MainViewModel.LanguagePreference), changed);
+        Assert.Contains(nameof(MainViewModel.SelectedLanguageOption), changed);
+    }
+
+    [Theory]
+    [InlineData("en-US", "Follow system")]
+    [InlineData("zh-CN", "跟随系统")]
+    [InlineData("ru-RU", "Следовать системным настройкам")]
+    public async Task LanguagePreference_LocalizesOnlyTheSystemChoice(
+        string cultureName,
+        string expectedSystemLabel)
+    {
+        using var culture = new CultureScope(cultureName);
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        Assert.Equal(
+            new[] { expectedSystemLabel, "English", "简体中文", "Русский" },
+            viewModel.LanguageSelectionOptions.Select(option => option.Label));
     }
 
     [Fact]

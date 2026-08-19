@@ -69,6 +69,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingWindowsPowerModeSelection;
+    private ResponsiveChoiceSelector? windowsPowerModeSelector;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
     private bool changingFanSelection;
@@ -242,12 +243,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         Root.SizeChanged += OnRootSizeChanged;
         AppWindow.Changed += OnAppWindowChanged;
 
-        string localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
-        preferenceStore = new UiPreferenceStore(Path.Combine(
-            localApplicationData,
-            "OpenBlade",
-            "preferences.json"));
+        preferenceStore = UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
             preferenceStore.SaveAsync,
             exception => Trace.TraceError(
@@ -591,6 +587,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async Task InitializeCoreAsync()
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
+        UiLanguagePreference initialLanguage = UiLanguagePreference.FollowSystem;
         LiveReadingsCadence liveReadingsRefreshCadence =
             LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
@@ -647,6 +644,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
+            initialLanguage = preferences.EffectiveLanguage;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
@@ -730,6 +728,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         ViewModel.Theme = initialTheme;
+        ViewModel.LanguagePreference = initialLanguage;
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
@@ -836,6 +835,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        if (args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                SynchronizeWindowsPowerModeSelection();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(SynchronizeWindowsPowerModeSelection);
+            }
+        }
+
         if (args.PropertyName == nameof(MainViewModel.Theme))
         {
             ThemePreference selectedTheme = ViewModel.Theme;
@@ -846,6 +857,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
 
             dispatcherQueue.TryEnqueue(() => ApplyThemeAndQueueSave(selectedTheme));
+            return;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.LanguagePreference))
+        {
+            QueuePreferenceSave();
             return;
         }
 
@@ -1085,7 +1102,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
-                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled));
+                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
+                Language: ViewModel.LanguagePreference));
         }
         catch (ObjectDisposedException)
         {
@@ -1493,9 +1511,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "Check for OpenBlade updates?"),
             Content = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_Content",
-                "OpenBlade can check GitHub for a new release once per day when "
-                    + "the tray starts. The check sends no hardware state, profiles, "
-                    + "settings, or diagnostics. You can change this later in Settings."),
+                "OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings."),
             PrimaryButtonText = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_PrimaryButton",
                 "Use daily checks"),
@@ -1800,6 +1816,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        windowsPowerModeSelector = selector;
         changingWindowsPowerModeSelection = true;
         try
         {
@@ -1809,6 +1826,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             changingWindowsPowerModeSelection = false;
+        }
+    }
+
+    private void OnWindowsPowerModeSelectorLoaded(object sender, RoutedEventArgs args)
+    {
+        if (sender is ResponsiveChoiceSelector selector)
+        {
+            windowsPowerModeSelector = selector;
+            SynchronizeWindowsPowerModeSelection();
+        }
+    }
+
+    private void SynchronizeWindowsPowerModeSelection()
+    {
+        if (Volatile.Read(ref disposed) == 0
+            && windowsPowerModeSelector is { } selector)
+        {
+            selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;
         }
     }
 
@@ -2993,6 +3028,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ApplyNavigationDestination(destination);
     }
 
+    internal void ShowLocalizationSnapshotSettingsAppearance()
+    {
+        SettingsAppearanceSection.StartBringIntoView();
+    }
+
     internal bool HasLocalizedCheckNowButton(
         string expectedContent,
         string expectedAccessibleName) =>
@@ -3666,8 +3706,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Title = LocalizedResources.Get("MainWindow_Shutdown_Title", "Shut down OpenBlade?"),
             Content = LocalizedResources.Get(
                 "MainWindow_Shutdown_Content",
-                "This stops the app, display helper, and hardware service. "
-                    + "Reopen OpenBlade and use Start OpenBlade in troubleshooting to turn it back on."),
+                "This stops the app, display helper, and hardware service. Reopen OpenBlade and use Start service in troubleshooting to turn it back on."),
             PrimaryButtonText = LocalizedResources.Get("MainWindow_Shutdown_PrimaryButton", "Shut down"),
             CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
             DefaultButton = ContentDialogButton.Close,
@@ -3742,10 +3781,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AutomationProperties.SetName(
             StartOpenBladeButton,
             isStarting
-                ? LocalizedResources.Get("MainWindow_Start_Starting", "Starting OpenBlade")
-                : LocalizedResources.Get("MainWindow_Start_Button", "Start OpenBlade"));
+                ? LocalizedResources.Get("MainWindow_Start_Starting", "Starting service")
+                : LocalizedResources.Get("MainWindow_Start_Button", "Start service"));
         StartOpenBladeProgressRing.IsActive = isStarting;
-        StartOpenBladeProgressRing.Opacity = isStarting ? 1 : 0;
+        StartOpenBladeProgressRing.Visibility = isStarting
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StartOpenBladeButtonLabel.Opacity = isStarting ? 0 : 1;
     }
 
     private async void OnExportProfiles(object sender, RoutedEventArgs args)

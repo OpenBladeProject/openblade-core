@@ -390,8 +390,8 @@
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
     <value>[!! Cónfígúré lívé réádíngs, sígn-ín, ánd líghtíng ównérshíp. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Configure theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>[!! Cónfígúré thémé, áccént cólór, návígátíón, ánd tráý téxt. ~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
+    <value>[!! Cónfígúré lángúágé, thémé, áccént cólór, návígátíón, ánd tráý téxt. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
     <value>[!! Cónnéctíón, áctívé séttíngs, ánd thé lívé réádíngs ýóú séléctéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -653,6 +653,12 @@
   </data>
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>[!! Kééps thé cúrrént Windows séttíng. ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
+    <value>[!! Úséd whénévér {0} ís séléctéd. {1} ~~~~~ !!]</value>
+  </data>
+  <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
+    <value>[!! Léávés thé Windows séttíng únchángéd whénévér {0} ís séléctéd. ~~~~~~~~~ !!]</value>
   </data>
   <data name="Keyboard" xml:space="preserve">
     <value>[!! Kéýbóárd ~~~ !!]</value>
@@ -1283,5 +1289,8 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>[!! tóp ~~ !!]</value>
+  </data>
+  <data name="Follow system" xml:space="preserve">
+    <value>[!! Fóllów sýstém ~~~~~ !!]</value>
   </data>
 </root>

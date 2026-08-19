@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added complete Simplified Chinese and Russian translations for the tray,
+  graphical installer, and native setup and uninstall experiences. Settings
+  now lets the tray follow the Windows UI language or use either translation,
+  with safe English fallback.
 - Added GPU-specific VBIOS update comparison for exact supported Blade models.
   OpenBlade now carries the installed NVIDIA adapter identity through service
   status and diagnostics, selects only the matching official Razer VBIOS
@@ -48,8 +52,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
   80 W, 90 W, OEM 280 W, and manifest-backed SlimQ 330 W adapter classes
   available across same-model firmware; their captured BIOS versions remain
   evidence provenance rather than runtime restrictions.
-- Advanced service IPC from 46 to 47 for the model-scoped firmware
+- Advanced service IPC from 47 to 48 for the model-scoped firmware
   compatibility state.
+- Tied each optional Windows power mode to a laptop performance preset instead
+  of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
+  transitions, and Fn+P now update Windows only after the laptop preset is
+  confirmed. Profile schema 15, export schema 10, and service IPC 47 migrate
+  unambiguous existing associations and leave conflicts unchanged. Because
+  AC and USB-C commonly shared one laptop preset but different Windows-mode
+  choices, existing associations may need to be set again after upgrading. The
+  Dashboard selector stays synchronized when the laptop preset changes.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
@@ -63,6 +75,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept malformed current-schema profile files on the safe recovery and import
+  error paths, and cleared stray legacy Windows power modes before publishing
+  migrated schema 1 profiles.
+- Removed the redundant **Double-click** hint from the tray context menu while
+  preserving double-click activation of the main window.
+- Removed redundant troubleshooting status dots, clarified the service-start
+  action, and removed its idle leading gap.
 - Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
   response while keeping Windows Offline authoritative for battery power and
   excluding that response from other Blade models.
