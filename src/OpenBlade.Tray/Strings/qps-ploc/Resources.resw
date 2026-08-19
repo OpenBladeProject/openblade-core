@@ -734,7 +734,7 @@ Nót clóséáblé:
     <value>[!! Séttíngs ~~~ !!]</value>
   </data>
   <data name="MainWindow_Shutdown_Content" xml:space="preserve">
-    <value>[!! Thís stóps thé ápp, díspláý hélpér, ánd hárdwáré sérvícé.  ~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Thís stóps thé ápp, díspláý hélpér, ánd hárdwáré sérvícé. Réópén OpenBlade ánd úsé Stárt sérvícé ín tróúbléshóótíng tó túrn ít báck ón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
     <value>[!! OpenBlade cóúld nót shút dówn ~~~~~~ !!]</value>
@@ -752,19 +752,19 @@ Nót clóséáblé:
     <value>[!! OpenBlade sérvícé ís álréádý rúnníng ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Start_Button" xml:space="preserve">
-    <value>[!! Stárt OpenBlade ~~ !!]</value>
+    <value>[!! Stárt sérvícé ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
     <value>[!! OpenBlade cóúld nót stárt ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_Start_Starting" xml:space="preserve">
-    <value>[!! Stártíng OpenBlade ~~~ !!]</value>
+    <value>[!! Stártíng sérvícé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Stárt OpenBlade mínímízéd ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_StartOpenBladeButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Stárt OpenBlade ~~ !!]</value>
+  <data name="MainWindow_StartServiceButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Stárt sérvícé ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Stártúp ánímátíón ~~~~~~ !!]</value>
@@ -1520,8 +1520,8 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
     <value>[!! Stárt mínímízéd ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockStartOpenBlade.Text" xml:space="preserve">
-    <value>[!! Stárt OpenBlade ~~ !!]</value>
+  <data name="MainWindow_TextBlockStartService.Text" xml:space="preserve">
+    <value>[!! Stárt sérvícé ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
     <value>[!! Stártúp ~~~ !!]</value>

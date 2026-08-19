@@ -734,7 +734,7 @@ Not closeable:
     <value>Settings</value>
   </data>
   <data name="MainWindow_Shutdown_Content" xml:space="preserve">
-    <value>This stops the app, display helper, and hardware service. </value>
+    <value>This stops the app, display helper, and hardware service. Reopen OpenBlade and use Start service in troubleshooting to turn it back on.</value>
   </data>
   <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
     <value>OpenBlade could not shut down</value>
@@ -752,19 +752,19 @@ Not closeable:
     <value>OpenBlade service is already running</value>
   </data>
   <data name="MainWindow_Start_Button" xml:space="preserve">
-    <value>Start OpenBlade</value>
+    <value>Start service</value>
   </data>
   <data name="MainWindow_Start_FailedTitle" xml:space="preserve">
     <value>OpenBlade could not start</value>
   </data>
   <data name="MainWindow_Start_Starting" xml:space="preserve">
-    <value>Starting OpenBlade</value>
+    <value>Starting service</value>
   </data>
   <data name="MainWindow_StartMinimizedToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Start OpenBlade minimized</value>
   </data>
-  <data name="MainWindow_StartOpenBladeButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Start OpenBlade</value>
+  <data name="MainWindow_StartServiceButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Start service</value>
   </data>
   <data name="MainWindow_StartupAnimationToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Startup animation</value>
@@ -1520,8 +1520,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
     <value>Start minimized</value>
   </data>
-  <data name="MainWindow_TextBlockStartOpenBlade.Text" xml:space="preserve">
-    <value>Start OpenBlade</value>
+  <data name="MainWindow_TextBlockStartService.Text" xml:space="preserve">
+    <value>Start service</value>
   </data>
   <data name="MainWindow_TextBlockStartup.Text" xml:space="preserve">
     <value>Startup</value>
