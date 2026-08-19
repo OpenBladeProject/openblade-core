@@ -379,7 +379,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortySixBatteryContracts_RoundTripExactShape()
+    public async Task VersionFortySevenBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -418,14 +418,22 @@ public sealed class IpcMessageCodecTests
             PluggedIn = defaults.PluggedIn with
             {
                 BatteryProtectionEnabled = false,
-                WindowsPowerMode = WindowsPowerMode.BestPerformance,
             },
             Battery = defaults.Battery with
             {
                 BatteryProtectionEnabled = true,
-                WindowsPowerMode = WindowsPowerMode.BestPowerEfficiency,
             },
             UsbC = defaults.UsbC with { BatteryProtectionEnabled = false },
+            WindowsPowerModes = defaults.WindowsPowerModes
+                .WithPerformance(
+                    PerformancePreset.Balanced,
+                    WindowsPowerMode.Balanced)
+                .WithPerformance(
+                    PerformancePreset.BatterySaver,
+                    WindowsPowerMode.BestPowerEfficiency)
+                .WithPerformance(
+                    PerformancePreset.Custom,
+                    WindowsPowerMode.BestPerformance),
         };
         ServiceRequest request = new SetBatteryProtectionRequest(
             OpenBladeIpc.ProtocolVersion,
@@ -444,10 +452,11 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(46, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.Equal(profiles.WindowsPowerModes, roundTrip.Profiles.WindowsPowerModes);
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             roundTrip.Capabilities.ObservedLightingEffects));
         Assert.Equal(
@@ -467,6 +476,308 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(profiles, roundTrip.Profiles);
         Assert.Equal(BatteryPolicy.Create(75), roundTrip.BatteryPolicyOverride);
         Assert.False(roundTrip.BatteryProtectionOverride);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WriteRequestAsync_RejectsMalformedWindowsPowerModeAssociations(
+        bool missing)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            WindowsPowerModes = missing
+                ? null!
+                : defaults.WindowsPowerModes.WithPerformance(
+                    PerformancePreset.Balanced,
+                    (WindowsPowerMode)999),
+        };
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                stream,
+                new UpdateProfilesRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    profiles),
+                CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsOmittedWindowsPowerModeAssociations()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        Assert.True(Assert.IsType<JsonObject>(root["profiles"])
+            .Remove("windowsPowerModes"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_AcceptsRequiredAssociationWithWebJsonCasing()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        RenameProperty(root, "version", "Version");
+        RenameProperty(root, "profiles", "Profiles");
+        RenameProperty(
+            Assert.IsType<JsonObject>(root["Profiles"]),
+            "windowsPowerModes",
+            "WindowsPowerModes");
+
+        UpdateProfilesRequest decoded = Assert.IsType<UpdateProfilesRequest>(
+            await IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal(request.Profiles, decoded.Profiles);
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_VersionMismatchWinsOverMissingAssociation()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        root["version"] = OpenBladeIpc.ProtocolVersion - 1;
+        Assert.IsType<JsonObject>(root["profiles"]).Remove("windowsPowerModes");
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+            },
+        };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                new MemoryStream(),
+                new UpdateProfilesRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    profiles),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        var request = new UpdateProfilesRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ProfileDefaults.CreateSafeDefaults());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject profiles = Assert.IsType<JsonObject>(root["profiles"]);
+        Assert.IsType<JsonObject>(profiles["pluggedIn"])["windowsPowerMode"] =
+            "bestPerformance";
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WriteServerFrameAsync_RejectsMalformedWindowsPowerModeAssociations(
+        bool missing)
+    {
+        ServiceStatusSnapshot status = CreateStatus();
+        status = status with
+        {
+            Profiles = status.Profiles with
+            {
+                WindowsPowerModes = missing
+                    ? null!
+                    : status.Profiles.WindowsPowerModes.WithPerformance(
+                        PerformancePreset.Custom,
+                        (WindowsPowerMode)999),
+            },
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsOmittedWindowsPowerModeAssociations()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        Assert.True(Assert.IsType<JsonObject>(status["profiles"])
+            .Remove("windowsPowerModes"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_AcceptsRequiredAssociationWithWebJsonCasing()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        RenameProperty(root, "version", "Version");
+        RenameProperty(root, "status", "Status");
+        JsonObject status = Assert.IsType<JsonObject>(root["Status"]);
+        RenameProperty(status, "profiles", "Profiles");
+        RenameProperty(
+            Assert.IsType<JsonObject>(status["Profiles"]),
+            "windowsPowerModes",
+            "WindowsPowerModes");
+
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal(CreateStatus().Profiles, decoded.Status.Profiles);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_VersionMismatchWinsOverMissingAssociation()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        root["version"] = OpenBladeIpc.ProtocolVersion - 1;
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        Assert.IsType<JsonObject>(status["profiles"]).Remove("windowsPowerModes");
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ServiceStatusSnapshot status = CreateStatus();
+        status = status with
+        {
+            Profiles = status.Profiles with
+            {
+                UsbC = status.Profiles.UsbC with
+                {
+                    WindowsPowerMode = WindowsPowerMode.Balanced,
+                },
+            },
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsLegacyWindowsPowerModeField()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        JsonObject root = FramedJsonObject(encoded);
+        JsonObject status = Assert.IsType<JsonObject>(root["status"]);
+        JsonObject profiles = Assert.IsType<JsonObject>(status["profiles"]);
+        Assert.IsType<JsonObject>(profiles["usbC"])["windowsPowerMode"] = "balanced";
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsNumericOperationDiscriminator()
+    {
+        using MemoryStream stream = FrameJson(
+            $$"""{"operation":47,"version":{{OpenBladeIpc.ProtocolVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsNumericFrameDiscriminator()
+    {
+        using MemoryStream stream = FrameJson(
+            $$"""{"frame":47,"version":{{OpenBladeIpc.ProtocolVersion}}}""");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsNullStatusEventBody()
+    {
+        using MemoryStream stream = FrameJson(
+            $$"""{"frame":"statusEvent","version":{{OpenBladeIpc.ProtocolVersion}},"status":null}""");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
     }
 
     [Fact]
@@ -717,7 +1028,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortySixStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFortySevenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -726,7 +1037,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(46, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(47, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1713,6 +2024,23 @@ public sealed class IpcMessageCodecTests
         BinaryPrimitives.WriteInt32LittleEndian(framed, payload.Length);
         payload.CopyTo(framed.AsSpan(sizeof(int)));
         return new MemoryStream(framed);
+    }
+
+    private static JsonObject FramedJsonObject(MemoryStream stream)
+    {
+        byte[] framedBytes = stream.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        return Assert.IsType<JsonObject>(JsonNode.Parse(Encoding.UTF8.GetString(
+            framedBytes,
+            sizeof(int),
+            payloadLength)));
+    }
+
+    private static void RenameProperty(JsonObject owner, string oldName, string newName)
+    {
+        JsonNode? value = owner[oldName]?.DeepClone();
+        Assert.True(owner.Remove(oldName));
+        owner[newName] = value;
     }
 
     private static async Task<ServiceRequest> RoundTripRequestAsync(ServiceRequest request)

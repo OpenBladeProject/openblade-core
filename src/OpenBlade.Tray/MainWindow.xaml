@@ -623,6 +623,7 @@
                                                                     ItemsSource="{Binding AvailableWindowsPowerModeOptions}"
                                                                     DisplayMemberPath="Label"
                                                                     SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
+                                                                    Loaded="OnWindowsPowerModeSelectorLoaded"
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>

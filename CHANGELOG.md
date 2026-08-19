@@ -47,6 +47,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - The firmware comparison table now omits items whose installed version is
   unavailable instead of showing non-actionable rows and a disclaimer.
+- Tied each optional Windows power mode to a laptop performance preset instead
+  of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
+  transitions, and Fn+P now update Windows only after the laptop preset is
+  confirmed. Profile schema 15, export schema 10, and service IPC 47 migrate
+  unambiguous existing associations and leave conflicts unchanged. Because
+  AC and USB-C commonly shared one laptop preset but different Windows-mode
+  choices, existing associations may need to be set again after upgrading. The
+  Dashboard selector stays synchronized when the laptop preset changes.
 - Advanced the firmware-smoke snapshot schema from 7 to 8 for observed-only
   Thunderbolt and touchpad inventory metadata.
 - Expanded the RZ09-0581 BIOS 4.00 USB-C profile to exact 45 W, 60 W, 65 W,
@@ -60,6 +68,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept malformed current-schema profile files on the safe recovery and import
+  error paths, and cleared stray legacy Windows power modes before publishing
+  migrated schema 1 profiles.
 - Removed the redundant **Double-click** hint from the tray context menu while
   preserving double-click activation of the main window.
 - Removed redundant troubleshooting status dots, clarified the service-start
