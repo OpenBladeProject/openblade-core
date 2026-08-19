@@ -96,8 +96,11 @@
       "evidence": null
     },
     "crashRecoveryValidated": {
-      "validated": false,
-      "evidence": null
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
+        "sha256": "D202CB0BDF516FD9E3B4393FD6FDE28A7916F5909C884FA44829051686652207"
+      }
     }
   }
 }

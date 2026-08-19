@@ -63,8 +63,8 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.NotNull(manifest.Gates.AdapterTransitionValidated.Evidence);
         Assert.False(manifest.Gates.LowPowerLifecycleValidated.Validated);
         Assert.Null(manifest.Gates.LowPowerLifecycleValidated.Evidence);
-        Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
-        Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
+        Assert.True(manifest.Gates.CrashRecoveryValidated.Validated);
+        Assert.NotNull(manifest.Gates.CrashRecoveryValidated.Evidence);
     }
 
     [Fact]
@@ -108,6 +108,12 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
     [InlineData(
         "2026-08-19-rz09-0581-hyperboost-padless-adapter-transition.json",
         "2BB2912F64E7B6DD1619821F9BD6253CE22C39ACD73AD42CEFA9D70C7DB42874")]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-low-power-negative.json",
+        "8871085E3825A7CFF8549CB844C5DD620FC67E8DF50F7990AF63B59B24F1A984")]
+    [InlineData(
+        "2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
+        "D202CB0BDF516FD9E3B4393FD6FDE28A7916F5909C884FA44829051686652207")]
     public void CurrentValidationEvidenceHash_MatchesPinnedCommittedArtifactBytes(
         string fileName,
         string expectedSha256)
@@ -135,7 +141,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(evidence.ReviewedLoadValidated);
         Assert.True(evidence.AdapterTransitionValidated);
         Assert.False(evidence.LowPowerLifecycleValidated);
-        Assert.False(evidence.CrashRecoveryValidated);
+        Assert.True(evidence.CrashRecoveryValidated);
         Assert.True(evidence.LifecycleValidationReady);
         Assert.False(evidence.WriteAdmitted);
     }

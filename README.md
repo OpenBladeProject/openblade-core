@@ -50,8 +50,9 @@ Pad-less HyperBoost is represented separately on the exact `RZ09-0581` and
 remains observed-only. The complete production route is implemented behind a
 reviewed evidence manifest. Exact-head immediate, 60-second no-load,
 Steel Nomad load, and full-power-to-USB-C transition validations have passed;
-write access stays closed until installed low-power and crash-recovery
-validation passes.
+installed unexpected-exit recovery has also passed. The installed low-power
+run failed because the Service did not observe the required sleep/resume
+boundary, so write access stays closed.
 
 On the `RZ09-0581`, OpenBlade discovers the exact `1532:0F43` cooling pad
 and can store Auto, Fixed, or Smart Fan Curve intent. Fixed plans cover 500 to

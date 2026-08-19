@@ -23,9 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Recorded successful exact-device padless HyperBoost validation for the
   immediate transition, 60-second no-load dwell, 60-second Steel Nomad load,
   and FullPower330W-to-USB-C100W transition. Each run confirmed paired mode 7,
-  exact Balanced restoration, and post-restoration pad absence. Production
-  write access remains closed pending installed low-power and crash-recovery
-  validation.
+  exact Balanced restoration, and post-restoration pad absence. Installed
+  unexpected-exit recovery also passed with one journal-backed restoration.
+  The installed sleep/resume run did not trigger Service low-power recovery,
+  so production write access remains closed on that failed gate.
 - Added the fail-closed production plumbing for pad-less HyperBoost on the exact
   `RZ09-0581`: a separate capability, defense-in-depth physical-absence checks,
   Balanced-only routing, admitted full-power adapter checks, and durable
@@ -121,6 +122,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Allowed the HyperBoost lifecycle verifier to distinguish the expected
+  post-crash `Fans` drift marker from an installed-generation mismatch while
+  retaining exact build, state, journal, boundary, and exactly-once recovery
+  checks.
 - Restored only OpenBlade-owned HyperBoost to its confirmed starting base
   before low power or shutdown, left externally observed mode 7 unchanged, and
   latched indeterminate outcomes without retry. Keyboard and fan cleanup still
