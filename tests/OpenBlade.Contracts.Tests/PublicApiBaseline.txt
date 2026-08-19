@@ -695,6 +695,7 @@ type sealed class OpenBlade.Contracts.FireLightingParameters
   method virtual System.Boolean Equals(OpenBlade.Contracts.FireLightingParameters other)
 type enum OpenBlade.Contracts.FirmwareCompatibilityStatus
   field System.Int32 value__
+  field const OpenBlade.Contracts.FirmwareCompatibilityStatus ModelScoped = 4
   field const OpenBlade.Contracts.FirmwareCompatibilityStatus Tested = 1
   field const OpenBlade.Contracts.FirmwareCompatibilityStatus Unknown = 0
   field const OpenBlade.Contracts.FirmwareCompatibilityStatus UntestedAllowed = 3
@@ -1222,7 +1223,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 47
+  field const System.Int32 ProtocolVersion = 48
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

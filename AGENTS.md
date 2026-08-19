@@ -22,14 +22,15 @@ files or components and inspect the combined diff before verification.
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
-only for a model and firmware combination backed by sanitized, reviewed capture
-evidence. Never copy a command from another model, expose raw firmware commands,
-or weaken exact-device checks to make a feature appear supported.
+only for an exact model and SKU backed by sanitized, reviewed capture evidence.
+Captured BIOS versions are provenance by default; a capability may impose an
+exact firmware restriction only through an explicit reviewed admission rule.
+Never copy a command from another model, expose raw firmware commands, or
+weaken exact-device checks to make a feature appear supported.
 
 Production support is exact-device scoped. Current admitted targets include the
-Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`) on their
-documented firmware baselines; neither model's device-specific assumptions may
-be copied to the other.
+Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`); neither
+model's device-specific assumptions may be copied to the other.
 
 ## Codebase map
 

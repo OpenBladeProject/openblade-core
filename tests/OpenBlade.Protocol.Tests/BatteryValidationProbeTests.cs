@@ -65,6 +65,30 @@ public sealed class BatteryValidationProbeTests
             evaluation.Result.FirmwareCompatibility);
     }
 
+    [Fact]
+    public void Evaluate_ReportsModelScopedFirmwareCompatibility()
+    {
+        var modelScopedHost = new HostIdentityReadResult(
+            new HostIdentityEvidence(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                "99.99"),
+            null,
+            HostFirmwareCompatibility.ModelScoped);
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(modelScopedHost, null),
+            new ScriptedGuard(new HardwareAccessDecision(["controller"], null), null),
+            new ScriptedNative([]),
+            ControllerExclusivityPolicy.Strict);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationFirmwareCompatibility.ModelScoped,
+            evaluation.Result.FirmwareCompatibility);
+    }
+
     [Theory]
     [InlineData(false, BatteryValidationProbeClassification.ConflictBlocked)]
     [InlineData(true, BatteryValidationProbeClassification.ConflictDetectionFailed)]

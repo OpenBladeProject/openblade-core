@@ -169,7 +169,7 @@ public sealed class ProductionFixtureSourceTests
             ProductionBatteryReadEvidence.Production
                 .SupportsRz090581CapabilityDiagnosticsQuery);
         Assert.True(
-            ProductionBatteryReadEvidence.Rz090581Bios301
+            ProductionBatteryReadEvidence.Rz090581ModelScoped
                 .SupportsRz090581CapabilityDiagnosticsQuery);
         Assert.Empty(typeof(ProductionBatteryReadEvidence).GetConstructors());
         Assert.DoesNotContain(

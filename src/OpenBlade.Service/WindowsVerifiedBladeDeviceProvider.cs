@@ -196,6 +196,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 FirmwareCompatibilityStatus.UntestedBlocked,
             BatteryValidationFirmwareCompatibility.UntestedAllowed =>
                 FirmwareCompatibilityStatus.UntestedAllowed,
+            BatteryValidationFirmwareCompatibility.ModelScoped =>
+                FirmwareCompatibilityStatus.ModelScoped,
             _ => FirmwareCompatibilityStatus.Unknown,
         };
 
@@ -204,7 +206,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         // Unknown fails closed for renderer reuse, but it must not erase a
         // previously confirmed override dependency. Otherwise a transient
         // probe failure immediately before disabling could skip renderer cleanup.
-        if (compatibility == FirmwareCompatibilityStatus.Tested)
+        if (compatibility is FirmwareCompatibilityStatus.Tested
+            or FirmwareCompatibilityStatus.ModelScoped)
         {
             Volatile.Write(ref requiresUntestedFirmwareOverride, 0);
         }
@@ -220,7 +223,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private bool IsOwnedRendererFirmwareAccessAllowed()
     {
         FirmwareCompatibilityStatus compatibility = FirmwareCompatibility;
-        return compatibility == FirmwareCompatibilityStatus.Tested
+        return compatibility is FirmwareCompatibilityStatus.Tested
+            or FirmwareCompatibilityStatus.ModelScoped
             || compatibility == FirmwareCompatibilityStatus.UntestedAllowed
                 && compatibilityPolicy.AllowUntestedFirmware;
     }

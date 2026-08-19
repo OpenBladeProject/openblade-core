@@ -7450,12 +7450,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 firmware?.ModelNumber,
                 RazerBladeModelCatalog.OpenBladeTargetModelNumber,
                 StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(
-                firmware?.BiosVersion,
-                TargetBladeDevice.BiosVersion,
-                StringComparison.Ordinal)
-            || deviceProvider.FirmwareCompatibility
-                != FirmwareCompatibilityStatus.Tested)
+            || deviceProvider.FirmwareCompatibility is not
+                (FirmwareCompatibilityStatus.Tested
+                    or FirmwareCompatibilityStatus.ModelScoped))
         {
             return;
         }

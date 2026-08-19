@@ -21,7 +21,8 @@ the model, validation, and redistribution limits.
 
 Hardware support is evidence-based. OpenBlade is Razer-only, and a control is
 enabled only when its command has reviewed, sanitized capture evidence for the
-exact laptop and firmware.
+exact laptop. BIOS versions remain evidence provenance unless a capability has
+an explicit firmware-specific restriction.
 
 | Dashboard | Lighting |
 | :---: | :---: |
@@ -29,18 +30,10 @@ exact laptop and firmware.
 
 ## Current hardware support
 
-| Laptop | USB identity | BIOS | EC | MCU |
-| --- | --- | --- | --- | --- |
-| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01`, `4.00` | `1.04` | `1.05`, `1.06` |
-| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | `1.09` | `1.09` |
-
-- Firmware update inventory also selects the exact published RZ09-0528 VBIOS
-  for the installed RTX 5080 or RTX 5090 GPU. On RZ09-0581 it displays Razer's
-  published Thunderbolt 5 `69.1` and touchpad `1.07` versions as
-  `ObservedOnly`; their installed versions remain unavailable, so OpenBlade
-  does not compare them or report an update.
-- Unlisted controls and Blade models remain unsupported without equivalent
-  capture and restoration evidence
+| Laptop | USB identity |
+| --- | --- |
+| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` |
+| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` |
 
 ## What it controls
 

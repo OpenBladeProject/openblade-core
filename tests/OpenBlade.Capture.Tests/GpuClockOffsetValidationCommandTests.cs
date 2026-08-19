@@ -21,6 +21,8 @@ public sealed class GpuClockOffsetValidationCommandTests
             ],
             controller.Writes);
         Assert.Contains("Requested=Core=1;Memory=1", output.ToString());
+        Assert.Contains("Target=RZ09-0528 1532:02C6", output.ToString());
+        Assert.DoesNotContain("BIOS 2.02", output.ToString());
         Assert.Contains("ReadBack=True", output.ToString());
         Assert.Contains("Restored=True", output.ToString());
         Assert.Contains("Success=True", output.ToString());
