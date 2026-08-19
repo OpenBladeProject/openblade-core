@@ -1748,7 +1748,7 @@ public sealed class ControlCoordinator
     private static ControlResult PreservedForHyperBoost(string name) => new(
         ControlResultStatus.Blocked,
         $"Automatic {name.ToLowerInvariant()} profile application was deferred " +
-        "because HyperBoost remains active while firmware owns the power-source transition.");
+        "because HyperBoost remains active; performance and fan changes are deferred until it exits.");
 
     private static ControlResult AutomaticReadUnavailable(string name) => new(
         ControlResultStatus.Blocked,

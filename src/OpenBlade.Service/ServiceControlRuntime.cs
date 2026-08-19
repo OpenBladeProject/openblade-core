@@ -8641,9 +8641,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // Hardware evidence confirms that firmware exits mode 7 when
                 // external power is removed, while mode 7 may remain active on
                 // USB-C. Preserve the active firmware state across every
-                // external-power profile transition instead of issuing a
-                // redundant thermal write. A later confirmed Battery sample
-                // relinquishes ownership through the ordinary readback path.
+                // automatic full transition instead of issuing a redundant
+                // thermal write. A later confirmed inactive sample relinquishes
+                // ownership through the ordinary readback path.
                 exclusions.Add(DeviceSubsystem.Performance);
                 exclusions.Add(DeviceSubsystem.Fans);
             }
@@ -8759,7 +8759,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             hyperBoostJournalRetired =
                 await RetireInactiveHyperBoostJournalIfPresentAsync(
-                        "A firmware-confirmed Battery exit relinquished HyperBoost ownership, but its journal could not be retired.")
+                        "HyperBoost was confirmed inactive, but its ownership journal could not be retired.")
                     .ConfigureAwait(false);
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {

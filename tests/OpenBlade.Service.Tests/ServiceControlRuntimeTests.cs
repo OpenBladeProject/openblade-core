@@ -13849,6 +13849,43 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Null(journal.Journal);
     }
 
+    [Fact]
+    public async Task UserActivation_FullTransitionPreservesOwnedHyperBoostWithoutThermalWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var padProvider = new FixedVerifiedCoolingPadProvider(
+            new CoolingPadObservationSnapshot(
+                CoolingPadConnectionState.Absent,
+                OpaqueFanObservation: null,
+                IsFresh: true,
+                CoolingPadObservationFailure.None));
+        TestContext context = await CreatePadlessHyperBoostReadyContextAsync(
+            padProvider,
+            journal);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int fanWrites = context.Device.FanSetCalls;
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.ConfirmedState?.HyperBoostActive);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            journal.Journal?.State);
+        Assert.Empty(status.UnconfirmedWrites);
+    }
+
     [Theory]
     [InlineData(
         (int)CoolingPadConnectionState.Absent,
