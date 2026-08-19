@@ -121,6 +121,25 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             break;
                         case ServiceLifecycleTrigger.DisplayOff:
+                            if (lowPowerGate.IsActive)
+                            {
+                                logger.LogInformation(
+                                    "Skipping display lighting suppression transition while the low-power gate is active.");
+                            }
+                            else
+                            {
+                                // Some Modern Standby systems begin their sleep session at
+                                // display-off without delivering the registered suspend callback.
+                                // Restore only OpenBlade-owned HyperBoost here; treating display-off
+                                // as a full suspend would incorrectly release unrelated ownership.
+                                await runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
+                                    stoppingToken);
+                                await runtime.SetLightingSuppressionAsync(
+                                    OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
+                                    suppressed: true,
+                                    stoppingToken);
+                            }
+                            break;
                         case ServiceLifecycleTrigger.DisplayOn:
                             if (lowPowerGate.IsActive)
                             {
@@ -131,7 +150,7 @@ public sealed class ServiceLifecycleRefreshLoop
                             {
                                 await runtime.SetLightingSuppressionAsync(
                                     OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
-                                    suppressed: trigger == ServiceLifecycleTrigger.DisplayOff,
+                                    suppressed: false,
                                     stoppingToken);
                             }
                             break;

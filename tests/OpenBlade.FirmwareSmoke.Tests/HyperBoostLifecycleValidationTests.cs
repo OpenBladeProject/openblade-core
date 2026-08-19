@@ -328,6 +328,46 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyAsync_LowPowerAcceptsModernStandbyDisplayOffFallback()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_013, 123_468);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "low-power-display-off.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        Assert.True(armed.Success);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before Modern Standby display-off fallback");
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.RecoveryAttemptsObserved);
+        Assert.Equal(1, result.RecoveryCompletionsObserved);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
     public async Task VerifyAsync_UnexpectedExitRequiresReplacementProcessAndExactlyOnce()
     {
         Directory.CreateDirectory(directory);
@@ -398,6 +438,49 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(1),
                     "before low power"))
+            .ToArray();
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(2, result.RecoveryAttemptsObserved);
+        Assert.Equal(2, result.RecoveryCompletionsObserved);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_LowPowerRejectsSuspendAndDisplayOffDuplicateRecovery()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_014, 123_469);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "duplicate-boundaries.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before low power").Concat(
+                RecoveryDiagnostics(
+                    armed.Marker.ArmedAtUtc.AddMilliseconds(3),
+                    "before Modern Standby display-off fallback"))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(

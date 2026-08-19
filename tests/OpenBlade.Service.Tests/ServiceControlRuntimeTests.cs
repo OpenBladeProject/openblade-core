@@ -2095,6 +2095,87 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task DisplayOffFallback_RestoresOwnedHyperBoostExactlyOnce()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareOwnedHyperBoostForDisplayOffAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Detail?.Contains(
+                "before Modern Standby display-off fallback",
+                StringComparison.Ordinal) == true);
+
+        await context.Runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
+            CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+    }
+
+    [Fact]
+    public async Task DisplayOffFallback_DoesNotRestoreExternallyObservedHyperBoost()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareOwnedHyperBoostForDisplayOffAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Contains("did not establish ownership", result.Message);
+    }
+
+    [Fact]
+    public async Task DisplayOffFallback_IndeterminateRestoreIsNotRetried()
+    {
+        TestContext context = await CreateOwnedHyperBoostContextAsync();
+        context.Device.HyperBoostFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "synthetic display-off restoration failure");
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult failed = await context.Runtime
+            .PrepareOwnedHyperBoostForDisplayOffAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.HyperBoostFailure = null;
+        await context.Runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
+            CancellationToken.None);
+
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
     public async Task PrepareForLowPower_RecordsDistinctReleaseFailureWithoutThrowing()
     {
         TestContext context = CreateContext(providerAvailable: true);

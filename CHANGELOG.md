@@ -5,6 +5,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored OpenBlade-owned HyperBoost at the display-off boundary used to enter
+  Modern Standby when Windows omits the registered suspend callback. The
+  fallback does not treat display-off as a full suspend, does not change
+  externally owned or indeterminate HyperBoost, and never re-enables the mode
+  after display-on.
+
 ### Added
 
 - Added developer-only padless HyperBoost validation for the exact

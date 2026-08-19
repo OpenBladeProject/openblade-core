@@ -56,13 +56,13 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Theory]
-    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0, 1)]
-    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0, 0, 0, 0)]
     public async Task Notification_RoutesToExpectedTypedRuntimeOperations(
         ServiceLifecycleTrigger trigger,
         int expectedPowerChanges,
@@ -70,7 +70,8 @@ public sealed class ServiceLifecycleRefreshLoopTests
         int expectedInvalidations,
         int expectedRestores,
         int expectedSuppressions,
-        int expectedLowPowerPreparations)
+        int expectedLowPowerPreparations,
+        int expectedDisplayOffHyperBoostPreparations)
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
@@ -94,10 +95,14 @@ public sealed class ServiceLifecycleRefreshLoopTests
         Assert.Equal(expectedRestores, runtime.LightingRestoreCount);
         Assert.Equal(expectedSuppressions, runtime.LightingSuppressionCount);
         Assert.Equal(expectedLowPowerPreparations, runtime.LowPowerPreparationCount);
+        Assert.Equal(
+            expectedDisplayOffHyperBoostPreparations,
+            runtime.DisplayOffHyperBoostPreparationCount);
         Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
         Assert.Equal(
             expectedPowerChanges + expectedObservations + expectedInvalidations
-                + expectedRestores + expectedSuppressions + expectedLowPowerPreparations,
+                + expectedRestores + expectedSuppressions + expectedLowPowerPreparations
+                + expectedDisplayOffHyperBoostPreparations,
             runtime.TotalOperationCount);
     }
 
@@ -254,6 +259,32 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Fact]
+    public async Task DisplayOff_RestoresOwnedHyperBoostBeforeLightingSuppression()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.DisplayOff);
+        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(
+            [
+                RecordingRuntime.Operation.PrepareDisplayOffHyperBoost,
+                RecordingRuntime.Operation.LightingSuppression,
+            ],
+            runtime.Operations);
+    }
+
+    [Fact]
     public async Task Notifications_ProcessSequentiallyAndContinueAfterFailure()
     {
         var source = new FakeLifecycleEventSource();
@@ -326,6 +357,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private int lightingRestoreCount;
         private int lightingSuppressionCount;
         private int lowPowerPreparationCount;
+        private int displayOffHyperBoostPreparationCount;
         private int resumeValidationBeginCount;
         private int resumeValidationCancelCount;
         private int totalOperationCount;
@@ -344,6 +376,9 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public int LightingSuppressionCount => Volatile.Read(ref lightingSuppressionCount);
 
         public int LowPowerPreparationCount => Volatile.Read(ref lowPowerPreparationCount);
+
+        public int DisplayOffHyperBoostPreparationCount =>
+            Volatile.Read(ref displayOffHyperBoostPreparationCount);
 
         public int ResumeValidationBeginCount =>
             Volatile.Read(ref resumeValidationBeginCount);
@@ -396,6 +431,14 @@ public sealed class ServiceLifecycleRefreshLoopTests
             Interlocked.Increment(ref lowPowerPreparationCount);
             await RecordRefreshAsync(Operation.PrepareLowPower);
             return new ControlOperationResult(ControlOperationStatus.Applied, "Released");
+        }
+
+        public async Task<ControlOperationResult> PrepareOwnedHyperBoostForDisplayOffAsync(
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref displayOffHyperBoostPreparationCount);
+            await RecordRefreshAsync(Operation.PrepareDisplayOffHyperBoost);
+            return new ControlOperationResult(ControlOperationStatus.Applied, "Restored");
         }
 
         public Task<ControlOperationResult> SetLightingSuppressionAsync(
@@ -474,6 +517,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
             RestoreLighting,
             LightingSuppression,
             PrepareLowPower,
+            PrepareDisplayOffHyperBoost,
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();

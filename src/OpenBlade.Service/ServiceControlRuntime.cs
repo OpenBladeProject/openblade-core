@@ -293,6 +293,12 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => PrepareForShutdownAsync(cancellationToken);
 
+    Task<ControlOperationResult> PrepareOwnedHyperBoostForDisplayOffAsync(
+        CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "OpenBlade-owned HyperBoost was left unchanged."));
+
     Task BeginResumeValidationAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
@@ -6639,6 +6645,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(ControlOperationStatus.Failed, failure);
             return new ControlOperationResult(ControlOperationStatus.Failed, failure);
         }
+    }
+
+    public Task<ControlOperationResult> PrepareOwnedHyperBoostForDisplayOffAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        return RestoreOwnedHyperBoostForLifecycleCoreAsync(
+            "Modern Standby display-off fallback",
+            cancellationToken);
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(

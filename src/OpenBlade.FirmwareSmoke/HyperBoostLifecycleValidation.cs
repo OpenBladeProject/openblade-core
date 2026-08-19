@@ -464,23 +464,28 @@ internal sealed class HyperBoostLifecycleValidationRunner
 
         IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics =
             await readDiagnostics(cancellationToken).ConfigureAwait(false);
-        string boundary = scenario == HyperBoostLifecycleScenario.LowPower
-            ? "before low power"
-            : "before unexpected-exit recovery";
+        string[] boundaries = scenario == HyperBoostLifecycleScenario.LowPower
+            ? [
+                "before low power",
+                "before Modern Standby display-off fallback",
+            ]
+            : ["before unexpected-exit recovery"];
         int attempts = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
-            && entry.Detail?.Contains(
-                $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(marker.BaseMode)} {boundary}.",
-                StringComparison.Ordinal) == true);
+            && boundaries.Any(boundary =>
+                entry.Detail?.Contains(
+                    $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    StringComparison.Ordinal) == true));
         int completions = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
-            && entry.Detail?.Contains(
-                $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(marker.BaseMode)} {boundary}.",
-                StringComparison.Ordinal) == true);
+            && boundaries.Any(boundary =>
+                entry.Detail?.Contains(
+                    $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    StringComparison.Ordinal) == true));
         bool success = exactGeneration
             && processBoundary
             && exactFinal
