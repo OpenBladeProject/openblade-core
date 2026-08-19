@@ -19,6 +19,55 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void CompareUnchangedInstalledGeneration_AcceptsDisabledLightingRenderer()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0") with
+        {
+            Controls = CreateSnapshot("1.5.0.0").Controls with
+            {
+                DesiredLightingEffect = "Off",
+                LightingRendererOwnership = "None",
+            },
+        };
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.True(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "state.lighting-renderer").Outcome);
+    }
+
+    [Fact]
+    public void CompareUnchangedInstalledGeneration_RejectsMissingActiveRenderer()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0") with
+        {
+            Controls = CreateSnapshot("1.5.0.0").Controls with
+            {
+                DesiredLightingEffect = "Static",
+                LightingRendererOwnership = "None",
+            },
+        };
+
+        FirmwareSmokeReport report =
+            FirmwareSmokeAssessment.CompareUnchangedInstalledGeneration(
+                snapshot,
+                snapshot);
+
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "state.lighting-renderer").Outcome);
+    }
+
+    [Fact]
     public void HealthyBaselineHasNoFailures()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.5.0.0");

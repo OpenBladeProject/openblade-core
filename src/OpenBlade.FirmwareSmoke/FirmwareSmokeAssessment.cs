@@ -313,10 +313,16 @@ public static class FirmwareSmokeAssessment
             Value(current.Controls.KeyboardDriverModeActive)));
         checks.Add(Check(
             "state.lighting-renderer",
-            "Lighting renderer is active and not faulted",
-            current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
-            "An active, non-faulted renderer",
-            current.Controls.LightingRendererOwnership));
+            "Lighting renderer state matches the desired effect and is not faulted",
+            string.Equals(
+                current.Controls.DesiredLightingEffect,
+                "Off",
+                StringComparison.Ordinal)
+                ? current.Controls.LightingRendererOwnership == "None"
+                : current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
+            "None for Off; otherwise an active, non-faulted renderer",
+            $"{current.Controls.DesiredLightingEffect ?? "Unavailable"}/" +
+                current.Controls.LightingRendererOwnership));
         checks.Add(Check(
             "runtime.components",
             "Installed OpenBlade component versions match the baseline",
