@@ -2012,8 +2012,37 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AppWindow.Resize(new Windows.Graphics.SizeInt32(1920, 1000))",
-            window,
+            "? new Windows.Graphics.SizeInt32(1920, 1000)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ": new Windows.Graphics.SizeInt32(1120, 820)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshotMainWindow.AppWindow.Resize(snapshotSize)",
+            app,
+            StringComparison.Ordinal);
+        int perPageResize = app.IndexOf(
+            "snapshotMainWindow.AppWindow.Resize(snapshotSize)",
+            pageLoop,
+            StringComparison.Ordinal);
+        int pageSelection = app.IndexOf(
+            "snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination)",
+            pageLoop,
+            StringComparison.Ordinal);
+        Assert.True(pageLoop < perPageResize && perPageResize < pageSelection);
+        int appearanceSnapshot = window.IndexOf(
+            "internal void ShowLocalizationSnapshotSettingsAppearance()",
+            StringComparison.Ordinal);
+        int nextSnapshotMember = window.IndexOf(
+            "internal bool HasLocalizedCheckNowButton",
+            appearanceSnapshot,
+            StringComparison.Ordinal);
+        Assert.True(appearanceSnapshot >= 0 && appearanceSnapshot < nextSnapshotMember);
+        Assert.DoesNotContain(
+            "AppWindow.Resize",
+            window[appearanceSnapshot..nextSnapshotMember],
             StringComparison.Ordinal);
         Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage",

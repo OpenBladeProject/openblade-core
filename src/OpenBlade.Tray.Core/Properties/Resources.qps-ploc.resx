@@ -1287,13 +1287,4 @@
   <data name="Follow system" xml:space="preserve">
     <value>[!! Fóllów sýstém ~~~~~ !!]</value>
   </data>
-  <data name="English" xml:space="preserve">
-    <value>[!! Énglísh ~~~ !!]</value>
-  </data>
-  <data name="Simplified Chinese" xml:space="preserve">
-    <value>[!! Símplífíéd Chínésé ~~~~~~ !!]</value>
-  </data>
-  <data name="Russian" xml:space="preserve">
-    <value>[!! Rússíán ~~~ !!]</value>
-  </data>
 </root>

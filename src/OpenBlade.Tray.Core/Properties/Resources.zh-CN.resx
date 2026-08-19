@@ -1287,13 +1287,4 @@
   <data name="Follow system" xml:space="preserve">
     <value>跟随系统</value>
   </data>
-  <data name="English" xml:space="preserve">
-    <value>English</value>
-  </data>
-  <data name="Simplified Chinese" xml:space="preserve">
-    <value>简体中文</value>
-  </data>
-  <data name="Russian" xml:space="preserve">
-    <value>俄语</value>
-  </data>
 </root>

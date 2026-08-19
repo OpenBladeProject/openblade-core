@@ -2998,7 +2998,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     internal void ShowLocalizationSnapshotSettingsAppearance()
     {
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1920, 1000));
         SettingsAppearanceSection.StartBringIntoView();
     }
 

@@ -435,6 +435,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                     StringComparison.Ordinal));
             foreach (string destination in destinations)
             {
+                Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
+                    destination,
+                    "settings-appearance",
+                    StringComparison.Ordinal)
+                    ? new Windows.Graphics.SizeInt32(1920, 1000)
+                    : new Windows.Graphics.SizeInt32(1120, 820);
+                snapshotMainWindow.AppWindow.Resize(snapshotSize);
+                await WaitForSnapshotLayoutAsync();
                 string navigationDestination = string.Equals(
                     destination,
                     "settings-appearance",
