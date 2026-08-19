@@ -167,7 +167,7 @@ switch ($Lane) {
                 '--runtime', 'win-x64', '--self-contained', 'true',
                 '--property:PublishTrimmed=false', '--property:DebugType=None',
                 '--property:DebugSymbols=false',
-                '--property:SatelliteResourceLanguages=en-US',
+                '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
                 '--property:NuGetAudit=false', '--no-restore',
                 '--output', $output)
         }

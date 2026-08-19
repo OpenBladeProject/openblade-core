@@ -161,7 +161,7 @@ public static class PageLayoutPreferenceDefaults
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsAppearance,
             TrayText.Get("Appearance"),
-            TrayText.Get("Configure theme, accent color, navigation, and tray text.")),
+            TrayText.Get("Configure language, theme, accent color, navigation, and tray text.")),
         new(
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsUpdates,

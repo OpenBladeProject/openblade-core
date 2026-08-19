@@ -922,7 +922,7 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(23, usages.Length);
+        Assert.Equal(24, usages.Length);
         Assert.All(usages, usage =>
         {
             Assert.NotNull(Attribute(usage, "ItemsSource"));
@@ -986,6 +986,7 @@ public sealed class CapabilityPresentationTests
             "Display color profile",
             "Live readings refresh interval",
             "App theme",
+            "App language",
             "App accent color",
             "Update channel",
             "Update check interval",
@@ -1106,7 +1107,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            16,
+            17,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -1147,12 +1148,22 @@ public sealed class CapabilityPresentationTests
         _ = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ResponsiveChoiceSelector"
             && Attribute(element, "AccessibleName") == "App theme");
+        XElement language = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ResponsiveChoiceSelector"
+            && Attribute(element, "AccessibleName") == "App language");
+        Assert.Equal(
+            "{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}",
+            Attribute(language, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
+            Attribute(language, "SelectedItem"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
                  {
                      "Live readings refresh interval",
                      "App theme",
+                     "App language",
                      "App accent color",
                      "Update channel",
                      "Update check interval",

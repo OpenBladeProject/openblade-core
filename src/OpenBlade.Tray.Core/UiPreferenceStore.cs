@@ -59,7 +59,8 @@ public sealed record UiPreferences(
     string? LastNotifiedReleaseTag = null,
     string? LastNotifiedFirmwareSignature = null,
     TrayDashboardPreference? TrayDashboard = null,
-    bool LabFeaturesEnabled = false)
+    bool LabFeaturesEnabled = false,
+    UiLanguagePreference Language = UiLanguagePreference.FollowSystem)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -104,7 +105,11 @@ public sealed record UiPreferences(
         LastNotifiedReleaseTag: null,
         LastNotifiedFirmwareSignature: null,
         TrayDashboard: TrayDashboardPreferenceDefaults.Preference,
-        LabFeaturesEnabled: false);
+        LabFeaturesEnabled: false,
+        Language: UiLanguagePreference.FollowSystem);
+
+    public UiLanguagePreference EffectiveLanguage =>
+        UiLanguagePreferencePolicy.Normalize(Language);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -183,10 +188,69 @@ public sealed class UiPreferenceStore
 
     private readonly string path;
 
+    public static string DefaultPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "OpenBlade",
+        "preferences.json");
+
+    public static UiPreferenceStore CreateDefault() => new(DefaultPath);
+
     public UiPreferenceStore(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         this.path = Path.GetFullPath(path);
+    }
+
+    public UiLanguagePreference LoadLanguagePreference()
+    {
+        if (!File.Exists(path))
+        {
+            return UiLanguagePreference.FollowSystem;
+        }
+
+        try
+        {
+            using FileStream stream = new(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using JsonDocument document = JsonDocument.Parse(stream);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return UiLanguagePreference.FollowSystem;
+            }
+
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                if (!property.Name.Equals("language", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (property.Value.ValueKind == JsonValueKind.String
+                    && Enum.TryParse(
+                        property.Value.GetString(),
+                        ignoreCase: true,
+                        out UiLanguagePreference namedPreference))
+                {
+                    return UiLanguagePreferencePolicy.Normalize(namedPreference);
+                }
+                if (property.Value.ValueKind == JsonValueKind.Number
+                    && property.Value.TryGetInt32(out int numericPreference))
+                {
+                    return UiLanguagePreferencePolicy.Normalize(
+                        (UiLanguagePreference)numericPreference);
+                }
+                return UiLanguagePreference.FollowSystem;
+            }
+        }
+        catch (Exception exception) when (
+            exception is JsonException or IOException or UnauthorizedAccessException or SecurityException)
+        {
+        }
+
+        return UiLanguagePreference.FollowSystem;
     }
 
     public async Task<UiPreferences> LoadAsync(CancellationToken cancellationToken = default)

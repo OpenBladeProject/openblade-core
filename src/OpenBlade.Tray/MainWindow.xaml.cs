@@ -243,12 +243,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         Root.SizeChanged += OnRootSizeChanged;
         AppWindow.Changed += OnAppWindowChanged;
 
-        string localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
-        preferenceStore = new UiPreferenceStore(Path.Combine(
-            localApplicationData,
-            "OpenBlade",
-            "preferences.json"));
+        preferenceStore = UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
             preferenceStore.SaveAsync,
             exception => Trace.TraceError(
@@ -592,6 +587,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async Task InitializeCoreAsync()
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
+        UiLanguagePreference initialLanguage = UiLanguagePreference.FollowSystem;
         LiveReadingsCadence liveReadingsRefreshCadence =
             LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
@@ -648,6 +644,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
+            initialLanguage = preferences.EffectiveLanguage;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
@@ -731,6 +728,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         ViewModel.Theme = initialTheme;
+        ViewModel.LanguagePreference = initialLanguage;
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
@@ -859,6 +857,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
 
             dispatcherQueue.TryEnqueue(() => ApplyThemeAndQueueSave(selectedTheme));
+            return;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.LanguagePreference))
+        {
+            QueuePreferenceSave();
             return;
         }
 
@@ -1098,7 +1102,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedReleaseTag: lastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
-                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled));
+                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
+                Language: ViewModel.LanguagePreference));
         }
         catch (ObjectDisposedException)
         {
@@ -1506,9 +1511,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "Check for OpenBlade updates?"),
             Content = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_Content",
-                "OpenBlade can check GitHub for a new release once per day when "
-                    + "the tray starts. The check sends no hardware state, profiles, "
-                    + "settings, or diagnostics. You can change this later in Settings."),
+                "OpenBlade can check GitHub for a new release once per day when the tray starts. The check sends no hardware state, profiles, settings, or diagnostics. You can change this later in Settings."),
             PrimaryButtonText = LocalizedResources.Get(
                 "MainWindow_UpdateConsent_PrimaryButton",
                 "Use daily checks"),
@@ -3023,6 +3026,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
         MainNavigation.SelectedItem = selected;
         ApplyNavigationDestination(destination);
+    }
+
+    internal void ShowLocalizationSnapshotSettingsAppearance()
+    {
+        SettingsAppearanceSection.StartBringIntoView();
     }
 
     internal bool HasLocalizedCheckNowButton(

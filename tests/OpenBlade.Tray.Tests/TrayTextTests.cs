@@ -15,6 +15,18 @@ public sealed class TrayTextTests
         Assert.Equal("Battery protection", TrayText.Get("Battery protection"));
     }
 
+    [Theory]
+    [InlineData("zh-CN", "电池保护")]
+    [InlineData("ru-RU", "Защита батареи")]
+    public void Get_SupportedCultureLoadsTranslatedResource(
+        string cultureName,
+        string expected)
+    {
+        using var culture = new CultureScope(cultureName);
+
+        Assert.Equal(expected, TrayText.Get("Battery protection"));
+    }
+
     [Fact]
     public void Get_MissingRequiredKeyFallsBackWithoutThrowing()
     {

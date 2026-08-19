@@ -138,9 +138,9 @@ if ($buildIdentity.Channel -eq 'Nightly') {
 $productionPublishArguments = @(
     '--property:DebugType=None',
     '--property:DebugSymbols=false',
-    # OpenBlade currently ships English UI strings. Keep native WinUI MUI
-    # resources, but do not deploy unused managed satellite assemblies.
-    '--property:SatelliteResourceLanguages=en-US',
+    # Keep only the supported production cultures. qps-ploc remains a
+    # development-only qualifier and satellite resource.
+    '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
     '--property:OpenBladeIncludePseudoLocalization=false'
 )
 $setupPublishArguments = @(

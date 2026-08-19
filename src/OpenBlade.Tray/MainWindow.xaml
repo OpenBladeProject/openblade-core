@@ -3475,6 +3475,28 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock x:Uid="MainWindow_TextBlockAppLanguage" Text="App language"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock x:Uid="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA" Text="Use your Windows display language, or choose a language. Restart OpenBlade to apply changes."
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppLanguage" Grid.Column="1"
+                                                                    CompactMinWidth="190"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    AccessibleName="App language"
+                                                                    ItemsSource="{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}"
+                                                                    DisplayMemberPath="Label"
+                                                                    SelectedItem="{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock x:Uid="MainWindow_TextBlockAppAccentColor" Text="App accent color"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock x:Uid="MainWindow_TextBlockUseOpenBladeGreenTheWindowsAccentOr" Text="Use OpenBlade green, the Windows accent, or a color you choose."

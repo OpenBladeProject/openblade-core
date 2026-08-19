@@ -398,6 +398,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private LaptopBehaviorProfileSettings? activeProfileOriginalLaptopBehavior;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private UiLanguagePreference languagePreference = UiLanguagePreference.FollowSystem;
     private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
@@ -3758,6 +3759,43 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ArgumentNullException.ThrowIfNull(value);
             Theme = value.Preference;
+        }
+    }
+
+    public UiLanguagePreference LanguagePreference
+    {
+        get => languagePreference;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (languagePreference == value)
+            {
+                return;
+            }
+
+            SetField(ref languagePreference, value);
+            Notify(nameof(SelectedLanguageOption));
+        }
+    }
+
+    public IReadOnlyList<UiLanguagePreferenceOption> LanguageSelectionOptions { get; } =
+    [
+        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow system")),
+        new(UiLanguagePreference.English, "English"),
+        new(UiLanguagePreference.SimplifiedChinese, "简体中文"),
+        new(UiLanguagePreference.Russian, "Русский"),
+    ];
+
+    public UiLanguagePreferenceOption SelectedLanguageOption
+    {
+        get => LanguageSelectionOptions.Single(option => option.Preference == LanguagePreference);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            LanguagePreference = value.Preference;
         }
     }
 

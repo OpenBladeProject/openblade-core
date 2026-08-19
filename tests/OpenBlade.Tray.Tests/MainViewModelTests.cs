@@ -7796,6 +7796,45 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LanguagePreference_OffersSystemEnglishChineseAndRussianChoices()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        viewModel.SelectedLanguageOption = viewModel.LanguageSelectionOptions.Single(option =>
+            option.Preference == UiLanguagePreference.Russian);
+
+        Assert.Equal(UiLanguagePreference.Russian, viewModel.LanguagePreference);
+        Assert.Equal("Русский", viewModel.SelectedLanguageOption.Label);
+        Assert.Equal(
+            Enum.GetValues<UiLanguagePreference>(),
+            viewModel.LanguageSelectionOptions.Select(option => option.Preference));
+        Assert.Contains(nameof(MainViewModel.LanguagePreference), changed);
+        Assert.Contains(nameof(MainViewModel.SelectedLanguageOption), changed);
+    }
+
+    [Theory]
+    [InlineData("en-US", "Follow system")]
+    [InlineData("zh-CN", "跟随系统")]
+    [InlineData("ru-RU", "Следовать системным настройкам")]
+    public async Task LanguagePreference_LocalizesOnlyTheSystemChoice(
+        string cultureName,
+        string expectedSystemLabel)
+    {
+        using var culture = new CultureScope(cultureName);
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        Assert.Equal(
+            new[] { expectedSystemLabel, "English", "简体中文", "Русский" },
+            viewModel.LanguageSelectionOptions.Select(option => option.Label));
+    }
+
+    [Fact]
     public async Task ExportDiagnosticsCommand_IsConnectedOnlyAndWorksDuringReadOnlyConflict()
     {
         var client = new FakeServiceClient();
