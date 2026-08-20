@@ -60,6 +60,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - The firmware versions table now stays hidden when none of its installed
   values are readable, while update controls and the official support link
   remain available.
+- Device Information now omits BIOS, EC, MCU, and VBIOS rows when the same
+  installed version is already visible in the firmware comparison table.
 - Tied each optional Windows power mode to a laptop performance preset instead
   of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
   transitions, and Fn+P now update Windows only after the laptop preset is
@@ -81,7 +83,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device admission, and corrected the platform warning shown while controls are unavailable.
+- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
+  admission, and corrected the platform warning shown while controls are
+  unavailable.
+- Preserved responsive selector bindings after Dashboard edits so switching
+  between AC and battery cannot leave the laptop-performance dropdown blank or
+  prevent it from expanding into horizontal choices when space is available.
 - Kept malformed current-schema profile files on the safe recovery and import
   error paths, and cleared stray legacy Windows power modes before publishing
   migrated schema 1 profiles.

@@ -388,6 +388,14 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.False(viewModel.ShowsTouchpadFirmware);
         Assert.False(viewModel.ShowsFirmwareVersions);
         Assert.Contains(nameof(viewModel.ShowsFirmwareVersions), changedProperties);
+        Assert.True(viewModel.ShowsBiosInDeviceInformation);
+        Assert.True(viewModel.ShowsEcInDeviceInformation);
+        Assert.True(viewModel.ShowsMcuInDeviceInformation);
+        Assert.True(viewModel.ShowsVbiosInDeviceInformation);
+        Assert.Contains(nameof(viewModel.ShowsBiosInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsEcInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsMcuInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsVbiosInDeviceInformation), changedProperties);
 
         changedProperties.Clear();
         viewModel.UpdateInstalledFirmware(new FirmwareVersions(
@@ -408,6 +416,37 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.True(viewModel.ShowsTouchpadFirmware);
         Assert.True(viewModel.ShowsFirmwareVersions);
         Assert.Contains(nameof(viewModel.ShowsFirmwareVersions), changedProperties);
+        Assert.False(viewModel.ShowsBiosInDeviceInformation);
+        Assert.False(viewModel.ShowsEcInDeviceInformation);
+        Assert.False(viewModel.ShowsMcuInDeviceInformation);
+        Assert.False(viewModel.ShowsVbiosInDeviceInformation);
+        Assert.Contains(nameof(viewModel.ShowsBiosInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsEcInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsMcuInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsVbiosInDeviceInformation), changedProperties);
+    }
+
+    [Fact]
+    public async Task ViewModel_KeepsDeviceInformationFirmwareForUnsupportedModels()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new("3.01", "1.04", "1.06")));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "1.6.0.0",
+            "95.04.5C.40.A9",
+            "RZ09-9999"));
+
+        Assert.False(viewModel.IsSupported);
+        Assert.True(viewModel.ShowsBiosFirmware);
+        Assert.True(viewModel.ShowsEcFirmware);
+        Assert.True(viewModel.ShowsMcuFirmware);
+        Assert.True(viewModel.ShowsVbiosFirmware);
+        Assert.True(viewModel.ShowsBiosInDeviceInformation);
+        Assert.True(viewModel.ShowsEcInDeviceInformation);
+        Assert.True(viewModel.ShowsMcuInDeviceInformation);
+        Assert.True(viewModel.ShowsVbiosInDeviceInformation);
     }
 
     [Fact]

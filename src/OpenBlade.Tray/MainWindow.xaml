@@ -759,7 +759,7 @@
                                                                     AccessibleName="Custom CPU level"
                                                                     IsEnabled="{Binding CanEditPerformance}"
                                                                     ItemsSource="{Binding AvailableCustomCpuLevels}"
-                                                                    SelectedItem="{Binding SelectedCustomCpuLevel}"
+                                                                    SelectedItem="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
@@ -785,7 +785,7 @@
                                                                     AccessibleName="Custom GPU level"
                                                                     IsEnabled="{Binding CanEditPerformance}"
                                                                     ItemsSource="{Binding AvailableCustomGpuLevels}"
-                                                                    SelectedItem="{Binding SelectedCustomGpuLevel}"
+                                                                    SelectedItem="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
@@ -4051,28 +4051,36 @@
                                                    AutomationProperties.Name="Display brightness driver status" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border x:Name="DeviceInformationBiosFirmwareRow"
+                                        Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsBiosInDeviceInformation, Mode=OneWay}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockBIOS" Text="BIOS" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutBiosVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border x:Name="DeviceInformationEcFirmwareRow"
+                                        Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsEcInDeviceInformation, Mode=OneWay}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockEC" Text="EC" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutEcVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border x:Name="DeviceInformationMcuFirmwareRow"
+                                        Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsMcuInDeviceInformation, Mode=OneWay}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockMCU" Text="MCU" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutMcuVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border x:Name="DeviceInformationVbiosFirmwareRow"
+                                        Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosInDeviceInformation, Mode=OneWay}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockVBIOS" Text="VBIOS" Style="{StaticResource CardTitleStyle}" />

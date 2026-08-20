@@ -566,6 +566,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
     public bool ShowsVbiosFirmware =>
         HasReadableFirmwareValue(installedFirmware?.VbiosVersion);
 
+    public bool ShowsBiosInDeviceInformation => !IsSupported || !ShowsBiosFirmware;
+
+    public bool ShowsEcInDeviceInformation => !IsSupported || !ShowsEcFirmware;
+
+    public bool ShowsMcuInDeviceInformation => !IsSupported || !ShowsMcuFirmware;
+
+    public bool ShowsVbiosInDeviceInformation => !IsSupported || !ShowsVbiosFirmware;
+
     public bool ShowsThunderboltFirmware =>
         supportPage?.PublishesThunderboltFirmware == true
         && HasReadableFirmwareValue(installedFirmware?.ThunderboltFirmwareVersion);
@@ -681,6 +689,10 @@ public sealed class FirmwareUpdateAssistantViewModel :
         Notify(nameof(ShowsEcFirmware));
         Notify(nameof(ShowsMcuFirmware));
         Notify(nameof(ShowsVbiosFirmware));
+        Notify(nameof(ShowsBiosInDeviceInformation));
+        Notify(nameof(ShowsEcInDeviceInformation));
+        Notify(nameof(ShowsMcuInDeviceInformation));
+        Notify(nameof(ShowsVbiosInDeviceInformation));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
         Notify(nameof(ShowsFirmwareVersions));

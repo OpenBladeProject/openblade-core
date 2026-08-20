@@ -177,6 +177,27 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_DeviceInformationHidesFirmwareDuplicatedByUpdateAssistant()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        (string RowName, string PropertyName)[] rows =
+        [
+            ("DeviceInformationBiosFirmwareRow", "ShowsBiosInDeviceInformation"),
+            ("DeviceInformationEcFirmwareRow", "ShowsEcInDeviceInformation"),
+            ("DeviceInformationMcuFirmwareRow", "ShowsMcuInDeviceInformation"),
+            ("DeviceInformationVbiosFirmwareRow", "ShowsVbiosInDeviceInformation"),
+        ];
+
+        Assert.All(rows, row =>
+        {
+            XElement element = NamedElement(document, "Border", row.RowName);
+            Assert.Equal(
+                $"{{x:Bind FirmwareUpdateViewModel.{row.PropertyName}, Mode=OneWay}}",
+                Attribute(element, "Visibility"));
+        });
+    }
+
+    [Fact]
     public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -933,6 +954,23 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(usage, "SelectedIndex"));
         });
 
+        XElement[] runtimeBoundUsages = usages
+            .Where(usage => Attribute(usage, "SelectedItem")?.StartsWith(
+                "{Binding ",
+                StringComparison.Ordinal) == true)
+            .ToArray();
+        Assert.Equal(5, runtimeBoundUsages.Length);
+        Assert.All(runtimeBoundUsages, usage =>
+        {
+            string selectedItemBinding = Assert.IsType<string>(
+                Attribute(usage, "SelectedItem"));
+            Assert.Contains(
+                "Mode=OneWay",
+                selectedItemBinding,
+                StringComparison.Ordinal);
+            Assert.NotNull(Attribute(usage, "SelectionChanged"));
+        });
+
         foreach (string name in new[]
                  {
                      "DashboardPerformanceSelector",
@@ -962,7 +1000,31 @@ public sealed class CapabilityPresentationTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "selector.RestoreAuthoritativeSelection();",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindow_RuntimeBoundResponsiveChoicesDoNotReplaceBindings()
+    {
+        string source = ReadTraySource("MainWindow.xaml.cs");
+        string[] forbiddenAssignments =
+        [
+            "selector.SelectedItem = ViewModel.SelectedPerformanceOption;",
+            "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
+            "selector.SelectedItem = selector.Name == \"DashboardCustomCpuSelector\"",
+            "selector.SelectedItem = ViewModel.SelectedFanModeOption;",
+        ];
+
+        Assert.All(forbiddenAssignments, assignment =>
+            Assert.DoesNotContain(assignment, source, StringComparison.Ordinal));
+        Assert.Contains(
+            "selector.RestoreAuthoritativeSelection();",
             source,
             StringComparison.Ordinal);
     }
