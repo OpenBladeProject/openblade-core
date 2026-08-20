@@ -73,7 +73,8 @@ public interface IBladeDevice
         bool enabled,
         PerformancePreset baseMode,
         CancellationToken cancellationToken) =>
-        Task.FromException(new NotSupportedException("HyperBoost is unavailable."));
+        Task.FromException(new CapabilityUnavailableException(
+            "HyperBoost is unavailable."));
 
     Task SetGpuClockOffsetsAsync(
         GpuClockOffsetSettings value,

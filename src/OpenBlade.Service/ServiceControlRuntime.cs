@@ -345,6 +345,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool ownsHyperBoost;
     private PerformancePreset? ownedHyperBoostBaseMode;
     private bool ownedHyperBoostRequiresCoolingPad;
+    private bool hyperBoostJournalSafetyBlock;
     private readonly HashSet<Guid> padlessHyperBoostLifecycleValidationRuns = [];
     private long hyperBoostOwnershipGeneration;
     private LightingSettings? pendingLightingRestore;
@@ -2961,6 +2962,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (enabled)
             {
+                // Absence is a pre-write eligibility condition, not a continuous
+                // thermal dependency of an already-owned pad-less session. A pad
+                // connected later can only add cooling, so observation reports the
+                // new state without issuing an automatic HyperBoost write.
                 CoolingPadConnectionState freshPadState =
                     hyperBoostPadDiscoverySource.Observe();
                 if (freshPadState != CoolingPadConnectionState.Absent)
@@ -3032,7 +3037,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     } && restoredPerformance == requestedBaseMode);
             if (!matched)
             {
-                if (!enabled)
+                bool journalRecovered = true;
+                if (ownershipJournalPrepared)
+                {
+                    journalRecovered = readback.HyperBoostActive
+                        ? await TryWriteHyperBoostOwnershipJournalAsync(
+                                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                                requestedBaseMode,
+                                ownedHyperBoostRequiresCoolingPad,
+                                "HyperBoost remained active after a mismatched transition, but its ownership journal could not be returned to owned state.")
+                            .ConfigureAwait(false)
+                        : await RetireHyperBoostOwnershipJournalAsync(
+                                requestedBaseMode,
+                                ownedHyperBoostRequiresCoolingPad,
+                                "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.")
+                            .ConfigureAwait(false);
+                }
+
+                if (!readback.HyperBoostActive)
                 {
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
@@ -3040,9 +3062,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ownedHyperBoostRequiresCoolingPad = false;
                 }
 
+                string mismatchMessage =
+                    "HyperBoost changed, but the final laptop state did not match the requested mode. OpenBlade will not retry it.";
+                if (!journalRecovered)
+                {
+                    mismatchMessage +=
+                        " Its ownership journal could not be made safe, so control writes remain blocked.";
+                }
                 var mismatch = new ControlOperationResult(
                     ControlOperationStatus.Failed,
-                    "HyperBoost changed, but the final laptop state did not match the requested mode. OpenBlade will not retry it.");
+                    mismatchMessage);
                 history.RecordSummary(mismatch.Status, mismatch.Message);
                 PublishIfChanged(current with
                 {
@@ -3072,9 +3101,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         .ConfigureAwait(false);
                 }
             }
-            else if (ownedDisableAttempt)
+            bool disableJournalCleared = true;
+            if (!enabled && ownedDisableAttempt)
             {
-                await TryClearHyperBoostOwnershipJournalAsync(
+                disableJournalCleared = await TryClearHyperBoostOwnershipJournalAsync(
                         "HyperBoost was restored, but its durable ownership journal could not be cleared.")
                     .ConfigureAwait(false);
             }
@@ -3086,7 +3116,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             string resultMessage = enabled
                 ? "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
-                : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored.";
+                : disableJournalCleared
+                    ? $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored."
+                    : $"HyperBoost is off and {PerformanceLabel(requestedBaseMode)} power mode is restored, but its ownership journal could not be cleared; control writes remain blocked.";
             if (lifecycleValidation is not null)
             {
                 resultMessage += lifecycleValidation.Scenario switch
@@ -3100,7 +3132,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             var result = new ControlOperationResult(
-                ControlOperationStatus.Applied,
+                disableJournalCleared
+                    ? ControlOperationStatus.Applied
+                    : ControlOperationStatus.Failed,
                 resultMessage);
             history.RecordSummary(result.Status, result.Message);
             PublishIfChanged(current with
@@ -3247,10 +3281,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         timeProvider.GetUtcNow()),
                     CancellationToken.None)
                 .ConfigureAwait(false);
+            hyperBoostJournalSafetyBlock = false;
             return true;
         }
         catch (Exception exception)
         {
+            hyperBoostJournalSafetyBlock = true;
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} {exception.Message}");
@@ -3333,19 +3369,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return uncertain;
     }
 
-    private async Task TryClearHyperBoostOwnershipJournalAsync(
+    private async Task<bool> TryClearHyperBoostOwnershipJournalAsync(
         string failureMessage)
     {
         try
         {
             await hyperBoostOwnershipJournalStore.ClearAsync(CancellationToken.None)
                 .ConfigureAwait(false);
+            hyperBoostJournalSafetyBlock = false;
+            return true;
         }
         catch (Exception exception)
         {
+            hyperBoostJournalSafetyBlock = true;
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} {exception.Message}");
+            return false;
         }
     }
 
@@ -3378,6 +3418,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             await hyperBoostOwnershipJournalStore.ClearAsync(CancellationToken.None)
                 .ConfigureAwait(false);
+            hyperBoostJournalSafetyBlock = false;
             return true;
         }
         catch (Exception exception)
@@ -3385,6 +3426,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal could not be removed: {exception.Message}");
+            hyperBoostJournalSafetyBlock = !relinquished;
             return relinquished;
         }
     }
@@ -3401,6 +3443,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
+            hyperBoostJournalSafetyBlock = true;
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal could not be inspected: {exception.Message}");
@@ -3409,18 +3452,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (load.Invalid)
         {
+            hyperBoostJournalSafetyBlock = true;
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal is invalid and was preserved for manual inspection.");
             return false;
         }
 
-        return load.Journal is not { } journal
-            || await RetireHyperBoostOwnershipJournalAsync(
-                    journal.BaseMode,
-                    journal.RequiresCoolingPad,
-                    failureMessage)
-                .ConfigureAwait(false);
+        if (load.Journal is not { } journal)
+        {
+            hyperBoostJournalSafetyBlock = false;
+            return true;
+        }
+
+        return await RetireHyperBoostOwnershipJournalAsync(
+                journal.BaseMode,
+                journal.RequiresCoolingPad,
+                failureMessage)
+            .ConfigureAwait(false);
     }
 
 
@@ -3878,6 +3927,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
             if (journalLoad.Invalid)
             {
+                hyperBoostJournalSafetyBlock = true;
                 const string invalidJournal =
                     "The HyperBoost ownership journal is invalid. OpenBlade will not issue an automatic recovery write.";
                 history.RecordSummary(ControlOperationStatus.Failed, invalidJournal);
@@ -3920,6 +3970,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 else if (journal.State
                     != HyperBoostOwnershipJournalState.OwnedConfirmed)
                 {
+                    hyperBoostJournalSafetyBlock = true;
                     string pending =
                         $"OpenBlade found active HyperBoost after an unexpected exit, but the ownership journal is {journal.State}. Because ownership was never durably confirmed, no automatic recovery write was issued.";
                     history.RecordSummary(ControlOperationStatus.Failed, pending);
@@ -3941,6 +3992,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             != DeviceFeatureAccess.ReadWrite
                         || baseAccess != DeviceFeatureAccess.ReadWrite)
                     {
+                        hyperBoostJournalSafetyBlock = true;
                         string unavailable =
                             $"OpenBlade found journaled HyperBoost ownership after an unexpected exit, but direct restoration to {PerformanceLabel(journal.BaseMode)} is not admitted. No recovery write was issued.";
                         history.RecordSummary(ControlOperationStatus.Failed, unavailable);
@@ -8151,7 +8203,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed,
+            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = !powerSourceConfirmed
                 ? powerSource == PowerSource.ExternalUnknown
@@ -8649,28 +8701,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private bool HyperBoostMayBeActive(ServiceStatusSnapshot snapshot)
-    {
-        if (snapshot.ConfirmedState?.HyperBoostActive == true)
-        {
-            return true;
-        }
-
-        lock (pendingWriteConfirmationGate)
-        {
-            return pendingWriteConfirmations.Values.Any(
-                static pending => pending.HyperBoostActive is not null);
-        }
-    }
-
     private void LatchPendingHyperBoost(
         ServiceStatusSnapshot? baseline,
         bool enabled,
         PerformancePreset baseMode)
     {
         // Either an indeterminate enable or disable may have left firmware in
-        // HyperBoost. Ephemeral host-demand leases must not survive that unknown
-        // state and then reappear after reconciliation.
+        // HyperBoost. Keep both thermal subsystems latched until a later fresh
+        // observation resolves the transition; no retry is scheduled here.
         if (baseline?.ConfirmedState is not { } preWriteState)
         {
             return;
@@ -9374,7 +9412,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             DeviceVerified = deviceVerified,
-            WritesBlocked = writesBlocked,
+            WritesBlocked = writesBlocked || hyperBoostJournalSafetyBlock,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Capabilities = capabilities ?? UnavailableCapabilities,
@@ -9605,6 +9643,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ServiceStatusSnapshot candidate = updated with
             {
                 WritesBlocked = updated.WritesBlocked
+                    || hyperBoostJournalSafetyBlock
                     || unconfirmedWrites.Count > 0,
                 UnconfirmedWrites = unconfirmedWrites,
             };

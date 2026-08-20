@@ -60,9 +60,9 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionGates(
 
 /// <summary>
 /// Evidence gates for enabling HyperBoost while the exact cooling pad is
-/// absent. The embedded manifest records developer observations but keeps
-/// production mutation closed until sustained and lifecycle validation are
-/// complete.
+/// absent. Production mutation is admitted only when the embedded manifest
+/// binds every reviewed protocol, sustained-load, restoration, and lifecycle
+/// artifact required by <see cref="WriteAdmitted"/>.
 /// </summary>
 internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
     bool ExactDeviceAndFirmwareReviewed,

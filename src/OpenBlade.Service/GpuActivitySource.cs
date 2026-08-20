@@ -33,7 +33,15 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
     {
         this.reader = reader;
         read = reader.Read;
-        _ = read();
+        try
+        {
+            _ = read();
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
     }
 
     internal WindowsGpuActivitySource(Func<WindowsGpuActivitySnapshot> read)
