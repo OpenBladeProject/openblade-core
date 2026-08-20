@@ -3783,7 +3783,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public IReadOnlyList<UiLanguagePreferenceOption> LanguageSelectionOptions { get; } =
     [
-        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow system")),
+        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow Windows")),
         new(UiLanguagePreference.English, "English"),
         new(UiLanguagePreference.SimplifiedChinese, "简体中文"),
         new(UiLanguagePreference.Russian, "Русский"),

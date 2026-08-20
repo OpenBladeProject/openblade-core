@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly VisibleObservationLoop gpuAppObservationLoop;
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly bool localizationSnapshotMode;
+    private readonly UiLanguagePreference? initialLanguageOverride;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly SessionGpuAppAdapter gpuAppAdapter;
@@ -132,6 +133,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    internal event Action<UiLanguagePreference>? LanguagePreferenceChanged;
+
     public MainWindow()
         : this(
             WindowsProcessorEfficiencyPolicy.Discover(),
@@ -144,9 +147,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         WindowsProcessorEfficiencyPolicy processorPolicy,
         IStartupRegistration startupRegistration,
         Func<TrayNotification, bool>? showNotification = null,
-        bool localizationSnapshotMode = false)
+        bool localizationSnapshotMode = false,
+        UiLanguagePreference? initialLanguageOverride = null)
     {
         this.localizationSnapshotMode = localizationSnapshotMode;
+        this.initialLanguageOverride = initialLanguageOverride;
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
         ArgumentNullException.ThrowIfNull(startupRegistration);
@@ -265,6 +270,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true);
+
+    internal string LocalizedAppLanguageHeading => AppLanguageHeading.Text;
+
+    internal string LocalizedAppLanguageDescription => AppLanguageDescription.Text;
 
     public bool StartMinimized { get; private set; }
 
@@ -408,6 +417,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayObservationLoop.Stop();
         gpuAppObservationLoop.Stop();
         displayRefreshTimer.Stop();
+    }
+
+    internal void ShowLanguageSettings()
+    {
+        MainNavigation.SelectedItem = SettingsNavigationItem;
+        dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () => SettingsAppearanceSection.StartBringIntoView(
+                new BringIntoViewOptions
+                {
+                    AnimationDesired = false,
+                    VerticalAlignmentRatio = 0,
+                }));
     }
 
     public void NavigateToNotificationDestination(
@@ -644,7 +666,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
-            initialLanguage = preferences.EffectiveLanguage;
+            initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
@@ -863,6 +885,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (args.PropertyName == nameof(MainViewModel.LanguagePreference))
         {
             QueuePreferenceSave();
+            LanguagePreferenceChanged?.Invoke(ViewModel.LanguagePreference);
             return;
         }
 

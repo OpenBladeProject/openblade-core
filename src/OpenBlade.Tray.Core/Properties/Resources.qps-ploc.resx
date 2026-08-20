@@ -655,10 +655,10 @@
     <value>[!! Kééps thé cúrrént Windows séttíng. ~~~~~~~~ !!]</value>
   </data>
   <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
-    <value>[!! Úséd whénévér {0} ís séléctéd. {1} ~~~~~ !!]</value>
+    <value>[!! Úséd whénévér {0} ís séléctéd. {1} ~~~~~~~~ !!]</value>
   </data>
   <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
-    <value>[!! Léávés thé Windows séttíng únchángéd whénévér {0} ís séléctéd. ~~~~~~~~~ !!]</value>
+    <value>[!! Léávés thé Windows séttíng únchángéd whénévér {0} ís séléctéd. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Keyboard" xml:space="preserve">
     <value>[!! Kéýbóárd ~~~ !!]</value>
@@ -1289,8 +1289,5 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>[!! tóp ~~ !!]</value>
-  </data>
-  <data name="Follow system" xml:space="preserve">
-    <value>[!! Fóllów sýstém ~~~~~ !!]</value>
   </data>
 </root>

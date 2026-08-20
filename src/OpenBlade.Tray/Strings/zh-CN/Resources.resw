@@ -1869,6 +1869,6 @@
     <value>应用语言</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
-    <value>使用 Windows 显示语言，或选择一种语言。重启 OpenBlade 后更改将生效。</value>
+    <value>使用 Windows 显示语言，或选择一种语言。更改会立即生效。</value>
   </data>
 </root>
