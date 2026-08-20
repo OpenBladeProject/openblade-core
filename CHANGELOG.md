@@ -85,6 +85,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept keyboard-lighting effect choices in the same order across supported
+  display languages.
 - Fixed live language changes mixing strings from the previous language into
   the rebuilt tray when background work retained an older UI culture.
 - Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device

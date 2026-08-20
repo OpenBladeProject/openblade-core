@@ -5088,31 +5088,73 @@ public sealed class MainViewModelTests
         Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
     }
 
-    [Fact]
-    public async Task LightingEffects_PutOffFirstThenSortTheRemainingLabels()
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("zh-CN")]
+    [InlineData("ru-RU")]
+    public async Task LightingEffects_KeepEnglishPresentationOrderAcrossCultures(
+        string cultureName)
     {
+        using var culture = new CultureScope(cultureName);
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                50,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        LightingSettings sequence = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 73);
+        ServiceStatusSnapshot status = CreateStatus(
             verified: true,
             blocked: false,
             capabilities: DeviceCapabilities.SafeTargetDefaults() with
             {
                 LightingEffects = new HashSet<LightingEffect>(
                     Enum.GetValues<LightingEffect>()),
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
                 ChargeLimits = ChargeLimits(),
-            }));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+            });
+        client.Publish(status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = sequence },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    sequence,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.LightingEffectEditor == LightingEffect.Sequence);
 
-        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
-        string[] remaining = viewModel.AvailableLightingEffectOptions
-            .Skip(1)
-            .Select(option => option.Label)
-            .ToArray();
         Assert.Equal(
-            remaining.OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            remaining);
+            [
+                LightingEffect.Off,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+                LightingEffect.Breathing,
+                LightingEffect.Fire,
+                LightingEffect.Sequence,
+                LightingEffect.Reactive,
+                LightingEffect.Ripple,
+                LightingEffect.Spectrum,
+                LightingEffect.Starlight,
+                LightingEffect.Static,
+                LightingEffect.Tidal,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+            ],
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Effect));
     }
 
     [Fact]
