@@ -8022,11 +8022,20 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(baseline);
         client.Publish(admitted);
         await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+        changed.Clear();
 
         client.Publish(admitted with
         {
@@ -8034,13 +8043,71 @@ public sealed class MainViewModelTests
             PadlessHyperBoostEligibility =
                 PadlessHyperBoostEligibilityState.CoolingPadPresent,
         });
-        await WaitUntilAsync(() => !viewModel.CanToggleHyperBoost);
+        await WaitUntilAsync(() => changed.Contains(nameof(viewModel.CanToggleHyperBoost)));
 
+        Assert.False(viewModel.CanToggleHyperBoost);
         Assert.Contains(
             "Disconnect the cooling pad",
             viewModel.HyperBoostDescription,
             StringComparison.OrdinalIgnoreCase);
         Assert.Null(client.HyperBoostEnabled);
+    }
+
+    [Fact]
+    public async Task HyperBoostPadlessPath_BlocksInactiveSessionAndRetainedRecheck()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false));
+
+        client.Publish(admitted with
+        {
+            ControlAccess = SessionControlAccess.InactiveSession,
+        });
+        await WaitUntilAsync(() => viewModel.IsHyperBoostWritable);
+        Assert.False(viewModel.CanToggleHyperBoost);
+
+        client.Publish(admitted with
+        {
+            Revision = admitted.Revision + 1,
+            WritesBlocked = true,
+            Message =
+                "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
+            ControlAccess = SessionControlAccess.Active,
+        });
+        await WaitUntilAsync(() => !viewModel.ControlAccessStatus.Contains(
+            "Another user",
+            StringComparison.OrdinalIgnoreCase));
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+    }
+
+    [Fact]
+    public async Task HyperBoostUnknownEligibilityReportsUnconfirmedState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false));
+
+        client.Publish(admitted with
+        {
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.Unknown,
+        });
+        await WaitUntilAsync(() => viewModel.IsHyperBoostWritable);
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Contains(
+            "could not be confirmed",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "checking",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

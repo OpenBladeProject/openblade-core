@@ -2537,7 +2537,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool CanToggleHyperBoost =>
-        CanRequestHardwareControl
+        CanMutate
+        && !IsRetainedPowerSourceRecheck(latestStatus)
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
         && (HyperBoostActive
@@ -2560,7 +2561,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 PadlessHyperBoostEligibilityState.CoolingPadPresent => TrayText.Get(
                     "Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required."),
                 _ => TrayText.Get(
-                    "OpenBlade is checking that the cooling pad is disconnected before enabling HyperBoost."),
+                    "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost."),
             }
         : Capabilities.HyperBoostWithoutCoolingPadAccess
             == DeviceFeatureAccess.ObservedOnly
@@ -5548,13 +5549,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     {
                         HyperBoostActive = enabled;
                     }
-                }).ConfigureAwait(false);
+                });
         }
         finally
         {
-            await dispatcher.InvokeAsync(
-                () => IsHyperBoostOperationInProgress = false,
-                CancellationToken.None).ConfigureAwait(false);
+            IsHyperBoostOperationInProgress = false;
         }
     }
 
