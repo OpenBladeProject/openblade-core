@@ -7,6 +7,43 @@ namespace OpenBlade.Service;
 
 internal static class ServiceComposition
 {
+    internal static IServiceCollection AddServiceControlRuntime(
+        this IServiceCollection services,
+        string machineDataDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        string journalPath = Path.Combine(
+            string.IsNullOrWhiteSpace(machineDataDirectory)
+                ? throw new ArgumentException(
+                    "A machine-data directory is required.",
+                    nameof(machineDataDirectory))
+                : Path.GetFullPath(machineDataDirectory),
+            "hyperboost-ownership.json");
+
+        services.AddSingleton<IHyperBoostOwnershipJournalStore>(
+            _ => new HyperBoostOwnershipJournalStore(journalPath));
+        services.AddSingleton<IServiceControlRuntime>(provider =>
+            new ServiceControlRuntime(
+                provider.GetRequiredService<BatteryConfigurationStore>(),
+                provider.GetRequiredService<PersistentOverrideStore>(),
+                provider.GetRequiredService<IPowerStateProvider>(),
+                provider.GetRequiredService<IStatusSubscriptionHub>(),
+                provider.GetRequiredService<IVerifiedBladeDeviceProvider>(),
+                provider.GetRequiredService<DiagnosticHistory>(),
+                provider.GetRequiredService<LowPowerGate>(),
+                provider.GetRequiredService<IControllerPresenceMonitor>(),
+                provider.GetRequiredService<IFirmwareVersionSource>(),
+                static (delay, token) => Task.Delay(delay, token),
+                provider.GetRequiredService<ProfileSetValidator>(),
+                userConfigurationRepository:
+                    provider.GetRequiredService<IUserConfigurationRepository>(),
+                displayBrightnessHidController:
+                    provider.GetRequiredService<IDisplayBrightnessHidController>(),
+                hyperBoostOwnershipJournalStore:
+                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+        return services;
+    }
+
     internal static IServiceCollection AddDiagnostics(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -48,7 +85,13 @@ internal static class ServiceComposition
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             CreateProductionBatteryFactory(
-                provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
+                BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
+                () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()),
+                () => ProductionBatteryFactory.CreateWindowsReadOnly(
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
             CreateProductionLightingFactory(
                 provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
@@ -81,7 +124,10 @@ internal static class ServiceComposition
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
-            BatteryValidationFactory.CreateWindowsProductionBatteryForService,
+            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled
+                ? BatteryValidationFactory
+                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation
+                : BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
@@ -112,6 +158,30 @@ internal static class ServiceComposition
         catch (JsonException)
         {
             return createReadOnly();
+        }
+    }
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
+        bool validationBuildEnabled,
+        Func<IProductionBatteryPortFactory> createValidation,
+        Func<IProductionBatteryPortFactory> createAdmitted,
+        Func<IProductionBatteryPortFactory> createReadOnly)
+    {
+        ArgumentNullException.ThrowIfNull(createValidation);
+        ArgumentNullException.ThrowIfNull(createAdmitted);
+        if (!validationBuildEnabled)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
+        }
+
+        try
+        {
+            return createValidation();
+        }
+        catch (Exception exception) when (exception is
+            UnvalidatedCommandException or JsonException)
+        {
+            return CreateProductionBatteryFactory(createAdmitted, createReadOnly);
         }
     }
 

@@ -103,6 +103,32 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 : new PerformanceOverride(value.Value, value.Lifetime),
             token);
 
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
+    public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+        PadlessHyperBoostLifecycleScenario scenario,
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedAdmissionManifestSha256,
+        CancellationToken token) => SendMutationAsync(
+            new ValidatePadlessHyperBoostLifecycleRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                scenario,
+                validationRunId,
+                expectedSourceRevision,
+                expectedServiceAssemblySha256,
+                expectedAdmissionManifestSha256),
+            token);
+
     public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token) => SendMutationAsync(

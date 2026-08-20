@@ -56,6 +56,19 @@ public static class FirmwareSmokeProgram
                     outputDirectory,
                     client,
                     cancellationToken).ConfigureAwait(false),
+                "hyperboost-lifecycle-arm" => await RunHyperBoostLifecycleArmAsync(
+                    args,
+                    outputDirectory,
+                    collector,
+                    client,
+                    cancellationToken).ConfigureAwait(false),
+                "hyperboost-lifecycle-verify" =>
+                    await RunHyperBoostLifecycleVerifyAsync(
+                        args,
+                        outputDirectory,
+                        collector,
+                        client,
+                        cancellationToken).ConfigureAwait(false),
                 _ => UnknownCommand(command),
             };
         }
@@ -246,6 +259,100 @@ public static class FirmwareSmokeProgram
         return report.Succeeded ? 0 : 2;
     }
 
+    private static async Task<int> RunHyperBoostLifecycleArmAsync(
+        string[] args,
+        string outputDirectory,
+        FirmwareSmokeSnapshotCollector collector,
+        IFirmwareSmokeClient client,
+        CancellationToken cancellationToken)
+    {
+        FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
+            args,
+            cancellationToken).ConfigureAwait(false);
+        HyperBoostLifecycleScenario scenario = ReadHyperBoostLifecycleScenario(args);
+        if (!HasHyperBoostLifecycleConfirmation(args, baseline, scenario))
+        {
+            Console.Error.WriteLine(
+                "HyperBoost lifecycle arming requires --confirm-target " +
+                HyperBoostLifecycleConfirmation(baseline.TargetModel, scenario));
+            return 1;
+        }
+
+        string markerPath = ReadOption(args, "--marker")
+            ?? throw new ArgumentException("--marker <private-marker.json> is required.");
+        PadlessHyperBoostLifecycleValidationBuildManifest? validationBuild = null;
+        string? validationBuildPath = ReadOption(args, "--validation-build-manifest");
+        if (validationBuildPath is not null)
+        {
+            validationBuild = await FirmwareSmokeFiles.ReadJsonAsync<
+                    PadlessHyperBoostLifecycleValidationBuildManifest>(
+                    validationBuildPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!validationBuild.IsWellFormed)
+            {
+                throw new InvalidDataException(
+                    "The pad-less HyperBoost lifecycle validation-build manifest is malformed.");
+            }
+        }
+        var runner = new HyperBoostLifecycleValidationRunner(client, collector);
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+                baseline,
+                scenario,
+                markerPath,
+                validationBuild,
+                cancellationToken)
+            .ConfigureAwait(false);
+        Directory.CreateDirectory(outputDirectory);
+        await FirmwareSmokeFiles.WriteJsonAsync(
+            Path.Combine(outputDirectory, "hyperboost-lifecycle-arm.json"),
+            result,
+            cancellationToken).ConfigureAwait(false);
+        Console.WriteLine(result.Message);
+        Console.WriteLine(
+            "FirmwareSmoke will not initiate sleep, stop, terminate, or restart any process.");
+        return result.Success ? 0 : 2;
+    }
+
+    private static async Task<int> RunHyperBoostLifecycleVerifyAsync(
+        string[] args,
+        string outputDirectory,
+        FirmwareSmokeSnapshotCollector collector,
+        IFirmwareSmokeClient client,
+        CancellationToken cancellationToken)
+    {
+        FirmwareSmokeSnapshot baseline = await ReadBaselineAsync(
+            args,
+            cancellationToken).ConfigureAwait(false);
+        HyperBoostLifecycleScenario scenario = ReadHyperBoostLifecycleScenario(args);
+        if (!HasHyperBoostLifecycleConfirmation(args, baseline, scenario))
+        {
+            Console.Error.WriteLine(
+                "HyperBoost lifecycle verification requires --confirm-target " +
+                HyperBoostLifecycleConfirmation(baseline.TargetModel, scenario));
+            return 1;
+        }
+
+        string markerPath = ReadOption(args, "--marker")
+            ?? throw new ArgumentException("--marker <private-marker.json> is required.");
+        var runner = new HyperBoostLifecycleValidationRunner(client, collector);
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+                baseline,
+                scenario,
+                markerPath,
+                cancellationToken)
+            .ConfigureAwait(false);
+        Directory.CreateDirectory(outputDirectory);
+        await FirmwareSmokeFiles.WriteJsonAsync(
+            Path.Combine(outputDirectory, "hyperboost-lifecycle-verify.json"),
+            result,
+            cancellationToken).ConfigureAwait(false);
+        Console.WriteLine(result.Message);
+        Console.WriteLine(
+            "Verification is read-only; FirmwareSmoke did not issue a recovery write.");
+        return result.Success ? 0 : 2;
+    }
+
     private static async Task<FirmwareSmokeSnapshot> ReadBaselineAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -333,6 +440,42 @@ public static class FirmwareSmokeProgram
         return $"{canonical}-FIRMWARE-SMOKE";
     }
 
+    internal static string HyperBoostLifecycleConfirmation(
+        string targetModel,
+        HyperBoostLifecycleScenario scenario)
+    {
+        string canonical = RazerBladeModelCatalog.Find(targetModel)?.ModelNumber
+            ?? targetModel.Trim().ToUpperInvariant();
+        string boundary = scenario == HyperBoostLifecycleScenario.LowPower
+            ? "LOW-POWER"
+            : "UNEXPECTED-EXIT";
+        return $"{canonical}-HYPERBOOST-{boundary}-LIFECYCLE";
+    }
+
+    private static bool HasHyperBoostLifecycleConfirmation(
+        string[] args,
+        FirmwareSmokeSnapshot baseline,
+        HyperBoostLifecycleScenario scenario) => string.Equals(
+        ReadOption(args, "--confirm-target"),
+        HyperBoostLifecycleConfirmation(baseline.TargetModel, scenario),
+        StringComparison.Ordinal);
+
+    internal static HyperBoostLifecycleScenario ParseHyperBoostLifecycleScenario(
+        string value) => value.ToLowerInvariant() switch
+        {
+            "low-power" => HyperBoostLifecycleScenario.LowPower,
+            "crash" or "unexpected-exit" =>
+                HyperBoostLifecycleScenario.UnexpectedExit,
+            _ => throw new ArgumentException(
+                "--scenario must be low-power or unexpected-exit."),
+        };
+
+    private static HyperBoostLifecycleScenario ReadHyperBoostLifecycleScenario(
+        string[] args) => ParseHyperBoostLifecycleScenario(
+        ReadOption(args, "--scenario")
+            ?? throw new ArgumentException(
+                "--scenario <low-power|unexpected-exit> is required."));
+
     public static IReadOnlySet<FirmwareComponent> ParseExpectedFirmwareChanges(
         string value)
     {
@@ -418,6 +561,16 @@ public static class FirmwareSmokeProgram
         Console.WriteLine(
             "  recover --baseline <baseline.json> --confirm-target " +
             TargetConfirmationFormat + " [--output <directory>]");
+        Console.WriteLine(
+            "  hyperboost-lifecycle-arm --baseline <baseline.json> " +
+            "--scenario <low-power|unexpected-exit> --marker <private-marker.json> " +
+            "--confirm-target <MODEL>-HYPERBOOST-<BOUNDARY>-LIFECYCLE " +
+            "[--output <directory>]");
+        Console.WriteLine(
+            "  hyperboost-lifecycle-verify --baseline <baseline.json> " +
+            "--scenario <low-power|unexpected-exit> --marker <private-marker.json> " +
+            "--confirm-target <MODEL>-HYPERBOOST-<BOUNDARY>-LIFECYCLE " +
+            "[--output <directory>]");
         Console.WriteLine();
         Console.WriteLine(
             "Components are a comma-separated subset of BIOS, EC, MCU, and VBIOS. " +

@@ -36,6 +36,30 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         new("0D/82 class1 thermal2", 0x0D, 0x82, [0x01, 0x02, 0x00, 0x00], 4),
     ];
 
+    private static readonly QueryDefinition[] HyperBoostObservationQueries =
+    [
+        new(
+            "0D/82 class1 thermal1",
+            0x0D,
+            0x82,
+            [0x01, 0x01, 0x00, 0x00],
+            4,
+            payload => ThermalModeProtocol.TryDecodeQuery(
+                payload.Span,
+                ThermalChannel.First,
+                out _)),
+        new(
+            "0D/82 class1 thermal2",
+            0x0D,
+            0x82,
+            [0x01, 0x02, 0x00, 0x00],
+            4,
+            payload => ThermalModeProtocol.TryDecodeQuery(
+                payload.Span,
+                ThermalChannel.Second,
+                out _)),
+    ];
+
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
     private readonly TimeProvider timeProvider;
@@ -52,7 +76,8 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry? pendingDisposals = null,
-        bool powerSourceOnly = false)
+        bool powerSourceOnly = false,
+        bool hyperBoostObservationOnly = false)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -62,7 +87,17 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
-        queries = powerSourceOnly ? PowerSourceQueries : DiscriminatorQueries;
+        if (powerSourceOnly && hyperBoostObservationOnly)
+        {
+            throw new ArgumentException(
+                "Only one narrowed query set can be selected.");
+        }
+
+        queries = hyperBoostObservationOnly
+            ? HyperBoostObservationQueries
+            : powerSourceOnly
+                ? PowerSourceQueries
+                : DiscriminatorQueries;
     }
 
     public async Task<HidSessionResult<PerformanceFanDiscriminatorSnapshot>> RunAsync(
@@ -166,12 +201,14 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         byte OperationClass,
         byte OperationId,
         byte[] Arguments,
-        int ExpectedResponseLength)
+        int ExpectedResponseLength,
+        Func<ReadOnlyMemory<byte>, bool>? PayloadValidator = null)
     {
         internal RazerCommandSpec CreateCommand() => new(
             OperationClass,
             OperationId,
             Arguments,
-            ExpectedResponseLength);
+            ExpectedResponseLength,
+            PayloadValidator);
     }
 }

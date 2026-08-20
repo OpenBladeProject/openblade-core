@@ -19,6 +19,8 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
+[JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
+[JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
@@ -87,6 +89,35 @@ public sealed record SetPerformanceOverrideRequest(
     Guid RequestId,
     PerformanceOverride? Value)
     : ServiceRequest(Version, RequestId);
+
+public sealed record SetHyperBoostRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public enum PadlessHyperBoostLifecycleScenario
+{
+    LowPower,
+    UnexpectedExit,
+}
+
+public sealed record ValidatePadlessHyperBoostLifecycleRequest(
+    int Version,
+    Guid RequestId,
+    PadlessHyperBoostLifecycleScenario Scenario,
+    Guid ValidationRunId,
+    string ExpectedSourceRevision,
+    string ExpectedServiceAssemblySha256,
+    string ExpectedAdmissionManifestSha256)
+    : ServiceRequest(Version, RequestId);
+
+public enum PadlessHyperBoostEligibilityState
+{
+    Unknown,
+    CoolingPadAbsent,
+    CoolingPadPresent,
+}
 
 public sealed record CyclePerformanceShortcutRequest(
     int Version,
@@ -292,6 +323,8 @@ public sealed record ServiceStatusSnapshot(
     public BatteryPolicy? BatteryPolicyOverride { get; init; }
 
     public bool? BatteryProtectionOverride { get; init; }
+
+    public PadlessHyperBoostEligibilityState PadlessHyperBoostEligibility { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

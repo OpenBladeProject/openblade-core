@@ -20,6 +20,14 @@ public static class BatteryValidationFactory
             : ProductionBatteryFactory.CreateWindows();
 
     internal static IProductionBatteryPortFactory
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation() =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? throw new UnvalidatedCommandException(
+                "Pad-less HyperBoost lifecycle validation is unavailable on this model.")
+            : ProductionBatteryFactory
+                .CreateWindowsForPadlessHyperBoostLifecycleValidation();
+
+    internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService(
             FirmwareCompatibilityPolicy compatibilityPolicy)
     {
@@ -914,6 +922,31 @@ public static class BatteryValidationFactory
             powerSourceOnly: true);
     }
 
+    internal static IPerformanceFanDiscriminatorQueryRunner
+        CreateWindowsRz090581Bios400HyperBoostObservationQuery()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory);
+        return new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            hyperBoostObservationOnly: true);
+    }
+
+
     public static IPerformanceFanSetterValidationRunner
         CreateWindowsPerformanceFanSetterValidation()
     {
@@ -929,6 +962,126 @@ public static class BatteryValidationFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout);
+    }
+
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidation() =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan: null,
+                thermalTelemetrySource: null,
+                externalWorkloadSource: null,
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSustainedValidation(
+            ReviewedHyperBoostThermalPlan sustainedPlan,
+            IHyperBoostThermalTelemetrySource thermalTelemetrySource) =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan
+                    ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                thermalTelemetrySource
+                    ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
+                externalWorkloadSource: null,
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostReviewedLoadValidation(
+            ReviewedHyperBoostThermalPlan sustainedPlan,
+            IHyperBoostThermalTelemetrySource thermalTelemetrySource,
+            IHyperBoostExternalWorkloadSource externalWorkloadSource) =>
+            CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                sustainedPlan
+                    ?? throw new ArgumentNullException(nameof(sustainedPlan)),
+                thermalTelemetrySource
+                    ?? throw new ArgumentNullException(nameof(thermalTelemetrySource)),
+                externalWorkloadSource
+                    ?? throw new ArgumentNullException(nameof(externalWorkloadSource)),
+                adapterTransitionPlan: null,
+                powerSourceBoundaryPlan: null);
+
+    internal static IHyperBoostAdapterTransitionValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostAdapterTransitionValidation(
+            ReviewedHyperBoostAdapterTransitionPlan adapterTransitionPlan) =>
+            (IHyperBoostAdapterTransitionValidationRunner)
+                CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                    sustainedPlan: null,
+                    thermalTelemetrySource: null,
+                    externalWorkloadSource: null,
+                    adapterTransitionPlan
+                        ?? throw new ArgumentNullException(nameof(adapterTransitionPlan)),
+                    powerSourceBoundaryPlan: null);
+
+    internal static IHyperBoostPowerSourceBoundaryValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostPowerSourceBoundaryValidation(
+            ReviewedHyperBoostPowerSourceBoundaryPlan powerSourceBoundaryPlan) =>
+            (IHyperBoostPowerSourceBoundaryValidationRunner)
+                CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+                    sustainedPlan: null,
+                    thermalTelemetrySource: null,
+                    externalWorkloadSource: null,
+                    adapterTransitionPlan: null,
+                    powerSourceBoundaryPlan
+                        ?? throw new ArgumentNullException(
+                            nameof(powerSourceBoundaryPlan)));
+
+    private static IPerformanceFanSetterValidationRunner
+        CreateWindowsRz090581Bios400PadAbsentHyperBoostSetterValidationCore(
+            ReviewedHyperBoostThermalPlan? sustainedPlan,
+            IHyperBoostThermalTelemetrySource? thermalTelemetrySource,
+            IHyperBoostExternalWorkloadSource? externalWorkloadSource,
+            ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan,
+            ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0581",
+                "RZ09-05819EN4",
+                Array.AsReadOnly(new[] { "4.00" })));
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Strict,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02E0,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: RazerReport.ReportLength + 1));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        var safetyGate = new PadAbsentHyperBoostSafetyGate(
+            new WindowsCoolingPadPhysicalPresenceSource(native),
+            DefaultExchangeTimeout);
+        return new PerformanceFanSetterValidationRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            safetyGate: safetyGate,
+            sustainedPlan: sustainedPlan,
+            thermalTelemetrySource: thermalTelemetrySource,
+            externalWorkloadSource: externalWorkloadSource,
+            adapterTransitionPlan: adapterTransitionPlan,
+            powerSourceBoundaryPlan: powerSourceBoundaryPlan);
     }
 
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
@@ -1546,4 +1699,8 @@ public static class BatteryValidationFactory
             exclusivityPolicy,
             TemporaryFullChargeValidationFeatureReportSettleDelay);
     }
+
+    internal static ICoolingPadPhysicalPresenceSource
+        CreateWindowsCoolingPadPhysicalPresenceSource() =>
+        new WindowsCoolingPadPhysicalPresenceSource(new WindowsHidNative());
 }

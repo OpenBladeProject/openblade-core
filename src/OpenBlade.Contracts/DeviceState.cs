@@ -156,6 +156,34 @@ public enum LightingRefreshRate
     SixtyHz,
 }
 
+public enum CoolingPadConnectionState
+{
+    Unavailable,
+    Absent,
+    PresentExact,
+    Ambiguous,
+    ObservationFailed,
+}
+
+public sealed record HyperBoostBaseModeCapabilities(
+    DeviceFeatureAccess Silent,
+    DeviceFeatureAccess Balanced,
+    DeviceFeatureAccess Performance)
+{
+    public DeviceFeatureAccess? AccessFor(PerformancePreset preset) => preset switch
+    {
+        PerformancePreset.Silent => Silent,
+        PerformancePreset.Balanced => Balanced,
+        PerformancePreset.Performance => Performance,
+        _ => null,
+    };
+
+    internal bool IsWellFormed =>
+        Enum.IsDefined(Silent)
+        && Enum.IsDefined(Balanced)
+        && Enum.IsDefined(Performance);
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -177,6 +205,12 @@ public sealed record DeviceCapabilities(
     public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
+
+    public DeviceFeatureAccess? HyperBoostAccess { get; init; }
+
+    public DeviceFeatureAccess? HyperBoostWithoutCoolingPadAccess { get; init; }
+
+    public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
 
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
@@ -215,6 +249,17 @@ public sealed record DeviceCapabilities(
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
         && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
         && (GpuOverclock is null || GpuOverclock.IsWellFormed)
+        && (HyperBoostAccess is null || Enum.IsDefined(HyperBoostAccess.Value))
+        && (HyperBoostWithoutCoolingPadAccess is null
+            || HyperBoostAccess is not null
+                && Enum.IsDefined(HyperBoostWithoutCoolingPadAccess.Value)
+                && HyperBoostWithoutCoolingPadAccess.Value <= HyperBoostAccess.Value)
+        && (HyperBoostBaseModes is null
+            || HyperBoostAccess is not null
+                && HyperBoostBaseModes.IsWellFormed
+                && HyperBoostBaseModes.Silent <= HyperBoostAccess.Value
+                && HyperBoostBaseModes.Balanced <= HyperBoostAccess.Value
+                && HyperBoostBaseModes.Performance <= HyperBoostAccess.Value)
         && (SpecialKeyBindingsAccess is null
             || Enum.IsDefined(SpecialKeyBindingsAccess.Value))
         && HasValidSpecialKeySlots()
@@ -294,6 +339,8 @@ public sealed record ConfirmedDeviceState(
     ConfirmedBatteryState? Battery,
     LightingSettings? Lighting)
 {
+    public bool HyperBoostActive { get; init; }
+
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 
     public GpuClockOffsetCapabilities? GpuClockOffsets { get; init; }

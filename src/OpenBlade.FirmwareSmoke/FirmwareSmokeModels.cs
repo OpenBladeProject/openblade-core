@@ -48,7 +48,12 @@ public sealed record FirmwareSmokeCapabilities(
     CpuPowerLimitCapabilities? CpuPowerLimit,
     CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer,
     GpuOverclockCapabilities? GpuOverclock,
-    IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors);
+    IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors,
+    string? HyperBoostAccess = null,
+    string? HyperBoostWithoutCoolingPadAccess = null)
+{
+    public HyperBoostBaseModeCapabilities? HyperBoostBaseModes { get; init; }
+}
 
 public sealed record FirmwareSmokeControlState(
     string? Performance,

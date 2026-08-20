@@ -74,6 +74,18 @@ public sealed class IpcMessageCodecTests
             new ManualOverride<PerformancePreset>(
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent)),
+        new SetHyperBoostRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true),
+        new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            PadlessHyperBoostLifecycleScenario.LowPower,
+            Guid.NewGuid(),
+            new string('a', 40),
+            new string('B', 64),
+            new string('C', 64)),
         new CyclePerformanceShortcutRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -379,7 +391,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyEightBatteryContracts_RoundTripExactShape()
+    public async Task VersionFortyNineBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -452,7 +464,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1028,7 +1040,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyEightStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFortyNineStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -1037,7 +1049,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(48, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

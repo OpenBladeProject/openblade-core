@@ -19,6 +19,21 @@ public interface IFirmwareSmokeClient : IAsyncDisposable
         PerformanceOverride? value,
         CancellationToken cancellationToken);
 
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken cancellationToken);
+
+    Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+        PadlessHyperBoostLifecycleScenario scenario,
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedAdmissionManifestSha256,
+        CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Pad-less HyperBoost lifecycle validation is unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
@@ -58,6 +73,26 @@ public sealed class FirmwareSmokeClient : IFirmwareSmokeClient
         PerformanceOverride? value,
         CancellationToken cancellationToken) =>
         client.SetPerformanceConfigurationOverrideAsync(value, cancellationToken);
+
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken cancellationToken) =>
+        client.SetHyperBoostAsync(enabled, cancellationToken);
+
+    public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
+        PadlessHyperBoostLifecycleScenario scenario,
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedAdmissionManifestSha256,
+        CancellationToken cancellationToken) =>
+        client.ValidatePadlessHyperBoostLifecycleAsync(
+            scenario,
+            validationRunId,
+            expectedSourceRevision,
+            expectedServiceAssemblySha256,
+            expectedAdmissionManifestSha256,
+            cancellationToken);
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 48;
+    public const int ProtocolVersion = 49;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -151,6 +151,13 @@ public static class IpcMessageCodec
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
+            SetHyperBoostRequest => true,
+            ValidatePadlessHyperBoostLifecycleRequest validate =>
+                Enum.IsDefined(validate.Scenario)
+                && validate.ValidationRunId != Guid.Empty
+                && IsHex(validate.ExpectedSourceRevision, 40)
+                && IsHex(validate.ExpectedServiceAssemblySha256, 64)
+                && IsHex(validate.ExpectedAdmissionManifestSha256, 64),
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetPerformanceShortcutPreviewRequest preview =>
                 preview.SessionId != Guid.Empty
@@ -197,6 +204,11 @@ public static class IpcMessageCodec
             throw new InvalidDataException("IPC request body is invalid.");
         }
     }
+
+    private static bool IsHex(string? value, int length) =>
+        value is not null
+        && value.Length == length
+        && value.All(Uri.IsHexDigit);
 
     private static void ValidateServerFrame(ServiceServerFrame? frame)
     {
@@ -408,6 +420,22 @@ public static class IpcMessageCodec
                 confirmed.CustomPerformance))
         {
             throw InvalidStatus("confirmed performance state is inconsistent");
+        }
+
+        if (!Enum.IsDefined(status.PadlessHyperBoostEligibility))
+        {
+            throw InvalidStatus("pad-less HyperBoost eligibility is unknown");
+        }
+
+        if (status.ConfirmedState is { HyperBoostActive: true } hyperBoost
+            && (status.Capabilities?.HyperBoostAccess is not (
+                    DeviceFeatureAccess.ObservedOnly
+                    or DeviceFeatureAccess.ReadOnly
+                    or DeviceFeatureAccess.ReadWrite)
+                || hyperBoost.Performance is not null
+                || hyperBoost.Fans != FanMode.Automatic))
+        {
+            throw InvalidStatus("confirmed HyperBoost state is inconsistent");
         }
 
         if (status.ConfirmedState?.GpuClockOffsets is { } gpuClockOffsets
