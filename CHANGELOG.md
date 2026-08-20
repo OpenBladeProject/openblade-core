@@ -78,6 +78,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device admission, and corrected the platform warning shown while controls are unavailable.
 - Kept malformed current-schema profile files on the safe recovery and import
   error paths, and cleared stray legacy Windows power modes before publishing
   migrated schema 1 profiles.
