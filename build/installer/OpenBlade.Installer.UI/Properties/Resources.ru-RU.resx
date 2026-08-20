@@ -55,10 +55,10 @@
     <value>Отменить установку?</value>
   </data>
   <data name="Cancellation requested; waiting for safe rollback." xml:space="preserve">
-    <value>Запрошена отмена; ожидание безопасного отката.</value>
+    <value>Отмена запрошена. Ожидание безопасного возврата к предыдущему состоянию.</value>
   </data>
   <data name="Cancelling and restoring the previous state…" xml:space="preserve">
-    <value>Отмена и восстановление предыдущего состояния…</value>
+    <value>Отмена операции и восстановление предыдущего состояния…</value>
   </data>
   <data name="Checking the OpenBlade service…" xml:space="preserve">
     <value>Проверка службы OpenBlade…</value>
@@ -88,7 +88,7 @@
     <value>Установить OpenBlade</value>
   </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
-    <value>Установить на этот компьютер службу OpenBlade, Session Agent и приложение в области уведомлений.</value>
+    <value>Установить на этот компьютер службу OpenBlade, агент сеанса и приложение для области уведомлений.</value>
   </data>
   <data name="Installer cleanup required" xml:space="preserve">
     <value>Требуется очистка установщика</value>
@@ -103,7 +103,7 @@
     <value>Установка необходимых компонентов Windows…</value>
   </data>
   <data name="Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again." xml:space="preserve">
-    <value>Его кэшированный установщик недоступен, поэтому программа установки не может безопасно восстановить или удалить его. Используйте средство восстановления установщика Windows перед повторной попыткой.</value>
+    <value>Установочный пакет в кэше недоступен, поэтому эту версию нельзя безопасно восстановить или удалить. Перед повторной попыткой воспользуйтесь средством восстановления установщика Windows.</value>
   </data>
   <data name="Keep _working" xml:space="preserve">
     <value>_Продолжить работу</value>
@@ -118,7 +118,7 @@
     <value>OpenBlade</value>
   </data>
   <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
-    <value>OpenBlade {0} уже установлен. Запустите этот установщик в интерактивном режиме, чтобы подтвердить перезапись.</value>
+    <value>OpenBlade {0} уже установлен. Запустите этот установщик в интерактивном режиме, чтобы подтвердить замену.</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>OpenBlade {0} установлен</value>
@@ -145,7 +145,7 @@
     <value>Программе установки OpenBlade не удалось подготовить запрошенное действие: {0}</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>Программа установки OpenBlade обнаружила {0} связанных регистраций установщика. Установка остановлена до внесения изменений, поскольку запуск одного устаревшего пакета может рекурсивно запустить остальные. По возможности используйте команду «Удалить» для каждой зарегистрированной записи OpenBlade. Если дубликаты останутся, воспользуйтесь средством восстановления установщика Windows перед повторным запуском этого установщика.</value>
+    <value>Программа установки OpenBlade обнаружила {0} связанных записей установщика. Операция остановлена до внесения изменений: запуск одного устаревшего пакета может по цепочке запустить остальные. По возможности выберите «Удалить» для каждой зарегистрированной записи OpenBlade. Если дубликаты останутся, воспользуйтесь средством восстановления установщика Windows перед повторным запуском.</value>
   </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>OpenBlade установлен, но его не удалось запустить: {0}</value>
@@ -160,7 +160,7 @@
     <value>Подготовка файлов OpenBlade…</value>
   </data>
   <data name="Preparing Windows uninstall support…" xml:space="preserve">
-    <value>Подготовка поддержки удаления Windows…</value>
+    <value>Подготовка удаления через Windows…</value>
   </data>
   <data name="Preparing…" xml:space="preserve">
     <value>Подготовка…</value>
@@ -169,10 +169,10 @@
     <value>Чтение текущей установки…</value>
   </data>
   <data name="Recording installer ownership…" xml:space="preserve">
-    <value>Регистрация владения установщиком…</value>
+    <value>Сохранение сведений об установщике…</value>
   </data>
   <data name="Registering Dynamic Lighting…" xml:space="preserve">
-    <value>Регистрация Dynamic Lighting…</value>
+    <value>Регистрация функции «Динамическое освещение» Windows…</value>
   </data>
   <data name="Remove saved _profiles and settings" xml:space="preserve">
     <value>Удалить сохранённые _профили и параметры</value>
@@ -181,7 +181,7 @@
     <value>Удаление регистрации более ранней версии OpenBlade…</value>
   </data>
   <data name="Removing Dynamic Lighting registration…" xml:space="preserve">
-    <value>Удаление регистрации Dynamic Lighting…</value>
+    <value>Удаление регистрации функции «Динамическое освещение» Windows…</value>
   </data>
   <data name="Removing OpenBlade" xml:space="preserve">
     <value>Удаление OpenBlade</value>
@@ -214,7 +214,7 @@
     <value>Заменить более новую версию OpenBlade?</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
-    <value>Разрешение конфликтов установщиков OpenBlade</value>
+    <value>Устранение конфликтов установщиков OpenBlade</value>
   </data>
   <data name="Restoring the previous installation state…" xml:space="preserve">
     <value>Восстановление предыдущего состояния установки…</value>
@@ -235,7 +235,7 @@
     <value>Установка</value>
   </data>
   <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>Для этого состояния программа установки не может безопасно выбрать единственного владельца обслуживания. Сначала используйте раздел «Установленные приложения» Windows, чтобы восстановить или удалить зарегистрированный пакет.</value>
+    <value>Не удаётся безопасно определить, какая зарегистрированная версия должна выполнять обслуживание. Сначала восстановите или удалите зарегистрированный пакет в разделе «Установленные приложения» Windows.</value>
   </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>Установка успешно завершена.</value>
@@ -268,7 +268,7 @@
     <value>Остановка компонентов OpenBlade…</value>
   </data>
   <data name="The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again." xml:space="preserve">
-    <value>Маркер владения зарегистрированным установщиком OpenBlade отсутствует или имеет неверный формат. Используйте средство восстановления установщика Windows перед повторной попыткой.</value>
+    <value>Маркер владельца зарегистрированного установщика OpenBlade отсутствует или имеет неверный формат. Перед повторной попыткой воспользуйтесь средством восстановления установщика Windows.</value>
   </data>
   <data name="The setup command is unavailable." xml:space="preserve">
     <value>Команда установки недоступна.</value>
@@ -277,7 +277,7 @@
     <value>Версия {0}</value>
   </data>
   <data name="Windows could not open the requested path: {0}" xml:space="preserve">
-    <value>Windows не удалось открыть указанный путь: {0}</value>
+    <value>Системе Windows не удалось открыть указанный путь: {0}</value>
   </data>
   <data name="Working" xml:space="preserve">
     <value>Выполняется</value>

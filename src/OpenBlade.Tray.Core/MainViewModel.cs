@@ -213,8 +213,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ],
         LightingEffects: KnownLightingEffects
             .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
-            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(option => LightingEffectDisplayOrder(option.Effect))
             .ToArray(),
         LogoLightingModes: KnownLogoLightingModes
             .Select(mode => new LogoLightingModeOption(
@@ -4879,8 +4878,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 AvailableLightingEffectOptions,
                 presentedLightingEffects
                     .Select(CreateLightingEffectOption)
-                    .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
-                    .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(option => LightingEffectDisplayOrder(option.Effect))
                     .ToArray());
         if (!ReferenceEquals(AvailableLightingEffectOptions, lightingEffectOptions))
         {
@@ -4923,6 +4921,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
         new(effect, LightingEffectLabel(effect));
+
+    // Keep Off first, then follow the en-US label order so translations never reorder the picker.
+    private static int LightingEffectDisplayOrder(LightingEffect effect) => effect switch
+    {
+        LightingEffect.Off => 0,
+        LightingEffect.AmbientAwareness => 1,
+        LightingEffect.AudioMeter => 2,
+        LightingEffect.Breathing => 3,
+        LightingEffect.Fire => 4,
+        LightingEffect.Sequence => 5,
+        LightingEffect.Reactive => 6,
+        LightingEffect.Ripple => 7,
+        LightingEffect.Spectrum => 8,
+        LightingEffect.Starlight => 9,
+        LightingEffect.Static => 10,
+        LightingEffect.Tidal => 11,
+        LightingEffect.Wave => 12,
+        LightingEffect.Wheel => 13,
+        _ => int.MaxValue,
+    };
 
     private static string LightingEffectLabel(LightingEffect effect) => effect switch
     {
@@ -8340,10 +8358,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         AvailableLightingEffectOptions =
-        [
-            .. AvailableLightingEffectOptions,
-            CreateLightingEffectOption(LightingEffect.Sequence),
-        ];
+            AvailableLightingEffectOptions
+                .Append(CreateLightingEffectOption(LightingEffect.Sequence))
+                .OrderBy(option => LightingEffectDisplayOrder(option.Effect))
+                .ToArray();
     }
 
     private void SeedVisibleLightingDefaults(

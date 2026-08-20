@@ -9,6 +9,22 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
+    private static readonly LightingEffect[] ExpectedStandardLightingEffectOrder =
+    [
+        LightingEffect.Off,
+        LightingEffect.AmbientAwareness,
+        LightingEffect.AudioMeter,
+        LightingEffect.Breathing,
+        LightingEffect.Fire,
+        LightingEffect.Reactive,
+        LightingEffect.Ripple,
+        LightingEffect.Spectrum,
+        LightingEffect.Starlight,
+        LightingEffect.Static,
+        LightingEffect.Tidal,
+        LightingEffect.Wave,
+        LightingEffect.Wheel,
+    ];
 
     [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
@@ -2152,15 +2168,9 @@ public sealed class CapabilityPresentationTests
         Assert.Empty(viewModel.AvailableLightingEffects);
         Assert.Empty(viewModel.AvailableLightingSettings);
         Assert.NotEmpty(viewModel.AvailableLightingEffectOptions);
-        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
-            viewModel.AvailableLightingEffectOptions
-                .Skip(1)
-                .Select(option => option.Label)
-                .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            viewModel.AvailableLightingEffectOptions
-                .Skip(1)
-                .Select(option => option.Label));
+            ExpectedStandardLightingEffectOrder,
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Effect));
         Assert.True(viewModel.IsLightingVisible);
         Assert.False(viewModel.HasLightingCapability);
         Assert.False(viewModel.CanControlLighting);
@@ -2641,15 +2651,9 @@ public sealed class CapabilityPresentationTests
             Enum.GetValues<LightingEffect>()
                 .Count(effect => effect != LightingEffect.Sequence),
             viewModel.AvailableLightingEffectOptions.Count);
-        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
-            viewModel.AvailableLightingEffectOptions
-                .Skip(1)
-                .Select(option => option.Label)
-                .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            viewModel.AvailableLightingEffectOptions
-                .Skip(1)
-                .Select(option => option.Label));
+            ExpectedStandardLightingEffectOrder,
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Effect));
 
         viewModel.LightingBrightnessEditor = 64;
         viewModel.LightingRedEditor = 12;

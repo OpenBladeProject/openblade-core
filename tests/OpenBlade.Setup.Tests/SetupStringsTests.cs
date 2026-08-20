@@ -42,6 +42,17 @@ public sealed class SetupStringsTests
     }
 
     [Fact]
+    public void Get_RussianUninstallSuccessMakesRetentionExplicit()
+    {
+        using CultureScope culture = new("ru-RU");
+
+        Assert.Equal(
+            "OpenBlade удалён. Сохранённые профили и параметры остались на компьютере.",
+            SetupStrings.Get(
+                "OpenBlade was removed. Your saved profiles and preferences were kept."));
+    }
+
+    [Fact]
     public void Format_PreservesInvariantDiagnosticArgument()
     {
         using CultureScope culture = new("qps-ploc");
