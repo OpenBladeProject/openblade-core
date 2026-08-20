@@ -9,6 +9,54 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceCompositionTests
 {
     [Fact]
+    public async Task AddServiceControlRuntime_RegistersPersistentHyperBoostOwnershipJournal()
+    {
+        string machineDataDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "OpenBlade.ServiceCompositionTests",
+            Guid.NewGuid().ToString("N"));
+        var services = new ServiceCollection();
+
+        try
+        {
+            services.AddServiceControlRuntime(machineDataDirectory);
+
+            ServiceDescriptor runtimeRegistration = Assert.Single(
+                services,
+                descriptor => descriptor.ServiceType == typeof(IServiceControlRuntime));
+            Assert.NotNull(runtimeRegistration.ImplementationFactory);
+            Assert.Equal(ServiceLifetime.Singleton, runtimeRegistration.Lifetime);
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+            var journalStore = Assert.IsType<HyperBoostOwnershipJournalStore>(
+                provider.GetRequiredService<IHyperBoostOwnershipJournalStore>());
+            var journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow);
+
+            await journalStore.WriteAsync(journal, CancellationToken.None);
+
+            string expectedPath = Path.Combine(
+                machineDataDirectory,
+                "hyperboost-ownership.json");
+            Assert.True(File.Exists(expectedPath));
+            HyperBoostOwnershipJournalLoadResult reloaded =
+                await journalStore.LoadAsync(CancellationToken.None);
+            Assert.False(reloaded.Invalid);
+            Assert.Equal(journal, reloaded.Journal);
+        }
+        finally
+        {
+            if (Directory.Exists(machineDataDirectory))
+            {
+                Directory.Delete(machineDataDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void ProductionBatteryFactoryFallbackCatchesAdmissionFailureOnlyAndReturnsEmptyCatalogFactory()
     {
         var fallback = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());

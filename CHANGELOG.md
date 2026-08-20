@@ -9,6 +9,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
   labels in Simplified Chinese and Russian instead of falling back to English.
+- Wired the HyperBoost ownership journal into the production Service composition
+  so a confirmed activation is durably recorded before lifecycle recovery is
+  armed.
 
 ### Added
 
