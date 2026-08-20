@@ -22,6 +22,9 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private TrayNotificationDestination lastBalloonDestination;
     private int disposed;
 
+    internal string OpenMenuText => menu.Items[0]?.Text
+        ?? throw new InvalidOperationException("The tray Open item is unavailable.");
+
     public WinFormsTrayIconHost(
         Action<TrayDashboardPoint> openDashboard,
         Action openTray,

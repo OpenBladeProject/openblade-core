@@ -46,6 +46,14 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task LanguageChangesReloadResourcesWithoutRestartingTheProcess() =>
+        RunTraySmokeAsync(
+            "--live-localization-smoke",
+            "OpenBlade-live-localization-smoke",
+            localizationLanguage: "en-US");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task ResponsiveChoiceSelectorPreservesAuthoritativeSelection() =>
         RunTraySmokeAsync(
             "--responsive-choice-selector-smoke",

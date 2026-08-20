@@ -20,12 +20,13 @@ Production supports these Windows UI cultures:
 - Simplified Chinese (China): `zh-CN`
 - Russian (Russia): `ru-RU`
 
-Settings > Appearance > App language offers `Follow system`, English,
-Simplified Chinese, and Russian. `Follow system` is the default and uses the current Windows UI
-culture. An explicit choice is stored for the current user and applies to the
-tray and Tray.Core the next time the tray starts; existing WinUI resources and
-already-created presentation strings are not switched in place. Number, date,
-and regional formatting continue to use the Windows regional culture.
+Settings > Appearance > App language offers `Follow Windows`, English,
+Simplified Chinese, and Russian. `Follow Windows` is the default and uses the
+current Windows UI culture. An explicit choice is stored for the current user
+and applies immediately by rebuilding the tray's localized windows and menu in
+the running process. The service and Session Agent continue running throughout
+the switch. Number, date, and regional formatting continue to use the Windows
+regional culture.
 
 The graphical installer and native setup remain independent processes and
 always follow the Windows UI culture. If a culture or individual resource
