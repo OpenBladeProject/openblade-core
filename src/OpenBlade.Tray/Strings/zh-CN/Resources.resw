@@ -1868,4 +1868,13 @@
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
     <value>使用 Windows 显示语言，或选择一种语言。更改会立即生效。</value>
   </data>
+  <data name="MainWindow_TextBlockHyperBoost.Text" xml:space="preserve">
+    <value>HyperBoost</value>
+  </data>
+  <data name="MainWindow_ProgressRingApplyingHyperBoost.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>正在应用 HyperBoost</value>
+  </data>
+  <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>HyperBoost</value>
+  </data>
 </root>

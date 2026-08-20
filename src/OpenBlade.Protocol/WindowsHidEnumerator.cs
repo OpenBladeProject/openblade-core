@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 internal sealed record HidInterfaceInfo(
@@ -48,6 +50,37 @@ internal static class WindowsHidEnumerator
         }
 
         return FindCollections(new WindowsHidNative(), vendorId, productId);
+    }
+
+    internal static CoolingPadConnectionState ObserveCoolingPad()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return CoolingPadConnectionState.Unavailable;
+        }
+
+        return new WindowsCoolingPadDiscoverySource(new WindowsHidNative()).Observe();
+    }
+
+    internal static ICoolingPadPhysicalPresenceSource
+        CreateCoolingPadPhysicalPresenceSource()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new UnavailableCoolingPadPhysicalPresenceSource();
+        }
+
+        return new WindowsCoolingPadPhysicalPresenceSource(new WindowsHidNative());
+    }
+
+    internal static ICoolingPadDiscoverySource CreateHyperBoostEligibilitySource()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new UnavailableCoolingPadDiscoverySource();
+        }
+
+        return new WindowsHyperBoostEligibilitySource(new WindowsHidNative());
     }
 
     internal static IReadOnlyList<HidInterfaceInfo> FindTargetInterfaces(

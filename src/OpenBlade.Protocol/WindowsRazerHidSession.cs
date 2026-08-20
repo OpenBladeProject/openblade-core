@@ -115,6 +115,7 @@ internal sealed class WindowsRazerHidSession :
     private readonly TimeProvider timeProvider;
     private readonly ValidationRunContext.ActorLease actorLease;
     private readonly TimeSpan featureReportSettleDelay;
+    private readonly byte featureReportId;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -125,7 +126,8 @@ internal sealed class WindowsRazerHidSession :
         TimeProvider timeProvider,
         ValidationRunContext.ActorLease actorLease,
         ControllerExclusivityPolicy exclusivityPolicy,
-        TimeSpan featureReportSettleDelay = default)
+        TimeSpan featureReportSettleDelay = default,
+        byte featureReportId = 0)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -144,6 +146,7 @@ internal sealed class WindowsRazerHidSession :
         this.timeProvider = timeProvider;
         this.actorLease = actorLease;
         this.featureReportSettleDelay = featureReportSettleDelay;
+        this.featureReportId = featureReportId;
         worker = RunAsync();
     }
 
@@ -428,6 +431,7 @@ internal sealed class WindowsRazerHidSession :
         }
 
         byte[] setBuffer = new byte[FeatureReportLength];
+        setBuffer[0] = featureReportId;
         RazerReport request = RazerReport.Create(
             assignment.TransactionId,
             item.Command.ClassId,
@@ -564,6 +568,7 @@ internal sealed class WindowsRazerHidSession :
         }
 
         byte[] getBuffer = new byte[FeatureReportLength];
+        getBuffer[0] = featureReportId;
         HidFeatureIoResult getResult;
         try
         {
@@ -583,7 +588,10 @@ internal sealed class WindowsRazerHidSession :
         }
 
         if (getResult.Termination == HidFeatureTermination.Completed &&
-            !IsCompleteGetFeatureReport(getResult.Completion, getBuffer[0]))
+            !IsCompleteGetFeatureReport(
+                getResult.Completion,
+                getBuffer[0],
+                featureReportId))
         {
             Poison();
             return DiagnosticFailure(
@@ -615,7 +623,7 @@ internal sealed class WindowsRazerHidSession :
 
         try
         {
-            if (getBuffer[0] != 0)
+            if (getBuffer[0] != featureReportId)
             {
                 throw new RazerProtocolException(
                     "Feature report ID is invalid.",
@@ -667,6 +675,7 @@ internal sealed class WindowsRazerHidSession :
         using var deadline =
             new CancellationTokenSource(item.ExchangeTimeout, timeProvider);
         byte[] setBuffer = new byte[FeatureReportLength];
+        setBuffer[0] = featureReportId;
         bool guardChecked = false;
         for (int index = 0; index < commands.Length; index++)
         {
@@ -917,10 +926,12 @@ internal sealed class WindowsRazerHidSession :
 
     private static bool IsCompleteGetFeatureReport(
         NativeIoCompletion? completion,
-        byte reportId) =>
+        byte reportId,
+        byte expectedReportId) =>
         completion is { Succeeded: true } native &&
         (native.BytesTransferred == FeatureReportLength ||
-            (native.BytesTransferred == RazerReport.ReportLength && reportId == 0));
+            (native.BytesTransferred == RazerReport.ReportLength
+                && reportId == expectedReportId));
 
     private sealed class WorkItem
     {

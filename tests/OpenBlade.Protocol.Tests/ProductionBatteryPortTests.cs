@@ -1034,7 +1034,7 @@ public sealed class ProductionBatteryPortTests
     public async Task UnknownThermalPayload_FailsClosedWithoutSecondRead()
     {
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x07, 0x00]),
+            Success([0x01, 0x01, 0x08, 0x00]),
             Success([0x01, 0x02, 0x00, 0x00]));
         await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
 

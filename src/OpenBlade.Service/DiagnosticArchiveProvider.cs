@@ -1,6 +1,7 @@
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -425,6 +426,29 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
         result["performance.gpuOverclock.enableDisableObserved"] =
             capabilities.GpuOverclock?.SupportsEnableDisable == true;
+        result["performance.hyperBoost.observed"] =
+            capabilities.HyperBoostAccess is not null;
+        result["performance.hyperBoost.write"] =
+            capabilities.HyperBoostAccess == DeviceFeatureAccess.ReadWrite;
+        result["performance.hyperBoost.withoutCoolingPad.observed"] =
+            capabilities.HyperBoostWithoutCoolingPadAccess is not null;
+        result["performance.hyperBoost.withoutCoolingPad.write"] =
+            capabilities.HyperBoostWithoutCoolingPadAccess
+                == DeviceFeatureAccess.ReadWrite;
+        HyperBoostWithoutCoolingPadEvidenceGates evidence =
+            HyperBoostWithoutCoolingPadEvidenceGates.Current;
+        result["performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad"] =
+            evidence.ImmediateNoLoadApplyReadbackRestoreValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.sustainedNoLoad"] =
+            evidence.SustainedNoLoadExecutionValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.reviewedLoad"] =
+            evidence.ReviewedLoadValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.adapterTransition"] =
+            evidence.AdapterTransitionValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle"] =
+            evidence.LowPowerLifecycleValidated;
+        result["performance.hyperBoost.withoutCoolingPad.gate.crashRecovery"] =
+            evidence.CrashRecoveryValidated;
         result["laptop.specialKeyBindings.observed"] =
             capabilities.SpecialKeyBindingsAccess is not null;
         result["laptop.specialKeyBindings.write"] =
@@ -515,6 +539,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
             ["confirmed.fans"] = EnumOrUnavailable(confirmed?.Fans),
+            ["confirmed.hyperBoostActive"] = BoolOrUnavailable(
+                confirmed?.HyperBoostActive),
+            ["hyperBoost.padlessEligibility"] =
+                status.PadlessHyperBoostEligibility.ToString(),
             ["confirmed.battery.chargeLimitPercent"] = NumberOrUnavailable(
                 confirmed?.Battery?.ChargeLimitPercent),
             ["confirmed.battery.protectionEnabled"] = BoolOrUnavailable(
@@ -546,6 +574,13 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.WritableSpecialKeySlots.ToString(),
             ["capability.lampArrayLightingAccess"] =
                 capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostAccess"] =
+                capabilities.HyperBoostAccess?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostWithoutCoolingPadAccess"] =
+                capabilities.HyperBoostWithoutCoolingPadAccess?.ToString()
+                    ?? "Unavailable",
+            ["capability.hyperBoostBase.Balanced"] =
+                capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(

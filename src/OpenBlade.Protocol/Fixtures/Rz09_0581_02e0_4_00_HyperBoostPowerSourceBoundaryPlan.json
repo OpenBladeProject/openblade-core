@@ -1,0 +1,18 @@
+{
+  "planId": "rz09-0581-bios-4.00-hyperboost-power-source-boundary-v1",
+  "modelNumber": "RZ09-0581",
+  "biosVersion": "4.00",
+  "initialAdapterStates": ["fullPower280W", "fullPower330W"],
+  "destinationAdapterStates": ["usbCPower100W", "battery"],
+  "baselineMode": "balanced",
+  "baselineFanMode": "automatic",
+  "observationDurationSeconds": 10,
+  "sampleIntervalMilliseconds": 500,
+  "requiredConsecutiveAutomaticSamples": 3,
+  "requirePadAbsenceBeforeApply": true,
+  "requirePadAbsenceAfterTransition": true,
+  "requirePadAbsenceAfterReconnect": true,
+  "forbidOpenBladeDisableDuringObservation": true,
+  "requireFullPowerReconnectBeforeCleanup": true,
+  "indeterminateRetryForbidden": true
+}

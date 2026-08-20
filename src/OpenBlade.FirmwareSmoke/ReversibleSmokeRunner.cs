@@ -19,6 +19,7 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         Func<Task<FirmwareSmokeCheck>>[] operations =
         {
             () => TestPerformanceAsync(original, cancellationToken),
+            () => TestHyperBoostAsync(original, cancellationToken),
             () => TestFansAsync(original, cancellationToken),
             () => TestBatteryAsync(original, cancellationToken),
             () => TestLightingAsync(original, cancellationToken),
@@ -37,6 +38,150 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         }
 
         return checks;
+    }
+
+    private async Task<FirmwareSmokeCheck> TestHyperBoostAsync(
+        ServiceStatusSnapshot original,
+        CancellationToken cancellationToken)
+    {
+        const string id = "write.hyper-boost";
+        PerformancePreset? baseMode = original.ConfirmedState?.Performance;
+        string baseLabel = baseMode == PerformancePreset.Silent
+            ? "Quiet"
+            : baseMode?.ToString() ?? "base mode";
+        string description =
+            $"HyperBoost applies, reads back, and restores {baseLabel} directly";
+        if (original.Capabilities is not { } capabilities
+            || capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+            || baseMode is null
+            || (capabilities.HyperBoostBaseModes?.AccessFor(baseMode.Value)
+                ?? (baseMode == PerformancePreset.Balanced
+                    ? capabilities.HyperBoostAccess
+                    : null)) != DeviceFeatureAccess.ReadWrite
+            || original.ConfirmedState is not
+            {
+                Performance: not null,
+                Fans: FanMode.Automatic,
+                HyperBoostActive: false,
+            })
+        {
+            return Skipped(
+                id,
+                description,
+                "A confirmed writable base mode with Automatic fans and inactive HyperBoost is required.");
+        }
+
+        bool padAbsentAdmitted =
+            baseMode == PerformancePreset.Balanced
+            && capabilities.HyperBoostWithoutCoolingPadAccess
+                == DeviceFeatureAccess.ReadWrite
+            && original.PadlessHyperBoostEligibility
+                == PadlessHyperBoostEligibilityState.CoolingPadAbsent;
+        if (!padAbsentAdmitted)
+        {
+            return Skipped(
+                id,
+                description,
+                "Admitted pad-less Balanced support with confirmed physical pad absence is required.");
+        }
+
+        string application = "Not attempted";
+        string restoration = "Not attempted";
+        bool applyAttempted = false;
+        bool applicationAccepted = false;
+        bool applicationPassed = false;
+        bool restorationPassed = false;
+        try
+        {
+            applyAttempted = true;
+            ControlOperationResult result = await client.SetHyperBoostAsync(
+                enabled: true,
+                cancellationToken).ConfigureAwait(false);
+            application = $"{result.Status}: {result.Message}";
+            applicationAccepted = IsAccepted(result);
+            if (!applicationAccepted)
+            {
+                application += "; no retry was attempted.";
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            application = $"{exception.GetType().Name}: {exception.Message}; no retry was attempted.";
+        }
+        finally
+        {
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            bool active = false;
+            if (applyAttempted)
+            {
+                try
+                {
+                    if (applicationAccepted)
+                    {
+                        active = await WaitForAsync(
+                            status => status.ConfirmedState?.HyperBoostActive == true,
+                            cleanup.Token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        ServiceStatusSnapshot inspected =
+                            await client.ObserveStateAsync(
+                                LiveReadingSensors.None,
+                                cleanup.Token).ConfigureAwait(false);
+                        active = inspected.ConfirmedState?.HyperBoostActive == true;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    application +=
+                        $" Inspection={exception.GetType().Name}: {exception.Message}";
+                }
+            }
+
+            applicationPassed = applicationAccepted && active;
+            if (!active)
+            {
+                application +=
+                    "; independent readback did not confirm HyperBoost, so no restoration write was submitted.";
+            }
+            else
+            {
+                try
+                {
+                    ControlOperationResult result = await client.SetHyperBoostAsync(
+                        enabled: false,
+                        cleanup.Token).ConfigureAwait(false);
+                    restoration = $"{result.Status}: {result.Message}";
+                    restorationPassed = IsAccepted(result)
+                        && await WaitForAsync(
+                            status => status.ConfirmedState is
+                            {
+                                HyperBoostActive: false,
+                                Performance: { } restoredPerformance,
+                                Fans: FanMode.Automatic,
+                            } && restoredPerformance == baseMode,
+                            cleanup.Token).ConfigureAwait(false);
+                    if (!restorationPassed)
+                    {
+                        restoration +=
+                            $"; independent readback did not confirm the exact {baseLabel} baseline.";
+                    }
+                }
+                catch (Exception exception)
+                {
+                    restoration = $"{exception.GetType().Name}: {exception.Message}";
+                }
+            }
+        }
+
+        return new FirmwareSmokeCheck(
+            id,
+            description,
+            applicationPassed && restorationPassed
+                ? FirmwareSmokeOutcome.Passed
+                : FirmwareSmokeOutcome.Failed,
+            $"Mode 7 confirmed; {baseLabel} and Automatic restored",
+            $"Apply={application} Restore={restoration}");
     }
 
     private async Task<FirmwareSmokeCheck> TestPerformanceAsync(

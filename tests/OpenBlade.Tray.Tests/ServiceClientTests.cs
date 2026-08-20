@@ -247,6 +247,7 @@ public sealed class ServiceClientTests
             await client.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
                 timeout.Token),
+            await client.SetHyperBoostAsync(true, timeout.Token),
             await client.CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 timeout.Token),
@@ -294,6 +295,7 @@ public sealed class ServiceClientTests
             observed,
             request => Assert.IsType<UpdateProfilesRequest>(request),
             request => Assert.IsType<SetPerformanceOverrideRequest>(request),
+            request => Assert.True(Assert.IsType<SetHyperBoostRequest>(request).Enabled),
             request => Assert.Equal(
                 PerformanceShortcutSource.DedicatedButton,
                 Assert.IsType<CyclePerformanceShortcutRequest>(request).Source),
@@ -348,7 +350,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(19, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(20, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -1036,7 +1038,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 19; index++)
+        for (int index = 0; index < 20; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

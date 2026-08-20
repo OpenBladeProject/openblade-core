@@ -1,0 +1,16 @@
+{
+  "planId": "rz09-0581-bios-4.00-pad-absent-no-load-dwell-v1",
+  "modelNumber": "RZ09-0581",
+  "biosVersion": "4.00",
+  "durationSeconds": 60,
+  "sampleIntervalMilliseconds": 2000,
+  "maximumCpuTemperatureCelsius": 85,
+  "maximumGpuTemperatureCelsius": 80,
+  "gpuSensorPolicy": "allowInactive",
+  "minimumFan1Rpm": null,
+  "minimumFan2Rpm": null,
+  "workloadKind": "sustainedNoLoadDwell",
+  "workloadIdentityPolicy": "notApplicable",
+  "workloadName": null,
+  "workloadSha256": null
+}

@@ -47,9 +47,18 @@ public static class CapturedFixtureFile
 
     internal static DeviceCommandCatalog LoadCatalog(
         ReadOnlyMemory<byte> fixtureBytes,
-        TrustedFixtureHashRegistry trustedHashes)
+        TrustedFixtureHashRegistry trustedHashes) => LoadCatalog(
+            fixtureBytes,
+            trustedHashes,
+            TargetDevice);
+
+    internal static DeviceCommandCatalog LoadCatalog(
+        ReadOnlyMemory<byte> fixtureBytes,
+        TrustedFixtureHashRegistry trustedHashes,
+        DeviceIdentity targetDevice)
     {
         ArgumentNullException.ThrowIfNull(trustedHashes);
+        ArgumentNullException.ThrowIfNull(targetDevice);
         byte[] hash = SHA256.HashData(fixtureBytes.Span);
         if (!trustedHashes.Contains(hash))
         {
@@ -73,7 +82,7 @@ public static class CapturedFixtureFile
                 "The fixture file contains a null command entry.");
         }
 
-        return DeviceCommandCatalog.Create(TargetDevice, fixtures);
+        return DeviceCommandCatalog.Create(targetDevice, fixtures);
     }
 
     private static void RejectDuplicateJsonMembers(ReadOnlyMemory<byte> json)

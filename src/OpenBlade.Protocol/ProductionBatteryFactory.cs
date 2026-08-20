@@ -4,12 +4,18 @@ namespace OpenBlade.Protocol;
 
 public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 {
+    private static readonly DeviceIdentity HyperBoostTarget = new(
+        TargetBladeDevice.Model,
+        TargetBladeDevice.VendorId,
+        TargetBladeDevice.ProductId,
+        "4.00");
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
         TimeSpan.FromMilliseconds(30);
 
     private readonly DeviceCommandCatalog catalog;
+    private readonly DeviceCommandCatalog hyperBoostCatalog;
     private readonly ProductionBatteryReadEvidence readEvidence;
     private readonly Func<ValidationRunContext> createContext;
     private readonly Func<TimeSpan, IValidationActorFactory> createActorFactory;
@@ -26,6 +32,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly IReadOnlyList<PowerSourceBehaviorObservation> observedPowerSourceBehaviors;
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly SemaphoreSlim? sharedCommandGate;
+    private readonly DeviceFeatureAccess? hyperBoostAccess;
+    private readonly DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess;
+    private readonly HyperBoostBaseModeCapabilities? hyperBoostBaseModes;
+    private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
+    private readonly bool allowPadlessHyperBoostLifecycleValidation;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -44,9 +55,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
         IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
         IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
-        SemaphoreSlim? sharedCommandGate = null)
+        SemaphoreSlim? sharedCommandGate = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceCommandCatalog? hyperBoostCatalog = null,
+        IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+        bool allowPadlessHyperBoostLifecycleValidation = false)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.createActorFactory = createActorFactory
@@ -80,6 +98,60 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             ? null
             : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
         this.sharedCommandGate = sharedCommandGate;
+        this.hyperBoostAccess = hyperBoostAccess;
+        this.hyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess;
+        this.hyperBoostBaseModes = hyperBoostBaseModes;
+        this.hyperBoostEligibility = hyperBoostEligibility;
+        this.allowPadlessHyperBoostLifecycleValidation =
+            allowPadlessHyperBoostLifecycleValidation;
+        ValidateHyperBoostBaseModes(
+            this.hyperBoostAccess,
+            this.hyperBoostBaseModes,
+            nameof(hyperBoostBaseModes));
+        if (this.hyperBoostWithoutCoolingPadAccess is not null
+            && (this.hyperBoostAccess is null
+                || this.hyperBoostWithoutCoolingPadAccess > this.hyperBoostAccess
+                || this.hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || this.hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
+                    && this.hyperBoostBaseModes?.Balanced
+                        != DeviceFeatureAccess.ReadWrite))
+        {
+            throw new UnvalidatedCommandException(
+                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+        }
+        if (this.hyperBoostAccess == DeviceFeatureAccess.ReadWrite
+            && (!ProductionBatteryPort.HasHyperBoostCommandSet(this.hyperBoostCatalog)
+                || this.hyperBoostEligibility is null))
+        {
+            throw new UnvalidatedCommandException(
+                "Writable HyperBoost requires reviewed exact-model fixtures and a cooling-pad eligibility gate.");
+        }
+        if (this.allowPadlessHyperBoostLifecycleValidation
+            && (this.hyperBoostAccess != DeviceFeatureAccess.ReadWrite
+                || this.hyperBoostWithoutCoolingPadAccess is not
+                    (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
+                || this.hyperBoostBaseModes?.Balanced
+                    != DeviceFeatureAccess.ReadWrite
+                || !ProductionBatteryPort.HasHyperBoostCommandSet(
+                    this.hyperBoostCatalog)
+                || this.hyperBoostEligibility is null))
+        {
+            throw new UnvalidatedCommandException(
+                "Developer pad-less lifecycle validation requires exact pad-less evidence and the admitted HyperBoost command set.");
+        }
+        if (this.hyperBoostBaseModes?.Silent == DeviceFeatureAccess.ReadWrite
+            && !ProductionBatteryPort.HasPerformancePair(
+                catalog,
+                PerformancePreset.Silent)
+            || this.hyperBoostBaseModes?.Performance == DeviceFeatureAccess.ReadWrite
+                && !ProductionBatteryPort.HasPerformancePair(
+                    catalog,
+                    PerformancePreset.Performance))
+        {
+            throw new UnvalidatedCommandException(
+                "A writable direct HyperBoost base mode requires its exact restoration pair.");
+        }
         Capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             readEvidence,
@@ -89,26 +161,66 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.cpuPowerLimitCapabilities,
             this.cpuVoltageOptimizerCapabilities,
             this.gpuOverclockCapabilities,
-            this.observedPowerSourceBehaviors);
+            this.observedPowerSourceBehaviors,
+            this.hyperBoostAccess,
+            this.hyperBoostWithoutCoolingPadAccess,
+            this.hyperBoostBaseModes);
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    private static void ValidateHyperBoostBaseModes(
+        DeviceFeatureAccess? overallAccess,
+        HyperBoostBaseModeCapabilities? baseModes,
+        string parameterName)
+    {
+        if (baseModes is null)
+        {
+            return;
+        }
+
+        if (overallAccess is null
+            || !Enum.IsDefined(baseModes.Silent)
+            || !Enum.IsDefined(baseModes.Balanced)
+            || !Enum.IsDefined(baseModes.Performance)
+            || baseModes.Silent > overallAccess
+            || baseModes.Balanced > overallAccess
+            || baseModes.Performance > overallAccess)
+        {
+            throw new ArgumentException(
+                "HyperBoost base-mode access must be defined and no broader than overall HyperBoost access.",
+                parameterName);
+        }
+    }
 
     internal IReadOnlySet<AdapterPowerState>? AdmittedAdapterPowerStates =>
         admittedAdapterPowerStates;
 
     public static IProductionBatteryPortFactory CreateWindows()
-        => CreateWindowsCore(compatibilityPolicy: null);
+        => CreateWindowsCore(
+            compatibilityPolicy: null,
+            allowPadlessHyperBoostLifecycleValidation: false);
+
+    internal static IProductionBatteryPortFactory
+        CreateWindowsForPadlessHyperBoostLifecycleValidation() =>
+        CreateWindowsCore(
+            compatibilityPolicy: null,
+            allowPadlessHyperBoostLifecycleValidation: true);
 
     internal static IProductionBatteryPortFactory CreateWindows(
         FirmwareCompatibilityPolicy compatibilityPolicy)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
-        return CreateWindowsCore(compatibilityPolicy);
+        return CreateWindowsCore(
+            compatibilityPolicy,
+            allowPadlessHyperBoostLifecycleValidation: false);
     }
 
     private static IProductionBatteryPortFactory CreateWindowsCore(
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy,
+        bool allowPadlessHyperBoostLifecycleValidation,
+        ControllerExclusivityPolicy exclusivityPolicy =
+            ControllerExclusivityPolicy.Advisory)
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();
         if (fixtureBytes is null)
@@ -120,17 +232,35 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
             fixtureBytes.Value,
             TrustedFixtureHashRegistry.Production);
+        ReadOnlyMemory<byte>? hyperBoostFixtureBytes = HyperBoostFixtureSource.Read();
+        if (hyperBoostFixtureBytes is null)
+        {
+            throw new UnvalidatedCommandException(
+                "The embedded HyperBoost production fixture is absent.");
+        }
+
+        DeviceCommandCatalog hyperBoostCatalog = CapturedFixtureFile.LoadCatalog(
+            hyperBoostFixtureBytes.Value,
+            TrustedFixtureHashRegistry.HyperBoostProduction,
+            HyperBoostTarget);
         return CreateWindows(
             catalog,
+            hyperBoostCatalog,
+            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
-            admitGpuOverclock: true);
+            admitGpuOverclock: true,
+            allowPadlessHyperBoostLifecycleValidation,
+            exclusivityPolicy);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
         CreateWindows(
             DeviceCommandCatalog.Empty,
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy: null,
-            admitGpuOverclock: false);
+            admitGpuOverclock: false,
+            allowPadlessHyperBoostLifecycleValidation: false);
 
     internal static IProductionBatteryPortFactory CreateWindowsReadOnly(
         FirmwareCompatibilityPolicy compatibilityPolicy)
@@ -138,8 +268,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindows(
             DeviceCommandCatalog.Empty,
+            DeviceCommandCatalog.Empty,
+            ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
-            admitGpuOverclock: false);
+            admitGpuOverclock: false,
+            allowPadlessHyperBoostLifecycleValidation: false);
     }
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -212,14 +345,25 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 cpuVoltageOptimizerCapabilities,
                 gpuOverclockCapabilities,
                 observedPowerSourceBehaviors,
-                sharedCommandGate),
+                sharedCommandGate,
+                hyperBoostAccess,
+                hyperBoostWithoutCoolingPadAccess,
+                hyperBoostBaseModes,
+                hyperBoostCatalog,
+                hyperBoostEligibility,
+                allowPadlessHyperBoostLifecycleValidation),
             null);
     }
 
     private static IProductionBatteryPortFactory CreateWindows(
         DeviceCommandCatalog catalog,
+        DeviceCommandCatalog hyperBoostCatalog,
+        ProductionBatteryReadEvidence readEvidence,
         FirmwareCompatibilityPolicy? compatibilityPolicy,
-        bool admitGpuOverclock)
+        bool admitGpuOverclock,
+        bool allowPadlessHyperBoostLifecycleValidation,
+        ControllerExclusivityPolicy exclusivityPolicy =
+            ControllerExclusivityPolicy.Advisory)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -238,13 +382,40 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             hostIdentity,
             hardwareAccessGuard,
             native,
-            ControllerExclusivityPolicy.Advisory);
+            exclusivityPolicy);
         HostIdentityReadResult exactIdentity = hostIdentity.ReadExactIdentity();
         ProductionBatteryReadEvidence admittedReadEvidence =
-            GetRz090581ProductionBatteryReadEvidence(exactIdentity);
+            readEvidence == ProductionBatteryReadEvidence.Production
+                ? GetRz090581ProductionBatteryReadEvidence(exactIdentity)
+                : readEvidence;
         GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
             ? GetRz090581GpuOverclockCapabilities(exactIdentity)
             : null;
+        DeviceFeatureAccess? hyperBoostAccess =
+            GetRz090581HyperBoostAccess(
+                exactIdentity,
+                ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoostCatalog));
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess =
+            GetRz090581HyperBoostWithoutCoolingPadAccess(
+                exactIdentity,
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted);
+        if (allowPadlessHyperBoostLifecycleValidation
+            && !HyperBoostWithoutCoolingPadEvidenceGates.Current
+                .LifecycleValidationReady)
+        {
+            throw new UnvalidatedCommandException(
+                "Developer pad-less lifecycle validation remains blocked until every non-lifecycle evidence gate is reviewed.");
+        }
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes =
+            GetRz090581HyperBoostBaseModeCapabilities(exactIdentity);
+        IHyperBoostEligibilitySource? hyperBoostEligibility =
+            hyperBoostAccess == DeviceFeatureAccess.ReadWrite
+                ? new WindowsHyperBoostEligibilitySource(native)
+                : null;
+        DeviceCommandCatalog admittedHyperBoostCatalog =
+            hyperBoostAccess == DeviceFeatureAccess.ReadWrite
+                ? hyperBoostCatalog
+                : DeviceCommandCatalog.Empty;
         IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
         return new ProductionBatteryFactory(
@@ -257,14 +428,21 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 hardwareAccessGuard,
                 TimeProvider.System,
                 DefaultExchangeTimeout,
-                ControllerExclusivityPolicy.Advisory,
+                exclusivityPolicy,
                 settleDelay),
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
             PendingDisposalRegistry.Shared,
             admittedAdapterPowerStates: admittedAdapterPowerStates,
-            gpuOverclockCapabilities: gpuOverclockCapabilities);
+            gpuOverclockCapabilities: gpuOverclockCapabilities,
+            hyperBoostAccess: hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess: hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes: hyperBoostBaseModes,
+            hyperBoostCatalog: admittedHyperBoostCatalog,
+            hyperBoostEligibility: hyperBoostEligibility,
+            allowPadlessHyperBoostLifecycleValidation:
+                allowPadlessHyperBoostLifecycleValidation);
     }
 
     internal static ProductionBatteryReadEvidence
@@ -298,6 +476,54 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             }
             : null;
 
+    internal static DeviceFeatureAccess? GetRz090581HyperBoostAccess(
+        HostIdentityReadResult exactIdentity,
+        bool reversibleWritesAdmitted = false) => exactIdentity is
+        {
+            Evidence:
+            {
+                Manufacturer: "Razer",
+                ProductName: "Blade 16 - RZ09-0581",
+                Sku: "RZ09-05819EN4",
+            } evidence,
+            Failure: null,
+        }
+            ? exactIdentity.FirmwareCompatibility is
+                HostFirmwareCompatibility.Tested
+                or HostFirmwareCompatibility.UntestedAllowed
+                or HostFirmwareCompatibility.ModelScoped
+                    ? reversibleWritesAdmitted
+                        ? DeviceFeatureAccess.ReadWrite
+                        : DeviceFeatureAccess.ReadOnly
+                    : DeviceFeatureAccess.ObservedOnly
+            : null;
+
+    internal static DeviceFeatureAccess? GetRz090581HyperBoostWithoutCoolingPadAccess(
+        HostIdentityReadResult exactIdentity,
+        bool writesAdmitted = false) => IsExactModelScopedRz090581Identity(exactIdentity)
+            ? writesAdmitted
+                ? DeviceFeatureAccess.ReadWrite
+                : DeviceFeatureAccess.ObservedOnly
+            : null;
+
+    internal static HyperBoostBaseModeCapabilities?
+        GetRz090581HyperBoostBaseModeCapabilities(
+            HostIdentityReadResult exactIdentity) => exactIdentity is
+            {
+                Evidence:
+                {
+                    Manufacturer: "Razer",
+                    ProductName: "Blade 16 - RZ09-0581",
+                    Sku: "RZ09-05819EN4",
+                },
+                Failure: null,
+                FirmwareCompatibility: HostFirmwareCompatibility.Tested
+                    or HostFirmwareCompatibility.UntestedAllowed
+                    or HostFirmwareCompatibility.ModelScoped,
+            }
+            ? HyperBoostBaseModeAdmissionSource.ReadCapabilities()
+            : null;
+
     internal static IReadOnlySet<AdapterPowerState>
         GetRz090581AdmittedAdapterPowerStates(
             HostIdentityReadResult exactIdentity,
@@ -319,7 +545,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         states.Add(AdapterPowerState.UsbCPower65W);
         states.Add(AdapterPowerState.UsbCPower80W);
         states.Add(AdapterPowerState.UsbCPower90W);
-
         try
         {
             if ((isSlimQAdmissionApproved ?? SlimQ330WAdapterAdmissionSource.IsAdmitted)())

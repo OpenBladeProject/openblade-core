@@ -5,8 +5,26 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Refreshed the fan-mode selector immediately when HyperBoost activates or
+  exits so its enabled state stays synchronized with the authoritative control
+  gate.
+- Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
+  labels in Simplified Chinese and Russian instead of falling back to English.
+- Wired the HyperBoost ownership journal into the production Service composition
+  so a confirmed activation is durably recorded before lifecycle recovery is
+  armed.
+
 ### Added
 
+- Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
+  reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
+  low-power, and unexpected-exit evidence now admits production use without
+  the cooling pad. Safety boundaries never retry an indeterminate write.
+- Presented padless HyperBoost status in Quick Controls and noted that full
+  cooling-pad integration is planned for a future update. The toggle is
+  available only when the service reports reviewed write access.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,
@@ -87,6 +105,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Prevented coordinated Session Agent cancellation from becoming a fatal
   named-pipe error that stops function-row and other per-user features.
+- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it could
+  exercise padless HyperBoost while the low-power and unexpected-exit
+  production evidence gates were still closed.
 - Reworked Simplified Chinese and Russian wording to use natural,
   context-aware terminology throughout the tray, installer, and setup.
 - Prevented localized profile-draft captions from overlapping adjacent
