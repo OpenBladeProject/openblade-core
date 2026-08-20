@@ -9,6 +9,20 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionDisplayServerTests
 {
     [Fact]
+    public async Task RunAsync_CancellationWhileWaitingCompletesNormally()
+    {
+        var dispatcher = new SessionDisplayRequestDispatcher(new RecordingApplier());
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher);
+        using var cancellation = new CancellationTokenSource();
+
+        Task running = server.RunAsync(cancellation.Token);
+        cancellation.Cancel();
+
+        await running.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task Dispatcher_MapsEveryTypedRequestAndPreservesCorrelationId()
     {
         var applier = new RecordingApplier();

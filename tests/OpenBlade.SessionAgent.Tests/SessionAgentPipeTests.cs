@@ -66,6 +66,32 @@ public sealed class SessionAgentPipeTests
     }
 
     [Fact]
+    public async Task TryAcceptAsync_CanceledIOExceptionCompletesNormally()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        bool accepted = await SessionAgentPipeAccept.TryAcceptAsync(
+            _ => Task.FromException(new IOException("The pipe is being closed.")),
+            cancellation.Token);
+
+        Assert.False(accepted);
+    }
+
+    [Fact]
+    public async Task TryAcceptAsync_UnexpectedIOExceptionRemainsObservable()
+    {
+        var expected = new IOException("unexpected accept failure");
+
+        IOException actual = await Assert.ThrowsAsync<IOException>(() =>
+            SessionAgentPipeAccept.TryAcceptAsync(
+                _ => Task.FromException(expected),
+                CancellationToken.None));
+
+        Assert.Same(expected, actual);
+    }
+
+    [Fact]
     public async Task DuplicateStartupDoesNotRegisterPersistentLogging()
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;

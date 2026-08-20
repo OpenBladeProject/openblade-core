@@ -7,6 +7,20 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionGpuServerTests
 {
     [Fact]
+    public async Task RunAsync_CancellationWhileWaitingCompletesNormally()
+    {
+        var dispatcher = new SessionGpuRequestDispatcher(new ThrowOnceGpuAppManager());
+        await using SessionAgentPipeOwner owner = AcquireOwner();
+        await using var server = new SessionGpuPipeServer(owner, dispatcher);
+        using var cancellation = new CancellationTokenSource();
+
+        Task running = server.RunAsync(cancellation.Token);
+        cancellation.Cancel();
+
+        await running.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task DispatchFailureReturnsCorrelatedErrorAndKeepsServerUsable()
     {
         var manager = new ThrowOnceGpuAppManager();
