@@ -92,10 +92,18 @@
       }
     },
     "lowPowerLifecycleValidated": {
-      "validated": false
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json",
+        "sha256": "AC861D69BC8E7B56B5DB929C384255BB6DB1AF4D35CE3B6B842EED7BC8ECE078"
+      }
     },
     "crashRecoveryValidated": {
-      "validated": false
+      "validated": true,
+      "evidence": {
+        "artifact": "captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json",
+        "sha256": "B1916C7338E09F7EFFC5EA4B04194128F76C50A75EDF31CF8259BD8ACCAB4684"
+      }
     }
   }
 }

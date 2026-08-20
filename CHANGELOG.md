@@ -16,13 +16,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
-  reviewed Balanced-and-Automatic protocol, load, adapter, and restoration
-  evidence is represented in the product, while production mutation remains
-  unavailable until exact-head low-power and unexpected-exit lifecycle evidence
-  is reviewed. Safety boundaries never retry an indeterminate write.
+  reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
+  low-power, and unexpected-exit evidence now admits production use without
+  the cooling pad. Safety boundaries never retry an indeterminate write.
 - Presented padless HyperBoost status in Quick Controls and noted that full
-  cooling-pad integration is planned for a future update. The toggle remains
-  read-only until the production admission gates pass.
+  cooling-pad integration is planned for a future update. The toggle is
+  available only when the service reports reviewed write access.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,
@@ -101,9 +100,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it accepts
-  the deliberately observed-only padless HyperBoost capability while the
-  low-power and unexpected-exit production evidence gates remain closed.
+- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it could
+  exercise padless HyperBoost while the low-power and unexpected-exit
+  production evidence gates were still closed.
 - Fixed live language changes mixing strings from the previous language into
   the rebuilt tray when background work retained an older UI culture.
 - Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device

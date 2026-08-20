@@ -150,33 +150,40 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
-    public void Rz090581RequiresObservedOnlyPadlessHyperBoostUntilLifecycleAdmission()
+    public void Rz090581RequiresReadWritePadlessHyperBoostAfterLifecycleAdmission()
     {
-        FirmwareSmokeSnapshot closedAdmission = CreateSnapshot("1.6.0.0");
+        FirmwareSmokeSnapshot admitted = CreateSnapshot("1.6.0.0") with
+        {
+            Capabilities = CreateSnapshot("1.6.0.0").Capabilities with
+            {
+                HyperBoostWithoutCoolingPadAccess =
+                    DeviceFeatureAccess.ReadWrite.ToString(),
+            },
+        };
 
-        FirmwareSmokeReport closedReport =
-            FirmwareSmokeAssessment.ValidateBaseline(closedAdmission);
+        FirmwareSmokeReport admittedReport =
+            FirmwareSmokeAssessment.ValidateBaseline(admitted);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(
-                closedReport.Checks,
+                admittedReport.Checks,
                 check => check.Id
                     == "capabilities.hyper-boost-without-cooling-pad").Outcome);
 
-        FirmwareSmokeReport prematurelyWritableReport =
+        FirmwareSmokeReport observedOnlyReport =
             FirmwareSmokeAssessment.ValidateBaseline(
-                closedAdmission with
+                admitted with
                 {
-                    Capabilities = closedAdmission.Capabilities with
+                    Capabilities = admitted.Capabilities with
                     {
                         HyperBoostWithoutCoolingPadAccess =
-                            DeviceFeatureAccess.ReadWrite.ToString(),
+                            DeviceFeatureAccess.ObservedOnly.ToString(),
                     },
                 });
         Assert.Equal(
             FirmwareSmokeOutcome.Failed,
             Assert.Single(
-                prematurelyWritableReport.Checks,
+                observedOnlyReport.Checks,
                 check => check.Id
                     == "capabilities.hyper-boost-without-cooling-pad").Outcome);
     }
@@ -857,7 +864,7 @@ public sealed class FirmwareSmokeAssessmentTests
             ObservedPowerSourceBehaviors: [],
             HyperBoostAccess: DeviceFeatureAccess.ReadWrite.ToString(),
             HyperBoostWithoutCoolingPadAccess:
-                DeviceFeatureAccess.ObservedOnly.ToString())
+                DeviceFeatureAccess.ReadWrite.ToString())
         {
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,
