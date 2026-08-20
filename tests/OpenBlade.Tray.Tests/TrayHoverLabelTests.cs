@@ -39,6 +39,21 @@ public sealed class TrayHoverLabelTests
                 "Not using battery"));
     }
 
+    [Fact]
+    public void Format_UsesUnambiguousRussianExternalPowerLabel()
+    {
+        using var culture = new CultureScope("ru-RU");
+
+        Assert.Equal(
+            "OpenBlade · От сети · Сбалансированный",
+            TrayHoverLabelFormatter.Format(
+                TrayHoverLabelMode.ActiveProfile,
+                isConnected: true,
+                PowerSource.PluggedIn,
+                PerformancePreset.Balanced,
+                "Аккумулятор не используется"));
+    }
+
     [Theory]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "OpenBlade · USB-C · Balanced")]
     [InlineData(

@@ -4922,6 +4922,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
         new(effect, LightingEffectLabel(effect));
 
+    // Keep Off first, then follow the en-US label order so translations never reorder the picker.
     private static int LightingEffectDisplayOrder(LightingEffect effect) => effect switch
     {
         LightingEffect.Off => 0,

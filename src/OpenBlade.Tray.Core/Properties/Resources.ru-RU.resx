@@ -154,7 +154,7 @@
     <value>Сочетание клавиш должно включать клавишу, не являющуюся модификатором.</value>
   </data>
   <data name="AC · {0}" xml:space="preserve">
-    <value>Сеть · {0}</value>
+    <value>От сети · {0}</value>
   </data>
   <data name="AC profile" xml:space="preserve">
     <value>Профиль питания от сети</value>

@@ -388,13 +388,13 @@
     <value>比较交流电、USB-C 和电池配置方案中保存的设置。</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
-    <value>设置实时监测、登录时启动和灯光控制权。</value>
+    <value>设置实时数据、登录时启动和灯光控制权。</value>
   </data>
   <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
     <value>配置语言、主题、强调色、导航和托盘文本。</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
-    <value>查看连接状态、当前设置和选定的实时监测数据。</value>
+    <value>查看连接状态、当前设置和选定的实时数据。</value>
   </data>
   <data name="Control keyboard effects, brightness, and laptop logo lighting." xml:space="preserve">
     <value>控制键盘效果、亮度和笔记本电脑徽标灯光。</value>
@@ -481,7 +481,7 @@
     <value>设备信息</value>
   </data>
   <data name="Device status and live readings" xml:space="preserve">
-    <value>设备状态和实时监测数据</value>
+    <value>设备状态和实时数据</value>
   </data>
   <data name="Diagnostic export canceled." xml:space="preserve">
     <value>已取消诊断导出。</value>
@@ -736,7 +736,7 @@
     <value>灯光效果</value>
   </data>
   <data name="Live readings are unavailable while the OpenBlade service is not running." xml:space="preserve">
-    <value>OpenBlade 服务未运行，无法获取实时监测数据。</value>
+    <value>OpenBlade 服务未运行，无法获取实时数据。</value>
   </data>
   <data name="Loaded" xml:space="preserve">
     <value>已加载</value>

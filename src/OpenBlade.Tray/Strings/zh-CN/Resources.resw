@@ -1284,7 +1284,7 @@
     <value>适用于 Razer Blade 笔记本电脑的轻量控制工具</value>
   </data>
   <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
-    <value>实时监测数据</value>
+    <value>实时数据</value>
   </data>
   <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
     <value>加载 OpenBlade 或 Razer Chroma 键盘灯光文件。</value>

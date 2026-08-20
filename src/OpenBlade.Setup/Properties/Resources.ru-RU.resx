@@ -19,7 +19,7 @@
     <value>Удаление OpenBlade</value>
   </data>
   <data name="OpenBlade was removed. Your saved profiles and preferences were kept." xml:space="preserve">
-    <value>OpenBlade удалён. Профили и параметры сохранены.</value>
+    <value>OpenBlade удалён. Сохранённые профили и параметры остались на компьютере.</value>
   </data>
   <data name="OpenBlade uninstalled" xml:space="preserve">
     <value>OpenBlade удалён</value>
