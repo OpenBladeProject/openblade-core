@@ -351,6 +351,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         if (string.IsNullOrWhiteSpace(language))
         {
+            TrayLocalization.SetLanguageOverride(SystemUiCulture.Name);
             return;
         }
 
@@ -366,6 +367,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ApplicationLanguages.PrimaryLanguageOverride = string.Empty;
             CultureInfo.CurrentUICulture = SystemUiCulture;
             LocalizedResources.SetLanguageOverride(SystemUiCulture.Name);
+            TrayLocalization.SetLanguageOverride(SystemUiCulture.Name);
             return;
         }
 
@@ -379,6 +381,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage;
         CultureInfo.CurrentUICulture = managedCulture;
         LocalizedResources.SetLanguageOverride(resourceLanguage);
+        TrayLocalization.SetLanguageOverride(resourceLanguage);
     }
 
     private static string? RequestedLocalizationLanguage() => string.Equals(
@@ -409,23 +412,32 @@ public partial class App : Microsoft.UI.Xaml.Application
             LiveLocalizationSmokeCase[] cases =
             [
                 new(
-                    UiLanguagePreference.English,
-                    "App language",
-                    "Use your Windows display language, or choose a language. Changes apply immediately.",
-                    "Follow Windows",
-                    "Open"),
+                    UiLanguagePreference.Russian,
+                    "Язык приложения",
+                    "Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.",
+                    "Следовать параметрам Windows",
+                    "Открыть",
+                    "Недоступно",
+                    "От батареи",
+                    "Сохраняет текущий параметр Windows."),
                 new(
                     UiLanguagePreference.SimplifiedChinese,
                     "应用语言",
                     "使用 Windows 显示语言，或选择一种语言。更改会立即生效。",
                     "跟随 Windows",
-                    "打开"),
+                    "打开",
+                    "不可用",
+                    "使用电池",
+                    "保留当前 Windows 设置。"),
                 new(
-                    UiLanguagePreference.Russian,
-                    "Язык приложения",
-                    "Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.",
-                    "Следовать параметрам Windows",
-                    "Открыть"),
+                    UiLanguagePreference.English,
+                    "App language",
+                    "Use your Windows display language, or choose a language. Changes apply immediately.",
+                    "Follow Windows",
+                    "Open",
+                    "Unavailable",
+                    "On battery",
+                    "Keeps the current Windows setting."),
             ];
 
             ApplyRuntimeLocalizationPreference(cases[0].Preference);
@@ -452,7 +464,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 throw new InvalidOperationException(
                     "A failed language refresh did not preserve the reachable tray shell.");
             }
-            AssertLiveLocalizationState(cases[0], previousWindow: null);
+            AssertLiveLocalizationState(
+                cases[0],
+                previousWindow: null,
+                assertTrayCorePresentation: false);
 
             foreach (LiveLocalizationSmokeCase smokeCase in cases[1..])
             {
@@ -489,7 +504,8 @@ public partial class App : Microsoft.UI.Xaml.Application
     private void AssertLiveLocalizationState(
         LiveLocalizationSmokeCase smokeCase,
         MainWindow? previousWindow,
-        bool expectMaximized = false)
+        bool expectMaximized = false,
+        bool assertTrayCorePresentation = true)
     {
         MainWindow window = mainWindow
             ?? throw new InvalidOperationException(
@@ -532,6 +548,24 @@ public partial class App : Microsoft.UI.Xaml.Application
             smokeCase.ExpectedOpenMenuItem,
             iconHost.OpenMenuText,
             "tray menu");
+        if (!assertTrayCorePresentation)
+        {
+            return;
+        }
+
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedUnavailable,
+            window.ViewModel.CurrentBatterySettingLabel,
+            "dashboard battery status");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedBatteryProfile,
+            window.ViewModel.ProfileComparisonOptions.Single(
+                option => option.Source == PowerSource.Battery).Label,
+            "battery profile option");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedWindowsPowerModeDescription,
+            window.ViewModel.AvailableWindowsPowerModeOptions[0].Description,
+            "Windows power mode description");
     }
 
     private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
@@ -1623,7 +1657,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedHeading,
         string ExpectedDescription,
         string ExpectedSystemChoice,
-        string ExpectedOpenMenuItem);
+        string ExpectedOpenMenuItem,
+        string ExpectedUnavailable,
+        string ExpectedBatteryProfile,
+        string ExpectedWindowsPowerModeDescription);
 
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
@@ -1874,6 +1911,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
             CultureInfo.CurrentUICulture = previousUiCulture;
             LocalizedResources.SetLanguageOverride(previousUiCulture.Name);
+            TrayLocalization.SetLanguageOverride(previousUiCulture.Name);
             previousWindow.ShowAndActivate();
         }
         finally

@@ -3,6 +3,22 @@ using System.Resources;
 
 namespace OpenBlade.Tray;
 
+public static class TrayLocalization
+{
+    private static CultureInfo? resourceCultureOverride;
+
+    internal static CultureInfo ResourceCulture =>
+        Volatile.Read(ref resourceCultureOverride) ?? CultureInfo.CurrentUICulture;
+
+    public static void SetLanguageOverride(string? language)
+    {
+        CultureInfo? culture = string.IsNullOrWhiteSpace(language)
+            ? null
+            : CultureInfo.GetCultureInfo(language);
+        Volatile.Write(ref resourceCultureOverride, culture);
+    }
+}
+
 internal static class TrayText
 {
     private static readonly CultureInfo EnglishCulture =
@@ -17,7 +33,7 @@ internal static class TrayText
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(english);
-        return TryGet(key, CultureInfo.CurrentUICulture)
+        return TryGet(key, TrayLocalization.ResourceCulture)
             ?? TryGet(key, EnglishCulture)
             ?? english;
     }

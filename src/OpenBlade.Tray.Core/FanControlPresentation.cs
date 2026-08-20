@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.Globalization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
@@ -61,7 +60,7 @@ public static class FanModePresentation
         new(StringComparer.OrdinalIgnoreCase);
 
     private static FanModeOption[] Options => OptionsByCulture.GetOrAdd(
-        CultureInfo.CurrentUICulture.Name,
+        TrayLocalization.ResourceCulture.Name,
         _ => Order
             .Select(value => new FanModeOption(value, Label(value)))
             .ToArray());

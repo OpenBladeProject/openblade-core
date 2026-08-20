@@ -126,7 +126,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static LocalizedOptionCatalog CurrentLocalizedOptions =>
         LocalizedOptionCatalogs.GetOrAdd(
-            CultureInfo.CurrentUICulture.Name,
+            TrayLocalization.ResourceCulture.Name,
             _ => CreateLocalizedOptionCatalog());
 
     private static IReadOnlyList<ProfileComparisonOption> ComparisonOptions =>
