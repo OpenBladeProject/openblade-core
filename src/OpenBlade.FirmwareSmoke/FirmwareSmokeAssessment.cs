@@ -888,7 +888,7 @@ public static class FirmwareSmokeAssessment
     private static string ExpectedHyperBoostWithoutCoolingPadAccess(
         string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
             == RazerBladeModelCatalog.OpenBladeTargetModelNumber
-                ? DeviceFeatureAccess.ReadWrite.ToString()
+                ? DeviceFeatureAccess.ObservedOnly.ToString()
                 : "Unavailable";
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
