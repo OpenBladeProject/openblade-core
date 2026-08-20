@@ -7896,8 +7896,8 @@ public sealed class MainViewModelTests
 
     [Theory]
     [InlineData("en-US", "Follow Windows")]
-    [InlineData("zh-CN", "跟随 Windows")]
-    [InlineData("ru-RU", "Следовать параметрам Windows")]
+    [InlineData("zh-CN", "跟随 Windows 设置")]
+    [InlineData("ru-RU", "Как в Windows")]
     public async Task LanguagePreference_LocalizesOnlyTheSystemChoice(
         string cultureName,
         string expectedSystemLabel)

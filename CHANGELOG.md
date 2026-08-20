@@ -85,6 +85,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reworked Simplified Chinese and Russian wording to use natural,
+  context-aware terminology throughout the tray, installer, and setup.
 - Kept keyboard-lighting effect choices in the same order across supported
   display languages.
 - Fixed live language changes mixing strings from the previous language into

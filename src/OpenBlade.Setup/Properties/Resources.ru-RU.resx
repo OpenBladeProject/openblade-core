@@ -13,13 +13,13 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="OpenBlade and its background service will be removed.&#xA;&#xA;Your saved profiles and preferences will be kept so they are available if you reinstall.&#xA;&#xA;Do you want to continue?" xml:space="preserve">
-    <value>OpenBlade и его фоновая служба будут удалены.&#xA;&#xA;Сохранённые профили и параметры останутся на компьютере и будут доступны после повторной установки.&#xA;&#xA;Продолжить?</value>
+    <value>OpenBlade и его фоновая служба будут удалены.&#xA;&#xA;Ваши сохранённые профили и параметры останутся на компьютере и будут доступны после повторной установки.&#xA;&#xA;Продолжить?</value>
   </data>
   <data name="Uninstall OpenBlade" xml:space="preserve">
     <value>Удаление OpenBlade</value>
   </data>
   <data name="OpenBlade was removed. Your saved profiles and preferences were kept." xml:space="preserve">
-    <value>OpenBlade удалён. Сохранённые профили и параметры оставлены на компьютере.</value>
+    <value>OpenBlade удалён. Профили и параметры сохранены.</value>
   </data>
   <data name="OpenBlade uninstalled" xml:space="preserve">
     <value>OpenBlade удалён</value>
@@ -28,7 +28,7 @@
     <value>Не удалось удалить OpenBlade.&#xA;&#xA;{0}</value>
   </data>
   <data name="OpenBlade uninstall failed" xml:space="preserve">
-    <value>Сбой удаления OpenBlade</value>
+    <value>Не удалось удалить OpenBlade</value>
   </data>
   <data name="Uninstall OpenBlade and keep saved profiles" xml:space="preserve">
     <value>Удалить OpenBlade и сохранить профили</value>

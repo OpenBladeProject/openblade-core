@@ -22,7 +22,7 @@
     <value>完全关闭</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>选择退出后是否让键盘灯光、热键、配置文件和自动化功能继续在后台运行。</value>
+    <value>退出 OpenBlade 时，可选择是否让键盘灯光、快捷键、配置方案和自动化功能继续在后台运行。</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>OpenBlade 无法关闭</value>
@@ -106,7 +106,7 @@
     <value>选择强调色</value>
   </data>
   <data name="MainWindow_AddTrayDashboardControlButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>添加托盘仪表板控件</value>
+    <value>添加托盘仪表板控制项</value>
   </data>
   <data name="MainWindow_AddTrayDashboardSliderButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>添加托盘仪表板调整项</value>
@@ -202,13 +202,13 @@
     <value>导出诊断信息</value>
   </data>
   <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>将配置文件导出为 JSON</value>
+    <value>将配置方案导出为 JSON</value>
   </data>
   <data name="MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>将已保存的配置文件导出为 JSON</value>
+    <value>将已保存的配置方案导出为 JSON</value>
   </data>
   <data name="MainWindow_ButtonExportProfiles.Content" xml:space="preserve">
-    <value>导出配置文件</value>
+    <value>导出配置方案</value>
   </data>
   <data name="MainWindow_ButtonImportKeyboardLightingPreset.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>导入键盘灯光预设</value>
@@ -217,13 +217,13 @@
     <value>导入键盘灯光预设</value>
   </data>
   <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>从 JSON 导入配置文件</value>
+    <value>从 JSON 导入配置方案</value>
   </data>
   <data name="MainWindow_ButtonImportProfiles.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>从 JSON 导入已保存的配置文件</value>
+    <value>从 JSON 导入已保存的配置方案</value>
   </data>
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
-    <value>导入配置文件</value>
+    <value>导入配置方案</value>
   </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>重新应用 OpenBlade 设置</value>
@@ -241,25 +241,25 @@
     <value>关闭 OpenBlade</value>
   </data>
   <data name="MainWindow_ButtonUseProfileSettings.Content" xml:space="preserve">
-    <value>使用配置文件设置</value>
+    <value>使用配置方案中的设置</value>
   </data>
   <data name="MainWindow_ButtonUseProfileSettings2.Content" xml:space="preserve">
-    <value>使用配置文件设置</value>
+    <value>使用配置方案中的设置</value>
   </data>
   <data name="MainWindow_ButtonUseProfileSettings3.Content" xml:space="preserve">
-    <value>使用配置文件设置</value>
+    <value>使用配置方案中的设置</value>
   </data>
   <data name="MainWindow_ButtonUseProfileSettings4.Content" xml:space="preserve">
-    <value>使用配置文件设置</value>
+    <value>使用配置方案中的设置</value>
   </data>
   <data name="MainWindow_ComboBoxProfileToReview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>要查看的配置文件</value>
+    <value>要查看的配置方案</value>
   </data>
   <data name="MainWindow_CustomizeDashboard_AutomationName" xml:space="preserve">
     <value>仪表板卡片</value>
   </data>
   <data name="MainWindow_CustomizeDashboard_Instructions" xml:space="preserve">
-    <value>选中要显示的卡片。将其拖动到所需顺序。</value>
+    <value>勾选要显示的卡片，并拖动调整顺序。</value>
   </data>
   <data name="MainWindow_CustomizeDashboard_Title" xml:space="preserve">
     <value>自定义仪表板</value>
@@ -268,7 +268,7 @@
     <value>{0}页面分区</value>
   </data>
   <data name="MainWindow_CustomizePage_Instructions" xml:space="preserve">
-    <value>选中要显示的分区。将其拖动到所需顺序。</value>
+    <value>勾选要显示的部分，并拖动调整顺序。</value>
   </data>
   <data name="MainWindow_CustomizePage_Title" xml:space="preserve">
     <value>自定义{0}</value>
@@ -277,7 +277,7 @@
     <value>音频电平表色彩增强</value>
   </data>
   <data name="MainWindow_DashboardAudioMeterDecaySliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>音频电平表静音变化平滑</value>
+    <value>平滑音频电平表的低音量变化</value>
   </data>
   <data name="MainWindow_DashboardChargeLimitSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>充电上限</value>
@@ -319,7 +319,7 @@
     <value>忽略此固件不匹配并继续运行</value>
   </data>
   <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
-    <value>强制控制可能会将已捕获的命令发送到未经验证的固件。仍必须通过精确的笔记本电脑和 USB 身份检查。</value>
+    <value>强制启用控制功能后，OpenBlade 可能会向未经验证的固件发送已捕获的命令。笔记本电脑的具体型号/SKU 和 USB 设备身份检查仍必须全部通过。</value>
   </data>
   <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>固定风扇转速</value>
@@ -346,13 +346,13 @@
     <value>关闭应用</value>
   </data>
   <data name="MainWindow_GpuApps_CloseConfirmationIntro" xml:space="preserve">
-    <value>OpenBlade 将请求这些应用关闭。请先保存您的工作。&#xA;&#xA;</value>
+    <value>OpenBlade 将请求这些应用退出。请先保存工作。&#xA;&#xA;</value>
   </data>
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>关闭使用 NVIDIA GPU 的应用？</value>
   </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
-    <value>所选应用已释放其 NVIDIA GPU 引擎。GPU 可能需要片刻才能重新进入休眠。</value>
+    <value>所选应用已停止占用 NVIDIA GPU。GPU 可能需要片刻才能恢复低功耗状态。</value>
   </data>
   <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
     <value>GPU 应用已关闭</value>
@@ -370,7 +370,7 @@
     <value>强制关闭</value>
   </data>
   <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
-    <value>所选应用已被强制关闭。GPU 可能需要片刻才能重新进入休眠。</value>
+    <value>所选应用已被强制关闭。GPU 可能需要片刻才能恢复低功耗状态。</value>
   </data>
   <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
     <value>GPU 应用已强制关闭</value>
@@ -382,16 +382,16 @@
     <value>强制关闭其余应用？</value>
   </data>
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
-    <value>保持运行</value>
+    <value>继续运行</value>
   </data>
   <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>没有可安全关闭的 GPU 使用者。&#xA;&#xA;</value>
+    <value>没有可安全关闭的 GPU 占用进程。&#xA;&#xA;</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>没有可关闭的 GPU 应用</value>
   </data>
   <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
-    <value>当前用户没有应用占用 NVIDIA GPU 引擎。</value>
+    <value>当前用户会话中没有应用占用 NVIDIA GPU。</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
     <value>&#xA;&#xA;无法关闭：&#xA;</value>
@@ -472,19 +472,19 @@
     <value>灯光页面有未保存的更改</value>
   </data>
   <data name="MainWindow_InfoBadgeProfilesHasUnsavedChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>配置文件有未保存的更改</value>
+    <value>配置方案有未保存的更改</value>
   </data>
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>托盘仪表板状态项</value>
   </data>
   <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>关于实验室功能</value>
+    <value>关于实验功能</value>
   </data>
   <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>关于实验室功能</value>
+    <value>关于实验功能</value>
   </data>
   <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>启用实验室实验性功能</value>
+    <value>启用实验功能</value>
   </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>笔记本电脑徽标灯光</value>
@@ -502,16 +502,16 @@
     <value>当前效果不可用</value>
   </data>
   <data name="MainWindow_LightingIdleTimeoutNumberBoxText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>键盘灯光非活动超时分钟数</value>
+    <value>键盘灯光闲置超时（分钟）</value>
   </data>
   <data name="MainWindow_LightingIdleTimeoutToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>非活动后关闭键盘灯光</value>
+    <value>闲置后关闭键盘灯光</value>
   </data>
   <data name="MainWindow_LightingImport_Brightness" xml:space="preserve">
     <value>{0}% 亮度</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>{0} 使用 {1} 效果，亮度为 {2}。导入后将通过 OpenBlade 应用该设置，并将其保留为活动电源配置文件的未保存更改。</value>
+    <value>{0} 使用 {1} 效果，亮度为 {2}。导入后，OpenBlade 会立即应用这些设置，并将其保留为当前电源配置方案中尚未保存的更改。</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>导入键盘灯光？</value>
@@ -520,13 +520,13 @@
     <value>在导入预设前，灯光控制已不可用。</value>
   </data>
   <data name="MainWindow_LightingImport_EffectUnavailable" xml:space="preserve">
-    <value>此笔记本电脑目前不支持 {0} 效果。</value>
+    <value>此笔记本电脑目前无法使用 {0} 效果。</value>
   </data>
   <data name="MainWindow_LightingImport_FailedTitle" xml:space="preserve">
     <value>无法导入键盘灯光</value>
   </data>
   <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
-    <value>所选灯光文件不能超过 {0}。</value>
+    <value>所选灯光文件的大小不能超过 {0}。</value>
   </data>
   <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
     <value>导入并应用</value>
@@ -549,19 +549,19 @@
     <value>使用 60 Hz 键盘灯光</value>
   </data>
   <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
-    <value>灯光控件不可用</value>
+    <value>灯光控制功能不可用</value>
   </data>
   <data name="MainWindow_ListViewActiveTrayDashboardAdjustments.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>活动的托盘仪表板调整项</value>
+    <value>当前托盘仪表板调整项</value>
   </data>
   <data name="MainWindow_ListViewActiveTrayDashboardControls.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>活动的托盘仪表板控件</value>
+    <value>当前托盘仪表板控制项</value>
   </data>
   <data name="MainWindow_ListViewNavigationMenuPages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>导航菜单页面</value>
   </data>
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>任务栏悬停标签内容</value>
+    <value>托盘图标悬停文本内容</value>
   </data>
   <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
     <value>False</value>
@@ -573,34 +573,34 @@
     <value>OpenBlade {0} 已可下载。</value>
   </data>
   <data name="MainWindow_Notification_AppUpdateTitle" xml:space="preserve">
-    <value>有可用的 OpenBlade 更新</value>
+    <value>OpenBlade 有新版本</value>
   </data>
   <data name="MainWindow_Notification_ControllerDetectedTitle" xml:space="preserve">
     <value>检测到 Razer 控制器</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
-    <value>有可用的 Razer 固件更新</value>
+    <value>Razer 固件有可用更新</value>
   </data>
   <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
     <value>OpenBlade 操作失败</value>
   </data>
   <data name="MainWindow_Notification_ProfileAc" xml:space="preserve">
-    <value>交流电源配置文件</value>
+    <value>交流电配置方案</value>
   </data>
   <data name="MainWindow_Notification_ProfileActive" xml:space="preserve">
-    <value>活动电源配置文件</value>
+    <value>当前电源配置方案</value>
   </data>
   <data name="MainWindow_Notification_ProfileBattery" xml:space="preserve">
-    <value>电池配置文件</value>
+    <value>电池配置方案</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
-    <value>OpenBlade 现在使用{0}。</value>
+    <value>OpenBlade 已切换到{0}。</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
-    <value>电源配置文件已更改</value>
+    <value>电源配置方案已切换</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>USB-C 配置文件</value>
+    <value>USB-C 配置方案</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer 官方固件更新助手</value>
@@ -612,25 +612,25 @@
     <value>OpenBlade 无法保存所选 JSON 文件。</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
-    <value>无法导出配置文件</value>
+    <value>无法导出配置方案</value>
   </data>
   <data name="MainWindow_ProfileExport_Title" xml:space="preserve">
-    <value>导出 OpenBlade 配置文件</value>
+    <value>导出 OpenBlade 配置方案</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmBody" xml:space="preserve">
-    <value>这将替换已保存的交流电源、USB-C、电池和电池保护配置文件。在您应用或切换配置文件之前，当前硬件设置不会更改。</value>
+    <value>这会替换已保存的交流电、USB-C、电池和电池保护配置方案。应用或切换配置方案前，当前硬件设置不会改变。</value>
   </data>
   <data name="MainWindow_ProfileImport_ConfirmTitle" xml:space="preserve">
-    <value>导入配置文件？</value>
+    <value>导入配置方案？</value>
   </data>
   <data name="MainWindow_ProfileImport_FailedTitle" xml:space="preserve">
-    <value>无法导入配置文件</value>
+    <value>无法导入配置方案</value>
   </data>
   <data name="MainWindow_ProfileImport_PickerTitle" xml:space="preserve">
-    <value>导入 OpenBlade 配置文件</value>
+    <value>导入 OpenBlade 配置方案</value>
   </data>
   <data name="MainWindow_ProfileImport_UnavailableSettings" xml:space="preserve">
-    <value>导入的配置文件包含此笔记本电脑上不可用的设置。</value>
+    <value>导入的配置方案中包含此笔记本电脑不支持的设置。</value>
   </data>
   <data name="MainWindow_ProfilePicker_JsonFiles" xml:space="preserve">
     <value>JSON 文件</value>
@@ -696,7 +696,7 @@
     <value>灯光方向</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval.AccessibleName" xml:space="preserve">
-    <value>实时读数刷新间隔</value>
+    <value>实时数据刷新间隔</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorReactiveLightingDuration.AccessibleName" xml:space="preserve">
     <value>响应灯光持续时间</value>
@@ -708,7 +708,7 @@
     <value>星光灯光持续时间</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorUpdateChannel.AccessibleName" xml:space="preserve">
-    <value>更新渠道</value>
+    <value>更新通道</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorUpdateCheckInterval.AccessibleName" xml:space="preserve">
     <value>更新检查间隔</value>
@@ -768,7 +768,7 @@
     <value>正在检查…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>以下已知控制器服务当前处于活动状态：&#xA;&#xA;{0}&#xA;&#xA;批准后，OpenBlade 将重新检查同一份已审核的允许列表，并停止任何活动的匹配项。这不会卸载 Razer 软件或禁用服务启动。Razer 软件可能会再次启动这些服务，而依赖这些服务的功能在此之前可能无法工作。</value>
+    <value>以下已知控制器服务正在运行：&#xA;&#xA;{0}&#xA;&#xA;获得管理员授权后，OpenBlade 会重新核对同一份审核清单，并停止其中仍在运行的服务。这不会卸载 Razer 软件，也不会禁用这些服务自动启动。Razer 软件可能会再次启动它们；在此之前，依赖这些服务的功能可能无法使用。</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>停止 Razer 服务？</value>
@@ -777,10 +777,10 @@
     <value>OpenBlade 无法停止 Razer 服务</value>
   </data>
   <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
-    <value>&#xA;&#xA;助手结果不确定，但重新读取已确认这些服务已停止或不再安装。</value>
+    <value>&#xA;&#xA;辅助程序未返回明确结果，但重新检查后已确认这些服务停止运行或已被卸载。</value>
   </data>
   <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
-    <value>OpenBlade 在已审核的允许列表中未发现活动的 Synapse 或 Chroma 控制器服务。</value>
+    <value>OpenBlade 未在审核清单中发现正在运行的 Synapse 或 Chroma 控制器服务。</value>
   </data>
   <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
     <value>没有已知的 Razer 控制器服务正在运行</value>
@@ -792,7 +792,7 @@
     <value>无法确认某些 Razer 服务已停止</value>
   </data>
   <data name="MainWindow_StopRazer_RemainingHeading" xml:space="preserve">
-    <value>仍处于活动或挂起状态：&#xA;</value>
+    <value>仍在运行或等待停止：&#xA;</value>
   </data>
   <data name="MainWindow_StopRazer_StopButton" xml:space="preserve">
     <value>停止服务</value>
@@ -807,7 +807,7 @@
     <value>Razer 服务已停止</value>
   </data>
   <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
-    <value>提升权限的请求已完成，但 OpenBlade 无法读取最终服务状态。{0}</value>
+    <value>管理员权限请求已完成，但 OpenBlade 无法读取服务的最终状态。{0}</value>
   </data>
   <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
     <value>Razer 服务状态未确认</value>
@@ -822,7 +822,7 @@
     <value>停止 Razer 服务</value>
   </data>
   <data name="MainWindow_TaskbarHoverLabelExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>任务栏悬停标签设置</value>
+    <value>托盘图标悬停文本设置</value>
   </data>
   <data name="MainWindow_TestedPlatformWarningBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>查看未经测试的系统版本</value>
@@ -834,25 +834,25 @@
     <value>交流电源</value>
   </data>
   <data name="MainWindow_TextBlockActive.Text" xml:space="preserve">
-    <value>活动</value>
+    <value>当前</value>
   </data>
   <data name="MainWindow_TextBlockActive2.Text" xml:space="preserve">
-    <value>活动</value>
+    <value>当前</value>
   </data>
   <data name="MainWindow_TextBlockActive3.Text" xml:space="preserve">
-    <value>活动</value>
+    <value>当前</value>
   </data>
   <data name="MainWindow_TextBlockActive4.Text" xml:space="preserve">
-    <value>活动</value>
+    <value>当前</value>
   </data>
   <data name="MainWindow_TextBlockActiveACUSBCOrBatteryProfile.Text" xml:space="preserve">
-    <value>活动的交流电源、USB-C 或电池配置文件。</value>
+    <value>当前使用的交流电、USB-C 或电池配置方案。</value>
   </data>
   <data name="MainWindow_TextBlockAddAdjustment.Text" xml:space="preserve">
     <value>添加调整项</value>
   </data>
   <data name="MainWindow_TextBlockAddControl.Text" xml:space="preserve">
-    <value>添加控件</value>
+    <value>添加控制项</value>
   </data>
   <data name="MainWindow_TextBlockAdjustments.Text" xml:space="preserve">
     <value>调整项</value>
@@ -861,7 +861,7 @@
     <value>调整键盘灯光亮度。</value>
   </data>
   <data name="MainWindow_TextBlockAfterInactivity.Text" xml:space="preserve">
-    <value>非活动后</value>
+    <value>闲置后</value>
   </data>
   <data name="MainWindow_TextBlockAppAccentColor.Text" xml:space="preserve">
     <value>应用强调色</value>
@@ -942,16 +942,16 @@
     <value>内置显示器</value>
   </data>
   <data name="MainWindow_TextBlockBypassOnlyTheTestedFirmwareCheckFor.Text" xml:space="preserve">
-    <value>仅绕过对受支持 Razer Blade 精确型号的已测试固件检查。其他硬件安全检查仍保持启用。</value>
+    <value>仅在 Razer Blade 与受支持机型完全匹配时，绕过已测试固件版本检查。其他硬件安全检查仍会继续执行。</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending.Text" xml:space="preserve">
-    <value>有待应用的更改</value>
+    <value>有未保存的更改</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending2.Text" xml:space="preserve">
-    <value>有待应用的更改</value>
+    <value>有未保存的更改</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending3.Text" xml:space="preserve">
-    <value>有待应用的更改</value>
+    <value>有未保存的更改</value>
   </data>
   <data name="MainWindow_TextBlockChargeLimit.Text" xml:space="preserve">
     <value>充电上限</value>
@@ -972,13 +972,13 @@
     <value>检查间隔</value>
   </data>
   <data name="MainWindow_TextBlockCheckItemsToIncludeDragThemInto.Text" xml:space="preserve">
-    <value>选中要包含的项目。将其拖动到所需顺序。</value>
+    <value>勾选要显示的项目，并拖动调整顺序。</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue.Text" xml:space="preserve">
-    <value>到期时在启动时检查。</value>
+    <value>到达检查时间后，将在启动时检查。</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue2.Text" xml:space="preserve">
-    <value>到期时在启动时检查。</value>
+    <value>到达检查时间后，将在启动时检查。</value>
   </data>
   <data name="MainWindow_TextBlockChooseANewColorPairForEach.Text" xml:space="preserve">
     <value>为每次潮汐循环选择一组新的颜色。</value>
@@ -996,10 +996,10 @@
     <value>选择按下的按键保持点亮的时长。</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>选择在窗口打开或鼠标悬停在托盘图标上时，OpenBlade 刷新温度、风扇转速和电池净功率的频率。</value>
+    <value>设置窗口打开或鼠标悬停在托盘图标上时，温度、风扇转速和电池净功率的刷新频率。</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
-    <value>选择单击托盘图标时显示的控件和实时详情。</value>
+    <value>选择单击托盘图标时显示的控制项和实时数据。</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheEffectSSecondColor.Text" xml:space="preserve">
     <value>选择效果的第二种颜色。</value>
@@ -1011,19 +1011,19 @@
     <value>选择左侧菜单中页面的顺序。</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToThreeLiveReadingsShown.Text" xml:space="preserve">
-    <value>选择最多三个显示在弹出窗口底部的实时读数。</value>
+    <value>选择最多三项实时数据，显示在弹出窗口底部。</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToTwoSlidersForThe.Text" xml:space="preserve">
-    <value>为弹出窗口固定的中间区域选择最多两个滑块。</value>
+    <value>为弹出窗口中部的固定区域选择最多两个滑块。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhetherToShowTheAppName.Text" xml:space="preserve">
-    <value>选择将鼠标指向托盘图标时是否显示应用名称、配置文件和实时详情。</value>
+    <value>选择鼠标指向托盘图标时要显示的应用名称、配置方案和实时数据。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichLiveReadingsAppearInThe.Text" xml:space="preserve">
-    <value>选择仪表板摘要中显示的实时读数。</value>
+    <value>选择仪表板摘要中显示的实时数据。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichPartOfTheDisplayColors.Text" xml:space="preserve">
-    <value>选择由显示器哪一部分的颜色为键盘着色。</value>
+    <value>选择从屏幕的哪个区域采集颜色并映射到键盘。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichWayTheEffectMoves.Text" xml:space="preserve">
     <value>选择效果移动方向。</value>
@@ -1032,7 +1032,7 @@
     <value>选择色轮效果的旋转方向。</value>
   </data>
   <data name="MainWindow_TextBlockCloseCurrentUserAppsSoTheDiscrete.Text" xml:space="preserve">
-    <value>关闭当前用户的应用，以便独立 GPU 重新进入休眠。</value>
+    <value>关闭当前用户会话中的应用，让独立 GPU 恢复低功耗状态。</value>
   </data>
   <data name="MainWindow_TextBlockColor.Text" xml:space="preserve">
     <value>颜色</value>
@@ -1059,7 +1059,7 @@
     <value>CPU</value>
   </data>
   <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>当前实验室功能</value>
+    <value>当前实验功能</value>
   </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>自定义颜色</value>
@@ -1086,7 +1086,7 @@
     <value>显示</value>
   </data>
   <data name="MainWindow_TextBlockDisplayBrightnessDriverStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>显示亮度驱动程序状态</value>
+    <value>显示亮度驱动状态</value>
   </data>
   <data name="MainWindow_TextBlockDisplayTurnsOff.Text" xml:space="preserve">
     <value>显示器关闭</value>
@@ -1098,7 +1098,7 @@
     <value>文档</value>
   </data>
   <data name="MainWindow_TextBlockDragActiveItemsToReorderThemChanges.Text" xml:space="preserve">
-    <value>拖动活动项目以重新排序。更改会立即显示在此窗口旁的托盘弹出窗口中。</value>
+    <value>拖动当前项目以调整顺序。更改会立即显示在此窗口旁的托盘弹出窗口中。</value>
   </data>
   <data name="MainWindow_TextBlockDragPagesIntoTheOrderYouWant.Text" xml:space="preserve">
     <value>将页面拖动到所需顺序。仪表板始终位于最前，“关于”始终位于最后。</value>
@@ -1119,7 +1119,7 @@
     <value>导出诊断信息</value>
   </data>
   <data name="MainWindow_TextBlockFailedControlOperationsDetailsStayVisible.Text" xml:space="preserve">
-    <value>失败的控制操作。详情将保持可见。</value>
+    <value>控制操作失败，详细信息会持续显示。</value>
   </data>
   <data name="MainWindow_TextBlockFans.Text" xml:space="preserve">
     <value>风扇</value>
@@ -1197,13 +1197,13 @@
     <value>导入预设</value>
   </data>
   <data name="MainWindow_TextBlockInactivityTimeout.Text" xml:space="preserve">
-    <value>非活动超时</value>
+    <value>闲置超时</value>
   </data>
   <data name="MainWindow_TextBlockInactivityTimeout2.Text" xml:space="preserve">
-    <value>非活动超时</value>
+    <value>闲置超时</value>
   </data>
   <data name="MainWindow_TextBlockInactivityTimeout3.Text" xml:space="preserve">
-    <value>非活动超时</value>
+    <value>闲置超时</value>
   </data>
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>增强音频电平对键盘颜色的驱动强度。</value>
@@ -1215,7 +1215,7 @@
     <value>已安装</value>
   </data>
   <data name="MainWindow_TextBlockKeepsTheKeyboardLitForUpTo.Text" xml:space="preserve">
-    <value>声音变小或暂停时，让键盘在所选时长内保持点亮。较大的声音仍会立即响应。</value>
+    <value>音量降低或暂停时，键盘会在所选时长内继续亮起；音量增大时仍会立即响应。</value>
   </data>
   <data name="MainWindow_TextBlockKeyboard.Text" xml:space="preserve">
     <value>键盘</value>
@@ -1224,7 +1224,7 @@
     <value>键盘</value>
   </data>
   <data name="MainWindow_TextBlockKeyboardDriverMode.Text" xml:space="preserve">
-    <value>键盘驱动程序模式</value>
+    <value>键盘驱动模式</value>
   </data>
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>键盘灯光</value>
@@ -1233,19 +1233,19 @@
     <value>键盘灯光预设导入</value>
   </data>
   <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>实验室功能</value>
+    <value>实验功能</value>
   </data>
   <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>实验室功能可能会更改或移除。</value>
+    <value>实验功能可能会变更或移除。</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>笔记本电脑</value>
   </data>
   <data name="MainWindow_TextBlockLaptopBehavior.Text" xml:space="preserve">
-    <value>笔记本电脑行为</value>
+    <value>笔记本电脑设置</value>
   </data>
   <data name="MainWindow_TextBlockLaptopBehavior2.Text" xml:space="preserve">
-    <value>控制访问</value>
+    <value>控制权限</value>
   </data>
   <data name="MainWindow_TextBlockLaptopLidLogo.Text" xml:space="preserve">
     <value>笔记本电脑上盖徽标</value>
@@ -1284,7 +1284,7 @@
     <value>适用于 Razer Blade 笔记本电脑的轻量控制工具</value>
   </data>
   <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
-    <value>实时读数</value>
+    <value>实时监测数据</value>
   </data>
   <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
     <value>加载 OpenBlade 或 Razer Chroma 键盘灯光文件。</value>
@@ -1302,13 +1302,13 @@
     <value>导航菜单</value>
   </data>
   <data name="MainWindow_TextBlockNewOpenBladeReleases.Text" xml:space="preserve">
-    <value>新的 OpenBlade 版本。</value>
+    <value>有新的 OpenBlade 版本。</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware.Text" xml:space="preserve">
-    <value>新的 Razer BIOS、EC 或 MCU 固件。</value>
+    <value>有新的 Razer BIOS、EC 或 MCU 固件。</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
-    <value>新的 Razer 控制器。提示将保持可见。</value>
+    <value>检测到新的 Razer 控制器，相关提示会持续显示。</value>
   </data>
   <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
     <value>通知</value>
@@ -1332,7 +1332,7 @@
     <value>OpenBlade 使用笔记本电脑固件温度和 NVIDIA GPU 温度。如果任一读数不可用，则使用最大风扇转速。</value>
   </data>
   <data name="MainWindow_TextBlockOpenGitHubIssuesToReportABug.Text" xml:space="preserve">
-    <value>打开 GitHub Issues 以报告错误或请求改进。</value>
+    <value>前往 GitHub Issues 报告问题或提出改进建议。</value>
   </data>
   <data name="MainWindow_TextBlockOpenInTheNotificationAreaWithoutShowing.Text" xml:space="preserve">
     <value>在通知区域中打开，不显示窗口。</value>
@@ -1347,7 +1347,7 @@
     <value>其他 Razer 软件正在运行</value>
   </data>
   <data name="MainWindow_TextBlockOverrideExternalLightingChanges.Text" xml:space="preserve">
-    <value>覆盖外部灯光更改</value>
+    <value>恢复 OpenBlade 灯光设置</value>
   </data>
   <data name="MainWindow_TextBlockPerformance.Text" xml:space="preserve">
     <value>性能</value>
@@ -1362,22 +1362,22 @@
     <value>电源和散热</value>
   </data>
   <data name="MainWindow_TextBlockPowerProfileChanges.Text" xml:space="preserve">
-    <value>电源配置文件更改</value>
+    <value>电源配置方案切换</value>
   </data>
   <data name="MainWindow_TextBlockPowerSource.Text" xml:space="preserve">
-    <value>电源来源</value>
+    <value>供电方式</value>
   </data>
   <data name="MainWindow_TextBlockPreview.Text" xml:space="preserve">
     <value>预览</value>
   </data>
   <data name="MainWindow_TextBlockProfiles.Text" xml:space="preserve">
-    <value>配置文件</value>
+    <value>配置方案</value>
   </data>
   <data name="MainWindow_TextBlockProfiles2.Text" xml:space="preserve">
-    <value>配置文件</value>
+    <value>配置方案</value>
   </data>
   <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
-    <value>由 Razer 发布</value>
+    <value>Razer 官方发布</value>
   </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>快速控制</value>
@@ -1386,19 +1386,19 @@
     <value>随机颜色</value>
   </data>
   <data name="MainWindow_TextBlockRazerBrightnessDriver.Text" xml:space="preserve">
-    <value>Razer 亮度驱动程序</value>
+    <value>Razer 亮度驱动</value>
   </data>
   <data name="MainWindow_TextBlockReactiveDuration.Text" xml:space="preserve">
     <value>响应持续时间</value>
   </data>
   <data name="MainWindow_TextBlockReadSetupUsageAndCompatibilityInformation.Text" xml:space="preserve">
-    <value>阅读安装、使用和兼容性信息。</value>
+    <value>查看安装、使用和兼容性说明。</value>
   </data>
   <data name="MainWindow_TextBlockReapplyOpenBladeSettings.Text" xml:space="preserve">
     <value>重新应用 OpenBlade 设置</value>
   </data>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
-    <value>最近的错误</value>
+    <value>最近一次错误</value>
   </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
     <value>刷新率</value>
@@ -1413,7 +1413,7 @@
     <value>发行说明</value>
   </data>
   <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>在已准入的键盘上更流畅地渲染支持的效果。</value>
+    <value>在经验证兼容的键盘上更流畅地呈现支持的灯光效果。</value>
   </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>报告问题</value>
@@ -1422,7 +1422,7 @@
     <value>旋转</value>
   </data>
   <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
-    <value>保存已移除敏感信息的日志和系统详情。</value>
+    <value>导出已去除敏感信息的日志和系统信息。</value>
   </data>
   <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
     <value>屏幕区域</value>
@@ -1431,7 +1431,7 @@
     <value>第二种颜色</value>
   </data>
   <data name="MainWindow_TextBlockSeeWhatChangedInEachOpenBladeBuild.Text" xml:space="preserve">
-    <value>查看每个 OpenBlade 内部版本中的更改。</value>
+    <value>查看 OpenBlade 各版本的更新内容。</value>
   </data>
   <data name="MainWindow_TextBlockService.Text" xml:space="preserve">
     <value>服务</value>
@@ -1455,7 +1455,7 @@
     <value>在支持的内容中显示更广的颜色和亮度范围。</value>
   </data>
   <data name="MainWindow_TextBlockShownOnDashboard.Text" xml:space="preserve">
-    <value>显示在仪表板上</value>
+    <value>在仪表板中显示</value>
   </data>
   <data name="MainWindow_TextBlockShutdown.Text" xml:space="preserve">
     <value>关闭</value>
@@ -1473,13 +1473,13 @@
     <value>60 Hz 灯光</value>
   </data>
   <data name="MainWindow_TextBlockSmoothQuietChanges.Text" xml:space="preserve">
-    <value>平滑较小的变化</value>
+    <value>平滑低音量变化</value>
   </data>
   <data name="MainWindow_TextBlockSourceCode.Text" xml:space="preserve">
     <value>源代码</value>
   </data>
   <data name="MainWindow_TextBlockStableOffersNormalReleasesNightlyOffersThe.Text" xml:space="preserve">
-    <value>稳定版提供常规版本。每夜版提供最新的自动测试内部版本。</value>
+    <value>稳定版适合日常使用；Nightly 版提供经过自动测试的最新版本。</value>
   </data>
   <data name="MainWindow_TextBlockStarlightColors.Text" xml:space="preserve">
     <value>星光颜色</value>
@@ -1491,7 +1491,7 @@
     <value>登录时启动</value>
   </data>
   <data name="MainWindow_TextBlockStartMinimized.Text" xml:space="preserve">
-    <value>最小化启动</value>
+    <value>启动时最小化</value>
   </data>
   <data name="MainWindow_TextBlockStartService.Text" xml:space="preserve">
     <value>启动服务</value>
@@ -1509,16 +1509,16 @@
     <value>启动动画</value>
   </data>
   <data name="MainWindow_TextBlockStatusRow.Text" xml:space="preserve">
-    <value>状态行</value>
+    <value>状态栏</value>
   </data>
   <data name="MainWindow_TextBlockStopTheAppDisplayHelperAndHardware.Text" xml:space="preserve">
-    <value>停止应用、显示助手和硬件服务。您可以从“故障排除”中再次启动 OpenBlade。</value>
+    <value>停止应用、显示助手和硬件服务。可在“故障排除”中重新启动 OpenBlade。</value>
   </data>
   <data name="MainWindow_TextBlockSupport.Text" xml:space="preserve">
     <value>支持</value>
   </data>
   <data name="MainWindow_TextBlockSwitchOffKeyboardLightingUntilTheDisplay.Text" xml:space="preserve">
-    <value>关闭键盘灯光，直至显示器再次开启。</value>
+    <value>关闭键盘灯光，直到显示器再次亮起。</value>
   </data>
   <data name="MainWindow_TextBlockSwitchOffKeyboardLightingWhenYouHave.Text" xml:space="preserve">
     <value>未使用笔记本电脑时关闭键盘灯光。</value>
@@ -1527,16 +1527,16 @@
     <value>关闭灯光</value>
   </data>
   <data name="MainWindow_TextBlockTaskbarHoverLabel.Text" xml:space="preserve">
-    <value>任务栏悬停标签</value>
+    <value>托盘图标悬停文本</value>
   </data>
   <data name="MainWindow_TextBlockTemporaryFullCharge.Text" xml:space="preserve">
     <value>临时充满电</value>
   </data>
   <data name="MainWindow_TextBlockTheFirstSixControlsRemainVisibleAny.Text" xml:space="preserve">
-    <value>前六个控件保持可见。其他控件可在弹出窗口中滚动查看。</value>
+    <value>前六个控制项会始终显示，其他控制项可在弹出窗口中滚动查看。</value>
   </data>
   <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
-    <value>这些是每个配置文件中保存的设置。圆点标记有待应用更改的值；将鼠标指向该值可预览新值。</value>
+    <value>这里显示各配置方案中保存的设置。带圆点的值包含尚未保存的更改；将鼠标悬停在该值上可预览更改后的值。</value>
   </data>
   <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
     <value>Thunderbolt 5</value>
@@ -1557,7 +1557,7 @@
     <value>未保存</value>
   </data>
   <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
-    <value>更新渠道</value>
+    <value>更新通道</value>
   </data>
   <data name="MainWindow_TextBlockUpdates.Text" xml:space="preserve">
     <value>更新</value>
@@ -1581,7 +1581,7 @@
     <value>使用一种颜色、在两种颜色之间交替，或选择随机颜色。</value>
   </data>
   <data name="MainWindow_TextBlockUseOpenBladeGreenTheWindowsAccentOr.Text" xml:space="preserve">
-    <value>使用 OpenBlade 绿色、Windows 强调色或您选择的颜色。</value>
+    <value>使用 OpenBlade 绿色、Windows 强调色或自定义颜色。</value>
   </data>
   <data name="MainWindow_TextBlockUseTheHotterSensorForBothFans.Text" xml:space="preserve">
     <value>两个风扇均使用温度较高的传感器</value>
@@ -1629,10 +1629,10 @@
     <value>Windows 电源模式</value>
   </data>
   <data name="MainWindow_TextBlockYourDashboardIsEmpty.Text" xml:space="preserve">
-    <value>您的仪表板为空</value>
+    <value>仪表板为空</value>
   </data>
   <data name="MainWindow_ToggleSwitchAlwaysOverrideExternalLightingChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>始终覆盖外部灯光更改</value>
+    <value>始终恢复 OpenBlade 灯光设置</value>
   </data>
   <data name="MainWindow_ToggleSwitchBlockAltTabInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>在游戏模式中屏蔽 Alt+Tab</value>
@@ -1647,16 +1647,16 @@
     <value>OpenBlade 操作失败时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeUpdateIsAvailable.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>有可用的 OpenBlade 更新时通知</value>
+    <value>OpenBlade 有新版本时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnotherRazerControllerIsDetected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>检测到另一个 Razer 控制器时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>有可用的 Razer 固件更新时通知</value>
+    <value>Razer 固件有可用更新时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>活动电源配置文件更改时通知</value>
+    <value>当前电源配置方案切换时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>性能模式更改时通知</value>
@@ -1674,13 +1674,13 @@
     <value>故障排除详情</value>
   </data>
   <data name="MainWindow_UpdateConsent_CloseButton" xml:space="preserve">
-    <value>仅手动</value>
+    <value>仅手动检查</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>OpenBlade 可在托盘启动时每天检查一次 GitHub 上的新版本。检查不会发送任何硬件状态、配置文件、设置或诊断信息。您稍后可以在“设置”中更改此选项。</value>
+    <value>OpenBlade 可在托盘启动时每天从 GitHub 检查一次新版本。检查不会发送硬件状态、配置方案、设置或诊断信息。稍后可在“设置”中更改此选项。</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
-    <value>使用每日检查</value>
+    <value>每天自动检查</value>
   </data>
   <data name="MainWindow_UpdateConsent_Title" xml:space="preserve">
     <value>检查 OpenBlade 更新？</value>
@@ -1704,7 +1704,7 @@
     <value>灯光</value>
   </data>
   <data name="Navigation_Profiles" xml:space="preserve">
-    <value>配置文件</value>
+    <value>配置方案</value>
   </data>
   <data name="Navigation_Settings" xml:space="preserve">
     <value>设置</value>
