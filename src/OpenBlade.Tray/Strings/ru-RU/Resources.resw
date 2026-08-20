@@ -1893,6 +1893,6 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Язык приложения</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
-    <value>Используйте язык интерфейса Windows или выберите язык. Перезапустите OpenBlade, чтобы применить изменения.</value>
+    <value>Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.</value>
   </data>
 </root>

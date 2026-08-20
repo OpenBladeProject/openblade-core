@@ -45,6 +45,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Applied tray language changes immediately without restarting OpenBlade and
+  aligned the language picker with the other Appearance controls.
 - Made production admission model-scoped by default for the exact supported
   laptop and SKU. Validated BIOS versions remain provenance, while explicit
   firmware-specific capability gates can still require exact versions. On the

@@ -2079,6 +2079,72 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LanguageChangesRebuildEveryLocalizedTraySurfaceInProcess()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string window = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+
+        int refreshStart = app.IndexOf(
+            "private async Task RefreshLanguageAsync",
+            StringComparison.Ordinal);
+        int refreshEnd = app.IndexOf(
+            "private bool TryShowTrayNotification",
+            refreshStart,
+            StringComparison.Ordinal);
+        Assert.True(refreshStart >= 0 && refreshStart < refreshEnd);
+        string refresh = app[refreshStart..refreshEnd];
+
+        int apply = refresh.IndexOf(
+            "ApplyRuntimeLocalizationPreference(preference)",
+            StringComparison.Ordinal);
+        int create = refresh.IndexOf(
+            "replacement = CreateMainWindow(registration, preference)",
+            StringComparison.Ordinal);
+        int initialize = refresh.IndexOf(
+            "await replacement.InitializeAsync()",
+            StringComparison.Ordinal);
+        int disposePrevious = refresh.IndexOf(
+            "await previousWindow.DisposeAsync()",
+            StringComparison.Ordinal);
+        int attach = refresh.IndexOf(
+            "AttachWindowSurfaces(replacement, eventEndpoint)",
+            StringComparison.Ordinal);
+        Assert.True(
+            apply >= 0
+            && apply < create
+            && create < initialize
+            && initialize < disposePrevious
+            && disposePrevious < attach);
+        Assert.Contains("trayIconHost?.Dispose()", refresh, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardWindow?.Dispose()", refresh, StringComparison.Ordinal);
+        Assert.Contains("CreateTrayIconHost()", refresh, StringComparison.Ordinal);
+        Assert.Contains("replacement.ShowLanguageSettings()", refresh, StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionAgentLauncher", refresh, StringComparison.Ordinal);
+
+        int languageChange = window.IndexOf(
+            "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
+            StringComparison.Ordinal);
+        int nextProperty = window.IndexOf(
+            "if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))",
+            languageChange,
+            StringComparison.Ordinal);
+        Assert.True(languageChange >= 0 && languageChange < nextProperty);
+        string languageHandler = window[languageChange..nextProperty];
+        int save = languageHandler.IndexOf("QueuePreferenceSave()", StringComparison.Ordinal);
+        int notify = languageHandler.IndexOf(
+            "LanguagePreferenceChanged?.Invoke",
+            StringComparison.Ordinal);
+        Assert.True(save >= 0 && save < notify);
+        Assert.Contains(
+            "initialLanguageOverride ?? preferences.EffectiveLanguage",
+            window,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -2097,7 +2163,7 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "initialLanguage = preferences.EffectiveLanguage",
+            "initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2173,7 +2239,7 @@ public sealed class WinUiShellContractTests
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains(
-            "windowInitializationTask = mainWindow.InitializeAsync()",
+            "windowInitializationTask = window.InitializeAsync()",
             app,
             StringComparison.Ordinal);
         Assert.Contains("await windowInitializationTask", app, StringComparison.Ordinal);
@@ -2440,7 +2506,7 @@ public sealed class WinUiShellContractTests
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         int startupGate = app.IndexOf(
-            "startupRegistration.ShouldStartForLaunchArguments(",
+            "registration.ShouldStartForLaunchArguments(",
             StringComparison.Ordinal);
         int commandLineArguments = app.IndexOf(
             "string[] commandLineArguments = Environment.GetCommandLineArgs()",
@@ -2747,8 +2813,8 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ShortcutKeyDisplayString", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
-        Assert.Contains("WindowNative.GetWindowHandle(mainWindow)", app, StringComparison.Ordinal);
-        Assert.Contains("mainWindow.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
+        Assert.Contains("window.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
         Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
         Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardEditSessionChanged +=", app, StringComparison.Ordinal);

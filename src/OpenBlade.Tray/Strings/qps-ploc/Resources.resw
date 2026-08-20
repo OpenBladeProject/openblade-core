@@ -1893,6 +1893,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Ápp lángúágé ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
-    <value>[!! Úsé ýóúr Windows díspláý lángúágé, ór chóósé á lángúágé. Réstárt OpenBlade tó ápplý chángés. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Úsé ýóúr Windows díspláý lángúágé, ór chóósé á lángúágé. Chángés ápplý ímmédíátélý. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>

@@ -654,6 +654,12 @@
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>保留当前 Windows 设置。</value>
   </data>
+  <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
+    <value>选择 {0} 时使用。{1}</value>
+  </data>
+  <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
+    <value>选择 {0} 时保留 Windows 设置不变。</value>
+  </data>
   <data name="Keyboard" xml:space="preserve">
     <value>键盘</value>
   </data>
@@ -1283,8 +1289,5 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>上</value>
-  </data>
-  <data name="Follow system" xml:space="preserve">
-    <value>跟随系统</value>
   </data>
 </root>
