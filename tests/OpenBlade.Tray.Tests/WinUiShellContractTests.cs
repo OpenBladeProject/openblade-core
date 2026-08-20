@@ -1663,7 +1663,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void FirmwareNotificationMigratesLegacySignatureWithoutDuplicateToast()
+    public void FirmwareNotificationUsesBehavioralLegacyMigrationGuard()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         int handlerStart = window.IndexOf(
@@ -1676,7 +1676,9 @@ public sealed class WinUiShellContractTests
         Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
 
         string handler = window[handlerStart..handlerEnd];
-        int legacyMatch = handler.IndexOf("args.LegacySignature", StringComparison.Ordinal);
+        int legacyMatch = handler.IndexOf(
+            "args.CanMigrateLegacySignature(lastNotifiedFirmwareSignature)",
+            StringComparison.Ordinal);
         int migration = handler.IndexOf(
             "lastNotifiedFirmwareSignature = args.Signature;",
             legacyMatch,

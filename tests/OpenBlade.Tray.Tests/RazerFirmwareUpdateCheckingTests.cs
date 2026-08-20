@@ -295,6 +295,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
             update.Signature,
             StringComparison.Ordinal);
+        Assert.False(update.IncludesThunderboltOrTouchpadUpdate);
+        Assert.True(update.CanMigrateLegacySignature(update.LegacySignature));
         Assert.Equal(viewModel.OfficialSupportUri, update.OfficialSupportUri);
     }
 
@@ -360,6 +362,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.NotNull(update);
         Assert.Contains("thunderbolt=69.2", update.Signature);
         Assert.Contains("touchpad=1.08", update.Signature);
+        Assert.True(update.IncludesThunderboltOrTouchpadUpdate);
+        Assert.False(update.CanMigrateLegacySignature(update.LegacySignature));
     }
 
     [Fact]

@@ -1331,11 +1331,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        if (args.LegacySignature is not null
-            && string.Equals(
-                lastNotifiedFirmwareSignature,
-                args.LegacySignature,
-                StringComparison.Ordinal))
+        if (args.CanMigrateLegacySignature(lastNotifiedFirmwareSignature))
         {
             lastNotifiedFirmwareSignature = args.Signature;
             QueuePreferenceSave();

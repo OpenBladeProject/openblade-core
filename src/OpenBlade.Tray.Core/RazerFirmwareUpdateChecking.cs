@@ -385,15 +385,27 @@ public sealed class FirmwareUpdateAvailableEventArgs(
     string signature,
     string summary,
     Uri officialSupportUri,
-    string? legacySignature = null) : EventArgs
+    string? legacySignature = null,
+    bool includesThunderboltOrTouchpadUpdate = false) : EventArgs
 {
     public string Signature { get; } = signature;
 
     public string? LegacySignature { get; } = legacySignature;
 
+    public bool IncludesThunderboltOrTouchpadUpdate { get; } =
+        includesThunderboltOrTouchpadUpdate;
+
     public string Summary { get; } = summary;
 
     public Uri OfficialSupportUri { get; } = officialSupportUri;
+
+    public bool CanMigrateLegacySignature(string? persistedSignature) =>
+        !IncludesThunderboltOrTouchpadUpdate
+        && LegacySignature is not null
+        && string.Equals(
+            persistedSignature,
+            LegacySignature,
+            StringComparison.Ordinal);
 }
 
 public sealed class FirmwareUpdateAssistantViewModel :
@@ -1001,6 +1013,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             newerComponents,
             installedFirmware?.VbiosVersion,
             vbios.Version);
+        int standardComponentCount = newerComponents.Count;
         AddNewerComponent(
             newerComponents,
             "Thunderbolt 5",
@@ -1011,6 +1024,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
             "Touchpad",
             installedFirmware?.TouchpadFirmwareVersion,
             published.TouchpadVersion);
+        bool includesThunderboltOrTouchpadUpdate =
+            newerComponents.Count > standardComponentCount;
 
         IsUpdateAvailable = newerComponents.Count > 0;
         UpdateAvailableSummary = IsUpdateAvailable
@@ -1042,7 +1057,8 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 signature,
                 UpdateAvailableSummary,
                 page.OfficialPageUri,
-                legacySignature));
+                legacySignature,
+                includesThunderboltOrTouchpadUpdate));
     }
 
     private static void AddNewerComponent(
