@@ -9,7 +9,7 @@ internal sealed record HidInterfaceInfo(
     ushort UsagePage,
     ushort Usage,
     ushort FeatureReportByteLength,
-    ushort? VersionNumber = null);
+    ushort VersionNumber = 0);
 
 internal static class WindowsHidEnumerator
 {

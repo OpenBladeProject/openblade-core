@@ -1627,6 +1627,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             ? "{0} This is a compatibility notice, not a hardware failure. The firmware override is enabled, and OpenBlade is checking control access."
                             : "{0} This is a compatibility notice, not a hardware failure. Controls remain blocked unless you explicitly enable the firmware override.",
                         warning)
+                    : latestStatus?.DeviceVerified != true
+                        ? TrayText.Format(
+                            "{0} {1}",
+                            warning,
+                            TrayText.Get(
+                                "Laptop controls are currently unavailable. Check Troubleshooting for details."))
                     : TrayText.Format(
                         "{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.",
                         warning);
@@ -3879,7 +3885,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public IReadOnlyList<UiLanguagePreferenceOption> LanguageSelectionOptions { get; } =
     [
-        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow system")),
+        new(UiLanguagePreference.FollowSystem, TrayText.Get("Follow Windows")),
         new(UiLanguagePreference.English, "English"),
         new(UiLanguagePreference.SimplifiedChinese, "简体中文"),
         new(UiLanguagePreference.Russian, "Русский"),

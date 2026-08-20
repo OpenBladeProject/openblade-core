@@ -654,6 +654,12 @@
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>Сохраняет текущий параметр Windows.</value>
   </data>
+  <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
+    <value>Используется при выборе {0}. {1}</value>
+  </data>
+  <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
+    <value>Оставляет параметр Windows без изменений при выборе {0}.</value>
+  </data>
   <data name="Keyboard" xml:space="preserve">
     <value>Клавиатура</value>
   </data>
@@ -1283,8 +1289,5 @@
   </data>
   <data name="Fragment.Top" xml:space="preserve">
     <value>сверху</value>
-  </data>
-  <data name="Follow system" xml:space="preserve">
-    <value>Следовать системным настройкам</value>
   </data>
 </root>

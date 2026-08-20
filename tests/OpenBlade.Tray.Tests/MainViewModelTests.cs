@@ -6996,6 +6996,24 @@ public sealed class MainViewModelTests
             Revision = stable.Revision + 3,
             DeviceVerified = false,
             WritesBlocked = true,
+            FirmwareCompatibility = FirmwareCompatibilityStatus.ModelScoped,
+            Firmware = stable.Firmware! with { McuVersion = "Unavailable" },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.AboutTestedPlatformWarningMessage.Contains(
+                "Laptop controls are currently unavailable",
+                StringComparison.Ordinal));
+
+        Assert.DoesNotContain(
+            "Controls remain available",
+            viewModel.AboutTestedPlatformWarningMessage,
+            StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 4,
+            DeviceVerified = false,
+            WritesBlocked = true,
             FirmwareCompatibility = FirmwareCompatibilityStatus.UntestedBlocked,
             Firmware = stable.Firmware! with { BiosVersion = "3.02" },
         });
@@ -7030,7 +7048,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 4,
+            Revision = stable.Revision + 5,
             DeviceVerified = false,
             WritesBlocked = true,
             AllowUntestedFirmware = true,
@@ -7050,7 +7068,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 5,
+            Revision = stable.Revision + 6,
             DeviceVerified = false,
             FirmwareCompatibility = FirmwareCompatibilityStatus.Unknown,
             Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
@@ -7065,7 +7083,7 @@ public sealed class MainViewModelTests
 
         client.Publish(stable with
         {
-            Revision = stable.Revision + 6,
+            Revision = stable.Revision + 7,
             Firmware = new FirmwareVersions(
                 "2.02",
                 "1.09",
@@ -7835,9 +7853,9 @@ public sealed class MainViewModelTests
     }
 
     [Theory]
-    [InlineData("en-US", "Follow system")]
-    [InlineData("zh-CN", "跟随系统")]
-    [InlineData("ru-RU", "Следовать системным настройкам")]
+    [InlineData("en-US", "Follow Windows")]
+    [InlineData("zh-CN", "跟随 Windows")]
+    [InlineData("ru-RU", "Следовать параметрам Windows")]
     public async Task LanguagePreference_LocalizesOnlyTheSystemChoice(
         string cultureName,
         string expectedSystemLabel)

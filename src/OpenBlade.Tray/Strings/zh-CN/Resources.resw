@@ -1379,9 +1379,6 @@
   <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
     <value>由 Razer 发布</value>
   </data>
-  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
-    <value>仅发布信息：OpenBlade 无法读取已安装的 Thunderbolt 5 或触摸板固件版本，因此不会比较这些值。</value>
-  </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>快速控制</value>
   </data>
@@ -1869,6 +1866,6 @@
     <value>应用语言</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
-    <value>使用 Windows 显示语言，或选择一种语言。重启 OpenBlade 后更改将生效。</value>
+    <value>使用 Windows 显示语言，或选择一种语言。更改会立即生效。</value>
   </data>
 </root>

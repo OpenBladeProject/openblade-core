@@ -65,6 +65,13 @@ public sealed partial class ResponsiveChoiceSelector
             typeof(ResponsiveChoiceSelector),
             new PropertyMetadata(150d, OnCompactMinWidthChanged));
 
+    public static readonly DependencyProperty CompactWidthProperty =
+        DependencyProperty.Register(
+            nameof(CompactWidth),
+            typeof(double),
+            typeof(ResponsiveChoiceSelector),
+            new PropertyMetadata(double.NaN, OnCompactWidthChanged));
+
     public static readonly DependencyProperty ExpandedMinWindowWidthProperty =
         DependencyProperty.Register(
             nameof(ExpandedMinWindowWidth),
@@ -135,6 +142,12 @@ public sealed partial class ResponsiveChoiceSelector
         set => SetValue(CompactMinWidthProperty, value);
     }
 
+    public double CompactWidth
+    {
+        get => (double)GetValue(CompactWidthProperty);
+        set => SetValue(CompactWidthProperty, value);
+    }
+
     public double ExpandedMinWindowWidth
     {
         get => (double)GetValue(ExpandedMinWindowWidthProperty);
@@ -199,6 +212,14 @@ public sealed partial class ResponsiveChoiceSelector
             args.NewValue is double value && double.IsFinite(value) && value >= 0
                 ? value
                 : 0;
+
+    private static void OnCompactWidthChanged(
+        DependencyObject dependencyObject,
+        DependencyPropertyChangedEventArgs args) =>
+        ((ResponsiveChoiceSelector)dependencyObject).CompactSelector.Width =
+            args.NewValue is double value && double.IsFinite(value) && value >= 0
+                ? value
+                : double.NaN;
 
     private static void OnResponsiveConstraintChanged(
         DependencyObject dependencyObject,
@@ -310,6 +331,9 @@ public sealed partial class ResponsiveChoiceSelector
         CompactSelector.DisplayMemberPath = DisplayMemberPath;
         CompactSelector.PlaceholderText = PlaceholderText;
         CompactSelector.MinWidth = Math.Max(0, CompactMinWidth);
+        CompactSelector.Width = double.IsFinite(CompactWidth) && CompactWidth >= 0
+            ? CompactWidth
+            : double.NaN;
         AutomationProperties.SetName(ExpandedSelector, AccessibleName);
         AutomationProperties.SetName(CompactSelector, AccessibleName);
     }

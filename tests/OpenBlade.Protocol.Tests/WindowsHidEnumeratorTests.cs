@@ -11,7 +11,7 @@ public sealed class WindowsHidEnumeratorTests
         DiagnosticNative native = new();
         OpenedCandidateHandle exact = native.Add(
             "exact",
-            new HidHandleIdentity(0x1532, 0x02E0, 1, 2, 91));
+            new HidHandleIdentity(0x1532, 0x02E0, 1, 2, 91, 0x0107));
         OpenedCandidateHandle rejected = native.Add(
             "rejected",
             new HidHandleIdentity(0x1532, 0x02E0, 1, 1, 91));
@@ -19,7 +19,7 @@ public sealed class WindowsHidEnumeratorTests
         IReadOnlyList<HidInterfaceInfo> result = WindowsHidEnumerator.FindTargetInterfaces(native);
 
         Assert.Equal(
-            [new HidInterfaceInfo("exact", 0x1532, 0x02E0, 1, 2, 91)],
+            [new HidInterfaceInfo("exact", 0x1532, 0x02E0, 1, 2, 91, 0x0107)],
             result);
         Assert.Equal(1, native.EnumerateCalls);
         Assert.Equal([exact, rejected], native.ReadHandles);

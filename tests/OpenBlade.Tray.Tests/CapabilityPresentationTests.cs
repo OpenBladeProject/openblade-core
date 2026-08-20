@@ -80,18 +80,9 @@ public sealed class CapabilityPresentationTests
         Assert.Single(versionsSection.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Published by Razer");
-        XElement publishedOnlyNotice = Assert.Single(
-            versionsSection.Descendants(),
-            element => Attribute(element, "Text")?.StartsWith(
-                "Published only:",
-                StringComparison.Ordinal) == true);
-        Assert.Contains(
-            "cannot read the installed Thunderbolt 5 or touchpad firmware versions",
-            Attribute(publishedOnlyNotice, "Text"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "ShowsPublishedOnlyFirmwareNotice",
-            Attribute(publishedOnlyNotice, "Visibility"),
+        Assert.DoesNotContain(
+            "Published only:",
+            versionsSection.ToString(),
             StringComparison.Ordinal);
         Assert.Equal(2, document.Descendants().Count(element =>
             Attribute(element, "Text") == "Checks at startup when due."));
@@ -170,6 +161,7 @@ public sealed class CapabilityPresentationTests
         XElement versionsGrid = Assert.Single(versionsSection.Elements());
         Assert.Contains(versionsGrid.Elements(), element =>
             Attribute(element, "Text") == "Firmware");
+        Assert.Null(Attribute(versionsGrid, "RowSpacing"));
 
         XElement[] valueGrids = versionsGrid.Elements()
             .Where(element => element.Name.LocalName == "Grid")
@@ -201,18 +193,48 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(12, versionValues.Length);
         Assert.All(versionValues, value =>
             Assert.Equal("Wrap", Attribute(value, "TextWrapping")));
-        Assert.Equal(
+        string[] rowVisibilityProperties =
+        [
+            "ShowsBiosFirmware",
+            "ShowsEcFirmware",
+            "ShowsMcuFirmware",
+            "ShowsVbiosFirmware",
+            "ShowsThunderboltFirmware",
+            "ShowsTouchpadFirmware",
+        ];
+        Assert.All(rowVisibilityProperties, property => Assert.Equal(
             2,
             versionsSection.Descendants()
                 .Count(element => Attribute(element, "Visibility")?.Contains(
-                    "ShowsThunderboltFirmware",
-                    StringComparison.Ordinal) == true));
-        Assert.Equal(
-            2,
-            versionsSection.Descendants()
-                .Count(element => Attribute(element, "Visibility")?.Contains(
-                    "ShowsTouchpadFirmware",
-                    StringComparison.Ordinal) == true));
+                    property,
+                    StringComparison.Ordinal) == true)));
+        Assert.All(
+            versionsSection.Descendants().Where(element =>
+                Attribute(element, "Visibility")?.Contains(
+                    "Shows",
+                    StringComparison.Ordinal) == true),
+            element => Assert.Equal("0,8,0,0", Attribute(element, "Margin")));
+    }
+
+    [Fact]
+    public void MainWindow_DeviceInformationHidesFirmwareDuplicatedByUpdateAssistant()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        (string RowName, string PropertyName)[] rows =
+        [
+            ("DeviceInformationBiosFirmwareRow", "ShowsBiosInDeviceInformation"),
+            ("DeviceInformationEcFirmwareRow", "ShowsEcInDeviceInformation"),
+            ("DeviceInformationMcuFirmwareRow", "ShowsMcuInDeviceInformation"),
+            ("DeviceInformationVbiosFirmwareRow", "ShowsVbiosInDeviceInformation"),
+        ];
+
+        Assert.All(rows, row =>
+        {
+            XElement element = NamedElement(document, "Border", row.RowName);
+            Assert.Equal(
+                $"{{x:Bind FirmwareUpdateViewModel.{row.PropertyName}, Mode=OneWay}}",
+                Attribute(element, "Visibility"));
+        });
     }
 
     [Fact]
@@ -1226,7 +1248,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
-        _ = Assert.Single(settings.Descendants(), element =>
+        XElement theme = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ResponsiveChoiceSelector"
             && Attribute(element, "AccessibleName") == "App theme");
         XElement language = Assert.Single(settings.Descendants(), element =>
@@ -1238,6 +1260,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
             Attribute(language, "SelectedItem"));
+        Assert.Equal("280", Attribute(theme, "CompactWidth"));
+        Assert.Equal(
+            Attribute(theme, "CompactWidth"),
+            Attribute(language, "CompactWidth"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
