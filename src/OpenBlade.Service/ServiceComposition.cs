@@ -7,6 +7,43 @@ namespace OpenBlade.Service;
 
 internal static class ServiceComposition
 {
+    internal static IServiceCollection AddServiceControlRuntime(
+        this IServiceCollection services,
+        string machineDataDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        string journalPath = Path.Combine(
+            string.IsNullOrWhiteSpace(machineDataDirectory)
+                ? throw new ArgumentException(
+                    "A machine-data directory is required.",
+                    nameof(machineDataDirectory))
+                : Path.GetFullPath(machineDataDirectory),
+            "hyperboost-ownership.json");
+
+        services.AddSingleton<IHyperBoostOwnershipJournalStore>(
+            _ => new HyperBoostOwnershipJournalStore(journalPath));
+        services.AddSingleton<IServiceControlRuntime>(provider =>
+            new ServiceControlRuntime(
+                provider.GetRequiredService<BatteryConfigurationStore>(),
+                provider.GetRequiredService<PersistentOverrideStore>(),
+                provider.GetRequiredService<IPowerStateProvider>(),
+                provider.GetRequiredService<IStatusSubscriptionHub>(),
+                provider.GetRequiredService<IVerifiedBladeDeviceProvider>(),
+                provider.GetRequiredService<DiagnosticHistory>(),
+                provider.GetRequiredService<LowPowerGate>(),
+                provider.GetRequiredService<IControllerPresenceMonitor>(),
+                provider.GetRequiredService<IFirmwareVersionSource>(),
+                static (delay, token) => Task.Delay(delay, token),
+                provider.GetRequiredService<ProfileSetValidator>(),
+                userConfigurationRepository:
+                    provider.GetRequiredService<IUserConfigurationRepository>(),
+                displayBrightnessHidController:
+                    provider.GetRequiredService<IDisplayBrightnessHidController>(),
+                hyperBoostOwnershipJournalStore:
+                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+        return services;
+    }
+
     internal static IServiceCollection AddDiagnostics(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Wired the HyperBoost ownership journal into the production Service composition
+  so a confirmed activation is durably recorded before lifecycle recovery is
+  armed.
+
 ### Added
 
 - Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
