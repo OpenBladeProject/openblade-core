@@ -5088,11 +5088,82 @@ public sealed class MainViewModelTests
         Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
     }
 
-    [Fact]
-    public async Task LightingEffects_PutOffFirstThenSortTheRemainingLabels()
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("zh-CN")]
+    [InlineData("ru-RU")]
+    public async Task LightingEffects_KeepEnglishPresentationOrderAcrossCultures(
+        string cultureName)
     {
+        using var culture = new CultureScope(cultureName);
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                50,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        LightingSettings sequence = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581,
+            timeline,
+            loop: true,
+            brightness: 73);
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = sequence },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    sequence,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.LightingEffectEditor == LightingEffect.Sequence);
+
+        Assert.Equal(
+            [
+                LightingEffect.Off,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+                LightingEffect.Breathing,
+                LightingEffect.Fire,
+                LightingEffect.Sequence,
+                LightingEffect.Reactive,
+                LightingEffect.Ripple,
+                LightingEffect.Spectrum,
+                LightingEffect.Starlight,
+                LightingEffect.Static,
+                LightingEffect.Tidal,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+            ],
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Effect));
+    }
+
+    [Fact]
+    public async Task ImportKeyboardLighting_InsertsSequenceAtItsEnglishLabelOrder()
+    {
+        using var culture = new CultureScope("en-US");
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         client.Publish(CreateStatus(
             verified: true,
@@ -5101,18 +5172,41 @@ public sealed class MainViewModelTests
             {
                 LightingEffects = new HashSet<LightingEffect>(
                     Enum.GetValues<LightingEffect>()),
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
                 ChargeLimits = ChargeLimits(),
             }));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        Assert.DoesNotContain(
+            viewModel.AvailableLightingEffectOptions,
+            option => option.Effect == LightingEffect.Sequence);
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+        [
+            new KeyboardLightingSequenceFrame(
+                50,
+                new RgbColor[AmbientLightingFrame.SlotCount]),
+        ]);
+        var preset = new KeyboardLightingPreset(
+            "Imported animation",
+            "User",
+            null,
+            1,
+            LightingSettingsFactory.Sequence(
+                KeyboardLightingLayoutIds.Rz09_0581,
+                timeline,
+                loop: true,
+                brightness: 73));
 
+        bool imported = viewModel.TryImportKeyboardLighting(preset);
+
+        Assert.True(imported);
         Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
-        string[] remaining = viewModel.AvailableLightingEffectOptions
+        string[] remainingLabels = viewModel.AvailableLightingEffectOptions
             .Skip(1)
             .Select(option => option.Label)
             .ToArray();
         Assert.Equal(
-            remaining.OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            remaining);
+            remainingLabels.OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
+            remainingLabels);
     }
 
     [Fact]
@@ -7854,8 +7948,8 @@ public sealed class MainViewModelTests
 
     [Theory]
     [InlineData("en-US", "Follow Windows")]
-    [InlineData("zh-CN", "跟随 Windows")]
-    [InlineData("ru-RU", "Следовать параметрам Windows")]
+    [InlineData("zh-CN", "跟随 Windows 设置")]
+    [InlineData("ru-RU", "Как в Windows")]
     public async Task LanguagePreference_LocalizesOnlyTheSystemChoice(
         string cultureName,
         string expectedSystemLabel)

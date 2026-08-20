@@ -18,7 +18,7 @@ public sealed class TrayTextTests
 
     [Theory]
     [InlineData("zh-CN", "电池保护")]
-    [InlineData("ru-RU", "Защита батареи")]
+    [InlineData("ru-RU", "Защита аккумулятора")]
     public void Get_SupportedCultureLoadsTranslatedResource(
         string cultureName,
         string expected)
@@ -199,7 +199,7 @@ public sealed class TrayTextTests
                 Assert.Equal("电池", TrayText.Get("Battery"));
                 ExecutionContext.Run(
                     previousContext,
-                    _ => Assert.Equal("Батарея", TrayText.Get("Battery")),
+                    _ => Assert.Equal("Аккумулятор", TrayText.Get("Battery")),
                     state: null);
 
                 temporaryContext = ExecutionContext.Capture();

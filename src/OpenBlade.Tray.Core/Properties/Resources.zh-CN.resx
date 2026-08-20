@@ -94,7 +94,7 @@
     <value>{0} 分钟</value>
   </data>
   <data name="{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ." xml:space="preserve">
-    <value>{0} 这是兼容性提示，并非硬件故障。控件仍可使用，但行为可能有所不同。</value>
+    <value>{0} 这是兼容性提示，并非硬件故障。控制功能仍可使用，但实际行为可能有所不同。</value>
   </data>
   <data name="{0} unavailable" xml:space="preserve">
     <value>{0} 不可用</value>
@@ -157,13 +157,13 @@
     <value>AC · {0}</value>
   </data>
   <data name="AC profile" xml:space="preserve">
-    <value>交流电源配置文件</value>
+    <value>交流电配置方案</value>
   </data>
   <data name="Active profile" xml:space="preserve">
-    <value>活动配置文件</value>
+    <value>当前配置方案</value>
   </data>
   <data name="All profiles" xml:space="preserve">
-    <value>所有配置文件</value>
+    <value>所有配置方案</value>
   </data>
   <data name="Ambient Awareness" xml:space="preserve">
     <value>环境感知</value>
@@ -181,7 +181,7 @@
     <value>另一个 Razer 应用正在运行</value>
   </data>
   <data name="Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available." xml:space="preserve">
-    <value>另一个 Razer 应用可能正在使用笔记本电脑的灯光接口。接口可用后，OpenBlade 将启用这些控件。</value>
+    <value>其他 Razer 应用可能正在占用笔记本电脑的灯光接口。接口恢复可用后，OpenBlade 将启用相关控制功能。</value>
   </data>
   <data name="Another user is controlling OpenBlade" xml:space="preserve">
     <value>另一位用户正在控制 OpenBlade</value>
@@ -202,13 +202,13 @@
     <value>可用</value>
   </data>
   <data name="Available · Windows OSD" xml:space="preserve">
-    <value>可用 · Windows 屏幕显示</value>
+    <value>可用 · Windows 系统提示</value>
   </data>
   <data name="Balanced" xml:space="preserve">
     <value>平衡</value>
   </data>
   <data name="Balances performance and energy use." xml:space="preserve">
-    <value>平衡性能与能源使用。</value>
+    <value>兼顾性能与能耗。</value>
   </data>
   <data name="Battery" xml:space="preserve">
     <value>电池</value>
@@ -220,13 +220,13 @@
     <value>电池供电</value>
   </data>
   <data name="Battery power flow" xml:space="preserve">
-    <value>电池功率流向</value>
+    <value>电池充放电功率</value>
   </data>
   <data name="Battery power unavailable" xml:space="preserve">
     <value>电池功率不可用</value>
   </data>
   <data name="Battery profile" xml:space="preserve">
-    <value>电池配置文件</value>
+    <value>电池配置方案</value>
   </data>
   <data name="Battery protection" xml:space="preserve">
     <value>电池保护</value>
@@ -235,7 +235,7 @@
     <value>电池保护已关闭</value>
   </data>
   <data name="Battery protection: {0} (not saved to profile)" xml:space="preserve">
-    <value>电池保护：{0}（未保存到配置文件）</value>
+    <value>电池保护：{0}（未保存到配置方案）</value>
   </data>
   <data name="Battery Saver" xml:space="preserve">
     <value>节能模式</value>
@@ -280,10 +280,10 @@
     <value>取消充电至 100%</value>
   </data>
   <data name="Changed outside OpenBlade" xml:space="preserve">
-    <value>在 OpenBlade 外部更改</value>
+    <value>并非由 OpenBlade 更改</value>
   </data>
   <data name="Changed outside OpenBlade: {0}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade." xml:space="preserve">
-    <value>已在 OpenBlade 外部更改：{0}。您保存的配置文件未更改。在您通过 OpenBlade 更改这些控件之前，其自动配置文件更新已暂停。</value>
+    <value>以下设置并非由 OpenBlade 更改：{0}。已保存的配置方案不受影响。在通过 OpenBlade 调整这些设置之前，配置方案不会自动更新这些设置。</value>
   </data>
   <data name="Charge limit" xml:space="preserve">
     <value>充电上限</value>
@@ -292,7 +292,7 @@
     <value>充电上限 {0}%</value>
   </data>
   <data name="Charge limit: {0}% not saved to profile" xml:space="preserve">
-    <value>充电上限：{0}%，未保存到配置文件</value>
+    <value>充电上限：{0}%，未保存到配置方案</value>
   </data>
   <data name="Charge to 100% until unplugged" xml:space="preserve">
     <value>充电至 100%，直至拔下电源</value>
@@ -313,16 +313,16 @@
     <value>正在检查</value>
   </data>
   <data name="Checking GitHub for updates..." xml:space="preserve">
-    <value>正在 GitHub 上检查更新...</value>
+    <value>正在检查 GitHub 上的更新…</value>
   </data>
   <data name="Checking laptop" xml:space="preserve">
     <value>正在检查笔记本电脑</value>
   </data>
   <data name="Checking Razer&apos;s official support page..." xml:space="preserve">
-    <value>正在检查 Razer 官方支持页面...</value>
+    <value>正在查看 Razer 官方支持页面…</value>
   </data>
   <data name="Checking the built-in display..." xml:space="preserve">
-    <value>正在检查内置显示器...</value>
+    <value>正在检查内置显示器…</value>
   </data>
   <data name="Choose a supported keyboard lighting effect." xml:space="preserve">
     <value>选择支持的键盘灯光效果。</value>
@@ -337,10 +337,10 @@
     <value>选择分配给 M1 至 M5 的操作。</value>
   </data>
   <data name="Choose the active power mode and custom CPU or GPU levels." xml:space="preserve">
-    <value>选择活动电源模式以及自定义 CPU 或 GPU 级别。</value>
+    <value>选择当前电源模式，并设置自定义 CPU 或 GPU 级别。</value>
   </data>
   <data name="Choose the active power mode." xml:space="preserve">
-    <value>选择活动电源模式。</value>
+    <value>选择当前电源模式。</value>
   </data>
   <data name="Choose the color profile used by the built-in display." xml:space="preserve">
     <value>选择内置显示器使用的颜色配置文件。</value>
@@ -382,19 +382,19 @@
     <value>颜色配置文件</value>
   </data>
   <data name="Color profile changed outside OpenBlade." xml:space="preserve">
-    <value>颜色配置文件已在 OpenBlade 外部更改。</value>
+    <value>颜色配置文件并非由 OpenBlade 更改。</value>
   </data>
   <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>比较交流电源、USB-C 和电池配置文件中存储的设置。</value>
+    <value>比较交流电、USB-C 和电池配置方案中保存的设置。</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
-    <value>配置实时读数、登录和灯光所有权。</value>
+    <value>设置实时数据、登录时启动和灯光控制权。</value>
   </data>
   <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
     <value>配置语言、主题、强调色、导航和托盘文本。</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
-    <value>连接、活动设置以及您选择的实时读数。</value>
+    <value>查看连接状态、当前设置和选定的实时数据。</value>
   </data>
   <data name="Control keyboard effects, brightness, and laptop logo lighting." xml:space="preserve">
     <value>控制键盘效果、亮度和笔记本电脑徽标灯光。</value>
@@ -409,13 +409,13 @@
     <value>控制刷新率、HDR 和颜色配置文件。</value>
   </data>
   <data name="Controller detection needs attention" xml:space="preserve">
-    <value>控制器检测需要注意</value>
+    <value>控制器检测异常</value>
   </data>
   <data name="Controls unavailable" xml:space="preserve">
-    <value>控件不可用</value>
+    <value>控制功能不可用</value>
   </data>
   <data name="Core {0}, memory {1}" xml:space="preserve">
-    <value>核心 {0}，显存 {1}</value>
+    <value>核心频率偏移 {0}，显存频率偏移 {1}</value>
   </data>
   <data name="Could not change start at sign-in: {0}" xml:space="preserve">
     <value>无法更改登录时启动设置：{0}</value>
@@ -427,16 +427,16 @@
     <value>无法清除 {0} 覆盖设置。</value>
   </data>
   <data name="Could not restore the saved display profile because the display controller is unavailable." xml:space="preserve">
-    <value>由于显示控制器不可用，无法恢复已保存的显示配置文件。</value>
+    <value>显示控制组件不可用，无法恢复已保存的显示配置方案。</value>
   </data>
   <data name="Could not restore the saved display profile because Windows did not confirm every setting." xml:space="preserve">
-    <value>由于 Windows 未确认所有设置，无法恢复已保存的显示配置文件。</value>
+    <value>Windows 未确认所有设置，无法恢复已保存的显示配置方案。</value>
   </data>
   <data name="Could not restore the saved display profile: {0}" xml:space="preserve">
-    <value>无法恢复已保存的显示配置文件：{0}</value>
+    <value>无法恢复已保存的显示配置方案：{0}</value>
   </data>
   <data name="Could not restore the saved profile settings because the power source changed." xml:space="preserve">
-    <value>由于电源来源发生变化，无法恢复已保存的配置文件设置。</value>
+    <value>供电方式已改变，无法恢复配置方案中保存的设置。</value>
   </data>
   <data name="Couldn&apos;t check for updates. Try again later." xml:space="preserve">
     <value>无法检查更新。请稍后重试。</value>
@@ -457,13 +457,13 @@
     <value>CPU 温度</value>
   </data>
   <data name="Current profile" xml:space="preserve">
-    <value>当前配置文件</value>
+    <value>当前配置方案</value>
   </data>
   <data name="Current setting" xml:space="preserve">
     <value>当前设置</value>
   </data>
   <data name="Current settings are not saved to this profile" xml:space="preserve">
-    <value>当前设置未保存到此配置文件</value>
+    <value>当前设置尚未保存到此配置方案</value>
   </data>
   <data name="Custom" xml:space="preserve">
     <value>自定义</value>
@@ -481,7 +481,7 @@
     <value>设备信息</value>
   </data>
   <data name="Device status and live readings" xml:space="preserve">
-    <value>设备状态和实时读数</value>
+    <value>设备状态和实时数据</value>
   </data>
   <data name="Diagnostic export canceled." xml:space="preserve">
     <value>已取消诊断导出。</value>
@@ -493,7 +493,7 @@
     <value>诊断信息已导出到 {0}。</value>
   </data>
   <data name="Different from saved profile" xml:space="preserve">
-    <value>与已保存的配置文件不同</value>
+    <value>与已保存的配置方案不同</value>
   </data>
   <data name="Display" xml:space="preserve">
     <value>显示</value>
@@ -502,7 +502,7 @@
     <value>显示器可用</value>
   </data>
   <data name="Display controls are unavailable." xml:space="preserve">
-    <value>显示控件不可用。</value>
+    <value>显示控制功能不可用。</value>
   </data>
   <data name="Display setting failed." xml:space="preserve">
     <value>显示设置失败。</value>
@@ -562,10 +562,10 @@
     <value>风扇</value>
   </data>
   <data name="Favors lower energy use." xml:space="preserve">
-    <value>优先降低能源使用。</value>
+    <value>侧重降低能耗。</value>
   </data>
   <data name="Favors responsiveness over energy use." xml:space="preserve">
-    <value>优先响应速度，而非能源使用。</value>
+    <value>侧重提升响应速度，而非降低能耗。</value>
   </data>
   <data name="Fire" xml:space="preserve">
     <value>火焰</value>
@@ -577,7 +577,7 @@
     <value>固定，{0:N0} RPM</value>
   </data>
   <data name="Follow Windows" xml:space="preserve">
-    <value>跟随 Windows</value>
+    <value>跟随 Windows 设置</value>
   </data>
   <data name="Full screen" xml:space="preserve">
     <value>全屏</value>
@@ -631,10 +631,10 @@
     <value>空闲</value>
   </data>
   <data name="Imported animation" xml:space="preserve">
-    <value>导入的动画</value>
+    <value>导入动画</value>
   </data>
   <data name="Inactivity timeout" xml:space="preserve">
-    <value>非活动超时</value>
+    <value>闲置超时</value>
   </data>
   <data name="Incompatible firmware" xml:space="preserve">
     <value>固件不兼容</value>
@@ -643,7 +643,7 @@
     <value>硬件不兼容</value>
   </data>
   <data name="Interactive session required" xml:space="preserve">
-    <value>需要交互式会话</value>
+    <value>需要用户登录</value>
   </data>
   <data name="Inward" xml:space="preserve">
     <value>向内</value>
@@ -673,10 +673,10 @@
     <value>键盘灯光</value>
   </data>
   <data name="Laptop controls are currently unavailable. Check Troubleshooting for details." xml:space="preserve">
-    <value>笔记本电脑控件当前不可用。请查看“故障排除”了解详情。</value>
+    <value>笔记本电脑控制功能目前不可用。请在“故障排除”中查看详情。</value>
   </data>
   <data name="Laptop controls changed outside OpenBlade" xml:space="preserve">
-    <value>笔记本电脑控件已在 OpenBlade 外部更改</value>
+    <value>笔记本电脑设置并非由 OpenBlade 更改</value>
   </data>
   <data name="Laptop lid logo" xml:space="preserve">
     <value>笔记本电脑上盖徽标</value>
@@ -736,7 +736,7 @@
     <value>灯光效果</value>
   </data>
   <data name="Live readings are unavailable while the OpenBlade service is not running." xml:space="preserve">
-    <value>OpenBlade 服务未运行时，实时读数不可用。</value>
+    <value>OpenBlade 服务未运行，无法获取实时数据。</value>
   </data>
   <data name="Loaded" xml:space="preserve">
     <value>已加载</value>
@@ -757,19 +757,19 @@
     <value>手动风扇曲线</value>
   </data>
   <data name="Manual only" xml:space="preserve">
-    <value>仅手动</value>
+    <value>仅手动检查</value>
   </data>
   <data name="Manual override clear requests completed; service confirmation is unavailable." xml:space="preserve">
-    <value>手动覆盖清除请求已完成；服务确认不可用。</value>
+    <value>已提交清除临时手动设置的请求，但无法从服务确认结果。</value>
   </data>
   <data name="Manual overrides cleared; hardware restoration was not applied for {0}." xml:space="preserve">
-    <value>手动覆盖已清除；未对 {0} 应用硬件恢复。</value>
+    <value>已清除临时手动设置，但未能为 {0} 恢复设备状态。</value>
   </data>
   <data name="Manual overrides cleared." xml:space="preserve">
-    <value>手动覆盖已清除。</value>
+    <value>已清除临时手动设置。</value>
   </data>
   <data name="Matches saved profile" xml:space="preserve">
-    <value>与已保存的配置文件匹配</value>
+    <value>与已保存的配置方案一致</value>
   </data>
   <data name="Maximum" xml:space="preserve">
     <value>最大</value>
@@ -793,7 +793,7 @@
     <value>Razer 提供了较新的 {0} 固件。</value>
   </data>
   <data name="Nightly" xml:space="preserve">
-    <value>每夜版</value>
+    <value>Nightly 版</value>
   </data>
   <data name="No eligible published release is available." xml:space="preserve">
     <value>没有符合条件的已发布版本。</value>
@@ -802,7 +802,7 @@
     <value>无互联网连接。请检查连接，然后重试。</value>
   </data>
   <data name="No manual overrides active." xml:space="preserve">
-    <value>没有活动的手动覆盖。</value>
+    <value>当前没有临时手动设置。</value>
   </data>
   <data name="None" xml:space="preserve">
     <value>无</value>
@@ -811,7 +811,7 @@
     <value>不适用</value>
   </data>
   <data name="Not available · OpenBlade OSD" xml:space="preserve">
-    <value>不可用 · OpenBlade 屏幕显示</value>
+    <value>不可用 · OpenBlade 提示</value>
   </data>
   <data name="Not charging" xml:space="preserve">
     <value>未充电</value>
@@ -859,13 +859,13 @@
     <value>OpenBlade 应用名称</value>
   </data>
   <data name="OpenBlade can’t connect to its service, so lighting controls are unavailable." xml:space="preserve">
-    <value>OpenBlade 无法连接到其服务，因此灯光控件不可用。</value>
+    <value>OpenBlade 无法连接到后台服务，灯光控制功能暂不可用。</value>
   </data>
   <data name="OpenBlade can’t find a supported laptop, so lighting controls are unavailable." xml:space="preserve">
-    <value>OpenBlade 找不到受支持的笔记本电脑，因此灯光控件不可用。</value>
+    <value>OpenBlade 未检测到受支持的笔记本电脑，灯光控制功能不可用。</value>
   </data>
   <data name="OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified." xml:space="preserve">
-    <value>OpenBlade 无法检查每个 Razer 控制器。仅在笔记本电脑通过验证时，控件才保持可用。</value>
+    <value>OpenBlade 未能检查所有 Razer 控制器。只有确认笔记本电脑兼容后，控制功能才可用。</value>
   </data>
   <data name="OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically." xml:space="preserve">
     <value>OpenBlade 在写入后无法确认 {0}。界面仍显示上次确认的值。检查当前状态是只读操作；OpenBlade 不会自动重试写入。</value>
@@ -880,16 +880,16 @@
     <value>OpenBlade 无法完成该操作。请查看“故障排除”了解详情。</value>
   </data>
   <data name="OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available." xml:space="preserve">
-    <value>OpenBlade 无法确认其他 Razer 应用是否正在使用笔记本电脑的灯光接口。在接口可访问之前，控件将保持禁用。</value>
+    <value>OpenBlade 无法确认其他 Razer 应用是否占用了笔记本电脑的灯光接口。恢复访问前，相关控制功能将保持禁用。</value>
   </data>
   <data name="OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override." xml:space="preserve">
-    <value>OpenBlade 发现了一台固件不兼容的受支持笔记本电脑，因此除非启用固件覆盖，否则灯光控件不可用。</value>
+    <value>这台笔记本电脑受支持，但固件版本不兼容。启用固件版本绕过后才能使用灯光控制功能。</value>
   </data>
   <data name="OpenBlade has not tested this configuration: {0}." xml:space="preserve">
     <value>OpenBlade 尚未测试此配置：{0}。</value>
   </data>
   <data name="OpenBlade is checking the laptop before enabling lighting controls." xml:space="preserve">
-    <value>OpenBlade 正在检查笔记本电脑，随后才会启用灯光控件。</value>
+    <value>OpenBlade 正在验证笔记本电脑，确认兼容后将启用灯光控制功能。</value>
   </data>
   <data name="OpenBlade is up to date." xml:space="preserve">
     <value>OpenBlade 已是最新版本。</value>
@@ -904,16 +904,16 @@
     <value>OpenBlade 服务未运行</value>
   </data>
   <data name="OpenBlade will not start when you sign in." xml:space="preserve">
-    <value>OpenBlade 不会在您登录时启动。</value>
+    <value>OpenBlade 不会在登录 Windows 时启动。</value>
   </data>
   <data name="OpenBlade will start when you sign in." xml:space="preserve">
-    <value>OpenBlade 将在您登录时启动。</value>
+    <value>OpenBlade 将在登录 Windows 时启动。</value>
   </data>
   <data name="Operation failed: {0}" xml:space="preserve">
     <value>操作失败：{0}</value>
   </data>
   <data name="Other controller may be active" xml:space="preserve">
-    <value>其他控制器可能处于活动状态</value>
+    <value>其他控制器可能正在运行</value>
   </data>
   <data name="Outward" xml:space="preserve">
     <value>向外</value>
@@ -928,22 +928,22 @@
     <value>电源模式</value>
   </data>
   <data name="Power source" xml:space="preserve">
-    <value>电源来源</value>
+    <value>供电方式</value>
   </data>
   <data name="Power source unavailable" xml:space="preserve">
-    <value>电源来源不可用</value>
+    <value>无法确定供电方式</value>
   </data>
   <data name="External power (unclassified)" xml:space="preserve">
     <value>外部电源（未分类）</value>
   </data>
   <data name="Preparing diagnostic export..." xml:space="preserve">
-    <value>正在准备诊断导出...</value>
+    <value>正在准备导出诊断信息…</value>
   </data>
   <data name="Primary color" xml:space="preserve">
-    <value>主要颜色</value>
+    <value>主颜色</value>
   </data>
   <data name="Profile and battery power" xml:space="preserve">
-    <value>配置文件和电池电量</value>
+    <value>配置方案和电池功率</value>
   </data>
   <data name="Random" xml:space="preserve">
     <value>随机</value>
@@ -955,7 +955,7 @@
     <value>随机颜色，{0}</value>
   </data>
   <data name="Razer app active" xml:space="preserve">
-    <value>Razer 应用处于活动状态</value>
+    <value>Razer 应用正在运行</value>
   </data>
   <data name="Reactive" xml:space="preserve">
     <value>响应</value>
@@ -997,22 +997,22 @@
     <value>正在运行</value>
   </data>
   <data name="Save profile changes" xml:space="preserve">
-    <value>保存配置文件更改</value>
+    <value>保存配置方案更改</value>
   </data>
   <data name="Save to AC profile" xml:space="preserve">
-    <value>保存到交流电源配置文件</value>
+    <value>保存到交流电配置方案</value>
   </data>
   <data name="Save to battery profile" xml:space="preserve">
-    <value>保存到电池配置文件</value>
+    <value>保存到电池配置方案</value>
   </data>
   <data name="Save to profile" xml:space="preserve">
-    <value>保存到配置文件</value>
+    <value>保存到配置方案</value>
   </data>
   <data name="Save to USB-C profile" xml:space="preserve">
-    <value>保存到 USB-C 配置文件</value>
+    <value>保存到 USB-C 配置方案</value>
   </data>
   <data name="Saved profile comparison" xml:space="preserve">
-    <value>已保存配置文件比较</value>
+    <value>比较已保存的配置方案</value>
   </data>
   <data name="Service disconnected" xml:space="preserve">
     <value>服务已断开连接</value>
@@ -1093,7 +1093,7 @@
     <value>温度</value>
   </data>
   <data name="Temporary change not saved to this profile" xml:space="preserve">
-    <value>临时更改未保存到此配置文件</value>
+    <value>临时更改尚未保存到此配置方案</value>
   </data>
   <data name="Temporary full charge active" xml:space="preserve">
     <value>临时充满电已启用</value>
@@ -1102,16 +1102,16 @@
     <value>临时充满电状态不可用</value>
   </data>
   <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
-    <value>活动效果是在 OpenBlade 外部设置的，无法从固件读取。</value>
+    <value>当前效果并非由 OpenBlade 设置，且无法从固件中读取。</value>
   </data>
   <data name="The display session agent is not responding." xml:space="preserve">
-    <value>显示会话代理未响应。</value>
+    <value>显示会话组件未响应。</value>
   </data>
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
     <value>诊断保存程序返回了无效结果。</value>
   </data>
   <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>已准入的精确 Razer 驱动程序使 Windows 能够显示原生亮度浮出控件。OpenBlade 会在每次按键时重新验证精确设备路径。原生路径不可用时，OpenBlade 会使用自己的浮出控件。</value>
+    <value>只有经过验证且明确支持的 Razer 驱动，才能让 Windows 显示系统原生亮度提示。每次按键时，OpenBlade 都会重新验证完全匹配的设备路径；如果原生路径不可用，则改用 OpenBlade 的亮度提示。</value>
   </data>
   <data name="Tidal" xml:space="preserve">
     <value>潮汐</value>
@@ -1132,7 +1132,7 @@
     <value>开启或关闭 GPU 时钟调校。</value>
   </data>
   <data name="Turn keyboard lighting off with the display or after inactivity." xml:space="preserve">
-    <value>随显示器关闭或在非活动后关闭键盘灯光。</value>
+    <value>显示器关闭或电脑闲置一段时间后，自动关闭键盘灯光。</value>
   </data>
   <data name="Turn lighting off" xml:space="preserve">
     <value>关闭灯光</value>
@@ -1171,7 +1171,7 @@
     <value>直至重置</value>
   </data>
   <data name="until the power source changes" xml:space="preserve">
-    <value>直至电源来源发生变化</value>
+    <value>直到供电方式改变</value>
   </data>
   <data name="Up to {0:0.##} seconds" xml:space="preserve">
     <value>最多 {0:0.##} 秒</value>
@@ -1186,7 +1186,7 @@
     <value>更新</value>
   </data>
   <data name="Updates have not been checked for the {0} channel." xml:space="preserve">
-    <value>尚未检查 {0} 渠道的更新。</value>
+    <value>尚未检查 {0} 通道的更新。</value>
   </data>
   <data name="Updates have not been checked." xml:space="preserve">
     <value>尚未检查更新。</value>
@@ -1195,7 +1195,7 @@
     <value>USB-C · {0}</value>
   </data>
   <data name="USB-C profile" xml:space="preserve">
-    <value>USB-C 配置文件</value>
+    <value>USB-C 配置方案</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
     <value>使用 Ctrl+Shift+M 之类的快捷键。</value>
@@ -1216,10 +1216,10 @@
     <value>VID {0} · PID {1}</value>
   </data>
   <data name="Waiting for power source" xml:space="preserve">
-    <value>正在等待电源来源</value>
+    <value>正在等待供电方式信息</value>
   </data>
   <data name="Waiting for the first live-reading check." xml:space="preserve">
-    <value>正在等待首次实时读数检查。</value>
+    <value>正在等待首次实时数据刷新。</value>
   </data>
   <data name="Wave" xml:space="preserve">
     <value>波浪</value>
