@@ -1783,7 +1783,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (ViewModel.SetPerformanceCommand is not AsyncRelayCommand command
             || !command.CanExecute(selected.Value))
         {
-            selector.SelectedItem = ViewModel.SelectedPerformanceOption;
+            selector.RestoreAuthoritativeSelection();
             changingPerformanceSelection = false;
             return;
         }
@@ -1798,7 +1798,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedPerformanceOption;
+            selector.RestoreAuthoritativeSelection();
             changingPerformanceSelection = false;
         }
     }
@@ -1821,7 +1821,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         try
         {
             ViewModel.StageWindowsPowerMode(selected.Value);
-            selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;
+            selector.RestoreAuthoritativeSelection();
         }
         finally
         {
@@ -1843,7 +1843,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (Volatile.Read(ref disposed) == 0
             && windowsPowerModeSelector is { } selector)
         {
-            selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;
+            selector.RestoreAuthoritativeSelection();
         }
     }
 
@@ -2390,9 +2390,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            selector.SelectedItem = selector.Name == "DashboardCustomCpuSelector"
-                ? ViewModel.SelectedCustomCpuLevel
-                : ViewModel.SelectedCustomGpuLevel;
+            selector.RestoreAuthoritativeSelection();
             changingCustomPerformanceSelection = false;
         }
     }
@@ -2414,7 +2412,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (ViewModel.SetFanModeCommand is not AsyncRelayCommand command
             || !command.CanExecute(selected.Value))
         {
-            selector.SelectedItem = ViewModel.SelectedFanModeOption;
+            selector.RestoreAuthoritativeSelection();
             changingFanSelection = false;
             return;
         }
@@ -2429,7 +2427,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedFanModeOption;
+            selector.RestoreAuthoritativeSelection();
             changingFanSelection = false;
         }
     }

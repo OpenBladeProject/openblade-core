@@ -75,6 +75,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserved responsive selector bindings after Dashboard edits so switching
+  between AC and battery cannot leave the laptop-performance dropdown blank or
+  prevent it from expanding into horizontal choices when space is available.
 - Kept malformed current-schema profile files on the safe recovery and import
   error paths, and cleared stray legacy Windows power modes before publishing
   migrated schema 1 profiles.
