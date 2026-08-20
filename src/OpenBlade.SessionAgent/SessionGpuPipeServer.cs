@@ -32,7 +32,12 @@ public sealed class SessionGpuPipeServer : IAsyncDisposable
         {
             NamedPipeServerStream connected = currentPipe
                 ?? throw new ObjectDisposedException(nameof(SessionGpuPipeServer));
-            await connected.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            if (!await SessionAgentPipeOwner.WaitForConnectionAsync(
+                    connected,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
             currentPipe = owner.CreateReplacementPipe();
             try
             {

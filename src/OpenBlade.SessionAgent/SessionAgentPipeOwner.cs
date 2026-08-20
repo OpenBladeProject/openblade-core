@@ -52,6 +52,31 @@ public sealed class SessionAgentPipeOwner : IAsyncDisposable
     internal NamedPipeServerStream CreateReplacementPipe() =>
         CreatePipe(Endpoint.PipeName, userSid, firstInstance: false);
 
+    internal static async Task<bool> WaitForConnectionAsync(
+        NamedPipeServerStream pipe,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(pipe);
+        try
+        {
+            await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception exception) when (
+            IsExpectedWaitCancellation(exception, cancellationToken))
+        {
+            // Windows can surface a canceled named-pipe accept as either
+            // OperationCanceledException or ERROR_PIPE_NOT_CONNECTED/IOException.
+            return false;
+        }
+    }
+
+    internal static bool IsExpectedWaitCancellation(
+        Exception exception,
+        CancellationToken cancellationToken) =>
+        cancellationToken.IsCancellationRequested
+        && exception is OperationCanceledException or IOException;
+
     public async ValueTask DisposeAsync()
     {
         NamedPipeServerStream? pipe = Interlocked.Exchange(ref initialPipe, null);

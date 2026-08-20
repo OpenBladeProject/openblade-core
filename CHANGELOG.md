@@ -85,6 +85,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented coordinated Session Agent cancellation from becoming a fatal
+  named-pipe error that stops function-row and other per-user features.
 - Reworked Simplified Chinese and Russian wording to use natural,
   context-aware terminology throughout the tray, installer, and setup.
 - Prevented localized profile-draft captions from overlapping adjacent

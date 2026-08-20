@@ -66,6 +66,29 @@ public sealed class SessionAgentPipeTests
     }
 
     [Fact]
+    public void WaitCancellation_ClassifiesClosedPipeOnlyAfterCancellationRequested()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var closedPipe = new IOException("The pipe is being closed.");
+
+        Assert.False(SessionAgentPipeOwner.IsExpectedWaitCancellation(
+            closedPipe,
+            cancellation.Token));
+
+        cancellation.Cancel();
+
+        Assert.True(SessionAgentPipeOwner.IsExpectedWaitCancellation(
+            closedPipe,
+            cancellation.Token));
+        Assert.True(SessionAgentPipeOwner.IsExpectedWaitCancellation(
+            new OperationCanceledException(cancellation.Token),
+            cancellation.Token));
+        Assert.False(SessionAgentPipeOwner.IsExpectedWaitCancellation(
+            new InvalidOperationException("unexpected failure"),
+            cancellation.Token));
+    }
+
+    [Fact]
     public async Task DuplicateStartupDoesNotRegisterPersistentLogging()
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
