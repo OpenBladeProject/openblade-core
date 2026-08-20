@@ -759,7 +759,7 @@
                                                                     AccessibleName="Custom CPU level"
                                                                     IsEnabled="{Binding CanEditPerformance}"
                                                                     ItemsSource="{Binding AvailableCustomCpuLevels}"
-                                                                    SelectedItem="{Binding SelectedCustomCpuLevel}"
+                                                                    SelectedItem="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
@@ -785,7 +785,7 @@
                                                                     AccessibleName="Custom GPU level"
                                                                     IsEnabled="{Binding CanEditPerformance}"
                                                                     ItemsSource="{Binding AvailableCustomGpuLevels}"
-                                                                    SelectedItem="{Binding SelectedCustomGpuLevel}"
+                                                                    SelectedItem="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
