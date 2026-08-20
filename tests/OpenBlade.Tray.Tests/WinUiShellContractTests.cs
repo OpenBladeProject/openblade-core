@@ -2104,25 +2104,50 @@ public sealed class WinUiShellContractTests
             "replacement = CreateMainWindow(registration, preference)",
             StringComparison.Ordinal);
         int initialize = refresh.IndexOf(
-            "await replacement.InitializeAsync()",
+            "await replacementInitialization",
             StringComparison.Ordinal);
-        int disposePrevious = refresh.IndexOf(
-            "await previousWindow.DisposeAsync()",
+        int prepareSurfaces = refresh.IndexOf(
+            "replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint)",
             StringComparison.Ordinal);
         int attach = refresh.IndexOf(
-            "AttachWindowSurfaces(replacement, eventEndpoint)",
+            "AttachWindowSurfaces(",
+            prepareSurfaces,
+            StringComparison.Ordinal);
+        int commit = refresh.IndexOf(
+            "replacementCommitted = true",
+            StringComparison.Ordinal);
+        int disposePrevious = refresh.IndexOf(
+            "await DisposeWindowSafelyAsync(previousWindow)",
             StringComparison.Ordinal);
         Assert.True(
             apply >= 0
             && apply < create
             && create < initialize
-            && initialize < disposePrevious
-            && disposePrevious < attach);
-        Assert.Contains("trayIconHost?.Dispose()", refresh, StringComparison.Ordinal);
-        Assert.Contains("trayDashboardWindow?.Dispose()", refresh, StringComparison.Ordinal);
-        Assert.Contains("CreateTrayIconHost()", refresh, StringComparison.Ordinal);
+            && initialize < prepareSurfaces
+            && prepareSurfaces < attach
+            && attach < commit
+            && commit < disposePrevious);
+        Assert.Contains("CreateTrayIconHost(replacement)", refresh, StringComparison.Ordinal);
+        Assert.Contains("replacementCommitted = true", refresh, StringComparison.Ordinal);
+        Assert.Contains("if (replacementCommitted)", refresh, StringComparison.Ordinal);
+        Assert.Contains("OverlappedPresenterState.Maximized", refresh, StringComparison.Ordinal);
+        Assert.Contains("presenter.Maximize()", refresh, StringComparison.Ordinal);
         Assert.Contains("replacement.ShowLanguageSettings()", refresh, StringComparison.Ordinal);
         Assert.DoesNotContain("SessionAgentLauncher", refresh, StringComparison.Ordinal);
+
+        int smokeStart = app.IndexOf(
+            "private async Task RunLiveLocalizationSmokeAsync",
+            StringComparison.Ordinal);
+        int smokeEnd = app.IndexOf(
+            "private static void AssertLiveLocalizationValue",
+            smokeStart,
+            StringComparison.Ordinal);
+        Assert.True(smokeStart >= 0 && smokeStart < smokeEnd);
+        string smoke = app[smokeStart..smokeEnd];
+        Assert.Contains("await RefreshLanguageAsync(", smoke, StringComparison.Ordinal);
+        Assert.Contains("Injected replacement tray icon failure", smoke, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals(trayIconHost, initialTrayIcon)", smoke, StringComparison.Ordinal);
+        Assert.Contains("expectMaximized", smoke, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
@@ -2239,7 +2264,7 @@ public sealed class WinUiShellContractTests
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains(
-            "windowInitializationTask = window.InitializeAsync()",
+            "AttachWindowSurfaces(window, surfaces, window.InitializeAsync())",
             app,
             StringComparison.Ordinal);
         Assert.Contains("await windowInitializationTask", app, StringComparison.Ordinal);

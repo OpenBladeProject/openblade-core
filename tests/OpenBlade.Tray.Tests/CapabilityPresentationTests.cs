@@ -1198,10 +1198,6 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
             Attribute(language, "SelectedItem"));
-        Assert.Equal("170", Attribute(theme, "CompactMinWidth"));
-        Assert.Equal(
-            Attribute(theme, "CompactMinWidth"),
-            Attribute(language, "CompactMinWidth"));
         Assert.Equal("280", Attribute(theme, "CompactWidth"));
         Assert.Equal(
             Attribute(theme, "CompactWidth"),

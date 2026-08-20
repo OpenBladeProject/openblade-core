@@ -3461,7 +3461,6 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppTheme" Grid.Column="1"
-                                                                    CompactMinWidth="170"
                                                                     CompactWidth="280"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App theme"
@@ -3484,7 +3483,6 @@
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppLanguage" Grid.Column="1"
-                                                                    CompactMinWidth="170"
                                                                     CompactWidth="280"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App language"
