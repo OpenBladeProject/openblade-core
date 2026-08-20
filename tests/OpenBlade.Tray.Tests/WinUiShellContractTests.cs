@@ -397,6 +397,14 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource DraftStatusTextStyle}\""));
+        string draftStatusStyle = SliceMethod(
+            xaml,
+            "<Style x:Key=\"DraftStatusTextStyle\"",
+            "</Style>");
+        Assert.Contains(
+            "<Setter Property=\"TextWrapping\" Value=\"Wrap\" />",
+            draftStatusStyle,
+            StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));
         Assert.DoesNotContain("PluggedInLightingEditor", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("BatteryLightingEditor", xaml, StringComparison.Ordinal);
@@ -2114,6 +2122,27 @@ public sealed class WinUiShellContractTests
             "$env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage",
             capture,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SimplifiedChineseUsesOneLiveReadingsTermAcrossTraySurfaces()
+    {
+        string trayCore = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray.Core",
+            "Properties",
+            "Resources.zh-CN.resx");
+        string tray = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "Strings",
+            "zh-CN",
+            "Resources.resw");
+
+        Assert.DoesNotContain("实时监测", trayCore, StringComparison.Ordinal);
+        Assert.DoesNotContain("实时监测", tray, StringComparison.Ordinal);
+        Assert.Contains("<value>设备状态和实时数据</value>", trayCore, StringComparison.Ordinal);
+        Assert.Contains("<value>实时数据</value>", tray, StringComparison.Ordinal);
     }
 
     [Fact]

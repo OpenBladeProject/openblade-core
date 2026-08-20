@@ -203,6 +203,7 @@
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
             <DataTemplate x:Key="PageHeaderButtonContentTemplate">

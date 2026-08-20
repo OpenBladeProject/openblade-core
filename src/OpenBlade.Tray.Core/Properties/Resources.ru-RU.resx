@@ -52,7 +52,7 @@
     <value>{0} {1}: {2}</value>
   </data>
   <data name="{0} {1}: {2}. Pending: {3}" xml:space="preserve">
-    <value>{0} {1}: {2}. Ожидается: {3}</value>
+    <value>{0} {1}: {2}. Несохранённое значение: {3}</value>
   </data>
   <data name="{0} / {1}" xml:space="preserve">
     <value>{0} / {1}</value>
@@ -154,10 +154,10 @@
     <value>Сочетание клавиш должно включать клавишу, не являющуюся модификатором.</value>
   </data>
   <data name="AC · {0}" xml:space="preserve">
-    <value>AC · {0}</value>
+    <value>От сети · {0}</value>
   </data>
   <data name="AC profile" xml:space="preserve">
-    <value>Профиль AC</value>
+    <value>Профиль питания от сети</value>
   </data>
   <data name="Active profile" xml:space="preserve">
     <value>Активный профиль</value>
@@ -166,13 +166,13 @@
     <value>Все профили</value>
   </data>
   <data name="Ambient Awareness" xml:space="preserve">
-    <value>Ambient Awareness</value>
+    <value>Цвета экрана</value>
   </data>
   <data name="Ambient Awareness, {0}" xml:space="preserve">
-    <value>Ambient Awareness, {0}</value>
+    <value>Цвета экрана, {0}</value>
   </data>
   <data name="Ambient Awareness, full screen" xml:space="preserve">
-    <value>Ambient Awareness, весь экран</value>
+    <value>Цвета экрана, весь экран</value>
   </data>
   <data name="Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back." xml:space="preserve">
     <value>Другое приложение Razer также может изменять эти параметры. OpenBlade будет показывать изменения, а не отменять их.</value>
@@ -187,13 +187,13 @@
     <value>OpenBlade управляет другой пользователь</value>
   </data>
   <data name="Appearance" xml:space="preserve">
-    <value>Оформление</value>
+    <value>Внешний вид</value>
   </data>
   <data name="Audio Meter" xml:space="preserve">
-    <value>Audio Meter</value>
+    <value>Аудиоиндикатор</value>
   </data>
   <data name="Audio Meter, color boost {0}, smoothing: {1}" xml:space="preserve">
-    <value>Audio Meter, усиление цвета {0}, сглаживание: {1}</value>
+    <value>Аудиоиндикатор, усиление цвета {0}, сглаживание: {1}</value>
   </data>
   <data name="Automatic" xml:space="preserve">
     <value>Автоматически</value>
@@ -202,7 +202,7 @@
     <value>Доступно</value>
   </data>
   <data name="Available · Windows OSD" xml:space="preserve">
-    <value>Доступно · OSD Windows</value>
+    <value>Доступно · системный индикатор Windows</value>
   </data>
   <data name="Balanced" xml:space="preserve">
     <value>Сбалансированный</value>
@@ -211,37 +211,37 @@
     <value>Баланс производительности и энергопотребления.</value>
   </data>
   <data name="Battery" xml:space="preserve">
-    <value>Батарея</value>
+    <value>Аккумулятор</value>
   </data>
   <data name="Battery · {0}" xml:space="preserve">
-    <value>Батарея · {0}</value>
+    <value>Аккумулятор · {0}</value>
   </data>
   <data name="Battery power" xml:space="preserve">
-    <value>Питание от батареи</value>
+    <value>Мощность аккумулятора</value>
   </data>
   <data name="Battery power flow" xml:space="preserve">
-    <value>Поток мощности батареи</value>
+    <value>Мощность зарядки и разрядки аккумулятора</value>
   </data>
   <data name="Battery power unavailable" xml:space="preserve">
-    <value>Данные о питании от батареи недоступны</value>
+    <value>Данные о мощности аккумулятора недоступны</value>
   </data>
   <data name="Battery profile" xml:space="preserve">
-    <value>Профиль батареи</value>
+    <value>Профиль питания от аккумулятора</value>
   </data>
   <data name="Battery protection" xml:space="preserve">
-    <value>Защита батареи</value>
+    <value>Защита аккумулятора</value>
   </data>
   <data name="Battery protection off" xml:space="preserve">
-    <value>Защита батареи отключена</value>
+    <value>Защита аккумулятора отключена</value>
   </data>
   <data name="Battery protection: {0} (not saved to profile)" xml:space="preserve">
-    <value>Защита батареи: {0} (не сохранена в профиле)</value>
+    <value>Защита аккумулятора: {0} (не сохранена в профиле)</value>
   </data>
   <data name="Battery Saver" xml:space="preserve">
     <value>Экономия заряда</value>
   </data>
   <data name="Battery setting unavailable" xml:space="preserve">
-    <value>Параметр батареи недоступен</value>
+    <value>Параметр аккумулятора недоступен</value>
   </data>
   <data name="Behavior" xml:space="preserve">
     <value>Поведение</value>
@@ -262,16 +262,16 @@
     <value>Снизу</value>
   </data>
   <data name="Breathing" xml:space="preserve">
-    <value>Пульсация</value>
+    <value>Дыхание</value>
   </data>
   <data name="Breathing, one color" xml:space="preserve">
-    <value>Пульсация, один цвет</value>
+    <value>Дыхание, один цвет</value>
   </data>
   <data name="Breathing, random colors" xml:space="preserve">
-    <value>Пульсация, случайные цвета</value>
+    <value>Дыхание, случайные цвета</value>
   </data>
   <data name="Breathing, two colors" xml:space="preserve">
-    <value>Пульсация, два цвета</value>
+    <value>Дыхание, два цвета</value>
   </data>
   <data name="Built-in display" xml:space="preserve">
     <value>Встроенный дисплей</value>
@@ -385,16 +385,16 @@
     <value>Цветовой профиль изменён вне OpenBlade.</value>
   </data>
   <data name="Compare the settings stored in AC, USB-C, and Battery profiles." xml:space="preserve">
-    <value>Сравните параметры, сохранённые в профилях AC, USB-C и батареи.</value>
+    <value>Сравните параметры в профилях питания от сети, USB-C и аккумулятора.</value>
   </data>
   <data name="Configure live readings, sign-in, and lighting ownership." xml:space="preserve">
-    <value>Настройте показания в реальном времени, запуск при входе и управление подсветкой.</value>
+    <value>Настройте текущие показания, запуск при входе и управление подсветкой.</value>
   </data>
   <data name="Configure language, theme, accent color, navigation, and tray text." xml:space="preserve">
-    <value>Настройте язык, тему, цвет акцента, навигацию и текст значка в области уведомлений.</value>
+    <value>Настройте язык, тему, акцентный цвет, навигацию и текст подсказки значка в области уведомлений.</value>
   </data>
   <data name="Connection, active settings, and the live readings you selected." xml:space="preserve">
-    <value>Подключение, активные параметры и выбранные вами показания в реальном времени.</value>
+    <value>Подключение, активные параметры и выбранные текущие показания.</value>
   </data>
   <data name="Control keyboard effects, brightness, and laptop logo lighting." xml:space="preserve">
     <value>Управляйте эффектами и яркостью клавиатуры, а также подсветкой логотипа ноутбука.</value>
@@ -424,7 +424,7 @@
     <value>Не удалось выполнить проверку: {0}</value>
   </data>
   <data name="Could not clear {0} overrides." xml:space="preserve">
-    <value>Не удалось сбросить переопределения для {0}.</value>
+    <value>Не удалось сбросить изменения, заданные вручную: {0}.</value>
   </data>
   <data name="Could not restore the saved display profile because the display controller is unavailable." xml:space="preserve">
     <value>Не удалось восстановить сохранённый профиль дисплея: контроллер дисплея недоступен.</value>
@@ -445,7 +445,7 @@
     <value>Не удалось прочитать</value>
   </data>
   <data name="Couldn&apos;t read Razer&apos;s page. The official link is still available." xml:space="preserve">
-    <value>Не удалось прочитать страницу Razer. Ссылка на официальную страницу по-прежнему доступна.</value>
+    <value>Не удалось получить данные со страницы Razer. Ссылка на официальную страницу по-прежнему доступна.</value>
   </data>
   <data name="counterclockwise" xml:space="preserve">
     <value>против часовой стрелки</value>
@@ -481,7 +481,7 @@
     <value>Сведения об устройстве</value>
   </data>
   <data name="Device status and live readings" xml:space="preserve">
-    <value>Состояние устройства и показания в реальном времени</value>
+    <value>Состояние устройства и текущие показания</value>
   </data>
   <data name="Diagnostic export canceled." xml:space="preserve">
     <value>Экспорт диагностики отменён.</value>
@@ -577,7 +577,7 @@
     <value>Фиксированная, {0:N0} об/мин</value>
   </data>
   <data name="Follow Windows" xml:space="preserve">
-    <value>Следовать параметрам Windows</value>
+    <value>Как в Windows</value>
   </data>
   <data name="Full screen" xml:space="preserve">
     <value>Весь экран</value>
@@ -586,7 +586,7 @@
     <value>Функциональные клавиши</value>
   </data>
   <data name="Function row" xml:space="preserve">
-    <value>Функциональный ряд</value>
+    <value>Ряд функциональных клавиш</value>
   </data>
   <data name="Gaming mode" xml:space="preserve">
     <value>Игровой режим</value>
@@ -643,7 +643,7 @@
     <value>Несовместимое оборудование</value>
   </data>
   <data name="Interactive session required" xml:space="preserve">
-    <value>Требуется интерактивный сеанс</value>
+    <value>Требуется активный сеанс пользователя</value>
   </data>
   <data name="Inward" xml:space="preserve">
     <value>Внутрь</value>
@@ -700,13 +700,13 @@
     <value>Последняя проверка: {0:T}.{1}Значения меняются только при поступлении новых данных от Windows или прошивки.</value>
   </data>
   <data name="Latest firmware versions last loaded {0:g}." xml:space="preserve">
-    <value>Последние версии прошивки загружены {0:g}.</value>
+    <value>Последние данные о версиях прошивки загружены {0:g}.</value>
   </data>
   <data name="Latest firmware versions loaded from Razer." xml:space="preserve">
     <value>Последние версии прошивки загружены с сайта Razer.</value>
   </data>
   <data name="Latest release: {0}. The installed version could not be compared." xml:space="preserve">
-    <value>Последний выпуск: {0}. Не удалось сравнить его с установленной версией.</value>
+    <value>Последняя версия: {0}. Сравнить её с установленной версией не удалось.</value>
   </data>
   <data name="Launch OpenBlade automatically when you sign in." xml:space="preserve">
     <value>Автоматически запускать OpenBlade при входе.</value>
@@ -736,7 +736,7 @@
     <value>Эффект подсветки</value>
   </data>
   <data name="Live readings are unavailable while the OpenBlade service is not running." xml:space="preserve">
-    <value>Показания в реальном времени недоступны, пока служба OpenBlade не запущена.</value>
+    <value>Текущие показания недоступны, пока служба OpenBlade не запущена.</value>
   </data>
   <data name="Loaded" xml:space="preserve">
     <value>Загружено</value>
@@ -748,10 +748,10 @@
     <value>Низкая</value>
   </data>
   <data name="Manage battery protection and temporary full charge." xml:space="preserve">
-    <value>Управляйте защитой батареи и временной полной зарядкой.</value>
+    <value>Управляйте защитой аккумулятора и временной зарядкой до 100%.</value>
   </data>
   <data name="Manage battery protection, charge limit, and temporary full charge." xml:space="preserve">
-    <value>Управляйте защитой батареи, пределом заряда и временной полной зарядкой.</value>
+    <value>Управляйте защитой аккумулятора, пределом заряда и временной зарядкой до 100%.</value>
   </data>
   <data name="Manual fan curve" xml:space="preserve">
     <value>Ручная кривая вентиляторов</value>
@@ -760,13 +760,13 @@
     <value>Только вручную</value>
   </data>
   <data name="Manual override clear requests completed; service confirmation is unavailable." xml:space="preserve">
-    <value>Запросы на сброс ручных переопределений выполнены; подтверждение службы недоступно.</value>
+    <value>Запросы на сброс изменений, заданных вручную, выполнены, но служба не подтвердила результат.</value>
   </data>
   <data name="Manual overrides cleared; hardware restoration was not applied for {0}." xml:space="preserve">
-    <value>Ручные переопределения сброшены; для {0} восстановление состояния оборудования не выполнено.</value>
+    <value>Изменения, заданные вручную, сброшены, но исходные параметры оборудования не восстановлены: {0}.</value>
   </data>
   <data name="Manual overrides cleared." xml:space="preserve">
-    <value>Ручные переопределения сброшены.</value>
+    <value>Изменения, заданные вручную, сброшены.</value>
   </data>
   <data name="Matches saved profile" xml:space="preserve">
     <value>Совпадает с сохранённым профилем</value>
@@ -796,13 +796,13 @@
     <value>Nightly</value>
   </data>
   <data name="No eligible published release is available." xml:space="preserve">
-    <value>Нет подходящего опубликованного выпуска.</value>
+    <value>Подходящих опубликованных выпусков нет.</value>
   </data>
   <data name="No internet connection. Check your connection and try again." xml:space="preserve">
     <value>Нет подключения к Интернету. Проверьте подключение и повторите попытку.</value>
   </data>
   <data name="No manual overrides active." xml:space="preserve">
-    <value>Ручные переопределения не активны.</value>
+    <value>Нет активных изменений, заданных вручную.</value>
   </data>
   <data name="None" xml:space="preserve">
     <value>Нет</value>
@@ -811,7 +811,7 @@
     <value>Неприменимо</value>
   </data>
   <data name="Not available · OpenBlade OSD" xml:space="preserve">
-    <value>Недоступно · OSD OpenBlade</value>
+    <value>Недоступно · индикатор OpenBlade</value>
   </data>
   <data name="Not charging" xml:space="preserve">
     <value>Не заряжается</value>
@@ -841,7 +841,7 @@
     <value>Вкл.</value>
   </data>
   <data name="On battery" xml:space="preserve">
-    <value>От батареи</value>
+    <value>От аккумулятора</value>
   </data>
   <data name="OpenBlade" xml:space="preserve">
     <value>OpenBlade</value>
@@ -859,37 +859,37 @@
     <value>Имя приложения OpenBlade</value>
   </data>
   <data name="OpenBlade can’t connect to its service, so lighting controls are unavailable." xml:space="preserve">
-    <value>OpenBlade не может подключиться к своей службе, поэтому элементы управления подсветкой недоступны.</value>
+    <value>Нет подключения к службе OpenBlade, поэтому управление подсветкой недоступно.</value>
   </data>
   <data name="OpenBlade can’t find a supported laptop, so lighting controls are unavailable." xml:space="preserve">
-    <value>OpenBlade не может найти поддерживаемый ноутбук, поэтому элементы управления подсветкой недоступны.</value>
+    <value>Поддерживаемый ноутбук не найден, поэтому управление подсветкой недоступно.</value>
   </data>
   <data name="OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified." xml:space="preserve">
-    <value>OpenBlade не удалось проверить каждый контроллер Razer. Элементы управления доступны только после проверки ноутбука.</value>
+    <value>Не удалось проверить все контроллеры Razer. Элементы управления доступны только для проверенного ноутбука.</value>
   </data>
   <data name="OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically." xml:space="preserve">
-    <value>OpenBlade не удалось подтвердить {0} после записи. По-прежнему показаны последние подтверждённые значения. Проверка текущего состояния выполняется только для чтения; OpenBlade не будет автоматически повторять запись.</value>
+    <value>После записи не удалось подтвердить {0}. По-прежнему показаны последние подтверждённые значения. Проверка текущего состояния выполняется только для чтения; OpenBlade не будет автоматически повторять запись.</value>
   </data>
   <data name="OpenBlade could not verify this configuration: {0}." xml:space="preserve">
-    <value>OpenBlade не удалось проверить эту конфигурацию: {0}.</value>
+    <value>Не удалось проверить эту конфигурацию: {0}.</value>
   </data>
   <data name="OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it." xml:space="preserve">
-    <value>OpenBlade не удалось получить доступ к интерфейсу подсветки ноутбука. Возможно, его использует другое приложение для управления подсветкой.</value>
+    <value>Не удалось получить доступ к интерфейсу подсветки ноутбука. Возможно, его использует другое приложение для управления подсветкой.</value>
   </data>
   <data name="OpenBlade couldn’t complete that action. Check Troubleshooting for details." xml:space="preserve">
-    <value>OpenBlade не удалось выполнить это действие. Подробнее см. в разделе «Устранение неполадок».</value>
+    <value>Не удалось выполнить это действие. Подробнее см. в разделе «Устранение неполадок».</value>
   </data>
   <data name="OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available." xml:space="preserve">
-    <value>OpenBlade не удалось определить, использует ли другое приложение Razer интерфейс подсветки ноутбука. Элементы управления останутся отключёнными до получения доступа.</value>
+    <value>Не удалось определить, использует ли другое приложение Razer интерфейс подсветки ноутбука. Управление останется недоступным до получения доступа.</value>
   </data>
   <data name="OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override." xml:space="preserve">
-    <value>OpenBlade обнаружил поддерживаемый ноутбук с несовместимой прошивкой, поэтому элементы управления подсветкой недоступны, пока вы не включите переопределение прошивки.</value>
+    <value>Обнаружен поддерживаемый ноутбук с несовместимой прошивкой. Управление подсветкой будет недоступно, пока вы не разрешите принудительный запуск.</value>
   </data>
   <data name="OpenBlade has not tested this configuration: {0}." xml:space="preserve">
-    <value>OpenBlade не тестировал эту конфигурацию: {0}.</value>
+    <value>Эта конфигурация не проверена в OpenBlade: {0}.</value>
   </data>
   <data name="OpenBlade is checking the laptop before enabling lighting controls." xml:space="preserve">
-    <value>OpenBlade проверяет ноутбук перед включением элементов управления подсветкой.</value>
+    <value>Идёт проверка ноутбука перед включением управления подсветкой.</value>
   </data>
   <data name="OpenBlade is up to date." xml:space="preserve">
     <value>Установлена последняя версия OpenBlade.</value>
@@ -898,7 +898,7 @@
     <value>Только OpenBlade</value>
   </data>
   <data name="OpenBlade saved the change, but the laptop has not applied it." xml:space="preserve">
-    <value>OpenBlade сохранил изменение, но ноутбук его не применил.</value>
+    <value>Изменение сохранено в OpenBlade, но ноутбук его не применил.</value>
   </data>
   <data name="OpenBlade service isn’t running" xml:space="preserve">
     <value>Служба OpenBlade не запущена</value>
@@ -919,7 +919,7 @@
     <value>Наружу</value>
   </data>
   <data name="Pending: {0}" xml:space="preserve">
-    <value>Ожидается: {0}</value>
+    <value>Несохранённое значение: {0}</value>
   </data>
   <data name="Performance" xml:space="preserve">
     <value>Производительность</value>
@@ -943,7 +943,7 @@
     <value>Основной цвет</value>
   </data>
   <data name="Profile and battery power" xml:space="preserve">
-    <value>Профиль и питание от батареи</value>
+    <value>Профиль и мощность аккумулятора</value>
   </data>
   <data name="Random" xml:space="preserve">
     <value>Случайно</value>
@@ -964,7 +964,7 @@
     <value>Реактивная подсветка, {0}</value>
   </data>
   <data name="Read-only" xml:space="preserve">
-    <value>Только чтение</value>
+    <value>Только для чтения</value>
   </data>
   <data name="Ready" xml:space="preserve">
     <value>Готово</value>
@@ -1000,10 +1000,10 @@
     <value>Сохранить изменения профиля</value>
   </data>
   <data name="Save to AC profile" xml:space="preserve">
-    <value>Сохранить в профиль AC</value>
+    <value>Сохранить в профиль питания от сети</value>
   </data>
   <data name="Save to battery profile" xml:space="preserve">
-    <value>Сохранить в профиль батареи</value>
+    <value>Сохранить в профиль питания от аккумулятора</value>
   </data>
   <data name="Save to profile" xml:space="preserve">
     <value>Сохранить в профиль</value>
@@ -1051,22 +1051,22 @@
     <value>Тихий</value>
   </data>
   <data name="Spectrum Cycling" xml:space="preserve">
-    <value>Смена цветов спектра</value>
+    <value>Циклическая смена спектра</value>
   </data>
   <data name="Stable" xml:space="preserve">
     <value>Стабильный</value>
   </data>
   <data name="Starlight" xml:space="preserve">
-    <value>Звёздное сияние</value>
+    <value>Звёздный свет</value>
   </data>
   <data name="Starlight, one color, {0}" xml:space="preserve">
-    <value>Звёздное сияние, один цвет, {0}</value>
+    <value>Звёздный свет, один цвет, {0}</value>
   </data>
   <data name="Starlight, random colors, {0}" xml:space="preserve">
-    <value>Звёздное сияние, случайные цвета, {0}</value>
+    <value>Звёздный свет, случайные цвета, {0}</value>
   </data>
   <data name="Starlight, two colors, {0}" xml:space="preserve">
-    <value>Звёздное сияние, два цвета, {0}</value>
+    <value>Звёздный свет, два цвета, {0}</value>
   </data>
   <data name="Start at sign-in is unavailable: {0}" xml:space="preserve">
     <value>Запуск при входе недоступен: {0}</value>
@@ -1096,31 +1096,31 @@
     <value>Временное изменение не сохранено в этом профиле</value>
   </data>
   <data name="Temporary full charge active" xml:space="preserve">
-    <value>Временная полная зарядка активна</value>
+    <value>Временная зарядка до 100% включена</value>
   </data>
   <data name="Temporary full charge state unavailable" xml:space="preserve">
-    <value>Состояние временной полной зарядки недоступно</value>
+    <value>Состояние временной зарядки до 100% недоступно</value>
   </data>
   <data name="The active effect was set outside OpenBlade and cannot be read from firmware." xml:space="preserve">
     <value>Активный эффект был задан вне OpenBlade и не может быть прочитан из прошивки.</value>
   </data>
   <data name="The display session agent is not responding." xml:space="preserve">
-    <value>Session Agent для дисплея не отвечает.</value>
+    <value>Агент сеанса для управления дисплеем не отвечает.</value>
   </data>
   <data name="The diagnostic saver returned an invalid result." xml:space="preserve">
-    <value>Средство сохранения диагностики вернуло недопустимый результат.</value>
+    <value>Модуль сохранения диагностики вернул некорректный результат.</value>
   </data>
   <data name="The exact admitted Razer driver lets Windows show its native brightness flyout. OpenBlade revalidates the exact device path for every key press. When the native path is unavailable, OpenBlade uses its own flyout." xml:space="preserve">
-    <value>Допущенный драйвер Razer, точно соответствующий устройству, позволяет Windows показывать системное всплывающее окно яркости. OpenBlade повторно проверяет точный путь к устройству при каждом нажатии клавиши. Если системный путь недоступен, OpenBlade использует собственное всплывающее окно.</value>
+    <value>Проверенный драйвер Razer, точно соответствующий этой модели, позволяет Windows показывать системный индикатор яркости. При каждом нажатии клавиши OpenBlade заново проверяет точный путь к устройству. Если системное управление недоступно, OpenBlade показывает собственный индикатор.</value>
   </data>
   <data name="Tidal" xml:space="preserve">
-    <value>Tidal</value>
+    <value>Прилив</value>
   </data>
   <data name="Tidal, inward" xml:space="preserve">
-    <value>Tidal, внутрь</value>
+    <value>Прилив, внутрь</value>
   </data>
   <data name="Tidal, outward" xml:space="preserve">
-    <value>Tidal, наружу</value>
+    <value>Прилив, наружу</value>
   </data>
   <data name="Top" xml:space="preserve">
     <value>Сверху</value>
@@ -1138,13 +1138,13 @@
     <value>Выключить подсветку</value>
   </data>
   <data name="Turn off battery protection" xml:space="preserve">
-    <value>Отключить защиту батареи</value>
+    <value>Отключить защиту аккумулятора</value>
   </data>
   <data name="Turn off HDR to change color profiles." xml:space="preserve">
     <value>Отключите HDR, чтобы изменить цветовой профиль.</value>
   </data>
   <data name="Turn the configured battery charge limit on or off." xml:space="preserve">
-    <value>Включайте или выключайте настроенный предел заряда батареи.</value>
+    <value>Включайте или выключайте настроенный предел заряда аккумулятора.</value>
   </data>
   <data name="Turn the laptop gaming mode on or off." xml:space="preserve">
     <value>Включайте или выключайте игровой режим ноутбука.</value>
@@ -1216,10 +1216,10 @@
     <value>VID {0} · PID {1}</value>
   </data>
   <data name="Waiting for power source" xml:space="preserve">
-    <value>Ожидание источника питания</value>
+    <value>Определение источника питания</value>
   </data>
   <data name="Waiting for the first live-reading check." xml:space="preserve">
-    <value>Ожидание первой проверки показаний в реальном времени.</value>
+    <value>Ожидание первых текущих показаний.</value>
   </data>
   <data name="Wave" xml:space="preserve">
     <value>Волна</value>
@@ -1240,13 +1240,13 @@
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
   <data name="Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies." xml:space="preserve">
-    <value>Клавиатурой управляет Windows Dynamic Lighting. OpenBlade не будет изменять яркость, эффекты или политики питания подсветки клавиатуры.</value>
+    <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows. OpenBlade не будет изменять яркость, эффекты и параметры отключения подсветки.</value>
   </data>
   <data name="Windows power mode" xml:space="preserve">
     <value>Режим питания Windows</value>
   </data>
   <data name="Fragment.BatteryProtection" xml:space="preserve">
-    <value>защита батареи</value>
+    <value>защита аккумулятора</value>
   </data>
   <data name="Fragment.Bottom" xml:space="preserve">
     <value>снизу</value>

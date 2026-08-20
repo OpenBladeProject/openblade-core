@@ -16,7 +16,7 @@
     <value>Выйти из OpenBlade?</value>
   </data>
   <data name="App_ExitDialog_KeepRunning" xml:space="preserve">
-    <value>Оставить фоновые функции включёнными</value>
+    <value>Продолжить работу в фоновом режиме</value>
   </data>
   <data name="App_ExitDialog_ShutDown" xml:space="preserve">
     <value>Завершить работу полностью</value>
@@ -40,7 +40,7 @@
     <value>Текущий режим: {0}</value>
   </data>
   <data name="App_PerformanceNotification_FailedBody" xml:space="preserve">
-    <value>OpenBlade не удалось применить выбранный режим.</value>
+    <value>Не удалось применить выбранный режим.</value>
   </data>
   <data name="App_PerformanceNotification_FailedTitle" xml:space="preserve">
     <value>Не удалось изменить режим производительности</value>
@@ -151,7 +151,7 @@
     <value>Закрыть приложения, использующие GPU NVIDIA</value>
   </data>
   <data name="MainWindow_ButtonCloseGPUApps.Content" xml:space="preserve">
-    <value>Закрыть приложения GPU</value>
+    <value>Закрыть приложения, использующие GPU</value>
   </data>
   <data name="MainWindow_ButtonCustomize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Настроить панель мониторинга</value>
@@ -316,10 +316,10 @@
     <value>Кривая GPU</value>
   </data>
   <data name="MainWindow_FirmwareOverride_CheckBox" xml:space="preserve">
-    <value>Игнорировать несовпадение прошивки и всё равно запустить</value>
+    <value>Игнорировать несовместимость прошивки и продолжить</value>
   </data>
   <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
-    <value>Принудительное управление может отправить записанные команды прошивке, для которой они не были проверены. Точная проверка идентификаторов ноутбука и USB по-прежнему обязательна.</value>
+    <value>Принудительное управление может отправить прошивке ранее записанные команды, которые на ней не проверялись. Проверка точных идентификаторов ноутбука и USB-устройства по-прежнему обязательна.</value>
   </data>
   <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Фиксированная скорость вентиляторов</value>
@@ -354,10 +354,10 @@
     <value>Закрыть приложения, использующие GPU NVIDIA?</value>
   </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
-    <value>Выбранные приложения освободили используемые ими движки GPU NVIDIA. Переход GPU в спящий режим может занять некоторое время.</value>
+    <value>Выбранные приложения прекратили использовать GPU NVIDIA. Переход GPU в спящий режим может занять некоторое время.</value>
   </data>
   <data name="MainWindow_GpuApps_ClosedTitle" xml:space="preserve">
-    <value>Приложения GPU закрыты</value>
+    <value>Приложения, использующие GPU, закрыты</value>
   </data>
   <data name="MainWindow_GpuApps_CountersUnavailable" xml:space="preserve">
     <value>Счётчики активности GPU Windows недоступны.</value>
@@ -378,7 +378,7 @@
     <value>Выбранные приложения были принудительно закрыты. Переход GPU в спящий режим может занять некоторое время.</value>
   </data>
   <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
-    <value>Приложения GPU принудительно закрыты</value>
+    <value>Приложения, использующие GPU, принудительно закрыты</value>
   </data>
   <data name="MainWindow_GpuApps_ForceConfirmationIntro" xml:space="preserve">
     <value>Эти приложения не закрылись. Принудительное закрытие может привести к потере несохранённой работы.
@@ -397,10 +397,10 @@
 </value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
-    <value>Нет приложений GPU для закрытия</value>
+    <value>Нет приложений, использующих GPU</value>
   </data>
   <data name="MainWindow_GpuApps_NoneUsingGpu" xml:space="preserve">
-    <value>Ни одно приложение текущего пользователя не удерживает движок GPU NVIDIA.</value>
+    <value>Ни одно приложение текущего пользователя сейчас не использует GPU NVIDIA.</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
     <value>
@@ -409,10 +409,10 @@
 </value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>Агенту сеанса не удалось выполнить операцию с приложением GPU: {0}</value>
+    <value>Агенту сеанса не удалось выполнить операцию с приложениями, использующими GPU: {0}</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
-    <value>Приложения GPU всё ещё работают</value>
+    <value>Приложения, использующие GPU, всё ещё работают</value>
   </data>
   <data name="MainWindow_GpuApps_SurvivorsHeading" xml:space="preserve">
     <value>Некоторые приложения не удалось закрыть:
@@ -441,10 +441,10 @@
     <value>Открыть документацию</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Открыть задачи GitHub</value>
+    <value>Открыть раздел Issues на GitHub</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenGitHubIssues.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>Открыть задачи GitHub</value>
+    <value>Открыть раздел Issues на GitHub</value>
   </data>
   <data name="MainWindow_HyperlinkButtonOpenOfficialRazerFirmwareSupportPage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Открыть официальную страницу поддержки прошивок Razer</value>
@@ -525,7 +525,7 @@
     <value>Яркость {0}%</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmBody" xml:space="preserve">
-    <value>В {0} используется эффект {1} с параметром {2}. При импорте он применяется через OpenBlade и сохраняется как несохранённое изменение активного профиля питания.</value>
+    <value>В файле {0} задан эффект «{1}» ({2}). После импорта OpenBlade применит его и оставит как несохранённое изменение в активном профиле питания.</value>
   </data>
   <data name="MainWindow_LightingImport_ConfirmTitle" xml:space="preserve">
     <value>Импортировать подсветку клавиатуры?</value>
@@ -540,7 +540,7 @@
     <value>Не удалось импортировать подсветку клавиатуры</value>
   </data>
   <data name="MainWindow_LightingImport_FileTooLarge" xml:space="preserve">
-    <value>Размер выбранного файла подсветки не может превышать {0}.</value>
+    <value>Размер выбранного файла подсветки не должен превышать {0}.</value>
   </data>
   <data name="MainWindow_LightingImport_ImportApplyButton" xml:space="preserve">
     <value>Импортировать и применить</value>
@@ -623,7 +623,7 @@
     <value>Ошибка операции</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
-    <value>OpenBlade не удалось сохранить выбранный файл JSON.</value>
+    <value>Не удалось сохранить выбранный JSON-файл.</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedTitle" xml:space="preserve">
     <value>Не удалось экспортировать профили</value>
@@ -692,7 +692,7 @@
     <value>Чтение или применение анимации запуска</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorAmbientAwarenessScreenRegion.AccessibleName" xml:space="preserve">
-    <value>Область экрана Ambient Awareness</value>
+    <value>Область экрана для эффекта «Цвета экрана»</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorAppAccentColor.AccessibleName" xml:space="preserve">
     <value>Акцентный цвет приложения</value>
@@ -710,7 +710,7 @@
     <value>Направление подсветки</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorLiveReadingsRefreshInterval.AccessibleName" xml:space="preserve">
-    <value>Интервал обновления показаний в реальном времени</value>
+    <value>Интервал обновления текущих показаний</value>
   </data>
   <data name="MainWindow_ResponsiveChoiceSelectorReactiveLightingDuration.AccessibleName" xml:space="preserve">
     <value>Длительность реактивной подсветки</value>
@@ -734,7 +734,7 @@
     <value>Параметры</value>
   </data>
   <data name="MainWindow_Shutdown_Content" xml:space="preserve">
-    <value>Это остановит приложение, помощник дисплея и службу оборудования. Чтобы снова включить их, откройте OpenBlade и выберите «Запустить службу» в разделе устранения неполадок.</value>
+    <value>Это остановит приложение, фоновый модуль дисплея и службу оборудования. Чтобы снова включить их, откройте OpenBlade и выберите «Запустить службу» в разделе устранения неполадок.</value>
   </data>
   <data name="MainWindow_Shutdown_FailedTitle" xml:space="preserve">
     <value>Не удалось завершить работу OpenBlade</value>
@@ -773,7 +773,7 @@
     <value>Остановить службы Razer</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledBody" xml:space="preserve">
-    <value>Windows не предоставила права администратора. OpenBlade не повторяла запрос.</value>
+    <value>Windows не предоставила права администратора. Повторный запрос не отправлялся.</value>
   </data>
   <data name="MainWindow_StopRazer_CanceledTitle" xml:space="preserve">
     <value>Остановка служб Razer отменена</value>
@@ -782,25 +782,25 @@
     <value>Проверка…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>Сейчас активны следующие известные службы контроллеров:
+    <value>Сейчас работают следующие известные службы управления:
 
 {0}
 
-После подтверждения OpenBlade заново проверит тот же проверенный список разрешённых служб и остановит все активные совпадения. Это не удаляет ПО Razer и не отключает запуск служб. ПО Razer может снова запустить службы, а зависящие от них функции до этого момента могут не работать.</value>
+После подтверждения OpenBlade снова проверит тот же проверенный список разрешённых служб и остановит те из них, которые по-прежнему работают. Это не удаляет ПО Razer и не отключает запуск служб. ПО Razer может снова запустить службы, а зависящие от них функции до этого момента могут не работать.</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>Остановить службы Razer?</value>
   </data>
   <data name="MainWindow_StopRazer_FailedTitle" xml:space="preserve">
-    <value>OpenBlade не удалось остановить службы Razer</value>
+    <value>Не удалось остановить службы Razer</value>
   </data>
   <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
     <value>
 
-Результат работы помощника был неопределённым, но повторное чтение подтверждает, что службы остановлены или больше не установлены.</value>
+Не удалось однозначно определить результат работы вспомогательного процесса, но повторная проверка подтверждает, что службы остановлены или больше не установлены.</value>
   </data>
   <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
-    <value>OpenBlade не обнаружила активных служб контроллеров Synapse или Chroma в проверенном списке разрешённых служб.</value>
+    <value>Активные службы управления Synapse или Chroma из проверенного списка не обнаружены.</value>
   </data>
   <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
     <value>Известные службы контроллеров Razer не запущены</value>
@@ -808,7 +808,7 @@
   <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
     <value>
 
-OpenBlade не повторяла запросы на остановку.</value>
+Повторные запросы на остановку не отправлялись.</value>
   </data>
   <data name="MainWindow_StopRazer_PartialTitle" xml:space="preserve">
     <value>Не удалось подтвердить остановку некоторых служб Razer</value>
@@ -831,7 +831,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Службы Razer остановлены</value>
   </data>
   <data name="MainWindow_StopRazer_UnconfirmedBody" xml:space="preserve">
-    <value>Запрос с повышенными правами завершён, но OpenBlade не удалось прочитать итоговое состояние службы. {0}</value>
+    <value>Запрос с повышенными правами завершён, но итоговое состояние служб определить не удалось. {0}</value>
   </data>
   <data name="MainWindow_StopRazer_UnconfirmedTitle" xml:space="preserve">
     <value>Состояние служб Razer не подтверждено</value>
@@ -966,16 +966,16 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Встроенный дисплей</value>
   </data>
   <data name="MainWindow_TextBlockBypassOnlyTheTestedFirmwareCheckFor.Text" xml:space="preserve">
-    <value>Обойти только проверку протестированной прошивки для точно поддерживаемой модели Razer Blade. Остальные проверки безопасности оборудования останутся включёнными.</value>
+    <value>Разрешить работу при несовпадении с протестированной версией прошивки только на Razer Blade, точная модель которого поддерживается. Остальные проверки безопасности оборудования останутся включёнными.</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending.Text" xml:space="preserve">
-    <value>Ожидают изменения</value>
+    <value>Есть несохранённые изменения</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending2.Text" xml:space="preserve">
-    <value>Ожидают изменения</value>
+    <value>Есть несохранённые изменения</value>
   </data>
   <data name="MainWindow_TextBlockChangesPending3.Text" xml:space="preserve">
-    <value>Ожидают изменения</value>
+    <value>Есть несохранённые изменения</value>
   </data>
   <data name="MainWindow_TextBlockChargeLimit.Text" xml:space="preserve">
     <value>Предел заряда</value>
@@ -999,13 +999,13 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Отметьте элементы для включения. Перетащите их в нужном порядке.</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue.Text" xml:space="preserve">
-    <value>Проверяет при запуске, когда наступает срок.</value>
+    <value>Проверка выполняется при запуске, если подошло время.</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue2.Text" xml:space="preserve">
-    <value>Проверяет при запуске, когда наступает срок.</value>
+    <value>Проверка выполняется при запуске, если подошло время.</value>
   </data>
   <data name="MainWindow_TextBlockChooseANewColorPairForEach.Text" xml:space="preserve">
-    <value>Выбирать новую пару цветов для каждого цикла Tidal.</value>
+    <value>Выбирать новую пару цветов для каждого цикла эффекта «Прилив».</value>
   </data>
   <data name="MainWindow_TextBlockChooseARefreshRateReportedByWindows.Text" xml:space="preserve">
     <value>Выберите частоту обновления, сообщаемую Windows, или используйте динамическую частоту обновления.</value>
@@ -1020,10 +1020,10 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Выберите, как долго нажатые клавиши остаются подсвеченными.</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>Выберите, как часто OpenBlade обновляет температуру, скорость вентиляторов и чистую мощность аккумулятора, пока окно открыто или указатель наведён на значок в области уведомлений.</value>
+    <value>Выберите, как часто OpenBlade обновляет температуру, скорость вентиляторов и мощность зарядки или разрядки аккумулятора, пока открыто окно или указатель наведён на значок в области уведомлений.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
-    <value>Выберите элементы управления и сведения в реальном времени, отображаемые при нажатии значка в области уведомлений.</value>
+    <value>Выберите элементы управления и текущие сведения, которые отображаются при нажатии значка в области уведомлений.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheEffectSSecondColor.Text" xml:space="preserve">
     <value>Выберите второй цвет эффекта.</value>
@@ -1035,16 +1035,16 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Выберите порядок страниц в левом меню.</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToThreeLiveReadingsShown.Text" xml:space="preserve">
-    <value>Выберите до трёх показаний в реальном времени для нижней части всплывающего окна.</value>
+    <value>Выберите до трёх текущих показаний для нижней части всплывающего окна.</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToTwoSlidersForThe.Text" xml:space="preserve">
     <value>Выберите до двух ползунков для закреплённой средней части всплывающего окна.</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhetherToShowTheAppName.Text" xml:space="preserve">
-    <value>Выберите, показывать ли имя приложения, профиль и сведения в реальном времени при наведении на значок в области уведомлений.</value>
+    <value>Выберите, показывать ли имя приложения, профиль и текущие сведения при наведении на значок в области уведомлений.</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichLiveReadingsAppearInThe.Text" xml:space="preserve">
-    <value>Выберите показания в реальном времени для сводки панели мониторинга.</value>
+    <value>Выберите текущие показания для сводки панели мониторинга.</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichPartOfTheDisplayColors.Text" xml:space="preserve">
     <value>Выберите область дисплея, цвета которой будут использоваться для клавиатуры.</value>
@@ -1143,7 +1143,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Экспорт диагностики</value>
   </data>
   <data name="MainWindow_TextBlockFailedControlOperationsDetailsStayVisible.Text" xml:space="preserve">
-    <value>Неудачные операции управления. Сведения остаются видимыми.</value>
+    <value>Ошибки управления. Подробности остаются на экране.</value>
   </data>
   <data name="MainWindow_TextBlockFans.Text" xml:space="preserve">
     <value>Вентиляторы</value>
@@ -1170,7 +1170,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Следовать настройке Windows или всегда использовать светлую либо тёмную тему.</value>
   </data>
   <data name="MainWindow_TextBlockForceRunOnIncompatibleFirmware.Text" xml:space="preserve">
-    <value>Принудительно запускать с несовместимой прошивкой</value>
+    <value>Разрешить работу с несовместимой прошивкой</value>
   </data>
   <data name="MainWindow_TextBlockFunctionKeyBehavior.Text" xml:space="preserve">
     <value>Поведение функциональных клавиш</value>
@@ -1290,7 +1290,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Производительность ноутбука</value>
   </data>
   <data name="MainWindow_TextBlockLatestRelease.Text" xml:space="preserve">
-    <value>Последний выпуск</value>
+    <value>Последняя версия</value>
   </data>
   <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
     <value>Подсветка</value>
@@ -1308,7 +1308,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Лёгкое управление ноутбуками Razer Blade</value>
   </data>
   <data name="MainWindow_TextBlockLiveReadings.Text" xml:space="preserve">
-    <value>Показания в реальном времени</value>
+    <value>Текущие показания</value>
   </data>
   <data name="MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text" xml:space="preserve">
     <value>Загрузите файл подсветки клавиатуры OpenBlade или Razer Chroma.</value>
@@ -1326,13 +1326,13 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Меню навигации</value>
   </data>
   <data name="MainWindow_TextBlockNewOpenBladeReleases.Text" xml:space="preserve">
-    <value>Новые выпуски OpenBlade.</value>
+    <value>Новые версии OpenBlade.</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerBIOSECOrMCUFirmware.Text" xml:space="preserve">
     <value>Новые прошивки BIOS, EC или MCU от Razer.</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
-    <value>Новые контроллеры Razer. Предупреждения остаются видимыми.</value>
+    <value>Обнаружены новые контроллеры Razer. Предупреждения остаются на экране.</value>
   </data>
   <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
     <value>Уведомления</value>
@@ -1371,7 +1371,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Запущено другое ПО Razer</value>
   </data>
   <data name="MainWindow_TextBlockOverrideExternalLightingChanges.Text" xml:space="preserve">
-    <value>Переопределять внешние изменения подсветки</value>
+    <value>Восстанавливать подсветку после изменений из других приложений</value>
   </data>
   <data name="MainWindow_TextBlockPerformance.Text" xml:space="preserve">
     <value>Производительность</value>
@@ -1437,7 +1437,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Примечания к выпуску</value>
   </data>
   <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>Более плавно отрисовывать поддерживаемые эффекты на допущенных клавиатурах.</value>
+    <value>Плавнее воспроизводить поддерживаемые эффекты на проверенных клавиатурах.</value>
   </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>Сообщить о проблеме</value>
@@ -1503,7 +1503,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Исходный код</value>
   </data>
   <data name="MainWindow_TextBlockStableOffersNormalReleasesNightlyOffersThe.Text" xml:space="preserve">
-    <value>Канал Stable предлагает обычные выпуски. Канал Nightly предлагает новейшую автоматическую тестовую сборку.</value>
+    <value>Stable содержит обычные выпуски, а Nightly — самые новые автоматически собранные тестовые версии.</value>
   </data>
   <data name="MainWindow_TextBlockStarlightColors.Text" xml:space="preserve">
     <value>Цвета эффекта «Звёздный свет»</value>
@@ -1536,7 +1536,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Строка состояния</value>
   </data>
   <data name="MainWindow_TextBlockStopTheAppDisplayHelperAndHardware.Text" xml:space="preserve">
-    <value>Остановить приложение, помощник дисплея и службу оборудования. OpenBlade можно снова запустить из раздела устранения неполадок.</value>
+    <value>Остановить приложение, фоновый модуль дисплея и службу оборудования. OpenBlade можно снова запустить из раздела устранения неполадок.</value>
   </data>
   <data name="MainWindow_TextBlockSupport.Text" xml:space="preserve">
     <value>Поддержка</value>
@@ -1554,13 +1554,13 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Подсказка при наведении на панель задач</value>
   </data>
   <data name="MainWindow_TextBlockTemporaryFullCharge.Text" xml:space="preserve">
-    <value>Временная полная зарядка</value>
+    <value>Временная зарядка до 100%</value>
   </data>
   <data name="MainWindow_TextBlockTheFirstSixControlsRemainVisibleAny.Text" xml:space="preserve">
     <value>Первые шесть элементов управления остаются видимыми. Дополнительные элементы прокручиваются во всплывающем окне.</value>
   </data>
   <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
-    <value>Здесь показаны параметры, сохранённые в каждом профиле. Точка отмечает значение с ожидающим изменением; наведите на неё, чтобы просмотреть новое значение.</value>
+    <value>Здесь показаны параметры, сохранённые в каждом профиле. Точка отмечает несохранённое изменение; наведите на неё, чтобы просмотреть новое значение.</value>
   </data>
   <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
     <value>Thunderbolt 5</value>
@@ -1611,7 +1611,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Использовать более горячий датчик для обоих вентиляторов</value>
   </data>
   <data name="MainWindow_TextBlockUseWindowsForKeyboardEffectsAndBrightness.Text" xml:space="preserve">
-    <value>Использовать Windows для управления эффектами и яркостью клавиатуры.</value>
+    <value>Передать Windows управление эффектами и яркостью подсветки клавиатуры.</value>
   </data>
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
     <value>VBIOS</value>
@@ -1629,7 +1629,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Просмотрите загрузки прошивок и сведения о выпусках на сайте Razer.</value>
   </data>
   <data name="MainWindow_TextBlockViewLiveConnectionAndControlDetails.Text" xml:space="preserve">
-    <value>Просмотрите сведения о подключении и управлении в реальном времени.</value>
+    <value>Просмотрите текущие сведения о подключении и управлении.</value>
   </data>
   <data name="MainWindow_TextBlockWhenOffOpenBladeYieldsKeyboardLightingTo.Text" xml:space="preserve">
     <value>Когда параметр выключен, OpenBlade передаёт управление подсветкой клавиатуры Synapse. Включите его, чтобы повторно применять последний эффект OpenBlade после внешнего изменения.</value>
@@ -1656,7 +1656,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Панель мониторинга пуста</value>
   </data>
   <data name="MainWindow_ToggleSwitchAlwaysOverrideExternalLightingChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Всегда переопределять внешние изменения подсветки</value>
+    <value>Всегда восстанавливать подсветку после изменений из других приложений</value>
   </data>
   <data name="MainWindow_ToggleSwitchBlockAltTabInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Блокировать Alt+Tab в игровом режиме</value>
@@ -1665,7 +1665,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Блокировать клавишу Windows в игровом режиме</value>
   </data>
   <data name="MainWindow_ToggleSwitchForceRunOnIncompatibleFirmware.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Принудительно запускать с несовместимой прошивкой</value>
+    <value>Разрешить работу с несовместимой прошивкой</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenAnOpenBladeOperationFails.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Уведомлять об ошибке операции OpenBlade</value>
@@ -1686,7 +1686,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Уведомлять об изменении режима производительности</value>
   </data>
   <data name="MainWindow_ToggleSwitchRandomTidalColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Случайные цвета Tidal</value>
+    <value>Случайные цвета эффекта «Прилив»</value>
   </data>
   <data name="MainWindow_ToggleSwitchStartOpenBladeWhenISignIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Запускать OpenBlade при входе в систему</value>
@@ -1710,7 +1710,7 @@ OpenBlade не повторяла запросы на остановку.</value
     <value>Проверять обновления OpenBlade?</value>
   </data>
   <data name="MainWindow_WindowsDynamicLightingToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Разрешить динамическому освещению Windows управлять клавиатурой</value>
+    <value>Разрешить функции «Динамическое освещение» Windows управлять клавиатурой</value>
   </data>
   <data name="MainWindow_WindowsPowerModeSelectorText.AccessibleName" xml:space="preserve">
     <value>Режим питания Windows</value>
