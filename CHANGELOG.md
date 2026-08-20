@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
+  labels in Simplified Chinese and Russian instead of falling back to English.
+
 ### Added
 
 - Added a fail-closed padless HyperBoost admission path on RZ09-0581. The

@@ -8035,6 +8035,32 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HyperBoostActive);
     }
 
+    [Theory]
+    [InlineData(
+        "zh-CN",
+        "HyperBoost 已验证可在不连接散热垫的情况下使用。启用前请设为平衡模式、笔记本风扇自动模式，并连接已获准的全功率电源适配器。",
+        "后续更新将加入完整的散热垫集成支持。")]
+    [InlineData(
+        "ru-RU",
+        "Работа HyperBoost без охлаждающей подставки подтверждена. Перед включением выберите режим «Сбалансированный», автоматическое управление вентиляторами ноутбука и подключите разрешённый полноразмерный адаптер питания.",
+        "Полная интеграция с охлаждающей подставкой будет добавлена в одном из будущих обновлений.")]
+    public async Task HyperBoostCard_UsesSelectedLanguage(
+        string cultureName,
+        string expectedDescription,
+        string expectedDisclaimer)
+    {
+        using var culture = new CultureScope(cultureName);
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false)));
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+
+        Assert.Equal(expectedDescription, viewModel.HyperBoostDescription);
+        Assert.Equal(expectedDisclaimer, viewModel.HyperBoostCoolingPadDisclaimer);
+    }
+
     [Fact]
     public async Task HyperBoostPadlessEligibilityRefresh_FailsClosedWhenPadAppears()
     {

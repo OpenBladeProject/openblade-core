@@ -637,7 +637,8 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="HyperBoost"
+                                        <TextBlock x:Uid="MainWindow_TextBlockHyperBoost"
+                                                   Text="HyperBoost"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="{Binding HyperBoostDescription}"
                                                    Style="{StaticResource SecondaryTextStyle}"
@@ -653,10 +654,12 @@
                                                 Orientation="Horizontal"
                                                 Spacing="10"
                                                 VerticalAlignment="Center">
-                                        <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                        <ProgressRing x:Uid="MainWindow_ProgressRingApplyingHyperBoost"
+                                                      Style="{StaticResource FirmwareProgressRingStyle}"
                                                       IsActive="{Binding IsHyperBoostOperationInProgress}"
                                                       AutomationProperties.Name="Applying HyperBoost" />
                                         <ToggleSwitch x:Name="HyperBoostToggle"
+                                                      x:Uid="MainWindow_HyperBoostToggle"
                                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       MinWidth="0"
                                                       OffContent=""

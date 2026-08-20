@@ -28,6 +28,7 @@ public sealed class CapabilityPresentationTests
             Attribute(toggle, "IsOn"));
         Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
         Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
+        Assert.Equal("MainWindow_HyperBoostToggle", Attribute(toggle, "Uid"));
         Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
         Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
         XElement disclaimer = NamedElement(
@@ -46,8 +47,16 @@ public sealed class CapabilityPresentationTests
             card.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
         Assert.Equal(
+            "MainWindow_ProgressRingApplyingHyperBoost",
+            Attribute(progress, "Uid"));
+        Assert.Equal(
             "{Binding IsHyperBoostOperationInProgress}",
             Attribute(progress, "IsActive"));
+        XElement title = Assert.Single(
+            card.Descendants(),
+            element => element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") == "HyperBoost");
+        Assert.Equal("MainWindow_TextBlockHyperBoost", Attribute(title, "Uid"));
     }
 
     [Fact]

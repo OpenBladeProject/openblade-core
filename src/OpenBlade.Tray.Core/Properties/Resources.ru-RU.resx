@@ -1290,4 +1290,25 @@
   <data name="Fragment.Top" xml:space="preserve">
     <value>сверху</value>
   </data>
+  <data name="Active. OpenBlade will restore Balanced when HyperBoost is turned off." xml:space="preserve">
+    <value>Активно. При отключении HyperBoost OpenBlade восстановит режим «Сбалансированный».</value>
+  </data>
+  <data name="HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter." xml:space="preserve">
+    <value>Работа HyperBoost без охлаждающей подставки подтверждена. Перед включением выберите режим «Сбалансированный», автоматическое управление вентиляторами ноутбука и подключите разрешённый полноразмерный адаптер питания.</value>
+  </data>
+  <data name="Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required." xml:space="preserve">
+    <value>Перед включением HyperBoost отключите охлаждающую подставку. Требуются режим «Сбалансированный», автоматическое управление вентиляторами ноутбука и разрешённый полноразмерный адаптер питания.</value>
+  </data>
+  <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>Не удалось подтвердить отсутствие охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
+  </data>
+  <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
+    <value>HyperBoost без охлаждающей подставки обнаружен, но недоступен при текущем наборе подтверждающих данных.</value>
+  </data>
+  <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
+    <value>Функция обнаружена на этом ноутбуке, но текущих данных недостаточно, чтобы OpenBlade мог безопасно изменять её состояние.</value>
+  </data>
+  <data name="Full cooling-pad integration is planned for a future update." xml:space="preserve">
+    <value>Полная интеграция с охлаждающей подставкой будет добавлена в одном из будущих обновлений.</value>
+  </data>
 </root>
