@@ -582,6 +582,14 @@ public sealed class FirmwareUpdateAssistantViewModel :
         supportPage?.PublishesTouchpadFirmware == true
         && HasReadableFirmwareValue(installedFirmware?.TouchpadFirmwareVersion);
 
+    public bool ShowsFirmwareVersions =>
+        ShowsBiosFirmware
+        || ShowsEcFirmware
+        || ShowsMcuFirmware
+        || ShowsVbiosFirmware
+        || ShowsThunderboltFirmware
+        || ShowsTouchpadFirmware;
+
     public bool IsChecking
     {
         get => isChecking;
@@ -687,6 +695,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         Notify(nameof(ShowsVbiosInDeviceInformation));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
+        Notify(nameof(ShowsFirmwareVersions));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
         Notify(nameof(InstalledEcVersion));

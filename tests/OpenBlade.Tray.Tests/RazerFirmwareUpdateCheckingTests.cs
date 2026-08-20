@@ -371,6 +371,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
             new StubClient(new("3.01", "1.04", "1.06")));
+        var changedProperties = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
         viewModel.UpdateInstalledFirmware(new FirmwareVersions(
             "Unavailable",
             " ",
@@ -384,14 +386,18 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.False(viewModel.ShowsVbiosFirmware);
         Assert.False(viewModel.ShowsThunderboltFirmware);
         Assert.False(viewModel.ShowsTouchpadFirmware);
+        Assert.False(viewModel.ShowsFirmwareVersions);
+        Assert.Contains(nameof(viewModel.ShowsFirmwareVersions), changedProperties);
         Assert.True(viewModel.ShowsBiosInDeviceInformation);
         Assert.True(viewModel.ShowsEcInDeviceInformation);
         Assert.True(viewModel.ShowsMcuInDeviceInformation);
         Assert.True(viewModel.ShowsVbiosInDeviceInformation);
+        Assert.Contains(nameof(viewModel.ShowsBiosInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsEcInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsMcuInDeviceInformation), changedProperties);
+        Assert.Contains(nameof(viewModel.ShowsVbiosInDeviceInformation), changedProperties);
 
-        var changedProperties = new List<string?>();
-        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
-
+        changedProperties.Clear();
         viewModel.UpdateInstalledFirmware(new FirmwareVersions(
             "3.01",
             "1.04",
@@ -408,6 +414,8 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.True(viewModel.ShowsVbiosFirmware);
         Assert.True(viewModel.ShowsThunderboltFirmware);
         Assert.True(viewModel.ShowsTouchpadFirmware);
+        Assert.True(viewModel.ShowsFirmwareVersions);
+        Assert.Contains(nameof(viewModel.ShowsFirmwareVersions), changedProperties);
         Assert.False(viewModel.ShowsBiosInDeviceInformation);
         Assert.False(viewModel.ShowsEcInDeviceInformation);
         Assert.False(viewModel.ShowsMcuInDeviceInformation);

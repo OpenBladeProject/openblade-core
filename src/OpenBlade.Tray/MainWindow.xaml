@@ -4174,7 +4174,8 @@
                                 <Border x:Name="FirmwareVersionsSection"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="0,0,0,1"
-                                        Padding="16,14">
+                                        Padding="16,14"
+                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsFirmwareVersions, Mode=OneWay}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="2*" />
