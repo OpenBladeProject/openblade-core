@@ -1208,7 +1208,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
-        _ = Assert.Single(settings.Descendants(), element =>
+        XElement theme = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ResponsiveChoiceSelector"
             && Attribute(element, "AccessibleName") == "App theme");
         XElement language = Assert.Single(settings.Descendants(), element =>
@@ -1220,6 +1220,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
             Attribute(language, "SelectedItem"));
+        Assert.Equal("280", Attribute(theme, "CompactWidth"));
+        Assert.Equal(
+            Attribute(theme, "CompactWidth"),
+            Attribute(language, "CompactWidth"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]

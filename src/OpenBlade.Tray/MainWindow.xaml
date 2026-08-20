@@ -3461,7 +3461,7 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppTheme" Grid.Column="1"
-                                                                    CompactMinWidth="170"
+                                                                    CompactWidth="280"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App theme"
                                                                     ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
@@ -3476,14 +3476,14 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock x:Uid="MainWindow_TextBlockAppLanguage" Text="App language"
+                                        <TextBlock x:Uid="MainWindow_TextBlockAppLanguage" x:Name="AppLanguageHeading" Text="App language"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA" Text="Use your Windows display language, or choose a language. Restart OpenBlade to apply changes."
+                                        <TextBlock x:Uid="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA" x:Name="AppLanguageDescription" Text="Use your Windows display language, or choose a language. Changes apply immediately."
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppLanguage" Grid.Column="1"
-                                                                    CompactMinWidth="190"
+                                                                    CompactWidth="280"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App language"
                                                                     ItemsSource="{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}"
