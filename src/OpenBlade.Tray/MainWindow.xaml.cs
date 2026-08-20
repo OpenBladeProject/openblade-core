@@ -72,6 +72,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private ResponsiveChoiceSelector? windowsPowerModeSelector;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
+    private bool changingHyperBoost;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -2205,6 +2206,35 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             toggle.IsOn = ViewModel.IsGpuClockTuningEnabled;
             changingGpuClockTuning = false;
+        }
+    }
+
+    private async void OnHyperBoostToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleHyperBoostToggledAsync(sender),
+            nameof(OnHyperBoostToggled));
+
+    private async Task HandleHyperBoostToggledAsync(object sender)
+    {
+        if (changingHyperBoost
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.HyperBoostActive)
+        {
+            return;
+        }
+
+        changingHyperBoost = true;
+        try
+        {
+            await ViewModel.SetHyperBoostEnabledAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.HyperBoostActive;
+            changingHyperBoost = false;
         }
     }
 

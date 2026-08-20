@@ -12,6 +12,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   evidence is represented in the product, while production mutation remains
   unavailable until exact-head low-power and unexpected-exit lifecycle evidence
   is reviewed. Safety boundaries never retry an indeterminate write.
+- Presented padless HyperBoost status in Quick Controls and noted that full
+  cooling-pad integration is planned for a future update. The toggle remains
+  read-only until the production admission gates pass.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,

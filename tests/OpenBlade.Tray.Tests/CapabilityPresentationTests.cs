@@ -11,6 +11,46 @@ public sealed class CapabilityPresentationTests
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
 
     [Fact]
+    public void MainWindow_HyperBoostUsesCapabilityGatedConfirmedToggle()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "HyperBoostCard");
+        string presentation = card.ToString();
+
+        Assert.Equal(
+            "{Binding IsHyperBoostVisible}",
+            Attribute(card, "AnimatedVisibility.IsVisible"));
+        XElement toggle = Assert.Single(
+            card.Descendants(),
+            element => element.Name.LocalName == "ToggleSwitch");
+        Assert.Equal(
+            "{Binding HyperBoostActive, Mode=OneWay}",
+            Attribute(toggle, "IsOn"));
+        Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
+        Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
+        Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
+        XElement disclaimer = NamedElement(
+            document,
+            "TextBlock",
+            "HyperBoostCoolingPadDisclaimer");
+        Assert.Equal(
+            "{Binding HyperBoostCoolingPadDisclaimer}",
+            Attribute(disclaimer, "Text"));
+        Assert.Equal("Wrap", Attribute(disclaimer, "TextWrapping"));
+        Assert.Equal("Collapsed", Attribute(disclaimer, "Visibility"));
+        Assert.Equal(
+            "{Binding IsHyperBoostCoolingPadDisclaimerVisible}",
+            Attribute(disclaimer, "AnimatedVisibility.IsVisible"));
+        XElement progress = Assert.Single(
+            card.Descendants(),
+            element => element.Name.LocalName == "ProgressRing");
+        Assert.Equal(
+            "{Binding IsHyperBoostOperationInProgress}",
+            Attribute(progress, "IsActive"));
+    }
+
+    [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
@@ -311,7 +351,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(26, animated.Length);
+        Assert.Equal(28, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
