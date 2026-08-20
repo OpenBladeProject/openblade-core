@@ -8093,6 +8093,14 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline));
@@ -8111,22 +8119,29 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(
             viewModel.AvailablePerformancePresets,
             preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
+        Assert.True(viewModel.CanChangeFanMode);
+        changed.Clear();
 
         await viewModel.SetHyperBoostEnabledAsync(true, default);
+        await WaitUntilAsync(() => changed.Contains(nameof(viewModel.CanChangeFanMode)));
 
         Assert.True(client.HyperBoostEnabled);
         Assert.True(viewModel.HyperBoostActive);
         Assert.False(viewModel.CanEditPerformance);
         Assert.False(viewModel.CanEditFanControl);
+        Assert.False(viewModel.CanChangeFanMode);
         Assert.Contains(
             "restore Balanced",
             viewModel.HyperBoostDescription,
             StringComparison.OrdinalIgnoreCase);
+        changed.Clear();
 
         await viewModel.SetHyperBoostEnabledAsync(false, default);
+        await WaitUntilAsync(() => changed.Contains(nameof(viewModel.CanChangeFanMode)));
 
         Assert.False(client.HyperBoostEnabled);
         Assert.False(viewModel.HyperBoostActive);
+        Assert.True(viewModel.CanChangeFanMode);
     }
 
     [Theory]

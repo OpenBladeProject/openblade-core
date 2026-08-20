@@ -2527,6 +2527,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(HyperBoostDescription));
             Notify(nameof(CanEditPerformance));
             Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
             NotifyCommands();
         }
     }

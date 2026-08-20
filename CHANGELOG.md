@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Refreshed the fan-mode selector immediately when HyperBoost activates or
+  exits so its enabled state stays synchronized with the authoritative control
+  gate.
 - Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
   labels in Simplified Chinese and Russian instead of falling back to English.
 - Wired the HyperBoost ownership journal into the production Service composition
