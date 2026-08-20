@@ -33,8 +33,8 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
         {
             NamedPipeServerStream connected = currentPipe
                 ?? throw new ObjectDisposedException(nameof(SessionDisplayPipeServer));
-            if (!await SessionAgentPipeOwner.WaitForConnectionAsync(
-                    connected,
+            if (!await SessionAgentPipeAccept.TryAcceptAsync(
+                    connected.WaitForConnectionAsync,
                     cancellationToken).ConfigureAwait(false))
             {
                 return;

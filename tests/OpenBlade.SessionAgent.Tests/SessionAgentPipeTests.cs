@@ -66,26 +66,29 @@ public sealed class SessionAgentPipeTests
     }
 
     [Fact]
-    public void WaitCancellation_ClassifiesClosedPipeOnlyAfterCancellationRequested()
+    public async Task TryAcceptAsync_CanceledIOExceptionCompletesNormally()
     {
         using var cancellation = new CancellationTokenSource();
-        var closedPipe = new IOException("The pipe is being closed.");
-
-        Assert.False(SessionAgentPipeOwner.IsExpectedWaitCancellation(
-            closedPipe,
-            cancellation.Token));
-
         cancellation.Cancel();
 
-        Assert.True(SessionAgentPipeOwner.IsExpectedWaitCancellation(
-            closedPipe,
-            cancellation.Token));
-        Assert.True(SessionAgentPipeOwner.IsExpectedWaitCancellation(
-            new OperationCanceledException(cancellation.Token),
-            cancellation.Token));
-        Assert.False(SessionAgentPipeOwner.IsExpectedWaitCancellation(
-            new InvalidOperationException("unexpected failure"),
-            cancellation.Token));
+        bool accepted = await SessionAgentPipeAccept.TryAcceptAsync(
+            _ => Task.FromException(new IOException("The pipe is being closed.")),
+            cancellation.Token);
+
+        Assert.False(accepted);
+    }
+
+    [Fact]
+    public async Task TryAcceptAsync_UnexpectedIOExceptionRemainsObservable()
+    {
+        var expected = new IOException("unexpected accept failure");
+
+        IOException actual = await Assert.ThrowsAsync<IOException>(() =>
+            SessionAgentPipeAccept.TryAcceptAsync(
+                _ => Task.FromException(expected),
+                CancellationToken.None));
+
+        Assert.Same(expected, actual);
     }
 
     [Fact]
