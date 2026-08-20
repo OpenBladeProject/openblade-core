@@ -1290,4 +1290,25 @@
   <data name="Fragment.Top" xml:space="preserve">
     <value>[!! tóp ~~ !!]</value>
   </data>
+  <data name="Active. OpenBlade will restore Balanced when HyperBoost is turned off." xml:space="preserve">
+    <value>[!! Áctívé. OpenBlade wíll réstóré Báláncéd whén HýpérBóóst ís túrnéd óff. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter." xml:space="preserve">
+    <value>[!! HýpérBóóst ís válídátéd wíthóút thé cóólíng pád. Stárt fróm Báláncéd wíth Áútómátíc láptóp fáns ánd án ádmíttéd fúll-pówér ádáptér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required." xml:space="preserve">
+    <value>[!! Díscónnéct thé cóólíng pád béfóré énáblíng HýpérBóóst. Báláncéd módé, Áútómátíc láptóp fáns, ánd án ádmíttéd fúll-pówér ádáptér áré réqúíréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>[!! Cóólíng-pád ábséncé cóúld nót bé cónfírméd. Réfrésh thé láptóp státé béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
+    <value>[!! Pád-léss HýpérBóóst ís détéctéd bút ís nót áváíláblé wíth thé cúrrént ádmíssíón évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
+    <value>[!! Détéctéd ón thís láptóp, bút OpenBlade cánnót sáfélý chángé ít wíth thé cúrrént évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Full cooling-pad integration is planned for a future update." xml:space="preserve">
+    <value>[!! Fúll cóólíng-pád íntégrátíón ís plánnéd fór á fútúré úpdáté. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

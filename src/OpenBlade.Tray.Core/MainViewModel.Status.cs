@@ -31,6 +31,7 @@ public sealed partial class MainViewModel
         && left.LightingOverride == right.LightingOverride
         && left.BatteryPolicyOverride == right.BatteryPolicyOverride
         && left.BatteryProtectionOverride == right.BatteryProtectionOverride
+        && left.PadlessHyperBoostEligibility == right.PadlessHyperBoostEligibility
         && left.FullChargeOverride == right.FullChargeOverride
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
@@ -64,6 +65,10 @@ public sealed partial class MainViewModel
             && left.CpuPowerLimit == right.CpuPowerLimit
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
+            && left.HyperBoostAccess == right.HyperBoostAccess
+            && left.HyperBoostWithoutCoolingPadAccess
+                == right.HyperBoostWithoutCoolingPadAccess
+            && left.HyperBoostBaseModes == right.HyperBoostBaseModes
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess

@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Refreshed the fan-mode selector immediately when HyperBoost activates or
+  exits so its enabled state stays synchronized with the authoritative control
+  gate.
+- Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
+  labels in Simplified Chinese and Russian instead of falling back to English.
 - Wired the HyperBoost ownership journal into the production Service composition
   so a confirmed activation is durably recorded before lifecycle recovery is
   armed.
@@ -17,6 +22,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
   low-power, and unexpected-exit evidence now admits production use without
   the cooling pad. Safety boundaries never retry an indeterminate write.
+- Presented padless HyperBoost status in Quick Controls and noted that full
+  cooling-pad integration is planned for a future update. The toggle is
+  available only when the service reports reviewed write access.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,

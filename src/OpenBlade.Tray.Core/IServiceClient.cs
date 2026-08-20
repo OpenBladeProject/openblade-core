@@ -46,6 +46,13 @@ public interface IServiceClient : IServiceStatusWatcher
         PerformanceOverride? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "HyperBoost control is unavailable."));
+
     Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
         CancellationToken token);

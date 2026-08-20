@@ -305,6 +305,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private FanControlSettings? pendingFanControl;
     private bool isFanControlOperationInProgress;
     private bool isPerformanceOperationInProgress;
+    private bool isHyperBoostOperationInProgress;
+    private bool hyperBoostActive;
     private bool isLightingOperationInProgress;
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
@@ -988,6 +990,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1927,6 +1931,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyTrayHoverLabel();
@@ -2098,6 +2104,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanChangeFanMode));
             Notify(nameof(IsFixedFanSpeedVisible));
             Notify(nameof(IsManualFanCurveVisible));
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
         }
     }
 
@@ -2172,7 +2180,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanEditFanControl =>
         CanRequestHardwareControl
-        && !IsFanControlOperationInProgress;
+        && !IsFanControlOperationInProgress
+        && !HyperBoostActive;
 
     public bool CanChangeFanMode =>
         CanEditFanControl
@@ -2180,7 +2189,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || SelectedFanModeOption is null);
 
     public bool CanEditPerformance =>
-        CanRequestHardwareControl && !IsPerformanceOperationInProgress;
+        CanRequestHardwareControl
+        && !IsPerformanceOperationInProgress
+        && !HyperBoostActive;
 
     public bool CanEditGpuClockTuning =>
         CanToggleGpuClockTuning
@@ -2476,6 +2487,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanToggleGpuClockTuning));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(IsHyperBoostVisible));
+            Notify(nameof(IsHyperBoostWritable));
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
+            Notify(nameof(IsHyperBoostCoolingPadDisclaimerVisible));
+            Notify(nameof(HyperBoostCoolingPadDisclaimer));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
@@ -2488,6 +2505,86 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool HasOneShotLaptopControls => Capabilities.OneShotLaptopControls.Count > 0;
+
+    public bool IsHyperBoostVisible =>
+        Capabilities.HyperBoostWithoutCoolingPadAccess is not null;
+
+    public bool IsHyperBoostWritable =>
+        Capabilities.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite;
+
+    public bool HyperBoostActive
+    {
+        get => hyperBoostActive;
+        private set
+        {
+            if (hyperBoostActive == value)
+            {
+                return;
+            }
+
+            SetField(ref hyperBoostActive, value);
+            Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(HyperBoostDescription));
+            Notify(nameof(CanEditPerformance));
+            Notify(nameof(CanEditFanControl));
+            Notify(nameof(CanChangeFanMode));
+            NotifyCommands();
+        }
+    }
+
+    public bool IsHyperBoostOperationInProgress
+    {
+        get => isHyperBoostOperationInProgress;
+        private set
+        {
+            if (isHyperBoostOperationInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isHyperBoostOperationInProgress, value);
+            Notify(nameof(CanToggleHyperBoost));
+        }
+    }
+
+    public bool CanToggleHyperBoost =>
+        CanMutate
+        && !IsRetainedPowerSourceRecheck(latestStatus)
+        && IsHyperBoostWritable
+        && !IsHyperBoostOperationInProgress
+        && (HyperBoostActive
+            || ActivePowerSource == PowerSource.PluggedIn
+                && SelectedPerformance == PerformancePreset.Balanced
+                && Capabilities.HyperBoostBaseModes?.AccessFor(SelectedPerformance)
+                    == DeviceFeatureAccess.ReadWrite
+                && SelectedFanMode == FanMode.Automatic
+                && latestStatus?.PadlessHyperBoostEligibility
+                    == PadlessHyperBoostEligibilityState.CoolingPadAbsent);
+
+    public string HyperBoostDescription => IsHyperBoostWritable
+        ? HyperBoostActive
+            ? TrayText.Get(
+                "Active. OpenBlade will restore Balanced when HyperBoost is turned off.")
+            : latestStatus?.PadlessHyperBoostEligibility switch
+            {
+                PadlessHyperBoostEligibilityState.CoolingPadAbsent => TrayText.Get(
+                    "HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter."),
+                PadlessHyperBoostEligibilityState.CoolingPadPresent => TrayText.Get(
+                    "Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required."),
+                _ => TrayText.Get(
+                    "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost."),
+            }
+        : Capabilities.HyperBoostWithoutCoolingPadAccess
+            == DeviceFeatureAccess.ObservedOnly
+            ? TrayText.Get(
+                "Pad-less HyperBoost is detected but is not available with the current admission evidence.")
+            : TrayText.Get(
+                "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.");
+
+    public bool IsHyperBoostCoolingPadDisclaimerVisible => IsHyperBoostVisible;
+
+    public string HyperBoostCoolingPadDisclaimer =>
+        TrayText.Get("Full cooling-pad integration is planned for a future update.");
 
     public bool HasKeyboardLaptopControls =>
         SupportsFunctionKeyPrimary || SupportsGamingMode;
@@ -4057,6 +4154,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         parameter is PerformancePreset value
         && Enum.IsDefined(value)
         && !IsPerformanceOperationInProgress
+        && !HyperBoostActive
         && CanMutate
         && HasConfirmedPowerSource
         && CommandCapabilities.PerformancePresets.Contains(value)
@@ -4068,6 +4166,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CommandCapabilities.CustomPerformance?.Supports(value) != false
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
+        && !HyperBoostActive
         && CanMutate
         && HasConfirmedPowerSource;
 
@@ -4137,6 +4236,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (parameter is not FanMode value
             || !Enum.IsDefined(value)
             || IsFanControlOperationInProgress
+            || HyperBoostActive
             || !CanMutate
             || !HasConfirmedPowerSource
             || !CommandCapabilities.FanModes.Contains(value))
@@ -4549,6 +4649,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool checkingLaptopConnection)
     {
         UpdateOneShotReadbacks(status);
+        HyperBoostActive = confirmed?.HyperBoostActive is true;
         SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
@@ -5453,6 +5554,37 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return ApplyGpuClockTuningAsync(
             new GpuClockTuningSettings(enabled, CurrentGpuClockOffsets),
             token);
+    }
+
+    public async Task SetHyperBoostEnabledAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        if (!CanToggleHyperBoost || enabled == HyperBoostActive)
+        {
+            throw new InvalidOperationException("HyperBoost control is unavailable.");
+        }
+
+        IsHyperBoostOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetHyperBoostAsync(
+                    enabled,
+                    cancellationToken),
+                token,
+                result =>
+                {
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        HyperBoostActive = enabled;
+                    }
+                });
+        }
+        finally
+        {
+            IsHyperBoostOperationInProgress = false;
+        }
     }
 
     public Task SetGpuClockOffsetsAsync(
@@ -9112,6 +9244,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || capabilities.ChargeLimits.Count > 0
         || capabilities.SupportsBatteryProtectionOff
         || capabilities.SupportsTemporaryFullCharge
+        || capabilities.HyperBoostAccess is not null
+        || capabilities.HyperBoostWithoutCoolingPadAccess is not null
         || capabilities.LogoLightingModes.Count > 0
         || capabilities.OneShotLaptopControls.Count > 0;
 
@@ -9127,6 +9261,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanEditWindowsPowerMode));
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));
+        Notify(nameof(IsHyperBoostVisible));
+        Notify(nameof(IsHyperBoostWritable));
+        Notify(nameof(CanToggleHyperBoost));
+        Notify(nameof(HyperBoostDescription));
+        Notify(nameof(IsHyperBoostCoolingPadDisclaimerVisible));
         Notify(nameof(CanEditFanControl));
         Notify(nameof(CanChangeFanMode));
         NotifyGamingModeKeyPolicy();
