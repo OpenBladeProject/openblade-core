@@ -1623,6 +1623,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             ? "{0} This is a compatibility notice, not a hardware failure. The firmware override is enabled, and OpenBlade is checking control access."
                             : "{0} This is a compatibility notice, not a hardware failure. Controls remain blocked unless you explicitly enable the firmware override.",
                         warning)
+                    : latestStatus?.DeviceVerified != true
+                        ? TrayText.Format(
+                            "{0} {1}",
+                            warning,
+                            TrayText.Get(
+                                "Laptop controls are currently unavailable. Check Troubleshooting for details."))
                     : TrayText.Format(
                         "{0} This is a compatibility notice, not a hardware failure. Controls remain available, but behavior may differ.",
                         warning);

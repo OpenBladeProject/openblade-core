@@ -312,7 +312,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 featureLengthMatches +=
                     handleIdentity.FeatureReportByteLength == exactIdentity.FeatureReportByteLength ? 1 : 0;
 
-                if (handleIdentity == exactIdentity)
+                if (MatchesOperationalIdentity(handleIdentity, exactIdentity))
                 {
                     exactMatches.Add(candidate);
                     fallbackExactMatches += usedAccessFallback ? 1 : 0;
@@ -337,6 +337,15 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             ? BatteryValidationProbeStage.Ready
             : BatteryValidationProbeStage.Cardinality;
         return new HidEvidenceEvaluation(Build(stage, classification), exactMatches);
+
+        static bool MatchesOperationalIdentity(
+            HidHandleIdentity candidate,
+            HidHandleIdentity expected) =>
+            candidate.VendorId == expected.VendorId
+            && candidate.ProductId == expected.ProductId
+            && candidate.UsagePage == expected.UsagePage
+            && candidate.Usage == expected.Usage
+            && candidate.FeatureReportByteLength == expected.FeatureReportByteLength;
 
         HidEvidenceEvaluation FinishFailure(
             BatteryValidationProbeStage stage,

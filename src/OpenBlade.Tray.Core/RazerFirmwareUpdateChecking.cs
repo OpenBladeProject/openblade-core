@@ -384,13 +384,28 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
 public sealed class FirmwareUpdateAvailableEventArgs(
     string signature,
     string summary,
-    Uri officialSupportUri) : EventArgs
+    Uri officialSupportUri,
+    string? legacySignature = null,
+    bool includesThunderboltOrTouchpadUpdate = false) : EventArgs
 {
     public string Signature { get; } = signature;
+
+    public string? LegacySignature { get; } = legacySignature;
+
+    public bool IncludesThunderboltOrTouchpadUpdate { get; } =
+        includesThunderboltOrTouchpadUpdate;
 
     public string Summary { get; } = summary;
 
     public Uri OfficialSupportUri { get; } = officialSupportUri;
+
+    public bool CanMigrateLegacySignature(string? persistedSignature) =>
+        !IncludesThunderboltOrTouchpadUpdate
+        && LegacySignature is not null
+        && string.Equals(
+            persistedSignature,
+            LegacySignature,
+            StringComparison.Ordinal);
 }
 
 public sealed class FirmwareUpdateAssistantViewModel :
@@ -539,13 +554,33 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
     public bool IsSupported => supportPage is not null;
 
+    public bool ShowsBiosFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.BiosVersion);
+
+    public bool ShowsEcFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.EcVersion);
+
+    public bool ShowsMcuFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.McuVersion);
+
+    public bool ShowsVbiosFirmware =>
+        HasReadableFirmwareValue(installedFirmware?.VbiosVersion);
+
+    public bool ShowsBiosInDeviceInformation => !IsSupported || !ShowsBiosFirmware;
+
+    public bool ShowsEcInDeviceInformation => !IsSupported || !ShowsEcFirmware;
+
+    public bool ShowsMcuInDeviceInformation => !IsSupported || !ShowsMcuFirmware;
+
+    public bool ShowsVbiosInDeviceInformation => !IsSupported || !ShowsVbiosFirmware;
+
     public bool ShowsThunderboltFirmware =>
-        supportPage?.PublishesThunderboltFirmware == true;
+        supportPage?.PublishesThunderboltFirmware == true
+        && HasReadableFirmwareValue(installedFirmware?.ThunderboltFirmwareVersion);
 
-    public bool ShowsTouchpadFirmware => supportPage?.PublishesTouchpadFirmware == true;
-
-    public bool ShowsPublishedOnlyFirmwareNotice =>
-        ShowsThunderboltFirmware || ShowsTouchpadFirmware;
+    public bool ShowsTouchpadFirmware =>
+        supportPage?.PublishesTouchpadFirmware == true
+        && HasReadableFirmwareValue(installedFirmware?.TouchpadFirmwareVersion);
 
     public bool IsChecking
     {
@@ -642,9 +677,16 @@ public sealed class FirmwareUpdateAssistantViewModel :
         installedFirmware = firmware;
         supportPage = nextPage;
         Notify(nameof(IsSupported));
+        Notify(nameof(ShowsBiosFirmware));
+        Notify(nameof(ShowsEcFirmware));
+        Notify(nameof(ShowsMcuFirmware));
+        Notify(nameof(ShowsVbiosFirmware));
+        Notify(nameof(ShowsBiosInDeviceInformation));
+        Notify(nameof(ShowsEcInDeviceInformation));
+        Notify(nameof(ShowsMcuInDeviceInformation));
+        Notify(nameof(ShowsVbiosInDeviceInformation));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
-        Notify(nameof(ShowsPublishedOnlyFirmwareNotice));
         Notify(nameof(OfficialSupportUri));
         Notify(nameof(InstalledBiosVersion));
         Notify(nameof(InstalledEcVersion));
@@ -822,6 +864,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 page.PublishesTouchpadFirmware
                     ? versions.TouchpadStatus
                     : RazerPublishedFirmwareVersionStatus.NotListed;
+            RazerPublishedFirmwareVersions applicableVersions = versions with
+            {
+                ThunderboltVersion = thunderboltVersion,
+                ThunderboltStatus = thunderboltStatus,
+                TouchpadVersion = touchpadVersion,
+                TouchpadStatus = touchpadStatus,
+            };
             PublishedThunderboltVersion = PublishedValue(
                 thunderboltVersion,
                 thunderboltStatus);
@@ -840,7 +889,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             cachedVbiosStatus = vbios.Status;
             cachedThunderboltStatus = thunderboltStatus;
             cachedTouchpadStatus = touchpadStatus;
-            PresentUpdateAvailability(page, versions, vbios);
+            PresentUpdateAvailability(page, applicableVersions, vbios);
             lastSuccessfulCheckAt = timeProvider.GetUtcNow();
             retryAfter = null;
             Notify(nameof(LastSuccessfulCheckAt));
@@ -976,6 +1025,19 @@ public sealed class FirmwareUpdateAssistantViewModel :
             newerComponents,
             installedFirmware?.VbiosVersion,
             vbios.Version);
+        int standardComponentCount = newerComponents.Count;
+        AddNewerComponent(
+            newerComponents,
+            "Thunderbolt 5",
+            installedFirmware?.ThunderboltFirmwareVersion,
+            published.ThunderboltVersion);
+        AddNewerComponent(
+            newerComponents,
+            "Touchpad",
+            installedFirmware?.TouchpadFirmwareVersion,
+            published.TouchpadVersion);
+        bool includesThunderboltOrTouchpadUpdate =
+            newerComponents.Count > standardComponentCount;
 
         IsUpdateAvailable = newerComponents.Count > 0;
         UpdateAvailableSummary = IsUpdateAvailable
@@ -988,7 +1050,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             return;
         }
 
-        string signature = string.Join(
+        string legacySignature = string.Join(
             '|',
             page.ModelNumber,
             $"bios={NormalizeCachedVersion(published.BiosVersion) ?? "-"}",
@@ -996,12 +1058,19 @@ public sealed class FirmwareUpdateAssistantViewModel :
             $"mcu={NormalizeCachedVersion(published.McuVersion) ?? "-"}",
             $"vbios={NormalizeCachedVersion(vbios.Version) ?? "-"}",
             $"vbiosGpu={NormalizeVbiosGpuName(vbios.GpuName) ?? "-"}");
+        string signature = string.Join(
+            '|',
+            legacySignature,
+            $"thunderbolt={NormalizeCachedVersion(published.ThunderboltVersion) ?? "-"}",
+            $"touchpad={NormalizeCachedVersion(published.TouchpadVersion) ?? "-"}");
         UpdateAvailable?.Invoke(
             this,
             new FirmwareUpdateAvailableEventArgs(
                 signature,
                 UpdateAvailableSummary,
-                page.OfficialPageUri));
+                page.OfficialPageUri,
+                legacySignature,
+                includesThunderboltOrTouchpadUpdate));
     }
 
     private static void AddNewerComponent(
@@ -1257,10 +1326,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
     }
 
     private static string FirmwareValue(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            || string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase)
+        !HasReadableFirmwareValue(value)
             ? TrayText.Get("Unavailable")
-            : value.Trim();
+            : value!.Trim();
+
+    private static bool HasReadableFirmwareValue(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !string.Equals(value.Trim(), "Unavailable", StringComparison.OrdinalIgnoreCase);
 
     private static string PublishedValue(
         string? value,

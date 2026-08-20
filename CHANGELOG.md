@@ -15,9 +15,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   OpenBlade now carries the installed NVIDIA adapter identity through service
   status and diagnostics, selects only the matching official Razer VBIOS
   release, and declines comparison when either side cannot be identified.
-- Added exact-RZ09-0581 published Thunderbolt 5 and touchpad versions to the
-  firmware inventory as observed-only fields. Their installed versions remain
-  unavailable, so they never produce an update comparison or notification.
+- Added model-scoped RZ09-0581 Thunderbolt 5 and touchpad firmware comparison.
+  The service reads the exact Windows USB4 root-router property and PixArt
+  Precision Touchpad HID descriptor, fails closed on other models or ambiguous
+  identities, and reports updates only from trustworthy installed versions.
 - Added exact-RZ09-0581 BIOS 3.01 read-only diagnostics for the captured Synapse
   SKU hardware-configuration byte, Mini-LED panel-resolution byte, and thermal
   fan ID list. The raw values remain in the service's diagnostic cache and
@@ -56,6 +57,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   evidence provenance rather than runtime restrictions.
 - Advanced service IPC from 47 to 48 for the model-scoped firmware
   compatibility state.
+- The firmware comparison table now omits items whose installed version is
+  unavailable instead of showing non-actionable rows and a disclaimer.
+- Device Information now omits BIOS, EC, MCU, and VBIOS rows when the same
+  installed version is already visible in the firmware comparison table.
 - Tied each optional Windows power mode to a laptop performance preset instead
   of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
   transitions, and Fn+P now update Windows only after the laptop preset is
@@ -77,6 +82,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
+  admission, and corrected the platform warning shown while controls are
+  unavailable.
 - Preserved responsive selector bindings after Dashboard edits so switching
   between AC and battery cannot leave the laptop-performance dropdown blank or
   prevent it from expanding into horizontal choices when space is available.

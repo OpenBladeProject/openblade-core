@@ -1403,9 +1403,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockPublishedByRazer.Text" xml:space="preserve">
     <value>[!! Públíshéd bý Razer ~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockPublishedOnlyFirmwareNotice.Text" xml:space="preserve">
-    <value>[!! Públíshéd ónlý: OpenBlade cánnót réád thé ínstálléd Thúndérbólt 5 ór tóúchpád fírmwáré vérsíóns, só thésé válúés áré nót cómpáréd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockQuickControls.Text" xml:space="preserve">
     <value>[!! Qúíck cóntróls ~~~~~ !!]</value>
   </data>

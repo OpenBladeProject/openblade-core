@@ -14,7 +14,8 @@ internal readonly record struct HidHandleIdentity(
     ushort ProductId,
     ushort UsagePage,
     ushort Usage,
-    ushort FeatureReportByteLength);
+    ushort FeatureReportByteLength,
+    ushort VersionNumber = 0);
 
 internal readonly record struct HidCandidateOpenResult(
     OpenedCandidateHandle? Candidate,

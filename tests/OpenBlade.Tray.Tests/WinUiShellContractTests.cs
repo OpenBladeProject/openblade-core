@@ -1650,7 +1650,9 @@ public sealed class WinUiShellContractTests
             appHandler.IndexOf("lastNotifiedReleaseTag =", StringComparison.Ordinal)
                 > appHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
         Assert.True(
-            firmwareHandler.IndexOf("lastNotifiedFirmwareSignature =", StringComparison.Ordinal)
+            firmwareHandler.LastIndexOf(
+                "lastNotifiedFirmwareSignature =",
+                StringComparison.Ordinal)
                 > firmwareHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
         Assert.Contains("Func<TrayNotification, bool>", window, StringComparison.Ordinal);
 
@@ -1658,6 +1660,45 @@ public sealed class WinUiShellContractTests
         Assert.Contains("if (host is null)", app, StringComparison.Ordinal);
         Assert.Contains("return false;", app, StringComparison.Ordinal);
         Assert.Contains("return true;", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FirmwareNotificationUsesBehavioralLegacyMigrationGuard()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int handlerStart = window.IndexOf(
+            "private void OnFirmwareUpdateAvailable(",
+            StringComparison.Ordinal);
+        int handlerEnd = window.IndexOf(
+            "private void ApplyNotificationPreferences(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+
+        string handler = window[handlerStart..handlerEnd];
+        int legacyMatch = handler.IndexOf(
+            "args.CanMigrateLegacySignature(lastNotifiedFirmwareSignature)",
+            StringComparison.Ordinal);
+        int migration = handler.IndexOf(
+            "lastNotifiedFirmwareSignature = args.Signature;",
+            legacyMatch,
+            StringComparison.Ordinal);
+        int migrationSave = handler.IndexOf(
+            "QueuePreferenceSave();",
+            migration,
+            StringComparison.Ordinal);
+        int notification = handler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal);
+
+        Assert.True(
+            legacyMatch >= 0
+                && migration > legacyMatch
+                && migrationSave > migration
+                && notification > migrationSave,
+            "A legacy signature must migrate and return before notification delivery.");
+        Assert.Contains(
+            "return;",
+            handler[migrationSave..notification],
+            StringComparison.Ordinal);
     }
 
     [Fact]
