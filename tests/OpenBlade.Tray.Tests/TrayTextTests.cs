@@ -5,6 +5,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
 
+[Collection(LocalizationTestCollection.Name)]
 public sealed class TrayTextTests
 {
     [Fact]
@@ -128,6 +129,96 @@ public sealed class TrayTextTests
                 new HashSet<FanMode> { FanMode.Automatic })[0].Label);
     }
 
+    [Fact]
+    public void ExplicitLanguageOverrideWinsOverCapturedThreadCulture()
+    {
+        ExecutionContext? russianContext;
+        using (new CultureScope("ru-RU"))
+        {
+            russianContext = ExecutionContext.Capture();
+        }
+
+        Assert.NotNull(russianContext);
+        try
+        {
+            TrayLocalization.SetLanguageOverride("zh-CN");
+            ExecutionContext.Run(
+                russianContext,
+                _ =>
+                {
+                    Assert.Equal("ru-RU", CultureInfo.CurrentUICulture.Name);
+                    Assert.Equal("电池", TrayText.Get("Battery"));
+
+                    IReadOnlyList<FanModeOption> fanOptions =
+                        FanModePresentation.CreateOptions(
+                            new HashSet<FanMode> { FanMode.Automatic });
+                    Assert.Equal("自动", fanOptions[0].Label);
+
+                    var viewModel = new MainViewModel(
+                        new UnavailableClient(),
+                        new InlineDispatcher());
+                    try
+                    {
+                        Assert.Equal(
+                            "使用电池",
+                            viewModel.ProfileComparisonOptions.Single(
+                                option => option.Source == PowerSource.Battery).Label);
+                        Assert.Equal(
+                            "保持不变",
+                            viewModel.AvailableWindowsPowerModeOptions[0].Label);
+                        Assert.Equal(
+                            "保留当前 Windows 设置。",
+                            viewModel.AvailableWindowsPowerModeOptions[0].Description);
+                    }
+                    finally
+                    {
+                        viewModel.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    }
+                },
+                state: null);
+        }
+        finally
+        {
+            TrayLocalization.SetLanguageOverride(null);
+        }
+    }
+
+    [Fact]
+    public void TemporaryLanguageOverrideIsIsolatedAndExpiresAcrossCapturedContexts()
+    {
+        ExecutionContext? previousContext;
+        ExecutionContext? temporaryContext;
+        try
+        {
+            TrayLocalization.SetLanguageOverride("ru-RU");
+            previousContext = ExecutionContext.Capture();
+            Assert.NotNull(previousContext);
+
+            using (TrayLocalization.BeginTemporaryLanguageOverride("zh-CN"))
+            {
+                Assert.Equal("电池", TrayText.Get("Battery"));
+                ExecutionContext.Run(
+                    previousContext,
+                    _ => Assert.Equal("Батарея", TrayText.Get("Battery")),
+                    state: null);
+
+                temporaryContext = ExecutionContext.Capture();
+                Assert.NotNull(temporaryContext);
+                TrayLocalization.SetLanguageOverride("en-US");
+                Assert.Equal("电池", TrayText.Get("Battery"));
+            }
+
+            ExecutionContext.Run(
+                temporaryContext,
+                _ => Assert.Equal("Battery", TrayText.Get("Battery")),
+                state: null);
+        }
+        finally
+        {
+            TrayLocalization.SetLanguageOverride(null);
+        }
+    }
+
     private static Dictionary<string, string> ReadStrings(ResourceSet resources) =>
         resources.Cast<System.Collections.DictionaryEntry>()
             .ToDictionary(
@@ -145,6 +236,18 @@ public sealed class TrayTextTests
     {
         Assert.StartsWith("[!! ", pseudo, StringComparison.Ordinal);
         Assert.NotEqual(english, pseudo);
+    }
+
+    private sealed class UnavailableClient : OpenBlade.Testing.UnavailableServiceClient;
+
+    private sealed class InlineDispatcher : IUiDispatcher
+    {
+        public Task InvokeAsync(Action action, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            action();
+            return Task.CompletedTask;
+        }
     }
 
 }

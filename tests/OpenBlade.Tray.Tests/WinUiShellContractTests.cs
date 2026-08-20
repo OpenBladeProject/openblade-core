@@ -2159,8 +2159,15 @@ public sealed class WinUiShellContractTests
         Assert.True(refreshStart >= 0 && refreshStart < refreshEnd);
         string refresh = app[refreshStart..refreshEnd];
 
+        int tryBlock = refresh.IndexOf(
+            "        try",
+            StringComparison.Ordinal);
+        int temporaryOverride = refresh.IndexOf(
+            "TrayLocalization.BeginTemporaryLanguageOverride(replacementTrayLanguage)",
+            StringComparison.Ordinal);
         int apply = refresh.IndexOf(
-            "ApplyRuntimeLocalizationPreference(preference)",
+            "ApplyRuntimeLocalizationPreference(",
+            temporaryOverride,
             StringComparison.Ordinal);
         int create = refresh.IndexOf(
             "replacement = CreateMainWindow(registration, preference)",
@@ -2178,17 +2185,24 @@ public sealed class WinUiShellContractTests
         int commit = refresh.IndexOf(
             "replacementCommitted = true",
             StringComparison.Ordinal);
+        int commitTrayLanguage = refresh.IndexOf(
+            "TrayLocalization.SetLanguageOverride(replacementTrayLanguage)",
+            StringComparison.Ordinal);
         int disposePrevious = refresh.IndexOf(
             "await DisposeWindowSafelyAsync(previousWindow)",
             StringComparison.Ordinal);
         Assert.True(
-            apply >= 0
+            tryBlock >= 0
+            && tryBlock < temporaryOverride
+            && temporaryOverride < apply
             && apply < create
             && create < initialize
             && initialize < prepareSurfaces
             && prepareSurfaces < attach
-            && attach < commit
+            && attach < commitTrayLanguage
+            && commitTrayLanguage < commit
             && commit < disposePrevious);
+        Assert.Contains("commitTrayLanguage: false", refresh, StringComparison.Ordinal);
         Assert.Contains("CreateTrayIconHost(replacement)", refresh, StringComparison.Ordinal);
         Assert.Contains("replacementCommitted = true", refresh, StringComparison.Ordinal);
         Assert.Contains("if (replacementCommitted)", refresh, StringComparison.Ordinal);
