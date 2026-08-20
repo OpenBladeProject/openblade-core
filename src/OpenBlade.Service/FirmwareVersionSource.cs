@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Security;
 using Microsoft.Win32;
@@ -20,45 +21,93 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
 
     private readonly Func<string, string, object?> readRegistryValue;
     private readonly Func<IReadOnlyList<VideoFirmwareCandidate>> readVideoFirmwareCandidates;
+    private readonly Func<string?> readThunderboltFirmwareVersion;
+    private readonly Func<string?> readTouchpadFirmwareVersion;
 
     public WindowsFirmwareVersionSource()
-        : this(ReadRegistryValue, ReadVideoFirmwareCandidates)
+        : this(
+            ReadRegistryValue,
+            ReadVideoFirmwareCandidates,
+            WindowsDeviceFirmwareVersionReader.ReadThunderboltFirmwareVersion,
+            WindowsDeviceFirmwareVersionReader.ReadTouchpadFirmwareVersion)
     {
     }
 
     internal WindowsFirmwareVersionSource(
         Func<string, string, object?> readRegistryValue,
         Func<IReadOnlyList<VideoFirmwareCandidate>> readVideoFirmwareCandidates)
+        : this(readRegistryValue, readVideoFirmwareCandidates, () => null, () => null)
+    {
+    }
+
+    internal WindowsFirmwareVersionSource(
+        Func<string, string, object?> readRegistryValue,
+        Func<IReadOnlyList<VideoFirmwareCandidate>> readVideoFirmwareCandidates,
+        Func<string?> readThunderboltFirmwareVersion,
+        Func<string?> readTouchpadFirmwareVersion)
     {
         this.readRegistryValue = readRegistryValue
             ?? throw new ArgumentNullException(nameof(readRegistryValue));
         this.readVideoFirmwareCandidates = readVideoFirmwareCandidates
             ?? throw new ArgumentNullException(nameof(readVideoFirmwareCandidates));
+        this.readThunderboltFirmwareVersion = readThunderboltFirmwareVersion
+            ?? throw new ArgumentNullException(nameof(readThunderboltFirmwareVersion));
+        this.readTouchpadFirmwareVersion = readTouchpadFirmwareVersion
+            ?? throw new ArgumentNullException(nameof(readTouchpadFirmwareVersion));
     }
 
     public FirmwareVersions Capture()
     {
         VideoFirmwareCandidate? vbios = ReadVbiosFirmware();
         string modelNumber = ReadModelNumber();
-        bool hasObservedOnlyRz090581Components = string.Equals(
+        string biosVersion = ReadBiosVersion();
+        string ecVersion = ReadEcVersion();
+        bool isRz090581 = string.Equals(
             RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber,
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
             StringComparison.OrdinalIgnoreCase);
+        string thunderboltFirmwareVersion = isRz090581
+            ? ReadFirmwareVersion(readThunderboltFirmwareVersion)
+            : Unavailable;
+        string touchpadFirmwareVersion = isRz090581
+            ? ReadFirmwareVersion(readTouchpadFirmwareVersion)
+            : Unavailable;
         return new(
-            ReadBiosVersion(),
-            ReadEcVersion(),
+            biosVersion,
+            ecVersion,
             Unavailable,
             vbios?.BiosVersion ?? Unavailable,
             modelNumber,
             vbios?.AdapterName ?? Unavailable,
-            Unavailable,
-            Unavailable,
-            hasObservedOnlyRz090581Components
-                ? DeviceFeatureAccess.ObservedOnly
+            thunderboltFirmwareVersion,
+            touchpadFirmwareVersion,
+            isRz090581
+                ? DeviceFeatureAccess.ReadOnly
                 : null,
-            hasObservedOnlyRz090581Components
-                ? DeviceFeatureAccess.ObservedOnly
+            isRz090581
+                ? DeviceFeatureAccess.ReadOnly
                 : null);
+    }
+
+    private static string ReadFirmwareVersion(Func<string?> readVersion)
+    {
+        try
+        {
+            string? value = readVersion();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return Unavailable;
+            }
+
+            string normalized = value.Trim();
+            return Version.TryParse(normalized, out _)
+                ? normalized
+                : Unavailable;
+        }
+        catch (Exception exception) when (IsSafeMetadataFailure(exception))
+        {
+            return Unavailable;
+        }
     }
 
     private string ReadModelNumber()
@@ -227,5 +276,5 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
     }
 
     private static bool IsSafeMetadataFailure(Exception exception) => exception is
-        IOException or UnauthorizedAccessException or SecurityException;
+        IOException or UnauthorizedAccessException or SecurityException or Win32Exception;
 }

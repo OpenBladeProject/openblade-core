@@ -9,6 +9,7 @@ using Microsoft.Windows.Globalization;
 using OpenBlade.Contracts;
 using OpenBlade.Platform;
 using OpenBlade.Session;
+using Windows.Graphics;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using WinRT.Interop;
@@ -36,6 +37,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
         "--responsive-choice-selector-smoke";
+    private const string LiveLocalizationSmokeArgument =
+        "--live-localization-smoke";
     private const string LocalizationSnapshotDirectoryVariable =
         "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
     private const string LocalizationSnapshotPageVariable =
@@ -47,6 +50,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         TimeSpan.FromSeconds(65);
     private static readonly TimeSpan RazerServiceStopHardExitTimeout =
         TimeSpan.FromSeconds(70);
+    private static readonly CultureInfo SystemUiCulture = CultureInfo.CurrentUICulture;
 
     private CrashReportWriter? crashReportWriter;
     private IDisposable? traceLogRegistration;
@@ -61,10 +65,13 @@ public partial class App : Microsoft.UI.Xaml.Application
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
     private TrayExitController? trayExitController;
+    private IStartupRegistration? startupRegistration;
+    private SessionAgentEventEndpoint? sessionAgentEventEndpoint;
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
     private int fatalCrashReported;
+    private int languageRefreshInProgress;
 
     static App()
     {
@@ -103,6 +110,12 @@ public partial class App : Microsoft.UI.Xaml.Application
             [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
         {
             _ = RunResponsiveChoiceSelectorSmokeAsync(selectorSmokeReportPath);
+            return;
+        }
+        if (commandLineArguments is
+            [_, LiveLocalizationSmokeArgument, string localizationSmokeReportPath])
+        {
+            _ = RunLiveLocalizationSmokeAsync(localizationSmokeReportPath);
             return;
         }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
@@ -155,8 +168,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         System.Windows.Forms.Application.EnableVisualStyles();
-        var startupRegistration = new WindowsStartupRegistration();
-        if (!startupRegistration.ShouldStartForLaunchArguments(
+        var registration = new WindowsStartupRegistration();
+        startupRegistration = registration;
+        if (!registration.ShouldStartForLaunchArguments(
                 commandLineArguments))
         {
             Trace.TraceInformation(
@@ -188,33 +202,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        mainWindow = CreateMainWindow(startupRegistration);
-        trayDashboardWindow = new TrayDashboardWindow(
-            mainWindow.ViewModel,
-            WindowNative.GetWindowHandle(mainWindow),
-            visible => mainWindow.SetTrayDashboardVisible(visible));
-        trayDashboardWindow.ApplyPreferences(mainWindow.TrayDashboardPreference);
-        mainWindow.TrayDashboardPreferenceChanged += OnTrayDashboardPreferenceChanged;
-        mainWindow.TrayDashboardEditSessionChanged += OnTrayDashboardEditSessionChanged;
-        SessionAgentEventEndpoint sessionEventEndpoint =
+        sessionAgentEventEndpoint =
             SessionAgentEventEndpoint.Create(
                 new SecurityIdentifier(userSid),
                 sessionId);
-        brightnessOsdHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
-            mainWindow,
-            sessionEventEndpoint,
-            exception => Trace.TraceWarning(
-                "OpenBlade brightness OSD host failed: {0}",
-                exception.Message));
-        performanceNotificationHost =
-            WindowsTrayPerformanceNotificationHost.CreateBestEffort(
-                mainWindow,
-                sessionEventEndpoint,
-                signal => Enqueue(() => ShowPerformanceNotification(signal)),
-                exception => Trace.TraceWarning(
-                    "OpenBlade performance notification host failed: {0}",
-                    exception.Message));
-        windowInitializationTask = mainWindow.InitializeAsync();
+        AttachWindowSurfaces(
+            CreateMainWindow(registration),
+            sessionAgentEventEndpoint);
 
         exitLifecycle = new TrayExitLifecycle(
             new TrayExitSteps(
@@ -247,6 +241,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                             OnTrayDashboardPreferenceChanged;
                         mainWindow.TrayDashboardEditSessionChanged -=
                             OnTrayDashboardEditSessionChanged;
+                        mainWindow.LanguagePreferenceChanged -=
+                            OnLanguagePreferenceChanged;
                     }
                     trayDashboardWindow?.Dispose();
                     trayDashboardWindow = null;
@@ -355,14 +351,48 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         if (string.IsNullOrWhiteSpace(language))
         {
+            TrayLocalization.SetLanguageOverride(SystemUiCulture.Name);
             return;
         }
 
+        ApplyLocalizationLanguage(language);
+    }
+
+    private static void ApplyRuntimeLocalizationPreference(
+        UiLanguagePreference preference,
+        bool commitTrayLanguage = true)
+    {
+        string? language = UiLanguagePreferencePolicy.ResolveCultureName(preference);
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            string resourceLanguage = SystemUiCulture.Name;
+            ApplicationLanguages.PrimaryLanguageOverride = string.Empty;
+            CultureInfo.CurrentUICulture = SystemUiCulture;
+            LocalizedResources.SetLanguageOverride(resourceLanguage);
+            if (commitTrayLanguage)
+            {
+                TrayLocalization.SetLanguageOverride(resourceLanguage);
+            }
+
+            return;
+        }
+
+        ApplyLocalizationLanguage(language, commitTrayLanguage);
+    }
+
+    private static void ApplyLocalizationLanguage(
+        string language,
+        bool commitTrayLanguage = true)
+    {
         CultureInfo managedCulture = CultureInfo.GetCultureInfo(language);
         string resourceLanguage = managedCulture.Name;
         ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage;
         CultureInfo.CurrentUICulture = managedCulture;
         LocalizedResources.SetLanguageOverride(resourceLanguage);
+        if (commitTrayLanguage)
+        {
+            TrayLocalization.SetLanguageOverride(resourceLanguage);
+        }
     }
 
     private static string? RequestedLocalizationLanguage() => string.Equals(
@@ -371,6 +401,209 @@ public partial class App : Microsoft.UI.Xaml.Application
                 StringComparison.Ordinal)
             ? "qps-ploc"
             : Environment.GetEnvironmentVariable(LocalizationLanguageVariable);
+
+    private async Task RunLiveLocalizationSmokeAsync(string smokeReportPath)
+    {
+        try
+        {
+            System.Windows.Forms.Application.EnableVisualStyles();
+            processorPolicy = WindowsProcessorEfficiencyPolicy.Discover();
+            uiDispatcherQueue = DispatcherQueue.GetForCurrentThread()
+                ?? throw new InvalidOperationException(
+                    "The localization smoke test requires a dispatcher thread.");
+            startupRegistration = new WindowsStartupRegistration();
+            string userSid = WindowsIdentity.GetCurrent().User?.Value
+                ?? throw new InvalidOperationException("Current user SID is unavailable.");
+            using Process currentProcess = Process.GetCurrentProcess();
+            sessionAgentEventEndpoint = SessionAgentEventEndpoint.Create(
+                new SecurityIdentifier(userSid),
+                currentProcess.SessionId);
+            trayIconThemeSource = new WindowsShellThemeSource(uiDispatcherQueue);
+
+            LiveLocalizationSmokeCase[] cases =
+            [
+                new(
+                    UiLanguagePreference.Russian,
+                    "Язык приложения",
+                    "Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.",
+                    "Следовать параметрам Windows",
+                    "Открыть",
+                    "От батареи",
+                    "Сохраняет текущий параметр Windows."),
+                new(
+                    UiLanguagePreference.SimplifiedChinese,
+                    "应用语言",
+                    "使用 Windows 显示语言，或选择一种语言。更改会立即生效。",
+                    "跟随 Windows",
+                    "打开",
+                    "使用电池",
+                    "保留当前 Windows 设置。"),
+                new(
+                    UiLanguagePreference.English,
+                    "App language",
+                    "Use your Windows display language, or choose a language. Changes apply immediately.",
+                    "Follow Windows",
+                    "Open",
+                    "On battery",
+                    "Keeps the current Windows setting."),
+            ];
+
+            ApplyRuntimeLocalizationPreference(cases[0].Preference);
+            MainWindow initialWindow = CreateMainWindow(
+                startupRegistration,
+                cases[0].Preference);
+            AttachWindowSurfaces(initialWindow, sessionAgentEventEndpoint);
+            await windowInitializationTask;
+            initialWindow.ShowAndActivate();
+            CreateTrayIconHost();
+            AssertLiveLocalizationState(cases[0], previousWindow: null);
+
+            ITrayIconHost initialTrayIcon = trayIconHost
+                ?? throw new InvalidOperationException(
+                    "The localization smoke test did not create a tray icon.");
+            await RefreshLanguageAsync(
+                UiLanguagePreference.SimplifiedChinese,
+                _ => throw new InvalidOperationException(
+                    "Injected replacement tray icon failure."));
+            if (!ReferenceEquals(mainWindow, initialWindow)
+                || !ReferenceEquals(trayIconHost, initialTrayIcon)
+                || !initialWindow.IsWindowVisible)
+            {
+                throw new InvalidOperationException(
+                    "A failed language refresh did not preserve the reachable tray shell.");
+            }
+            AssertLiveLocalizationState(cases[0], previousWindow: null);
+
+            foreach (LiveLocalizationSmokeCase smokeCase in cases[1..])
+            {
+                MainWindow previousWindow = mainWindow
+                    ?? throw new InvalidOperationException(
+                        "The localization smoke test lost the main window.");
+                bool expectMaximized = smokeCase.Preference
+                    == UiLanguagePreference.SimplifiedChinese;
+                if (expectMaximized
+                    && previousWindow.AppWindow.Presenter is OverlappedPresenter presenter)
+                {
+                    presenter.Maximize();
+                }
+
+                await RefreshLanguageAsync(smokeCase.Preference);
+                AssertLiveLocalizationState(
+                    smokeCase,
+                    previousWindow,
+                    expectMaximized);
+            }
+
+            File.WriteAllText(smokeReportPath, "completed");
+            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(smokeReportPath, exception.ToString());
+            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            Environment.Exit(1);
+        }
+    }
+
+    private void AssertLiveLocalizationState(
+        LiveLocalizationSmokeCase smokeCase,
+        MainWindow? previousWindow,
+        bool expectMaximized = false)
+    {
+        MainWindow window = mainWindow
+            ?? throw new InvalidOperationException(
+                "The localization smoke test lost the main window.");
+        if (previousWindow is not null && ReferenceEquals(window, previousWindow))
+        {
+            throw new InvalidOperationException(
+                "The localization smoke test did not replace the main window.");
+        }
+        if (!window.IsWindowVisible
+            || trayIconHost is not WinFormsTrayIconHost iconHost
+            || trayDashboardWindow is null)
+        {
+            throw new InvalidOperationException(
+                "The language refresh did not leave every interactive tray surface reachable.");
+        }
+        if (expectMaximized
+            && window.AppWindow.Presenter is not OverlappedPresenter
+            {
+                State: OverlappedPresenterState.Maximized,
+            })
+        {
+            throw new InvalidOperationException(
+                "The language refresh did not preserve the maximized window state.");
+        }
+
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedHeading,
+            window.LocalizedAppLanguageHeading,
+            "settings heading");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedDescription,
+            window.LocalizedAppLanguageDescription,
+            "settings description");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedSystemChoice,
+            window.ViewModel.LanguageSelectionOptions[0].Label,
+            "system language choice");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedOpenMenuItem,
+            iconHost.OpenMenuText,
+            "tray menu");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedBatteryProfile,
+            window.ViewModel.ProfileComparisonOptions.Single(
+                option => option.Source == PowerSource.Battery).Label,
+            "battery profile option");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedWindowsPowerModeDescription,
+            window.ViewModel.AvailableWindowsPowerModeOptions[0].Description,
+            "Windows power mode description");
+    }
+
+    private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
+    {
+        DisposeSurfaceSafely("localization smoke tray icon", trayIconHost);
+        trayIconHost = null;
+        DisposeSurfaceSafely(
+            "localization smoke performance notification host",
+            performanceNotificationHost);
+        performanceNotificationHost = null;
+        DisposeSurfaceSafely(
+            "localization smoke brightness OSD host",
+            brightnessOsdHost);
+        brightnessOsdHost = null;
+        DisposeSurfaceSafely(
+            "localization smoke dashboard window",
+            trayDashboardWindow);
+        trayDashboardWindow = null;
+        if (mainWindow is not null)
+        {
+            DetachWindowEvents(mainWindow);
+            await DisposeWindowSafelyAsync(mainWindow);
+            CloseWindowSafely(mainWindow);
+            mainWindow = null;
+        }
+        DisposeSurfaceSafely(
+            "localization smoke tray icon theme source",
+            trayIconThemeSource);
+        trayIconThemeSource = null;
+    }
+
+    private static void AssertLiveLocalizationValue(
+        string expected,
+        string actual,
+        string surface)
+    {
+        if (!string.Equals(expected, actual, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Live localization did not update the {surface}: "
+                + $"expected '{expected}', actual '{actual}'.");
+        }
+    }
 
     private async Task RunLocalizationSnapshotAsync(
         string outputDirectory,
@@ -1414,6 +1647,15 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private sealed record ResponsiveChoiceSelectorSmokeOption(string Key, string Label);
 
+    private sealed record LiveLocalizationSmokeCase(
+        UiLanguagePreference Preference,
+        string ExpectedHeading,
+        string ExpectedDescription,
+        string ExpectedSystemChoice,
+        string ExpectedOpenMenuItem,
+        string ExpectedBatteryProfile,
+        string ExpectedWindowsPowerModeDescription);
+
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
         ResponsiveChoiceSelectorSmokeOption? selected)
@@ -1447,12 +1689,238 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private MainWindow CreateMainWindow(IStartupRegistration startupRegistration)
+    private MainWindow CreateMainWindow(
+        IStartupRegistration startupRegistration,
+        UiLanguagePreference? initialLanguageOverride = null)
     {
         return new MainWindow(
             processorPolicy,
             startupRegistration,
-            TryShowTrayNotification);
+            TryShowTrayNotification,
+            initialLanguageOverride: initialLanguageOverride);
+    }
+
+    private void AttachWindowSurfaces(
+        MainWindow window,
+        SessionAgentEventEndpoint eventEndpoint)
+    {
+        WindowSurfaceSet surfaces = CreateWindowSurfaces(window, eventEndpoint);
+        AttachWindowSurfaces(window, surfaces, window.InitializeAsync());
+    }
+
+    private WindowSurfaceSet CreateWindowSurfaces(
+        MainWindow window,
+        SessionAgentEventEndpoint eventEndpoint)
+    {
+        TrayDashboardWindow? dashboard = null;
+        WindowsTrayBrightnessOsdHost? brightnessHost = null;
+        WindowsTrayPerformanceNotificationHost? notificationHost = null;
+        try
+        {
+            dashboard = new TrayDashboardWindow(
+                window.ViewModel,
+                WindowNative.GetWindowHandle(window),
+                visible => window.SetTrayDashboardVisible(visible));
+            dashboard.ApplyPreferences(window.TrayDashboardPreference);
+            brightnessHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
+                window,
+                eventEndpoint,
+                exception => Trace.TraceWarning(
+                    "OpenBlade brightness OSD host failed: {0}",
+                    exception.Message));
+            notificationHost =
+                WindowsTrayPerformanceNotificationHost.CreateBestEffort(
+                    window,
+                    eventEndpoint,
+                    signal => Enqueue(() => ShowPerformanceNotification(signal)),
+                    exception => Trace.TraceWarning(
+                        "OpenBlade performance notification host failed: {0}",
+                        exception.Message));
+            return new WindowSurfaceSet(
+                dashboard,
+                brightnessHost,
+                notificationHost);
+        }
+        catch
+        {
+            DisposeSurfaceSafely(
+                "replacement performance notification host",
+                notificationHost);
+            DisposeSurfaceSafely("replacement brightness OSD host", brightnessHost);
+            DisposeSurfaceSafely("replacement dashboard window", dashboard);
+            throw;
+        }
+    }
+
+    private void AttachWindowSurfaces(
+        MainWindow window,
+        WindowSurfaceSet surfaces,
+        Task initializationTask)
+    {
+        window.LanguagePreferenceChanged += OnLanguagePreferenceChanged;
+        window.TrayDashboardPreferenceChanged += OnTrayDashboardPreferenceChanged;
+        window.TrayDashboardEditSessionChanged += OnTrayDashboardEditSessionChanged;
+        mainWindow = window;
+        trayDashboardWindow = surfaces.Dashboard;
+        brightnessOsdHost = surfaces.BrightnessHost;
+        performanceNotificationHost = surfaces.NotificationHost;
+        windowInitializationTask = initializationTask;
+    }
+
+    private void DetachWindowEvents(MainWindow window)
+    {
+        window.LanguagePreferenceChanged -= OnLanguagePreferenceChanged;
+        window.TrayDashboardPreferenceChanged -= OnTrayDashboardPreferenceChanged;
+        window.TrayDashboardEditSessionChanged -= OnTrayDashboardEditSessionChanged;
+    }
+
+    private void OnLanguagePreferenceChanged(UiLanguagePreference preference)
+    {
+        if (Interlocked.CompareExchange(ref languageRefreshInProgress, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = RefreshLanguageAsync(preference);
+    }
+
+    private async Task RefreshLanguageAsync(
+        UiLanguagePreference preference,
+        Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null)
+    {
+        MainWindow? previousWindow = mainWindow;
+        IStartupRegistration? registration = startupRegistration;
+        SessionAgentEventEndpoint? eventEndpoint = sessionAgentEventEndpoint;
+        if (previousWindow is null || registration is null || eventEndpoint is null)
+        {
+            Interlocked.Exchange(ref languageRefreshInProgress, 0);
+            return;
+        }
+
+        bool wasVisible = previousWindow.IsWindowVisible;
+        PointInt32 position = previousWindow.AppWindow.Position;
+        SizeInt32 size = previousWindow.AppWindow.Size;
+        bool wasMaximized = previousWindow.AppWindow.Presenter is OverlappedPresenter
+        {
+            State: OverlappedPresenterState.Maximized,
+        };
+        string previousLanguageOverride = ApplicationLanguages.PrimaryLanguageOverride;
+        CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+        string previousTrayLanguage = TrayLocalization.CurrentLanguageName;
+        MainWindow? replacement = null;
+        WindowSurfaceSet? replacementSurfaces = null;
+        ITrayIconHost? replacementTrayIcon = null;
+        bool replacementCommitted = false;
+
+        try
+        {
+            string replacementTrayLanguage = UiLanguagePreferencePolicy.ResolveCultureName(
+                    preference)
+                ?? SystemUiCulture.Name;
+            using IDisposable temporaryTrayLanguage =
+                TrayLocalization.BeginTemporaryLanguageOverride(replacementTrayLanguage);
+            previousWindow.StartHiddenObservation();
+            previousWindow.AppWindow.Hide();
+            ApplyRuntimeLocalizationPreference(
+                preference,
+                commitTrayLanguage: false);
+
+            replacement = CreateMainWindow(registration, preference);
+            Task replacementInitialization = replacement.InitializeAsync();
+            await replacementInitialization;
+            replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint);
+            replacementTrayIcon = replacementTrayIconFactory?.Invoke(replacement)
+                ?? CreateTrayIconHost(replacement);
+
+            if (wasMaximized
+                && replacement.AppWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.Maximize();
+            }
+            else
+            {
+                replacement.AppWindow.MoveAndResize(new RectInt32(
+                    position.X,
+                    position.Y,
+                    size.Width,
+                    size.Height));
+            }
+
+            if (exitLifecycle?.ExitRequested == true)
+            {
+                DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
+                replacementSurfaces.Dispose();
+                await DisposeWindowSafelyAsync(replacement);
+                CloseWindowSafely(replacement);
+                return;
+            }
+
+            if (wasVisible)
+            {
+                replacement.ShowAndActivate();
+            }
+            else
+            {
+                replacement.StartHiddenObservation();
+            }
+
+            ITrayIconHost? previousTrayIcon = trayIconHost;
+            WindowSurfaceSet previousSurfaces = new(
+                trayDashboardWindow,
+                brightnessOsdHost,
+                performanceNotificationHost);
+            DetachWindowEvents(previousWindow);
+            AttachWindowSurfaces(
+                replacement,
+                replacementSurfaces,
+                replacementInitialization);
+            trayIconHost = replacementTrayIcon;
+            TrayLocalization.SetLanguageOverride(replacementTrayLanguage);
+            replacementCommitted = true;
+            replacementSurfaces = null;
+            replacementTrayIcon = null;
+
+            DisposeSurfaceSafely("previous tray icon", previousTrayIcon);
+            previousSurfaces.Dispose();
+            await DisposeWindowSafelyAsync(previousWindow);
+            CloseWindowSafely(previousWindow);
+
+            if (wasVisible)
+            {
+                replacement.ShowLanguageSettings();
+                await replacement.StartUpdateCheckingAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade could not apply the selected language: {0}",
+                exception);
+            if (replacementCommitted)
+            {
+                if (wasVisible && replacement is not null && !replacement.IsWindowVisible)
+                {
+                    replacement.ShowAndActivate();
+                }
+                return;
+            }
+            DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
+            replacementSurfaces?.Dispose();
+            if (replacement is not null)
+            {
+                await DisposeWindowSafelyAsync(replacement);
+                CloseWindowSafely(replacement);
+            }
+            ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
+            CultureInfo.CurrentUICulture = previousUiCulture;
+            LocalizedResources.SetLanguageOverride(previousUiCulture.Name);
+            TrayLocalization.SetLanguageOverride(previousTrayLanguage);
+            previousWindow.ShowAndActivate();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref languageRefreshInProgress, 0);
+        }
     }
 
     private bool TryShowTrayNotification(TrayNotification notification)
@@ -1467,26 +1935,89 @@ public partial class App : Microsoft.UI.Xaml.Application
         return true;
     }
 
-    private void CreateTrayIconHost()
+    private ITrayIconHost CreateTrayIconHost(MainWindow window)
     {
-        if (mainWindow is null || trayIconThemeSource is null)
-        {
-            return;
-        }
+        ITrayIconThemeSource themeSource = trayIconThemeSource
+            ?? throw new InvalidOperationException(
+                "The tray icon theme source is not initialized.");
 
         trayExitController = new TrayExitController(
             ShowTrayExitDialog,
             ExitTrayAsync,
             ShutdownOpenBladeAsync);
-        trayIconHost = new WinFormsTrayIconHost(
+        return new WinFormsTrayIconHost(
             point => Enqueue(() => _ = ToggleTrayDashboardWhenReadyAsync(point)),
             () => Enqueue(OpenMainWindowFromTrayIcon),
             () => Enqueue(() => _ = RequestTrayExitAsync()),
-            mainWindow.ViewModel,
-            trayIconThemeSource,
-            () => Enqueue(mainWindow.RequestTrayTelemetryRefresh),
+            window.ViewModel,
+            themeSource,
+            () => Enqueue(window.RequestTrayTelemetryRefresh),
             destination => Enqueue(
                 () => _ = ShowNotificationDestinationAsync(destination)));
+    }
+
+    private void CreateTrayIconHost()
+    {
+        if (mainWindow is not null && trayIconThemeSource is not null)
+        {
+            trayIconHost = CreateTrayIconHost(mainWindow);
+        }
+    }
+
+    private sealed record WindowSurfaceSet(
+        TrayDashboardWindow? Dashboard,
+        WindowsTrayBrightnessOsdHost? BrightnessHost,
+        WindowsTrayPerformanceNotificationHost? NotificationHost) : IDisposable
+    {
+        public void Dispose()
+        {
+            DisposeSurfaceSafely("performance notification host", NotificationHost);
+            DisposeSurfaceSafely("brightness OSD host", BrightnessHost);
+            DisposeSurfaceSafely("dashboard window", Dashboard);
+        }
+    }
+
+    private static void DisposeSurfaceSafely(string component, IDisposable? surface)
+    {
+        try
+        {
+            surface?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade {0} disposal failed: {1}",
+                component,
+                exception);
+        }
+    }
+
+    private static async Task DisposeWindowSafelyAsync(MainWindow window)
+    {
+        try
+        {
+            await window.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade main window disposal failed: {0}",
+                exception);
+        }
+    }
+
+    private static void CloseWindowSafely(MainWindow window)
+    {
+        try
+        {
+            window.Close();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade main window close failed: {0}",
+                exception);
+        }
     }
 
     private static void StartSessionAgent()

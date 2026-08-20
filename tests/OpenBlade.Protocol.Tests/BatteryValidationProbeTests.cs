@@ -177,6 +177,18 @@ public sealed class BatteryValidationProbeTests
     }
 
     [Fact]
+    public void Evaluate_NonzeroFirmwareVersionPreservesOperationalIdentity()
+    {
+        ScriptedNative native = new([]);
+        native.Add("exact", ExactHandle with { VersionNumber = 0x0107 });
+
+        using HidEvidenceEvaluation evaluation = CreateEvaluator(native).Evaluate();
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, evaluation.Result.Classification);
+        Assert.Equal(1, evaluation.Result.ExactMatchCount);
+    }
+
+    [Fact]
     public void Evaluate_AdvisoryStillRejectsWrongHostIdentity()
     {
         var evaluator = new WindowsRazerHidEvidenceEvaluator(
