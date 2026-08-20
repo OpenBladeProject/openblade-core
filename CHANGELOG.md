@@ -7,11 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Added production padless HyperBoost on RZ09-0581. The service admits the
-  validated Balanced-and-Automatic path only after fresh physical pad-absence,
-  exact-device, full-power, readback, ownership-journal, and restoration gates
-  pass; power and lifecycle boundaries remain fail closed and never retry an
-  indeterminate write.
+- Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
+  reviewed Balanced-and-Automatic protocol, load, adapter, and restoration
+  evidence is represented in the product, while production mutation remains
+  unavailable until exact-head low-power and unexpected-exit lifecycle evidence
+  is reviewed. Safety boundaries never retry an indeterminate write.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,

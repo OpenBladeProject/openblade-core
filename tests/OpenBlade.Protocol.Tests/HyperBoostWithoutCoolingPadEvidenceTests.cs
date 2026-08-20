@@ -61,10 +61,10 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.NotNull(manifest.Gates.ReviewedLoadValidated.Evidence);
         Assert.True(manifest.Gates.AdapterTransitionValidated.Validated);
         Assert.NotNull(manifest.Gates.AdapterTransitionValidated.Evidence);
-        Assert.True(manifest.Gates.LowPowerLifecycleValidated.Validated);
-        Assert.NotNull(manifest.Gates.LowPowerLifecycleValidated.Evidence);
-        Assert.True(manifest.Gates.CrashRecoveryValidated.Validated);
-        Assert.NotNull(manifest.Gates.CrashRecoveryValidated.Evidence);
+        Assert.False(manifest.Gates.LowPowerLifecycleValidated.Validated);
+        Assert.Null(manifest.Gates.LowPowerLifecycleValidated.Evidence);
+        Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
+        Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
     }
 
     [Fact]
-    public void CurrentEvidence_AdmitsProductionWrites()
+    public void CurrentEvidence_IsReadyForLifecycleValidationButDoesNotAdmitWrites()
     {
         HyperBoostWithoutCoolingPadEvidenceGates evidence =
             HyperBoostWithoutCoolingPadEvidenceGates.Current;
@@ -143,10 +143,10 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(evidence.ReviewedLoadPlanReviewed);
         Assert.True(evidence.ReviewedLoadValidated);
         Assert.True(evidence.AdapterTransitionValidated);
-        Assert.True(evidence.LowPowerLifecycleValidated);
-        Assert.True(evidence.CrashRecoveryValidated);
+        Assert.False(evidence.LowPowerLifecycleValidated);
+        Assert.False(evidence.CrashRecoveryValidated);
         Assert.True(evidence.LifecycleValidationReady);
-        Assert.True(evidence.WriteAdmitted);
+        Assert.False(evidence.WriteAdmitted);
     }
 
     [Theory]

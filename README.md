@@ -38,8 +38,8 @@ an explicit firmware-specific restriction.
 ## What it controls
 
 - AC, USB-C, and battery profiles with automatic power-source switching
-- Power modes, including validated padless HyperBoost on RZ09-0581, fan
-  behavior, NVIDIA GPU clock offsets, and battery charge limits
+- Power modes, including fail-closed padless HyperBoost validation on
+  RZ09-0581, fan behavior, NVIDIA GPU clock offsets, and battery charge limits
 - Keyboard and lid-logo lighting, including streamed effects and a playback
   mute indicator
 - Display profiles, brightness behavior, function-row behavior, and M1 through
