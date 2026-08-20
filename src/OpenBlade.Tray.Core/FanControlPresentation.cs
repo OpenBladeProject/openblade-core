@@ -61,9 +61,14 @@ public static class FanModePresentation
 
     private static FanModeOption[] Options => OptionsByCulture.GetOrAdd(
         TrayLocalization.ResourceCulture.Name,
-        _ => Order
-            .Select(value => new FanModeOption(value, Label(value)))
-            .ToArray());
+        static cultureName =>
+        {
+            using IDisposable temporary =
+                TrayLocalization.BeginTemporaryLanguageOverride(cultureName);
+            return Order
+                .Select(value => new FanModeOption(value, Label(value)))
+                .ToArray();
+        });
 
     public static string Label(FanMode value) => value switch
     {

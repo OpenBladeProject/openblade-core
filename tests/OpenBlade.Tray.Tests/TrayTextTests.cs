@@ -183,6 +183,42 @@ public sealed class TrayTextTests
         }
     }
 
+    [Fact]
+    public void TemporaryLanguageOverrideIsIsolatedAndExpiresAcrossCapturedContexts()
+    {
+        ExecutionContext? previousContext;
+        ExecutionContext? temporaryContext;
+        try
+        {
+            TrayLocalization.SetLanguageOverride("ru-RU");
+            previousContext = ExecutionContext.Capture();
+            Assert.NotNull(previousContext);
+
+            using (TrayLocalization.BeginTemporaryLanguageOverride("zh-CN"))
+            {
+                Assert.Equal("电池", TrayText.Get("Battery"));
+                ExecutionContext.Run(
+                    previousContext,
+                    _ => Assert.Equal("Батарея", TrayText.Get("Battery")),
+                    state: null);
+
+                temporaryContext = ExecutionContext.Capture();
+                Assert.NotNull(temporaryContext);
+                TrayLocalization.SetLanguageOverride("en-US");
+                Assert.Equal("电池", TrayText.Get("Battery"));
+            }
+
+            ExecutionContext.Run(
+                temporaryContext,
+                _ => Assert.Equal("Battery", TrayText.Get("Battery")),
+                state: null);
+        }
+        finally
+        {
+            TrayLocalization.SetLanguageOverride(null);
+        }
+    }
+
     private static Dictionary<string, string> ReadStrings(ResourceSet resources) =>
         resources.Cast<System.Collections.DictionaryEntry>()
             .ToDictionary(

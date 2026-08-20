@@ -5,10 +5,30 @@ namespace OpenBlade.Tray;
 
 public static class TrayLocalization
 {
+    private static readonly AsyncLocal<TemporaryLanguageOverride?> TemporaryOverride =
+        new();
     private static CultureInfo? resourceCultureOverride;
 
-    internal static CultureInfo ResourceCulture =>
-        Volatile.Read(ref resourceCultureOverride) ?? CultureInfo.CurrentUICulture;
+    public static string CurrentLanguageName => ResourceCulture.Name;
+
+    internal static CultureInfo ResourceCulture
+    {
+        get
+        {
+            for (TemporaryLanguageOverride? current = TemporaryOverride.Value;
+                current is not null;
+                current = current.Previous)
+            {
+                if (current.IsActive)
+                {
+                    return current.Culture;
+                }
+            }
+
+            return Volatile.Read(ref resourceCultureOverride)
+                ?? CultureInfo.CurrentUICulture;
+        }
+    }
 
     public static void SetLanguageOverride(string? language)
     {
@@ -16,6 +36,42 @@ public static class TrayLocalization
             ? null
             : CultureInfo.GetCultureInfo(language);
         Volatile.Write(ref resourceCultureOverride, culture);
+    }
+
+    public static IDisposable BeginTemporaryLanguageOverride(string language)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(language);
+        var temporary = new TemporaryLanguageOverride(
+            CultureInfo.GetCultureInfo(language),
+            TemporaryOverride.Value);
+        TemporaryOverride.Value = temporary;
+        return temporary;
+    }
+
+    private sealed class TemporaryLanguageOverride(
+        CultureInfo culture,
+        TemporaryLanguageOverride? previous) : IDisposable
+    {
+        private int active = 1;
+
+        internal CultureInfo Culture { get; } = culture;
+
+        internal TemporaryLanguageOverride? Previous { get; } = previous;
+
+        internal bool IsActive => Volatile.Read(ref active) != 0;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref active, 0) == 0)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(TemporaryOverride.Value, this))
+            {
+                TemporaryOverride.Value = Previous;
+            }
+        }
     }
 }
 

@@ -5,11 +5,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
-### Fixed
-
-- Fixed live language changes mixing strings from the previous language into
-  the rebuilt tray when background work retained an older UI culture.
-
 ### Added
 
 - Added complete Simplified Chinese and Russian translations for the tray,
@@ -90,6 +85,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed live language changes mixing strings from the previous language into
+  the rebuilt tray when background work retained an older UI culture.
 - Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
   admission, and corrected the platform warning shown while controls are
   unavailable.

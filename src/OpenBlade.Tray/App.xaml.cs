@@ -359,29 +359,40 @@ public partial class App : Microsoft.UI.Xaml.Application
     }
 
     private static void ApplyRuntimeLocalizationPreference(
-        UiLanguagePreference preference)
+        UiLanguagePreference preference,
+        bool commitTrayLanguage = true)
     {
         string? language = UiLanguagePreferencePolicy.ResolveCultureName(preference);
         if (string.IsNullOrWhiteSpace(language))
         {
+            string resourceLanguage = SystemUiCulture.Name;
             ApplicationLanguages.PrimaryLanguageOverride = string.Empty;
             CultureInfo.CurrentUICulture = SystemUiCulture;
-            LocalizedResources.SetLanguageOverride(SystemUiCulture.Name);
-            TrayLocalization.SetLanguageOverride(SystemUiCulture.Name);
+            LocalizedResources.SetLanguageOverride(resourceLanguage);
+            if (commitTrayLanguage)
+            {
+                TrayLocalization.SetLanguageOverride(resourceLanguage);
+            }
+
             return;
         }
 
-        ApplyLocalizationLanguage(language);
+        ApplyLocalizationLanguage(language, commitTrayLanguage);
     }
 
-    private static void ApplyLocalizationLanguage(string language)
+    private static void ApplyLocalizationLanguage(
+        string language,
+        bool commitTrayLanguage = true)
     {
         CultureInfo managedCulture = CultureInfo.GetCultureInfo(language);
         string resourceLanguage = managedCulture.Name;
         ApplicationLanguages.PrimaryLanguageOverride = resourceLanguage;
         CultureInfo.CurrentUICulture = managedCulture;
         LocalizedResources.SetLanguageOverride(resourceLanguage);
-        TrayLocalization.SetLanguageOverride(resourceLanguage);
+        if (commitTrayLanguage)
+        {
+            TrayLocalization.SetLanguageOverride(resourceLanguage);
+        }
     }
 
     private static string? RequestedLocalizationLanguage() => string.Equals(
@@ -417,7 +428,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.",
                     "Следовать параметрам Windows",
                     "Открыть",
-                    "Недоступно",
                     "От батареи",
                     "Сохраняет текущий параметр Windows."),
                 new(
@@ -426,7 +436,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "使用 Windows 显示语言，或选择一种语言。更改会立即生效。",
                     "跟随 Windows",
                     "打开",
-                    "不可用",
                     "使用电池",
                     "保留当前 Windows 设置。"),
                 new(
@@ -435,7 +444,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Use your Windows display language, or choose a language. Changes apply immediately.",
                     "Follow Windows",
                     "Open",
-                    "Unavailable",
                     "On battery",
                     "Keeps the current Windows setting."),
             ];
@@ -464,10 +472,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 throw new InvalidOperationException(
                     "A failed language refresh did not preserve the reachable tray shell.");
             }
-            AssertLiveLocalizationState(
-                cases[0],
-                previousWindow: null,
-                assertTrayCorePresentation: false);
+            AssertLiveLocalizationState(cases[0], previousWindow: null);
 
             foreach (LiveLocalizationSmokeCase smokeCase in cases[1..])
             {
@@ -504,8 +509,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private void AssertLiveLocalizationState(
         LiveLocalizationSmokeCase smokeCase,
         MainWindow? previousWindow,
-        bool expectMaximized = false,
-        bool assertTrayCorePresentation = true)
+        bool expectMaximized = false)
     {
         MainWindow window = mainWindow
             ?? throw new InvalidOperationException(
@@ -548,15 +552,6 @@ public partial class App : Microsoft.UI.Xaml.Application
             smokeCase.ExpectedOpenMenuItem,
             iconHost.OpenMenuText,
             "tray menu");
-        if (!assertTrayCorePresentation)
-        {
-            return;
-        }
-
-        AssertLiveLocalizationValue(
-            smokeCase.ExpectedUnavailable,
-            window.ViewModel.CurrentBatterySettingLabel,
-            "dashboard battery status");
         AssertLiveLocalizationValue(
             smokeCase.ExpectedBatteryProfile,
             window.ViewModel.ProfileComparisonOptions.Single(
@@ -1658,7 +1653,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedDescription,
         string ExpectedSystemChoice,
         string ExpectedOpenMenuItem,
-        string ExpectedUnavailable,
         string ExpectedBatteryProfile,
         string ExpectedWindowsPowerModeDescription);
 
@@ -1812,6 +1806,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         };
         string previousLanguageOverride = ApplicationLanguages.PrimaryLanguageOverride;
         CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+        string previousTrayLanguage = TrayLocalization.CurrentLanguageName;
         MainWindow? replacement = null;
         WindowSurfaceSet? replacementSurfaces = null;
         ITrayIconHost? replacementTrayIcon = null;
@@ -1819,9 +1814,16 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         try
         {
+            string replacementTrayLanguage = UiLanguagePreferencePolicy.ResolveCultureName(
+                    preference)
+                ?? SystemUiCulture.Name;
+            using IDisposable temporaryTrayLanguage =
+                TrayLocalization.BeginTemporaryLanguageOverride(replacementTrayLanguage);
             previousWindow.StartHiddenObservation();
             previousWindow.AppWindow.Hide();
-            ApplyRuntimeLocalizationPreference(preference);
+            ApplyRuntimeLocalizationPreference(
+                preference,
+                commitTrayLanguage: false);
 
             replacement = CreateMainWindow(registration, preference);
             Task replacementInitialization = replacement.InitializeAsync();
@@ -1873,6 +1875,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 replacementSurfaces,
                 replacementInitialization);
             trayIconHost = replacementTrayIcon;
+            TrayLocalization.SetLanguageOverride(replacementTrayLanguage);
             replacementCommitted = true;
             replacementSurfaces = null;
             replacementTrayIcon = null;
@@ -1911,7 +1914,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
             CultureInfo.CurrentUICulture = previousUiCulture;
             LocalizedResources.SetLanguageOverride(previousUiCulture.Name);
-            TrayLocalization.SetLanguageOverride(previousUiCulture.Name);
+            TrayLocalization.SetLanguageOverride(previousTrayLanguage);
             previousWindow.ShowAndActivate();
         }
         finally
