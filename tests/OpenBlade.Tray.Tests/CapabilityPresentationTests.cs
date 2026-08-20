@@ -177,6 +177,27 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_DeviceInformationHidesFirmwareDuplicatedByUpdateAssistant()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        (string RowName, string PropertyName)[] rows =
+        [
+            ("DeviceInformationBiosFirmwareRow", "ShowsBiosInDeviceInformation"),
+            ("DeviceInformationEcFirmwareRow", "ShowsEcInDeviceInformation"),
+            ("DeviceInformationMcuFirmwareRow", "ShowsMcuInDeviceInformation"),
+            ("DeviceInformationVbiosFirmwareRow", "ShowsVbiosInDeviceInformation"),
+        ];
+
+        Assert.All(rows, row =>
+        {
+            XElement element = NamedElement(document, "Border", row.RowName);
+            Assert.Equal(
+                $"{{x:Bind FirmwareUpdateViewModel.{row.PropertyName}, Mode=OneWay}}",
+                Attribute(element, "Visibility"));
+        });
+    }
+
+    [Fact]
     public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

@@ -57,6 +57,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   compatibility state.
 - The firmware comparison table now omits items whose installed version is
   unavailable instead of showing non-actionable rows and a disclaimer.
+- Device Information now omits BIOS, EC, MCU, and VBIOS rows when the same
+  installed version is already visible in the firmware comparison table.
 - Tied each optional Windows power mode to a laptop performance preset instead
   of an AC, USB-C, or battery profile. Dashboard changes, saved-profile
   transitions, and Fn+P now update Windows only after the laptop preset is
