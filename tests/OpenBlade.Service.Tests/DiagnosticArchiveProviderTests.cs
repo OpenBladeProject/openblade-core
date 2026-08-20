@@ -195,11 +195,11 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement
                 .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.lowPowerLifecycle")
                 .GetBoolean());
-        Assert.False(
+        Assert.True(
             capabilities.RootElement
                 .GetProperty("performance.hyperBoost.withoutCoolingPad.gate.crashRecovery")
                 .GetBoolean());

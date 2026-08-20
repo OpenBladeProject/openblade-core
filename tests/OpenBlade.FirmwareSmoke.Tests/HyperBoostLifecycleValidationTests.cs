@@ -510,13 +510,13 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
-    public void ValidateInstalledGeneration_AllowsClosedPadlessLifecycleAdmission()
+    public void ValidateInstalledGeneration_AllowsAdmittedPadlessLifecycleCapability()
     {
         FirmwareSmokeSnapshot baseline =
             FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
 
         Assert.Equal(
-            DeviceFeatureAccess.ObservedOnly.ToString(),
+            DeviceFeatureAccess.ReadWrite.ToString(),
             baseline.Capabilities.HyperBoostWithoutCoolingPadAccess);
         Assert.True(HyperBoostLifecycleValidationRunner.ValidateInstalledGeneration(
             baseline,

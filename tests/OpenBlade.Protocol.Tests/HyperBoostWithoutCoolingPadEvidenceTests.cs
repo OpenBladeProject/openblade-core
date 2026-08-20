@@ -61,10 +61,10 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.NotNull(manifest.Gates.ReviewedLoadValidated.Evidence);
         Assert.True(manifest.Gates.AdapterTransitionValidated.Validated);
         Assert.NotNull(manifest.Gates.AdapterTransitionValidated.Evidence);
-        Assert.False(manifest.Gates.LowPowerLifecycleValidated.Validated);
-        Assert.Null(manifest.Gates.LowPowerLifecycleValidated.Evidence);
-        Assert.False(manifest.Gates.CrashRecoveryValidated.Validated);
-        Assert.Null(manifest.Gates.CrashRecoveryValidated.Evidence);
+        Assert.True(manifest.Gates.LowPowerLifecycleValidated.Validated);
+        Assert.NotNull(manifest.Gates.LowPowerLifecycleValidated.Evidence);
+        Assert.True(manifest.Gates.CrashRecoveryValidated.Validated);
+        Assert.NotNull(manifest.Gates.CrashRecoveryValidated.Evidence);
     }
 
     [Fact]
@@ -117,6 +117,12 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
     [InlineData(
         "2026-08-19-rz09-0581-hyperboost-padless-crash-recovery.json",
         "D202CB0BDF516FD9E3B4393FD6FDE28A7916F5909C884FA44829051686652207")]
+    [InlineData(
+        "2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json",
+        "AC861D69BC8E7B56B5DB929C384255BB6DB1AF4D35CE3B6B842EED7BC8ECE078")]
+    [InlineData(
+        "2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json",
+        "B1916C7338E09F7EFFC5EA4B04194128F76C50A75EDF31CF8259BD8ACCAB4684")]
     public void CurrentValidationEvidenceHash_MatchesPinnedCommittedArtifactBytes(
         string fileName,
         string expectedSha256)
@@ -130,7 +136,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
     }
 
     [Fact]
-    public void CurrentEvidence_IsReadyForLifecycleValidationButDoesNotAdmitWrites()
+    public void CurrentEvidence_AdmitsPadlessHyperBoostWrites()
     {
         HyperBoostWithoutCoolingPadEvidenceGates evidence =
             HyperBoostWithoutCoolingPadEvidenceGates.Current;
@@ -143,10 +149,10 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.True(evidence.ReviewedLoadPlanReviewed);
         Assert.True(evidence.ReviewedLoadValidated);
         Assert.True(evidence.AdapterTransitionValidated);
-        Assert.False(evidence.LowPowerLifecycleValidated);
-        Assert.False(evidence.CrashRecoveryValidated);
+        Assert.True(evidence.LowPowerLifecycleValidated);
+        Assert.True(evidence.CrashRecoveryValidated);
         Assert.True(evidence.LifecycleValidationReady);
-        Assert.False(evidence.WriteAdmitted);
+        Assert.True(evidence.WriteAdmitted);
     }
 
     [Theory]

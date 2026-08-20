@@ -113,7 +113,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "30497B0A0902D301BF481FB8F0A2796C24FD1CD30AE372D0D4C78478BEE7F64A";
+        "15435DACEA62A51F55119D560FC2FCFC0A363AF0CB419698A47D658E4914C475";
 
     internal static string TrustedManifestSha256 => ExpectedSha256;
     private const string ImmediateAnnotationSha256 =
@@ -132,6 +132,10 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
         "4818729C2E46F7E3B3C308552C3A5E049A441F49B21DF7B45DD88545B81BB00C";
     private const string AdapterTransitionAnnotationSha256 =
         "2BB2912F64E7B6DD1619821F9BD6253CE22C39ACD73AD42CEFA9D70C7DB42874";
+    private const string LowPowerLifecycleAnnotationSha256 =
+        "AC861D69BC8E7B56B5DB929C384255BB6DB1AF4D35CE3B6B842EED7BC8ECE078";
+    private const string CrashRecoveryAnnotationSha256 =
+        "B1916C7338E09F7EFFC5EA4B04194128F76C50A75EDF31CF8259BD8ACCAB4684";
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -320,13 +324,21 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                     },
                     LowPowerLifecycleValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-low-power-recovery.json",
+                            Sha256: LowPowerLifecycleAnnotationSha256,
+                        },
                     },
                     CrashRecoveryValidated:
                     {
-                        Validated: false,
-                        Evidence: null,
+                        Validated: true,
+                        Evidence:
+                        {
+                            Artifact: "captures/annotations/2026-08-21-rz09-0581-hyperboost-padless-crash-recovery.json",
+                            Sha256: CrashRecoveryAnnotationSha256,
+                        },
                     },
                 },
             })

@@ -84,6 +84,29 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581PadlessHyperBoostPolicy_AdmitsReviewedExactModelEvidence()
+    {
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                ExactRz090581Identity("4.00"),
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                ExactRz090581Identity(
+                    "99.99",
+                    HostFirmwareCompatibility.ModelScoped),
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted));
+        Assert.Null(
+            ProductionBatteryFactory.GetRz090581HyperBoostWithoutCoolingPadAccess(
+                new HostIdentityReadResult(
+                    null,
+                    HidSessionFailureKind.IdentityBlocked),
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted));
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
         AdapterPowerState[] modelScopedExpected =
