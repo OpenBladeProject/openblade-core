@@ -90,6 +90,10 @@ cannot be silently overwritten. Accepted imports rebuild each locale from the cu
 authoritative source keyset, add newly translated keys, and remove obsolete keys. The
 four source catalogs remain read-locked from model reconstruction through validation
 and writing, preventing a concurrent source edit from bypassing the workbook hashes.
+Before checking the target hash, the importer also opens all four existing target
+catalogs with write-denying handles (and reserves absent files with create-new
+semantics), then retains those handles through staged writes, validation, and rollback.
+This makes a concurrent editor save fail instead of silently losing either version.
 The importer validates complete .NET composite-format items, markup, access-key
 counts, and collisions among simultaneously visible installer actions, significant
 whitespace, line breaks,

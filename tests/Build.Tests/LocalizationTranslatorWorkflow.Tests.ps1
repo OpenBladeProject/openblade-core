@@ -66,7 +66,7 @@ function New-TranslatorFixture {
     $validator = Join-Path $root 'build\Validate-LocalizationResources.ps1'
     [IO.File]::WriteAllText(
         $validator,
-        "[CmdletBinding()]`r`nparam([string]`$Repository)`r`n",
+        "[CmdletBinding()]`r`nparam([string]`$Repository, [switch]`$AllowLockedCatalogRead)`r`n",
         [Text.UTF8Encoding]::new($false))
     return $root
 }
@@ -243,6 +243,15 @@ try {
                 'SpecialKey_ValuePlaceholder_Shortcut')[0]
             $candidate.Translation = $candidate.Translation.Replace(
                 'Ctrl+Shift+M', 'Ctrl+Shift+N')
+            return $copy
+        }),
+        @('named-shortcut-token', 'protected token', {
+            param($copy)
+            $candidate = @($copy | Where-Object {
+                    $_.Surface -ceq 'tray-core' -and $_.Key -ceq 'Block Alt+Tab'
+                })[0]
+            $candidate.Translation = $candidate.Translation.Replace(
+                'Alt+Tab', 'Alt+Teb')
             return $copy
         }),
         @('windows-path-token', 'protected token', {
@@ -462,7 +471,7 @@ try {
         }
         [IO.File]::WriteAllText(
             (Join-Path $fixture 'build\Validate-LocalizationResources.ps1'),
-            "[CmdletBinding()]`r`nparam([string]`$Repository)`r`nthrow 'fixture validation failed'`r`n",
+            "[CmdletBinding()]`r`nparam([string]`$Repository, [switch]`$AllowLockedCatalogRead)`r`nthrow 'fixture validation failed'`r`n",
             [Text.UTF8Encoding]::new($false))
         Assert-Throws 'fixture validation failed' {
             Import-LocalizationWorkbook -Repository $fixture -Path $rollbackWorkbook
@@ -548,7 +557,7 @@ try {
         Write-CsvRows $sourceLockRows $sourceLockWorkbook
         $sourceLockValidator = @'
 [CmdletBinding()]
-param([string]$Repository)
+param([string]$Repository, [switch]$AllowLockedCatalogRead)
 $source = Join-Path $Repository 'src\OpenBlade.Tray\Strings\en-US\Resources.resw'
 $writeHandle = $null
 try {
@@ -586,6 +595,62 @@ throw 'Authoritative source catalog was not read-locked during import.'
     finally {
         Import-Module $modulePath -Force
         Remove-Item -LiteralPath $sourceLockFixture -Recurse -Force
+    }
+
+    $targetLockFixture = New-TranslatorFixture
+    try {
+        Import-Module (Join-Path $targetLockFixture `
+            'build\LocalizationTranslatorWorkflow.psm1') -Force
+        $targetLockWorkbook = Join-Path $testRoot 'target-lock.csv'
+        [void](Export-LocalizationWorkbook `
+            -Repository $targetLockFixture -Locale 'ru-RU' -Path $targetLockWorkbook)
+        $targetLockRows = @(Import-Csv -LiteralPath $targetLockWorkbook)
+        $targetLockCandidate = @($targetLockRows | Where-Object {
+                $_.Surface -ceq 'tray-core' -and
+                $_.Constraints -like 'Translate naturally*'
+            })[0]
+        $targetLockCandidate.Translation += ' target lock test'
+        Write-CsvRows $targetLockRows $targetLockWorkbook
+        $targetLockValidator = @'
+[CmdletBinding()]
+param([string]$Repository, [switch]$AllowLockedCatalogRead)
+$target = Join-Path $Repository 'src\OpenBlade.Tray\Strings\ru-RU\Resources.resw'
+$writeHandle = $null
+try {
+    $writeHandle = [IO.File]::Open(
+        $target,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::Read)
+}
+catch [IO.IOException] {
+    return
+}
+finally {
+    if ($null -ne $writeHandle) { $writeHandle.Dispose() }
+}
+throw 'Target catalog was not write-locked during import.'
+'@
+        [IO.File]::WriteAllText(
+            (Join-Path $targetLockFixture 'build\Validate-LocalizationResources.ps1'),
+            $targetLockValidator,
+            [Text.UTF8Encoding]::new($false))
+        $targetLockResult = Import-LocalizationWorkbook `
+            -Repository $targetLockFixture -Path $targetLockWorkbook
+        Assert-Equal 1 @($targetLockResult.ChangedPaths).Count `
+            'The target-lock fixture must exercise a real catalog write.'
+        $targetPath = Join-Path $targetLockFixture `
+            'src\OpenBlade.Tray\Strings\ru-RU\Resources.resw'
+        $releasedTargetHandle = [IO.File]::Open(
+            $targetPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::Read)
+        $releasedTargetHandle.Dispose()
+    }
+    finally {
+        Import-Module $modulePath -Force
+        Remove-Item -LiteralPath $targetLockFixture -Recurse -Force
     }
 
     $markupFixture = New-TranslatorFixture

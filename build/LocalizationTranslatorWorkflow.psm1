@@ -127,16 +127,13 @@ function Assert-TranslatorLocale {
     }
 }
 
-function Read-LocalizationCatalog {
-    param([Parameter(Mandatory)][string]$Path)
+function ConvertFrom-LocalizationCatalogText {
+    param(
+        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][string]$Path)
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $null
-    }
     try {
-        [xml]$document = [IO.File]::ReadAllText(
-            $Path,
-            [Text.UTF8Encoding]::new($false, $true))
+        [xml]$document = $Text
     }
     catch {
         throw "Localization catalog is malformed: $Path. $($_.Exception.Message)"
@@ -151,6 +148,23 @@ function Read-LocalizationCatalog {
         $values.Add($key, [string]$entry.value)
     }
     return [pscustomobject]@{ Document = $document; Values = $values }
+}
+
+function Read-LocalizationCatalog {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+    try {
+        $text = [IO.File]::ReadAllText(
+            $Path,
+            [Text.UTF8Encoding]::new($false, $true))
+    }
+    catch {
+        throw "Localization catalog is malformed: $Path. $($_.Exception.Message)"
+    }
+    return ConvertFrom-LocalizationCatalogText $text $Path
 }
 
 function Get-LengthPrefixedText {
@@ -192,6 +206,19 @@ function Get-FileSha256 {
     }
 }
 
+function Get-BytesSha256 {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Bytes)
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString($algorithm.ComputeHash($Bytes)).
+            Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+}
+
 function Get-LocalizationTargetCatalogHash {
     param(
         [Parameter(Mandatory)][string]$Repository,
@@ -212,6 +239,134 @@ function Get-LocalizationTargetCatalogHash {
         }
     }
     return Get-TextSha256 $state
+}
+
+function Read-LockedStreamBytes {
+    param([Parameter(Mandatory)][IO.FileStream]$Stream)
+
+    if ($Stream.Length -gt [int]::MaxValue) {
+        throw 'Localization catalog is too large to import.'
+    }
+    $bytes = [byte[]]::new([int]$Stream.Length)
+    $Stream.Position = 0
+    $offset = 0
+    while ($offset -lt $bytes.Length) {
+        $read = $Stream.Read($bytes, $offset, $bytes.Length - $offset)
+        if ($read -eq 0) { throw 'Localization catalog ended unexpectedly.' }
+        $offset += $read
+    }
+    $Stream.Position = 0
+    return $bytes
+}
+
+function Open-LocalizationTargetTransactions {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Locale)
+
+    $transactions = [Collections.Generic.List[object]]::new()
+    try {
+        foreach ($definition in @(Get-LocalizationCatalogDefinitions $Repository)) {
+            $relative = & $definition.TranslationPath $Locale
+            $path = Join-Path $Repository $relative
+            $exists = Test-Path -LiteralPath $path -PathType Leaf
+            $directory = [IO.Path]::GetDirectoryName($path)
+            $directoryCreated = $false
+            if (-not $exists -and -not [IO.Directory]::Exists($directory)) {
+                [IO.Directory]::CreateDirectory($directory) | Out-Null
+                $directoryCreated = $true
+            }
+            $stream = [IO.File]::Open(
+                $path,
+                $(if ($exists) { [IO.FileMode]::Open } else { [IO.FileMode]::CreateNew }),
+                [IO.FileAccess]::ReadWrite,
+                [IO.FileShare]::Read)
+            $transaction = [pscustomobject]@{
+                    Definition = $definition
+                    Relative = $relative
+                    Path = $path
+                    Existed = $exists
+                    Directory = $directory
+                    DirectoryCreated = $directoryCreated
+                    Stream = $stream
+                    OriginalBytes = [byte[]]::new(0)
+                }
+            $transactions.Add($transaction)
+            if ($exists) {
+                $transaction.OriginalBytes = Read-LockedStreamBytes $stream
+            }
+        }
+        return $transactions.ToArray()
+    }
+    catch {
+        foreach ($transaction in $transactions) {
+            $transaction.Stream.Dispose()
+            if (-not $transaction.Existed -and
+                (Test-Path -LiteralPath $transaction.Path -PathType Leaf)) {
+                Remove-Item -LiteralPath $transaction.Path -Force
+            }
+            if ($transaction.DirectoryCreated -and
+                [IO.Directory]::Exists($transaction.Directory) -and
+                [IO.Directory]::GetFileSystemEntries($transaction.Directory).Count -eq 0) {
+                [IO.Directory]::Delete($transaction.Directory)
+            }
+        }
+        throw
+    }
+}
+
+function Get-LockedTargetCatalogHash {
+    param([Parameter(Mandatory)][object[]]$Transactions)
+
+    $state = ''
+    foreach ($transaction in $Transactions) {
+        $state += Get-LengthPrefixedText ([string]$transaction.Definition.Surface)
+        $relative = ([string]$transaction.Relative).Replace('\', '/')
+        $state += Get-LengthPrefixedText $relative
+        if ($transaction.Existed) {
+            $state += Get-LengthPrefixedText 'present'
+            $state += Get-LengthPrefixedText (Get-BytesSha256 $transaction.OriginalBytes)
+        }
+        else {
+            $state += Get-LengthPrefixedText 'missing'
+        }
+    }
+    return Get-TextSha256 $state
+}
+
+function Write-LockedStreamBytes {
+    param(
+        [Parameter(Mandatory)][IO.FileStream]$Stream,
+        [Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Bytes)
+
+    $Stream.Position = 0
+    $Stream.SetLength(0)
+    $Stream.Write($Bytes, 0, $Bytes.Length)
+    $Stream.Flush($true)
+    $Stream.Position = 0
+}
+
+function Restore-LocalizationTargetTransactions {
+    param(
+        [Parameter(Mandatory)][object[]]$Transactions,
+        [switch]$RestoreExisting)
+
+    foreach ($transaction in $Transactions) {
+        if ($transaction.Existed -and $RestoreExisting) {
+            Write-LockedStreamBytes $transaction.Stream $transaction.OriginalBytes
+        }
+        elseif (-not $transaction.Existed) {
+            $transaction.Stream.Dispose()
+            if (Test-Path -LiteralPath $transaction.Path -PathType Leaf) {
+                Remove-Item -LiteralPath $transaction.Path -Force
+            }
+            if ($transaction.DirectoryCreated -and
+                [IO.Directory]::Exists($transaction.Directory) -and
+                [IO.Directory]::GetFileSystemEntries($transaction.Directory).Count -eq 0) {
+                [IO.Directory]::Delete($transaction.Directory)
+            }
+        }
+    }
 }
 
 function Sort-OrdinalStrings {
@@ -362,7 +517,11 @@ function Get-MarkupTokens {
 function Get-InvariantTokens {
     param([AllowEmptyString()][string]$Value)
 
-    $pattern = '(?:https?://[^\s<]+|(?<![\p{L}\p{Nd}_])(?:Ctrl|Alt|Shift|Win)(?:\+(?:Ctrl|Alt|Shift|Win|F(?:[1-9]|1[0-2])|[A-Z0-9]))+|\b[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+\.(?:exe|dll|json|oblight|chroma)\b|\bM[1-5]\b|\bRZ09-\d{4}\b|\b1532:[0-9A-Fa-f]{4}\b|\b0x[0-9A-Fa-f]+\b|\b[\w.-]+\.(?:exe|dll|json|oblight|chroma)\b)'
+    $modifier = '(?:Ctrl|Control|Alt|Shift|Win|Windows)'
+    $shortcutKey = '(?:Backspace|Tab|Enter|Escape|Esc|Space|Page\s*Up|Page\s*Down|End|Home|Left|Up|Right|Down|Insert|Delete|Print\s*Screen|F(?:[1-9]|1[0-9]|2[0-4])|[A-Z0-9])'
+    $shortcut = '(?<![\p{L}\p{Nd}_])' + $modifier +
+        '(?:\+' + $modifier + ')*\+' + $shortcutKey + '(?![\p{L}\p{Nd}_])'
+    $pattern = '(?:https?://[^\s<]+|' + $shortcut + '|\b[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+\.(?:exe|dll|json|oblight|chroma)\b|\bM[1-5]\b|\bRZ09-\d{4}\b|\b1532:[0-9A-Fa-f]{4}\b|\b0x[0-9A-Fa-f]+\b|\b[\w.-]+\.(?:exe|dll|json|oblight|chroma)\b)'
     return @(Sort-OrdinalStrings @(
             [regex]::Matches($Value, $pattern) | ForEach-Object Value))
 }
@@ -864,20 +1023,29 @@ function Import-LocalizationWorkbookCore {
         }
     }
 
-    $currentTargetHash = Get-LocalizationTargetCatalogHash $Repository $locale
-    if ($currentTargetHash -cne [string]$rows[0].TargetCatalogHash) {
-        throw 'Translator workbook target catalogs changed during validation. Re-export from the current target catalogs.'
-    }
-    $originalFiles = [ordered]@{}
+    $targetTransactions = @()
     $changedPaths = [Collections.Generic.List[string]]::new()
+    $writesStarted = $false
     try {
-        foreach ($definition in @(Get-LocalizationCatalogDefinitions $Repository)) {
+        $targetTransactions = @(Open-LocalizationTargetTransactions $Repository $locale)
+        $currentTargetHash = Get-LockedTargetCatalogHash $targetTransactions
+        if ($currentTargetHash -cne [string]$rows[0].TargetCatalogHash) {
+            throw 'Translator workbook target catalogs changed during validation. Re-export from the current target catalogs.'
+        }
+
+        $staged = [Collections.Generic.List[object]]::new()
+        foreach ($transaction in $targetTransactions) {
+            $definition = $transaction.Definition
             $sourcePath = Join-Path $Repository $definition.SourcePath
-            $relativeTarget = & $definition.TranslationPath $locale
-            $targetPath = Join-Path $Repository $relativeTarget
-            $exists = Test-Path -LiteralPath $targetPath -PathType Leaf
             $sourceCatalog = Read-LocalizationCatalog $sourcePath
-            $targetCatalog = if ($exists) { Read-LocalizationCatalog $targetPath } else { $null }
+            $targetText = if ($transaction.Existed) {
+                [Text.UTF8Encoding]::new($false, $true).GetString(
+                    [byte[]]$transaction.OriginalBytes)
+            } else { $null }
+            $targetCatalog = if ($transaction.Existed) {
+                ConvertFrom-LocalizationCatalogText `
+                    $targetText $transaction.Path
+            } else { $null }
             $useTargetTemplate = $null -ne $targetCatalog -and
                 $targetCatalog.Values.Count -eq $sourceCatalog.Values.Count
             if ($useTargetTemplate) {
@@ -888,12 +1056,13 @@ function Import-LocalizationWorkbookCore {
                     }
                 }
             }
-            $originalFiles[$targetPath] = if ($exists) {
-                [IO.File]::ReadAllBytes($targetPath)
-            } else { $null }
-            $templateText = [IO.File]::ReadAllText(
-                $(if ($useTargetTemplate) { $targetPath } else { $sourcePath }),
-                [Text.UTF8Encoding]::new($false, $true))
+            $templateText = if ($useTargetTemplate) {
+                $targetText
+            } else {
+                [IO.File]::ReadAllText(
+                    $sourcePath,
+                    [Text.UTF8Encoding]::new($false, $true))
+            }
             $updatedText = Set-ResourceCatalogText `
                 -Text $templateText `
                 -Surface $definition.Surface `
@@ -902,29 +1071,36 @@ function Import-LocalizationWorkbookCore {
                     $targetCatalog.Values
                 } else { $null })
             $bytes = [Text.UTF8Encoding]::new($false).GetBytes($updatedText)
-            if ($exists -and [Linq.Enumerable]::SequenceEqual(
-                    [byte[]]$originalFiles[$targetPath], [byte[]]$bytes)) {
+            if ($transaction.Existed -and [Linq.Enumerable]::SequenceEqual(
+                    [byte[]]$transaction.OriginalBytes, [byte[]]$bytes)) {
                 continue
             }
-            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($targetPath)) | Out-Null
-            [IO.File]::WriteAllBytes($targetPath, $bytes)
-            $changedPaths.Add($relativeTarget.Replace('\', '/'))
+            $staged.Add([pscustomobject]@{
+                    Transaction = $transaction
+                    Bytes = $bytes
+                })
+        }
+        $writesStarted = $staged.Count -gt 0
+        foreach ($change in $staged) {
+            Write-LockedStreamBytes $change.Transaction.Stream $change.Bytes
+            $changedPaths.Add($change.Transaction.Relative.Replace('\', '/'))
         }
         & (Join-Path $Repository 'build\Validate-LocalizationResources.ps1') `
-            -Repository $Repository
+            -Repository $Repository `
+            -AllowLockedCatalogRead
     }
     catch {
-        foreach ($path in $originalFiles.Keys) {
-            if ($null -eq $originalFiles[$path]) {
-                if (Test-Path -LiteralPath $path -PathType Leaf) {
-                    Remove-Item -LiteralPath $path -Force
-                }
-            }
-            else {
-                [IO.File]::WriteAllBytes($path, [byte[]]$originalFiles[$path])
-            }
+        if ($targetTransactions.Count -gt 0) {
+            Restore-LocalizationTargetTransactions `
+                $targetTransactions `
+                -RestoreExisting:$writesStarted
         }
         throw
+    }
+    finally {
+        foreach ($transaction in $targetTransactions) {
+            $transaction.Stream.Dispose()
+        }
     }
     return [pscustomobject]@{
         Locale = $locale
