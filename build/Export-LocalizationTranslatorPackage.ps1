@@ -83,6 +83,7 @@ controlling hardware.
         [Text.UTF8Encoding]::new($false))
 
     $screenshotsIncluded = -not $SkipScreenshots
+    $screenshotRenderProfile = $null
     if ($screenshotsIncluded) {
         $captureRoot = Join-Path $temporaryPath '.snapshot-source'
         & (Join-Path $PSScriptRoot 'Capture-LocalizationSnapshots.ps1') `
@@ -90,6 +91,16 @@ controlling hardware.
             -Configuration $Configuration `
             -Culture 'en-US'
         $capturedCulture = Join-Path $captureRoot 'en-US'
+        $captureManifest = Get-Content `
+            -LiteralPath (Join-Path $capturedCulture 'manifest.json') `
+            -Raw | ConvertFrom-Json
+        if ($captureManifest.schemaVersion -ne 2 -or
+            [string]$captureManifest.culture -cne 'en-US' -or
+            [string]$captureManifest.renderProfile.dpi -cne
+                '96-process-local-DPIUNAWARE') {
+            throw 'Localization snapshot manifest has an unexpected render profile.'
+        }
+        $screenshotRenderProfile = $captureManifest.renderProfile
         $contextPath = Join-Path $temporaryPath 'context'
         [IO.Directory]::CreateDirectory($contextPath) | Out-Null
         foreach ($image in @(Get-ChildItem -LiteralPath $capturedCulture `
@@ -130,6 +141,7 @@ controlling hardware.
         rowCount = @($model.Rows).Count
         catalogHash = $model.CatalogHash
         screenshotsIncluded = $screenshotsIncluded
+        screenshotRenderProfile = $screenshotRenderProfile
         screenshots = $manifestImages
     }
     $manifestJson = $manifest | ConvertTo-Json -Depth 5

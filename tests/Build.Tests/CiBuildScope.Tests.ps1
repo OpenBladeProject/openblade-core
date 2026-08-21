@@ -215,12 +215,16 @@ foreach ($translatorPath in @(
         'build/localization/TranslatorScreenshotMap.json',
         'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
         'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
+        'build/installer/OpenBlade.Installer.UI/Properties/Resources.ru-RU.resx',
         'docs/localization-translators.md',
         'src/OpenBlade.Setup/Properties/Resources.resx',
+        'src/OpenBlade.Setup/Properties/Resources.ru-RU.resx',
         'src/OpenBlade.Tray/App.xaml.cs',
         'src/OpenBlade.Tray/MainWindow.xaml.cs',
         'src/OpenBlade.Tray/Strings/en-US/Resources.resw',
+        'src/OpenBlade.Tray/Strings/ru-RU/Resources.resw',
         'src/OpenBlade.Tray.Core/Properties/Resources.resx',
+        'src/OpenBlade.Tray.Core/Properties/Resources.ru-RU.resx',
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')) {
     $translator = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($translatorPath)
     Assert-Contains $translator.ContractTests `

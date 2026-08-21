@@ -40,7 +40,11 @@ $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
+$previousCompatibilityLayer = $env:__COMPAT_LAYER
 try {
+    # Constrain every child renderer to a 96-DPI logical desktop without
+    # changing the user's display configuration or machine-wide settings.
+    $env:__COMPAT_LAYER = 'DPIUNAWARE'
     $env:OPENBLADE_PSEUDO_LOCALIZATION = if ($Culture -eq 'qps-ploc') { '1' } else { $null }
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $installerOutput
@@ -103,6 +107,7 @@ finally {
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
+    $env:__COMPAT_LAYER = $previousCompatibilityLayer
 }
 
 $images = @(Get-ChildItem -LiteralPath $resolvedOutput -Filter '*.png' -File -Recurse |
@@ -120,7 +125,7 @@ $manifest = [ordered]@{
     renderProfile = [ordered]@{
         language = $Culture
         theme = 'light'
-        trayDpi = 96
+        dpi = '96-process-local-DPIUNAWARE'
         installerRendering = 'software'
         data = 'sanitized-fixed-preview'
     }

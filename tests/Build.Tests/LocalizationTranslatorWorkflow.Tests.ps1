@@ -179,6 +179,12 @@ try {
             $candidate.Translation = 'placeholder removed'
             return $copy
         }),
+        @('format-index-limit', 'invalid .NET format string', {
+            param($copy)
+            $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
+            $candidate.Translation = '{99999999999}'
+            return $copy
+        }),
         @('whitespace', 'leading or trailing whitespace', {
             param($copy)
             $candidate = @($copy | Where-Object Constraints -like '*leading and trailing*')[0]
@@ -438,6 +444,11 @@ try {
         Assert-True (-not $captureScript.Contains($volatileField)) `
             "Snapshot manifest must not expose volatile field '$volatileField'."
     }
+    Assert-True ($captureScript.Contains("`$env:__COMPAT_LAYER = 'DPIUNAWARE'")) `
+        'Snapshot children must run in the process-local 96-DPI compatibility context.'
+    Assert-True ($captureScript.Contains(
+            '$env:__COMPAT_LAYER = $previousCompatibilityLayer')) `
+        'Snapshot capture must restore the caller compatibility environment.'
 }
 finally {
     Import-Module $modulePath -Force

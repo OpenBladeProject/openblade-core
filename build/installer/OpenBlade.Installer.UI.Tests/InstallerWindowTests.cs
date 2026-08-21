@@ -2,7 +2,6 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Runtime.ExceptionServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -10,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
@@ -310,6 +310,11 @@ public sealed class InstallerWindowTests
                     PumpDispatcher(window.Dispatcher);
                     window.UpdateLayout();
                     FrameworkElement visual = (FrameworkElement)window.Content;
+                    const int width = 560;
+                    const int height = 560;
+                    visual.Measure(new System.Windows.Size(width, height));
+                    visual.Arrange(new Rect(0, 0, width, height));
+                    visual.UpdateLayout();
                     FrameworkElement[] activeActions = selectActiveActions(window);
                     AssertWithinSnapshot(visual, window.HeaderPanel);
                     AssertWithinSnapshot(visual, window.VersionText);
@@ -317,33 +322,18 @@ public sealed class InstallerWindowTests
                     {
                         AssertWithinSnapshot(visual, action);
                     }
-                    _ = window.Activate();
-                    PumpDispatcher(window.Dispatcher);
-                    // Let the focused button template finish drawing before PrintWindow.
-                    Thread.Sleep(500);
-                    PumpDispatcher(window.Dispatcher);
-                    IntPtr handle = new WindowInteropHelper(window).Handle;
-                    Assert.True(GetWindowRect(handle, out NativeRect windowBounds));
-                    int width = windowBounds.Right - windowBounds.Left;
-                    int height = windowBounds.Bottom - windowBounds.Top;
-                    Assert.True(width > 0 && height > 0);
-                    using var bitmap = new System.Drawing.Bitmap(width, height);
-                    using (System.Drawing.Graphics graphics =
-                           System.Drawing.Graphics.FromImage(bitmap))
-                    {
-                        IntPtr deviceContext = graphics.GetHdc();
-                        try
-                        {
-                            Assert.True(PrintWindow(handle, deviceContext, 2));
-                        }
-                        finally
-                        {
-                            graphics.ReleaseHdc(deviceContext);
-                        }
-                    }
-                    bitmap.Save(
-                        Path.Combine(outputDirectory, name + ".png"),
-                        System.Drawing.Imaging.ImageFormat.Png);
+                    var bitmap = new RenderTargetBitmap(
+                        width,
+                        height,
+                        96,
+                        96,
+                        PixelFormats.Pbgra32);
+                    bitmap.Render(visual);
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using FileStream stream = File.Create(
+                        Path.Combine(outputDirectory, name + ".png"));
+                    encoder.Save(stream);
                 }
                 finally
                 {
@@ -351,23 +341,6 @@ public sealed class InstallerWindowTests
                 }
             });
         }
-    }
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetWindowRect(IntPtr window, out NativeRect bounds);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
     }
 
     private static void AssertWithinSnapshot(

@@ -164,8 +164,15 @@ function Assert-ValidCompositeFormat {
         [AllowEmptyString()][string]$Value,
         [Parameter(Mandatory)][string]$Description)
 
-    $indices = @([regex]::Matches($Value, '(?<!\{)\{(?<index>\d+)') |
-        ForEach-Object { [int]$_.Groups['index'].Value })
+    $indices = [Collections.Generic.List[int]]::new()
+    foreach ($match in @([regex]::Matches($Value, '(?<!\{)\{(?<index>\d+)'))) {
+        $index = 0
+        if (-not [int]::TryParse($match.Groups['index'].Value, [ref]$index) -or
+            $index -gt 1024) {
+            throw "$Description contains an invalid .NET format string."
+        }
+        $indices.Add($index)
+    }
     $argumentCount = if ($indices.Count -eq 0) { 0 }
         else { 1 + ($indices | Measure-Object -Maximum).Maximum }
     [object[]]$arguments = @('value') * $argumentCount

@@ -58,9 +58,12 @@ Export a package from the repository root:
 
 The default command renders fixed en-US context through the disconnected localization
 preview, writes a folder under `artifacts/localization/translator/`, and creates a ZIP
-with sorted entries and fixed timestamps. It does not install OpenBlade, request UAC,
-start the service or Session Agent, or perform hardware writes. The output directory is
-gitignored; do not commit generated CSV, ZIP, or PNG files.
+with sorted entries and fixed timestamps. Child renderers use a process-local 96-DPI
+compatibility context, a fixed light theme, software installer rendering, and sanitized
+sample data. That render profile and every image hash are recorded in the package
+manifest; system display settings are not changed. It does not install OpenBlade,
+request UAC, start the service or Session Agent, or perform hardware writes. The output
+directory is gitignored; do not commit generated CSV, ZIP, or PNG files.
 
 Validate a returned workbook before opening it:
 
