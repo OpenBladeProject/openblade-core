@@ -1626,7 +1626,16 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("OpenBlade installer version", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Supported laptop", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
-        Assert.Contains("Independent open-source project; not affiliated with Razer.", aboutPage.ToString(), StringComparison.Ordinal);
+        XElement communityTagline = Assert.Single(
+            aboutPage.Descendants(),
+            element => element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") == "For gamers. By the community.");
+        Assert.Equal(
+            "MainWindow_TextBlockForGamersByTheCommunity",
+            Attribute(communityTagline, "Uid"));
+        Assert.Equal(
+            "{StaticResource SecondaryTextStyle}",
+            Attribute(communityTagline, "Style"));
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Copy version information", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Equal(
