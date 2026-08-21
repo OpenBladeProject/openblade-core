@@ -80,8 +80,8 @@ Import only after validation succeeds:
     -Workbook C:\path\to\OpenBlade-ru-RU.csv
 ```
 
-The importer reconstructs the current 1,152-row source model from all four
-authoritative catalogs. It accepts reordered rows, but rejects missing, extra,
+The importer reconstructs the current source model from all four authoritative
+catalogs. It accepts reordered rows, but rejects missing, extra,
 duplicate, structurally incomplete, stale, or altered rows before writing. It validates
 placeholders, markup, access-key counts, significant whitespace, line breaks,
 punctuation-only values, protected technical identifiers, control characters, and

@@ -220,6 +220,7 @@ foreach ($translatorPath in @(
         'src/OpenBlade.Setup/Properties/Resources.resx',
         'src/OpenBlade.Setup/Properties/Resources.ru-RU.resx',
         'src/OpenBlade.Tray/App.xaml.cs',
+        'src/OpenBlade.Tray/MainWindow.xaml',
         'src/OpenBlade.Tray/MainWindow.xaml.cs',
         'src/OpenBlade.Tray/Strings/en-US/Resources.resw',
         'src/OpenBlade.Tray/Strings/ru-RU/Resources.resw',

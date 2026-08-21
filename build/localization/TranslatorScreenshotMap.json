@@ -14,6 +14,8 @@
     "tray/main-laptop.png",
     "tray/main-lighting.png",
     "tray/main-profiles.png",
+    "tray/main-profiles-narrow.png",
+    "tray/main-profiles-wide.png",
     "tray/main-settings-appearance.png",
     "tray/main-settings.png",
     "tray/tray-dashboard.png"
@@ -45,7 +47,7 @@
       "match": "key",
       "pattern": "(?i)(?:profile|automation)",
       "context": "Profiles and automation page control or status.",
-      "screenshots": ["tray/main-profiles.png"]
+      "screenshots": ["tray/main-profiles.png", "tray/main-profiles-narrow.png", "tray/main-profiles-wide.png"]
     },
     {
       "surface": "tray",
@@ -64,7 +66,7 @@
     {
       "surface": "tray",
       "match": "key",
-      "pattern": "(?i)(?:about|firmware|version|diagnostic|component)",
+      "pattern": "(?i)(?:about|firmware|version|diagnostic|component|ForGamersByTheCommunity)",
       "context": "About, diagnostics, version, or firmware information.",
       "screenshots": ["tray/main-about.png"]
     },
@@ -101,7 +103,7 @@
       "match": "source",
       "pattern": "(?i)(?:profile|automation)",
       "context": "Runtime profile and automation presentation text.",
-      "screenshots": ["tray/main-profiles.png"]
+      "screenshots": ["tray/main-profiles.png", "tray/main-profiles-narrow.png", "tray/main-profiles-wide.png"]
     },
     {
       "surface": "tray-core",

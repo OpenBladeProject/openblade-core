@@ -205,7 +205,7 @@ function Get-MarkupTokens {
 function Get-InvariantTokens {
     param([AllowEmptyString()][string]$Value)
 
-    $pattern = '(?:https?://[^\s<]+|\bRZ09-\d{4}\b|\b1532:[0-9A-Fa-f]{4}\b|\b0x[0-9A-Fa-f]+\b|\b[\w.-]+\.(?:exe|dll|json|oblight|chroma)\b)'
+    $pattern = '(?:https?://[^\s<]+|(?<![\p{L}\p{Nd}_])(?:Ctrl|Alt|Shift|Win)(?:\+(?:Ctrl|Alt|Shift|Win|F(?:[1-9]|1[0-2])|[A-Z0-9]))+|\b[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+\.(?:exe|dll|json|oblight|chroma)\b|\bM[1-5]\b|\bRZ09-\d{4}\b|\b1532:[0-9A-Fa-f]{4}\b|\b0x[0-9A-Fa-f]+\b|\b[\w.-]+\.(?:exe|dll|json|oblight|chroma)\b)'
     return @(Sort-OrdinalStrings @(
             [regex]::Matches($Value, $pattern) | ForEach-Object Value))
 }
@@ -729,14 +729,26 @@ function Test-LocalizationScreenshotSet {
 
     $Repository = Get-LocalizationRepository $Repository
     $map = Read-LocalizationScreenshotMap $Repository
+    $expected = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
     foreach ($relative in @($map.screenshots | ForEach-Object { [string]$_ })) {
         if ([IO.Path]::IsPathRooted($relative) -or @($relative.Split('/')) -contains '..') {
             throw "Translator screenshot map contains unsafe path '$relative'."
         }
+        [void]$expected.Add($relative)
         $path = Join-Path $ContextDirectory $relative
         if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
             (Get-Item -LiteralPath $path).Length -eq 0) {
             throw "Translator screenshot is missing or empty: $relative"
+        }
+    }
+    $prefix = [IO.Path]::GetFullPath($ContextDirectory).TrimEnd('\') + '\'
+    foreach ($image in @(Get-ChildItem -LiteralPath $ContextDirectory `
+            -Filter '*.png' -File -Recurse)) {
+        $relative = [IO.Path]::GetFullPath($image.FullName).Substring(
+            $prefix.Length).Replace('\', '/')
+        if (-not $expected.Contains($relative)) {
+            throw "Translator screenshot is not declared in the map: $relative"
         }
     }
 }

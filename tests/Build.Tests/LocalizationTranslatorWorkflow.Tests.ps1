@@ -81,6 +81,19 @@ function Get-CatalogPaths {
         ForEach-Object { Join-Path $Root $_ }
 }
 
+function Get-AuthoritativeSourceRowCount {
+    $total = 0
+    foreach ($relative in @(
+            'src\OpenBlade.Tray\Strings\en-US\Resources.resw',
+            'src\OpenBlade.Tray.Core\Properties\Resources.resx',
+            'build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
+            'src\OpenBlade.Setup\Properties\Resources.resx')) {
+        [xml]$catalog = [IO.File]::ReadAllText((Join-Path $repository $relative))
+        $total += @($catalog.root.data).Count
+    }
+    return $total
+}
+
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) (
     'OpenBlade.Translator.Tests.' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
@@ -89,7 +102,9 @@ try {
     $second = Join-Path $testRoot 'second.csv'
     $model = Export-LocalizationWorkbook -Repository $repository -Locale 'ru-RU' -Path $first
     [void](Export-LocalizationWorkbook -Repository $repository -Locale 'ru-RU' -Path $second)
-    Assert-Equal 1152 @($model.Rows).Count 'The workbook must cover all four catalogs.'
+    $expectedRowCount = Get-AuthoritativeSourceRowCount
+    Assert-Equal $expectedRowCount @($model.Rows).Count `
+        'The workbook must cover every row in all four catalogs.'
     Assert-Equal 4 @($model.Rows | Group-Object Surface).Count `
         'The workbook must contain four distinct surfaces.'
     Assert-Equal (Get-FileHash $first -Algorithm SHA256).Hash `
@@ -125,13 +140,28 @@ try {
             }).Count -eq 0) 'Every workbook row must map to context screenshots.'
     Assert-True (@($rows | Where-Object {
                 $_.Screenshots -match '(?:^|;)context/(?:tray|installer)/[^/]+\.png(?:;|$)'
-            }).Count -eq 1152) 'Screenshot references must be safe package-relative PNG paths.'
+            }).Count -eq $expectedRowCount) `
+        'Screenshot references must be safe package-relative PNG paths.'
+    $profileContext = @($rows | Where-Object Key -ceq `
+        'MainWindow_ButtonExportProfiles.Content')[0]
+    foreach ($profileScreenshot in @(
+            'context/tray/main-profiles.png',
+            'context/tray/main-profiles-narrow.png',
+            'context/tray/main-profiles-wide.png')) {
+        Assert-True ($profileContext.Screenshots.Split(';') -ccontains $profileScreenshot) `
+            "Profile rows must reference '$profileScreenshot'."
+    }
+    $taglineContext = @($rows | Where-Object Key -ceq `
+        'MainWindow_TextBlockForGamersByTheCommunity.Text')[0]
+    Assert-Equal 'context/tray/main-about.png' $taglineContext.Screenshots `
+        'The community tagline must use the About-page screenshot.'
 
     $reordered = Join-Path $testRoot 'reordered.csv'
     Write-CsvRows @($rows | Sort-Object Surface, Key -Descending) $reordered
     $validated = Import-LocalizationWorkbook `
         -Repository $repository -Path $reordered -ValidateOnly
-    Assert-Equal 1152 $validated.RowCount 'Reordered rows must validate by stable identity.'
+    Assert-Equal $expectedRowCount $validated.RowCount `
+        'Reordered rows must validate by stable identity.'
 
     Assert-Throws 'cannot be used as a translator target' {
         Export-LocalizationWorkbook -Repository $repository -Locale 'qps-ploc' `
@@ -185,6 +215,28 @@ try {
             $candidate.Translation = '{99999999999}'
             return $copy
         }),
+        @('shortcut-token', 'protected token', {
+            param($copy)
+            $candidate = @($copy | Where-Object Key -ceq `
+                'SpecialKey_ValuePlaceholder_Shortcut')[0]
+            $candidate.Translation = $candidate.Translation.Replace(
+                'Ctrl+Shift+M', 'Ctrl+Shift+N')
+            return $copy
+        }),
+        @('windows-path-token', 'protected token', {
+            param($copy)
+            $candidate = @($copy | Where-Object Key -ceq `
+                'SpecialKey_ValuePlaceholder_AppPath')[0]
+            $candidate.Translation = $candidate.Translation.Replace(
+                'C:\Path\To\App.exe', 'C:\Other\App.exe')
+            return $copy
+        }),
+        @('special-key-token', 'protected token', {
+            param($copy)
+            $candidate = @($copy | Where-Object Key -ceq 'SpecialKey_Slot_M1')[0]
+            $candidate.Translation = 'M6'
+            return $copy
+        }),
         @('whitespace', 'leading or trailing whitespace', {
             param($copy)
             $candidate = @($copy | Where-Object Constraints -like '*leading and trailing*')[0]
@@ -233,6 +285,23 @@ try {
             Import-LocalizationWorkbook -Repository $repository -Path $path -ValidateOnly
         } "The $($case[0]) workbook must fail closed."
     }
+
+    $screenshotFixture = Join-Path $testRoot 'screenshot-set'
+    $screenshotMap = Get-Content -LiteralPath (Join-Path $repository `
+        'build\localization\TranslatorScreenshotMap.json') -Raw | ConvertFrom-Json
+    foreach ($relative in @($screenshotMap.screenshots | ForEach-Object { [string]$_ })) {
+        $path = Join-Path $screenshotFixture $relative
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
+        [IO.File]::WriteAllBytes($path, [byte[]]@(1))
+    }
+    Test-LocalizationScreenshotSet `
+        -Repository $repository -ContextDirectory $screenshotFixture
+    $unexpectedScreenshot = Join-Path $screenshotFixture 'tray\unexpected.png'
+    [IO.File]::WriteAllBytes($unexpectedScreenshot, [byte[]]@(1))
+    Assert-Throws 'not declared in the map' {
+        Test-LocalizationScreenshotSet `
+            -Repository $repository -ContextDirectory $screenshotFixture
+    } 'Generated screenshots must be explicitly declared before packaging.'
 
     $badHeaders = Join-Path $testRoot 'headers.csv'
     Write-CsvRows @($rows | Select-Object -Property FormatVersion, Locale, Surface, Key,
