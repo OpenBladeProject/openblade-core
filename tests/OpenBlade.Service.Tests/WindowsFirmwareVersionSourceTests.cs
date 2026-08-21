@@ -146,6 +146,71 @@ public sealed class WindowsFirmwareVersionSourceTests
     }
 
     [Fact]
+    public void Capture_RejectsDuplicateNvidiaCandidatesAsAmbiguous()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, _) => null,
+            () =>
+            [
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5090 Laptop GPU",
+                    "Version98.03.5C.40.3D"),
+                new VideoFirmwareCandidate(
+                    "NVIDIA GeForce RTX 5090 Laptop GPU",
+                    "Version98.03.5C.40.3D"),
+            ]);
+
+        FirmwareVersions result = source.Capture();
+
+        Assert.Equal("Unavailable", result.VbiosVersion);
+        Assert.Equal("Unavailable", result.VbiosGpuName);
+    }
+
+    [Fact]
+    public void RegistryAdapterInstances_CollapseIdenticalDisplayHeadAliases()
+    {
+        VideoFirmwareCandidate[] aliases =
+        [
+            new("NVIDIA GeForce RTX 5090 Laptop GPU", "Version98.03.5C.40.3D"),
+            new("NVIDIA GeForce RTX 5090 Laptop GPU", "Version98.03.5C.40.3D"),
+            new(" NVIDIA GeForce RTX 5090 Laptop GPU ", " Version98.03.5C.40.3D "),
+        ];
+
+        VideoFirmwareCandidate candidate = Assert.Single(
+            WindowsFirmwareVersionSource.CollapseRegistryAdapterInstances(aliases));
+
+        Assert.Equal("NVIDIA GeForce RTX 5090 Laptop GPU", candidate.AdapterName);
+        Assert.Equal("Version98.03.5C.40.3D", candidate.BiosVersion);
+    }
+
+    [Fact]
+    public void RegistryAdapterInstances_PreserveConflictingCandidatesForFailClosedSelection()
+    {
+        VideoFirmwareCandidate[] conflicting =
+        [
+            new("NVIDIA GeForce RTX 5080 Laptop GPU", "Version98.03.5C.40.16"),
+            new("NVIDIA GeForce RTX 5090 Laptop GPU", "Version98.03.5C.40.15"),
+        ];
+
+        Assert.Equal(
+            2,
+            WindowsFirmwareVersionSource.CollapseRegistryAdapterInstances(conflicting).Count);
+    }
+
+    [Fact]
+    public void Capture_LeavesVbiosUnavailableWithoutAnNvidiaFirmwareCandidate()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, _) => null,
+            () => [new VideoFirmwareCandidate("Intel Graphics", "Intel Video BIOS")]);
+
+        FirmwareVersions result = source.Capture();
+
+        Assert.Equal("Unavailable", result.VbiosVersion);
+        Assert.Equal("Unavailable", result.VbiosGpuName);
+    }
+
+    [Fact]
     public void Capture_DoesNotPresentMissingEcComponentsAsZeroVersion()
     {
         var source = new WindowsFirmwareVersionSource((_, _) => null, () => []);

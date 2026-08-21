@@ -158,9 +158,13 @@ public static partial class RazerFirmwarePageParser
         }
 
         var gpuSpecific = new List<RazerPublishedVbiosVersion>();
+        bool hasGpuLabel = false;
+        bool hasGenericVersion = false;
         foreach (Match block in blocks)
         {
             string body = block.Groups["body"].Value;
+            hasGpuLabel |= VbiosGpuLabelRegex().IsMatch(body);
+            hasGenericVersion |= VbiosVersionRegex().IsMatch(body);
             MatchCollection gpuVersions = VbiosGpuVersionRegex().Matches(body);
             foreach (Match match in gpuVersions)
             {
@@ -180,7 +184,9 @@ public static partial class RazerFirmwarePageParser
             versions,
             versions.Count > 0
                 ? RazerPublishedFirmwareVersionStatus.Listed
-                : RazerPublishedFirmwareVersionStatus.Unreadable);
+                : hasGenericVersion && !hasGpuLabel
+                    ? RazerPublishedFirmwareVersionStatus.NotListed
+                    : RazerPublishedFirmwareVersionStatus.Unreadable);
     }
 
     private readonly record struct ParsedVbiosVersions(
@@ -224,14 +230,20 @@ public static partial class RazerFirmwarePageParser
     private static partial Regex McuVersionRegex();
 
     [GeneratedRegex(
-        "\\bvBIOS\\s+Firmware\\s+Updater\\b(?<body>(?:(?!\\bUpdater\\b).){0,500})",
+        "\\bvBIOS\\s+Firmware\\s+Updater\\b(?<body>(?:(?!\\b(?:BIOS(?:\\s+Firmware)?|EC\\s+Firmware|MCU\\s+Firmware|vBIOS\\s+Firmware|Thunderbolt(?:\\s+5)?\\s+Firmware|Touchpad\\s+Firmware|Camera\\s+Firmware)\\s+Updater\\b).){0,500})",
         RegexOptions.IgnoreCase)]
     private static partial Regex VbiosBlockRegex();
 
     [GeneratedRegex(
-        "\\b(?<gpu>RTX\\s+\\d{4})\\s*:\\s*v\\s*(?<version>[0-9A-F]+(?:\\.[0-9A-F]+)+)\\b",
+        "\\b(?<gpu>RTX\\s*\\d{4}(?:\\s*Ti)?)\\s*:\\s*v?\\s*(?<version>[0-9A-F]+(?:\\.[0-9A-F]+)+)\\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex VbiosGpuVersionRegex();
+
+    [GeneratedRegex("\\bRTX\\s*\\d{4}(?:\\s*Ti)?\\b", RegexOptions.IgnoreCase)]
+    private static partial Regex VbiosGpuLabelRegex();
+
+    [GeneratedRegex("\\b[0-9A-F]+(?:\\.[0-9A-F]+)+\\b", RegexOptions.IgnoreCase)]
+    private static partial Regex VbiosVersionRegex();
 
     [GeneratedRegex(
         "\\bThunderbolt(?:\\s+5)?\\s+Firmware\\s+Updater\\b",
@@ -563,16 +575,13 @@ public sealed class FirmwareUpdateAssistantViewModel :
     public bool ShowsMcuFirmware =>
         HasReadableFirmwareValue(installedFirmware?.McuVersion);
 
-    public bool ShowsVbiosFirmware =>
-        HasReadableFirmwareValue(installedFirmware?.VbiosVersion);
+    public bool ShowsVbiosFirmware => IsSupported;
 
     public bool ShowsBiosInDeviceInformation => !IsSupported || !ShowsBiosFirmware;
 
     public bool ShowsEcInDeviceInformation => !IsSupported || !ShowsEcFirmware;
 
     public bool ShowsMcuInDeviceInformation => !IsSupported || !ShowsMcuFirmware;
-
-    public bool ShowsVbiosInDeviceInformation => !IsSupported || !ShowsVbiosFirmware;
 
     public bool ShowsThunderboltFirmware =>
         supportPage?.PublishesThunderboltFirmware == true
@@ -692,7 +701,6 @@ public sealed class FirmwareUpdateAssistantViewModel :
         Notify(nameof(ShowsBiosInDeviceInformation));
         Notify(nameof(ShowsEcInDeviceInformation));
         Notify(nameof(ShowsMcuInDeviceInformation));
-        Notify(nameof(ShowsVbiosInDeviceInformation));
         Notify(nameof(ShowsThunderboltFirmware));
         Notify(nameof(ShowsTouchpadFirmware));
         Notify(nameof(ShowsFirmwareVersions));
@@ -858,7 +866,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
             ResolvedPublishedVbios vbios = ResolvePublishedVbios(
                 versions,
                 installedFirmware?.VbiosGpuName);
-            PublishedVbiosVersion = PublishedValue(vbios.Version, vbios.Status);
+            PublishedVbiosVersion = PublishedVbiosValue(vbios.Version, vbios.Status);
             string? thunderboltVersion = page.PublishesThunderboltFirmware
                 ? versions.ThunderboltVersion
                 : null;
@@ -918,6 +926,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 "OpenBlade firmware update check failed: {0}",
                 exception);
             RecordFailureRetry(page.ModelNumber);
+            PresentVbiosCheckFailure();
             StatusText = TrayText.Get(
                 "Couldn't read Razer's page. The official link is still available.");
         }
@@ -927,6 +936,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 "OpenBlade firmware update check failed unexpectedly: {0}",
                 exception);
             RecordFailureRetry(page.ModelNumber);
+            PresentVbiosCheckFailure();
             StatusText = TrayText.Get(
                 "Couldn't read Razer's page. The official link is still available.");
         }
@@ -976,12 +986,15 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 installedGpu,
                 StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        return matches.Length == 1
-            ? new(
+        return matches.Length switch
+        {
+            0 => new(null, installedGpu, RazerPublishedFirmwareVersionStatus.NotListed),
+            1 => new(
                 matches[0].Version,
                 installedGpu,
-                RazerPublishedFirmwareVersionStatus.Listed)
-            : new(null, null, RazerPublishedFirmwareVersionStatus.Unreadable);
+                RazerPublishedFirmwareVersionStatus.Listed),
+            _ => new(null, null, RazerPublishedFirmwareVersionStatus.Unreadable),
+        };
     }
 
     private static string? NormalizeVbiosGpuName(string? value)
@@ -997,10 +1010,11 @@ public sealed class FirmwareUpdateAssistantViewModel :
 
         Match match = Regex.Match(
             value,
-            "\\bRTX\\s+(?<model>\\d{4})\\b",
+            "\\bRTX\\s*(?<model>\\d{4})(?<tier>\\s*Ti)?\\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return match.Success
             ? $"RTX {match.Groups["model"].Value}"
+                + (match.Groups["tier"].Success ? " Ti" : string.Empty)
             : null;
     }
 
@@ -1275,7 +1289,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
                 published.McuVersion,
                 published.McuStatus);
             PublishedVbiosVersion = hasCachedVbiosResult
-                ? PublishedValue(vbios.Version, vbios.Status)
+                ? PublishedVbiosValue(vbios.Version, vbios.Status)
                 : TrayText.Get("Not checked");
             PublishedThunderboltVersion = cachedThunderboltStatus is not null
                 || cachedThunderboltVersion is not null
@@ -1351,6 +1365,23 @@ public sealed class FirmwareUpdateAssistantViewModel :
             : status == RazerPublishedFirmwareVersionStatus.NotListed
                 ? TrayText.Get("Not listed")
                 : TrayText.Get("Couldn't read");
+
+    private static string PublishedVbiosValue(
+        string? value,
+        RazerPublishedFirmwareVersionStatus status) =>
+        !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : status == RazerPublishedFirmwareVersionStatus.NotListed
+                ? TrayText.Get("None")
+                : TrayText.Get("Unavailable");
+
+    private void PresentVbiosCheckFailure()
+    {
+        if (lastSuccessfulCheckAt is null)
+        {
+            PublishedVbiosVersion = TrayText.Get("Unavailable");
+        }
+    }
 
     private static string? NormalizeCachedVersion(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

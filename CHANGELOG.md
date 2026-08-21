@@ -7,6 +7,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Moved VBIOS inventory into the Firmware section and now show `None` only
+  after Razer's page authoritatively has no exact-GPU publication. Website,
+  parser, and installed GPU readback failures remain unavailable and never
+  populate installed firmware state. Repeated display-head aliases under one
+  Windows video-adapter key now collapse to that adapter's installed VBIOS,
+  while zero or multiple NVIDIA adapters still fail closed.
 - Awaited every supervised Session Agent loop during coordinated shutdown so
   microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service

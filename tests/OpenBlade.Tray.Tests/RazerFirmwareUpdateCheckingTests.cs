@@ -62,12 +62,12 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
-    public void PageParser_ReadsGpuSpecificVbiosVersionsAndIgnoresOlderGenericUpdater()
+    public void PageParser_ReadsCurrentGpuSpecificVbiosMarkup()
     {
         const string html = """
             <table>
-              <tr><td>vBIOS Firmware Updater</td><td>RTX 5080: v98.03.5C.40.26<br />RTX 5090: v98.03.5C.40.25</td></tr>
-              <tr><td>vBIOS Firmware Updater</td><td>v98.05.31.00.63</td></tr>
+              <tr><td>vBIOS Firmware Updater</td><td>RTX 5080: v98.03.5C.40.16<br />RTX 5090: v98.03.5C.40.15</td></tr>
+              <tr><td>vBIOS Firmware Updater</td><td>RTX5070Ti: 98.05.31.00.63</td></tr>
             </table>
             """;
 
@@ -76,18 +76,34 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal(RazerPublishedFirmwareVersionStatus.Listed, versions.VbiosStatus);
         Assert.Equal(
             [
-                new RazerPublishedVbiosVersion("98.03.5C.40.26", "RTX 5080"),
-                new RazerPublishedVbiosVersion("98.03.5C.40.25", "RTX 5090"),
+                new RazerPublishedVbiosVersion("98.03.5C.40.16", "RTX 5080"),
+                new RazerPublishedVbiosVersion("98.03.5C.40.15", "RTX 5090"),
+                new RazerPublishedVbiosVersion("98.05.31.00.63", "RTX5070Ti"),
             ],
             versions.EffectiveVbiosVersions);
     }
 
     [Fact]
-    public void PageParser_RejectsGenericVbiosVersionWithoutAnExactGpuMapping()
+    public void PageParser_TreatsGenericVbiosVersionAsNoExactGpuPublication()
     {
         const string html = """
             <table>
               <tr><td>vBIOS Firmware Updater</td><td>v98.05.31.00.63</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.NotListed, versions.VbiosStatus);
+        Assert.Empty(versions.EffectiveVbiosVersions);
+    }
+
+    [Fact]
+    public void PageParser_ReportsMalformedGpuSpecificVbiosPublicationAsUnreadable()
+    {
+        const string html = """
+            <table>
+              <tr><td>vBIOS Firmware Updater</td><td>RTX 5090: version unavailable</td></tr>
             </table>
             """;
 
@@ -113,6 +129,9 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Null(versions.BiosVersion);
         Assert.Equal("1.09", versions.EcVersion);
         Assert.Equal("1.09", versions.McuVersion);
+        Assert.Equal(
+            RazerPublishedFirmwareVersionStatus.NotListed,
+            versions.VbiosStatus);
         Assert.Equal(
             RazerPublishedFirmwareVersionStatus.Unreadable,
             versions.BiosStatus);
@@ -142,6 +161,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
             <div>BIOS Firmware Updater</div><div>v2.02</div>
             <div>EC Firmware Updater</div><div>v1.09</div>
             <div>MCU Firmware Updater</div><div>v1.09</div>
+            <div>vBIOS Firmware Updater</div><div>v98.05.31.00.63</div>
             <div>Thunderbolt 5 Firmware Updater</div><div>v69.1</div>
             <div>Touchpad Firmware Updater</div><div>v1.07</div>
             """);
@@ -367,7 +387,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
-    public async Task ViewModel_ShowsOnlyFirmwareWithReadableInstalledValues()
+    public async Task ViewModel_KeepsVbiosInFirmwareWhenInstalledReadbackIsUnavailable()
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
             new StubClient(new("3.01", "1.04", "1.06")));
@@ -383,19 +403,18 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.False(viewModel.ShowsBiosFirmware);
         Assert.False(viewModel.ShowsEcFirmware);
         Assert.False(viewModel.ShowsMcuFirmware);
-        Assert.False(viewModel.ShowsVbiosFirmware);
+        Assert.True(viewModel.ShowsVbiosFirmware);
         Assert.False(viewModel.ShowsThunderboltFirmware);
         Assert.False(viewModel.ShowsTouchpadFirmware);
-        Assert.False(viewModel.ShowsFirmwareVersions);
+        Assert.True(viewModel.ShowsFirmwareVersions);
         Assert.Contains(nameof(viewModel.ShowsFirmwareVersions), changedProperties);
         Assert.True(viewModel.ShowsBiosInDeviceInformation);
         Assert.True(viewModel.ShowsEcInDeviceInformation);
         Assert.True(viewModel.ShowsMcuInDeviceInformation);
-        Assert.True(viewModel.ShowsVbiosInDeviceInformation);
+        Assert.Equal("Unavailable", viewModel.InstalledVbiosVersion);
         Assert.Contains(nameof(viewModel.ShowsBiosInDeviceInformation), changedProperties);
         Assert.Contains(nameof(viewModel.ShowsEcInDeviceInformation), changedProperties);
         Assert.Contains(nameof(viewModel.ShowsMcuInDeviceInformation), changedProperties);
-        Assert.Contains(nameof(viewModel.ShowsVbiosInDeviceInformation), changedProperties);
 
         changedProperties.Clear();
         viewModel.UpdateInstalledFirmware(new FirmwareVersions(
@@ -419,11 +438,9 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.False(viewModel.ShowsBiosInDeviceInformation);
         Assert.False(viewModel.ShowsEcInDeviceInformation);
         Assert.False(viewModel.ShowsMcuInDeviceInformation);
-        Assert.False(viewModel.ShowsVbiosInDeviceInformation);
         Assert.Contains(nameof(viewModel.ShowsBiosInDeviceInformation), changedProperties);
         Assert.Contains(nameof(viewModel.ShowsEcInDeviceInformation), changedProperties);
         Assert.Contains(nameof(viewModel.ShowsMcuInDeviceInformation), changedProperties);
-        Assert.Contains(nameof(viewModel.ShowsVbiosInDeviceInformation), changedProperties);
     }
 
     [Fact]
@@ -442,11 +459,10 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.True(viewModel.ShowsBiosFirmware);
         Assert.True(viewModel.ShowsEcFirmware);
         Assert.True(viewModel.ShowsMcuFirmware);
-        Assert.True(viewModel.ShowsVbiosFirmware);
+        Assert.False(viewModel.ShowsVbiosFirmware);
         Assert.True(viewModel.ShowsBiosInDeviceInformation);
         Assert.True(viewModel.ShowsEcInDeviceInformation);
         Assert.True(viewModel.ShowsMcuInDeviceInformation);
-        Assert.True(viewModel.ShowsVbiosInDeviceInformation);
     }
 
     [Fact]
@@ -535,11 +551,38 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Contains("vbiosGpu=RTX 5090", update.Signature);
     }
 
-    [Theory]
-    [InlineData("Unavailable")]
-    [InlineData("NVIDIA GeForce RTX 5070 Laptop GPU")]
-    public async Task ViewModel_FailsClosedWhenPublishedVbiosCannotMatchInstalledGpu(
-        string installedGpuName)
+    [Fact]
+    public async Task ViewModel_ShowsUnavailableWhenInstalledVbiosReadbackFails()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                "2.02",
+                "1.09",
+                "1.09",
+                VbiosVersions:
+                [
+                    new("98.03.5C.40.26", "RTX 5080"),
+                    new("98.03.5C.40.25", "RTX 5090"),
+                ],
+                VbiosStatus: RazerPublishedFirmwareVersionStatus.Listed)));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "Unavailable"));
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.True(viewModel.ShowsVbiosFirmware);
+        Assert.Equal("Unavailable", viewModel.InstalledVbiosVersion);
+        Assert.Equal("Unavailable", viewModel.PublishedVbiosVersion);
+        Assert.False(viewModel.IsUpdateAvailable);
+    }
+
+    [Fact]
+    public async Task ViewModel_ShowsNoneWhenNoExactPublishedVbiosMatchesInstalledGpu()
     {
         await using var viewModel = new FirmwareUpdateAssistantViewModel(
             new StubClient(new(
@@ -558,12 +601,36 @@ public sealed class RazerFirmwareUpdateCheckingTests
             "1.9.0.0",
             "98.03.5C.40.24",
             RazerBladeModelCatalog.Rz090528ModelNumber,
-            installedGpuName));
+            "NVIDIA GeForce RTX 5070 Laptop GPU"));
 
         await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
 
-        Assert.Equal("Couldn't read", viewModel.PublishedVbiosVersion);
+        Assert.Equal("None", viewModel.PublishedVbiosVersion);
         Assert.False(viewModel.IsUpdateAvailable);
+    }
+
+    [Fact]
+    public async Task ViewModel_MatchesCompactRtx5070TiPublicationExactly()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                "2.02",
+                "1.09",
+                "1.09",
+                VbiosVersions: [new("98.05.31.00.63", "RTX5070Ti")],
+                VbiosStatus: RazerPublishedFirmwareVersionStatus.Listed)));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "98.05.31.00.62",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "NVIDIA GeForce RTX 5070 Ti Laptop GPU"));
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.Equal("98.05.31.00.63", viewModel.PublishedVbiosVersion);
+        Assert.Contains("VBIOS 98.05.31.00.63", viewModel.UpdateAvailableSummary);
     }
 
     [Theory]
@@ -637,7 +704,7 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal("Couldn't read", viewModel.PublishedBiosVersion);
         Assert.Equal("Not listed", viewModel.PublishedEcVersion);
         Assert.Equal("1.06", viewModel.PublishedMcuVersion);
-        Assert.Equal("Not listed", viewModel.PublishedVbiosVersion);
+        Assert.Equal("None", viewModel.PublishedVbiosVersion);
     }
 
     [Fact]
@@ -658,6 +725,47 @@ public sealed class RazerFirmwareUpdateCheckingTests
         Assert.Equal(officialPage, viewModel.OfficialSupportUri);
         Assert.Contains("official link is still available", viewModel.StatusText);
         Assert.Equal("Not checked", viewModel.PublishedBiosVersion);
+        Assert.Equal("Unavailable", viewModel.PublishedVbiosVersion);
+    }
+
+    [Theory]
+    [InlineData("en-US", "None", "Unavailable")]
+    [InlineData("qps-ploc", "[!! Nóné ~~ !!]", "[!! Únáváíláblé ~~~~ !!]")]
+    [InlineData("ru-RU", "Нет", "Недоступно")]
+    [InlineData("zh-CN", "无", "不可用")]
+    public async Task ViewModel_LocalizesAbsentAndUnavailablePublishedVbios(
+        string cultureName,
+        string expectedNone,
+        string expectedUnavailable)
+    {
+        using var culture = new CultureScope(cultureName);
+        await using var absentViewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new("2.02", "1.09", "1.09")));
+        absentViewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "98.03.5C.40.24",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "NVIDIA GeForce RTX 5090 Laptop GPU"));
+
+        await ((AsyncRelayCommand)absentViewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.Equal(expectedNone, absentViewModel.PublishedVbiosVersion);
+
+        await using var unavailableViewModel = new FirmwareUpdateAssistantViewModel(
+            new ThrowingClient());
+        unavailableViewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "Unavailable"));
+
+        await ((AsyncRelayCommand)unavailableViewModel.CheckCommand).ExecuteAsync(null);
+
+        Assert.Equal(expectedUnavailable, unavailableViewModel.PublishedVbiosVersion);
     }
 
     [Fact]
