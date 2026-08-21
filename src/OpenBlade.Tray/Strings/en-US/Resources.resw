@@ -1232,9 +1232,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>Increase how strongly audio levels drive the keyboard colors.</value>
   </data>
-  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>Independent open-source project; not affiliated with Razer.</value>
-  </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>Installed</value>
   </data>
@@ -1900,6 +1897,9 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>HyperBoost</value>
+  </data>
+  <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
+    <value>For gamers. By the community.</value>
   </data>
   <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
     <value>Action for {0}</value>
