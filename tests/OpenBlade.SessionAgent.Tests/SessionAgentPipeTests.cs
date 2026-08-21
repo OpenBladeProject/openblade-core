@@ -66,25 +66,65 @@ public sealed class SessionAgentPipeTests
     }
 
     [Fact]
-    public async Task TryAcceptAsync_CanceledIOExceptionCompletesNormally()
+    public async Task AcceptAsync_CanceledIOExceptionCompletesNormally()
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        bool accepted = await SessionAgentPipeAccept.TryAcceptAsync(
+        SessionAgentPipeAcceptResult result = await SessionAgentPipeAccept.AcceptAsync(
             _ => Task.FromException(new IOException("The pipe is being closed.")),
             cancellation.Token);
 
-        Assert.False(accepted);
+        Assert.Equal(SessionAgentPipeAcceptResult.Canceled, result);
     }
 
     [Fact]
-    public async Task TryAcceptAsync_UnexpectedIOExceptionRemainsObservable()
+    public async Task AcceptAsync_UncanceledPipeClosingRequestsReplacement()
+    {
+        const int pipeClosingHResult = unchecked((int)0x800700E8);
+
+        SessionAgentPipeAcceptResult result = await SessionAgentPipeAccept.AcceptAsync(
+            _ => Task.FromException(new IOException(
+                "The pipe is being closed.",
+                pipeClosingHResult)),
+            CancellationToken.None);
+
+        Assert.Equal(SessionAgentPipeAcceptResult.PipeClosed, result);
+    }
+
+    [Fact]
+    public async Task WindowsAccept_ClientClosesBeforeWaitReportsPipeClosing()
+    {
+        const int pipeClosingHResult = unchecked((int)0x800700E8);
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+        var endpoint = new SessionAgentPipeEndpoint(
+            $"{SessionGpuIpc.PipeNamePrefix}.Tests.{Guid.NewGuid():N}");
+        Assert.True(SessionAgentPipeOwner.TryAcquire(endpoint, sid, out SessionAgentPipeOwner? owner));
+        await using SessionAgentPipeOwner acquiredOwner = owner!;
+        await using NamedPipeServerStream server = acquiredOwner.TakeInitialPipe();
+        await using (var client = new NamedPipeClientStream(
+            ".",
+            endpoint.PipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous))
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await client.ConnectAsync(timeout.Token);
+        }
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(
+            () => server.WaitForConnectionAsync(CancellationToken.None));
+
+        Assert.Equal(pipeClosingHResult, exception.HResult);
+    }
+
+    [Fact]
+    public async Task AcceptAsync_UnexpectedIOExceptionRemainsObservable()
     {
         var expected = new IOException("unexpected accept failure");
 
         IOException actual = await Assert.ThrowsAsync<IOException>(() =>
-            SessionAgentPipeAccept.TryAcceptAsync(
+            SessionAgentPipeAccept.AcceptAsync(
                 _ => Task.FromException(expected),
                 CancellationToken.None));
 

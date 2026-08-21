@@ -2,9 +2,18 @@ using System.Diagnostics;
 
 namespace OpenBlade.SessionAgent;
 
+internal enum SessionAgentPipeAcceptResult
+{
+    Accepted,
+    Canceled,
+    PipeClosed,
+}
+
 internal static class SessionAgentPipeAccept
 {
-    internal static async Task<bool> TryAcceptAsync(
+    private const int PipeClosingHResult = unchecked((int)0x800700E8);
+
+    internal static async Task<SessionAgentPipeAcceptResult> AcceptAsync(
         Func<CancellationToken, Task> accept,
         CancellationToken cancellationToken)
     {
@@ -12,11 +21,11 @@ internal static class SessionAgentPipeAccept
         try
         {
             await accept(cancellationToken).ConfigureAwait(false);
-            return true;
+            return SessionAgentPipeAcceptResult.Accepted;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return false;
+            return SessionAgentPipeAcceptResult.Canceled;
         }
         catch (IOException exception) when (cancellationToken.IsCancellationRequested)
         {
@@ -26,7 +35,17 @@ internal static class SessionAgentPipeAccept
                 "Session Agent pipe accept reported an I/O error during cancellation "
                 + "(0x{0:X8}).",
                 exception.HResult);
-            return false;
+            return SessionAgentPipeAcceptResult.Canceled;
+        }
+        catch (IOException exception) when (exception.HResult == PipeClosingHResult)
+        {
+            // A client can connect and close before Windows completes the server-side
+            // accept. Retire that unusable listener without terminating the agent.
+            Trace.TraceInformation(
+                "Session Agent pipe listener closed during accept (0x{0:X8}); "
+                + "replacing it.",
+                exception.HResult);
+            return SessionAgentPipeAcceptResult.PipeClosed;
         }
     }
 }
