@@ -303,13 +303,14 @@ public sealed class InstallerWindowTests
                     ShowInTaskbar = false,
                     Topmost = true,
                 };
+                InstallerTheme.Apply(window, dark: false);
                 window.Show();
                 try
                 {
                     showState(window);
                     PumpDispatcher(window.Dispatcher);
                     window.UpdateLayout();
-                    FrameworkElement visual = (FrameworkElement)window.Content;
+                    Grid visual = Assert.IsType<Grid>(window.Content);
                     const int width = 560;
                     const int height = 560;
                     visual.Measure(new System.Windows.Size(width, height));
@@ -328,7 +329,23 @@ public sealed class InstallerWindowTests
                         96,
                         96,
                         PixelFormats.Pbgra32);
+                    var backgroundVisual = new DrawingVisual();
+                    using (DrawingContext drawing = backgroundVisual.RenderOpen())
+                    {
+                        drawing.DrawRectangle(
+                            Assert.IsType<SolidColorBrush>(window.Resources["WindowBrush"]),
+                            null,
+                            new Rect(0, 0, width, height));
+                    }
+                    bitmap.Render(backgroundVisual);
                     bitmap.Render(visual);
+                    byte[] topLeftPixel = new byte[4];
+                    bitmap.CopyPixels(
+                        new Int32Rect(0, 0, 1, 1),
+                        topLeftPixel,
+                        4,
+                        0);
+                    Assert.Equal(new byte[] { 0xF7, 0xF7, 0xF7, 0xFF }, topLeftPixel);
                     var encoder = new PngBitmapEncoder();
                     encoder.Frames.Add(BitmapFrame.Create(bitmap));
                     using FileStream stream = File.Create(
