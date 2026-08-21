@@ -1232,8 +1232,8 @@
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>Увеличьте влияние уровня звука на цвета клавиатуры.</value>
   </data>
-  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>Независимый проект с открытым исходным кодом, не связанный с Razer.</value>
+  <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
+    <value>Для геймеров. От сообщества.</value>
   </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>Установлено</value>
