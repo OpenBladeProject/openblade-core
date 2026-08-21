@@ -1874,4 +1874,100 @@
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>HyperBoost</value>
   </data>
+  <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
+    <value>{0} 操作</value>
+  </data>
+  <data name="SpecialKey_Action_CycleLightingEffect" xml:space="preserve">
+    <value>循环切换键盘效果</value>
+  </data>
+  <data name="SpecialKey_Action_CyclePowerMode" xml:space="preserve">
+    <value>循环切换 OpenBlade 电源模式</value>
+  </data>
+  <data name="SpecialKey_Action_Default" xml:space="preserve">
+    <value>默认</value>
+  </data>
+  <data name="SpecialKey_Action_Disabled" xml:space="preserve">
+    <value>已禁用</value>
+  </data>
+  <data name="SpecialKey_Action_DoubleClick" xml:space="preserve">
+    <value>双击</value>
+  </data>
+  <data name="SpecialKey_Action_KeyboardShortcut" xml:space="preserve">
+    <value>键盘快捷键</value>
+  </data>
+  <data name="SpecialKey_Action_LaunchApplication" xml:space="preserve">
+    <value>启动应用</value>
+  </data>
+  <data name="SpecialKey_Action_LeftClick" xml:space="preserve">
+    <value>左键单击</value>
+  </data>
+  <data name="SpecialKey_Action_MiddleClick" xml:space="preserve">
+    <value>中键单击</value>
+  </data>
+  <data name="SpecialKey_Action_MouseBack" xml:space="preserve">
+    <value>鼠标后退</value>
+  </data>
+  <data name="SpecialKey_Action_MouseForward" xml:space="preserve">
+    <value>鼠标前进</value>
+  </data>
+  <data name="SpecialKey_Action_MuteMicrophone" xml:space="preserve">
+    <value>麦克风静音</value>
+  </data>
+  <data name="SpecialKey_Action_MuteVolume" xml:space="preserve">
+    <value>静音</value>
+  </data>
+  <data name="SpecialKey_Action_NextTrack" xml:space="preserve">
+    <value>下一曲</value>
+  </data>
+  <data name="SpecialKey_Action_OpenWebsite" xml:space="preserve">
+    <value>打开网站</value>
+  </data>
+  <data name="SpecialKey_Action_PlayPause" xml:space="preserve">
+    <value>播放或暂停</value>
+  </data>
+  <data name="SpecialKey_Action_PreviousTrack" xml:space="preserve">
+    <value>上一曲</value>
+  </data>
+  <data name="SpecialKey_Action_RightClick" xml:space="preserve">
+    <value>右键单击</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollDown" xml:space="preserve">
+    <value>向下滚动</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollUp" xml:space="preserve">
+    <value>向上滚动</value>
+  </data>
+  <data name="SpecialKey_Action_ToggleGamingMode" xml:space="preserve">
+    <value>切换游戏模式</value>
+  </data>
+  <data name="SpecialKey_Action_TypeText" xml:space="preserve">
+    <value>输入文本</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeDown" xml:space="preserve">
+    <value>降低音量</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeUp" xml:space="preserve">
+    <value>提高音量</value>
+  </data>
+  <data name="SpecialKey_Slot_M1" xml:space="preserve">
+    <value>M1</value>
+  </data>
+  <data name="SpecialKey_Slot_M2" xml:space="preserve">
+    <value>M2</value>
+  </data>
+  <data name="SpecialKey_Slot_M3" xml:space="preserve">
+    <value>M3</value>
+  </data>
+  <data name="SpecialKey_Slot_M4" xml:space="preserve">
+    <value>M4</value>
+  </data>
+  <data name="SpecialKey_Slot_M5" xml:space="preserve">
+    <value>M5</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_AppPath" xml:space="preserve">
+    <value>C:\Path\To\App.exe</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
+    <value>https://example.com</value>
+  </data>
 </root>

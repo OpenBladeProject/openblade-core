@@ -4,7 +4,7 @@ param()
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
-$protectedPattern = '(?:\{[^{}]+\}|_[\p{L}]|https?://\S+|[A-Za-z]:\\\S+|OpenBlade(?:\.[A-Za-z0-9]+)*|Dynamic Lighting|Session Agent|Razer|NVIDIA|Windows|WinUI|WPF|GitHub)'
+$protectedPattern = '(?:\{[^{}]+\}|_[\p{L}]|https?://\S+|[A-Za-z]:\\\S+|\b(?:Ctrl|Alt|Shift|Win)(?:\+(?:Ctrl|Alt|Shift|Win|[A-Za-z0-9]+))+\b|OpenBlade(?:\.[A-Za-z0-9]+)*|Dynamic Lighting|Session Agent|Razer|NVIDIA|Windows|WinUI|WPF|GitHub)'
 $accentReplacements = @(
     @('a', [string][char]0x00E1), @('e', [string][char]0x00E9),
     @('i', [string][char]0x00ED), @('o', [string][char]0x00F3),

@@ -2308,6 +2308,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Injected replacement tray icon failure", smoke, StringComparison.Ordinal);
         Assert.Contains("ReferenceEquals(trayIconHost, initialTrayIcon)", smoke, StringComparison.Ordinal);
         Assert.Contains("expectMaximized", smoke, StringComparison.Ordinal);
+        Assert.Contains(
+            "The language refresh changed invariant M-key bindings.",
+            smoke,
+            StringComparison.Ordinal);
+        Assert.Contains("ExpectedKeyboardShortcutAction", smoke, StringComparison.Ordinal);
+        Assert.Contains("ExpectedActionAccessibleName", smoke, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
@@ -2866,6 +2872,10 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string bindingViewModel = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
 
         Assert.Contains("Text=\"Shortcut keys\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
@@ -2889,7 +2899,15 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"{x:Bind SlotLabel}\"",
+            "ItemsSource=\"{x:Bind AvailableActions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind SlotLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{x:Bind ActionAccessibleName, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2932,6 +2950,79 @@ public sealed class WinUiShellContractTests
             "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
+        Assert.Contains("CreateActionOptions()", bindingViewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "availableActions.Single(option => option.Kind == normalized.Kind)",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "public static IReadOnlyList<SpecialKeyActionOption> ActionOptions",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Slot.ToString()", bindingViewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SpecialKeyEditorResourcesCoverEveryActionAndSlotInEveryCatalog()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
+        string[] resourceKeys = System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "LocalizedResources\\.(?:Get|Format)\\(\\s*\\\"(?<key>SpecialKey_[^\\\"]+)\\\"")
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        System.Text.RegularExpressions.Match[] actionOptions =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "new\\(SpecialKeyActionKind\\.(?<kind>\\w+),\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Action_[^\\\"]+)\\\"")
+            .ToArray();
+        System.Text.RegularExpressions.Match[] slotLabels =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "SpecialKeySlot\\.(?<slot>\\w+)\\s*=>\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Slot_[^\\\"]+)\\\"")
+            .ToArray();
+        string[] actionKeys = actionOptions
+            .Select(match => match.Groups["key"].Value)
+            .ToArray();
+        string[] slotKeys = slotLabels
+            .Select(match => match.Groups["key"].Value)
+            .ToArray();
+
+        Assert.Equal(
+            Enum.GetNames<SpecialKeyActionKind>().Order(StringComparer.Ordinal),
+            actionOptions
+                .Select(match => match.Groups["kind"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(actionKeys.Length, actionKeys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(
+            Enum.GetNames<SpecialKeySlot>().Order(StringComparer.Ordinal),
+            slotLabels
+                .Select(match => match.Groups["slot"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(slotKeys.Length, slotKeys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains("SpecialKey_Action_AccessibleName", resourceKeys);
+
+        foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
+        {
+            XDocument catalog = XDocument.Load(RepositoryPath(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            HashSet<string> catalogKeys = catalog.Root!
+                .Elements("data")
+                .Select(element => (string)element.Attribute("name")!)
+                .ToHashSet(StringComparer.Ordinal);
+            Assert.All(resourceKeys, key => Assert.Contains(key, catalogKeys));
+        }
     }
 
     [Fact]

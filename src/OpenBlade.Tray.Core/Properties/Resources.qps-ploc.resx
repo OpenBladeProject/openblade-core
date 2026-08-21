@@ -253,7 +253,7 @@
     <value>[!! Bést pówér éffícíéncý ~~~~~~~ !!]</value>
   </data>
   <data name="Block Alt+Tab" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ~~ !!]</value>
   </data>
   <data name="Block Windows key" xml:space="preserve">
     <value>[!! Blóck Windows kéý ~~~ !!]</value>
@@ -1198,7 +1198,7 @@
     <value>[!! ÚSB-C prófílé ~~~~ !!]</value>
   </data>
   <data name="Use a shortcut such as Ctrl+Shift+M." xml:space="preserve">
-    <value>[!! Úsé á shórtcút súch ás Ctrl+Shíft+M. ~~~~~~~~~~ !!]</value>
+    <value>[!! Úsé á shórtcút súch ás Ctrl+Shift+M. ~~~~~~~ !!]</value>
   </data>
   <data name="Using {0} W" xml:space="preserve">
     <value>[!! Úsíng {0} W ~~~ !!]</value>

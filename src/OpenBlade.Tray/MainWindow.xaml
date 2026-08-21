@@ -2944,7 +2944,7 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Spacing="2"
                                                                     VerticalAlignment="Center">
-                                                            <TextBlock Text="{x:Bind SlotLabel}"
+                                                            <TextBlock Text="{x:Bind SlotLabel, Mode=OneWay}"
                                                                        Style="{StaticResource CardTitleStyle}" />
                                                         </StackPanel>
                                                         <ComboBox Grid.Column="1"
@@ -2952,13 +2952,13 @@
                                                                   MinWidth="200"
                                                                   HorizontalAlignment="Stretch"
                                                                   VerticalAlignment="Center"
-                                                                  ItemsSource="{x:Bind AvailableActions}"
+                                                                  ItemsSource="{x:Bind AvailableActions, Mode=OneWay}"
                                                                   DisplayMemberPath="Label"
                                                                   SelectedItem="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   Tag="{x:Bind Slot}"
                                                                   SelectionChanged="OnSpecialKeyActionSelectionChanged"
-                                                                  AutomationProperties.Name="{x:Bind SlotLabel}" />
+                                                                  AutomationProperties.Name="{x:Bind ActionAccessibleName, Mode=OneWay}" />
                                                     </Grid>
                                                     <Grid Visibility="{x:Bind ValueEditorVisibility, Mode=OneWay}"
                                                           ColumnSpacing="20">

@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Localized every M1-M5 shortcut action, row label, validation message, and
+  accessibility name immediately when the app language changes.
 - Moved VBIOS inventory into the Firmware section and now show `None` only
   after Razer's page authoritatively has no exact-GPU publication. Website,
   parser, and installed GPU readback failures remain unavailable and never
