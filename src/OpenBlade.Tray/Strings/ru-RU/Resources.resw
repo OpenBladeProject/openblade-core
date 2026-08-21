@@ -1901,4 +1901,100 @@
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>HyperBoost</value>
   </data>
+  <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
+    <value>Действие клавиши {0}</value>
+  </data>
+  <data name="SpecialKey_Action_CycleLightingEffect" xml:space="preserve">
+    <value>Переключить эффект клавиатуры</value>
+  </data>
+  <data name="SpecialKey_Action_CyclePowerMode" xml:space="preserve">
+    <value>Переключить режим питания OpenBlade</value>
+  </data>
+  <data name="SpecialKey_Action_Default" xml:space="preserve">
+    <value>По умолчанию</value>
+  </data>
+  <data name="SpecialKey_Action_Disabled" xml:space="preserve">
+    <value>Отключено</value>
+  </data>
+  <data name="SpecialKey_Action_DoubleClick" xml:space="preserve">
+    <value>Двойной щелчок</value>
+  </data>
+  <data name="SpecialKey_Action_KeyboardShortcut" xml:space="preserve">
+    <value>Сочетание клавиш</value>
+  </data>
+  <data name="SpecialKey_Action_LaunchApplication" xml:space="preserve">
+    <value>Запустить приложение</value>
+  </data>
+  <data name="SpecialKey_Action_LeftClick" xml:space="preserve">
+    <value>Левый щелчок</value>
+  </data>
+  <data name="SpecialKey_Action_MiddleClick" xml:space="preserve">
+    <value>Средний щелчок</value>
+  </data>
+  <data name="SpecialKey_Action_MouseBack" xml:space="preserve">
+    <value>Назад (мышь)</value>
+  </data>
+  <data name="SpecialKey_Action_MouseForward" xml:space="preserve">
+    <value>Вперёд (мышь)</value>
+  </data>
+  <data name="SpecialKey_Action_MuteMicrophone" xml:space="preserve">
+    <value>Отключить микрофон</value>
+  </data>
+  <data name="SpecialKey_Action_MuteVolume" xml:space="preserve">
+    <value>Отключить звук</value>
+  </data>
+  <data name="SpecialKey_Action_NextTrack" xml:space="preserve">
+    <value>Следующая композиция</value>
+  </data>
+  <data name="SpecialKey_Action_OpenWebsite" xml:space="preserve">
+    <value>Открыть веб-сайт</value>
+  </data>
+  <data name="SpecialKey_Action_PlayPause" xml:space="preserve">
+    <value>Воспроизведение или пауза</value>
+  </data>
+  <data name="SpecialKey_Action_PreviousTrack" xml:space="preserve">
+    <value>Предыдущая композиция</value>
+  </data>
+  <data name="SpecialKey_Action_RightClick" xml:space="preserve">
+    <value>Правый щелчок</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollDown" xml:space="preserve">
+    <value>Прокрутка вниз</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollUp" xml:space="preserve">
+    <value>Прокрутка вверх</value>
+  </data>
+  <data name="SpecialKey_Action_ToggleGamingMode" xml:space="preserve">
+    <value>Переключить игровой режим</value>
+  </data>
+  <data name="SpecialKey_Action_TypeText" xml:space="preserve">
+    <value>Ввести текст</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeDown" xml:space="preserve">
+    <value>Уменьшить громкость</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeUp" xml:space="preserve">
+    <value>Увеличить громкость</value>
+  </data>
+  <data name="SpecialKey_Slot_M1" xml:space="preserve">
+    <value>M1</value>
+  </data>
+  <data name="SpecialKey_Slot_M2" xml:space="preserve">
+    <value>M2</value>
+  </data>
+  <data name="SpecialKey_Slot_M3" xml:space="preserve">
+    <value>M3</value>
+  </data>
+  <data name="SpecialKey_Slot_M4" xml:space="preserve">
+    <value>M4</value>
+  </data>
+  <data name="SpecialKey_Slot_M5" xml:space="preserve">
+    <value>M5</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_AppPath" xml:space="preserve">
+    <value>C:\Path\To\App.exe</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
+    <value>https://example.com</value>
+  </data>
 </root>

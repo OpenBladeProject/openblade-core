@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Localized every M1-M5 shortcut action, row label, validation message, and
+  accessibility name immediately when the app language changes.
 - Awaited every supervised Session Agent loop during coordinated shutdown so
   microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service

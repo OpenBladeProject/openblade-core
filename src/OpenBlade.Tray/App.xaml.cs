@@ -429,7 +429,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Как в Windows",
                     "Открыть",
                     "От аккумулятора",
-                    "Сохраняет текущий параметр Windows."),
+                    "Сохраняет текущий параметр Windows.",
+                    "По умолчанию",
+                    "Сочетание клавиш",
+                    "Действие клавиши M1"),
                 new(
                     UiLanguagePreference.SimplifiedChinese,
                     "应用语言",
@@ -437,7 +440,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "跟随 Windows 设置",
                     "打开",
                     "使用电池",
-                    "保留当前 Windows 设置。"),
+                    "保留当前 Windows 设置。",
+                    "默认",
+                    "键盘快捷键",
+                    "M1 操作"),
                 new(
                     UiLanguagePreference.English,
                     "App language",
@@ -445,7 +451,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Follow Windows",
                     "Open",
                     "On battery",
-                    "Keeps the current Windows setting."),
+                    "Keeps the current Windows setting.",
+                    "Default",
+                    "Keyboard shortcut",
+                    "Action for M1"),
             ];
 
             ApplyRuntimeLocalizationPreference(cases[0].Preference);
@@ -479,6 +488,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 MainWindow previousWindow = mainWindow
                     ?? throw new InvalidOperationException(
                         "The localization smoke test lost the main window.");
+                SpecialKeyBindingPreference[] previousBindings = previousWindow
+                    .SpecialKeyBindings
+                    .Select(binding => binding.ToPreference())
+                    .ToArray();
                 bool expectMaximized = smokeCase.Preference
                     == UiLanguagePreference.SimplifiedChinese;
                 if (expectMaximized
@@ -492,6 +505,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                     smokeCase,
                     previousWindow,
                     expectMaximized);
+                SpecialKeyBindingPreference[] refreshedBindings = mainWindow!
+                    .SpecialKeyBindings
+                    .Select(binding => binding.ToPreference())
+                    .ToArray();
+                if (!previousBindings.SequenceEqual(refreshedBindings))
+                {
+                    throw new InvalidOperationException(
+                        "The language refresh changed invariant M-key bindings.");
+                }
             }
 
             File.WriteAllText(smokeReportPath, "completed");
@@ -561,6 +583,32 @@ public partial class App : Microsoft.UI.Xaml.Application
             smokeCase.ExpectedWindowsPowerModeDescription,
             window.ViewModel.AvailableWindowsPowerModeOptions[0].Description,
             "Windows power mode description");
+        if (window.SpecialKeyBindings.Count != Enum.GetValues<SpecialKeySlot>().Length)
+        {
+            throw new InvalidOperationException(
+                "The language refresh did not preserve every M-key binding row.");
+        }
+
+        SpecialKeyBindingViewModel m1 = window.SpecialKeyBindings.Single(
+            binding => binding.Slot == SpecialKeySlot.M1);
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedDefaultAction,
+            m1.AvailableActions.Single(
+                option => option.Kind == SpecialKeyActionKind.Default).Label,
+            "M1 default action");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedKeyboardShortcutAction,
+            m1.AvailableActions.Single(
+                option => option.Kind == SpecialKeyActionKind.KeyboardShortcut).Label,
+            "M1 keyboard shortcut action");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedActionAccessibleName,
+            m1.ActionAccessibleName,
+            "M1 action accessibility name");
+        AssertLiveLocalizationValue(
+            m1.AvailableActions.Single(option => option.Kind == m1.SelectedAction.Kind).Label,
+            m1.SelectedAction.Label,
+            "M1 selected action");
     }
 
     private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
@@ -1654,7 +1702,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedSystemChoice,
         string ExpectedOpenMenuItem,
         string ExpectedBatteryProfile,
-        string ExpectedWindowsPowerModeDescription);
+        string ExpectedWindowsPowerModeDescription,
+        string ExpectedDefaultAction,
+        string ExpectedKeyboardShortcutAction,
+        string ExpectedActionAccessibleName);
 
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,

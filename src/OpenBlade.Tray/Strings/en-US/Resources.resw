@@ -1901,4 +1901,100 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>HyperBoost</value>
   </data>
+  <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
+    <value>Action for {0}</value>
+  </data>
+  <data name="SpecialKey_Action_CycleLightingEffect" xml:space="preserve">
+    <value>Cycle keyboard effect</value>
+  </data>
+  <data name="SpecialKey_Action_CyclePowerMode" xml:space="preserve">
+    <value>Cycle OpenBlade power mode</value>
+  </data>
+  <data name="SpecialKey_Action_Default" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="SpecialKey_Action_Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="SpecialKey_Action_DoubleClick" xml:space="preserve">
+    <value>Double click</value>
+  </data>
+  <data name="SpecialKey_Action_KeyboardShortcut" xml:space="preserve">
+    <value>Keyboard shortcut</value>
+  </data>
+  <data name="SpecialKey_Action_LaunchApplication" xml:space="preserve">
+    <value>Launch an app</value>
+  </data>
+  <data name="SpecialKey_Action_LeftClick" xml:space="preserve">
+    <value>Left click</value>
+  </data>
+  <data name="SpecialKey_Action_MiddleClick" xml:space="preserve">
+    <value>Middle click</value>
+  </data>
+  <data name="SpecialKey_Action_MouseBack" xml:space="preserve">
+    <value>Mouse back</value>
+  </data>
+  <data name="SpecialKey_Action_MouseForward" xml:space="preserve">
+    <value>Mouse forward</value>
+  </data>
+  <data name="SpecialKey_Action_MuteMicrophone" xml:space="preserve">
+    <value>Mute microphone</value>
+  </data>
+  <data name="SpecialKey_Action_MuteVolume" xml:space="preserve">
+    <value>Mute volume</value>
+  </data>
+  <data name="SpecialKey_Action_NextTrack" xml:space="preserve">
+    <value>Next track</value>
+  </data>
+  <data name="SpecialKey_Action_OpenWebsite" xml:space="preserve">
+    <value>Open a website</value>
+  </data>
+  <data name="SpecialKey_Action_PlayPause" xml:space="preserve">
+    <value>Play or pause</value>
+  </data>
+  <data name="SpecialKey_Action_PreviousTrack" xml:space="preserve">
+    <value>Previous track</value>
+  </data>
+  <data name="SpecialKey_Action_RightClick" xml:space="preserve">
+    <value>Right click</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollDown" xml:space="preserve">
+    <value>Scroll down</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollUp" xml:space="preserve">
+    <value>Scroll up</value>
+  </data>
+  <data name="SpecialKey_Action_ToggleGamingMode" xml:space="preserve">
+    <value>Toggle Gaming mode</value>
+  </data>
+  <data name="SpecialKey_Action_TypeText" xml:space="preserve">
+    <value>Type text</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeDown" xml:space="preserve">
+    <value>Volume down</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeUp" xml:space="preserve">
+    <value>Volume up</value>
+  </data>
+  <data name="SpecialKey_Slot_M1" xml:space="preserve">
+    <value>M1</value>
+  </data>
+  <data name="SpecialKey_Slot_M2" xml:space="preserve">
+    <value>M2</value>
+  </data>
+  <data name="SpecialKey_Slot_M3" xml:space="preserve">
+    <value>M3</value>
+  </data>
+  <data name="SpecialKey_Slot_M4" xml:space="preserve">
+    <value>M4</value>
+  </data>
+  <data name="SpecialKey_Slot_M5" xml:space="preserve">
+    <value>M5</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_AppPath" xml:space="preserve">
+    <value>C:\Path\To\App.exe</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
+    <value>https://example.com</value>
+  </data>
 </root>

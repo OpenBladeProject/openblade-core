@@ -10,34 +10,7 @@ public sealed record SpecialKeyActionOption(
 
 public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 {
-    public static IReadOnlyList<SpecialKeyActionOption> ActionOptions { get; } =
-    [
-        Option(SpecialKeyActionKind.Default, "SpecialKey_Action_Default", "Default"),
-        Option(SpecialKeyActionKind.Disabled, "SpecialKey_Action_Disabled", "Disabled"),
-        Option(SpecialKeyActionKind.KeyboardShortcut, "SpecialKey_Action_KeyboardShortcut", "Keyboard shortcut"),
-        Option(SpecialKeyActionKind.MouseLeftClick, "SpecialKey_Action_LeftClick", "Left click"),
-        Option(SpecialKeyActionKind.MouseRightClick, "SpecialKey_Action_RightClick", "Right click"),
-        Option(SpecialKeyActionKind.MouseMiddleClick, "SpecialKey_Action_MiddleClick", "Middle click"),
-        Option(SpecialKeyActionKind.MouseBack, "SpecialKey_Action_MouseBack", "Mouse back"),
-        Option(SpecialKeyActionKind.MouseForward, "SpecialKey_Action_MouseForward", "Mouse forward"),
-        Option(SpecialKeyActionKind.MouseDoubleClick, "SpecialKey_Action_DoubleClick", "Double click"),
-        Option(SpecialKeyActionKind.MouseScrollUp, "SpecialKey_Action_ScrollUp", "Scroll up"),
-        Option(SpecialKeyActionKind.MouseScrollDown, "SpecialKey_Action_ScrollDown", "Scroll down"),
-        Option(SpecialKeyActionKind.MediaPreviousTrack, "SpecialKey_Action_PreviousTrack", "Previous track"),
-        Option(SpecialKeyActionKind.MediaPlayPause, "SpecialKey_Action_PlayPause", "Play or pause"),
-        Option(SpecialKeyActionKind.MediaNextTrack, "SpecialKey_Action_NextTrack", "Next track"),
-        Option(SpecialKeyActionKind.VolumeMute, "SpecialKey_Action_MuteVolume", "Mute volume"),
-        Option(SpecialKeyActionKind.VolumeDown, "SpecialKey_Action_VolumeDown", "Volume down"),
-        Option(SpecialKeyActionKind.VolumeUp, "SpecialKey_Action_VolumeUp", "Volume up"),
-        Option(SpecialKeyActionKind.MicrophoneMute, "SpecialKey_Action_MuteMicrophone", "Mute microphone"),
-        Option(SpecialKeyActionKind.LaunchApplication, "SpecialKey_Action_LaunchApplication", "Launch an app"),
-        Option(SpecialKeyActionKind.OpenWebsite, "SpecialKey_Action_OpenWebsite", "Open a website"),
-        Option(SpecialKeyActionKind.TypeText, "SpecialKey_Action_TypeText", "Type text"),
-        Option(SpecialKeyActionKind.CyclePowerMode, "SpecialKey_Action_CyclePowerMode", "Cycle OpenBlade power mode"),
-        Option(SpecialKeyActionKind.ToggleGamingMode, "SpecialKey_Action_ToggleGamingMode", "Toggle Gaming mode"),
-        Option(SpecialKeyActionKind.CycleLightingEffect, "SpecialKey_Action_CycleLightingEffect", "Cycle keyboard effect"),
-    ];
-
+    private readonly IReadOnlyList<SpecialKeyActionOption> availableActions;
     private SpecialKeyActionOption selectedAction;
     private string value;
     private bool isEditable;
@@ -50,7 +23,8 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
         Slot = preference.Slot;
         this.isEditable = isEditable;
         SpecialKeyAction normalized = SpecialKeyBindingDefaults.Normalize(preference.Action);
-        selectedAction = ActionOptions.Single(option => option.Kind == normalized.Kind);
+        availableActions = CreateActionOptions();
+        selectedAction = availableActions.Single(option => option.Kind == normalized.Kind);
         value = normalized.Value ?? string.Empty;
     }
 
@@ -58,9 +32,22 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     public SpecialKeySlot Slot { get; }
 
-    public IReadOnlyList<SpecialKeyActionOption> AvailableActions => ActionOptions;
+    public IReadOnlyList<SpecialKeyActionOption> AvailableActions => availableActions;
 
-    public string SlotLabel => Slot.ToString();
+    public string SlotLabel => Slot switch
+    {
+        SpecialKeySlot.M1 => LocalizedResources.Get("SpecialKey_Slot_M1", "M1"),
+        SpecialKeySlot.M2 => LocalizedResources.Get("SpecialKey_Slot_M2", "M2"),
+        SpecialKeySlot.M3 => LocalizedResources.Get("SpecialKey_Slot_M3", "M3"),
+        SpecialKeySlot.M4 => LocalizedResources.Get("SpecialKey_Slot_M4", "M4"),
+        SpecialKeySlot.M5 => LocalizedResources.Get("SpecialKey_Slot_M5", "M5"),
+        _ => string.Empty,
+    };
+
+    public string ActionAccessibleName => LocalizedResources.Format(
+        "SpecialKey_Action_AccessibleName",
+        "Action for {0}",
+        SlotLabel);
 
     public bool IsEditable
     {
@@ -146,8 +133,12 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
     public string ValuePlaceholder => SelectedAction.Kind switch
     {
         SpecialKeyActionKind.KeyboardShortcut => LocalizedResources.Get("SpecialKey_ValuePlaceholder_Shortcut", "For example: Ctrl+Shift+M"),
-        SpecialKeyActionKind.LaunchApplication => @"C:\Path\To\App.exe",
-        SpecialKeyActionKind.OpenWebsite => "https://example.com",
+        SpecialKeyActionKind.LaunchApplication => LocalizedResources.Get(
+            "SpecialKey_ValuePlaceholder_AppPath",
+            "C:\\Path\\To\\App.exe"),
+        SpecialKeyActionKind.OpenWebsite => LocalizedResources.Get(
+            "SpecialKey_ValuePlaceholder_Website",
+            "https://example.com"),
         SpecialKeyActionKind.TypeText => LocalizedResources.Get("SpecialKey_ValuePlaceholder_Text", "Text to type"),
         _ => string.Empty,
     };
@@ -169,10 +160,32 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-    private static SpecialKeyActionOption Option(
-        SpecialKeyActionKind kind,
-        string resourceKey,
-        string englishLabel) =>
-        new(kind, LocalizedResources.Get(resourceKey, englishLabel));
+    private static IReadOnlyList<SpecialKeyActionOption> CreateActionOptions() =>
+    [
+        new(SpecialKeyActionKind.Default, LocalizedResources.Get("SpecialKey_Action_Default", "Default")),
+        new(SpecialKeyActionKind.Disabled, LocalizedResources.Get("SpecialKey_Action_Disabled", "Disabled")),
+        new(SpecialKeyActionKind.KeyboardShortcut, LocalizedResources.Get("SpecialKey_Action_KeyboardShortcut", "Keyboard shortcut")),
+        new(SpecialKeyActionKind.MouseLeftClick, LocalizedResources.Get("SpecialKey_Action_LeftClick", "Left click")),
+        new(SpecialKeyActionKind.MouseRightClick, LocalizedResources.Get("SpecialKey_Action_RightClick", "Right click")),
+        new(SpecialKeyActionKind.MouseMiddleClick, LocalizedResources.Get("SpecialKey_Action_MiddleClick", "Middle click")),
+        new(SpecialKeyActionKind.MouseBack, LocalizedResources.Get("SpecialKey_Action_MouseBack", "Mouse back")),
+        new(SpecialKeyActionKind.MouseForward, LocalizedResources.Get("SpecialKey_Action_MouseForward", "Mouse forward")),
+        new(SpecialKeyActionKind.MouseDoubleClick, LocalizedResources.Get("SpecialKey_Action_DoubleClick", "Double click")),
+        new(SpecialKeyActionKind.MouseScrollUp, LocalizedResources.Get("SpecialKey_Action_ScrollUp", "Scroll up")),
+        new(SpecialKeyActionKind.MouseScrollDown, LocalizedResources.Get("SpecialKey_Action_ScrollDown", "Scroll down")),
+        new(SpecialKeyActionKind.MediaPreviousTrack, LocalizedResources.Get("SpecialKey_Action_PreviousTrack", "Previous track")),
+        new(SpecialKeyActionKind.MediaPlayPause, LocalizedResources.Get("SpecialKey_Action_PlayPause", "Play or pause")),
+        new(SpecialKeyActionKind.MediaNextTrack, LocalizedResources.Get("SpecialKey_Action_NextTrack", "Next track")),
+        new(SpecialKeyActionKind.VolumeMute, LocalizedResources.Get("SpecialKey_Action_MuteVolume", "Mute volume")),
+        new(SpecialKeyActionKind.VolumeDown, LocalizedResources.Get("SpecialKey_Action_VolumeDown", "Volume down")),
+        new(SpecialKeyActionKind.VolumeUp, LocalizedResources.Get("SpecialKey_Action_VolumeUp", "Volume up")),
+        new(SpecialKeyActionKind.MicrophoneMute, LocalizedResources.Get("SpecialKey_Action_MuteMicrophone", "Mute microphone")),
+        new(SpecialKeyActionKind.LaunchApplication, LocalizedResources.Get("SpecialKey_Action_LaunchApplication", "Launch an app")),
+        new(SpecialKeyActionKind.OpenWebsite, LocalizedResources.Get("SpecialKey_Action_OpenWebsite", "Open a website")),
+        new(SpecialKeyActionKind.TypeText, LocalizedResources.Get("SpecialKey_Action_TypeText", "Type text")),
+        new(SpecialKeyActionKind.CyclePowerMode, LocalizedResources.Get("SpecialKey_Action_CyclePowerMode", "Cycle OpenBlade power mode")),
+        new(SpecialKeyActionKind.ToggleGamingMode, LocalizedResources.Get("SpecialKey_Action_ToggleGamingMode", "Toggle Gaming mode")),
+        new(SpecialKeyActionKind.CycleLightingEffect, LocalizedResources.Get("SpecialKey_Action_CycleLightingEffect", "Cycle keyboard effect")),
+    ];
 
 }

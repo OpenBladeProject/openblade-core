@@ -2253,6 +2253,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Injected replacement tray icon failure", smoke, StringComparison.Ordinal);
         Assert.Contains("ReferenceEquals(trayIconHost, initialTrayIcon)", smoke, StringComparison.Ordinal);
         Assert.Contains("expectMaximized", smoke, StringComparison.Ordinal);
+        Assert.Contains(
+            "The language refresh changed invariant M-key bindings.",
+            smoke,
+            StringComparison.Ordinal);
+        Assert.Contains("ExpectedKeyboardShortcutAction", smoke, StringComparison.Ordinal);
+        Assert.Contains("ExpectedActionAccessibleName", smoke, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
@@ -2811,6 +2817,10 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string bindingViewModel = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
 
         Assert.Contains("Text=\"Shortcut keys\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
@@ -2834,7 +2844,15 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"{x:Bind SlotLabel}\"",
+            "ItemsSource=\"{x:Bind AvailableActions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind SlotLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{x:Bind ActionAccessibleName, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2877,6 +2895,58 @@ public sealed class WinUiShellContractTests
             "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
+        Assert.Contains("CreateActionOptions()", bindingViewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "availableActions.Single(option => option.Kind == normalized.Kind)",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "public static IReadOnlyList<SpecialKeyActionOption> ActionOptions",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Slot.ToString()", bindingViewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SpecialKeyEditorResourcesCoverEveryActionAndSlotInEveryCatalog()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
+        string[] resourceKeys = System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "LocalizedResources\\.(?:Get|Format)\\(\\s*\\\"(?<key>SpecialKey_[^\\\"]+)\\\"")
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        string[] actionKeys = resourceKeys
+            .Where(key => key.StartsWith("SpecialKey_Action_", StringComparison.Ordinal)
+                && key != "SpecialKey_Action_AccessibleName")
+            .ToArray();
+        string[] slotKeys = resourceKeys
+            .Where(key => key.StartsWith("SpecialKey_Slot_", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(Enum.GetValues<SpecialKeyActionKind>().Length, actionKeys.Length);
+        Assert.Equal(Enum.GetValues<SpecialKeySlot>().Length, slotKeys.Length);
+        Assert.Contains("SpecialKey_Action_AccessibleName", resourceKeys);
+
+        foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
+        {
+            XDocument catalog = XDocument.Load(RepositoryPath(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            HashSet<string> catalogKeys = catalog.Root!
+                .Elements("data")
+                .Select(element => (string)element.Attribute("name")!)
+                .ToHashSet(StringComparer.Ordinal);
+            Assert.All(resourceKeys, key => Assert.Contains(key, catalogKeys));
+        }
     }
 
     [Fact]
