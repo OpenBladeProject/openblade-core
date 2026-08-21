@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Placed the Profiles page Import and Export actions beside the title when
+  space permits, while preserving accessible ordering and responsive wrapping
+  for narrow or long-localized layouts.
 - Kept the App theme and App language pickers compact on desktop while allowing
   them to grow for longer localized choices.
 - Awaited every supervised Session Agent loop during coordinated shutdown so

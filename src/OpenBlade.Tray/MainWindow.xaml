@@ -2445,38 +2445,39 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="ProfilesPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16"
-                              RowSpacing="10">
-                            <Grid.RowDefinitions>
+                        <local:ResponsivePageHeader x:Name="ProfilesPageHeader"
+                                                    Margin="0,0,0,20">
+                            <local:ResponsivePageHeader.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
+                            </local:ResponsivePageHeader.RowDefinitions>
+                            <local:ResponsivePageHeader.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                            </local:ResponsivePageHeader.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockProfiles2" Text="Profiles"
-                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ResponsivePageHeader.Role="Title" />
                             <StackPanel x:Name="ProfilesHeaderActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,2,0,0"
-                                        VerticalAlignment="Center">
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button x:Uid="MainWindow_ButtonImportProfiles" Content="Import profiles"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                         Click="OnImportProfiles"
                                         ToolTipService.ToolTip="Import saved profiles from JSON"
                                         AutomationProperties.Name="Import profiles from JSON" />
                                 <Button x:Uid="MainWindow_ButtonExportProfiles" Content="Export profiles"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                         Click="OnExportProfiles"
                                         ToolTipService.ToolTip="Export saved profiles as JSON"
                                         AutomationProperties.Name="Export profiles to JSON" />
                             </StackPanel>
-                        </Grid>
+                        </local:ResponsivePageHeader>
                         <StackPanel x:Name="ProfilesSectionHost">
                         <StackPanel x:Name="ProfilesComparisonSection">
                         <TextBlock x:Uid="MainWindow_TextBlockTheseAreTheSettingsSavedInEach" Text="These are the settings saved in each profile. A dot marks a value with a pending change; point to it to preview the new value."

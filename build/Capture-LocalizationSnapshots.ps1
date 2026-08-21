@@ -68,6 +68,8 @@ try {
     foreach ($trayPage in @(
             'home',
             'profiles',
+            'profiles-narrow',
+            'profiles-wide',
             'laptop',
             'lighting',
             'display',
