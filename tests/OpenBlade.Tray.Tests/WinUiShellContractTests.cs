@@ -2921,16 +2921,37 @@ public sealed class WinUiShellContractTests
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        string[] actionKeys = resourceKeys
-            .Where(key => key.StartsWith("SpecialKey_Action_", StringComparison.Ordinal)
-                && key != "SpecialKey_Action_AccessibleName")
+        System.Text.RegularExpressions.Match[] actionOptions =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "new\\(SpecialKeyActionKind\\.(?<kind>\\w+),\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Action_[^\\\"]+)\\\"")
             .ToArray();
-        string[] slotKeys = resourceKeys
-            .Where(key => key.StartsWith("SpecialKey_Slot_", StringComparison.Ordinal))
+        System.Text.RegularExpressions.Match[] slotLabels =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "SpecialKeySlot\\.(?<slot>\\w+)\\s*=>\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Slot_[^\\\"]+)\\\"")
+            .ToArray();
+        string[] actionKeys = actionOptions
+            .Select(match => match.Groups["key"].Value)
+            .ToArray();
+        string[] slotKeys = slotLabels
+            .Select(match => match.Groups["key"].Value)
             .ToArray();
 
-        Assert.Equal(Enum.GetValues<SpecialKeyActionKind>().Length, actionKeys.Length);
-        Assert.Equal(Enum.GetValues<SpecialKeySlot>().Length, slotKeys.Length);
+        Assert.Equal(
+            Enum.GetNames<SpecialKeyActionKind>().Order(StringComparer.Ordinal),
+            actionOptions
+                .Select(match => match.Groups["kind"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(actionKeys.Length, actionKeys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(
+            Enum.GetNames<SpecialKeySlot>().Order(StringComparer.Ordinal),
+            slotLabels
+                .Select(match => match.Groups["slot"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(slotKeys.Length, slotKeys.Distinct(StringComparer.Ordinal).Count());
         Assert.Contains("SpecialKey_Action_AccessibleName", resourceKeys);
 
         foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
