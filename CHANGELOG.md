@@ -13,6 +13,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   populate installed firmware state. Repeated display-head aliases under one
   Windows video-adapter key now collapse to that adapter's installed VBIOS,
   while zero or multiple NVIDIA adapters still fail closed.
+- Placed the Profiles page Import and Export actions beside the title when
+  space permits, while preserving accessible ordering and responsive wrapping
+  for narrow or long-localized layouts.
+- Kept the App theme and App language pickers compact on desktop while allowing
+  them to grow for longer localized choices.
 - Awaited every supervised Session Agent loop during coordinated shutdown so
   microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service
@@ -75,6 +80,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Replaced the About-page affiliation disclaimer with the translated community
+  tagline “For gamers. By the community.”
 - Applied tray language changes immediately without restarting OpenBlade and
   aligned the language picker with the other Appearance controls.
 - Made production admission model-scoped by default for the exact supported

@@ -1318,10 +1318,12 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
             Attribute(language, "SelectedItem"));
-        Assert.Equal("280", Attribute(theme, "CompactWidth"));
+        Assert.Equal("210", Attribute(theme, "CompactMinWidth"));
         Assert.Equal(
-            Attribute(theme, "CompactWidth"),
-            Attribute(language, "CompactWidth"));
+            Attribute(theme, "CompactMinWidth"),
+            Attribute(language, "CompactMinWidth"));
+        Assert.Null(Attribute(theme, "CompactWidth"));
+        Assert.Null(Attribute(language, "CompactWidth"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
@@ -1659,7 +1661,16 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("OpenBlade installer version", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Supported laptop", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
-        Assert.Contains("Independent open-source project; not affiliated with Razer.", aboutPage.ToString(), StringComparison.Ordinal);
+        XElement communityTagline = Assert.Single(
+            aboutPage.Descendants(),
+            element => element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") == "For gamers. By the community.");
+        Assert.Equal(
+            "MainWindow_TextBlockForGamersByTheCommunity",
+            Attribute(communityTagline, "Uid"));
+        Assert.Equal(
+            "{StaticResource SecondaryTextStyle}",
+            Attribute(communityTagline, "Style"));
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Copy version information", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Equal(
