@@ -96,12 +96,11 @@ public static partial class RazerFirmwarePageParser
     public static RazerPublishedFirmwareVersions Parse(string html)
     {
         ArgumentNullException.ThrowIfNull(html);
-        string text = WebUtility.HtmlDecode(TagRegex().Replace(html, " "));
-        text = WhitespaceRegex().Replace(text, " ");
+        string text = NormalizeHtmlText(html);
         ParsedVersion bios = FindVersion(text, BiosLabelRegex(), BiosVersionRegex());
         ParsedVersion ec = FindVersion(text, EcLabelRegex(), EcVersionRegex());
         ParsedVersion mcu = FindVersion(text, McuLabelRegex(), McuVersionRegex());
-        ParsedVbiosVersions vbios = FindVbiosVersions(text);
+        ParsedVbiosVersions vbios = FindVbiosVersions(html, text);
         ParsedVersion thunderbolt = FindVersion(
             text,
             ThunderboltLabelRegex(),
@@ -149,10 +148,20 @@ public static partial class RazerFirmwarePageParser
         string? Value,
         RazerPublishedFirmwareVersionStatus Status);
 
-    private static ParsedVbiosVersions FindVbiosVersions(string text)
+    private static ParsedVbiosVersions FindVbiosVersions(string html, string text)
     {
-        MatchCollection blocks = VbiosBlockRegex().Matches(text);
-        if (blocks.Count == 0)
+        string[] tableRows = HtmlTableRowRegex()
+            .Matches(html)
+            .Select(match => NormalizeHtmlText(match.Groups["body"].Value))
+            .Where(row => VbiosLabelRegex().IsMatch(row))
+            .ToArray();
+        string[] bodies = tableRows.Length > 0
+            ? tableRows
+            : VbiosBlockRegex()
+                .Matches(text)
+                .Select(match => match.Groups["body"].Value)
+                .ToArray();
+        if (bodies.Length == 0)
         {
             return new([], RazerPublishedFirmwareVersionStatus.NotListed);
         }
@@ -160,9 +169,8 @@ public static partial class RazerFirmwarePageParser
         var gpuSpecific = new List<RazerPublishedVbiosVersion>();
         bool hasGpuLabel = false;
         bool hasGenericVersion = false;
-        foreach (Match block in blocks)
+        foreach (string body in bodies)
         {
-            string body = block.Groups["body"].Value;
             hasGpuLabel |= VbiosGpuLabelRegex().IsMatch(body);
             hasGenericVersion |= VbiosVersionRegex().IsMatch(body);
             MatchCollection gpuVersions = VbiosGpuVersionRegex().Matches(body);
@@ -192,6 +200,17 @@ public static partial class RazerFirmwarePageParser
     private readonly record struct ParsedVbiosVersions(
         IReadOnlyList<RazerPublishedVbiosVersion> Versions,
         RazerPublishedFirmwareVersionStatus Status);
+
+    private static string NormalizeHtmlText(string html)
+    {
+        string text = WebUtility.HtmlDecode(TagRegex().Replace(html, " "));
+        return WhitespaceRegex().Replace(text, " ");
+    }
+
+    [GeneratedRegex(
+        "<tr\\b[^>]*>(?<body>.*?)</tr\\s*>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex HtmlTableRowRegex();
 
     [GeneratedRegex("<[^>]+>", RegexOptions.Singleline)]
     private static partial Regex TagRegex();
@@ -233,6 +252,11 @@ public static partial class RazerFirmwarePageParser
         "\\bvBIOS\\s+Firmware\\s+Updater\\b(?<body>(?:(?!\\b(?:BIOS(?:\\s+Firmware)?|EC\\s+Firmware|MCU\\s+Firmware|vBIOS\\s+Firmware|Thunderbolt(?:\\s+5)?\\s+Firmware|Touchpad\\s+Firmware|Camera\\s+Firmware)\\s+Updater\\b).){0,500})",
         RegexOptions.IgnoreCase)]
     private static partial Regex VbiosBlockRegex();
+
+    [GeneratedRegex(
+        "\\bvBIOS\\s+Firmware\\s+Updater\\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex VbiosLabelRegex();
 
     [GeneratedRegex(
         "\\b(?<gpu>RTX\\s*\\d{4}(?:\\s*Ti)?)\\s*:\\s*v?\\s*(?<version>[0-9A-F]+(?:\\.[0-9A-F]+)+)\\b",
@@ -1240,8 +1264,7 @@ public sealed class FirmwareUpdateAssistantViewModel :
         {
             bool hasCachedVbiosResult = cachedVbiosVersion is not null
                 || cachedVbiosStatus is not null;
-            bool cachedVbiosMatchesGpu = cachedVbiosVersion is null
-                || cachedVbiosGpuName is null
+            bool cachedVbiosMatchesGpu = cachedVbiosGpuName is null
                 || string.Equals(
                     NormalizeVbiosGpuName(cachedVbiosGpuName),
                     NormalizeVbiosGpuName(installedFirmware?.VbiosGpuName),

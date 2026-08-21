@@ -114,6 +114,22 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public void PageParser_DoesNotUseVersionsFromANeighboringTableRow()
+    {
+        const string html = """
+            <table>
+              <tr><td>vBIOS Firmware Updater</td><td>version unavailable</td></tr>
+              <tr><td>Graphics driver</td><td>1.2.3.4</td></tr>
+            </table>
+            """;
+
+        RazerPublishedFirmwareVersions versions = RazerFirmwarePageParser.Parse(html);
+
+        Assert.Equal(RazerPublishedFirmwareVersionStatus.Unreadable, versions.VbiosStatus);
+        Assert.Empty(versions.EffectiveVbiosVersions);
+    }
+
+    [Fact]
     public void PageParser_DoesNotBorrowAVersionFromANeighboringUpdater()
     {
         const string html = """
@@ -606,6 +622,43 @@ public sealed class RazerFirmwareUpdateCheckingTests
         await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
 
         Assert.Equal("None", viewModel.PublishedVbiosVersion);
+        Assert.False(viewModel.IsUpdateAvailable);
+    }
+
+    [Fact]
+    public async Task ViewModel_DoesNotRestoreCachedNoneAfterInstalledGpuBecomesUnavailable()
+    {
+        await using var viewModel = new FirmwareUpdateAssistantViewModel(
+            new StubClient(new(
+                "2.02",
+                "1.09",
+                "1.09",
+                VbiosVersions:
+                [
+                    new("98.03.5C.40.16", "RTX 5080"),
+                    new("98.03.5C.40.15", "RTX 5090"),
+                ],
+                VbiosStatus: RazerPublishedFirmwareVersionStatus.Listed)));
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "98.03.5C.40.24",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "NVIDIA GeForce RTX 5070 Laptop GPU"));
+
+        await ((AsyncRelayCommand)viewModel.CheckCommand).ExecuteAsync(null);
+        Assert.Equal("None", viewModel.PublishedVbiosVersion);
+
+        viewModel.UpdateInstalledFirmware(new FirmwareVersions(
+            "2.02",
+            "1.09",
+            "1.9.0.0",
+            "Unavailable",
+            RazerBladeModelCatalog.Rz090528ModelNumber,
+            "Unavailable"));
+
+        Assert.Equal("Unavailable", viewModel.PublishedVbiosVersion);
         Assert.False(viewModel.IsUpdateAvailable);
     }
 
