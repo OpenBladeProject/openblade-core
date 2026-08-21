@@ -7304,7 +7304,12 @@ public sealed class MainViewModelTests
     public async Task GenericManualReadback_AllowsDirectFixedAndManualCurveChanges()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         var curve = new FanControlSettings(
@@ -7342,33 +7347,263 @@ public sealed class MainViewModelTests
             FanMode.Fixed,
             3700,
             ManualFanCurve.Default);
-        client.Publish(baseline with
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            baseline with
+            {
+                Revision = baseline.Revision + 1,
+                Message = "Fixed fan readback applied",
+                DesiredState = baseline.DesiredState with
+                {
+                    Fans = new ResolvedSetting<FanMode>(
+                        FanMode.Fixed,
+                        SettingValueSource.TemporaryOverride),
+                    FanControl = fixedSettings,
+                },
+                FanOverride = new ManualOverride<FanMode>(
+                    FanMode.Fixed,
+                    OverrideLifetime.UntilPowerSourceChange),
+                FanControlOverride = fixedSettings,
+                ConfirmedState = baseline.ConfirmedState! with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                },
+            });
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.ManualCurve);
+
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            baseline with
+            {
+                Revision = baseline.Revision + 2,
+                Message = "Lagging fixed fan readback",
+                DesiredState = baseline.DesiredState with
+                {
+                    Fans = new ResolvedSetting<FanMode>(
+                        FanMode.Fixed,
+                        SettingValueSource.TemporaryOverride),
+                    FanControl = fixedSettings,
+                },
+                FanOverride = new ManualOverride<FanMode>(
+                    FanMode.Fixed,
+                    OverrideLifetime.UntilPowerSourceChange),
+                FanControlOverride = fixedSettings,
+                ConfirmedState = baseline.ConfirmedState! with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                },
+            });
+
+        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
+        Assert.Equal(FanMode.ManualCurve, client.LastFanControlSettings!.Mode);
+
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            baseline with
+            {
+                Revision = baseline.Revision + 3,
+                Message = "Manual fan readback caught up",
+                DesiredState = baseline.DesiredState with
+                {
+                    Fans = new ResolvedSetting<FanMode>(
+                        FanMode.ManualCurve,
+                        SettingValueSource.TemporaryOverride),
+                    FanControl = curve,
+                },
+                FanOverride = new ManualOverride<FanMode>(
+                    FanMode.ManualCurve,
+                    OverrideLifetime.UntilPowerSourceChange),
+                FanControlOverride = curve,
+                ConfirmedState = baseline.ConfirmedState! with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                },
+            });
+
+        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
+
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            baseline with
+            {
+                Revision = baseline.Revision + 4,
+                Message = "Later fixed fan readback",
+                DesiredState = baseline.DesiredState with
+                {
+                    Fans = new ResolvedSetting<FanMode>(
+                        FanMode.Fixed,
+                        SettingValueSource.TemporaryOverride),
+                    FanControl = fixedSettings,
+                },
+                FanOverride = new ManualOverride<FanMode>(
+                    FanMode.Fixed,
+                    OverrideLifetime.UntilPowerSourceChange),
+                FanControlOverride = fixedSettings,
+                ConfirmedState = baseline.ConfirmedState! with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                },
+            });
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+    }
+
+    [Fact]
+    public async Task FanControlSelection_StaysRequestedDuringInFlightStaleStatus()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.ManualCurve);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        FanControlSettings requested = Assert.IsType<FanControlSettings>(
+            client.LastFanControlSettings);
+        var laggingSettings = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            baseline with
+            {
+                Revision = baseline.Revision + 1,
+                Message = "Stale status during fan mutation",
+                DesiredState = baseline.DesiredState with
+                {
+                    Fans = new ResolvedSetting<FanMode>(
+                        FanMode.Fixed,
+                        SettingValueSource.TemporaryOverride),
+                    FanControl = laggingSettings,
+                },
+                FanControlOverride = laggingSettings,
+            });
+
+        Assert.True(viewModel.IsFanControlOperationInProgress);
+        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
+        Assert.Equal(requested, viewModel.CurrentFanControlSettings);
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.False(viewModel.IsFanControlOperationInProgress);
+        Assert.Equal(requested, viewModel.CurrentFanControlSettings);
+    }
+
+    [Fact]
+    public async Task FanControlSelection_ReleasesAfterReadbackGracePeriod()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.ManualCurve);
+
+        var laggingSettings = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        ServiceStatusSnapshot lagging = baseline with
         {
             Revision = baseline.Revision + 1,
+            Message = "Lagging fan status",
             DesiredState = baseline.DesiredState with
             {
                 Fans = new ResolvedSetting<FanMode>(
                     FanMode.Fixed,
                     SettingValueSource.TemporaryOverride),
-                FanControl = fixedSettings,
+                FanControl = laggingSettings,
             },
-            FanOverride = new ManualOverride<FanMode>(
-                FanMode.Fixed,
-                OverrideLifetime.UntilPowerSourceChange),
-            FanControlOverride = fixedSettings,
-            ConfirmedState = baseline.ConfirmedState! with
+            FanControlOverride = laggingSettings,
+        };
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            lagging);
+        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
+        Assert.Equal(
+            client.LastFanControlSettings,
+            viewModel.CurrentFanControlSettings);
+
+        time.Advance(TimeSpan.FromSeconds(3));
+        await PublishAndWaitForFanControlPresentationAsync(
+            client,
+            viewModel,
+            lagging with
             {
-                Performance = null,
-                Fans = FanMode.Maximum,
-            },
-        });
-        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Fixed);
+                Revision = baseline.Revision + 2,
+                Message = "Fan readback hold expired",
+            });
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Equal(laggingSettings, viewModel.CurrentFanControlSettings);
+    }
+
+    [Fact]
+    public async Task FanControlSelection_ReleasesWhenPowerSourceChanges()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
             .ExecuteAsync(FanMode.ManualCurve);
 
-        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
-        Assert.Equal(FanMode.ManualCurve, client.LastFanControlSettings!.Mode);
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Automatic,
+                    SettingValueSource.PowerProfile),
+                FanControl = FanControlSettings.Default,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+
+        Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
     }
 
     [Fact]
@@ -8343,6 +8578,33 @@ public sealed class MainViewModelTests
             PadlessHyperBoostEligibility =
                 PadlessHyperBoostEligibilityState.CoolingPadAbsent,
         };
+
+    private static async Task PublishAndWaitForFanControlPresentationAsync(
+        FakeServiceClient client,
+        MainViewModel viewModel,
+        ServiceStatusSnapshot status)
+    {
+        var presentationApplied = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        PropertyChangedEventHandler handler = (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.CurrentFanControlSettings)
+                && viewModel.ConnectionStatus == status.Message)
+            {
+                presentationApplied.TrySetResult();
+            }
+        };
+        viewModel.PropertyChanged += handler;
+        try
+        {
+            client.Publish(status);
+            await presentationApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            viewModel.PropertyChanged -= handler;
+        }
+    }
 
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,

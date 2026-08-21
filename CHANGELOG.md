@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept completed manual fan selections stable while their authoritative service
+  readback catches up, preventing an older in-flight status from briefly
+  reverting the fan-mode selector.
 - Refreshed the fan-mode selector immediately when HyperBoost activates or
   exits so its enabled state stays synchronized with the authoritative control
   gate.
