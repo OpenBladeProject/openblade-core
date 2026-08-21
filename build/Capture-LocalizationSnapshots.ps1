@@ -1,17 +1,21 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = 'artifacts\localization\issue-233',
+    [string]$OutputDirectory = 'artifacts\localization\snapshots',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]
+    [ValidateSet('en-US', 'qps-ploc', 'zh-CN', 'ru-RU')]
     [string]$Culture = 'qps-ploc'
 )
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
-$resolvedOutput = [IO.Path]::GetFullPath((
-    Join-Path (Join-Path $repository $OutputDirectory) $Culture))
+$resolvedOutputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
+    [IO.Path]::GetFullPath($OutputDirectory)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repository $OutputDirectory))
+}
+$resolvedOutput = [IO.Path]::GetFullPath((Join-Path $resolvedOutputRoot $Culture))
 $trayOutput = Join-Path $resolvedOutput 'tray'
 $installerOutput = Join-Path $resolvedOutput 'installer'
 [IO.Directory]::CreateDirectory($trayOutput) | Out-Null
@@ -101,38 +105,32 @@ finally {
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
 }
 
-$appliedDpi = try {
-    (Get-ItemProperty -LiteralPath 'HKCU:\Control Panel\Desktop\WindowMetrics' `
-        -Name AppliedDPI -ErrorAction Stop).AppliedDPI
-} catch { $null }
-$lightTheme = try {
-    (Get-ItemProperty -LiteralPath (
-        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') `
-        -Name AppsUseLightTheme -ErrorAction Stop).AppsUseLightTheme
-} catch { $null }
 $images = @(Get-ChildItem -LiteralPath $resolvedOutput -Filter '*.png' -File -Recurse |
     Sort-Object FullName |
     ForEach-Object {
         [ordered]@{
-            path = Get-SnapshotRelativePath $resolvedOutput $_.FullName
+            path = (Get-SnapshotRelativePath $resolvedOutput $_.FullName).Replace('\', '/')
             sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             bytes = $_.Length
         }
     })
 $manifest = [ordered]@{
-    sourceRevision = (git -C $repository rev-parse HEAD).Trim()
-    workingTreeDiff = (git -C $repository diff --stat)
-    generatedAtUtc = [DateTime]::UtcNow.ToString('O')
+    schemaVersion = 2
     culture = $Culture
-    operatingSystem = [Environment]::OSVersion.VersionString
-    appliedDpi = $appliedDpi
-    appTheme = if ($null -eq $lightTheme) { 'unknown' }
-        elseif ($lightTheme -eq 0) { 'dark' } else { 'light' }
+    renderProfile = [ordered]@{
+        language = $Culture
+        theme = 'light'
+        trayDpi = 96
+        installerRendering = 'software'
+        data = 'sanitized-fixed-preview'
+    }
     images = $images
 }
+$manifestJson = $manifest | ConvertTo-Json -Depth 5
+$manifestJson = $manifestJson.Replace("`r`n", "`n").Replace("`r", "`n") + "`n"
 [IO.File]::WriteAllText(
     (Join-Path $resolvedOutput 'manifest.json'),
-    ($manifest | ConvertTo-Json -Depth 5),
+    $manifestJson,
     [Text.UTF8Encoding]::new($false))
 
 Write-Host "Localization snapshots written to $resolvedOutput"

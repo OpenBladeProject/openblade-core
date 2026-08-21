@@ -235,6 +235,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
         gpuClockOffsetCommitTimer.IsRepeating = false;
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
+        if (localizationSnapshotMode)
+        {
+            Root.RequestedTheme = ElementTheme.Light;
+            AppTitleBar.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black);
+        }
         micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
         {

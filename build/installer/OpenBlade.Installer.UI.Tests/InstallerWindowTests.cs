@@ -247,6 +247,8 @@ public sealed class InstallerWindowTests
                         window.ShowProgress(LaunchAction.Install);
                         window.SetProgress(47, InstallerStrings.Get("Installing OpenBlade"));
                         window.AddDetail("Stable diagnostic detail: OpenBlade.Tray.exe");
+                        window.DetailsText.Text =
+                            "00:00:00  Stable diagnostic detail: OpenBlade.Tray.exe";
                         window.DetailsToggle.IsChecked = true;
                     },
                     window =>

@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
 **/bin/
+**/bin-localization-preview/
 **/obj/
 artifacts/
 *.user

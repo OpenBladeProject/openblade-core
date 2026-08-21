@@ -23,6 +23,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an Excel-compatible translator package workflow for all four localization
+  surfaces, with sanitized context screenshots, deterministic source hashes, strict
+  import validation, and a plain-language contributor guide.
 - Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
   reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
   low-power, and unexpected-exit evidence now admits production use without

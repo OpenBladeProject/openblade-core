@@ -720,6 +720,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                         .Select(slider => slider with { IsVisible = true })
                         .ToArray(),
                 });
+                if (snapshotDashboardWindow.Content is FrameworkElement dashboardRoot)
+                {
+                    dashboardRoot.RequestedTheme = ElementTheme.Light;
+                }
                 snapshotDashboardWindow.AppWindow.Resize(
                     new Windows.Graphics.SizeInt32(430, 760));
                 snapshotDashboardWindow.Activate();
