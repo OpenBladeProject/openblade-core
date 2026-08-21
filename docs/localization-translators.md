@@ -27,12 +27,14 @@ screenshots. You edit one column and return the CSV for automated validation.
 Automated feedback names the surface and key that needs attention. Common messages
 mean:
 
-- **stale or tampered**: the English source or package structure changed; ask for a
-  fresh export and copy translations into its Translation column.
+- **stale or tampered**: the English source, current target catalogs, or package
+  structure changed; ask for a fresh export and copy translations into its
+  Translation column.
 - **changed format placeholders**: restore every complete item such as `{0}` or
   `{1:N0}`. The items may move to fit your grammar.
 - **changed markup/access-key/whitespace**: restore the markup structure, underscore
-  shortcut count, or intentional spaces and line breaks shown in Constraints.
+  shortcut count, distinct shortcut letters for actions shown together, or intentional
+  spaces and line breaks shown in Constraints.
 - **formula character**: prefix a legitimate leading `=`, `+`, `-`, or `@` with one
   Tab, or remove it if it was accidental.
 
@@ -81,20 +83,25 @@ Import only after validation succeeds:
 ```
 
 The importer reconstructs the current source model from all four authoritative
-catalogs. It accepts reordered rows, but rejects missing, extra,
-duplicate, structurally incomplete, stale, or altered rows before writing. It validates
-placeholders, markup, access-key counts, significant whitespace, line breaks,
+catalogs. It accepts reordered rows, but rejects missing, extra, duplicate,
+structurally incomplete, stale, or altered rows before writing. A workbook is also
+bound to the exact target-catalog files that existed at export, so a newer translation
+cannot be silently overwritten. Accepted imports rebuild each locale from the current
+authoritative source keyset, add newly translated keys, and remove obsolete keys. The
+importer validates placeholders, markup, access-key counts and collisions among
+simultaneously visible installer actions, significant whitespace, line breaks,
 punctuation-only values, protected technical identifiers, control characters, and
 spreadsheet-formula prefixes. If writing or repository localization validation fails,
 all touched catalogs are restored. Import never edits language admission or packaging;
 adding a production locale remains a separate reviewed change. `qps-ploc` is always
 rejected as a translator target and remains development-only.
 
-The workbook's stable identity is `Surface + Key`. Each row has a SHA-256 hash over
-its immutable source/context fields, and every row repeats a catalog hash over all
-ordered row hashes. These are deterministic change detectors, not signatures; the
-importer's fresh comparison with the checked-out authoritative catalogs is the trust
-boundary.
+The workbook's stable identity is `Surface + Key`. Format version 2 gives each row a
+SHA-256 hash over its immutable source/context fields, repeats a source catalog hash
+over all ordered row hashes, and repeats a target catalog hash over the exact four
+locale files present at export. These are deterministic change detectors, not
+signatures; the importer's fresh comparison with the checked-out authoritative
+catalogs is the trust boundary.
 
 ## Why this format
 

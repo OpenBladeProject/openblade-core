@@ -140,6 +140,7 @@ controlling hardware.
             Hash.ToLowerInvariant()
         rowCount = @($model.Rows).Count
         catalogHash = $model.CatalogHash
+        targetCatalogHash = $model.TargetCatalogHash
         screenshotsIncluded = $screenshotsIncluded
         screenshotRenderProfile = $screenshotRenderProfile
         screenshots = $manifestImages

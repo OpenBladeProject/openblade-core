@@ -1,7 +1,7 @@
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-$script:WorkbookFormatVersion = '1'
+$script:WorkbookFormatVersion = '2'
 $script:WorkbookHeaders = @(
     'FormatVersion',
     'Locale',
@@ -13,7 +13,54 @@ $script:WorkbookHeaders = @(
     'Constraints',
     'Screenshots',
     'SourceHash',
-    'CatalogHash')
+    'CatalogHash',
+    'TargetCatalogHash')
+
+$script:AccessKeyGroups = @(
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'fresh-install actions'
+        Keys = @('_Install', '_Cancel')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'maintenance actions'
+        Keys = @(
+            '_Repair',
+            '_Uninstall',
+            'Remove saved _profiles and settings',
+            '_Cancel')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'newer-version actions'
+        Keys = @('_Overwrite', '_Cancel')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'collapsed progress actions'
+        Keys = @('Show _details', '_Cancel')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'expanded progress actions'
+        Keys = @('Hide _details', '_Cancel')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'success actions'
+        Keys = @('_Launch OpenBlade', '_Close')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'failure actions'
+        Keys = @('_Open log', '_Close')
+    },
+    [pscustomobject]@{
+        Surface = 'installer'
+        Context = 'cancel-confirmation actions'
+        Keys = @('Keep _working', 'Cancel _setup')
+    })
 
 function Get-LocalizationRepository {
     param([string]$Repository)
@@ -124,6 +171,47 @@ function Get-TextSha256 {
     finally {
         $algorithm.Dispose()
     }
+}
+
+function Get-FileSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        try {
+            return [BitConverter]::ToString($algorithm.ComputeHash($stream)).
+                Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+}
+
+function Get-LocalizationTargetCatalogHash {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Locale)
+
+    $state = ''
+    foreach ($definition in @(Get-LocalizationCatalogDefinitions $Repository)) {
+        $relative = (& $definition.TranslationPath $Locale).Replace('\', '/')
+        $path = Join-Path $Repository $relative
+        $state += Get-LengthPrefixedText ([string]$definition.Surface)
+        $state += Get-LengthPrefixedText $relative
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $state += Get-LengthPrefixedText 'present'
+            $state += Get-LengthPrefixedText (Get-FileSha256 $path)
+        }
+        else {
+            $state += Get-LengthPrefixedText 'missing'
+        }
+    }
+    return Get-TextSha256 $state
 }
 
 function Sort-OrdinalStrings {
@@ -284,6 +372,29 @@ function Assert-TranslationValue {
     }
 }
 
+function Assert-AccessKeyGroups {
+    param([Parameter(Mandatory)]$RowsByIdentity)
+
+    foreach ($group in $script:AccessKeyGroups) {
+        $seen = [Collections.Generic.Dictionary[string,string]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+        foreach ($key in @($group.Keys)) {
+            $identity = [string]$group.Surface + "`0" + [string]$key
+            if (-not $RowsByIdentity.ContainsKey($identity)) {
+                continue
+            }
+            $row = $RowsByIdentity[$identity]
+            foreach ($marker in @(Get-AccessKeys ([string]$row.Translation))) {
+                $accessKey = $marker.Substring(1)
+                if ($seen.ContainsKey($accessKey)) {
+                    throw "Translation access key '$accessKey' collides in $($group.Context): '$($seen[$accessKey])' and '$($row.Surface)/$($row.Key)'."
+                }
+                $seen.Add($accessKey, "$($row.Surface)/$($row.Key)")
+            }
+        }
+    }
+}
+
 function Get-TranslatorConstraints {
     param([Parameter(Mandatory)][string]$Source)
 
@@ -401,6 +512,7 @@ function Get-LocalizationWorkbookModel {
 
     Assert-TranslatorLocale $Locale
     $map = Read-LocalizationScreenshotMap $Repository
+    $targetCatalogHash = Get-LocalizationTargetCatalogHash $Repository $Locale
     $rows = [Collections.Generic.List[object]]::new()
     foreach ($definition in @(Get-LocalizationCatalogDefinitions $Repository)) {
         $sourcePath = Join-Path $Repository $definition.SourcePath
@@ -432,6 +544,7 @@ function Get-LocalizationWorkbookModel {
                 Screenshots = $context.Screenshots
                 SourceHash = ''
                 CatalogHash = ''
+                TargetCatalogHash = $targetCatalogHash
             }
             $hashText = ''
             foreach ($field in @('FormatVersion', 'Locale', 'Surface', 'Key', 'Source',
@@ -462,6 +575,7 @@ function Get-LocalizationWorkbookModel {
     return [pscustomobject]@{
         Rows = $orderedRows
         CatalogHash = $catalogHash
+        TargetCatalogHash = $targetCatalogHash
         ScreenshotMap = $map
     }
 }
@@ -563,10 +677,15 @@ function Read-TranslatorWorkbookRows {
 }
 
 function ConvertTo-ResourceXmlValue {
-    param([AllowEmptyString()][string]$Value)
+    param(
+        [AllowEmptyString()][string]$Value,
+        [switch]$UseNewlineCharacterReferences)
 
     $escaped = [Security.SecurityElement]::Escape($Value)
-    return $escaped.Replace("`r`n", '&#xA;').Replace("`r", '&#xA;').Replace("`n", '&#xA;')
+    if ($UseNewlineCharacterReferences) {
+        return $escaped.Replace("`r`n", '&#xA;').Replace("`r", '&#xA;').Replace("`n", '&#xA;')
+    }
+    return $escaped.Replace("`r`n", "`n").Replace("`r", "`n").Replace("`n", "`r`n")
 }
 
 function Set-ResourceCatalogText {
@@ -585,18 +704,24 @@ function Set-ResourceCatalogText {
             [string]$ExistingValues[$key] -ceq [string]$pair.Value.Translation) {
             continue
         }
-        $escapedKey = ConvertTo-ResourceXmlValue $key
-        $pattern = '(?s)(<data\s+name="' + [regex]::Escape($escapedKey) +
-            '"[^>]*>.*?<value>).*?(</value>)'
+        $escapedKey = ConvertTo-ResourceXmlValue `
+            $key -UseNewlineCharacterReferences
+        $pattern = '(?s)(?<prefix><data\s+name="' + [regex]::Escape($escapedKey) +
+            '"[^>]*>.*?<value>)(?<value>.*?)(?<suffix></value>)'
         $matches = [regex]::Matches($Text, $pattern)
         if ($matches.Count -ne 1) {
             throw "Resource template has $($matches.Count) value nodes for '$Surface/$key'."
         }
-        $encoded = ConvertTo-ResourceXmlValue ([string]$pair.Value.Translation)
+        $usesNewlineCharacterReferences = $matches[0].Groups['value'].Value -match
+            '&#(?:xA|10);'
+        $encoded = ConvertTo-ResourceXmlValue `
+            ([string]$pair.Value.Translation) `
+            -UseNewlineCharacterReferences:$usesNewlineCharacterReferences
         $Text = [regex]::Replace(
             $Text,
             $pattern,
-            { param($match) $match.Groups[1].Value + $encoded + $match.Groups[2].Value },
+            { param($match) $match.Groups['prefix'].Value + $encoded +
+                $match.Groups['suffix'].Value },
             [Text.RegularExpressions.RegexOptions]::None,
             [TimeSpan]::FromSeconds(5))
     }
@@ -624,7 +749,8 @@ function Import-LocalizationWorkbook {
         [StringComparer]::Ordinal)
     foreach ($row in $rows) {
         foreach ($required in @('FormatVersion', 'Locale', 'Surface', 'Key', 'Source',
-                'Context', 'Constraints', 'Screenshots', 'SourceHash', 'CatalogHash')) {
+                'Context', 'Constraints', 'Screenshots', 'SourceHash', 'CatalogHash',
+                'TargetCatalogHash')) {
             if ([string]::IsNullOrEmpty([string]$row.$required)) {
                 throw "Translator workbook row has a blank structural field '$required'."
             }
@@ -648,7 +774,8 @@ function Import-LocalizationWorkbook {
         $actual = $actualByIdentity[$pair.Key]
         $canonical = $pair.Value
         foreach ($immutable in @('FormatVersion', 'Locale', 'Surface', 'Key', 'Source',
-                'Context', 'Constraints', 'Screenshots', 'SourceHash', 'CatalogHash')) {
+                'Context', 'Constraints', 'Screenshots', 'SourceHash', 'CatalogHash',
+                'TargetCatalogHash')) {
             if ([string]$actual.$immutable -cne [string]$canonical.$immutable) {
                 throw "Translator workbook row '$($canonical.Surface)/$($canonical.Key)' has stale or tampered '$immutable'. Re-export from current source."
             }
@@ -658,6 +785,7 @@ function Import-LocalizationWorkbook {
             -Translation ([string]$actual.Translation) `
             -Description "Translation '$($canonical.Surface)/$($canonical.Key)'"
     }
+    Assert-AccessKeyGroups $actualByIdentity
     if ($ValidateOnly) {
         return [pscustomobject]@{
             Locale = $locale
@@ -667,6 +795,10 @@ function Import-LocalizationWorkbook {
         }
     }
 
+    $currentTargetHash = Get-LocalizationTargetCatalogHash $Repository $locale
+    if ($currentTargetHash -cne [string]$rows[0].TargetCatalogHash) {
+        throw 'Translator workbook target catalogs changed during validation. Re-export from the current target catalogs.'
+    }
     $originalFiles = [ordered]@{}
     $changedPaths = [Collections.Generic.List[string]]::new()
     try {
@@ -675,19 +807,31 @@ function Import-LocalizationWorkbook {
             $relativeTarget = & $definition.TranslationPath $locale
             $targetPath = Join-Path $Repository $relativeTarget
             $exists = Test-Path -LiteralPath $targetPath -PathType Leaf
+            $sourceCatalog = Read-LocalizationCatalog $sourcePath
             $targetCatalog = if ($exists) { Read-LocalizationCatalog $targetPath } else { $null }
-            $originalFiles[$targetPath] = if ($exists) { [IO.File]::ReadAllBytes($targetPath) } else { $null }
-            $templatePath = if ($exists) { $targetPath } else { $sourcePath }
+            $useTargetTemplate = $null -ne $targetCatalog -and
+                $targetCatalog.Values.Count -eq $sourceCatalog.Values.Count
+            if ($useTargetTemplate) {
+                foreach ($key in $sourceCatalog.Values.Keys) {
+                    if (-not $targetCatalog.Values.ContainsKey($key)) {
+                        $useTargetTemplate = $false
+                        break
+                    }
+                }
+            }
+            $originalFiles[$targetPath] = if ($exists) {
+                [IO.File]::ReadAllBytes($targetPath)
+            } else { $null }
             $templateText = [IO.File]::ReadAllText(
-                $templatePath,
+                $(if ($useTargetTemplate) { $targetPath } else { $sourcePath }),
                 [Text.UTF8Encoding]::new($false, $true))
             $updatedText = Set-ResourceCatalogText `
                 -Text $templateText `
                 -Surface $definition.Surface `
                 -RowsByIdentity $actualByIdentity `
-                -ExistingValues $(if ($null -eq $targetCatalog) { $null } else {
+                -ExistingValues $(if ($useTargetTemplate) {
                     $targetCatalog.Values
-                })
+                } else { $null })
             $bytes = [Text.UTF8Encoding]::new($false).GetBytes($updatedText)
             if ($exists -and [Linq.Enumerable]::SequenceEqual(
                     [byte[]]$originalFiles[$targetPath], [byte[]]$bytes)) {

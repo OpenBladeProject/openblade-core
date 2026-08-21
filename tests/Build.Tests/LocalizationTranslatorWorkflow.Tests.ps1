@@ -107,6 +107,11 @@ try {
         'The workbook must cover every row in all four catalogs.'
     Assert-Equal 4 @($model.Rows | Group-Object Surface).Count `
         'The workbook must contain four distinct surfaces.'
+    Assert-True (@($model.Rows | Where-Object {
+                $_.FormatVersion -cne '2' -or
+                $_.TargetCatalogHash -notmatch '^[0-9a-f]{64}$'
+            }).Count -eq 0) `
+        'Every format-2 row must bind the exact target-catalog state.'
     Assert-Equal (Get-FileHash $first -Algorithm SHA256).Hash `
         (Get-FileHash $second -Algorithm SHA256).Hash `
         'Repeated exports must be byte deterministic.'
@@ -190,6 +195,11 @@ try {
         @('catalog-tamper', 'stale or tampered.*CatalogHash', {
             param($copy)
             $copy[0].CatalogHash = '0' * 64
+            return $copy
+        }),
+        @('target-catalog-tamper', 'stale or tampered.*TargetCatalogHash', {
+            param($copy)
+            $copy[0].TargetCatalogHash = '0' * 64
             return $copy
         }),
         @('mixed-locale', 'mixes locales', {
@@ -286,6 +296,20 @@ try {
         } "The $($case[0]) workbook must fail closed."
     }
 
+    $accessCollision = Join-Path $testRoot 'access-collision.csv'
+    $accessRows = @(Import-Csv -LiteralPath $first)
+    @($accessRows | Where-Object {
+            $_.Surface -ceq 'installer' -and $_.Key -ceq '_Install'
+        })[0].Translation = '_Apply'
+    @($accessRows | Where-Object {
+            $_.Surface -ceq 'installer' -and $_.Key -ceq '_Cancel'
+        })[0].Translation = '_Abort'
+    Write-CsvRows $accessRows $accessCollision
+    Assert-Throws 'access key.*collides' {
+        Import-LocalizationWorkbook `
+            -Repository $repository -Path $accessCollision -ValidateOnly
+    } 'Simultaneously visible installer actions must use distinct access keys.'
+
     $screenshotFixture = Join-Path $testRoot 'screenshot-set'
     $screenshotMap = Get-Content -LiteralPath (Join-Path $repository `
         'build\localization\TranslatorScreenshotMap.json') -Raw | ConvertFrom-Json
@@ -315,7 +339,7 @@ try {
     $extraFieldLines.AddRange([string[]][IO.File]::ReadAllLines($first))
     $extraFieldLines[1] += ',"unexpected"'
     [IO.File]::WriteAllLines($extraField, $extraFieldLines, [Text.UTF8Encoding]::new($true))
-    Assert-Throws 'row has 12 fields; expected 11' {
+    Assert-Throws 'row has 13 fields; expected 12' {
         Import-LocalizationWorkbook -Repository $repository -Path $extraField -ValidateOnly
     } 'Extra data fields must fail closed instead of being silently discarded.'
 
@@ -347,6 +371,29 @@ try {
                 "Round trip changed catalog '$path'."
         }
 
+        $staleTargetWorkbook = Join-Path $testRoot 'stale-target.csv'
+        Copy-Item -LiteralPath $fixtureWorkbook -Destination $staleTargetWorkbook
+        $staleTarget = Join-Path $fixture `
+            'src\OpenBlade.Tray\Strings\ru-RU\Resources.resw'
+        $staleTargetBytes = [IO.File]::ReadAllBytes($staleTarget)
+        $staleTargetText = [IO.File]::ReadAllText($staleTarget)
+        $staleTargetText = [regex]::Replace(
+            $staleTargetText,
+            '(?s)(<data name="App_ExitDialog_Heading"[^>]*>.*?<value>).*?(</value>)',
+            { param($match) $match.Groups[1].Value +
+                'Newer parallel translation' + $match.Groups[2].Value })
+        [IO.File]::WriteAllText(
+            $staleTarget, $staleTargetText, [Text.UTF8Encoding]::new($false))
+        $newerTargetHash = (Get-FileHash -LiteralPath $staleTarget -Algorithm SHA256).Hash
+        Assert-Throws 'stale or tampered.*TargetCatalogHash' {
+            Import-LocalizationWorkbook `
+                -Repository $fixture -Path $staleTargetWorkbook
+        } 'A newer target-catalog edit must stale the prior workbook before writing.'
+        Assert-Equal $newerTargetHash `
+            (Get-FileHash -LiteralPath $staleTarget -Algorithm SHA256).Hash `
+            'Rejected stale-target import overwrote the newer catalog.'
+        [IO.File]::WriteAllBytes($staleTarget, $staleTargetBytes)
+
         $fixtureRows = @(Import-Csv -LiteralPath $fixtureWorkbook)
         $changed = @{}
         foreach ($surface in @('tray', 'tray-core', 'installer', 'setup')) {
@@ -373,7 +420,8 @@ try {
         }
 
         $staleWorkbook = Join-Path $testRoot 'stale.csv'
-        Copy-Item -LiteralPath $fixtureWorkbook -Destination $staleWorkbook
+        [void](Export-LocalizationWorkbook `
+            -Repository $fixture -Locale 'ru-RU' -Path $staleWorkbook)
         $traySource = Join-Path $fixture `
             'src\OpenBlade.Tray\Strings\en-US\Resources.resw'
         $sourceText = [IO.File]::ReadAllText($traySource)
@@ -416,6 +464,60 @@ try {
     finally {
         Import-Module $modulePath -Force
         Remove-Item -LiteralPath $fixture -Recurse -Force
+    }
+
+
+    $keysetFixture = New-TranslatorFixture
+    try {
+        Import-Module (Join-Path $keysetFixture `
+            'build\LocalizationTranslatorWorkflow.psm1') -Force
+        $keysetSource = Join-Path $keysetFixture `
+            'src\OpenBlade.Tray\Strings\en-US\Resources.resw'
+        $keysetTarget = Join-Path $keysetFixture `
+            'src\OpenBlade.Tray\Strings\ru-RU\Resources.resw'
+        $newSourceNode = @"
+  <data name="Synthetic_New_Key.Text" xml:space="preserve">
+    <value>Synthetic new label</value>
+  </data>
+"@
+        $orphanTargetNode = @"
+  <data name="Synthetic_Orphan_Key.Text" xml:space="preserve">
+    <value>Obsolete translated label</value>
+  </data>
+"@
+        [IO.File]::WriteAllText(
+            $keysetSource,
+            [IO.File]::ReadAllText($keysetSource).Replace(
+                '</root>', $newSourceNode + "`r`n</root>"),
+            [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText(
+            $keysetTarget,
+            [IO.File]::ReadAllText($keysetTarget).Replace(
+                '</root>', $orphanTargetNode + "`r`n</root>"),
+            [Text.UTF8Encoding]::new($false))
+        $keysetWorkbook = Join-Path $testRoot 'keyset.csv'
+        [void](Export-LocalizationWorkbook `
+            -Repository $keysetFixture -Locale 'ru-RU' -Path $keysetWorkbook)
+        $keysetRows = @(Import-Csv -LiteralPath $keysetWorkbook)
+        @($keysetRows | Where-Object {
+                $_.Surface -ceq 'tray' -and $_.Key -ceq 'Synthetic_New_Key.Text'
+            })[0].Translation = 'Synthetic translated label'
+        Write-CsvRows $keysetRows $keysetWorkbook
+        [void](Import-LocalizationWorkbook `
+            -Repository $keysetFixture -Path $keysetWorkbook)
+        [xml]$keysetDocument = [IO.File]::ReadAllText($keysetTarget)
+        $importedSynthetic = [string](@($keysetDocument.root.data | Where-Object {
+                    [string]$_.name -ceq 'Synthetic_New_Key.Text'
+                })[0].value)
+        Assert-Equal 'Synthetic translated label' $importedSynthetic `
+            'Import must add newly authoritative source keys to an existing locale.'
+        Assert-Equal 0 @($keysetDocument.root.data | Where-Object {
+                [string]$_.name -ceq 'Synthetic_Orphan_Key.Text'
+            }).Count 'Import must remove keys absent from the authoritative source.'
+    }
+    finally {
+        Import-Module $modulePath -Force
+        Remove-Item -LiteralPath $keysetFixture -Recurse -Force
     }
 
     $markupFixture = New-TranslatorFixture
@@ -500,6 +602,9 @@ try {
     Assert-Equal ((Get-FileHash -LiteralPath $generatedWorkbook -Algorithm SHA256).
         Hash.ToLowerInvariant()) $manifest.workbookSha256 `
         'The package manifest must bind the exact workbook bytes.'
+    $generatedRows = @(Import-Csv -LiteralPath $generatedWorkbook)
+    Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
+        'The package manifest must expose the workbook target-catalog binding.'
     & $packageScript -Locale ru-RU -OutputDirectory $packageRoot `
         -SkipScreenshots -Force
     Assert-Equal $firstArchiveHash `
