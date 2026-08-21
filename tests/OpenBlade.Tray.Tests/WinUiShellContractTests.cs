@@ -2053,8 +2053,12 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "[ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]",
+            "[ValidateSet('en-US', 'qps-ploc', 'zh-CN', 'ru-RU')]",
             capture,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Root.RequestedTheme = ElementTheme.Light",
+            window,
             StringComparison.Ordinal);
         Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",

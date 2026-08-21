@@ -208,6 +208,26 @@ foreach ($localizedPath in @(
         "Localization path '$localizedPath' must validate resource contracts."
 }
 
+foreach ($translatorPath in @(
+        'build/Export-LocalizationTranslatorPackage.ps1',
+        'build/Import-LocalizationTranslatorWorkbook.ps1',
+        'build/LocalizationTranslatorWorkflow.psm1',
+        'build/localization/TranslatorScreenshotMap.json',
+        'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
+        'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
+        'docs/localization-translators.md',
+        'src/OpenBlade.Setup/Properties/Resources.resx',
+        'src/OpenBlade.Tray/App.xaml.cs',
+        'src/OpenBlade.Tray/MainWindow.xaml.cs',
+        'src/OpenBlade.Tray/Strings/en-US/Resources.resw',
+        'src/OpenBlade.Tray.Core/Properties/Resources.resx',
+        'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')) {
+    $translator = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($translatorPath)
+    Assert-Contains $translator.ContractTests `
+        'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
+        "Translator workflow path '$translatorPath' must run its adversarial contracts."
+}
+
 foreach ($globalPath in @(
         'Directory.Build.props',
         'src/OpenBlade.Service/OpenBlade.Service.csproj',
