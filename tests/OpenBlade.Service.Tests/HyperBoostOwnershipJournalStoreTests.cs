@@ -24,7 +24,17 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         var expected = new HyperBoostOwnershipJournal(
             state,
             PerformancePreset.Performance,
-            new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.Custom,
+                CustomPerformanceSettings.Default,
+                GpuClockTuningSettings.Disabled,
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3200,
+                    ManualFanCurve.Default)),
+        };
 
         await store.WriteAsync(expected, CancellationToken.None);
         HyperBoostOwnershipJournalLoadResult loaded =
@@ -74,6 +84,35 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.False(loaded.Invalid);
         Assert.True(Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal)
             .RequiresCoolingPad);
+    }
+
+    [Fact]
+    public async Task Load_SchemaTwoDefaultsRestoreIntentToRecordedBaseMode()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 2,
+              "state": 1,
+              "baseMode": 2,
+              "requiresCoolingPad": false,
+              "updatedAtUtc": "2026-08-11T12:00:00Z"
+            }
+            """,
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        HyperBoostOwnershipJournal journal =
+            Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal);
+        Assert.False(loaded.Invalid);
+        Assert.Equal(PerformancePreset.Performance, journal.RestoreIntent.Performance);
+        Assert.Equal(FanMode.Automatic, journal.RestoreIntent.FanControl.Mode);
     }
 
     [Theory]

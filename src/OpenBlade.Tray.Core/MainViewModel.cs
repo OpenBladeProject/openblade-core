@@ -2496,8 +2496,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsHyperBoostWritable));
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
-            Notify(nameof(IsHyperBoostCoolingPadDisclaimerVisible));
-            Notify(nameof(HyperBoostCoolingPadDisclaimer));
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
@@ -2559,23 +2557,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsHyperBoostOperationInProgress
         && (HyperBoostActive
             || ActivePowerSource == PowerSource.PluggedIn
-                && SelectedPerformance == PerformancePreset.Balanced
-                && Capabilities.HyperBoostBaseModes?.AccessFor(SelectedPerformance)
-                    == DeviceFeatureAccess.ReadWrite
-                && SelectedFanMode == FanMode.Automatic
+                && PerformancePresetPresentation.IsAvailable(
+                    PowerSource.PluggedIn,
+                    SelectedPerformance)
+                && Capabilities.PerformancePresets.Contains(SelectedPerformance)
+                && Capabilities.FanModes.Contains(SelectedFanMode)
                 && latestStatus?.PadlessHyperBoostEligibility
                     == PadlessHyperBoostEligibilityState.CoolingPadAbsent);
 
     public string HyperBoostDescription => IsHyperBoostWritable
         ? HyperBoostActive
             ? TrayText.Get(
-                "Active. OpenBlade will restore Balanced when HyperBoost is turned off.")
+                "Improves thermal performance so key components can sustain higher power limits.")
             : latestStatus?.PadlessHyperBoostEligibility switch
             {
                 PadlessHyperBoostEligibilityState.CoolingPadAbsent => TrayText.Get(
-                    "HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter."),
+                    "Improves thermal performance so key components can sustain higher power limits."),
                 PadlessHyperBoostEligibilityState.CoolingPadPresent => TrayText.Get(
-                    "Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required."),
+                    "Disconnect the cooling pad before enabling HyperBoost."),
                 _ => TrayText.Get(
                     "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost."),
             }
@@ -2585,11 +2584,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 "Pad-less HyperBoost is detected but is not available with the current admission evidence.")
             : TrayText.Get(
                 "Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.");
-
-    public bool IsHyperBoostCoolingPadDisclaimerVisible => IsHyperBoostVisible;
-
-    public string HyperBoostCoolingPadDisclaimer =>
-        TrayText.Get("Full cooling-pad integration is planned for a future update.");
 
     public bool HasKeyboardLaptopControls =>
         SupportsFunctionKeyPrimary || SupportsGamingMode;
@@ -9312,7 +9306,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(IsHyperBoostWritable));
         Notify(nameof(CanToggleHyperBoost));
         Notify(nameof(HyperBoostDescription));
-        Notify(nameof(IsHyperBoostCoolingPadDisclaimerVisible));
         Notify(nameof(CanEditFanControl));
         Notify(nameof(CanChangeFanMode));
         NotifyGamingModeKeyPolicy();

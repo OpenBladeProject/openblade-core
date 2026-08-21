@@ -11,12 +11,41 @@ internal enum HyperBoostOwnershipJournalState
     Relinquished,
 }
 
+internal sealed record HyperBoostRestoreIntent(
+    PerformancePreset Performance,
+    CustomPerformanceSettings? CustomPerformance,
+    GpuClockTuningSettings? GpuClockTuning,
+    FanControlSettings FanControl)
+{
+    internal static HyperBoostRestoreIntent BalancedAutomatic { get; } = new(
+        PerformancePreset.Balanced,
+        CustomPerformance: null,
+        GpuClockTuning: null,
+        FanControlSettings.FromLegacy(FanMode.Automatic));
+
+    internal bool IsWellFormed =>
+        Performance is (PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom)
+        && (Performance == PerformancePreset.Custom
+            ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
+            : CustomPerformance is null)
+        && (GpuClockTuning is null
+            || GpuClockTuningSettings.IsWellFormed(GpuClockTuning))
+        && FanControl is not null
+        && Enum.IsDefined(FanControl.Mode);
+}
+
 internal sealed record HyperBoostOwnershipJournal(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
     bool RequiresCoolingPad,
     DateTimeOffset UpdatedAtUtc)
 {
+    internal HyperBoostRestoreIntent RestoreIntent { get; init; } =
+        HyperBoostRestoreIntent.BalancedAutomatic;
+
     internal HyperBoostOwnershipJournal(
         HyperBoostOwnershipJournalState state,
         PerformancePreset baseMode,
@@ -27,9 +56,10 @@ internal sealed record HyperBoostOwnershipJournal(
 
     internal bool IsWellFormed =>
         Enum.IsDefined(State)
-        && BaseMode is PerformancePreset.Silent
+        && BaseMode is (PerformancePreset.Silent
             or PerformancePreset.Balanced
-            or PerformancePreset.Performance
+            or PerformancePreset.Performance)
+        && RestoreIntent is { IsWellFormed: true }
         && UpdatedAtUtc != default;
 }
 
@@ -47,7 +77,11 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
     DateTimeOffset UpdatedAtUtc,
-    bool? RequiresCoolingPad = null);
+    bool? RequiresCoolingPad = null,
+    PerformancePreset? RestorePerformance = null,
+    CustomPerformanceSettings? RestoreCustomPerformance = null,
+    GpuClockTuningSettings? RestoreGpuClockTuning = null,
+    FanControlSettings? RestoreFanControl = null);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -93,7 +127,7 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -134,7 +168,32 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         SerializerOptions);
                 bool recognizedSchema = document is
                 { SchemaVersion: 1, RequiresCoolingPad: null }
-                    or { SchemaVersion: CurrentSchemaVersion, RequiresCoolingPad: not null };
+                    or { SchemaVersion: 2, RequiresCoolingPad: not null }
+                    or
+                {
+                    SchemaVersion: CurrentSchemaVersion,
+                    RequiresCoolingPad: not null,
+                    RestorePerformance: not null,
+                    RestoreFanControl: not null,
+                };
+                HyperBoostRestoreIntent restoreIntent = document is
+                {
+                    SchemaVersion: CurrentSchemaVersion,
+                    RestorePerformance: { } restorePerformance,
+                    RestoreFanControl: { } restoreFanControl,
+                }
+                    ? new HyperBoostRestoreIntent(
+                        restorePerformance,
+                        document.RestoreCustomPerformance,
+                        document.RestoreGpuClockTuning,
+                        restoreFanControl)
+                    : document is null
+                        ? HyperBoostRestoreIntent.BalancedAutomatic
+                        : new HyperBoostRestoreIntent(
+                            document.BaseMode,
+                            CustomPerformance: null,
+                            GpuClockTuning: null,
+                            FanControlSettings.FromLegacy(FanMode.Automatic));
                 var journal = document is null
                     ? null
                     : new HyperBoostOwnershipJournal(
@@ -143,7 +202,10 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         document.SchemaVersion == 1
                             ? true
                             : document.RequiresCoolingPad!.Value,
-                        document.UpdatedAtUtc);
+                        document.UpdatedAtUtc)
+                    {
+                        RestoreIntent = restoreIntent,
+                    };
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
                     ? new HyperBoostOwnershipJournalLoadResult(null, true)
@@ -186,7 +248,11 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     journal.State,
                     journal.BaseMode,
                     journal.UpdatedAtUtc,
-                    journal.RequiresCoolingPad),
+                    journal.RequiresCoolingPad,
+                    journal.RestoreIntent.Performance,
+                    journal.RestoreIntent.CustomPerformance,
+                    journal.RestoreIntent.GpuClockTuning,
+                    journal.RestoreIntent.FanControl),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

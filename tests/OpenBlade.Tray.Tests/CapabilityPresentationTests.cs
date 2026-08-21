@@ -47,18 +47,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("MainWindow_HyperBoostToggle", Attribute(toggle, "Uid"));
         Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
         Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
-        XElement disclaimer = NamedElement(
-            document,
-            "TextBlock",
-            "HyperBoostCoolingPadDisclaimer");
-        Assert.Equal(
-            "{Binding HyperBoostCoolingPadDisclaimer}",
-            Attribute(disclaimer, "Text"));
-        Assert.Equal("Wrap", Attribute(disclaimer, "TextWrapping"));
-        Assert.Equal("Collapsed", Attribute(disclaimer, "Visibility"));
-        Assert.Equal(
-            "{Binding IsHyperBoostCoolingPadDisclaimerVisible}",
-            Attribute(disclaimer, "AnimatedVisibility.IsVisible"));
+        Assert.DoesNotContain(
+            "HyperBoostCoolingPadDisclaimer",
+            presentation,
+            StringComparison.Ordinal);
         XElement progress = Assert.Single(
             card.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
@@ -398,7 +390,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(28, animated.Length);
+        Assert.Equal(27, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));

@@ -8343,14 +8343,9 @@ public sealed class MainViewModelTests
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
-        Assert.Contains(
-            "validated without the cooling pad",
-            viewModel.HyperBoostDescription,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.True(viewModel.IsHyperBoostCoolingPadDisclaimerVisible);
         Assert.Equal(
-            "Full cooling-pad integration is planned for a future update.",
-            viewModel.HyperBoostCoolingPadDisclaimer);
+            "Improves thermal performance so key components can sustain higher power limits.",
+            viewModel.HyperBoostDescription);
         Assert.DoesNotContain(
             viewModel.AvailablePerformancePresets,
             preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
@@ -8365,10 +8360,9 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.CanEditPerformance);
         Assert.False(viewModel.CanEditFanControl);
         Assert.False(viewModel.CanChangeFanMode);
-        Assert.Contains(
-            "restore Balanced",
-            viewModel.HyperBoostDescription,
-            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "Improves thermal performance so key components can sustain higher power limits.",
+            viewModel.HyperBoostDescription);
         changed.Clear();
 
         await viewModel.SetHyperBoostEnabledAsync(false, default);
@@ -8381,17 +8375,17 @@ public sealed class MainViewModelTests
 
     [Theory]
     [InlineData(
+        "en-US",
+        "Improves thermal performance so key components can sustain higher power limits.")]
+    [InlineData(
         "zh-CN",
-        "HyperBoost 已验证可在不连接散热垫的情况下使用。启用前请设为平衡模式、笔记本风扇自动模式，并连接已获准的全功率电源适配器。",
-        "后续更新将加入完整的散热垫集成支持。")]
+        "提升散热性能，使关键组件能够维持更高的功率上限。")]
     [InlineData(
         "ru-RU",
-        "Работа HyperBoost без охлаждающей подставки подтверждена. Перед включением выберите режим «Сбалансированный», автоматическое управление вентиляторами ноутбука и подключите разрешённый полноразмерный адаптер питания.",
-        "Полная интеграция с охлаждающей подставкой будет добавлена в одном из будущих обновлений.")]
+        "Улучшает охлаждение, позволяя ключевым компонентам поддерживать более высокие пределы мощности.")]
     public async Task HyperBoostCard_UsesSelectedLanguage(
         string cultureName,
-        string expectedDescription,
-        string expectedDisclaimer)
+        string expectedDescription)
     {
         using var culture = new CultureScope(cultureName);
         var client = new FakeServiceClient();
@@ -8402,7 +8396,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
 
         Assert.Equal(expectedDescription, viewModel.HyperBoostDescription);
-        Assert.Equal(expectedDisclaimer, viewModel.HyperBoostCoolingPadDisclaimer);
+
+        await viewModel.SetHyperBoostEnabledAsync(true, default);
+
+        Assert.Equal(expectedDescription, viewModel.HyperBoostDescription);
     }
 
     [Fact]
@@ -8498,14 +8495,29 @@ public sealed class MainViewModelTests
             StringComparison.OrdinalIgnoreCase);
     }
 
+    public static IEnumerable<object[]> FullPowerHyperBoostTransitionMatrix()
+    {
+        PerformancePreset[] performancePresets =
+        [
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+            PerformancePreset.Custom,
+        ];
+        foreach (PerformancePreset performance in performancePresets)
+        {
+            foreach (FanMode fans in Enum.GetValues<FanMode>())
+            {
+                yield return [performance, fans];
+            }
+        }
+    }
+
     [Theory]
-    [InlineData(PerformancePreset.Performance, FanMode.Automatic, PowerSource.PluggedIn)]
-    [InlineData(PerformancePreset.Balanced, FanMode.Fixed, PowerSource.PluggedIn)]
-    [InlineData(PerformancePreset.Balanced, FanMode.Automatic, PowerSource.UsbC)]
-    public async Task HyperBoostPadlessPath_RequiresExactBaseFanAndPowerState(
+    [MemberData(nameof(FullPowerHyperBoostTransitionMatrix))]
+    public async Task HyperBoostPadlessPath_AllowsEveryFullPowerProfileAndFanSetting(
         PerformancePreset performance,
-        FanMode fans,
-        PowerSource powerSource)
+        FanMode fans)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -8513,7 +8525,6 @@ public sealed class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline) with
         {
-            ActivePowerSource = powerSource,
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = performance,
@@ -8522,7 +8533,24 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.SelectedPerformance == performance
             && viewModel.SelectedFanMode == fans
-            && viewModel.ActivePowerSource == powerSource);
+            && viewModel.ActivePowerSource == PowerSource.PluggedIn);
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+
+        Assert.True(viewModel.CanToggleHyperBoost);
+    }
+
+    [Fact]
+    public async Task HyperBoostPadlessPath_StillRequiresFullPowerAdapter()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(CreatePadlessHyperBoostStatus(baseline) with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.False(viewModel.CanToggleHyperBoost);
     }

@@ -644,12 +644,6 @@
                                         <TextBlock Text="{Binding HyperBoostDescription}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
-                                        <TextBlock x:Name="HyperBoostCoolingPadDisclaimer"
-                                                   Text="{Binding HyperBoostCoolingPadDisclaimer}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap"
-                                                   Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostCoolingPadDisclaimerVisible}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
