@@ -71,6 +71,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Replaced the About-page affiliation disclaimer with the translated community
+  tagline “For gamers. By the community.”
 - Applied tray language changes immediately without restarting OpenBlade and
   aligned the language picker with the other Appearance controls.
 - Made production admission model-scoped by default for the exact supported

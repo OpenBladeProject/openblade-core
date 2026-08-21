@@ -4018,7 +4018,7 @@
                                                Style="{StaticResource TitleLargeTextBlockStyle}" />
                                     <TextBlock x:Uid="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops" Text="Lightweight controls for Razer Blade laptops"
                                                Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock x:Uid="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith" Text="Independent open-source project; not affiliated with Razer."
+                                    <TextBlock x:Uid="MainWindow_TextBlockForGamersByTheCommunity" Text="For gamers. By the community."
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                             </Grid>

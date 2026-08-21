@@ -1208,8 +1208,8 @@
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>增强音频电平对键盘颜色的驱动强度。</value>
   </data>
-  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>独立的开源项目；与 Razer 无关联。</value>
+  <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
+    <value>为玩家而生。由社区打造。</value>
   </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>已安装</value>

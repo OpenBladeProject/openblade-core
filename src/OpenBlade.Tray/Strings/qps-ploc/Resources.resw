@@ -1232,9 +1232,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>[!! Íncréásé hów strónglý áúdíó lévéls drívé thé kéýbóárd cólórs. ~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>[!! Índépéndént ópén-sóúrcé prójéct; nót áffílíátéd wíth Razer. ~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>[!! Ínstálléd ~~~~ !!]</value>
   </data>
@@ -1900,5 +1897,8 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! HýpérBóóst ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
+    <value>[!! Fór gámérs. Bý thé cómmúnítý. ~~~~~~~~~ !!]</value>
   </data>
 </root>
