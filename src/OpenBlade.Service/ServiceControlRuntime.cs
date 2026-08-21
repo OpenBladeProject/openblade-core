@@ -3343,6 +3343,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (CapabilityUnavailableException exception)
         {
+            HyperBoostIntentRestorationResult? failedEntryRestoration = null;
             if (ownershipJournalPrepared && !setterCompleted)
             {
                 if (enabled
@@ -3350,7 +3351,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     && transitionDevice is not null
                     && transitionIntent is not null)
                 {
-                    await RestoreKnownFailedHyperBoostEntryAsync(
+                    failedEntryRestoration =
+                        await RestoreKnownFailedHyperBoostEntryAsync(
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode)
@@ -3364,6 +3366,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         .ConfigureAwait(false);
                 }
             }
+            if (failedEntryRestoration is { Succeeded: false })
+            {
+                string restorationMessage = GetStatus().Message
+                    ?? $"HyperBoost was not submitted, but its entry-time intent could not be restored. {failedEntryRestoration.Message} Control writes remain blocked.";
+                var restorationFailed = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    restorationMessage);
+                history.RecordSummary(
+                    restorationFailed.Status,
+                    restorationFailed.Message);
+                return restorationFailed;
+            }
             var result = new ControlOperationResult(
                 ControlOperationStatus.Blocked,
                 exception.Message);
@@ -3372,6 +3386,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (BladeWriteException exception)
         {
+            HyperBoostIntentRestorationResult? failedEntryRestoration = null;
             if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
                 if (ownedDisableAttempt)
@@ -3393,7 +3408,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     && transitionDevice is not null
                     && transitionIntent is not null)
                 {
-                    await RestoreKnownFailedHyperBoostEntryAsync(
+                    failedEntryRestoration =
+                        await RestoreKnownFailedHyperBoostEntryAsync(
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode)
@@ -3406,6 +3422,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             pendingBaseMode)
                         .ConfigureAwait(false);
                 }
+            }
+
+            if (failedEntryRestoration is { Succeeded: false })
+            {
+                string restorationMessage = GetStatus().Message
+                    ?? $"HyperBoost was not submitted, but its entry-time intent could not be restored. {failedEntryRestoration.Message} Control writes remain blocked.";
+                var restorationFailed = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    restorationMessage);
+                history.RecordSummary(
+                    restorationFailed.Status,
+                    restorationFailed.Message);
+                return restorationFailed;
             }
 
             var result = new ControlOperationResult(

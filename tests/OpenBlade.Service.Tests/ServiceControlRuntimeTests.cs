@@ -10909,6 +10909,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PadlessHyperBoost_DirectRefusalAndRestoreFailureFailsClosed(
+        bool capabilityRefusal)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                    == FanMode.Automatic
+                        ? context.Device.ConfirmedState with
+                        {
+                            Performance = PerformancePreset.Balanced,
+                        }
+                        : context.Device.ConfirmedState with { Performance = null };
+            }
+        };
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            fanControl,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.HyperBoostFailures.Enqueue(
+            capabilityRefusal
+                ? new CapabilityUnavailableException(
+                    "Injected direct capability refusal.")
+                : new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Injected direct write refusal."));
+        context.Device.AfterHyperBoostFailure = () =>
+            context.Device.FanFailure = new CapabilityUnavailableException(
+                "Injected fan restoration refusal.");
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains(
+            "could not be restored",
+            result.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.NotNull(journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(result.Message, context.Runtime.GetStatus().Message);
+    }
+
     [Fact]
     public async Task PadlessHyperBoost_BlocksWhenCoolingPadIsPresent()
     {
@@ -12072,6 +12143,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool SuppressHyperBoostMutation { get; set; }
 
+        public Queue<Exception> HyperBoostFailures { get; } = new();
+
+        public Action? AfterHyperBoostFailure { get; set; }
+
         public Exception? FanFailure { get; set; }
 
         public Exception? LightingFailure { get; set; }
@@ -12332,6 +12407,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             if (SuppressHyperBoostMutation)
             {
                 return Task.CompletedTask;
+            }
+            if (HyperBoostFailures.TryDequeue(out Exception? failure))
+            {
+                AfterHyperBoostFailure?.Invoke();
+                return Task.FromException(failure);
             }
             ConfirmedState = enabled
                 ? ConfirmedState with
