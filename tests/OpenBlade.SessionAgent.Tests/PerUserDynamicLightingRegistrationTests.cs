@@ -118,6 +118,24 @@ public sealed class PerUserDynamicLightingRegistrationTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => monitoring);
     }
 
+    [Fact]
+    public void IdentityRelaunchRequiresTheCompletedTaskToSucceedWithTrue()
+    {
+        Task<bool> relaunch = Task.FromResult(true);
+        Task<bool> noRelaunch = Task.FromResult(false);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Task<bool> canceled = Task.FromCanceled<bool>(cancellation.Token);
+        Task<bool> faulted = Task.FromException<bool>(
+            new InvalidOperationException("registration failed"));
+
+        Assert.True(Program.ShouldRelaunchForIdentity(relaunch, relaunch));
+        Assert.False(Program.ShouldRelaunchForIdentity(Task.CompletedTask, relaunch));
+        Assert.False(Program.ShouldRelaunchForIdentity(noRelaunch, noRelaunch));
+        Assert.False(Program.ShouldRelaunchForIdentity(canceled, canceled));
+        Assert.False(Program.ShouldRelaunchForIdentity(faulted, faulted));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

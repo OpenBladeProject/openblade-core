@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Awaited every supervised Session Agent loop during coordinated shutdown so
+  microphone mute indication cannot overlap teardown or lose a late failure.
 - Refreshed the fan-mode selector immediately when HyperBoost activates or
   exits so its enabled state stays synchronized with the authoritative control
   gate.

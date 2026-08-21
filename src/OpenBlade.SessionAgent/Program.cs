@@ -295,7 +295,8 @@ internal static class Program
                     MonitorIdentityRegistrationAsync(
                         enabled: !identityRegistrationRelaunch,
                         lifetime.Token);
-                Task completed = await Task.WhenAny(
+                Task[] supervisedTasks =
+                [
                     serverTask,
                     gpuServerTask,
                     statusFeedTask,
@@ -309,9 +310,12 @@ internal static class Program
                     playbackMuteTask,
                     microphoneMuteTask,
                     lampArrayObservationTask,
-                    identityRegistrationTask).ConfigureAwait(false);
-                bool relaunchForIdentity = completed == identityRegistrationTask
-                    && await identityRegistrationTask.ConfigureAwait(false);
+                    identityRegistrationTask,
+                ];
+                Task completed = await Task.WhenAny(supervisedTasks).ConfigureAwait(false);
+                bool relaunchForIdentity = ShouldRelaunchForIdentity(
+                    completed,
+                    identityRegistrationTask);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -322,21 +326,11 @@ internal static class Program
 
                 try
                 {
-                    await Task.WhenAll(
-                            serverTask,
-                            gpuServerTask,
-                            statusFeedTask,
-                            specialKeyBindingsTask,
-                            automationTask,
-                            powerModeAutomationTask,
-                            reactiveTask,
-                            ambientTask,
-                            audioMeterTask,
-                            lightingIdleTask,
-                            playbackMuteTask,
-                            lampArrayObservationTask,
-                            identityRegistrationTask)
+                    await Task.WhenAll(supervisedTasks)
                         .ConfigureAwait(false);
+                }
+                catch (Exception) when (terminalFailure is not null)
+                {
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
                 {
@@ -364,6 +358,13 @@ internal static class Program
             }
         }
     }
+
+    internal static bool ShouldRelaunchForIdentity(
+        Task completed,
+        Task<bool> identityRegistrationTask) =>
+        ReferenceEquals(completed, identityRegistrationTask)
+        && identityRegistrationTask.IsCompletedSuccessfully
+        && identityRegistrationTask.GetAwaiter().GetResult();
 
     internal static async Task<bool> MonitorIdentityRegistrationAsync(
         bool enabled,
