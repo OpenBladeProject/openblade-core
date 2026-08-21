@@ -3648,6 +3648,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     intent.CustomPerformance,
                     cancellationToken)
                 .ConfigureAwait(false);
+            UpdateOwnedFanControlSettings(
+                intent.FanControl,
+                fans.Result,
+                fans.WriteAttempted);
             return new HyperBoostIntentRestorationResult(
                 HyperBoostBaselineStepSucceeded(fans),
                 fans.Readback,
@@ -3672,6 +3676,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ScopedApplyOutcome automaticFans = await coordinator
             .ApplyFanControlOutcomeAsync(intent.FanControl, cancellationToken)
             .ConfigureAwait(false);
+        UpdateOwnedFanControlSettings(
+            intent.FanControl,
+            automaticFans.Result,
+            automaticFans.WriteAttempted);
         return new HyperBoostIntentRestorationResult(
             HyperBoostBaselineStepSucceeded(automaticFans),
             automaticFans.Readback ?? performance.Readback,
@@ -3760,6 +3768,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 failedMessage);
         }
 
+        driftTracker.Observe(restored);
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
         bool journalRetired = await TryClearHyperBoostOwnershipJournalAsync(
                 "HyperBoost was confirmed off and the prior intent was restored after an indeterminate disable, but its ownership journal could not be cleared.")
             .ConfigureAwait(false);
@@ -3869,6 +3880,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 failedMessage);
         }
 
+        driftTracker.Observe(restored);
         driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
         driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
         bool journalRetired = await TryClearHyperBoostOwnershipJournalAsync(

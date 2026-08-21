@@ -11363,6 +11363,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        string restorationMessage = context.Runtime.GetStatus().Message;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot restored = context.Runtime.GetStatus();
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
@@ -11377,7 +11379,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformancePreset.Performance,
             restored.DesiredState.Performance.Value);
         Assert.Equal(FanMode.Fixed, restored.DesiredState.Fans.Value);
-        Assert.Contains("restored without retrying", restored.Message);
+        Assert.Contains("restored without retrying", restorationMessage);
         Assert.Null(journal.Journal);
     }
 
@@ -11447,6 +11449,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
 
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot restored = context.Runtime.GetStatus();

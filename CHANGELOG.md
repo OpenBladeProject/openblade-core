@@ -12,7 +12,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Balanced and Automatic transition baseline, then restored the entry-time
   intent on same-source exits and the destination profile after a power-source
   change, including when fresh readback resolves an indeterminate entry or
-  exit.
+  exit, without misreporting the restored manual fan state as an external
+  change on the next observation.
 - Localized every M1-M5 shortcut action, row label, validation message, and
   accessibility name immediately when the app language changes.
 - Moved VBIOS inventory into the Firmware section and now show `None` only
