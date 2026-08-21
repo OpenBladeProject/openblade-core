@@ -4124,15 +4124,6 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutMcuVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border x:Name="DeviceInformationVbiosFirmwareRow"
-                                        Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosInDeviceInformation, Mode=OneWay}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS" Text="VBIOS" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutVbiosVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
@@ -4287,7 +4278,7 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS2" Grid.Row="4" Margin="0,8,0,0" Text="VBIOS" Style="{StaticResource CardTitleStyle}"
+                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS" Grid.Row="4" Margin="0,8,0,0" Text="VBIOS" Style="{StaticResource CardTitleStyle}"
                                                    Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}" />
                                         <Grid Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
                                               Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}">

@@ -1616,9 +1616,6 @@
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
     <value>VBIOS</value>
   </data>
-  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
-    <value>VBIOS</value>
-  </data>
   <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">
     <value>Версии</value>
   </data>

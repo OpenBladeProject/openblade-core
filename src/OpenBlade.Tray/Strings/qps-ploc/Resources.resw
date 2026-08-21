@@ -1613,9 +1613,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
     <value>[!! VBÍÓS ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
-    <value>[!! VBÍÓS ~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">
     <value>[!! Vérsíóns ~~~ !!]</value>
   </data>

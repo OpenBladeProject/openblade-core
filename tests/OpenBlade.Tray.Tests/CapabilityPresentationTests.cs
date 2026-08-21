@@ -242,7 +242,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_DeviceInformationHidesFirmwareDuplicatedByUpdateAssistant()
+    public void MainWindow_PresentsVbiosOnlyInTheFirmwareSection()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         (string RowName, string PropertyName)[] rows =
@@ -250,7 +250,6 @@ public sealed class CapabilityPresentationTests
             ("DeviceInformationBiosFirmwareRow", "ShowsBiosInDeviceInformation"),
             ("DeviceInformationEcFirmwareRow", "ShowsEcInDeviceInformation"),
             ("DeviceInformationMcuFirmwareRow", "ShowsMcuInDeviceInformation"),
-            ("DeviceInformationVbiosFirmwareRow", "ShowsVbiosInDeviceInformation"),
         ];
 
         Assert.All(rows, row =>
@@ -260,6 +259,40 @@ public sealed class CapabilityPresentationTests
                 $"{{x:Bind FirmwareUpdateViewModel.{row.PropertyName}, Mode=OneWay}}",
                 Attribute(element, "Visibility"));
         });
+
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Name") == "DeviceInformationVbiosFirmwareRow");
+        Assert.DoesNotContain(
+            document.ToString(),
+            "ShowsVbiosInDeviceInformation",
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            document.ToString(),
+            "AboutVbiosVersionStatus",
+            StringComparison.Ordinal);
+
+        XElement versionsSection = NamedElement(
+            document,
+            "Border",
+            "FirmwareVersionsSection");
+        XElement vbiosLabel = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "VBIOS");
+        Assert.Contains(vbiosLabel, versionsSection.Descendants());
+        Assert.Equal("MainWindow_TextBlockVBIOS", Attribute(vbiosLabel, "Uid"));
+        Assert.Equal("4", Attribute(vbiosLabel, "Grid.Row"));
+        XElement vbiosValues = Assert.Single(versionsSection.Descendants(), element =>
+            element.Name.LocalName == "Grid"
+            && Attribute(element, "Grid.Row") == "4"
+            && Attribute(element, "Grid.Column") == "1");
+        Assert.Contains(
+            "FirmwareUpdateViewModel.InstalledVbiosVersion",
+            vbiosValues.ToString(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FirmwareUpdateViewModel.PublishedVbiosVersion",
+            vbiosValues.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

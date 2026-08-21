@@ -7,6 +7,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Moved VBIOS inventory into the Firmware section and now show `None` only
+  after Razer's page authoritatively has no exact-GPU publication. Website,
+  parser, and installed GPU readback failures remain unavailable and never
+  populate installed firmware state. Repeated display-head aliases under one
+  Windows video-adapter key now collapse to that adapter's installed VBIOS,
+  while zero or multiple NVIDIA adapters still fail closed.
 - Placed the Profiles page Import and Export actions beside the title when
   space permits, while preserving accessible ordering and responsive wrapping
   for narrow or long-localized layouts.

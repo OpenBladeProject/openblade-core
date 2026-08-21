@@ -251,6 +251,7 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
 
         foreach (string adapterKeyName in videoRoot.GetSubKeyNames())
         {
+            var adapterInstances = new List<VideoFirmwareCandidate>();
             using RegistryKey? adapterKey = videoRoot.OpenSubKey(adapterKeyName, writable: false);
             if (adapterKey is null)
             {
@@ -268,11 +269,25 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
                     continue;
                 }
 
-                candidates.Add(new VideoFirmwareCandidate(adapter, bios));
+                adapterInstances.Add(new VideoFirmwareCandidate(adapter, bios));
             }
+
+            candidates.AddRange(CollapseRegistryAdapterInstances(adapterInstances));
         }
 
         return candidates;
+    }
+
+    internal static IReadOnlyList<VideoFirmwareCandidate> CollapseRegistryAdapterInstances(
+        IReadOnlyList<VideoFirmwareCandidate> instances)
+    {
+        ArgumentNullException.ThrowIfNull(instances);
+        return instances
+            .GroupBy(
+                candidate => $"{candidate.AdapterName.Trim()}\0{candidate.BiosVersion.Trim()}",
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
     }
 
     private static bool IsSafeMetadataFailure(Exception exception) => exception is
