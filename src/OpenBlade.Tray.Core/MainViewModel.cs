@@ -93,7 +93,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
-    private static readonly TimeSpan PerformancePresentationHoldGracePeriod =
+    private static readonly TimeSpan ControlPresentationHoldGracePeriod =
         TimeSpan.FromSeconds(2);
     private static readonly HashSet<string> CompetingLightingControllers = new(
         ["RazerAppEngine", "Razer Synapse Service"],
@@ -109,6 +109,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private sealed record PendingPerformanceHold(
         PerformanceOverride Requested,
+        PowerSource PowerSource,
+        DateTimeOffset? ExpiresAt);
+
+    private sealed record PendingFanControlHold(
+        FanControlSettings Requested,
         PowerSource PowerSource,
         DateTimeOffset? ExpiresAt);
 
@@ -302,7 +307,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private int gpuCoreClockOffsetMegahertz;
     private int gpuMemoryClockOffsetMegahertz;
     private FanMode selectedFanMode = FanMode.Automatic;
-    private FanControlSettings? pendingFanControl;
+    private PendingFanControlHold? pendingFanControl;
     private bool isFanControlOperationInProgress;
     private bool isPerformanceOperationInProgress;
     private bool isHyperBoostOperationInProgress;
@@ -4611,12 +4616,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         bool performanceHoldReleased = ReleasePendingPerformanceHold(status);
+        bool fanControlHoldReleased = ReleasePendingFanControlHold(status);
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
         if (IsConnected
             && previousStatus is not null
             && !performanceHoldReleased
+            && !fanControlHoldReleased
             && StatusMetadataEqual(previousStatus, status))
         {
             ApplyLiveReadings(status);
@@ -4652,10 +4659,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         HyperBoostActive = confirmed?.HyperBoostActive is true;
         SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
-        SelectedFanMode = pendingFanControl?.Mode
+        SelectedFanMode = pendingFanControl?.Requested.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
         LoadFanControlEditor(
-            pendingFanControl
+            pendingFanControl?.Requested
             ?? status.FanControlOverride
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
@@ -5683,7 +5690,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     pendingPerformance = hold with
                     {
                         ExpiresAt = timeProvider.GetUtcNow()
-                            + PerformancePresentationHoldGracePeriod,
+                            + ControlPresentationHoldGracePeriod,
                     };
                 }
 
@@ -5756,7 +5763,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource sourceAtStart = ActivePowerSource;
         FanControlSettings previous = CurrentFanControlSettings;
         bool applied = false;
-        pendingFanControl = requested;
+        pendingFanControl = new PendingFanControlHold(
+            requested,
+            sourceAtStart,
+            ExpiresAt: null);
         IsFanControlOperationInProgress = true;
         SelectedFanMode = requested.Mode;
         LoadFanControlEditor(requested);
@@ -5786,14 +5796,51 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         finally
         {
-            pendingFanControl = null;
             IsFanControlOperationInProgress = false;
             if (!applied)
             {
+                pendingFanControl = null;
                 SelectedFanMode = previous.Mode;
                 LoadFanControlEditor(previous);
             }
+            else
+            {
+                if (pendingFanControl is { Requested: var pending } hold
+                    && pending == requested)
+                {
+                    pendingFanControl = hold with
+                    {
+                        ExpiresAt = timeProvider.GetUtcNow()
+                            + ControlPresentationHoldGracePeriod,
+                    };
+                }
+
+                if (latestStatus is { } status)
+                {
+                    ReleasePendingFanControlHold(status);
+                }
+            }
         }
+    }
+
+    private bool ReleasePendingFanControlHold(ServiceStatusSnapshot status)
+    {
+        if (pendingFanControl is not { } pending)
+        {
+            return false;
+        }
+
+        bool statusCaughtUp = status.FanControlOverride == pending.Requested;
+        bool sourceChanged = status.ActivePowerSource != pending.PowerSource;
+        bool gracePeriodExpired = pending.ExpiresAt is { } expiresAt
+            && timeProvider.GetUtcNow() >= expiresAt;
+        if (!statusCaughtUp && !sourceChanged && !gracePeriodExpired)
+        {
+            return false;
+        }
+
+        pendingFanControl = null;
+        return true;
     }
 
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
