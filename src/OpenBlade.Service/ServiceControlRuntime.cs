@@ -3057,6 +3057,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         FanControlSettings.FromLegacy(FanMode.Automatic),
                         token)
                     .ConfigureAwait(false);
+                automaticFans = await ResolveIndeterminateHyperBoostFanBaselineAsync(
+                        device,
+                        confirmed.Fans,
+                        automaticFans,
+                        token)
+                    .ConfigureAwait(false);
                 if (!HyperBoostBaselineStepSucceeded(automaticFans))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -3566,6 +3572,74 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static bool HyperBoostBaselineStepSucceeded(
         ScopedApplyOutcome outcome) => outcome.Result.Status is
         ControlResultStatus.Applied or ControlResultStatus.Unchanged;
+
+    private static async Task<ScopedApplyOutcome>
+        ResolveIndeterminateHyperBoostFanBaselineAsync(
+            IBladeDevice device,
+            FanMode? entryFans,
+            ScopedApplyOutcome outcome,
+            CancellationToken cancellationToken)
+    {
+        if (HyperBoostBaselineStepSucceeded(outcome)
+            || !outcome.WriteAttempted)
+        {
+            return outcome;
+        }
+
+        try
+        {
+            ConfirmedDeviceState readback = await device
+                .ReadStateAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (readback.Fans == FanMode.Automatic)
+            {
+                return outcome with
+                {
+                    Result = new ControlResult(
+                        ControlResultStatus.Applied,
+                        "Fans setting applied and confirmed by fresh readback after an indeterminate submission."),
+                    Readback = readback,
+                    ReadbackMatched = true,
+                    DeviceAccessFailed = false,
+                    ConfirmationUnavailable = false,
+                    PreWriteState = null,
+                };
+            }
+
+            if (EquivalentFanReadback(entryFans, readback.Fans))
+            {
+                return outcome with
+                {
+                    Result = new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{outcome.Result.Message} Fresh readback confirmed that the prior fan intent remained active."),
+                    Readback = readback,
+                    WriteAttempted = false,
+                    DeviceAccessFailed = false,
+                    ConfirmationUnavailable = false,
+                    PreWriteState = null,
+                };
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Preserve the indeterminate outcome. The existing reconciliation
+            // path will require a later fresh observation before any write.
+        }
+
+        return outcome;
+    }
+
+    private static bool EquivalentFanReadback(FanMode? left, FanMode? right) =>
+        left == right
+        || left is { } leftMode
+            && right is { } rightMode
+            && DeviceSubsystemOrder.IsManualFanMode(leftMode)
+            && DeviceSubsystemOrder.IsManualFanMode(rightMode);
 
     private async Task<ControlOperationResult>
         FinishFailedHyperBoostBaselineTransitionAsync(
