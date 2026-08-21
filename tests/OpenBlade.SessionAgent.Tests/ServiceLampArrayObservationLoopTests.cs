@@ -170,7 +170,7 @@ public sealed class ServiceLampArrayObservationLoopTests
             program,
             StringComparison.Ordinal);
         Assert.Equal(
-            3,
+            2,
             CountOccurrences(program, "lampArrayObservationTask"));
     }
 

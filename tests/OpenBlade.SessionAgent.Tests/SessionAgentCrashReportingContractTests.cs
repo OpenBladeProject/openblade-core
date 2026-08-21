@@ -14,6 +14,8 @@ public sealed class SessionAgentCrashReportingContractTests
         Assert.Contains("CrashReportWriter.CreateDefault", program, StringComparison.Ordinal);
         Assert.Contains("\"OpenBlade.SessionAgent\"", program, StringComparison.Ordinal);
         Assert.Contains("processTerminating: true", program, StringComparison.Ordinal);
+        Assert.Contains("catch (Exception) when (terminalFailure is not null)", program,
+            StringComparison.Ordinal);
         Assert.Contains("ExceptionDispatchInfo.Capture(terminalFailure).Throw()", program,
             StringComparison.Ordinal);
         Assert.Contains("return 1;", program, StringComparison.Ordinal);

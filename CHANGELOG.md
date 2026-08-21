@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Awaited every supervised Session Agent loop during coordinated shutdown so
+  microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service
   readback catches up, preventing an older in-flight status from briefly
   reverting the fan-mode selector.
