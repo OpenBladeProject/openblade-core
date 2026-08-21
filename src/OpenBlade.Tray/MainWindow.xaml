@@ -3507,7 +3507,7 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppTheme" Grid.Column="1"
-                                                                    CompactWidth="280"
+                                                                    CompactMinWidth="210"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App theme"
                                                                     ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
@@ -3529,7 +3529,7 @@
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppLanguage" Grid.Column="1"
-                                                                    CompactWidth="280"
+                                                                    CompactMinWidth="210"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App language"
                                                                     ItemsSource="{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}"
@@ -4019,7 +4019,7 @@
                                                Style="{StaticResource TitleLargeTextBlockStyle}" />
                                     <TextBlock x:Uid="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops" Text="Lightweight controls for Razer Blade laptops"
                                                Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock x:Uid="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith" Text="Independent open-source project; not affiliated with Razer."
+                                    <TextBlock x:Uid="MainWindow_TextBlockForGamersByTheCommunity" Text="For gamers. By the community."
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                             </Grid>
