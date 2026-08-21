@@ -88,8 +88,11 @@ structurally incomplete, stale, or altered rows before writing. A workbook is al
 bound to the exact target-catalog files that existed at export, so a newer translation
 cannot be silently overwritten. Accepted imports rebuild each locale from the current
 authoritative source keyset, add newly translated keys, and remove obsolete keys. The
-importer validates placeholders, markup, access-key counts and collisions among
-simultaneously visible installer actions, significant whitespace, line breaks,
+four source catalogs remain read-locked from model reconstruction through validation
+and writing, preventing a concurrent source edit from bypassing the workbook hashes.
+The importer validates complete .NET composite-format items, markup, access-key
+counts, and collisions among simultaneously visible installer actions, significant
+whitespace, line breaks,
 punctuation-only values, protected technical identifiers, control characters, and
 spreadsheet-formula prefixes. If writing or repository localization validation fails,
 all touched catalogs are restored. Import never edits language admission or packaging;

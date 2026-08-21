@@ -219,6 +219,18 @@ try {
             $candidate.Translation = 'placeholder removed'
             return $copy
         }),
+        @('placeholder-alignment-whitespace', 'format placeholders', {
+            param($copy)
+            $candidate = @($copy | Where-Object Source -ceq '{0:N0} RPM')[0]
+            $candidate.Translation = '{1, 10} ' + $candidate.Translation
+            return $copy
+        }),
+        @('placeholder-escaped-wrapper', 'format placeholders', {
+            param($copy)
+            $candidate = @($copy | Where-Object Source -ceq '{0:N0} RPM')[0]
+            $candidate.Translation = '{{{1}}} ' + $candidate.Translation
+            return $copy
+        }),
         @('format-index-limit', 'invalid .NET format string', {
             param($copy)
             $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
@@ -518,6 +530,62 @@ try {
     finally {
         Import-Module $modulePath -Force
         Remove-Item -LiteralPath $keysetFixture -Recurse -Force
+    }
+
+    $sourceLockFixture = New-TranslatorFixture
+    try {
+        Import-Module (Join-Path $sourceLockFixture `
+            'build\LocalizationTranslatorWorkflow.psm1') -Force
+        $sourceLockWorkbook = Join-Path $testRoot 'source-lock.csv'
+        [void](Export-LocalizationWorkbook `
+            -Repository $sourceLockFixture -Locale 'ru-RU' -Path $sourceLockWorkbook)
+        $sourceLockRows = @(Import-Csv -LiteralPath $sourceLockWorkbook)
+        $sourceLockCandidate = @($sourceLockRows | Where-Object {
+                $_.Surface -ceq 'tray-core' -and
+                $_.Constraints -like 'Translate naturally*'
+            })[0]
+        $sourceLockCandidate.Translation += ' lock test'
+        Write-CsvRows $sourceLockRows $sourceLockWorkbook
+        $sourceLockValidator = @'
+[CmdletBinding()]
+param([string]$Repository)
+$source = Join-Path $Repository 'src\OpenBlade.Tray\Strings\en-US\Resources.resw'
+$writeHandle = $null
+try {
+    $writeHandle = [IO.File]::Open(
+        $source,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::Read)
+}
+catch [IO.IOException] {
+    return
+}
+finally {
+    if ($null -ne $writeHandle) { $writeHandle.Dispose() }
+}
+throw 'Authoritative source catalog was not read-locked during import.'
+'@
+        [IO.File]::WriteAllText(
+            (Join-Path $sourceLockFixture 'build\Validate-LocalizationResources.ps1'),
+            $sourceLockValidator,
+            [Text.UTF8Encoding]::new($false))
+        $sourceLockResult = Import-LocalizationWorkbook `
+            -Repository $sourceLockFixture -Path $sourceLockWorkbook
+        Assert-Equal 1 @($sourceLockResult.ChangedPaths).Count `
+            'The source-lock fixture must exercise a real catalog write.'
+        $sourcePath = Join-Path $sourceLockFixture `
+            'src\OpenBlade.Tray\Strings\en-US\Resources.resw'
+        $releasedHandle = [IO.File]::Open(
+            $sourcePath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::Read)
+        $releasedHandle.Dispose()
+    }
+    finally {
+        Import-Module $modulePath -Force
+        Remove-Item -LiteralPath $sourceLockFixture -Recurse -Force
     }
 
     $markupFixture = New-TranslatorFixture

@@ -242,9 +242,60 @@ function Test-OrdinalSequenceEqual {
 function Get-CompositeFormatItems {
     param([AllowEmptyString()][string]$Value)
 
-    $pattern = '(?<!\{)\{\d+(?:,-?\d+)?(?::[^{}]*)?\}(?!\})'
     return @(Sort-OrdinalStrings @(
-            [regex]::Matches($Value, $pattern) | ForEach-Object Value))
+            Get-CompositeFormatItemModels $Value | ForEach-Object Text))
+}
+
+function Get-CompositeFormatItemModels {
+    param([AllowEmptyString()][string]$Value)
+
+    $items = [Collections.Generic.List[object]]::new()
+    $position = 0
+    while ($position -lt $Value.Length) {
+        if ($Value[$position] -eq '{') {
+            $runEnd = $position + 1
+            while ($runEnd -lt $Value.Length -and $Value[$runEnd] -eq '{') {
+                $runEnd++
+            }
+            $runLength = $runEnd - $position
+            if ($runLength % 2 -eq 0) {
+                $position = $runEnd
+                continue
+            }
+            $itemStart = $runEnd - 1
+            $match = [regex]::Match(
+                $Value.Substring($itemStart),
+                '^\{(?<index>\d+)\s*(?:,\s*-?\d+\s*)?(?::[^{}]*)?\}',
+                [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+            if (-not $match.Success) {
+                throw 'Composite format string is invalid.'
+            }
+            $index = 0
+            if (-not [int]::TryParse($match.Groups['index'].Value, [ref]$index) -or
+                $index -gt 1024) {
+                throw 'Composite format string is invalid.'
+            }
+            $items.Add([pscustomobject]@{
+                    Text = $match.Value
+                    Index = $index
+                })
+            $position = $itemStart + $match.Length
+            continue
+        }
+        if ($Value[$position] -eq '}') {
+            $runEnd = $position + 1
+            while ($runEnd -lt $Value.Length -and $Value[$runEnd] -eq '}') {
+                $runEnd++
+            }
+            if (($runEnd - $position) % 2 -ne 0) {
+                throw 'Composite format string is invalid.'
+            }
+            $position = $runEnd
+            continue
+        }
+        $position++
+    }
+    return $items.ToArray()
 }
 
 function Assert-ValidCompositeFormat {
@@ -252,17 +303,14 @@ function Assert-ValidCompositeFormat {
         [AllowEmptyString()][string]$Value,
         [Parameter(Mandatory)][string]$Description)
 
-    $indices = [Collections.Generic.List[int]]::new()
-    foreach ($match in @([regex]::Matches($Value, '(?<!\{)\{(?<index>\d+)'))) {
-        $index = 0
-        if (-not [int]::TryParse($match.Groups['index'].Value, [ref]$index) -or
-            $index -gt 1024) {
-            throw "$Description contains an invalid .NET format string."
-        }
-        $indices.Add($index)
+    try {
+        $items = @(Get-CompositeFormatItemModels $Value)
     }
-    $argumentCount = if ($indices.Count -eq 0) { 0 }
-        else { 1 + ($indices | Measure-Object -Maximum).Maximum }
+    catch {
+        throw "$Description contains an invalid .NET format string."
+    }
+    $argumentCount = if ($items.Count -eq 0) { 0 }
+        else { 1 + ($items.Index | Measure-Object -Maximum).Maximum }
     [object[]]$arguments = @('value') * $argumentCount
     try {
         [void][string]::Format(
@@ -272,6 +320,27 @@ function Assert-ValidCompositeFormat {
     }
     catch [FormatException] {
         throw "$Description contains an invalid .NET format string."
+    }
+}
+
+function Open-LocalizationSourceReadLocks {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    $locks = [Collections.Generic.List[IO.FileStream]]::new()
+    try {
+        foreach ($definition in @(Get-LocalizationCatalogDefinitions $Repository)) {
+            $path = Join-Path $Repository $definition.SourcePath
+            $locks.Add([IO.File]::Open(
+                    $path,
+                    [IO.FileMode]::Open,
+                    [IO.FileAccess]::Read,
+                    [IO.FileShare]::Read))
+        }
+        return $locks.ToArray()
+    }
+    catch {
+        foreach ($lock in $locks) { $lock.Dispose() }
+        throw
     }
 }
 
@@ -728,7 +797,7 @@ function Set-ResourceCatalogText {
     return $Text
 }
 
-function Import-LocalizationWorkbook {
+function Import-LocalizationWorkbookCore {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -862,6 +931,27 @@ function Import-LocalizationWorkbook {
         RowCount = $rows.Count
         CatalogHash = $expected.CatalogHash
         ChangedPaths = @($changedPaths)
+    }
+}
+
+function Import-LocalizationWorkbook {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$Repository,
+        [switch]$ValidateOnly)
+
+    $Repository = Get-LocalizationRepository $Repository
+    $sourceLocks = @()
+    try {
+        $sourceLocks = @(Open-LocalizationSourceReadLocks $Repository)
+        return Import-LocalizationWorkbookCore `
+            -Repository $Repository `
+            -Path $Path `
+            -ValidateOnly:$ValidateOnly
+    }
+    finally {
+        foreach ($lock in $sourceLocks) { $lock.Dispose() }
     }
 }
 
