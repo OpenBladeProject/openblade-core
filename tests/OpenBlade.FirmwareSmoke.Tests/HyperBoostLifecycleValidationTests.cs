@@ -1,5 +1,6 @@
 using OpenBlade.Contracts;
 using OpenBlade.FirmwareSmoke;
+using System.Text.Json;
 
 namespace OpenBlade.FirmwareSmoke.Tests;
 
@@ -196,12 +197,16 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.False(File.Exists(markerPath));
     }
 
-    [Fact]
-    public async Task ArmAsync_PadlessRejectsNonBalancedBase()
+    [Theory]
+    [MemberData(nameof(FullPowerProfileFanMatrix))]
+    public async Task ArmAsync_PadlessAllowsEveryFullPowerProfileAndFanIntent(
+        PerformancePreset performance,
+        FanMode fans)
     {
         Directory.CreateDirectory(directory);
         var client = new FakeClient(
-            PerformancePreset.Performance,
+            performance,
+            fans,
             padlessAdmitted: true,
             coolingPadConnection: CoolingPadConnectionState.Absent);
         FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
@@ -210,9 +215,10 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             snapshot,
             () => new HyperBoostLifecycleServiceProcess(42_009, 123_466),
             () => OwnedJournal(
-                PerformancePreset.Performance,
+                performance,
+                fans,
                 requiresCoolingPad: false));
-        string markerPath = Path.Combine(directory, "blocked-performance.json");
+        string markerPath = Path.Combine(directory, $"allowed-{performance}-{fans}.json");
 
         HyperBoostLifecycleArmResult result = await runner.ArmAsync(
             snapshot,
@@ -220,9 +226,35 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             markerPath,
             CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Equal(0, client.EnableCalls);
-        Assert.False(File.Exists(markerPath));
+        Assert.True(result.Success);
+        Assert.Equal(PerformancePreset.Balanced, result.Marker!.BaseMode);
+        Assert.Equal(RestoreIntent(performance, fans), result.Marker.RestoreIntent);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.True(File.Exists(markerPath));
+    }
+
+    public static TheoryData<PerformancePreset, FanMode>
+        FullPowerProfileFanMatrix
+    {
+        get
+        {
+            var values = new TheoryData<PerformancePreset, FanMode>();
+            foreach (PerformancePreset performance in new[]
+            {
+                PerformancePreset.Silent,
+                PerformancePreset.Balanced,
+                PerformancePreset.Performance,
+                PerformancePreset.Custom,
+            })
+            {
+                foreach (FanMode fans in Enum.GetValues<FanMode>())
+                {
+                    values.Add(performance, fans);
+                }
+            }
+
+            return values;
+        }
     }
 
     [Fact]
@@ -318,7 +350,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         Assert.True(result.Success);
         Assert.True(result.ExpectedProcessBoundary);
-        Assert.True(result.ExactBaseAndAutomaticConfirmed);
+        Assert.True(result.ExactRestoreIntentConfirmed);
         Assert.True(result.JournalRetired);
         Assert.Equal(1, result.RecoveryAttemptsObserved);
         Assert.Equal(1, result.RecoveryCompletionsObserved);
@@ -538,6 +570,37 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             current));
     }
 
+    [Fact]
+    public void ParseOwnershipJournal_AcceptsSchemaThreeRestoreIntent()
+    {
+        HyperBoostLifecycleRestoreIntent expected = RestoreIntent(
+            PerformancePreset.Custom,
+            FanMode.ManualCurve);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                schemaVersion = 3,
+                state = 1,
+                baseMode = (int)PerformancePreset.Balanced,
+                updatedAtUtc = DateTimeOffset.UtcNow,
+                requiresCoolingPad = false,
+                restorePerformance = (int)expected.Performance,
+                restoreCustomPerformance = expected.CustomPerformance,
+                restoreGpuClockTuning = expected.GpuClockTuning,
+                restoreFanControl = expected.FanControl,
+            },
+            FirmwareSmokeFiles.JsonOptions);
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.True(observation.Valid);
+        Assert.Equal("OwnedConfirmed", observation.State);
+        Assert.Equal(PerformancePreset.Balanced, observation.BaseMode);
+        Assert.Equal(expected, observation.RestoreIntent);
+        Assert.False(observation.RequiresCoolingPad);
+    }
+
     [Theory]
     [InlineData("low-power", (int)HyperBoostLifecycleScenario.LowPower)]
     [InlineData("crash", (int)HyperBoostLifecycleScenario.UnexpectedExit)]
@@ -591,14 +654,26 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 TimeSpan.Zero)));
 
     private static HyperBoostLifecycleJournalObservation OwnedJournal(
-        PerformancePreset baseMode = PerformancePreset.Balanced,
+        PerformancePreset restorePerformance = PerformancePreset.Balanced,
+        FanMode restoreFans = FanMode.Automatic,
         bool requiresCoolingPad = false) => new(
         true,
         true,
         "OwnedConfirmed",
-        baseMode,
+        PerformancePreset.Balanced,
+        RestoreIntent(restorePerformance, restoreFans),
         RequiresCoolingPad: requiresCoolingPad,
-        new string('A', 64));
+        Sha256: new string('A', 64));
+
+    private static HyperBoostLifecycleRestoreIntent RestoreIntent(
+        PerformancePreset performance = PerformancePreset.Balanced,
+        FanMode fans = FanMode.Automatic) => new(
+        performance,
+        performance == PerformancePreset.Custom
+            ? CustomPerformanceSettings.Default
+            : null,
+        GpuClockTuning: null,
+        FanControlSettings.FromLegacy(fans));
 
     private static IReadOnlyList<HyperBoostLifecycleDiagnosticResult>
         RecoveryDiagnostics(DateTimeOffset timestamp, string boundary) =>
@@ -608,13 +683,13 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 "Service",
                 "Reconcile",
                 "Stored",
-                $"Attempting to restore OpenBlade-owned HyperBoost to Balanced {boundary}."),
+                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}."),
             new(
                 timestamp.AddMilliseconds(2),
                 "Service",
                 "Reconcile",
                 "Applied",
-                $"OpenBlade-owned HyperBoost was restored to Balanced {boundary}."),
+                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}."),
         ];
 
     private static FirmwareSmokeSnapshot Snapshot(ServiceStatusSnapshot status) => new(
@@ -684,15 +759,18 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     private sealed class FakeClient : IFirmwareSmokeClient
     {
         private readonly PerformancePreset baseMode;
+        private readonly FanMode fanMode;
 
         internal FakeClient(
             PerformancePreset baseMode = PerformancePreset.Balanced,
+            FanMode fanMode = FanMode.Automatic,
             bool padlessAdmitted = true,
             bool padlessObservedOnly = false,
             CoolingPadConnectionState coolingPadConnection =
                 CoolingPadConnectionState.Absent)
         {
             this.baseMode = baseMode;
+            this.fanMode = fanMode;
             DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
             {
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
@@ -716,22 +794,33 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 Message: "Verified",
                 capabilities,
                 new ConfirmedDeviceState(
-                    baseMode,
-                    FanMode.Automatic,
+                    IsManualFanMode(fanMode) ? null : baseMode,
+                    fanMode,
                     new ConfirmedBatteryState(true, 80, false),
-                    Lighting: null),
+                    Lighting: null)
+                {
+                    CustomPerformance = baseMode == PerformancePreset.Custom
+                        ? CustomPerformanceSettings.Default
+                        : null,
+                },
                 ProfileDefaults.CreateSafeDefaults(),
                 new DesiredDeviceState(
                     new ResolvedSetting<PerformancePreset>(
                         baseMode,
                         SettingValueSource.PowerProfile),
                     new ResolvedSetting<FanMode>(
-                        FanMode.Automatic,
+                        fanMode,
                         SettingValueSource.PowerProfile),
                     new ResolvedSetting<LightingSettings>(
                         LightingSettingsFactory.SpectrumCycling(50),
                         SettingValueSource.PowerProfile),
-                    new DesiredBatteryState(BatteryPolicy.Create(80), true, false)),
+                    new DesiredBatteryState(BatteryPolicy.Create(80), true, false))
+                {
+                    CustomPerformance = baseMode == PerformancePreset.Custom
+                        ? CustomPerformanceSettings.Default
+                        : null,
+                    FanControl = FanControlSettings.FromLegacy(fanMode),
+                },
                 ActivePowerSource: PowerSource.PluggedIn,
                 LiveReadings: null,
                 PerformanceOverride: null,
@@ -770,8 +859,11 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             ConfirmedState = Status.ConfirmedState! with
             {
                 HyperBoostActive = false,
-                Performance = baseMode,
-                Fans = FanMode.Automatic,
+                Performance = IsManualFanMode(fanMode) ? null : baseMode,
+                Fans = fanMode,
+                CustomPerformance = baseMode == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null,
             },
         };
 
@@ -799,8 +891,14 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 ConfirmedState = Status.ConfirmedState! with
                 {
                     HyperBoostActive = enabled,
-                    Performance = enabled ? null : baseMode,
-                    Fans = FanMode.Automatic,
+                    Performance = enabled || IsManualFanMode(fanMode)
+                        ? null
+                        : baseMode,
+                    Fans = enabled ? FanMode.Automatic : fanMode,
+                    CustomPerformance = !enabled
+                        && baseMode == PerformancePreset.Custom
+                            ? CustomPerformanceSettings.Default
+                            : null,
                 },
             };
             if (enabled && ThrowAfterEnable)
@@ -843,6 +941,9 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(
             bool liveReadingsEnabled,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        private static bool IsManualFanMode(FanMode mode) =>
+            mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(
             PerformanceOverride? value,

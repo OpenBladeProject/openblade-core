@@ -42,11 +42,32 @@ internal sealed record HyperBoostLifecycleJournalObservation(
     bool Valid,
     string? State,
     PerformancePreset? BaseMode,
+    HyperBoostLifecycleRestoreIntent? RestoreIntent,
     bool? RequiresCoolingPad,
     string? Sha256)
 {
     internal static HyperBoostLifecycleJournalObservation Missing { get; } =
-        new(false, true, null, null, null, null);
+        new(false, true, null, null, null, null, null);
+}
+
+internal sealed record HyperBoostLifecycleRestoreIntent(
+    PerformancePreset Performance,
+    CustomPerformanceSettings? CustomPerformance,
+    GpuClockTuningSettings? GpuClockTuning,
+    FanControlSettings FanControl)
+{
+    internal bool IsWellFormed =>
+        Performance is PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom
+        && (Performance == PerformancePreset.Custom
+            ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
+            : CustomPerformance is null)
+        && (GpuClockTuning is null
+            || GpuClockTuningSettings.IsWellFormed(GpuClockTuning))
+        && FanControl is not null
+        && Enum.IsDefined(FanControl.Mode);
 }
 
 internal sealed record HyperBoostLifecycleMarker(
@@ -58,18 +79,18 @@ internal sealed record HyperBoostLifecycleMarker(
     bool RequiresCoolingPad,
     DateTimeOffset ArmedAtUtc,
     HyperBoostLifecycleServiceProcess ServiceProcess,
-    string OwnershipJournalSha256)
+    string OwnershipJournalSha256,
+    HyperBoostLifecycleRestoreIntent RestoreIntent)
 {
-    internal const int CurrentSchemaVersion = 1;
+    internal const int CurrentSchemaVersion = 2;
 
     internal bool IsWellFormed =>
         SchemaVersion == CurrentSchemaVersion
         && Enum.IsDefined(Scenario)
         && !string.IsNullOrWhiteSpace(TargetModel)
         && IsSha256(InstalledGenerationSha256)
-        && BaseMode is PerformancePreset.Silent
-            or PerformancePreset.Balanced
-            or PerformancePreset.Performance
+        && BaseMode == PerformancePreset.Balanced
+        && RestoreIntent is { IsWellFormed: true }
         && ArmedAtUtc != default
         && ServiceProcess.ProcessId > 0
         && ServiceProcess.StartUtcTicks > 0
@@ -98,7 +119,7 @@ internal sealed record HyperBoostLifecycleVerifyResult(
     bool Success,
     bool ExactInstalledGeneration,
     bool ExpectedProcessBoundary,
-    bool ExactBaseAndAutomaticConfirmed,
+    bool ExactRestoreIntentConfirmed,
     bool JournalRetired,
     int RecoveryAttemptsObserved,
     int RecoveryCompletionsObserved,
@@ -224,6 +245,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 greenInstalledGeneration,
                 validationBuild,
                 out PerformancePreset baseMode,
+                out HyperBoostLifecycleRestoreIntent restoreIntent,
                 out bool requiresCoolingPad,
                 out bool useValidationRequest,
                 out string failure))
@@ -272,7 +294,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                     .ConfigureAwait(false);
                 hyperBoostConfirmed = inspected.ConfirmedState?.HyperBoostActive == true;
                 return await FailArmAndRestoreIfNeededAsync(
-                        baseMode,
+                        restoreIntent,
                         hyperBoostConfirmed,
                         "Typed service activation was not independently confirmed.",
                         cancellationToken)
@@ -287,14 +309,16 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 Valid: true,
                 State: OwnedConfirmedJournalState,
                 BaseMode: var journalBase,
+                RestoreIntent: var journalRestoreIntent,
                 RequiresCoolingPad: var journalRequiresPad,
                 Sha256: not null,
             } && journalBase == baseMode
+                && journalRestoreIntent == restoreIntent
                 && journalRequiresPad == requiresCoolingPad;
             if (!durableOwnership)
             {
                 return await FailArmAndRestoreIfNeededAsync(
-                        baseMode,
+                        restoreIntent,
                         hyperBoostConfirmed,
                         "Durable service ownership was not confirmed after activation.",
                         cancellationToken)
@@ -310,7 +334,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 requiresCoolingPad,
                 armedAtUtc,
                 serviceProcess!,
-                journal.Sha256!);
+                journal.Sha256!,
+                restoreIntent);
             try
             {
                 await CreateMarkerAsync(markerPath, marker, cancellationToken)
@@ -319,7 +344,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 return await FailArmAndRestoreIfNeededAsync(
-                        baseMode,
+                        restoreIntent,
                         hyperBoostConfirmed,
                         $"The private lifecycle marker could not be created: {exception.Message}",
                         cancellationToken)
@@ -345,7 +370,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             if (applyAttempted)
             {
                 (bool active, bool restored) =
-                    await InspectAndRestoreAfterArmFailureAsync(baseMode)
+                    await InspectAndRestoreAfterArmFailureAsync(restoreIntent)
                     .ConfigureAwait(false);
                 hyperBoostConfirmed |= active;
                 cleanupAttempted = active;
@@ -358,7 +383,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             if (applyAttempted)
             {
                 (bool active, bool restored) =
-                    await InspectAndRestoreAfterArmFailureAsync(baseMode)
+                    await InspectAndRestoreAfterArmFailureAsync(restoreIntent)
                     .ConfigureAwait(false);
                 hyperBoostConfirmed |= active;
                 cleanupAttempted = active;
@@ -379,7 +404,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
     }
 
     private async Task<(bool HyperBoostActive, bool Restored)>
-        InspectAndRestoreAfterArmFailureAsync(PerformancePreset baseMode)
+        InspectAndRestoreAfterArmFailureAsync(
+            HyperBoostLifecycleRestoreIntent restoreIntent)
     {
         using var timeout = new CancellationTokenSource(ArmFailureCleanupTimeout);
         try
@@ -391,10 +417,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
             bool active = inspected.ConfirmedState?.HyperBoostActive == true;
             if (!active)
             {
-                return (false, IsExactRestoredState(inspected, baseMode));
+                return (false, IsExactRestoredState(inspected, restoreIntent));
             }
 
-            return (true, await RestoreOnceAsync(baseMode, timeout.Token)
+            return (true, await RestoreOnceAsync(restoreIntent, timeout.Token)
                 .ConfigureAwait(false));
         }
         catch
@@ -453,8 +479,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 LiveReadingSensors.None,
                 cancellationToken)
             .ConfigureAwait(false);
-        bool exactFinal = IsExactRestoredState(first, marker.BaseMode)
-            && IsExactRestoredState(second, marker.BaseMode);
+        bool exactFinal = IsExactRestoredState(first, marker.RestoreIntent)
+            && IsExactRestoredState(second, marker.RestoreIntent);
         bool stable = first.ConfirmedState?.HyperBoostActive == false
             && first.ConfirmedState?.Performance == second.ConfirmedState?.Performance
             && first.ConfirmedState?.Fans == second.ConfirmedState?.Fans;
@@ -476,7 +502,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>
                 entry.Detail?.Contains(
-                    $"Attempting to restore OpenBlade-owned HyperBoost to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
                     StringComparison.Ordinal) == true));
         int completions = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
@@ -484,7 +510,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>
                 entry.Detail?.Contains(
-                    $"OpenBlade-owned HyperBoost was restored to {PerformanceLabel(marker.BaseMode)} {boundary}.",
+                    $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.",
                     StringComparison.Ordinal) == true));
         bool success = exactGeneration
             && processBoundary
@@ -510,14 +536,14 @@ internal sealed class HyperBoostLifecycleValidationRunner
     }
 
     private async Task<HyperBoostLifecycleArmResult> FailArmAndRestoreIfNeededAsync(
-        PerformancePreset baseMode,
+        HyperBoostLifecycleRestoreIntent restoreIntent,
         bool hyperBoostConfirmed,
         string message,
         CancellationToken cancellationToken)
     {
         bool cleanupAttempted = hyperBoostConfirmed;
         bool restored = !hyperBoostConfirmed || await RestoreOnceAsync(
-                baseMode,
+                restoreIntent,
                 cancellationToken)
             .ConfigureAwait(false);
         return new HyperBoostLifecycleArmResult(
@@ -534,7 +560,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
     }
 
     private async Task<bool> RestoreOnceAsync(
-        PerformancePreset baseMode,
+        HyperBoostLifecycleRestoreIntent restoreIntent,
         CancellationToken cancellationToken)
     {
         try
@@ -545,7 +571,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 .ConfigureAwait(false);
             if (current.ConfirmedState?.HyperBoostActive != true)
             {
-                return IsExactRestoredState(current, baseMode);
+                return IsExactRestoredState(current, restoreIntent);
             }
 
             ControlOperationResult result = await client.SetHyperBoostAsync(
@@ -554,7 +580,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 .ConfigureAwait(false);
             return IsAccepted(result)
                 && await WaitForStateAsync(
-                        candidate => IsExactRestoredState(candidate, baseMode),
+                        candidate => IsExactRestoredState(candidate, restoreIntent),
                         cancellationToken)
                     .ConfigureAwait(false);
         }
@@ -596,11 +622,17 @@ internal sealed class HyperBoostLifecycleValidationRunner
         bool greenInstalledGeneration,
         PadlessHyperBoostLifecycleValidationBuildManifest? validationBuild,
         out PerformancePreset baseMode,
+        out HyperBoostLifecycleRestoreIntent restoreIntent,
         out bool requiresCoolingPad,
         out bool useValidationRequest,
         out string failure)
     {
-        baseMode = status.ConfirmedState?.Performance ?? PerformancePreset.Balanced;
+        baseMode = PerformancePreset.Balanced;
+        restoreIntent = new HyperBoostLifecycleRestoreIntent(
+            PerformancePreset.Balanced,
+            CustomPerformance: null,
+            GpuClockTuning: null,
+            FanControlSettings.Default);
         requiresCoolingPad = false;
         useValidationRequest = false;
         failure = string.Empty;
@@ -616,26 +648,52 @@ internal sealed class HyperBoostLifecycleValidationRunner
             || status.ConfirmedState is not
             {
                 HyperBoostActive: false,
-                Performance: { } confirmedBase,
-                Fans: FanMode.Automatic,
+                Performance: var confirmedPerformance,
+                Fans: { } confirmedFans,
             }
             || status.Capabilities?.HyperBoostAccess
                 != DeviceFeatureAccess.ReadWrite
-            || (status.Capabilities.HyperBoostBaseModes?.AccessFor(confirmedBase)
-                ?? (confirmedBase == PerformancePreset.Balanced
-                    ? status.Capabilities.HyperBoostAccess
-                    : null)) != DeviceFeatureAccess.ReadWrite
+            || status.Capabilities.HyperBoostBaseModes?.Balanced
+                != DeviceFeatureAccess.ReadWrite
+            || status.DesiredState.Performance.Value is not (PerformancePreset.Silent
+                or PerformancePreset.Balanced
+                or PerformancePreset.Performance
+                or PerformancePreset.Custom)
+            || !status.Capabilities.PerformancePresets.Contains(
+                status.DesiredState.Performance.Value)
+            || !status.Capabilities.FanModes.Contains(confirmedFans)
+            || !IsManualFanMode(confirmedFans)
+                && confirmedPerformance != status.DesiredState.Performance.Value
+            || IsManualFanMode(confirmedFans)
+                && confirmedPerformance is not null
+                && confirmedPerformance != status.DesiredState.Performance.Value
             || status.ActivePowerSource != PowerSource.PluggedIn)
         {
             failure =
-                "The exact installed generation, verified inactive base, Automatic fans, and writable HyperBoost capability are required.";
+                "The exact installed generation, verified inactive full-power profile, admitted fan intent, and writable Balanced HyperBoost transition are required.";
             return false;
         }
 
-        baseMode = confirmedBase;
+        FanControlSettings fanControl = status.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(confirmedFans);
+        restoreIntent = new HyperBoostLifecycleRestoreIntent(
+            status.DesiredState.Performance.Value,
+            status.DesiredState.Performance.Value == PerformancePreset.Custom
+                ? status.DesiredState.CustomPerformance
+                : null,
+            status.DesiredState.GpuClockTuning,
+            fanControl);
+        if (!restoreIntent.IsWellFormed
+            || status.DesiredState.Fans.Value != confirmedFans
+            || fanControl.Mode != confirmedFans)
+        {
+            failure =
+                "The confirmed performance and fan state must match one well-formed entry-time profile intent.";
+            return false;
+        }
+
         bool padAbsentAdmitted =
-            confirmedBase == PerformancePreset.Balanced
-            && (status.Capabilities.HyperBoostWithoutCoolingPadAccess
+            (status.Capabilities.HyperBoostWithoutCoolingPadAccess
                     == DeviceFeatureAccess.ReadWrite
                 || validationBuild?.IsWellFormed == true
                     && status.Capabilities.HyperBoostWithoutCoolingPadAccess
@@ -645,7 +703,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         if (!padAbsentAdmitted)
         {
             failure =
-                "Installed-service lifecycle validation requires pad-less Balanced support with confirmed physical pad absence.";
+                "Installed-service lifecycle validation requires the admitted Balanced transition and confirmed physical pad absence.";
             return false;
         }
 
@@ -690,7 +748,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
 
     private static bool IsExactRestoredState(
         ServiceStatusSnapshot status,
-        PerformancePreset baseMode) =>
+        HyperBoostLifecycleRestoreIntent restoreIntent) =>
         status.DeviceVerified
         && !status.WritesBlocked
         && status.UnconfirmedWrites.Count == 0
@@ -698,16 +756,30 @@ internal sealed class HyperBoostLifecycleValidationRunner
         {
             HyperBoostActive: false,
             Performance: var restored,
-            Fans: FanMode.Automatic,
+            Fans: var restoredFans,
         }
-        && restored == baseMode;
+        && (IsManualFanMode(restoreIntent.FanControl.Mode)
+            ? restored is null || restored == restoreIntent.Performance
+            : restored == restoreIntent.Performance)
+        && restoredFans == restoreIntent.FanControl.Mode
+        && (IsManualFanMode(restoreIntent.FanControl.Mode)
+            || restoreIntent.Performance != PerformancePreset.Custom
+            || status.ConfirmedState.CustomPerformance
+                == restoreIntent.CustomPerformance)
+        && status.DesiredState.Performance.Value == restoreIntent.Performance
+        && status.DesiredState.Fans.Value == restoreIntent.FanControl.Mode
+        && status.DesiredState.CustomPerformance == restoreIntent.CustomPerformance
+        && status.DesiredState.GpuClockTuning == restoreIntent.GpuClockTuning
+        && (status.DesiredState.FanControl
+                ?? FanControlSettings.FromLegacy(status.DesiredState.Fans.Value))
+            == restoreIntent.FanControl;
+
+    private static bool IsManualFanMode(FanMode mode) =>
+        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
 
     private static bool IsAccepted(ControlOperationResult result) =>
         result.Status is ControlOperationStatus.Applied
             or ControlOperationStatus.Stored;
-
-    private static string PerformanceLabel(PerformancePreset baseMode) =>
-        baseMode == PerformancePreset.Silent ? "Quiet" : baseMode.ToString();
 
     private static string InstalledGenerationSha256(FirmwareSmokeSnapshot snapshot)
     {
@@ -786,33 +858,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         {
             byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken)
                 .ConfigureAwait(false);
-            using JsonDocument document = JsonDocument.Parse(bytes);
-            JsonElement root = document.RootElement;
-            int schemaVersion = root.GetProperty("schemaVersion").GetInt32();
-            int state = root.GetProperty("state").GetInt32();
-            int baseMode = root.GetProperty("baseMode").GetInt32();
-            bool requiresPad = root.GetProperty("requiresCoolingPad").GetBoolean();
-            string? stateName = state switch
-            {
-                0 => "EnablePending",
-                1 => OwnedConfirmedJournalState,
-                2 => "RestorePending",
-                3 => "Relinquished",
-                _ => null,
-            };
-            var parsedBase = (PerformancePreset)baseMode;
-            bool valid = schemaVersion == 2
-                && stateName is not null
-                && parsedBase is PerformancePreset.Silent
-                    or PerformancePreset.Balanced
-                    or PerformancePreset.Performance;
-            return new HyperBoostLifecycleJournalObservation(
-                true,
-                valid,
-                stateName,
-                valid ? parsedBase : null,
-                requiresPad,
-                Convert.ToHexString(SHA256.HashData(bytes)));
+            return ParseOwnershipJournal(bytes);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -826,8 +872,65 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 null,
                 null,
                 null,
+                null,
                 null);
         }
+    }
+
+    internal static HyperBoostLifecycleJournalObservation ParseOwnershipJournal(
+        byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        using JsonDocument document = JsonDocument.Parse(bytes);
+        JsonElement root = document.RootElement;
+        int schemaVersion = root.GetProperty("schemaVersion").GetInt32();
+        int state = root.GetProperty("state").GetInt32();
+        int baseMode = root.GetProperty("baseMode").GetInt32();
+        bool requiresPad = root.GetProperty("requiresCoolingPad").GetBoolean();
+        string? stateName = state switch
+        {
+            0 => "EnablePending",
+            1 => OwnedConfirmedJournalState,
+            2 => "RestorePending",
+            3 => "Relinquished",
+            _ => null,
+        };
+        var parsedBase = (PerformancePreset)baseMode;
+        HyperBoostLifecycleRestoreIntent? restoreIntent = schemaVersion switch
+        {
+            2 => new HyperBoostLifecycleRestoreIntent(
+                parsedBase,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+            3 => new HyperBoostLifecycleRestoreIntent(
+                (PerformancePreset)root.GetProperty("restorePerformance").GetInt32(),
+                root.TryGetProperty("restoreCustomPerformance", out JsonElement custom)
+                    && custom.ValueKind != JsonValueKind.Null
+                        ? custom.Deserialize<CustomPerformanceSettings>(
+                            FirmwareSmokeFiles.JsonOptions)
+                        : null,
+                root.TryGetProperty("restoreGpuClockTuning", out JsonElement tuning)
+                    && tuning.ValueKind != JsonValueKind.Null
+                        ? tuning.Deserialize<GpuClockTuningSettings>(
+                            FirmwareSmokeFiles.JsonOptions)
+                        : null,
+                root.GetProperty("restoreFanControl")
+                    .Deserialize<FanControlSettings>(FirmwareSmokeFiles.JsonOptions)!),
+            _ => null,
+        };
+        bool valid = schemaVersion is 2 or 3
+            && stateName is not null
+            && parsedBase == PerformancePreset.Balanced
+            && restoreIntent is { IsWellFormed: true };
+        return new HyperBoostLifecycleJournalObservation(
+            true,
+            valid,
+            stateName,
+            valid ? parsedBase : null,
+            valid ? restoreIntent : null,
+            requiresPad,
+            Convert.ToHexString(SHA256.HashData(bytes)));
     }
 
     private static async Task<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>
