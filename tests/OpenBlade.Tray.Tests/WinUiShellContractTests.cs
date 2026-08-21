@@ -2104,6 +2104,18 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
+            "ReadPresentedProductVersion(localizationSnapshotMode)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "version.IndexOf('+', StringComparison.Ordinal)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "return metadataSeparator < 0 ? version : version[..metadataSeparator]",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
             capture,
             StringComparison.Ordinal);
@@ -3693,7 +3705,7 @@ public sealed class WinUiShellContractTests
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.Contains(
-            "string uiVersion = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);",
+            "string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);",
             window,
             StringComparison.Ordinal);
         Assert.Contains(

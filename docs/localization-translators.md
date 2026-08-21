@@ -62,8 +62,10 @@ The default command renders fixed en-US context through the disconnected localiz
 preview, writes a folder under `artifacts/localization/translator/`, and creates a ZIP
 with sorted entries and fixed timestamps. Child renderers use a process-local 96-DPI
 compatibility context, a fixed light theme, software installer rendering, and sanitized
-sample data. That render profile and every image hash are recorded in the package
-manifest; system display settings are not changed. It does not install OpenBlade,
+sample data. Snapshot mode omits commit build metadata from the displayed app version,
+so an incremental build cannot leak a superseded head into an otherwise current package.
+That render profile and every image hash are recorded in the package manifest; system
+display settings are not changed. It does not install OpenBlade,
 request UAC, start the service or Session Agent, or perform hardware writes. The output
 directory is gitignored; do not commit generated CSV, ZIP, or PNG files.
 
