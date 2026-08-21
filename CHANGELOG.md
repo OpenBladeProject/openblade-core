@@ -10,7 +10,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Allowed HyperBoost to start from every supported full-power-adapter
   performance profile and fan setting while preserving the capture-backed
   Balanced and Automatic transition baseline, then restored the entry-time
-  performance and fan intent on direct and lifecycle exits.
+  intent on same-source exits and the destination profile after a power-source
+  change.
 - Awaited every supervised Session Agent loop during coordinated shutdown so
   microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service

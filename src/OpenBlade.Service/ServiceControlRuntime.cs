@@ -2963,8 +2963,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             transitionIntent = enabled
                 ? CreateHyperBoostRestoreIntent(current.DesiredState)
-                : ownedHyperBoostRestoreIntent
-                    ?? CreateHyperBoostRestoreIntent(current.DesiredState);
+                : ResolveHyperBoostExitIntent(
+                    current,
+                    ownedHyperBoostRestoreIntent);
             if (enabled && !IsSupportedFullPowerHyperBoostIntent(
                     current.Capabilities!,
                     transitionIntent))
@@ -3521,6 +3522,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             desired.FanControl
                 ?? FanControlSettings.FromLegacy(desired.Fans.Value));
     }
+
+    private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
+        ServiceStatusSnapshot current,
+        HyperBoostRestoreIntent? ownedIntent) => current.ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => ownedIntent
+                ?? CreateHyperBoostRestoreIntent(current.DesiredState),
+            PowerSource.Battery or PowerSource.UsbC =>
+                CreateHyperBoostRestoreIntent(current.DesiredState),
+            _ => HyperBoostRestoreIntent.BalancedAutomatic,
+        };
 
     private static bool IsSupportedFullPowerHyperBoostIntent(
         DeviceCapabilities capabilities,

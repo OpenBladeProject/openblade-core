@@ -10771,6 +10771,62 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task PadlessHyperBoost_LifecycleExitAfterPowerChangeRestoresDestinationIntent(
+        PowerSource destination)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var acFans = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            acFans,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+
+        context.Telemetry.Current = CreateTelemetry(destination);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        DesiredDeviceState destinationIntent = context.Runtime.GetStatus().DesiredState;
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            destinationIntent.Performance.Value,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(
+            destinationIntent.FanControl?.Mode ?? destinationIntent.Fans.Value,
+            context.Device.ConfirmedState.Fans);
+        Assert.NotEqual(
+            PerformancePreset.Performance,
+            context.Device.ConfirmedState.Performance);
+        Assert.NotEqual(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task PadlessHyperBoost_KnownBaselineFailureRestoresOrFailsClosed(
