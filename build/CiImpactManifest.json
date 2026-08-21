@@ -158,7 +158,7 @@
     },
     {
       "test": "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1",
-      "patterns": ["build/Export-LocalizationTranslatorPackage.ps1", "build/Import-LocalizationTranslatorWorkbook.ps1", "build/LocalizationTranslatorWorkflow.psm1", "build/Capture-LocalizationSnapshots.ps1", "build/localization/TranslatorScreenshotMap.json", "build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs", "build/installer/OpenBlade.Installer.UI/Properties/*", "docs/localization-translators.md", "src/OpenBlade.Setup/Properties/*", "src/OpenBlade.Tray/App.xaml.cs", "src/OpenBlade.Tray/MainWindow.xaml", "src/OpenBlade.Tray/MainWindow.xaml.cs", "src/OpenBlade.Tray/Strings/*", "src/OpenBlade.Tray.Core/Properties/*", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"]
+      "patterns": ["build/Export-LocalizationTranslatorPackage.ps1", "build/Import-LocalizationTranslatorWorkbook.ps1", "build/LocalizationTranslatorWorkflow.psm1", "build/Validate-LocalizationResources.ps1", "build/Capture-LocalizationSnapshots.ps1", "build/localization/TranslatorScreenshotMap.json", "build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs", "build/installer/OpenBlade.Installer.UI/Properties/*", "docs/localization-translators.md", "src/OpenBlade.Setup/Properties/*", "src/OpenBlade.Tray/App.xaml.cs", "src/OpenBlade.Tray/MainWindow.xaml", "src/OpenBlade.Tray/MainWindow.xaml.cs", "src/OpenBlade.Tray/Strings/*", "src/OpenBlade.Tray.Core/Properties/*", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"]
     },
     {
       "test": "tests/Build.Tests/NightlyChangelog.Tests.ps1",

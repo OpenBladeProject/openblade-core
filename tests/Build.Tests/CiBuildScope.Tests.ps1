@@ -212,6 +212,7 @@ foreach ($translatorPath in @(
         'build/Export-LocalizationTranslatorPackage.ps1',
         'build/Import-LocalizationTranslatorWorkbook.ps1',
         'build/LocalizationTranslatorWorkflow.psm1',
+        'build/Validate-LocalizationResources.ps1',
         'build/localization/TranslatorScreenshotMap.json',
         'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
         'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
