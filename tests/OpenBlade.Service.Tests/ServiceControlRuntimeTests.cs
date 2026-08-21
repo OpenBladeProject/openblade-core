@@ -10770,6 +10770,121 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Fact]
+    public async Task PadlessHyperBoost_DirectExitRetriesPreWriteReadFailureDuringRestoration()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem != DeviceSubsystem.Fans)
+            {
+                return;
+            }
+
+            context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                == FanMode.Automatic
+                    ? context.Device.ConfirmedState with
+                    {
+                        Performance = PerformancePreset.Balanced,
+                    }
+                    : context.Device.ConfirmedState with { Performance = null };
+        };
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            fanControl,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 3;
+        context.Device.ReadStateFailureOnCallException =
+            new IOException("Battery state query failed.");
+
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_DirectExitDoesNotRetryIndeterminateRestorationWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate restoration write."));
+        int performanceSetCallsBeforeExit = context.Device.PerformanceSetCalls;
+
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, disabled.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            performanceSetCallsBeforeExit + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]

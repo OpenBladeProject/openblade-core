@@ -13,7 +13,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   intent on same-source exits and the destination profile after a power-source
   change, including when fresh readback resolves an indeterminate entry or
   exit, without misreporting the restored manual fan state as an external
-  change on the next observation.
+  change on the next observation. A transient device read before an affected
+  restoration write is retried once; indeterminate and post-write failures
+  remain non-retryable.
 - Localized every M1-M5 shortcut action, row label, validation message, and
   accessibility name immediately when the app language changes.
 - Moved VBIOS inventory into the Firmware section and now show `None` only

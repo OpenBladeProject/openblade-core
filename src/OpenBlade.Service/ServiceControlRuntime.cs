@@ -3648,6 +3648,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     intent.CustomPerformance,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (ShouldRetryHyperBoostRestorationPreWriteRead(fans))
+            {
+                fans = await coordinator
+                    .ApplyFanControlTransitionOutcomeAsync(
+                        FanControlSettings.FromLegacy(FanMode.Automatic),
+                        intent.FanControl,
+                        intent.Performance,
+                        intent.CustomPerformance,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
                 fans.Result,
@@ -3665,6 +3676,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 intent.GpuClockTuning,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (ShouldRetryHyperBoostRestorationPreWriteRead(performance))
+        {
+            performance = await coordinator
+                .ApplyPerformanceOutcomeAsync(
+                    intent.Performance,
+                    intent.CustomPerformance,
+                    intent.GpuClockTuning,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
         if (!HyperBoostBaselineStepSucceeded(performance))
         {
             return new HyperBoostIntentRestorationResult(
@@ -3676,6 +3697,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ScopedApplyOutcome automaticFans = await coordinator
             .ApplyFanControlOutcomeAsync(intent.FanControl, cancellationToken)
             .ConfigureAwait(false);
+        if (ShouldRetryHyperBoostRestorationPreWriteRead(automaticFans))
+        {
+            automaticFans = await coordinator
+                .ApplyFanControlOutcomeAsync(intent.FanControl, cancellationToken)
+                .ConfigureAwait(false);
+        }
         UpdateOwnedFanControlSettings(
             intent.FanControl,
             automaticFans.Result,
@@ -3685,6 +3712,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             automaticFans.Readback ?? performance.Readback,
             automaticFans.Result.Message);
     }
+
+    private static bool ShouldRetryHyperBoostRestorationPreWriteRead(
+        ScopedApplyOutcome outcome) =>
+        !HyperBoostBaselineStepSucceeded(outcome)
+        && outcome.DeviceAccessFailed
+        && !outcome.WriteAttempted;
 
     private async Task<(
         FullDeviceObservation Observation,
