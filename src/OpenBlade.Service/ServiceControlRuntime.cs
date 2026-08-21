@@ -3248,8 +3248,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             current,
                             readback,
                             requestedBaseMode,
-                            requiresCoolingPad: false)
-                        .ConfigureAwait(false);
+                            requiresCoolingPad: false,
+                            transitionIntent!)
+                    .ConfigureAwait(false);
                 }
             }
             bool disableJournalCleared = true;
@@ -3551,11 +3552,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (baselineChanged)
             {
-                await RestoreKnownFailedHyperBoostEntryAsync(
+                HyperBoostIntentRestorationResult restoration =
+                    await RestoreKnownFailedHyperBoostEntryAsync(
                         device,
                         intent,
                         baseMode)
                     .ConfigureAwait(false);
+                if (!restoration.Succeeded)
+                {
+                    message = GetStatus().Message
+                        ?? $"HyperBoost was not submitted, but its entry-time intent could not be restored. {restoration.Message} Control writes remain blocked.";
+                    status = ControlOperationStatus.Failed;
+                    var failed = new ControlOperationResult(status, message);
+                    history.RecordSummary(failed.Status, failed.Message);
+                    return failed;
+                }
             }
             else
             {
@@ -3566,7 +3577,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             message =
                 baselineChanged
-                    ? $"HyperBoost was not submitted because its Balanced Automatic baseline could not be established. {outcome.Result.Message} The entry-time intent restoration was attempted."
+                    ? $"HyperBoost was not submitted because its Balanced Automatic baseline could not be established. {outcome.Result.Message} The entry-time intent was restored."
                     : $"HyperBoost was not submitted because its Balanced Automatic baseline could not be established. {outcome.Result.Message}";
             status = outcome.Result.Status == ControlResultStatus.Blocked
                 ? ControlOperationStatus.Blocked
@@ -3626,7 +3637,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             automaticFans.Result.Message);
     }
 
-    private async Task RestoreKnownFailedHyperBoostEntryAsync(
+    private async Task<HyperBoostIntentRestorationResult>
+        RestoreKnownFailedHyperBoostEntryAsync(
         IBladeDevice device,
         HyperBoostRestoreIntent intent,
         PerformancePreset baseMode)
@@ -3639,11 +3651,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 .ConfigureAwait(false);
         if (restoration.Succeeded)
         {
-            await RestorePreparedHyperBoostJournalAsync(
+            bool journalRecovered = await RestorePreparedHyperBoostJournalAsync(
                     enabled: true,
                     baseMode: baseMode)
                 .ConfigureAwait(false);
-            return;
+            if (journalRecovered)
+            {
+                return restoration;
+            }
+
+            var journalFailure = new HyperBoostIntentRestorationResult(
+                    Succeeded: false,
+                    restoration.Readback,
+                    "The entry-time intent was restored, but the pending ownership journal could not be cleared.");
+            string journalMessage =
+                $"HyperBoost was not submitted. {journalFailure.Message} Control writes remain blocked.";
+            history.RecordSummary(ControlOperationStatus.Failed, journalMessage);
+            PublishIfChanged(GetStatus() with
+            {
+                ConfirmedState = journalFailure.Readback ?? GetStatus().ConfirmedState,
+                WritesBlocked = true,
+                Message = journalMessage,
+            });
+            return journalFailure;
         }
 
         hyperBoostJournalSafetyBlock = true;
@@ -3656,9 +3686,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             WritesBlocked = true,
             Message = message,
         });
+        return restoration;
     }
 
-    private Task RestorePreparedHyperBoostJournalAsync(
+    private Task<bool> RestorePreparedHyperBoostJournalAsync(
         bool enabled,
         PerformancePreset baseMode) => enabled
         ? TryClearHyperBoostOwnershipJournalAsync(
@@ -3710,7 +3741,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ServiceStatusSnapshot baseline,
             ConfirmedDeviceState activeReadback,
             PerformancePreset baseMode,
-            bool requiresCoolingPad)
+            bool requiresCoolingPad,
+            HyperBoostRestoreIntent restoreIntent)
     {
         const string failurePrefix =
             "HyperBoost was activated, but durable ownership could not be recorded.";
@@ -3732,6 +3764,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
                 && restoredBase == baseMode)
             {
+                HyperBoostIntentRestorationResult intentRestoration =
+                    await RestoreHyperBoostIntentAsync(
+                            device,
+                            restoreIntent,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                restored = intentRestoration.Readback ?? restored;
+                if (!intentRestoration.Succeeded)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    hyperBoostOwnershipGeneration++;
+                    ownsHyperBoost = false;
+                    ownedHyperBoostBaseMode = null;
+                    ownedHyperBoostRestoreIntent = null;
+                    ownedHyperBoostRequiresCoolingPad = false;
+                    string restorationFailed =
+                        $"{failurePrefix} HyperBoost is off, but the entry-time performance or fan intent could not be restored. {intentRestoration.Message} Control writes remain blocked.";
+                    var failed = new ControlOperationResult(
+                        ControlOperationStatus.Failed,
+                        restorationFailed);
+                    history.RecordSummary(failed.Status, failed.Message);
+                    PublishIfChanged(baseline with
+                    {
+                        ConfirmedState = restored,
+                        WritesBlocked = true,
+                        Message = failed.Message,
+                    });
+                    return failed;
+                }
+
                 bool retired = await RetireHyperBoostOwnershipJournalAsync(
                         baseMode,
                         requiresCoolingPad,
@@ -3743,8 +3805,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ownedHyperBoostRestoreIntent = null;
                 ownedHyperBoostRequiresCoolingPad = false;
                 string message = retired
-                    ? $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)} exactly once and did not leave HyperBoost active."
-                    : $"{failurePrefix} OpenBlade restored {PerformanceLabel(baseMode)}, but the pending ownership journal could not be retired; control writes remain blocked.";
+                    ? $"{failurePrefix} OpenBlade restored the entry-time {PerformanceLabel(restoreIntent.Performance)} performance and fan intent and did not leave HyperBoost active."
+                    : $"{failurePrefix} OpenBlade restored the entry-time {PerformanceLabel(restoreIntent.Performance)} performance and fan intent, but the pending ownership journal could not be retired; control writes remain blocked.";
                 var result = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     message);

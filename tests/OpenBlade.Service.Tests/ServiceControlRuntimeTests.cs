@@ -10770,8 +10770,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
-    [Fact]
-    public async Task PadlessHyperBoost_KnownBaselineFailureRestoresEntryIntent()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PadlessHyperBoost_KnownBaselineFailureRestoresOrFailsClosed(
+        bool restorationFails)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -10811,13 +10814,94 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
         context.Device.PerformanceFailures.Enqueue(
             new CapabilityUnavailableException("Injected known refusal."));
+        if (restorationFails)
+        {
+            context.Device.PerformanceFailures.Enqueue(
+                new CapabilityUnavailableException(
+                    "Injected restoration refusal."));
+        }
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
             true,
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        if (restorationFails)
+        {
+            Assert.Equal(ControlOperationStatus.Failed, result.Status);
+            Assert.Contains(
+                "could not be restored",
+                result.Message,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+            Assert.NotNull(journal.Journal);
+            Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        }
+        else
+        {
+            Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+            Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+            Assert.Null(context.Device.ConfirmedState.Performance);
+            Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
+            Assert.Null(journal.Journal);
+            Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        }
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_JournalFinalizeFailureRestoresEntryIntent()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            FailWriteOnCall = 2,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                    == FanMode.Automatic
+                        ? context.Device.ConfirmedState with
+                        {
+                            Performance = PerformancePreset.Balanced,
+                        }
+                        : context.Device.ConfirmedState with { Performance = null };
+            }
+        };
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            fanControl,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains(
+            "entry-time Quiet performance and fan intent",
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
         Assert.Null(context.Device.ConfirmedState.Performance);
         Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
@@ -11467,6 +11551,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool FailWrite { get; set; }
 
+        public int? FailWriteOnCall { get; set; }
+
+        public int WriteCalls { get; private set; }
+
         public bool FailClear { get; set; }
 
         public List<HyperBoostOwnershipJournal> Writes { get; } = [];
@@ -11488,7 +11576,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (FailWrite)
+            WriteCalls++;
+            if (FailWrite || WriteCalls == FailWriteOnCall)
             {
                 return Task.FromException(new IOException("journal write failed"));
             }
