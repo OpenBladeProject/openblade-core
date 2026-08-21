@@ -33,9 +33,12 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
         {
             NamedPipeServerStream connected = currentPipe
                 ?? throw new ObjectDisposedException(nameof(SessionDisplayPipeServer));
-            if (!await SessionAgentPipeAccept.TryAcceptAsync(
-                    connected.WaitForConnectionAsync,
-                    cancellationToken).ConfigureAwait(false))
+            SessionAgentPipeAcceptResult acceptResult =
+                await SessionAgentPipeAccept.AcceptAsync(
+                        connected.WaitForConnectionAsync,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (acceptResult == SessionAgentPipeAcceptResult.Canceled)
             {
                 return;
             }
@@ -43,6 +46,11 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
             // Preserve ownership without a gap while the accepted request is handled.
             NamedPipeServerStream replacement = owner.CreateReplacementPipe();
             currentPipe = replacement;
+            if (acceptResult == SessionAgentPipeAcceptResult.PipeClosed)
+            {
+                await connected.DisposeAsync().ConfigureAwait(false);
+                continue;
+            }
             try
             {
                 await ServeConnectionAsync(connected, cancellationToken).ConfigureAwait(false);

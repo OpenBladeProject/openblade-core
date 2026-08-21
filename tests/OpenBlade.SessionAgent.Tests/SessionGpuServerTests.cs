@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Security.Principal;
 using OpenBlade.Platform;
 using OpenBlade.Session;
@@ -18,6 +19,25 @@ public sealed class SessionGpuServerTests
         cancellation.Cancel();
 
         await running.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ClientClosesBeforeAccept_ReplacesListener()
+    {
+        var dispatcher = new SessionGpuRequestDispatcher(new ThrowOnceGpuAppManager());
+        await using SessionAgentPipeOwner owner = AcquireOwner();
+        await using var server = new SessionGpuPipeServer(owner, dispatcher);
+        using var cancellation = new CancellationTokenSource();
+        await ConnectAndCloseAsync(owner.Endpoint.PipeName);
+
+        Task running = server.RunAsync(cancellation.Token);
+        SessionGpuResponse first = await QueryAsync(owner.Endpoint.PipeName);
+        SessionGpuResponse response = await QueryAsync(owner.Endpoint.PipeName);
+        cancellation.Cancel();
+
+        await running.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(SessionGpuOperationStatus.Failed, first.Status);
+        Assert.Equal(SessionGpuOperationStatus.Succeeded, response.Status);
     }
 
     [Fact]
@@ -64,6 +84,33 @@ public sealed class SessionGpuServerTests
             sid,
             out SessionAgentPipeOwner? owner));
         return owner!;
+    }
+
+    private static async Task ConnectAndCloseAsync(string pipeName)
+    {
+        await using var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await client.ConnectAsync(timeout.Token);
+    }
+
+    private static async Task<SessionGpuResponse> QueryAsync(string pipeName)
+    {
+        await using var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await client.ConnectAsync(timeout.Token);
+        var request = new QueryGpuAppsRequest(
+            SessionGpuIpc.ProtocolVersion,
+            Guid.NewGuid());
+        await SessionGpuIpcCodec.WriteRequestAsync(client, request, timeout.Token);
+        return await SessionGpuIpcCodec.ReadResponseAsync(client, timeout.Token);
     }
 
     private sealed class ThrowOnceGpuAppManager : IWindowsGpuAppManager

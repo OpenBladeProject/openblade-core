@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Display;
@@ -20,6 +21,23 @@ public sealed class SessionDisplayServerTests
         cancellation.Cancel();
 
         await running.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunAsync_ClientClosesBeforeAccept_ReplacesListener()
+    {
+        var dispatcher = new SessionDisplayRequestDispatcher(new RecordingApplier());
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher);
+        using var cancellation = new CancellationTokenSource();
+        await ConnectAndCloseAsync(owner.Endpoint.PipeName);
+
+        Task running = server.RunAsync(cancellation.Token);
+        SessionDisplayResponse response = await QueryAsync(owner.Endpoint.PipeName);
+        cancellation.Cancel();
+
+        await running.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(SessionDisplayOperationStatus.Succeeded, response.Status);
     }
 
     [Fact]
@@ -166,6 +184,33 @@ public sealed class SessionDisplayServerTests
             $"{SessionDisplayIpc.PipeNamePrefix}.Tests.{Guid.NewGuid():N}");
         Assert.True(SessionAgentPipeOwner.TryAcquire(endpoint, sid, out SessionAgentPipeOwner? owner));
         return owner!;
+    }
+
+    private static async Task ConnectAndCloseAsync(string pipeName)
+    {
+        await using var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await client.ConnectAsync(timeout.Token);
+    }
+
+    private static async Task<SessionDisplayResponse> QueryAsync(string pipeName)
+    {
+        await using var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await client.ConnectAsync(timeout.Token);
+        var request = new QueryDisplayRequest(
+            SessionDisplayIpc.ProtocolVersion,
+            Guid.NewGuid());
+        await SessionDisplayIpcCodec.WriteRequestAsync(client, request, timeout.Token);
+        return await SessionDisplayIpcCodec.ReadResponseAsync(client, timeout.Token);
     }
 
     private sealed class RecordingApplier : IDisplayProfileApplier
