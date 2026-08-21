@@ -29,6 +29,7 @@ public sealed class ResponsivePageHeader : Grid
     private StackPanel? profileActions;
     private FrameworkElement? customizeAction;
     private PageHeaderProfileActionPlacement? placement;
+    private bool? customizeActionVisible;
     private double constrainedProfileActionsWidth = double.PositiveInfinity;
 
     public static ResponsivePageHeaderElementRole GetRole(DependencyObject element) =>
@@ -42,14 +43,19 @@ public sealed class ResponsivePageHeader : Grid
     {
         ResolveRoleElements();
         if (titleElement is null
-            || profileActions is null
-            || customizeAction is null)
+            || profileActions is null)
         {
             return base.MeasureOverride(availableSize);
         }
 
         titleElement.Measure(NaturalMeasureSize);
-        customizeAction.Measure(NaturalMeasureSize);
+        bool hasVisibleCustomizeAction = customizeAction?.Visibility == Visibility.Visible;
+        double? customizeWidth = null;
+        if (hasVisibleCustomizeAction)
+        {
+            customizeAction!.Measure(NaturalMeasureSize);
+            customizeWidth = customizeAction.DesiredSize.Width;
+        }
         double profileActionsWidth = MeasureNaturalProfileActions(
             profileActions,
             out bool hasVisibleProfileAction);
@@ -57,10 +63,13 @@ public sealed class ResponsivePageHeader : Grid
             availableSize.Width,
             titleElement.DesiredSize.Width,
             profileActionsWidth,
-            customizeAction.DesiredSize.Width,
+            customizeWidth,
             profileActions.Visibility == Visibility.Visible && hasVisibleProfileAction);
 
-        ApplyProfileActionPlacement(resolved, availableSize.Width);
+        ApplyProfileActionPlacement(
+            resolved,
+            availableSize.Width,
+            hasVisibleCustomizeAction);
         return base.MeasureOverride(availableSize);
     }
 
@@ -87,7 +96,8 @@ public sealed class ResponsivePageHeader : Grid
 
     private void ApplyProfileActionPlacement(
         PageHeaderProfileActionPlacement resolved,
-        double availableWidth)
+        double availableWidth,
+        bool hasVisibleCustomizeAction)
     {
         if (profileActions is null)
         {
@@ -102,9 +112,11 @@ public sealed class ResponsivePageHeader : Grid
             ? availableWidth
             : double.PositiveInfinity;
 
-        if (placement != resolved)
+        if (placement != resolved
+            || customizeActionVisible != hasVisibleCustomizeAction)
         {
             placement = resolved;
+            customizeActionVisible = hasVisibleCustomizeAction;
             SetRow(profileActions, useTitleRow ? 0 : 1);
             SetColumn(profileActions, useTitleRow ? 1 : 0);
             SetColumnSpan(profileActions, useTitleRow ? 1 : 3);
@@ -120,7 +132,9 @@ public sealed class ResponsivePageHeader : Grid
                 PageHeaderProfileActionPlacement.TitleRow => new Thickness(
                     0,
                     0,
-                    PageHeaderLayoutPolicy.InterActionGroupGapDip,
+                    hasVisibleCustomizeAction
+                        ? PageHeaderLayoutPolicy.InterActionGroupGapDip
+                        : 0,
                     0),
                 _ => new Thickness(0, 12, 0, 0),
             };

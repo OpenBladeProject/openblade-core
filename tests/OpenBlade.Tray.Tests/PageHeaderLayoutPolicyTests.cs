@@ -109,4 +109,59 @@ public sealed class PageHeaderLayoutPolicyTests
 
         Assert.Equal(PageHeaderProfileActionPlacement.TitleRow, placement);
     }
+
+    [Fact]
+    public void ActionsWithoutCustomizeUseTitleRowAtExactFit()
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: 336,
+            titleWidth: 120,
+            profileActionsWidth: 200,
+            customizeWidth: null,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.TitleRow, placement);
+    }
+
+    [Fact]
+    public void ActionsWithoutCustomizeMoveTogetherToHorizontalLowerRow()
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: 280,
+            titleWidth: 120,
+            profileActionsWidth: 200,
+            customizeWidth: null,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.LowerRowHorizontal, placement);
+    }
+
+    [Fact]
+    public void LocalizedActionsWithoutCustomizeStackVertically()
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: 280,
+            titleWidth: 120,
+            profileActionsWidth: 400,
+            customizeWidth: null,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.LowerRowVertical, placement);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(0)]
+    public void InvalidVisibleCustomizeMeasurementFailsToVerticalLowerRow(
+        double invalidWidth)
+    {
+        PageHeaderProfileActionPlacement placement = PageHeaderLayoutPolicy.Resolve(
+            availableWidth: 620,
+            titleWidth: 120,
+            profileActionsWidth: 200,
+            customizeWidth: invalidWidth,
+            profileActionsVisible: true);
+
+        Assert.Equal(PageHeaderProfileActionPlacement.LowerRowVertical, placement);
+    }
 }
