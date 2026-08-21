@@ -2120,6 +2120,8 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("foreach ($trayPage", capture, StringComparison.Ordinal);
         Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
+        Assert.Contains("'profiles-narrow'", capture, StringComparison.Ordinal);
+        Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
         Assert.Contains(
             "ShowLocalizationSnapshotSettingsAppearance()",
             app,
@@ -2141,7 +2143,7 @@ public sealed class WinUiShellContractTests
             app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "new Windows.Graphics.SizeInt32(1120, 820)",
+            ": new Windows.Graphics.SizeInt32(1120, 820)",
             app,
             StringComparison.Ordinal);
         Assert.Contains("\"profiles-narrow\"", app, StringComparison.Ordinal);
