@@ -95,6 +95,22 @@ public sealed class SpecialKeyBindingTests
         Assert.NotEqual(exception.Message, validationMessage);
     }
 
+    [Theory]
+    [InlineData("en-US", "Enter a value for this action.")]
+    [InlineData("ru-RU", "Введите значение для этого действия.")]
+    [InlineData("zh-CN", "请输入此操作的值。")]
+    public void ValidationMessageFollowsTheSelectedUiLanguage(
+        string cultureName,
+        string expected)
+    {
+        using var culture = new CultureScope(cultureName);
+
+        string message = SpecialKeyBindingDefaults.GetValidationMessage(
+            new SpecialKeyAction(SpecialKeyActionKind.KeyboardShortcut));
+
+        Assert.Equal(expected, message);
+    }
+
     [Fact]
     public void RawHidInput_RecognizesEachCapturedFnLayerKeyOncePerPress()
     {

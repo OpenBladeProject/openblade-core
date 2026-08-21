@@ -17,7 +17,7 @@ internal static class PageHeaderLayoutPolicy
         double availableWidth,
         double titleWidth,
         double profileActionsWidth,
-        double customizeWidth,
+        double? customizeWidth,
         bool profileActionsVisible)
     {
         if (!profileActionsVisible)
@@ -27,7 +27,8 @@ internal static class PageHeaderLayoutPolicy
 
         if (!IsUsableWidth(titleWidth)
             || !IsUsableWidth(profileActionsWidth)
-            || !IsUsableWidth(customizeWidth))
+            || customizeWidth is double visibleCustomizeWidth
+                && !IsUsableWidth(visibleCustomizeWidth))
         {
             return PageHeaderProfileActionPlacement.LowerRowVertical;
         }
@@ -44,9 +45,11 @@ internal static class PageHeaderLayoutPolicy
 
         double titleRowWidth = titleWidth
             + MinimumTitleActionGapDip
-            + profileActionsWidth
-            + InterActionGroupGapDip
-            + customizeWidth;
+            + profileActionsWidth;
+        if (customizeWidth is double measuredCustomizeWidth)
+        {
+            titleRowWidth += InterActionGroupGapDip + measuredCustomizeWidth;
+        }
         if (availableWidth + 0.5 >= titleRowWidth)
         {
             return PageHeaderProfileActionPlacement.TitleRow;
