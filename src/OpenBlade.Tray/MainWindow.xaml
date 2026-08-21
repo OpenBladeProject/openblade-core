@@ -2439,38 +2439,39 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="ProfilesPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16"
-                              RowSpacing="10">
-                            <Grid.RowDefinitions>
+                        <local:ResponsivePageHeader x:Name="ProfilesPageHeader"
+                                                    Margin="0,0,0,20">
+                            <local:ResponsivePageHeader.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
+                            </local:ResponsivePageHeader.RowDefinitions>
+                            <local:ResponsivePageHeader.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                            </local:ResponsivePageHeader.ColumnDefinitions>
                             <TextBlock x:Uid="MainWindow_TextBlockProfiles2" Text="Profiles"
-                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                                       Style="{StaticResource PageHeaderTitleStyle}"
+                                       local:ResponsivePageHeader.Role="Title" />
                             <StackPanel x:Name="ProfilesHeaderActions"
-                                        Grid.Row="1"
-                                        Grid.ColumnSpan="2"
+                                        Grid.Column="1"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,2,0,0"
-                                        VerticalAlignment="Center">
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        local:ResponsivePageHeader.Role="ProfileActions">
                                 <Button x:Uid="MainWindow_ButtonImportProfiles" Content="Import profiles"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                         Click="OnImportProfiles"
                                         ToolTipService.ToolTip="Import saved profiles from JSON"
                                         AutomationProperties.Name="Import profiles from JSON" />
                                 <Button x:Uid="MainWindow_ButtonExportProfiles" Content="Export profiles"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                         Click="OnExportProfiles"
                                         ToolTipService.ToolTip="Export saved profiles as JSON"
                                         AutomationProperties.Name="Export profiles to JSON" />
                             </StackPanel>
-                        </Grid>
+                        </local:ResponsivePageHeader>
                         <StackPanel x:Name="ProfilesSectionHost">
                         <StackPanel x:Name="ProfilesComparisonSection">
                         <TextBlock x:Uid="MainWindow_TextBlockTheseAreTheSettingsSavedInEach" Text="These are the settings saved in each profile. A dot marks a value with a pending change; point to it to preview the new value."
@@ -2937,7 +2938,7 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Spacing="2"
                                                                     VerticalAlignment="Center">
-                                                            <TextBlock Text="{x:Bind SlotLabel}"
+                                                            <TextBlock Text="{x:Bind SlotLabel, Mode=OneWay}"
                                                                        Style="{StaticResource CardTitleStyle}" />
                                                         </StackPanel>
                                                         <ComboBox Grid.Column="1"
@@ -2945,13 +2946,13 @@
                                                                   MinWidth="200"
                                                                   HorizontalAlignment="Stretch"
                                                                   VerticalAlignment="Center"
-                                                                  ItemsSource="{x:Bind AvailableActions}"
+                                                                  ItemsSource="{x:Bind AvailableActions, Mode=OneWay}"
                                                                   DisplayMemberPath="Label"
                                                                   SelectedItem="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   Tag="{x:Bind Slot}"
                                                                   SelectionChanged="OnSpecialKeyActionSelectionChanged"
-                                                                  AutomationProperties.Name="{x:Bind SlotLabel}" />
+                                                                  AutomationProperties.Name="{x:Bind ActionAccessibleName, Mode=OneWay}" />
                                                     </Grid>
                                                     <Grid Visibility="{x:Bind ValueEditorVisibility, Mode=OneWay}"
                                                           ColumnSpacing="20">
@@ -3500,7 +3501,7 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppTheme" Grid.Column="1"
-                                                                    CompactWidth="280"
+                                                                    CompactMinWidth="210"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App theme"
                                                                     ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
@@ -3522,7 +3523,7 @@
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Uid="MainWindow_ResponsiveChoiceSelectorAppLanguage" Grid.Column="1"
-                                                                    CompactWidth="280"
+                                                                    CompactMinWidth="210"
                                                                     ExpandedMinWindowWidth="800"
                                                                     AccessibleName="App language"
                                                                     ItemsSource="{x:Bind ViewModel.LanguageSelectionOptions, Mode=OneWay}"
@@ -4012,7 +4013,7 @@
                                                Style="{StaticResource TitleLargeTextBlockStyle}" />
                                     <TextBlock x:Uid="MainWindow_TextBlockLightweightControlsForRazerBladeLaptops" Text="Lightweight controls for Razer Blade laptops"
                                                Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock x:Uid="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith" Text="Independent open-source project; not affiliated with Razer."
+                                    <TextBlock x:Uid="MainWindow_TextBlockForGamersByTheCommunity" Text="For gamers. By the community."
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                             </Grid>
@@ -4115,15 +4116,6 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock x:Uid="MainWindow_TextBlockMCU" Text="MCU" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutMcuVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                                <Border x:Name="DeviceInformationVbiosFirmwareRow"
-                                        Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosInDeviceInformation, Mode=OneWay}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS" Text="VBIOS" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutVbiosVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -4280,7 +4272,7 @@
                                                        Text="{x:Bind FirmwareUpdateViewModel.PublishedMcuVersion, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
                                         </Grid>
-                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS2" Grid.Row="4" Margin="0,8,0,0" Text="VBIOS" Style="{StaticResource CardTitleStyle}"
+                                        <TextBlock x:Uid="MainWindow_TextBlockVBIOS" Grid.Row="4" Margin="0,8,0,0" Text="VBIOS" Style="{StaticResource CardTitleStyle}"
                                                    Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}" />
                                         <Grid Grid.Row="4" Grid.Column="1" Margin="0,8,0,0" ColumnSpacing="24"
                                               Visibility="{x:Bind FirmwareUpdateViewModel.ShowsVbiosFirmware, Mode=OneWay}">

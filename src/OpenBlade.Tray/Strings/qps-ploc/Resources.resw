@@ -936,13 +936,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! BÍÓS ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockAltTab2.Text" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockAltTab3.Text" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockBlockTheWindowsKey.Text" xml:space="preserve">
     <value>[!! Blóck thé Windows kéý ~~~~ !!]</value>
@@ -1231,9 +1231,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
     <value>[!! Íncréásé hów strónglý áúdíó lévéls drívé thé kéýbóárd cólórs. ~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockIndependentOpenSourceProjectNotAffiliatedWith.Text" xml:space="preserve">
-    <value>[!! Índépéndént ópén-sóúrcé prójéct; nót áffílíátéd wíth Razer. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockInstalled.Text" xml:space="preserve">
     <value>[!! Ínstálléd ~~~~ !!]</value>
@@ -1616,9 +1613,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockVBIOS.Text" xml:space="preserve">
     <value>[!! VBÍÓS ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockVBIOS2.Text" xml:space="preserve">
-    <value>[!! VBÍÓS ~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockVersions.Text" xml:space="preserve">
     <value>[!! Vérsíóns ~~~ !!]</value>
   </data>
@@ -1659,7 +1653,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Álwáýs óvérrídé éxtérnál líghtíng chángés ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchBlockAltTabInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ín Gámíng módé ~~~~~~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ín Gámíng módé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ToggleSwitchBlockTheWindowsKeyInGamingMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Blóck thé Windows kéý ín Gámíng módé ~~~~~~~~~ !!]</value>
@@ -1746,7 +1740,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Wébsíté ~~~ !!]</value>
   </data>
   <data name="SpecialKey_ValuePlaceholder_Shortcut" xml:space="preserve">
-    <value>[!! Fór éxámplé: Ctrl+Shíft+M ~~~~~~~ !!]</value>
+    <value>[!! Fór éxámplé: Ctrl+Shift+M ~~~~ !!]</value>
   </data>
   <data name="SpecialKey_ValuePlaceholder_Text" xml:space="preserve">
     <value>[!! Téxt tó týpé ~~~~ !!]</value>
@@ -1842,7 +1836,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Báttérý prótéctíón ~~~~~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockBlockAltTab.Text" xml:space="preserve">
-    <value>[!! Blóck Ált+Táb ~~~~ !!]</value>
+    <value>[!! Blóck Alt+Tab ~~ !!]</value>
   </data>
   <data name="TrayDashboardWindow_TextBlockBlockWindowsKey.Text" xml:space="preserve">
     <value>[!! Blóck Windows kéý ~~~ !!]</value>
@@ -1900,5 +1894,104 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! HýpérBóóst ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
+    <value>[!! Fór gámérs. Bý thé cómmúnítý. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
+    <value>[!! Áctíón fór {0} ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_CycleLightingEffect" xml:space="preserve">
+    <value>[!! Cýclé kéýbóárd éfféct ~~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_CyclePowerMode" xml:space="preserve">
+    <value>[!! Cýclé OpenBlade pówér módé ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_Default" xml:space="preserve">
+    <value>[!! Défáúlt ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_Disabled" xml:space="preserve">
+    <value>[!! Dísábléd ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_DoubleClick" xml:space="preserve">
+    <value>[!! Dóúblé clíck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_KeyboardShortcut" xml:space="preserve">
+    <value>[!! Kéýbóárd shórtcút ~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_LaunchApplication" xml:space="preserve">
+    <value>[!! Láúnch án ápp ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_LeftClick" xml:space="preserve">
+    <value>[!! Léft clíck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_MiddleClick" xml:space="preserve">
+    <value>[!! Míddlé clíck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_MouseBack" xml:space="preserve">
+    <value>[!! Móúsé báck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_MouseForward" xml:space="preserve">
+    <value>[!! Móúsé fórwárd ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_MuteMicrophone" xml:space="preserve">
+    <value>[!! Múté mícróphóné ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_MuteVolume" xml:space="preserve">
+    <value>[!! Múté vólúmé ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_NextTrack" xml:space="preserve">
+    <value>[!! Néxt tráck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_OpenWebsite" xml:space="preserve">
+    <value>[!! Ópén á wébsíté ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_PlayPause" xml:space="preserve">
+    <value>[!! Pláý ór páúsé ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_PreviousTrack" xml:space="preserve">
+    <value>[!! Prévíóús tráck ~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_RightClick" xml:space="preserve">
+    <value>[!! Ríght clíck ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollDown" xml:space="preserve">
+    <value>[!! Scróll dówn ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_ScrollUp" xml:space="preserve">
+    <value>[!! Scróll úp ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_ToggleGamingMode" xml:space="preserve">
+    <value>[!! Tógglé Gámíng módé ~~~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_TypeText" xml:space="preserve">
+    <value>[!! Týpé téxt ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeDown" xml:space="preserve">
+    <value>[!! Vólúmé dówn ~~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Action_VolumeUp" xml:space="preserve">
+    <value>[!! Vólúmé úp ~~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Slot_M1" xml:space="preserve">
+    <value>[!! M1 ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Slot_M2" xml:space="preserve">
+    <value>[!! M2 ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Slot_M3" xml:space="preserve">
+    <value>[!! M3 ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Slot_M4" xml:space="preserve">
+    <value>[!! M4 ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_Slot_M5" xml:space="preserve">
+    <value>[!! M5 ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_AppPath" xml:space="preserve">
+    <value>[!! C:\Path\To\App.exe ~~ !!]</value>
+  </data>
+  <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
+    <value>[!! https://example.com ~~ !!]</value>
   </data>
 </root>

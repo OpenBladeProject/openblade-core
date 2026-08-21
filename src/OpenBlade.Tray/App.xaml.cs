@@ -429,7 +429,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Как в Windows",
                     "Открыть",
                     "От аккумулятора",
-                    "Сохраняет текущий параметр Windows."),
+                    "Сохраняет текущий параметр Windows.",
+                    "По умолчанию",
+                    "Сочетание клавиш",
+                    "Действие клавиши M1"),
                 new(
                     UiLanguagePreference.SimplifiedChinese,
                     "应用语言",
@@ -437,7 +440,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "跟随 Windows 设置",
                     "打开",
                     "使用电池",
-                    "保留当前 Windows 设置。"),
+                    "保留当前 Windows 设置。",
+                    "默认",
+                    "键盘快捷键",
+                    "M1 操作"),
                 new(
                     UiLanguagePreference.English,
                     "App language",
@@ -445,7 +451,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "Follow Windows",
                     "Open",
                     "On battery",
-                    "Keeps the current Windows setting."),
+                    "Keeps the current Windows setting.",
+                    "Default",
+                    "Keyboard shortcut",
+                    "Action for M1"),
             ];
 
             ApplyRuntimeLocalizationPreference(cases[0].Preference);
@@ -479,6 +488,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 MainWindow previousWindow = mainWindow
                     ?? throw new InvalidOperationException(
                         "The localization smoke test lost the main window.");
+                SpecialKeyBindingPreference[] previousBindings = previousWindow
+                    .SpecialKeyBindings
+                    .Select(binding => binding.ToPreference())
+                    .ToArray();
                 bool expectMaximized = smokeCase.Preference
                     == UiLanguagePreference.SimplifiedChinese;
                 if (expectMaximized
@@ -492,6 +505,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                     smokeCase,
                     previousWindow,
                     expectMaximized);
+                SpecialKeyBindingPreference[] refreshedBindings = mainWindow!
+                    .SpecialKeyBindings
+                    .Select(binding => binding.ToPreference())
+                    .ToArray();
+                if (!previousBindings.SequenceEqual(refreshedBindings))
+                {
+                    throw new InvalidOperationException(
+                        "The language refresh changed invariant M-key bindings.");
+                }
             }
 
             File.WriteAllText(smokeReportPath, "completed");
@@ -561,6 +583,32 @@ public partial class App : Microsoft.UI.Xaml.Application
             smokeCase.ExpectedWindowsPowerModeDescription,
             window.ViewModel.AvailableWindowsPowerModeOptions[0].Description,
             "Windows power mode description");
+        if (window.SpecialKeyBindings.Count != Enum.GetValues<SpecialKeySlot>().Length)
+        {
+            throw new InvalidOperationException(
+                "The language refresh did not preserve every M-key binding row.");
+        }
+
+        SpecialKeyBindingViewModel m1 = window.SpecialKeyBindings.Single(
+            binding => binding.Slot == SpecialKeySlot.M1);
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedDefaultAction,
+            m1.AvailableActions.Single(
+                option => option.Kind == SpecialKeyActionKind.Default).Label,
+            "M1 default action");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedKeyboardShortcutAction,
+            m1.AvailableActions.Single(
+                option => option.Kind == SpecialKeyActionKind.KeyboardShortcut).Label,
+            "M1 keyboard shortcut action");
+        AssertLiveLocalizationValue(
+            smokeCase.ExpectedActionAccessibleName,
+            m1.ActionAccessibleName,
+            "M1 action accessibility name");
+        AssertLiveLocalizationValue(
+            m1.AvailableActions.Single(option => option.Kind == m1.SelectedAction.Kind).Label,
+            m1.SelectedAction.Label,
+            "M1 selected action");
     }
 
     private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
@@ -650,8 +698,18 @@ public partial class App : Microsoft.UI.Xaml.Application
             };
             string? requestedPage = Environment.GetEnvironmentVariable(
                 LocalizationSnapshotPageVariable);
+            bool captureNarrowProfiles = string.Equals(
+                requestedPage,
+                "profiles-narrow",
+                StringComparison.Ordinal);
+            bool captureWideProfiles = string.Equals(
+                requestedPage,
+                "profiles-wide",
+                StringComparison.Ordinal);
+            bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
+                && !captureProfilesVariant
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -660,12 +718,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                 throw new InvalidOperationException(
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
-            IEnumerable<string> destinations = string.IsNullOrWhiteSpace(requestedPage)
-                ? mainDestinations
-                : mainDestinations.Where(destination => string.Equals(
-                    destination,
-                    requestedPage,
-                    StringComparison.Ordinal));
+            IEnumerable<string> destinations = captureProfilesVariant
+                ? [requestedPage!]
+                : string.IsNullOrWhiteSpace(requestedPage)
+                    ? mainDestinations
+                    : mainDestinations.Where(destination => string.Equals(
+                        destination,
+                        requestedPage,
+                        StringComparison.Ordinal));
             foreach (string destination in destinations)
             {
                 Windows.Graphics.SizeInt32 snapshotSize = string.Equals(
@@ -673,7 +733,17 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "settings-appearance",
                     StringComparison.Ordinal)
                     ? new Windows.Graphics.SizeInt32(1920, 1000)
-                    : new Windows.Graphics.SizeInt32(1120, 820);
+                    : string.Equals(
+                        destination,
+                        "profiles-narrow",
+                        StringComparison.Ordinal)
+                        ? new Windows.Graphics.SizeInt32(800, 820)
+                        : string.Equals(
+                            destination,
+                            "profiles-wide",
+                            StringComparison.Ordinal)
+                            ? new Windows.Graphics.SizeInt32(1600, 900)
+                            : new Windows.Graphics.SizeInt32(1120, 820);
                 snapshotMainWindow.AppWindow.Resize(snapshotSize);
                 await WaitForSnapshotLayoutAsync();
                 string navigationDestination = string.Equals(
@@ -681,7 +751,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     "settings-appearance",
                     StringComparison.Ordinal)
                     ? "settings"
-                    : destination;
+                    : captureProfilesVariant
+                        ? "profiles"
+                        : destination;
                 snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                 await WaitForSnapshotLayoutAsync();
                 if (string.Equals(
@@ -1010,6 +1082,16 @@ public partial class App : Microsoft.UI.Xaml.Application
             RequireResponsivePageHeader(
                 IsTitleRow(actions),
                 "The Save-only action did not return to the title row when it fit.");
+            customize.Visibility = Visibility.Collapsed;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsTitleRow(actions, hasCustomizeAction: false),
+                "The title-row action gap remained after Customize was hidden.");
+            customize.Visibility = Visibility.Visible;
+            await DrainResponsiveHeaderLayoutAsync(header);
+            RequireResponsivePageHeader(
+                IsTitleRow(actions),
+                "The title-row action gap was not restored with Customize.");
             save.Width = double.NaN;
             header.Width = 360;
             await DrainResponsiveHeaderLayoutAsync(header);
@@ -1070,6 +1152,92 @@ public partial class App : Microsoft.UI.Xaml.Application
                 IsHorizontalLowerRow(actions),
                 "The restored Save-only layout changed after a repeated layout pass.");
 
+            File.WriteAllText(smokeReportPath, "verify header without customize action");
+            var profilesHeader = new ResponsivePageHeader
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+                Width = 700,
+            };
+            profilesHeader.RowDefinitions.Add(
+                new XamlRowDefinition { Height = GridLength.Auto });
+            profilesHeader.RowDefinitions.Add(
+                new XamlRowDefinition { Height = GridLength.Auto });
+            profilesHeader.ColumnDefinitions.Add(new XamlColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
+            profilesHeader.ColumnDefinitions.Add(
+                new XamlColumnDefinition { Width = GridLength.Auto });
+            profilesHeader.ColumnDefinitions.Add(
+                new XamlColumnDefinition { Width = GridLength.Auto });
+
+            var profilesTitle = new XamlTextBlock
+            {
+                Style = titleStyle,
+                Text = "Profiles",
+            };
+            ResponsivePageHeader.SetRole(
+                profilesTitle,
+                ResponsivePageHeaderElementRole.Title);
+            profilesHeader.Children.Add(profilesTitle);
+
+            var importProfiles = new XamlButton
+            {
+                Content = "Import profiles",
+                Style = secondaryStyle,
+            };
+            var exportProfiles = new XamlButton
+            {
+                Content = "Export profiles",
+                Style = secondaryStyle,
+            };
+            var profilesActions = new XamlStackPanel
+            {
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+                Orientation = XamlOrientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+            };
+            profilesActions.Children.Add(importProfiles);
+            profilesActions.Children.Add(exportProfiles);
+            XamlGrid.SetColumn(profilesActions, 1);
+            ResponsivePageHeader.SetRole(
+                profilesActions,
+                ResponsivePageHeaderElementRole.ProfileActions);
+            profilesHeader.Children.Add(profilesActions);
+
+            host.Children.Clear();
+            host.Children.Add(profilesHeader);
+            await DrainResponsiveHeaderLayoutAsync(profilesHeader);
+            RequireResponsivePageHeader(
+                IsTitleRow(profilesActions, hasCustomizeAction: false),
+                "The Profiles actions did not share the title row when they fit.");
+
+            profilesHeader.Width = 320;
+            await DrainResponsiveHeaderLayoutAsync(profilesHeader);
+            RequireResponsivePageHeader(
+                IsHorizontalLowerRow(profilesActions),
+                "The Profiles actions did not move together when the title row was constrained.");
+
+            importProfiles.Content =
+                "Import an extraordinarily long localized collection of profiles from JSON";
+            exportProfiles.Content =
+                "Export an extraordinarily long localized collection of profiles to JSON";
+            profilesHeader.Width = 360;
+            await DrainResponsiveHeaderLayoutAsync(profilesHeader);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(profilesActions, profilesHeader.ActualWidth),
+                "Long localized Profiles actions did not stack within the header width.");
+            RequireResponsivePageHeader(
+                importProfiles.ActualHeight > 32
+                    && exportProfiles.ActualHeight > 32
+                    && profilesActions.ActualWidth <= profilesHeader.ActualWidth + 0.5,
+                "Long localized Profiles actions did not wrap without clipping.");
+            await DrainResponsiveHeaderLayoutAsync(profilesHeader);
+            RequireResponsivePageHeader(
+                IsVerticalLowerRow(profilesActions, profilesHeader.ActualWidth),
+                "The localized Profiles layout changed after a repeated layout pass.");
+
             smokeWindow.Close();
             File.WriteAllText(smokeReportPath, "completed");
             Environment.Exit(0);
@@ -1090,14 +1258,18 @@ public partial class App : Microsoft.UI.Xaml.Application
         await DrainDispatcherAsync(header.DispatcherQueue);
     }
 
-    private static bool IsTitleRow(XamlStackPanel actions) =>
+    private static bool IsTitleRow(
+        XamlStackPanel actions,
+        bool hasCustomizeAction = true) =>
         XamlGrid.GetRow(actions) == 0
         && XamlGrid.GetColumn(actions) == 1
         && XamlGrid.GetColumnSpan(actions) == 1
         && actions.Orientation == XamlOrientation.Horizontal
         && actions.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right
         && actions.Margin.Top == 0
-        && actions.Margin.Right == PageHeaderLayoutPolicy.InterActionGroupGapDip
+        && actions.Margin.Right == (hasCustomizeAction
+            ? PageHeaderLayoutPolicy.InterActionGroupGapDip
+            : 0)
         && double.IsPositiveInfinity(actions.MaxWidth);
 
     private static bool IsHorizontalLowerRow(XamlStackPanel actions) =>
@@ -1654,7 +1826,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedSystemChoice,
         string ExpectedOpenMenuItem,
         string ExpectedBatteryProfile,
-        string ExpectedWindowsPowerModeDescription);
+        string ExpectedWindowsPowerModeDescription,
+        string ExpectedDefaultAction,
+        string ExpectedKeyboardShortcutAction,
+        string ExpectedActionAccessibleName);
 
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,

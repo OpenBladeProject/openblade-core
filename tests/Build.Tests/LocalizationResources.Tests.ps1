@@ -352,6 +352,18 @@ try {
             throw "Regenerated catalog '$relativePath' changed bytes unexpectedly."
         }
     }
+    foreach ($relativePath in @(
+            'src\OpenBlade.Tray\Strings\qps-ploc\Resources.resw',
+            'src\OpenBlade.Tray.Core\Properties\Resources.qps-ploc.resx')) {
+        $pseudoText = [IO.File]::ReadAllText(
+            (Join-Path $pseudoFixture $relativePath),
+            $utf8)
+        if ($pseudoText.IndexOf(
+                'Ctrl+Shift+M',
+                [StringComparison]::Ordinal) -lt 0) {
+            throw "Pseudo-localization changed invariant shortcut syntax in '$relativePath'."
+        }
+    }
     & $validator -Repository $pseudoFixture
     foreach ($catalog in $catalogs) {
         [xml]$englishDocument = [IO.File]::ReadAllText(

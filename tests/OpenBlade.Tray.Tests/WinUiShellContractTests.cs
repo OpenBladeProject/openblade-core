@@ -127,13 +127,56 @@ public sealed class WinUiShellContractTests
                 Attribute(setter, "Property") == "Height");
         }
 
-        XElement profilesHeader = NamedElement(document, "Grid", "ProfilesPageHeader");
+        XElement profilesHeader = NamedElement(
+            document,
+            "ResponsivePageHeader",
+            "ProfilesPageHeader");
+        XElement profilesTitle = UidElement(
+            document,
+            "TextBlock",
+            "MainWindow_TextBlockProfiles2");
         XElement profilesActions = NamedElement(document, "StackPanel", "ProfilesHeaderActions");
+        Assert.Same(profilesHeader, profilesTitle.Parent);
+        Assert.Equal(
+            "Title",
+            Attribute(profilesTitle, "ResponsivePageHeader.Role"));
         Assert.Same(profilesHeader, profilesActions.Parent);
-        Assert.Equal("1", Attribute(profilesActions, "Grid.Row"));
-        Assert.Equal("2", Attribute(profilesActions, "Grid.ColumnSpan"));
-        Assert.Equal("0,2,0,0", Attribute(profilesActions, "Margin"));
-        Assert.Equal("10", Attribute(profilesHeader, "RowSpacing"));
+        Assert.Equal("1", Attribute(profilesActions, "Grid.Column"));
+        Assert.Null(Attribute(profilesActions, "Grid.Row"));
+        Assert.Null(Attribute(profilesActions, "Grid.ColumnSpan"));
+        Assert.Null(Attribute(profilesActions, "Margin"));
+        Assert.Equal("Right", Attribute(profilesActions, "HorizontalAlignment"));
+        Assert.Equal(
+            "ProfileActions",
+            Attribute(profilesActions, "ResponsivePageHeader.Role"));
+        Assert.Null(Attribute(profilesHeader, "RowSpacing"));
+        Assert.Null(Attribute(profilesHeader, "ColumnSpacing"));
+
+        XElement[] profileFileActions = profilesActions.Elements()
+            .Where(element => element.Name.LocalName == "Button")
+            .ToArray();
+        Assert.Equal(2, profileFileActions.Length);
+        Assert.Equal("MainWindow_ButtonImportProfiles", Attribute(profileFileActions[0], "Uid"));
+        Assert.Equal("Import profiles", Attribute(profileFileActions[0], "Content"));
+        Assert.Equal("OnImportProfiles", Attribute(profileFileActions[0], "Click"));
+        Assert.Equal(
+            "Import saved profiles from JSON",
+            Attribute(profileFileActions[0], "ToolTipService.ToolTip"));
+        Assert.Equal(
+            "Import profiles from JSON",
+            Attribute(profileFileActions[0], "AutomationProperties.Name"));
+        Assert.Equal("MainWindow_ButtonExportProfiles", Attribute(profileFileActions[1], "Uid"));
+        Assert.Equal("Export profiles", Attribute(profileFileActions[1], "Content"));
+        Assert.Equal("OnExportProfiles", Attribute(profileFileActions[1], "Click"));
+        Assert.Equal(
+            "Export saved profiles as JSON",
+            Attribute(profileFileActions[1], "ToolTipService.ToolTip"));
+        Assert.Equal(
+            "Export profiles to JSON",
+            Attribute(profileFileActions[1], "AutomationProperties.Name"));
+        Assert.All(profileFileActions, button => Assert.Equal(
+            "{StaticResource PageHeaderSecondaryButtonStyle}",
+            Attribute(button, "Style")));
 
         XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
         Assert.Equal("Grid", aboutCustomize.Parent?.Name.LocalName);
@@ -2077,6 +2120,8 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("foreach ($trayPage", capture, StringComparison.Ordinal);
         Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
+        Assert.Contains("'profiles-narrow'", capture, StringComparison.Ordinal);
+        Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
         Assert.Contains(
             "ShowLocalizationSnapshotSettingsAppearance()",
             app,
@@ -2090,9 +2135,19 @@ public sealed class WinUiShellContractTests
             app,
             StringComparison.Ordinal);
         Assert.Contains(
+            "new Windows.Graphics.SizeInt32(800, 820)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new Windows.Graphics.SizeInt32(1600, 900)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
             ": new Windows.Graphics.SizeInt32(1120, 820)",
             app,
             StringComparison.Ordinal);
+        Assert.Contains("\"profiles-narrow\"", app, StringComparison.Ordinal);
+        Assert.Contains("\"profiles-wide\"", app, StringComparison.Ordinal);
         Assert.Contains(
             "snapshotMainWindow.AppWindow.Resize(snapshotSize)",
             app,
@@ -2253,6 +2308,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Injected replacement tray icon failure", smoke, StringComparison.Ordinal);
         Assert.Contains("ReferenceEquals(trayIconHost, initialTrayIcon)", smoke, StringComparison.Ordinal);
         Assert.Contains("expectMaximized", smoke, StringComparison.Ordinal);
+        Assert.Contains(
+            "The language refresh changed invariant M-key bindings.",
+            smoke,
+            StringComparison.Ordinal);
+        Assert.Contains("ExpectedKeyboardShortcutAction", smoke, StringComparison.Ordinal);
+        Assert.Contains("ExpectedActionAccessibleName", smoke, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
@@ -2811,6 +2872,10 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string bindingViewModel = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
 
         Assert.Contains("Text=\"Shortcut keys\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
@@ -2834,7 +2899,15 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"{x:Bind SlotLabel}\"",
+            "ItemsSource=\"{x:Bind AvailableActions, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind SlotLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{x:Bind ActionAccessibleName, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -2877,6 +2950,79 @@ public sealed class WinUiShellContractTests
             "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
+        Assert.Contains("CreateActionOptions()", bindingViewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "availableActions.Single(option => option.Kind == normalized.Kind)",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "public static IReadOnlyList<SpecialKeyActionOption> ActionOptions",
+            bindingViewModel,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Slot.ToString()", bindingViewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SpecialKeyEditorResourcesCoverEveryActionAndSlotInEveryCatalog()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SpecialKeyBindingViewModel.cs");
+        string[] resourceKeys = System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "LocalizedResources\\.(?:Get|Format)\\(\\s*\\\"(?<key>SpecialKey_[^\\\"]+)\\\"")
+            .Select(match => match.Groups["key"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        System.Text.RegularExpressions.Match[] actionOptions =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "new\\(SpecialKeyActionKind\\.(?<kind>\\w+),\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Action_[^\\\"]+)\\\"")
+            .ToArray();
+        System.Text.RegularExpressions.Match[] slotLabels =
+            System.Text.RegularExpressions.Regex.Matches(
+                source,
+                "SpecialKeySlot\\.(?<slot>\\w+)\\s*=>\\s*"
+                + "LocalizedResources\\.Get\\(\\s*\\\"(?<key>SpecialKey_Slot_[^\\\"]+)\\\"")
+            .ToArray();
+        string[] actionKeys = actionOptions
+            .Select(match => match.Groups["key"].Value)
+            .ToArray();
+        string[] slotKeys = slotLabels
+            .Select(match => match.Groups["key"].Value)
+            .ToArray();
+
+        Assert.Equal(
+            Enum.GetNames<SpecialKeyActionKind>().Order(StringComparer.Ordinal),
+            actionOptions
+                .Select(match => match.Groups["kind"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(actionKeys.Length, actionKeys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(
+            Enum.GetNames<SpecialKeySlot>().Order(StringComparer.Ordinal),
+            slotLabels
+                .Select(match => match.Groups["slot"].Value)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(slotKeys.Length, slotKeys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains("SpecialKey_Action_AccessibleName", resourceKeys);
+
+        foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
+        {
+            XDocument catalog = XDocument.Load(RepositoryPath(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            HashSet<string> catalogKeys = catalog.Root!
+                .Elements("data")
+                .Select(element => (string)element.Attribute("name")!)
+                .ToHashSet(StringComparer.Ordinal);
+            Assert.All(resourceKeys, key => Assert.Contains(key, catalogKeys));
+        }
     }
 
     [Fact]
