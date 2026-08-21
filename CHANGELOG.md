@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept the App theme and App language pickers compact on desktop while allowing
+  them to grow for longer localized choices.
 - Awaited every supervised Session Agent loop during coordinated shutdown so
   microphone mute indication cannot overlap teardown or lose a late failure.
 - Kept completed manual fan selections stable while their authoritative service

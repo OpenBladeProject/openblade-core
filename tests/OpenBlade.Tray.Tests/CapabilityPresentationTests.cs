@@ -1285,10 +1285,12 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLanguageOption, Mode=TwoWay}",
             Attribute(language, "SelectedItem"));
-        Assert.Equal("280", Attribute(theme, "CompactWidth"));
+        Assert.Equal("210", Attribute(theme, "CompactMinWidth"));
         Assert.Equal(
-            Attribute(theme, "CompactWidth"),
-            Attribute(language, "CompactWidth"));
+            Attribute(theme, "CompactMinWidth"),
+            Attribute(language, "CompactMinWidth"));
+        Assert.Null(Attribute(theme, "CompactWidth"));
+        Assert.Null(Attribute(language, "CompactWidth"));
         Assert.DoesNotContain(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsPickerStyle");
         foreach (string pickerName in new[]
