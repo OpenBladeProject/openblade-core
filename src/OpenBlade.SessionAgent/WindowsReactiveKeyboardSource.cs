@@ -397,19 +397,20 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     }
                     return 1;
                 }
-                if (owner.functionRowInput.Process(
+                bool suppressFunctionRow = owner.functionRowInput.Process(
                     owner.readVerifiedInputDeviceKind(),
                     input.ScanCode,
                     keyDown,
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
                     owner.readDriverModeObservation().AllowsFunctionRowInterception,
-                    out FunctionRowInputEvent? inputEvent))
+                    out FunctionRowInputEvent? inputEvent);
+                if (inputEvent is { } triggered)
                 {
-                    if (inputEvent is { } triggered)
-                    {
-                        owner.publishFunctionRowInput(triggered);
-                    }
+                    owner.publishFunctionRowInput(triggered);
+                }
+                if (suppressFunctionRow)
+                {
                     return 1;
                 }
             }

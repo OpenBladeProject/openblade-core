@@ -108,7 +108,7 @@ public sealed class FunctionRowHookRecoveryTests
     }
 
     [Fact]
-    public void UncorrelatedRepeat_PreservesPreviouslySuppressedInput()
+    public void UncorrelatedRepeat_PreservesSuppressionButPassesFinalRelease()
     {
         var state = new RazerBladeFunctionRowInputState();
         Assert.True(state.Process(
@@ -128,7 +128,7 @@ public sealed class FunctionRowHookRecoveryTests
 
         Assert.True(result.ReinstallHook);
         Assert.Null(result.ReleaseEvent);
-        Assert.True(state.Process(
+        Assert.False(state.Process(
             0x43,
             keyDown: false,
             functionKeyPressed: false,

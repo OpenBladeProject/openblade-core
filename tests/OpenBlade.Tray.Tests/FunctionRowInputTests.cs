@@ -367,7 +367,7 @@ public sealed class FunctionRowInputTests
     }
 
     [Fact]
-    public void UncorrelatedRepeat_PreservesPreviouslySuppressedInput()
+    public void UncorrelatedRepeat_PreservesSuppressionButPassesFinalRelease()
     {
         var state = new RazerBladeFunctionRowInputState();
         Assert.True(state.Process(
@@ -385,6 +385,15 @@ public sealed class FunctionRowInputTests
         Assert.Null(release);
 
         Assert.True(state.Process(
+            0x43,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? repeated));
+        Assert.Equal(FunctionRowInputPhase.Repeat, repeated?.Phase);
+
+        Assert.False(state.Process(
             0x43,
             keyDown: false,
             functionKeyPressed: false,

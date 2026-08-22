@@ -107,6 +107,7 @@ public sealed class RazerBladeFunctionRowInputState
 {
     private readonly Dictionary<uint, FunctionRowAction> suppressedKeys = [];
     private readonly HashSet<uint> passedThroughKeys = [];
+    private readonly HashSet<uint> passThroughReleases = [];
 
     public bool Process(
         uint scanCode,
@@ -154,11 +155,12 @@ public sealed class RazerBladeFunctionRowInputState
             if (!suppressedKeys.Remove(scanCode, out FunctionRowAction released))
             {
                 passedThroughKeys.Remove(scanCode);
+                passThroughReleases.Remove(scanCode);
                 return false;
             }
 
             inputEvent = new(scanCode, released, FunctionRowInputPhase.Up);
-            return true;
+            return !passThroughReleases.Remove(scanCode);
         }
 
         if (suppressedKeys.TryGetValue(scanCode, out FunctionRowAction repeated))
@@ -215,11 +217,17 @@ public sealed class RazerBladeFunctionRowInputState
         {
             // Correlation is deliberately bounded, so an uncorrelated repeat
             // does not prove that the hook missed it. Preserve the original
-            // suppression decision unless the physical release is observed.
+            // suppression decision for later repeats. Let the eventual release
+            // through in case this edge escaped after a genuine hook loss.
             if (!keyDown)
             {
                 suppressedKeys.Remove(scanCode);
+                passThroughReleases.Remove(scanCode);
                 releaseEvent = new(scanCode, suppressed, FunctionRowInputPhase.Up);
+            }
+            else
+            {
+                passThroughReleases.Add(scanCode);
             }
 
             return true;
