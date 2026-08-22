@@ -21,8 +21,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   submission itself becomes indeterminate, one fresh scoped readback now
   confirms an applied target or an unchanged prior state without retrying the
   hardware write; unavailable or contradictory readback remains fail-closed.
-  The Tray also keeps its one-way HyperBoost binding intact after a failed or
-  indeterminate command so later confirmed reconciliation corrects the toggle.
+  The Tray also reattaches its authoritative one-way HyperBoost binding after
+  a failed or indeterminate command so the toggle restores immediately and
+  still follows later confirmed reconciliation.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

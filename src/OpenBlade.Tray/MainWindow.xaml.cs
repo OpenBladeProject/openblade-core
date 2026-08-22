@@ -2267,6 +2267,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
+            toggle.SetBinding(
+                ToggleSwitch.IsOnProperty,
+                new Microsoft.UI.Xaml.Data.Binding
+                {
+                    Source = ViewModel,
+                    Path = new PropertyPath(nameof(MainViewModel.HyperBoostActive)),
+                    Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
+                });
             changingHyperBoost = false;
         }
     }

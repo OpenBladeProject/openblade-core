@@ -68,7 +68,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_HyperBoostRestoresThroughItsOneWayBinding()
+    public void MainWindow_HyperBoostReattachesItsAuthoritativeOneWayBinding()
     {
         string window = ReadTraySource("MainWindow.xaml.cs");
         int handlerStart = window.IndexOf(
@@ -81,16 +81,24 @@ public sealed class CapabilityPresentationTests
         Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
         string handler = window[handlerStart..handlerEnd];
 
-        Assert.DoesNotContain(
-            "toggle.IsOn = ViewModel.HyperBoostActive;",
+        Assert.Contains(
+            "toggle.SetBinding(",
             handler,
             StringComparison.Ordinal);
-
-        string viewModel = ReadTrayCoreSource("MainViewModel.cs");
+        Assert.Contains("Source = ViewModel,", handler, StringComparison.Ordinal);
         Assert.Contains(
-            "Notify(nameof(HyperBoostActive));",
-            viewModel,
+            "Path = new PropertyPath(nameof(MainViewModel.HyperBoostActive)),",
+            handler,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,",
+            handler,
+            StringComparison.Ordinal);
+        Assert.True(
+            handler.IndexOf(
+                "toggle.SetBinding(",
+                StringComparison.Ordinal)
+            < handler.IndexOf("changingHyperBoost = false;", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -8374,7 +8374,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task HyperBoostFailedCommand_ReassertsAuthoritativePresentation()
+    public async Task HyperBoostFailedCommand_PreservesAuthoritativePresentation()
     {
         var client = new FakeServiceClient
         {
@@ -8383,14 +8383,6 @@ public sealed class MainViewModelTests
                 "The hardware write outcome is indeterminate."),
         };
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        var changed = new ConcurrentPropertySet();
-        viewModel.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName is not null)
-            {
-                changed.Add(args.PropertyName);
-            }
-        };
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
@@ -8402,12 +8394,9 @@ public sealed class MainViewModelTests
         };
         client.Publish(active);
         await WaitUntilAsync(() => viewModel.HyperBoostActive);
-        changed.Clear();
-
         await viewModel.SetHyperBoostEnabledAsync(false, default);
 
         Assert.True(viewModel.HyperBoostActive);
-        Assert.Contains(nameof(viewModel.HyperBoostActive), changed);
         Assert.Equal(
             "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
             viewModel.OperationFeedbackMessage);
