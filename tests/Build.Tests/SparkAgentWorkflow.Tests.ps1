@@ -177,6 +177,22 @@ function Assert-ContainsAll {
     }
 }
 
+function Test-ContainsUndefinedArtifactAuditMode {
+    param([Parameter(Mandatory)][string]$Content)
+
+    return [Regex]::IsMatch(
+        $Content,
+        'artifact[- ]audit',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
+foreach ($legacyModeSpelling in @('artifact-audit', 'artifact audit')) {
+    if (-not (Test-ContainsUndefinedArtifactAuditMode `
+            -Content "stable-publish, nightly-publish, or $legacyModeSpelling")) {
+        throw "The undefined-mode guard missed '$legacyModeSpelling'."
+    }
+}
+
 $expectedAgents = @(
     [pscustomobject]@{
         File = 'openblade-release-operator.toml'
@@ -241,9 +257,8 @@ $releaseContent = Read-RequiredFile (
 $releaseManifest = ConvertFrom-OpenBladeAgentToml `
     -Content $releaseContent `
     -Source 'openblade-release-operator.toml'
-if ($releaseManifest.developer_instructions.IndexOf(
-        'artifact-audit',
-        [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+if (Test-ContainsUndefinedArtifactAuditMode `
+        -Content $releaseManifest.developer_instructions) {
     throw 'The release operator still exposes the undefined artifact-audit mode.'
 }
 
@@ -307,10 +322,7 @@ foreach ($boundedSource in @(
             Name = 'references/release-operator.md'
             Content = $releaseReference
         })) {
-    if ([Regex]::IsMatch(
-            $boundedSource.Content,
-            'artifact[- ]audit',
-            [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+    if (Test-ContainsUndefinedArtifactAuditMode -Content $boundedSource.Content) {
         throw "$($boundedSource.Name) still exposes the undefined artifact-audit mode."
     }
 }
