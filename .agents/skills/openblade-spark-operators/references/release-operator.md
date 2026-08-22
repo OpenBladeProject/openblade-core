@@ -1,15 +1,15 @@
 # Release operator handoff
 
-Use `openblade_release_operator` only for a local artifact build or artifact audit that the user has already requested. The primary agent chooses and supplies every release-significant input.
+Use `openblade_release_operator` only for a local stable or nightly artifact build that the user has already requested. The primary agent chooses and supplies every release-significant input.
 
 ## Required inputs
 
 - Full immutable source SHA.
-- Mode: `stable-publish`, `nightly-publish`, or `nightly-artifact-audit`.
+- Mode: `stable-publish` or `nightly-publish`.
 - For a nightly publish: positive `BuildRevision`, exact `SourceRevision`, and optional non-secret workflow-run identifier.
 - Expected artifact-report destination or an instruction to report in the agent result only.
 
-The operator must reject a branch name, moving ref, missing SHA, missing nightly revision, or a `SourceRevision` that differs from the selected SHA.
+The operator must reject any other mode, a branch name, moving ref, missing SHA, missing nightly revision, or a `SourceRevision` that differs from the selected SHA.
 
 ## Execution boundary
 

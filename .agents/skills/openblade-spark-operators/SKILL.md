@@ -20,7 +20,7 @@ Before delegation:
 
 ## Route the work
 
-- For a local production publish or nightly artifact audit, read [references/release-operator.md](references/release-operator.md), then spawn the `openblade_release_operator` custom agent.
+- For an exact-SHA local stable or nightly artifact build, read [references/release-operator.md](references/release-operator.md), then spawn the `openblade_release_operator` custom agent.
 - For affected, focused, full, build-contract, or localization-snapshot validation, read [references/validation-operator.md](references/validation-operator.md), then spawn the `openblade_validation_operator` custom agent.
 - For read-only analysis of sanitized fixtures, admission manifests, cached diagnostics, localization invariants, CI routing, or test coverage, read [references/offline-auditor.md](references/offline-auditor.md), then spawn the `openblade_offline_auditor` custom agent.
 

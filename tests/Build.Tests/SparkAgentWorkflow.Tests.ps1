@@ -29,41 +29,235 @@ function Assert-Matches {
     }
 }
 
+function ConvertFrom-JsonString {
+    param(
+        [Parameter(Mandatory)][string]$Value,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    if ($Value -notmatch '^"(?:[^"\\]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"$') {
+        throw "$Source must be a double-quoted string."
+    }
+    return ConvertFrom-Json -InputObject $Value
+}
+
+# These project manifests intentionally use a strict string-only TOML subset.
+# Parse the complete file so duplicate keys, unknown keys, trailing syntax, and
+# unterminated multiline instructions fail before semantic assertions run.
+function ConvertFrom-OpenBladeAgentToml {
+    param(
+        [Parameter(Mandatory)][string]$Content,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    $lines = @($Content -split '\r?\n')
+    $values = [ordered]@{}
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        $line = $lines[$index]
+        if ($index -eq ($lines.Count - 1) -and $line.Length -eq 0) {
+            continue
+        }
+
+        $assignment = [Regex]::Match(
+            $line,
+            '^(?<key>[a-z][a-z0-9_]*) = (?<value>.+)$')
+        if (-not $assignment.Success) {
+            throw "$Source has invalid TOML syntax at line $($index + 1)."
+        }
+
+        $key = $assignment.Groups['key'].Value
+        if ($values.Contains($key)) {
+            throw "$Source defines '$key' more than once."
+        }
+
+        $rawValue = $assignment.Groups['value'].Value
+        if ($rawValue -eq '"""') {
+            $body = @()
+            $closed = $false
+            for ($index++; $index -lt $lines.Count; $index++) {
+                if ($lines[$index] -eq '"""') {
+                    $closed = $true
+                    break
+                }
+                $body += $lines[$index]
+            }
+            if (-not $closed) {
+                throw "$Source has an unterminated multiline string for '$key'."
+            }
+            $values[$key] = [string]::Join("`n", [string[]]$body)
+            continue
+        }
+
+        $values[$key] = ConvertFrom-JsonString `
+            -Value $rawValue `
+            -Source "$Source '$key'"
+    }
+
+    $requiredKeys = @(
+        'name',
+        'description',
+        'model',
+        'model_reasoning_effort',
+        'sandbox_mode',
+        'developer_instructions')
+    foreach ($key in $requiredKeys) {
+        if (-not $values.Contains($key)) {
+            throw "$Source is missing required key '$key'."
+        }
+    }
+    foreach ($key in $values.Keys) {
+        if ($key -notin $requiredKeys) {
+            throw "$Source contains unsupported key '$key'."
+        }
+    }
+
+    return [pscustomobject]$values
+}
+
+function ConvertFrom-OpenBladeSkillMetadata {
+    param(
+        [Parameter(Mandatory)][string]$Content,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    $lines = @($Content -split '\r?\n')
+    if ($lines.Count -lt 2 -or $lines[0] -cne 'interface:') {
+        throw "$Source must begin with the interface mapping."
+    }
+
+    $values = [ordered]@{}
+    for ($index = 1; $index -lt $lines.Count; $index++) {
+        $line = $lines[$index]
+        if ($index -eq ($lines.Count - 1) -and $line.Length -eq 0) {
+            continue
+        }
+
+        $entry = [Regex]::Match(
+            $line,
+            '^  (?<key>[a-z][a-z0-9_]*): (?<value>.+)$')
+        if (-not $entry.Success) {
+            throw "$Source has invalid YAML syntax at line $($index + 1)."
+        }
+
+        $key = $entry.Groups['key'].Value
+        if ($values.Contains($key)) {
+            throw "$Source defines interface.$key more than once."
+        }
+        $values[$key] = ConvertFrom-JsonString `
+            -Value $entry.Groups['value'].Value `
+            -Source "$Source interface.$key"
+    }
+
+    $requiredKeys = @('display_name', 'short_description', 'default_prompt')
+    foreach ($key in $requiredKeys) {
+        if (-not $values.Contains($key)) {
+            throw "$Source is missing interface.$key."
+        }
+    }
+    foreach ($key in $values.Keys) {
+        if ($key -notin $requiredKeys) {
+            throw "$Source contains unsupported interface key '$key'."
+        }
+    }
+
+    return [pscustomobject]$values
+}
+
+function Assert-ContainsAll {
+    param(
+        [Parameter(Mandatory)][string]$Content,
+        [Parameter(Mandatory)][string[]]$RequiredValues,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    foreach ($value in $RequiredValues) {
+        if ($Content.IndexOf($value, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "$Source is missing required safety contract '$value'."
+        }
+    }
+}
+
 $expectedAgents = @(
     [pscustomobject]@{
         File = 'openblade-release-operator.toml'
         Name = 'openblade_release_operator'
         Sandbox = 'workspace-write'
-        RequiredInstruction = 'build/Publish\.ps1'
+        RequiredInstructions = @(
+            'full immutable SHA',
+            'stable-publish or nightly-publish',
+            'build/Publish.ps1',
+            'Do not edit source, change the version, patch a failure, pass signing credentials',
+            'install, request UAC, launch product processes, touch hardware',
+            'push, tag, merge, publish a GitHub release',
+            'delete a worktree')
     },
     [pscustomobject]@{
         File = 'openblade-validation-operator.toml'
         Name = 'openblade_validation_operator'
         Sandbox = 'workspace-write'
-        RequiredInstruction = 'build/Run-AffectedCi\.ps1'
+        RequiredInstructions = @(
+            'absolute dedicated-worktree path',
+            'build/Run-AffectedCi.ps1',
+            'Do not edit source, publish production artifacts, install, request UAC, access live hardware',
+            'mutate GitHub, delete anything')
     },
     [pscustomobject]@{
         File = 'openblade-offline-auditor.toml'
         Name = 'openblade_offline_auditor'
         Sandbox = 'read-only'
-        RequiredInstruction = 'Do not write files'
+        RequiredInstructions = @(
+            'Do not write files, run builds or tests, inspect unsanitized captures, open HID',
+            'mutate GitHub, delete anything')
     })
 
 foreach ($agent in $expectedAgents) {
-    $content = Read-RequiredFile (Join-Path $agentDirectory $agent.File)
-    Assert-Matches $content "(?m)^name = `"$([Regex]::Escape($agent.Name))`"\r?$" `
-        "$($agent.File) must expose its configured custom-agent name."
-    Assert-Matches $content '(?m)^model = "gpt-5\.3-codex-spark"\r?$' `
-        "$($agent.File) must remain pinned to GPT-5.3-Codex-Spark."
-    Assert-Matches $content '(?m)^model_reasoning_effort = "medium"\r?$' `
-        "$($agent.File) must use the bounded medium reasoning profile."
-    Assert-Matches $content `
-        "(?m)^sandbox_mode = `"$([Regex]::Escape($agent.Sandbox))`"\r?$" `
-        "$($agent.File) has the wrong sandbox boundary."
-    Assert-Matches $content '(?s)developer_instructions = """\s*\S.+\s*"""\s*$' `
-        "$($agent.File) must contain non-empty developer instructions."
-    Assert-Matches $content $agent.RequiredInstruction `
-        "$($agent.File) is missing its defining workflow boundary."
+    $path = Join-Path $agentDirectory $agent.File
+    $manifest = ConvertFrom-OpenBladeAgentToml `
+        -Content (Read-RequiredFile $path) `
+        -Source $agent.File
+    if ($manifest.name -cne $agent.Name) {
+        throw "$($agent.File) must expose custom-agent name '$($agent.Name)'."
+    }
+    if ($manifest.model -cne 'gpt-5.3-codex-spark') {
+        throw "$($agent.File) must remain pinned to GPT-5.3-Codex-Spark."
+    }
+    if ($manifest.model_reasoning_effort -cne 'medium') {
+        throw "$($agent.File) must use the bounded medium reasoning profile."
+    }
+    if ($manifest.sandbox_mode -cne $agent.Sandbox) {
+        throw "$($agent.File) has the wrong sandbox boundary."
+    }
+    if ([string]::IsNullOrWhiteSpace($manifest.developer_instructions)) {
+        throw "$($agent.File) must contain non-empty developer instructions."
+    }
+    Assert-ContainsAll `
+        -Content $manifest.developer_instructions `
+        -RequiredValues $agent.RequiredInstructions `
+        -Source $agent.File
+}
+
+$releaseContent = Read-RequiredFile (
+    Join-Path $agentDirectory 'openblade-release-operator.toml')
+$releaseManifest = ConvertFrom-OpenBladeAgentToml `
+    -Content $releaseContent `
+    -Source 'openblade-release-operator.toml'
+if ($releaseManifest.developer_instructions.IndexOf(
+        'artifact-audit',
+        [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+    throw 'The release operator still exposes the undefined artifact-audit mode.'
+}
+
+$duplicateKeyRejected = $false
+try {
+    [void](ConvertFrom-OpenBladeAgentToml `
+            -Content ($releaseContent.TrimEnd() + "`nname = `"duplicate`"`n") `
+            -Source 'duplicate-key-test.toml')
+}
+catch {
+    $duplicateKeyRejected = $true
+}
+if (-not $duplicateKeyRejected) {
+    throw 'The agent TOML parser accepted a duplicate key.'
 }
 
 $skill = Read-RequiredFile (Join-Path $skillDirectory 'SKILL.md')
@@ -77,6 +271,17 @@ foreach ($agent in $expectedAgents) {
 if ($skill.IndexOf('[TODO', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
     throw 'The dispatcher skill contains unfinished scaffold text.'
 }
+Assert-ContainsAll `
+    -Content $skill `
+    -RequiredValues @(
+        'Do not delegate any of the following',
+        'source-code fixes',
+        'exact-device admission',
+        'live `OpenBlade.Capture`',
+        'signing, installation, UAC',
+        'pushing, tagging, merging',
+        'destructive worktree') `
+    -Source 'SKILL.md'
 
 foreach ($reference in @(
         'release-operator.md',
@@ -88,9 +293,36 @@ foreach ($reference in @(
     }
 }
 
-$metadata = Read-RequiredFile (Join-Path $skillDirectory 'agents\openai.yaml')
-Assert-Matches $metadata `
-    '(?m)^  default_prompt: "Use \$openblade-spark-operators .+"\r?$' `
-    'The skill UI metadata must provide a default prompt that invokes the skill.'
+$releaseReference = Read-RequiredFile (
+    Join-Path $skillDirectory 'references\release-operator.md')
+Assert-ContainsAll `
+    -Content $releaseReference `
+    -RequiredValues @(
+        'Mode: `stable-publish` or `nightly-publish`',
+        'reject any other mode') `
+    -Source 'references/release-operator.md'
+foreach ($boundedSource in @(
+        [pscustomobject]@{ Name = 'SKILL.md'; Content = $skill },
+        [pscustomobject]@{
+            Name = 'references/release-operator.md'
+            Content = $releaseReference
+        })) {
+    if ([Regex]::IsMatch(
+            $boundedSource.Content,
+            'artifact[- ]audit',
+            [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        throw "$($boundedSource.Name) still exposes the undefined artifact-audit mode."
+    }
+}
+
+$metadata = ConvertFrom-OpenBladeSkillMetadata `
+    -Content (Read-RequiredFile (
+        Join-Path $skillDirectory 'agents\openai.yaml')) `
+    -Source 'agents/openai.yaml'
+if (-not $metadata.default_prompt.StartsWith(
+        'Use $openblade-spark-operators ',
+        [StringComparison]::Ordinal)) {
+    throw 'The skill UI metadata must invoke $openblade-spark-operators.'
+}
 
 Write-Host 'Spark agent and skill workflow contracts passed.'
