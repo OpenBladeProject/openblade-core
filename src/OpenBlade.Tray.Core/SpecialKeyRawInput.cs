@@ -201,7 +201,7 @@ public sealed class RazerBladeFunctionRowInputState
     }
 
     /// <summary>
-    /// Reconciles a target-device edge without a matching recent hook
+    /// Reconciles a target-device edge without its matching hook
     /// observation. The edge may already have reached the foreground
     /// application, so a new media action must never be started or repeated
     /// here. A release for an action suppressed on an earlier edge is still

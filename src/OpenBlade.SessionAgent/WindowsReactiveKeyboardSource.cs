@@ -54,8 +54,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const ushort ConsumerUsagePage = 0x000C;
     private const ushort PageOnlyUsage = 0x0000;
     private static readonly nint MessageOnlyWindow = new(-3);
-    private static readonly long HookObservationMaximumAge =
-        Math.Max(1, Stopwatch.Frequency / 2);
     private static readonly ConcurrentDictionary<nint, WindowsReactiveKeyboardSource>
         Sources = new();
     private static readonly WindowProcedure WindowProcedureCallback = ProcessWindowMessage;
@@ -317,7 +315,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             try
             {
-                source.ProcessRawInput(messageParameter);
+                source.ProcessRawInput(
+                    messageParameter,
+                    unchecked((uint)GetMessageTime()));
             }
             catch (Exception exception)
             {
@@ -369,10 +369,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 bool keyDown = windowParameter is
                     WindowMessageKeyDown or WindowMessageSystemKeyDown;
-                owner.hookHealth.Record(
-                    input.ScanCode,
-                    keyDown,
-                    Stopwatch.GetTimestamp());
+                owner.hookHealth.Record(input.ScanCode, keyDown, input.Time);
                 if (owner.gamingModeKeyBlockState.ShouldSuppress(
                     input.VirtualKey,
                     keyDown,
@@ -397,18 +394,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     }
                     return 1;
                 }
-                bool suppressFunctionRow = owner.functionRowInput.Process(
+                bool suppressFunctionRow = FunctionRowKeyboardHookProcessor.Process(
+                    owner.functionRowInput,
                     owner.readVerifiedInputDeviceKind(),
                     input.ScanCode,
                     keyDown,
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
                     owner.readDriverModeObservation().AllowsFunctionRowInterception,
-                    out FunctionRowInputEvent? inputEvent);
-                if (inputEvent is { } triggered)
-                {
-                    owner.publishFunctionRowInput(triggered);
-                }
+                    owner.publishFunctionRowInput);
                 if (suppressFunctionRow)
                 {
                     return 1;
@@ -419,7 +413,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         return CallNextHookEx(0, code, windowParameter, messageParameter);
     }
 
-    private void ProcessRawInput(nint rawInputHandle)
+    private void ProcessRawInput(nint rawInputHandle, uint messageTime)
     {
         uint headerSize = checked((uint)Marshal.SizeOf<RawInputHeader>());
         uint headerBytes = headerSize;
@@ -437,8 +431,18 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         if (headerResult < headerSize
             || headerBytes < headerSize
             || header.Size < headerSize
-            || header.Size > MaximumRawInputBytes
-            || !TryGetInputDeviceKind(header.Device, out RazerBladeInputDeviceKind deviceKind))
+            || header.Size > MaximumRawInputBytes)
+        {
+            return;
+        }
+
+        bool targetDevice = TryGetInputDeviceKind(
+            header.Device,
+            out RazerBladeInputDeviceKind deviceKind);
+        // Every keyboard packet must consume its exact hook observation. If
+        // non-target keyboards left observations behind, an identical target
+        // edge could falsely make a missing hook appear healthy.
+        if (header.Type != RawInputTypeKeyboard && !targetDevice)
         {
             return;
         }
@@ -471,9 +475,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         if (receivedHeader.Type == RawInputTypeKeyboard)
         {
-            ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind);
+            ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind, messageTime);
         }
-        else if (receivedHeader.Type == RawInputTypeHid)
+        else if (receivedHeader.Type == RawInputTypeHid
+            && deviceKind != RazerBladeInputDeviceKind.Unsupported)
         {
             ProcessHid(buffer, headerSize, receivedSize, deviceKind);
         }
@@ -508,7 +513,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         nint buffer,
         uint headerSize,
         uint receivedSize,
-        RazerBladeInputDeviceKind deviceKind)
+        RazerBladeInputDeviceKind deviceKind,
+        uint messageTime)
     {
         int keyboardSize = Marshal.SizeOf<RawKeyboard>();
         if (receivedSize < headerSize + keyboardSize)
@@ -523,8 +529,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         bool observedByHook = hookHealth.Consume(
             keyboard.MakeCode,
             keyDown,
-            Stopwatch.GetTimestamp(),
-            HookObservationMaximumAge);
+            messageTime);
         FunctionRowHookRecoveryResult recovery =
             FunctionRowHookRecovery.EvaluateTargetPacket(
                 functionRowInput,
@@ -689,12 +694,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     private void ReinstallKeyboardHook()
     {
-        nint previous = Interlocked.Exchange(ref keyboardHook, 0);
-        if (previous != 0)
-        {
-            _ = UnhookWindowsHookEx(previous);
-        }
-
         nint replacement = SetWindowsHookEx(
             LowLevelKeyboardHook,
             KeyboardProcedureCallback,
@@ -707,8 +706,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 "Unable to restore the function-row keyboard hook.");
         }
 
+        nint previous = Interlocked.Exchange(ref keyboardHook, replacement);
         hookHealth.Clear();
-        keyboardHook = replacement;
+        if (previous != 0 && !UnhookWindowsHookEx(previous))
+        {
+            Trace.TraceWarning(
+                "Superseded function-row keyboard hook cleanup failed: {0}",
+                Marshal.GetLastWin32Error());
+        }
         Trace.TraceWarning(
             "OpenBlade restored a missing function-row keyboard hook from target-device Raw Input.");
     }
@@ -944,6 +949,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     [DllImport("user32.dll")]
     private static extern bool TranslateMessage(ref WindowMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessageTime();
 
     [DllImport("user32.dll")]
     private static extern nint DispatchMessage(ref WindowMessage message);

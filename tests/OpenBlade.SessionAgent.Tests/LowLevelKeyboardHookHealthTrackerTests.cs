@@ -5,45 +5,44 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class LowLevelKeyboardHookHealthTrackerTests
 {
     [Fact]
-    public void ConsumeMatchesOneRecentHookObservation()
+    public void ConsumeMatchesOneExactHookObservation()
     {
         var tracker = new LowLevelKeyboardHookHealthTracker();
-        tracker.Record(scanCode: 0x3B, keyDown: true, timestamp: 100);
+        tracker.Record(scanCode: 0x3B, keyDown: true, messageTime: 100);
 
-        Assert.True(tracker.Consume(
-            scanCode: 0x3B,
-            keyDown: true,
-            timestamp: 110,
-            maximumAge: 20));
         Assert.False(tracker.Consume(
             scanCode: 0x3B,
             keyDown: true,
-            timestamp: 111,
-            maximumAge: 20));
+            messageTime: 110));
+        Assert.True(tracker.Consume(
+            scanCode: 0x3B,
+            keyDown: true,
+            messageTime: 100));
+        Assert.False(tracker.Consume(
+            scanCode: 0x3B,
+            keyDown: true,
+            messageTime: 100));
     }
 
     [Fact]
-    public void ConsumeRejectsWrongDirectionAndExpiredObservations()
+    public void ConsumeRejectsWrongDirectionAndMessageTime()
     {
         var tracker = new LowLevelKeyboardHookHealthTracker();
-        tracker.Record(scanCode: 0x3B, keyDown: true, timestamp: 100);
-        tracker.Record(scanCode: 0x3C, keyDown: false, timestamp: 110);
+        tracker.Record(scanCode: 0x3B, keyDown: true, messageTime: 100);
+        tracker.Record(scanCode: 0x3C, keyDown: false, messageTime: 110);
 
         Assert.False(tracker.Consume(
             scanCode: 0x3B,
             keyDown: false,
-            timestamp: 115,
-            maximumAge: 20));
+            messageTime: 100));
         Assert.False(tracker.Consume(
             scanCode: 0x3B,
             keyDown: true,
-            timestamp: 130,
-            maximumAge: 20));
+            messageTime: 101));
         Assert.True(tracker.Consume(
             scanCode: 0x3C,
             keyDown: false,
-            timestamp: 130,
-            maximumAge: 20));
+            messageTime: 110));
     }
 
     [Fact]
@@ -54,33 +53,30 @@ public sealed class LowLevelKeyboardHookHealthTrackerTests
              index < LowLevelKeyboardHookHealthTracker.MaximumRecentEvents + 4;
              index++)
         {
-            tracker.Record(index, keyDown: true, timestamp: index);
+            tracker.Record(index, keyDown: true, messageTime: index);
         }
 
         Assert.False(tracker.Consume(
             scanCode: 0,
             keyDown: true,
-            timestamp: 100,
-            maximumAge: 100));
+            messageTime: 0));
         Assert.True(tracker.Consume(
             scanCode: 4,
             keyDown: true,
-            timestamp: 100,
-            maximumAge: 100));
+            messageTime: 4));
     }
 
     [Fact]
     public void ClearDropsAllObservations()
     {
         var tracker = new LowLevelKeyboardHookHealthTracker();
-        tracker.Record(scanCode: 0x3B, keyDown: true, timestamp: 100);
+        tracker.Record(scanCode: 0x3B, keyDown: true, messageTime: 100);
 
         tracker.Clear();
 
         Assert.False(tracker.Consume(
             scanCode: 0x3B,
             keyDown: true,
-            timestamp: 101,
-            maximumAge: 20));
+            messageTime: 100));
     }
 }
