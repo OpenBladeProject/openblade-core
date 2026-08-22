@@ -11171,6 +11171,71 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_LifecycleExitRejectsOlderSourceAfterUnknownClassification()
+    {
+        var enteredExitBoundary = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseExitBoundary = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            hyperBoostLifecycleExitBoundary: async token =>
+            {
+                enteredExitBoundary.SetResult();
+                await releaseExitBoundary.Task.WaitAsync(token);
+            });
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(
+                FanMode.Fixed,
+                3200,
+                ManualFanCurve.Default),
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+
+        Task<ControlOperationResult> lifecycleExit =
+            context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await enteredExitBoundary.Task;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        releaseExitBoundary.SetResult();
+
+        ControlOperationResult result = await lifecycleExit;
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.NotEqual(
+            PerformancePreset.Performance,
+            context.Device.ConfirmedState.Performance);
+        Assert.NotEqual(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_LifecycleExitWithUnknownPowerRestoresSafeBaseline()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();

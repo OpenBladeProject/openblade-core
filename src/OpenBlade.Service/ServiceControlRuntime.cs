@@ -2981,11 +2981,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : ResolveHyperBoostExitIntent(
                     current,
                     ownedHyperBoostRestoreIntent,
-                    exitPowerSourceOverride is { } exitSource
-                        && expectedExitPowerSourceGeneration
-                            == powerSourceGeneration
-                            ? exitSource
-                            : current.ActivePowerSource);
+                    current.WritesBlocked
+                        ? PowerSource.ExternalUnknown
+                        : exitPowerSourceOverride is { } exitSource
+                            && expectedExitPowerSourceGeneration
+                                == powerSourceGeneration
+                                ? exitSource
+                                : current.ActivePowerSource);
             if (enabled && !IsSupportedFullPowerHyperBoostIntent(
                     current.Capabilities!,
                     transitionIntent))
