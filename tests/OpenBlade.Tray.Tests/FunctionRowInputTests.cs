@@ -180,6 +180,232 @@ public sealed class FunctionRowInputTests
         Assert.Null(inputEvent);
     }
 
+    [Fact]
+    public void StatefulInput_LatchesPassThroughThroughDriverStatusChanges()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: false,
+            out FunctionRowInputEvent? initial));
+        Assert.Null(initial);
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? repeated));
+        Assert.Null(repeated);
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: false,
+            functionKeyPressed: true,
+            FunctionKeyPrimaryMode.FunctionKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? released));
+        Assert.Null(released);
+
+        Assert.True(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? nextPress));
+        Assert.Equal(FunctionRowInputPhase.Down, nextPress?.Phase);
+    }
+
+    [Fact]
+    public void StatefulInput_LatchesPassThroughThroughFnChanges()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: true,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: false,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+    }
+
+    [Fact]
+    public void StatefulInput_LatchesPassThroughAcrossDeviceAdmissionRecovery()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.False(state.Process(
+            RazerBladeInputDeviceKind.Unsupported,
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+        Assert.False(state.Process(
+            RazerBladeInputDeviceKind.Rz09_0581,
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+        Assert.False(state.Process(
+            RazerBladeInputDeviceKind.Rz09_0581,
+            0x3B,
+            keyDown: false,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+
+        Assert.True(state.Process(
+            RazerBladeInputDeviceKind.Rz09_0581,
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? nextPress));
+        Assert.Equal(FunctionRowInputPhase.Down, nextPress?.Phase);
+    }
+
+    [Fact]
+    public void PassedThroughDown_RecoversHookWithoutPublishingMediaAction()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.True(state.ReconcilePassedThroughEdge(
+            0x3B,
+            keyDown: true,
+            out FunctionRowInputEvent? passedThrough));
+        Assert.Null(passedThrough);
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? repeated));
+        Assert.Null(repeated);
+
+        Assert.False(state.Process(
+            0x3B,
+            keyDown: false,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+
+        Assert.True(state.Process(
+            0x3B,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? recovered));
+        Assert.Equal(
+            new FunctionRowInputEvent(
+                0x3B,
+                FunctionRowAction.VolumeMute,
+                FunctionRowInputPhase.Down),
+            recovered);
+    }
+
+    [Fact]
+    public void PassedThroughRelease_ClosesPreviouslySuppressedInput()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+        Assert.True(state.Process(
+            0x43,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+
+        Assert.True(state.ReconcilePassedThroughEdge(
+            0x43,
+            keyDown: false,
+            out FunctionRowInputEvent? release));
+        Assert.Equal(
+            new FunctionRowInputEvent(
+                0x43,
+                FunctionRowAction.DisplayBrightnessUp,
+                FunctionRowInputPhase.Up),
+            release);
+
+        Assert.False(state.Process(
+            0x43,
+            keyDown: false,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+    }
+
+    [Fact]
+    public void UncorrelatedRepeat_PreservesPreviouslySuppressedInput()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+        Assert.True(state.Process(
+            0x43,
+            keyDown: true,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out _));
+
+        Assert.True(state.ReconcilePassedThroughEdge(
+            0x43,
+            keyDown: true,
+            out FunctionRowInputEvent? release));
+        Assert.Null(release);
+
+        Assert.True(state.Process(
+            0x43,
+            keyDown: false,
+            functionKeyPressed: false,
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            driverModeActive: true,
+            out FunctionRowInputEvent? released));
+        Assert.Equal(FunctionRowInputPhase.Up, released?.Phase);
+    }
+
+    [Fact]
+    public void UncorrelatedMappedEdge_RequestsHookRecoveryWithoutAction()
+    {
+        var state = new RazerBladeFunctionRowInputState();
+
+        Assert.True(state.ReconcilePassedThroughEdge(
+            0x3B,
+            keyDown: true,
+            out FunctionRowInputEvent? inputEvent));
+        Assert.Null(inputEvent);
+    }
+
     [Theory]
     [InlineData(FunctionRowAction.VolumeDown, 0x3C, true)]
     [InlineData(FunctionRowAction.DisplayBrightnessDown, 0x42, true)]

@@ -73,7 +73,7 @@ public static class RazerBladeFunctionRowMediaInput
         return true;
     }
 
-    private static bool TryMap(uint scanCode, out FunctionRowAction action)
+    internal static bool TryMap(uint scanCode, out FunctionRowAction action)
     {
         action = scanCode switch
         {
@@ -96,9 +96,9 @@ public static class RazerBladeFunctionRowMediaInput
 }
 
 /// <summary>
-/// Latches the suppression decision made on the first key-down until the
-/// matching key-up. Fn, firmware mode, or service status can change while a
-/// key is held without leaking an orphaned F-key edge into the foreground app.
+/// Latches the suppression or pass-through decision made on the first key-down
+/// until the matching key-up. Fn, firmware mode, or service status can change
+/// while a key is held without mixing F-key and media behavior for that press.
 /// One-shot actions ignore auto-repeat; volume and brightness actions repeat.
 /// Every suppressed key publishes its matching release so consumers can
 /// safely hold native input state across changes to Fn or service status.
@@ -106,8 +106,41 @@ public static class RazerBladeFunctionRowMediaInput
 public sealed class RazerBladeFunctionRowInputState
 {
     private readonly Dictionary<uint, FunctionRowAction> suppressedKeys = [];
+    private readonly HashSet<uint> passedThroughKeys = [];
 
     public bool Process(
+        uint scanCode,
+        bool keyDown,
+        bool functionKeyPressed,
+        FunctionKeyPrimaryMode? primaryMode,
+        bool driverModeActive,
+        out FunctionRowInputEvent? inputEvent) => ProcessCore(
+            deviceSupported: true,
+            scanCode,
+            keyDown,
+            functionKeyPressed,
+            primaryMode,
+            driverModeActive,
+            out inputEvent);
+
+    public bool Process(
+        RazerBladeInputDeviceKind deviceKind,
+        uint scanCode,
+        bool keyDown,
+        bool functionKeyPressed,
+        FunctionKeyPrimaryMode? primaryMode,
+        bool driverModeActive,
+        out FunctionRowInputEvent? inputEvent) => ProcessCore(
+            RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind),
+            scanCode,
+            keyDown,
+            functionKeyPressed,
+            primaryMode,
+            driverModeActive,
+            out inputEvent);
+
+    private bool ProcessCore(
+        bool deviceSupported,
         uint scanCode,
         bool keyDown,
         bool functionKeyPressed,
@@ -120,6 +153,7 @@ public sealed class RazerBladeFunctionRowInputState
         {
             if (!suppressedKeys.Remove(scanCode, out FunctionRowAction released))
             {
+                passedThroughKeys.Remove(scanCode);
                 return false;
             }
 
@@ -136,7 +170,13 @@ public sealed class RazerBladeFunctionRowInputState
             return true;
         }
 
-        if (!RazerBladeFunctionRowMediaInput.TryOverride(
+        if (passedThroughKeys.Contains(scanCode))
+        {
+            return false;
+        }
+
+        if (!deviceSupported
+            || !RazerBladeFunctionRowMediaInput.TryOverride(
             scanCode,
             keyDown: true,
             functionKeyPressed,
@@ -145,12 +185,59 @@ public sealed class RazerBladeFunctionRowInputState
             out FunctionRowAction? mapped)
             || mapped is not { } first)
         {
+            if (RazerBladeFunctionRowMediaInput.TryMap(scanCode, out _))
+            {
+                passedThroughKeys.Add(scanCode);
+            }
+
             return false;
         }
 
         suppressedKeys.Add(scanCode, first);
         inputEvent = new(scanCode, first, FunctionRowInputPhase.Down);
         return true;
+    }
+
+    /// <summary>
+    /// Reconciles a target-device edge without a matching recent hook
+    /// observation. The edge may already have reached the foreground
+    /// application, so a new media action must never be started or repeated
+    /// here. A release for an action suppressed on an earlier edge is still
+    /// published so held native state can be reset.
+    /// </summary>
+    public bool ReconcilePassedThroughEdge(
+        uint scanCode,
+        bool keyDown,
+        out FunctionRowInputEvent? releaseEvent)
+    {
+        releaseEvent = null;
+        if (suppressedKeys.TryGetValue(scanCode, out FunctionRowAction suppressed))
+        {
+            // Correlation is deliberately bounded, so an uncorrelated repeat
+            // does not prove that the hook missed it. Preserve the original
+            // suppression decision unless the physical release is observed.
+            if (!keyDown)
+            {
+                suppressedKeys.Remove(scanCode);
+                releaseEvent = new(scanCode, suppressed, FunctionRowInputPhase.Up);
+            }
+
+            return true;
+        }
+
+        bool shouldRecover = RazerBladeFunctionRowMediaInput.TryMap(scanCode, out _);
+        if (!keyDown)
+        {
+            passedThroughKeys.Remove(scanCode);
+            return shouldRecover;
+        }
+
+        if (shouldRecover)
+        {
+            passedThroughKeys.Add(scanCode);
+        }
+
+        return shouldRecover;
     }
 
     private static bool IsRepeatable(FunctionRowAction action) => action is

@@ -397,9 +397,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     }
                     return 1;
                 }
-                if (RazerBladeFunctionRowMediaInput.SupportsDevice(
-                        owner.readVerifiedInputDeviceKind())
-                    && owner.functionRowInput.Process(
+                if (owner.functionRowInput.Process(
+                    owner.readVerifiedInputDeviceKind(),
                     input.ScanCode,
                     keyDown,
                     owner.performanceFunctionKeyPressed,
@@ -525,17 +524,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             keyDown,
             Stopwatch.GetTimestamp(),
             HookObservationMaximumAge);
-        if (RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind)
-            && !observedByHook
-            && functionRowInput.Process(
+        FunctionRowHookRecoveryResult recovery =
+            FunctionRowHookRecovery.EvaluateTargetPacket(
+                functionRowInput,
+                deviceKind,
+                observedByHook,
                 keyboard.MakeCode,
-                keyDown,
-                performanceFunctionKeyPressed,
-                readFunctionKeyPrimaryMode(),
-                readDriverModeObservation().AllowsFunctionRowInterception,
-                out FunctionRowInputEvent? recoveredInput))
+                keyDown);
+        if (recovery.ReinstallHook)
         {
-            if (recoveredInput is { } inputEvent)
+            if (recovery.ReleaseEvent is { } inputEvent)
             {
                 publishFunctionRowInput(inputEvent);
             }
