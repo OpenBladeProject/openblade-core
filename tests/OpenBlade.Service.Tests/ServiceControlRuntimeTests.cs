@@ -10743,9 +10743,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(
             true,
             CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
         ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(
             false,
             CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
         Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
@@ -10767,6 +10773,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
         }
         Assert.Null(journal.Journal);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
@@ -11090,6 +11097,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
 
         await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        int settersAfterRestoration = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(
@@ -11102,6 +11111,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformancePreset.Performance,
             context.Device.ConfirmedState.Performance);
         Assert.NotEqual(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(settersAfterRestoration, context.Device.TotalSetterCalls);
         Assert.Null(journal.Journal);
     }
 

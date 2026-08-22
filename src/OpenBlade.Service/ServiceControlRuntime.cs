@@ -3280,6 +3280,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             pendingIndeterminateHyperBoostExitIntent = null;
             ownedHyperBoostRequiresCoolingPad = false;
 
+            driftTracker.Observe(readback);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+
             string resultMessage = enabled
                 ? "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
                 : disableJournalCleared
@@ -3306,6 +3310,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(current with
             {
                 ConfirmedState = readback,
+                ExternalChanges = driftTracker.ExternalChanges,
                 Message = result.Message,
             });
             return result;
