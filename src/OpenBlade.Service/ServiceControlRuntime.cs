@@ -3071,7 +3071,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 var coordinator = new ControlCoordinator(
                     device,
-                    device.ReadPerformanceFanStateAsync);
+                    device.ReadPerformanceFanStateAsync,
+                    resolveIndeterminatePerformanceWrites: true);
                 ScopedApplyOutcome automaticFans = await coordinator
                     .ApplyFanControlOutcomeAsync(
                         FanControlSettings.FromLegacy(FanMode.Automatic),
@@ -3767,7 +3768,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         var coordinator = new ControlCoordinator(
             device,
-            device.ReadPerformanceFanStateAsync);
+            device.ReadPerformanceFanStateAsync,
+            resolveIndeterminatePerformanceWrites: true);
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
             ScopedApplyOutcome fans = await coordinator
@@ -7604,7 +7606,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         try
         {
-            return await apply(new ControlCoordinator(device), desired, token);
+            ControlCoordinator coordinator = subsystem is
+                DeviceSubsystem.Performance or DeviceSubsystem.Fans
+                    ? new ControlCoordinator(
+                        device,
+                        device.ReadPerformanceFanStateAsync,
+                        resolveIndeterminatePerformanceWrites: true)
+                    : new ControlCoordinator(device);
+            return await apply(coordinator, desired, token);
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)

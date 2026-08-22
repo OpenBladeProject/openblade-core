@@ -17,7 +17,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   restoration write is retried once; indeterminate and post-write failures
   remain non-retryable. HyperBoost thermal transitions now use their scoped,
   paired performance-and-fan readback so unrelated battery or lighting query
-  failures cannot abort an otherwise confirmed transition.
+  failures cannot abort an otherwise confirmed transition. When a performance
+  submission itself becomes indeterminate, one fresh scoped readback now
+  confirms an applied target or an unchanged prior state without retrying the
+  hardware write; unavailable or contradictory readback remains fail-closed.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

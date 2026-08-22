@@ -55,6 +55,7 @@ public sealed class ControlCoordinator
     private readonly IBladeDevice device;
     private readonly Func<CancellationToken, Task<ConfirmedDeviceState>>?
         scopedStateReader;
+    private readonly bool resolveIndeterminatePerformanceWrites;
 
     public ControlCoordinator(IBladeDevice device)
         : this(device, scopedStateReader: null)
@@ -63,10 +64,13 @@ public sealed class ControlCoordinator
 
     internal ControlCoordinator(
         IBladeDevice device,
-        Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader)
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader,
+        bool resolveIndeterminatePerformanceWrites = false)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.scopedStateReader = scopedStateReader;
+        this.resolveIndeterminatePerformanceWrites =
+            resolveIndeterminatePerformanceWrites;
     }
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
@@ -230,7 +234,11 @@ public sealed class ControlCoordinator
             beforeInitialStateRead: (_, token) =>
                 relinquishWhenUnconfigured && effectiveGpuClockTuning is null
                     ? RelinquishGpuClockOffsetManagementAsync(token)
-                    : Task.CompletedTask).ConfigureAwait(false);
+                    : Task.CompletedTask,
+            resolveIndeterminateWriteByReadback:
+                resolveIndeterminatePerformanceWrites,
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches)
+            .ConfigureAwait(false);
         return requestedDesired is null
             ? outcome
             : outcome with
@@ -1293,7 +1301,10 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
         Func<bool>? writeAllowed = null,
-        Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null)
+        Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null,
+        bool resolveIndeterminateWriteByReadback = false,
+        Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
+            unchangedAfterIndeterminateWrite = null)
     {
         if (!valid)
         {
@@ -1417,6 +1428,75 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 capabilities,
                 DeviceAccessFailed: false);
+        }
+        catch (BladeWriteException exception)
+            when (writeAttempted
+                && exception.SubmissionState is WriteSubmissionState.Indeterminate
+                && resolveIndeterminateWriteByReadback)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ConfirmedDeviceState final = await readState(cancellationToken)
+                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (matches(final))
+                {
+                    return new ScopedApplyOutcome(
+                        new ControlResult(
+                            ControlResultStatus.Applied,
+                            $"{name} setting applied and confirmed by fresh readback after an indeterminate submission."),
+                        final,
+                        WriteAttempted: true,
+                        ReadbackMatched: true,
+                        capabilities,
+                        DeviceAccessFailed: false);
+                }
+
+                if (initial is not null
+                    && unchangedAfterIndeterminateWrite?.Invoke(initial, final) == true)
+                {
+                    return new ScopedApplyOutcome(
+                        new ControlResult(
+                            ControlResultStatus.Failed,
+                            $"{Indeterminate(name, exception).Message} Fresh readback confirmed that the prior {name.ToLowerInvariant()} state remained active."),
+                        final,
+                        WriteAttempted: false,
+                        ReadbackMatched: false,
+                        capabilities,
+                        DeviceAccessFailed: false);
+                }
+
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{Indeterminate(name, exception).Message} Fresh readback did not match the requested or prior {name.ToLowerInvariant()} state."),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+            catch (OperationCanceledException cancellationException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw new IntentionalWriteCanceledException(
+                    new HashSet<DeviceSubsystem> { subsystem },
+                    cancellationToken,
+                    cancellationException);
+            }
+            catch
+            {
+                return new ScopedApplyOutcome(
+                    Indeterminate(name, exception),
+                    null,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: true,
+                    ConfirmationUnavailable: initial is not null,
+                    PreWriteState: initial);
+            }
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && writeAttempted)
@@ -1849,6 +1929,15 @@ public sealed class ControlCoordinator
                                 .RelinquishedDefaultConfirmed
                     : state.GpuClockOffsets?.Current ==
                         GpuClockOffsetSettings.Default));
+
+    private static bool PerformanceStateMatches(
+        ConfirmedDeviceState left,
+        ConfirmedDeviceState right) =>
+        left.Performance == right.Performance
+        && left.CustomPerformance == right.CustomPerformance
+        && left.GpuClockOffsets?.Current == right.GpuClockOffsets?.Current
+        && left.Fans == right.Fans
+        && left.HyperBoostActive == right.HyperBoostActive;
 
     private void EnsureGpuClockOffsetManagementContract(
         DeviceCapabilities capabilities)
