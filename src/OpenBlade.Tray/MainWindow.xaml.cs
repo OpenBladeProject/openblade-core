@@ -74,6 +74,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
     private bool changingHyperBoost;
+    private ToggleSwitch? hyperBoostToggle;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -867,6 +868,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             else
             {
                 dispatcherQueue.TryEnqueue(SynchronizeWindowsPowerModeSelection);
+            }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.HyperBoostActive))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                SynchronizeHyperBoostToggle();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);
             }
         }
 
@@ -2248,6 +2261,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => HandleHyperBoostToggledAsync(sender),
             nameof(OnHyperBoostToggled));
 
+    private void OnHyperBoostToggleLoaded(object sender, RoutedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) != 0 || sender is not ToggleSwitch toggle)
+        {
+            return;
+        }
+
+        hyperBoostToggle = toggle;
+        SynchronizeHyperBoostToggle(toggle);
+    }
+
+    private void OnHyperBoostToggleUnloaded(object sender, RoutedEventArgs args)
+    {
+        if (ReferenceEquals(hyperBoostToggle, sender))
+        {
+            hyperBoostToggle = null;
+        }
+    }
+
     private async Task HandleHyperBoostToggledAsync(object sender)
     {
         if (changingHyperBoost
@@ -2267,15 +2299,32 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            toggle.SetBinding(
-                ToggleSwitch.IsOnProperty,
-                new Microsoft.UI.Xaml.Data.Binding
-                {
-                    Source = ViewModel,
-                    Path = new PropertyPath(nameof(MainViewModel.HyperBoostActive)),
-                    Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
-                });
+            SynchronizeHyperBoostToggle(toggle);
             changingHyperBoost = false;
+        }
+    }
+
+    private void SynchronizeHyperBoostToggle() =>
+        SynchronizeHyperBoostToggle(hyperBoostToggle);
+
+    private void SynchronizeHyperBoostToggle(ToggleSwitch? toggle)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || toggle is null
+            || toggle.IsOn == ViewModel.HyperBoostActive)
+        {
+            return;
+        }
+
+        bool wasChangingHyperBoost = changingHyperBoost;
+        changingHyperBoost = true;
+        try
+        {
+            toggle.IsOn = ViewModel.HyperBoostActive;
+        }
+        finally
+        {
+            changingHyperBoost = wasChangingHyperBoost;
         }
     }
 

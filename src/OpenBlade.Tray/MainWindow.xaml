@@ -659,9 +659,10 @@
                                                       MinWidth="0"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsOn="{Binding HyperBoostActive, Mode=OneWay}"
                                                       IsEnabled="{Binding CanToggleHyperBoost}"
                                                       AutomationProperties.Name="HyperBoost"
+                                                      Loaded="OnHyperBoostToggleLoaded"
+                                                      Unloaded="OnHyperBoostToggleUnloaded"
                                                       Toggled="OnHyperBoostToggled" />
                                     </StackPanel>
                                 </Grid>

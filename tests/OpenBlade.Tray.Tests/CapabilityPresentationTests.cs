@@ -39,10 +39,10 @@ public sealed class CapabilityPresentationTests
         XElement toggle = Assert.Single(
             card.Descendants(),
             element => element.Name.LocalName == "ToggleSwitch");
-        Assert.Equal(
-            "{Binding HyperBoostActive, Mode=OneWay}",
-            Attribute(toggle, "IsOn"));
+        Assert.Null(Attribute(toggle, "IsOn"));
         Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("OnHyperBoostToggleLoaded", Attribute(toggle, "Loaded"));
+        Assert.Equal("OnHyperBoostToggleUnloaded", Attribute(toggle, "Unloaded"));
         Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
         Assert.Equal("MainWindow_HyperBoostToggle", Attribute(toggle, "Uid"));
         Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
@@ -68,7 +68,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_HyperBoostReattachesItsAuthoritativeOneWayBinding()
+    public void MainWindow_HyperBoostSynchronizesFromItsAuthoritativeOwner()
     {
         string window = ReadTraySource("MainWindow.xaml.cs");
         int handlerStart = window.IndexOf(
@@ -80,25 +80,68 @@ public sealed class CapabilityPresentationTests
             StringComparison.Ordinal);
         Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
         string handler = window[handlerStart..handlerEnd];
+        int loadedStart = window.IndexOf(
+            "private void OnHyperBoostToggleLoaded(",
+            StringComparison.Ordinal);
+        int unloadedStart = window.IndexOf(
+            "private void OnHyperBoostToggleUnloaded(",
+            loadedStart,
+            StringComparison.Ordinal);
+        Assert.True(loadedStart >= 0 && unloadedStart > loadedStart);
+        string loadedHandler = window[loadedStart..unloadedStart];
+        int synchronizeStart = handler.IndexOf(
+            "private void SynchronizeHyperBoostToggle() =>",
+            StringComparison.Ordinal);
+        Assert.True(synchronizeStart >= 0);
+        string synchronization = handler[synchronizeStart..];
 
         Assert.Contains(
-            "toggle.SetBinding(",
+            "SynchronizeHyperBoostToggle(toggle);",
             handler,
             StringComparison.Ordinal);
-        Assert.Contains("Source = ViewModel,", handler, StringComparison.Ordinal);
-        Assert.Contains(
-            "Path = new PropertyPath(nameof(MainViewModel.HyperBoostActive)),",
-            handler,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,",
-            handler,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("toggle.SetBinding(", handler, StringComparison.Ordinal);
         Assert.True(
             handler.IndexOf(
-                "toggle.SetBinding(",
+                "SynchronizeHyperBoostToggle(toggle);",
                 StringComparison.Ordinal)
             < handler.IndexOf("changingHyperBoost = false;", StringComparison.Ordinal));
+        Assert.Contains(
+            "if (args.PropertyName == nameof(MainViewModel.HyperBoostActive))",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "hyperBoostToggle = toggle;",
+            loadedHandler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SynchronizeHyperBoostToggle(toggle);",
+            loadedHandler,
+            StringComparison.Ordinal);
+        Assert.True(
+            loadedHandler.IndexOf("hyperBoostToggle = toggle;", StringComparison.Ordinal)
+            < loadedHandler.IndexOf(
+                "SynchronizeHyperBoostToggle(toggle);",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            "if (ReferenceEquals(hyperBoostToggle, sender))",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "toggle.IsOn = ViewModel.HyperBoostActive;",
+            synchronization,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "changingHyperBoost = true;",
+            synchronization,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "changingHyperBoost = wasChangingHyperBoost;",
+            synchronization,
+            StringComparison.Ordinal);
     }
 
     [Fact]
