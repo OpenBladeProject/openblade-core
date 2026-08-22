@@ -2267,7 +2267,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            toggle.IsOn = ViewModel.HyperBoostActive;
             changingHyperBoost = false;
         }
     }

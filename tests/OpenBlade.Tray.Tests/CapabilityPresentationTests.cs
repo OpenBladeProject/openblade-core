@@ -68,6 +68,32 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_HyperBoostRestoresThroughItsOneWayBinding()
+    {
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        int handlerStart = window.IndexOf(
+            "private async Task HandleHyperBoostToggledAsync(",
+            StringComparison.Ordinal);
+        int handlerEnd = window.IndexOf(
+            "private async void OnBlockWindowsKeyInGamingModeToggled(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = window[handlerStart..handlerEnd];
+
+        Assert.DoesNotContain(
+            "toggle.IsOn = ViewModel.HyperBoostActive;",
+            handler,
+            StringComparison.Ordinal);
+
+        string viewModel = ReadTrayCoreSource("MainViewModel.cs");
+        Assert.Contains(
+            "Notify(nameof(HyperBoostActive));",
+            viewModel,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

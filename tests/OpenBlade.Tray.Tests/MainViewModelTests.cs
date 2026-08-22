@@ -8373,6 +8373,58 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.CanChangeFanMode);
     }
 
+    [Fact]
+    public async Task HyperBoostFailedCommand_ReassertsAuthoritativePresentation()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The hardware write outcome is indeterminate."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+            },
+        };
+        client.Publish(active);
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        changed.Clear();
+
+        await viewModel.SetHyperBoostEnabledAsync(false, default);
+
+        Assert.True(viewModel.HyperBoostActive);
+        Assert.Contains(nameof(viewModel.HyperBoostActive), changed);
+        Assert.Equal(
+            "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
+            viewModel.OperationFeedbackMessage);
+
+        client.Publish(active with
+        {
+            Revision = active.Revision + 1,
+            ConfirmedState = active.ConfirmedState! with
+            {
+                HyperBoostActive = false,
+            },
+        });
+        await WaitUntilAsync(() => !viewModel.HyperBoostActive);
+
+        Assert.False(viewModel.HyperBoostActive);
+    }
+
     [Theory]
     [InlineData(
         "en-US",

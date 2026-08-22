@@ -5585,6 +5585,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         finally
         {
             IsHyperBoostOperationInProgress = false;
+            Notify(nameof(HyperBoostActive));
         }
     }
 
