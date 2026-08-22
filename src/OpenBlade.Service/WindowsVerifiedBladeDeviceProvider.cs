@@ -320,7 +320,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IPadlessHyperBoostLifecycleValidationDevice,
         IDisposable
     {
-        private const int MaximumBatteryReadAttempts = 3;
+        private const int MaximumStateReadAttempts = 3;
 
         private readonly record struct TransitionLightingReadResult(
             LightingSettings? State,
@@ -523,6 +523,86 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 confirmTransientLightingOff: true,
                 cancellationToken);
 
+        public async Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                bool observedTimeout = false;
+                for (int attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        return await ReadPerformanceFanStateOnceAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (RazerProtocolException exception) when (
+                        attempt < MaximumStateReadAttempts - 1 &&
+                        exception.ValidationFailure is
+                            HidProtocolValidationFailure.TransactionMismatch or
+                            HidProtocolValidationFailure.CommandClassMismatch or
+                            HidProtocolValidationFailure.CommandIdMismatch)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException or TimeoutException)
+                    {
+                        observedTimeout |= exception is TimeoutException;
+                        if (attempt >= MaximumStateReadAttempts - 1)
+                        {
+                            if (observedTimeout && exception is IOException)
+                            {
+                                throw new TimeoutException(
+                                    "Performance and fan state query timed out.");
+                            }
+
+                            throw;
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException("Performance and fan state query timed out.");
+            }
+            catch (RazerProtocolException exception)
+            {
+                throw new RazerProtocolException(
+                    $"Performance and fan state query failed protocol validation ({exception.ValidationFailure}).",
+                    exception.ValidationFailure);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch (FailClosedDeviceException exception)
+            {
+                throw new IOException(exception.Message);
+            }
+            catch
+            {
+                throw new IOException("Performance and fan state query failed.");
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         private async Task<PowerTransitionDeviceStateReadResult> ReadStateCoreAsync(
             bool confirmTransientLightingOff,
             CancellationToken cancellationToken)
@@ -546,7 +626,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             .ConfigureAwait(false);
                     }
                     catch (RazerProtocolException exception) when (
-                        attempt < MaximumBatteryReadAttempts - 1 &&
+                        attempt < MaximumStateReadAttempts - 1 &&
                         exception.ValidationFailure is
                             HidProtocolValidationFailure.TransactionMismatch or
                             HidProtocolValidationFailure.CommandClassMismatch or
@@ -561,7 +641,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         exception is IOException or TimeoutException)
                     {
                         observedTimeout |= exception is TimeoutException;
-                        if (attempt >= MaximumBatteryReadAttempts - 1)
+                        if (attempt >= MaximumStateReadAttempts - 1)
                         {
                             if (observedTimeout && exception is IOException)
                             {
@@ -695,6 +775,41 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LogoLighting = logo,
                     },
                     lightingRead.OffConfirmationUnavailable);
+            }
+        }
+
+        private async Task<ConfirmedDeviceState> ReadPerformanceFanStateOnceAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<IProductionBatteryPort> opened =
+                await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (opened.Value is not { } port)
+            {
+                ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                throw new IOException(
+                    "Performance and fan state query did not provide a verified session.");
+            }
+
+            await using (port.ConfigureAwait(false))
+            {
+                if (opened.Failure is not null)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                }
+
+                ProductionPerformanceFanState performanceFan =
+                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                return new ConfirmedDeviceState(
+                    performanceFan.Performance,
+                    performanceFan.Fans,
+                    Battery: null,
+                    Lighting: null)
+                {
+                    HyperBoostActive = performanceFan.HyperBoostActive,
+                    CustomPerformance = performanceFan.CustomPerformance,
+                    GpuClockOffsets = ReadManagedGpuClockOffsets(),
+                };
             }
         }
 

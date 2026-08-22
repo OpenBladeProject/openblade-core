@@ -3069,7 +3069,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             if (enabled)
             {
-                var coordinator = new ControlCoordinator(device);
+                var coordinator = new ControlCoordinator(
+                    device,
+                    device.ReadPerformanceFanStateAsync);
                 ScopedApplyOutcome automaticFans = await coordinator
                     .ApplyFanControlOutcomeAsync(
                         FanControlSettings.FromLegacy(FanMode.Automatic),
@@ -3137,7 +3139,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
             }
             setterCompleted = true;
-            ConfirmedDeviceState readback = await device.ReadStateAsync(token)
+            ConfirmedDeviceState readback = await ReadHyperBoostThermalStateAsync(
+                    device,
+                    current.ConfirmedState,
+                    token)
                 .ConfigureAwait(false);
             bool matched = readback.HyperBoostActive == enabled
                 && (enabled
@@ -3157,6 +3162,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     failedTransitionRestore = await RestoreHyperBoostIntentAsync(
                             device,
                             transitionIntent,
+                            readback,
                             CancellationToken.None)
                         .ConfigureAwait(false);
                     readback = failedTransitionRestore.Readback ?? readback;
@@ -3244,6 +3250,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await RestoreHyperBoostIntentAsync(
                             device,
                             transitionIntent,
+                            readback,
                             token)
                         .ConfigureAwait(false);
                 readback = restoration.Readback ?? readback;
@@ -3635,7 +3642,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             ConfirmedDeviceState readback = await device
-                .ReadStateAsync(cancellationToken)
+                .ReadPerformanceFanStateAsync(cancellationToken)
                 .ConfigureAwait(false);
             if (readback.Fans == FanMode.Automatic)
             {
@@ -3755,9 +3762,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         RestoreHyperBoostIntentAsync(
             IBladeDevice device,
             HyperBoostRestoreIntent intent,
+            ConfirmedDeviceState? preservedState,
             CancellationToken cancellationToken)
     {
-        var coordinator = new ControlCoordinator(device);
+        var coordinator = new ControlCoordinator(
+            device,
+            device.ReadPerformanceFanStateAsync);
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
             ScopedApplyOutcome fans = await coordinator
@@ -3785,7 +3795,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 fans.WriteAttempted);
             return new HyperBoostIntentRestorationResult(
                 HyperBoostBaselineStepSucceeded(fans),
-                fans.Readback,
+                MergeHyperBoostThermalState(preservedState, fans.Readback),
                 fans.Result.Message);
         }
 
@@ -3810,7 +3820,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return new HyperBoostIntentRestorationResult(
                 Succeeded: false,
-                performance.Readback,
+                MergeHyperBoostThermalState(preservedState, performance.Readback),
                 performance.Result.Message);
         }
 
@@ -3829,8 +3839,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             automaticFans.WriteAttempted);
         return new HyperBoostIntentRestorationResult(
             HyperBoostBaselineStepSucceeded(automaticFans),
-            automaticFans.Readback ?? performance.Readback,
+            MergeHyperBoostThermalState(
+                preservedState,
+                automaticFans.Readback ?? performance.Readback),
             automaticFans.Result.Message);
+    }
+
+    private static async Task<ConfirmedDeviceState> ReadHyperBoostThermalStateAsync(
+        IBladeDevice device,
+        ConfirmedDeviceState? preservedState,
+        CancellationToken cancellationToken)
+    {
+        ConfirmedDeviceState thermalState = await device
+            .ReadPerformanceFanStateAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return MergeHyperBoostThermalState(preservedState, thermalState)
+            ?? thermalState;
+    }
+
+    private static ConfirmedDeviceState? MergeHyperBoostThermalState(
+        ConfirmedDeviceState? preservedState,
+        ConfirmedDeviceState? thermalState)
+    {
+        if (thermalState is null || preservedState is null)
+        {
+            return thermalState ?? preservedState;
+        }
+
+        return preservedState with
+        {
+            Performance = thermalState.Performance,
+            Fans = thermalState.Fans,
+            HyperBoostActive = thermalState.HyperBoostActive,
+            CustomPerformance = thermalState.CustomPerformance,
+            GpuClockOffsets = thermalState.GpuClockOffsets,
+        };
     }
 
     private static bool ShouldRetryHyperBoostRestorationPreWriteRead(
@@ -3904,6 +3947,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreHyperBoostIntentAsync(
                     device,
                     restoreIntent,
+                    observation.Confirmed,
                     cancellationToken)
                 .ConfigureAwait(false);
         pendingIndeterminateHyperBoostExitIntent = null;
@@ -4017,6 +4061,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreHyperBoostIntentAsync(
                     device,
                     restoreIntent,
+                    observation.Confirmed,
                     cancellationToken)
                 .ConfigureAwait(false);
         pendingIndeterminateHyperBoostEntryIntent = null;
@@ -4074,6 +4119,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreHyperBoostIntentAsync(
                     device,
                     intent,
+                    GetStatus().ConfirmedState,
                     CancellationToken.None)
                 .ConfigureAwait(false);
         if (restoration.Succeeded)
@@ -4180,7 +4226,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     baseMode,
                     CancellationToken.None)
                 .ConfigureAwait(false);
-            ConfirmedDeviceState restored = await device.ReadStateAsync(
+            ConfirmedDeviceState restored = await ReadHyperBoostThermalStateAsync(
+                    device,
+                    baseline.ConfirmedState,
                     CancellationToken.None)
                 .ConfigureAwait(false);
             if (restored is
@@ -4195,6 +4243,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await RestoreHyperBoostIntentAsync(
                             device,
                             restoreIntent,
+                            restored,
                             CancellationToken.None)
                         .ConfigureAwait(false);
                 restored = intentRestoration.Readback ?? restored;

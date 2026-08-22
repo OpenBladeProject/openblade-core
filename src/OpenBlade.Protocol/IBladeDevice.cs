@@ -12,6 +12,10 @@ public interface IBladeDevice
 
     Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken);
 
+    Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
+        CancellationToken cancellationToken) =>
+        ReadStateAsync(cancellationToken);
+
     Task<ConfirmedDeviceState> ReadLightingStateAsync(
         CancellationToken cancellationToken) =>
         ReadStateAsync(cancellationToken);

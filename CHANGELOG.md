@@ -15,7 +15,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   exit, without misreporting the restored manual fan state as an external
   change on the next observation. A transient device read before an affected
   restoration write is retried once; indeterminate and post-write failures
-  remain non-retryable.
+  remain non-retryable. HyperBoost thermal transitions now use their scoped,
+  paired performance-and-fan readback so unrelated battery or lighting query
+  failures cannot abort an otherwise confirmed transition.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

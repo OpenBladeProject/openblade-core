@@ -7,6 +7,113 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Fact]
+    public async Task ReadPerformanceFanState_SkipsUnrelatedBatteryQueries()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Performance },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: true,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Performance,
+                FanMode.Automatic))
+        {
+            ProtectionFailure = new IOException("unrelated protection failure"),
+            TemporaryFailure = new IOException("unrelated temporary-charge failure"),
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadPerformanceFanStateAsync(default);
+
+        Assert.Equal(PerformancePreset.Performance, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Null(state.Battery);
+        Assert.Null(state.Lighting);
+        Assert.Equal(0, port.ProtectionQueryCount);
+        Assert.Equal(0, port.TemporaryQueryCount);
+        Assert.Equal(1, port.PerformanceFanQueryCount);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task ReadPerformanceFanState_RetriesTransientFailureWithFreshSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var failedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            PerformanceFanFailure = new IOException("temporary thermal read failure"),
+        };
+        var recoveredPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(
+            capabilities,
+            failedPort,
+            recoveredPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadPerformanceFanStateAsync(default);
+
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, failedPort.DisposeCount);
+        Assert.Equal(1, recoveredPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadPerformanceFanState_DoesNotRetrySemanticMismatch()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var failedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            PerformanceFanFailure = new RazerProtocolException(
+                "unrecognized thermal state",
+                HidProtocolValidationFailure.PayloadValidator),
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(
+            capabilities,
+            failedPort,
+            unusedPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException exception = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadPerformanceFanStateAsync(default));
+
+        Assert.Contains("PayloadValidator", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, failedPort.DisposeCount);
+        Assert.Equal(0, unusedPort.DisposeCount);
+    }
+
+    [Fact]
     public async Task ReadCustomPerformance_DoesNotQueryUnmanagedGpuClockOffsets()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
@@ -1877,6 +1984,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public BladeWriteException? WriteFailure { get; set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
+        public Exception? PerformanceFanFailure { get; init; }
         public Exception? StartupAnimationFailure { get; init; }
         public Action? AfterPerformanceWrite { get; init; }
         public TaskCompletionSource ProtectionQueryStarted { get; } =
@@ -1935,8 +2043,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             PerformanceFanQueryCount++;
-            return Task.FromResult(
-                performanceFan ?? new ProductionPerformanceFanState(null, null));
+            return PerformanceFanFailure is null
+                ? Task.FromResult(
+                    performanceFan ?? new ProductionPerformanceFanState(null, null))
+                : Task.FromException<ProductionPerformanceFanState>(
+                    PerformanceFanFailure);
         }
 
         public Task<AdapterPowerState> QueryAdapterPowerStateAsync(

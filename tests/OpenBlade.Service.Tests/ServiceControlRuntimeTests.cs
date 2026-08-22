@@ -11868,6 +11868,80 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_ScopedThermalReadIgnoresUnrelatedFullStateFailure()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ConfirmedDeviceState confirmedBeforeEntry = Assert.IsType<ConfirmedDeviceState>(
+            context.Runtime.GetStatus().ConfirmedState);
+        int fullReadsBeforeEntry = context.Device.StateReadCalls;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.ReadStateFailure = new IOException(
+            "unrelated full-state query failed");
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.PerformanceFanStateReadCalls > 0);
+        Assert.Equal(fullReadsBeforeEntry, context.Device.StateReadCalls);
+        Assert.Equal(
+            confirmedBeforeEntry.Battery,
+            context.Runtime.GetStatus().ConfirmedState?.Battery);
+        Assert.Equal(
+            confirmedBeforeEntry.Lighting,
+            context.Runtime.GetStatus().ConfirmedState?.Lighting);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            journal.Journal?.State);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_ScopedThermalPostWriteFailureIsNotRetried()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.PerformanceFanStateReadFailureOnCall = 3;
+        int performanceWritesBeforeEntry = context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(
+            performanceWritesBeforeEntry + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(3, context.Device.PerformanceFanStateReadCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_IndeterminateActiveEntryRebasesManualFanDrift()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -13258,6 +13332,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? ReadStateFailureOnCallException { get; set; }
 
+        public bool UseScopedPerformanceFanRead { get; set; }
+
+        public int PerformanceFanStateReadCalls { get; private set; }
+
+        public int? PerformanceFanStateReadFailureOnCall { get; set; }
+
         public Action? AfterReadState { get; set; }
 
         public Action<int>? AfterReadStateCall { get; set; }
@@ -13304,6 +13384,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AfterReadState?.Invoke();
             AfterReadStateCall?.Invoke(StateReadCalls);
             return Task.FromResult(ConfirmedState);
+        }
+
+        public Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
+            CancellationToken cancellationToken)
+        {
+            if (!UseScopedPerformanceFanRead)
+            {
+                return ReadStateAsync(cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            PerformanceFanStateReadCalls++;
+            if (PerformanceFanStateReadFailureOnCall
+                == PerformanceFanStateReadCalls)
+            {
+                throw new IOException("scoped thermal readback failed");
+            }
+
+            return Task.FromResult(new ConfirmedDeviceState(
+                ConfirmedState.Performance,
+                ConfirmedState.Fans,
+                Battery: null,
+                Lighting: null)
+            {
+                HyperBoostActive = ConfirmedState.HyperBoostActive,
+                CustomPerformance = ConfirmedState.CustomPerformance,
+                GpuClockOffsets = ConfirmedState.GpuClockOffsets,
+            });
         }
 
         public Task<ConfirmedDeviceState> ReadLightingStateAsync(

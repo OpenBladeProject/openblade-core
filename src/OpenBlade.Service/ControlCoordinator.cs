@@ -53,10 +53,20 @@ internal sealed class WriteAuthorityLostException : InvalidOperationException
 public sealed class ControlCoordinator
 {
     private readonly IBladeDevice device;
+    private readonly Func<CancellationToken, Task<ConfirmedDeviceState>>?
+        scopedStateReader;
 
     public ControlCoordinator(IBladeDevice device)
+        : this(device, scopedStateReader: null)
+    {
+    }
+
+    internal ControlCoordinator(
+        IBladeDevice device,
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
+        this.scopedStateReader = scopedStateReader;
     }
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
@@ -1301,7 +1311,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities? capabilities = null;
         ConfirmedDeviceState? initial = null;
         Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
-            stateReader ?? device.ReadStateAsync;
+            stateReader ?? scopedStateReader ?? device.ReadStateAsync;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
