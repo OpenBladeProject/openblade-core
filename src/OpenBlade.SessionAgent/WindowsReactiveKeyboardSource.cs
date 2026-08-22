@@ -394,11 +394,17 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     }
                     return 1;
                 }
+                // The low-level callback precedes the async-state update, so
+                // the high bit distinguishes a held repeat from a new down
+                // whose earlier release was never observed.
+                bool keyWasAlreadyDown = keyDown
+                    && (GetAsyncKeyState(checked((int)input.VirtualKey)) & 0x8000) != 0;
                 bool suppressFunctionRow = FunctionRowKeyboardHookProcessor.Process(
                     owner.functionRowInput,
                     owner.readVerifiedInputDeviceKind(),
                     input.ScanCode,
                     keyDown,
+                    keyWasAlreadyDown,
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
                     owner.readDriverModeObservation().AllowsFunctionRowInterception,
@@ -952,6 +958,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     [DllImport("user32.dll")]
     private static extern int GetMessageTime();
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
 
     [DllImport("user32.dll")]
     private static extern nint DispatchMessage(ref WindowMessage message);

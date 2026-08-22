@@ -10,6 +10,7 @@ internal static class FunctionRowKeyboardHookProcessor
         RazerBladeInputDeviceKind deviceKind,
         uint scanCode,
         bool keyDown,
+        bool keyWasAlreadyDown,
         bool functionKeyPressed,
         FunctionKeyPrimaryMode? primaryMode,
         bool driverModeActive,
@@ -17,6 +18,13 @@ internal static class FunctionRowKeyboardHookProcessor
     {
         ArgumentNullException.ThrowIfNull(inputState);
         ArgumentNullException.ThrowIfNull(publish);
+
+        if (keyDown
+            && inputState.PrepareKeyDown(scanCode, keyWasAlreadyDown)
+                is { } staleRelease)
+        {
+            publish(staleRelease);
+        }
 
         bool suppress = inputState.Process(
             deviceKind,

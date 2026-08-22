@@ -109,6 +109,26 @@ public sealed class RazerBladeFunctionRowInputState
     private readonly HashSet<uint> passedThroughKeys = [];
     private readonly HashSet<uint> passThroughReleases = [];
 
+    /// <summary>
+    /// Clears a press whose release was never observed before Windows reports
+    /// a new physical key-down. A held-key repeat keeps the existing latch.
+    /// </summary>
+    public FunctionRowInputEvent? PrepareKeyDown(
+        uint scanCode,
+        bool keyWasAlreadyDown)
+    {
+        if (keyWasAlreadyDown)
+        {
+            return null;
+        }
+
+        passedThroughKeys.Remove(scanCode);
+        passThroughReleases.Remove(scanCode);
+        return suppressedKeys.Remove(scanCode, out FunctionRowAction suppressed)
+            ? new(scanCode, suppressed, FunctionRowInputPhase.Up)
+            : null;
+    }
+
     public bool Process(
         uint scanCode,
         bool keyDown,
