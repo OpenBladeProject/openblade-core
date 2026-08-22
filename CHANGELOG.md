@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   change on the next observation. A transient device read before an affected
   restoration write is retried once; indeterminate and post-write failures
   remain non-retryable.
+- Kept the Session Agent and media-key handling alive when a client closes a
+  named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and
   accessibility name immediately when the app language changes.
 - Moved VBIOS inventory into the Firmware section and now show `None` only

@@ -32,13 +32,21 @@ public sealed class SessionGpuPipeServer : IAsyncDisposable
         {
             NamedPipeServerStream connected = currentPipe
                 ?? throw new ObjectDisposedException(nameof(SessionGpuPipeServer));
-            if (!await SessionAgentPipeAccept.TryAcceptAsync(
-                    connected.WaitForConnectionAsync,
-                    cancellationToken).ConfigureAwait(false))
+            SessionAgentPipeAcceptResult acceptResult =
+                await SessionAgentPipeAccept.AcceptAsync(
+                        connected.WaitForConnectionAsync,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (acceptResult == SessionAgentPipeAcceptResult.Canceled)
             {
                 return;
             }
             currentPipe = owner.CreateReplacementPipe();
+            if (acceptResult == SessionAgentPipeAcceptResult.PipeClosed)
+            {
+                await connected.DisposeAsync().ConfigureAwait(false);
+                continue;
+            }
             try
             {
                 await ServeConnectionAsync(connected, cancellationToken).ConfigureAwait(false);
