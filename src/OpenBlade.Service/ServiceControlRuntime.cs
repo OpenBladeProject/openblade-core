@@ -2802,6 +2802,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             expectedOwnershipGeneration: null,
             lifecycleValidation: null,
             restoreUserIntent: true,
+            exitPowerSourceOverride: null,
             token);
 
     public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
@@ -2834,6 +2835,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             expectedOwnershipGeneration: null,
             request,
             restoreUserIntent: false,
+            exitPowerSourceOverride: null,
             token);
     }
 
@@ -2858,6 +2860,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long? expectedOwnershipGeneration,
         ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
         bool restoreUserIntent,
+        PowerSource? exitPowerSourceOverride,
         CancellationToken token)
     {
         EnsureInitialized();
@@ -2969,7 +2972,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? CreateHyperBoostRestoreIntent(current.DesiredState)
                 : ResolveHyperBoostExitIntent(
                     current,
-                    ownedHyperBoostRestoreIntent);
+                    ownedHyperBoostRestoreIntent,
+                    exitPowerSourceOverride ?? current.ActivePowerSource);
             if (enabled && !IsSupportedFullPowerHyperBoostIntent(
                     current.Capabilities!,
                     transitionIntent))
@@ -3131,10 +3135,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (!matched)
             {
                 HyperBoostIntentRestorationResult? failedTransitionRestore = null;
-                if (enabled
-                    && !readback.HyperBoostActive
-                    && baselineTransitionCompleted
-                    && transitionIntent is not null)
+                if (!readback.HyperBoostActive
+                    && transitionIntent is not null
+                    && (enabled && baselineTransitionCompleted
+                        || !enabled && restoreUserIntent))
                 {
                     failedTransitionRestore = await RestoreHyperBoostIntentAsync(
                             device,
@@ -3197,6 +3201,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     mismatchMessage +=
                         " Its ownership journal could not be made safe, so control writes remain blocked.";
                 }
+                if (failedTransitionRestore is { Succeeded: true })
+                {
+                    driftTracker.Observe(readback);
+                    driftTracker.ConfirmIntentional(
+                        DeviceSubsystem.Performance,
+                        matched: true);
+                    driftTracker.ConfirmIntentional(
+                        DeviceSubsystem.Fans,
+                        matched: true);
+                }
                 var mismatch = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     mismatchMessage);
@@ -3204,6 +3218,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishIfChanged(current with
                 {
                     ConfirmedState = readback,
+                    ExternalChanges = driftTracker.ExternalChanges,
                     Message = mismatch.Message,
                 });
                 return mismatch;
@@ -3536,7 +3551,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
         ServiceStatusSnapshot current,
-        HyperBoostRestoreIntent? ownedIntent) => current.ActivePowerSource switch
+        HyperBoostRestoreIntent? ownedIntent,
+        PowerSource exitPowerSource) => exitPowerSource switch
         {
             PowerSource.PluggedIn => ownedIntent
                 ?? CreateHyperBoostRestoreIntent(current.DesiredState),
@@ -3821,6 +3837,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Fresh readback confirmed that an indeterminate HyperBoost disable did not apply, but its ownership journal could not be returned to owned state.",
                     savedIntent)
                 .ConfigureAwait(false);
+            driftTracker.Observe(observation.Confirmed);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
             string activeMessage = journalRecovered
@@ -3934,6 +3951,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ownedHyperBoostRequiresCoolingPad = false;
             }
 
+            driftTracker.Observe(observation.Confirmed);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
             string activeMessage = journalFinalized
@@ -6056,6 +6074,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         long expectedOwnershipGeneration = 0;
+        PowerSource exitPowerSource = PowerSource.ExternalUnknown;
         try
         {
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -6091,6 +6110,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             : "HyperBoost was already inactive, but its ownership journal could not be retired; control writes remain blocked.");
                 }
 
+                exitPowerSource = await ResolveCurrentPowerSourceAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (exitPowerSource != PowerSource.ExternalUnknown
+                    && ChangePowerSourceCore(exitPowerSource))
+                {
+                    current = GetStatus();
+                    PublishIfChanged(current with
+                    {
+                        ActivePowerSource = exitPowerSource,
+                        DesiredState = Automation.Resolve(
+                            current.ConfirmedState ?? UnknownConfirmedState),
+                        Message =
+                            "The power source was refreshed before HyperBoost lifecycle restoration so the destination profile is authoritative.",
+                    });
+                }
+
                 expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
             }
             finally
@@ -6110,6 +6146,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     expectedOwnershipGeneration,
                     lifecycleValidation: null,
                     restoreUserIntent: true,
+                    exitPowerSourceOverride: exitPowerSource,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (result.Status != ControlOperationStatus.Applied)
