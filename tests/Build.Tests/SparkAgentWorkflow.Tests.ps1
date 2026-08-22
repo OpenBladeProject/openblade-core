@@ -278,6 +278,9 @@ if (-not $duplicateKeyRejected) {
 $skill = Read-RequiredFile (Join-Path $skillDirectory 'SKILL.md')
 Assert-Matches $skill '(?m)^name: openblade-spark-operators\r?$' `
     'The dispatcher skill has the wrong frontmatter name.'
+Assert-Matches $skill `
+    '(?m)^description: [^\r\n]*when the runtime exposes exact named-agent selection[^\r\n]*\r?$' `
+    'The dispatcher description must disclose its named-agent dependency.'
 foreach ($agent in $expectedAgents) {
     if ($skill.IndexOf($agent.Name, [StringComparison]::Ordinal) -lt 0) {
         throw "The dispatcher skill does not route to '$($agent.Name)'."
@@ -286,6 +289,32 @@ foreach ($agent in $expectedAgents) {
 if ($skill.IndexOf('[TODO', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
     throw 'The dispatcher skill contains unfinished scaffold text.'
 }
+
+$capabilityGateHeading = '## Confirm named-agent availability'
+$routingHeading = '## Route the work'
+$capabilityGateIndex = $skill.IndexOf(
+    $capabilityGateHeading,
+    [StringComparison]::Ordinal)
+$routingIndex = $skill.IndexOf($routingHeading, [StringComparison]::Ordinal)
+if ($capabilityGateIndex -lt 0 -or $routingIndex -lt 0 -or
+        $capabilityGateIndex -ge $routingIndex) {
+    throw 'The dispatcher must check named-agent capability before routing work.'
+}
+$capabilityGateStart = $capabilityGateIndex + $capabilityGateHeading.Length
+$capabilityGate = $skill.Substring(
+    $capabilityGateStart,
+    $routingIndex - $capabilityGateStart)
+Assert-ContainsAll `
+    -Content $capabilityGate `
+    -RequiredValues @(
+        'exact custom-agent selector',
+        'does not prove that this client can invoke those profiles',
+        'task name, thread label, prompt, or generic model override',
+        'Do not pass an unsupported model name',
+        'Ask for explicit user approval',
+        'Only describe a delegated run as Spark') `
+    -Source 'SKILL.md named-agent capability gate'
+
 Assert-ContainsAll `
     -Content $skill `
     -RequiredValues @(
@@ -335,6 +364,11 @@ if (-not $metadata.default_prompt.StartsWith(
         'Use $openblade-spark-operators ',
         [StringComparison]::Ordinal)) {
     throw 'The skill UI metadata must invoke $openblade-spark-operators.'
+}
+if ($metadata.default_prompt.IndexOf(
+        'verify exact named-agent support',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The skill UI metadata must expose the named-agent preflight.'
 }
 
 Write-Host 'Spark agent and skill workflow contracts passed.'
