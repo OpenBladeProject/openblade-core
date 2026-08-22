@@ -318,6 +318,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly IDisplayBrightnessHidController displayBrightnessHidController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
+    private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator;
@@ -353,6 +354,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool hyperBoostJournalSafetyBlock;
     private readonly HashSet<Guid> padlessHyperBoostLifecycleValidationRuns = [];
     private long hyperBoostOwnershipGeneration;
+    private long powerSourceGeneration;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
@@ -591,7 +593,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IUserConfigurationRepository? userConfigurationRepository = null,
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
-        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -622,6 +625,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? CoolingPadDiscoveryFactory.CreateWindows();
         this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
             ?? UnavailableHyperBoostOwnershipJournalStore.Instance;
+        this.hyperBoostLifecycleExitBoundary = hyperBoostLifecycleExitBoundary
+            ?? (static _ => Task.CompletedTask);
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -2803,6 +2808,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             lifecycleValidation: null,
             restoreUserIntent: true,
             exitPowerSourceOverride: null,
+            expectedExitPowerSourceGeneration: null,
             token);
 
     public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
@@ -2836,6 +2842,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             request,
             restoreUserIntent: false,
             exitPowerSourceOverride: null,
+            expectedExitPowerSourceGeneration: null,
             token);
     }
 
@@ -2861,6 +2868,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
         bool restoreUserIntent,
         PowerSource? exitPowerSourceOverride,
+        long? expectedExitPowerSourceGeneration,
         CancellationToken token)
     {
         EnsureInitialized();
@@ -2973,7 +2981,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : ResolveHyperBoostExitIntent(
                     current,
                     ownedHyperBoostRestoreIntent,
-                    exitPowerSourceOverride ?? current.ActivePowerSource);
+                    exitPowerSourceOverride is { } exitSource
+                        && expectedExitPowerSourceGeneration
+                            == powerSourceGeneration
+                            ? exitSource
+                            : current.ActivePowerSource);
             if (enabled && !IsSupportedFullPowerHyperBoostIntent(
                     current.Capabilities!,
                     transitionIntent))
@@ -4340,6 +4352,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return true;
         }
 
+        if (journal.State == HyperBoostOwnershipJournalState.RestorePending)
+        {
+            hyperBoostJournalSafetyBlock = true;
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The pending restore marker was preserved because inactive HyperBoost does not confirm the saved performance and fan intent.");
+            return false;
+        }
+
         return await RetireHyperBoostOwnershipJournalAsync(
                 journal.BaseMode,
                 journal.RequiresCoolingPad,
@@ -4825,9 +4846,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (!confirmed.HyperBoostActive)
                 {
-                    bool retired = await RetireHyperBoostOwnershipJournalAsync(
-                            journal.BaseMode,
-                            journal.RequiresCoolingPad,
+                    bool retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
                             "Inactive HyperBoost was confirmed after an unexpected exit, but its stale ownership journal could not be retired.")
                         .ConfigureAwait(false);
                     if (!retired)
@@ -6075,6 +6094,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         long expectedOwnershipGeneration = 0;
         PowerSource exitPowerSource = PowerSource.ExternalUnknown;
+        long expectedExitPowerSourceGeneration = 0;
         try
         {
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -6090,10 +6110,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (current.ConfirmedState?.HyperBoostActive != true)
                 {
-                    bool retired = await RetireHyperBoostOwnershipJournalAsync(
-                            ownedHyperBoostBaseMode
-                                ?? PerformancePreset.Balanced,
-                            ownedHyperBoostRequiresCoolingPad,
+                    bool retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
                             "HyperBoost was already inactive at the lifecycle boundary, but its ownership journal could not be retired.")
                         .ConfigureAwait(false);
                     hyperBoostOwnershipGeneration++;
@@ -6128,11 +6145,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
 
                 expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
+                expectedExitPowerSourceGeneration = powerSourceGeneration;
             }
             finally
             {
                 operationGate.Release();
             }
+
+            await hyperBoostLifecycleExitBoundary(cancellationToken)
+                .ConfigureAwait(false);
 
             string boundary = reasonLabel == "shutdown"
                 ? "before shutdown"
@@ -6147,6 +6168,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     lifecycleValidation: null,
                     restoreUserIntent: true,
                     exitPowerSourceOverride: exitPowerSource,
+                    expectedExitPowerSourceGeneration,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (result.Status != ControlOperationStatus.Applied)
@@ -9336,6 +9358,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool changed = Automation.ChangePowerSource(powerSource);
         if (changed)
         {
+            powerSourceGeneration++;
             InvalidatePendingWriteConfirmations(markExternal: true);
             explicitLightingOwnershipActive = false;
             lightingRecoveryPauseMessage = null;

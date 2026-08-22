@@ -11120,6 +11120,57 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_LifecycleExitUsesNewerQueuedPowerSource()
+    {
+        var enteredExitBoundary = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseExitBoundary = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            hyperBoostLifecycleExitBoundary: async token =>
+            {
+                enteredExitBoundary.SetResult();
+                await releaseExitBoundary.Task.WaitAsync(token);
+            });
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        Task<ControlOperationResult> lifecycleExit =
+            context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await enteredExitBoundary.Task;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        releaseExitBoundary.SetResult();
+
+        ControlOperationResult result = await lifecycleExit;
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            context.Runtime.GetStatus().Profiles.UsbC.Performance,
+            context.Device.ConfirmedState.Performance);
+        Assert.NotEqual(
+            context.Runtime.GetStatus().Profiles.Battery.Performance,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(
+            context.Runtime.GetStatus().Profiles.UsbC.Fans,
+            context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_LifecycleExitWithUnknownPowerRestoresSafeBaseline()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -11599,6 +11650,55 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(
             HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_UnexpectedExitPreservesInactiveRestorePendingJournal()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Performance,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    new FanControlSettings(
+                        FanMode.Fixed,
+                        3200,
+                        ManualFanCurve.Default)),
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context, active: false);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
     }
 
@@ -12131,6 +12231,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
         Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        int settersAfterFailure = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersAfterFailure, context.Device.TotalSetterCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
     }
 
     private static void ConfigurePadlessHyperBoost(
@@ -12191,7 +12301,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IUserConfigurationRepository? userConfigurationRepository = null,
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
-        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -12273,7 +12384,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             userConfigurationRepository: userConfigurationRepository,
             displayBrightnessHidController: displayBrightnessHidController,
             hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource,
-            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
+            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
