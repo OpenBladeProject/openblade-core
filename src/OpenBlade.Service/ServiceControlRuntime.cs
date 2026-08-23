@@ -3602,7 +3602,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (intent.Performance == PerformancePreset.Custom
             && capabilities.CustomPerformance?.Supports(intent.CustomPerformance)
-                != true)
+                == false)
         {
             return false;
         }
