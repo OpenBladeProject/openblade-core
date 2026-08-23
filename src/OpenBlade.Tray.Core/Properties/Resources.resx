@@ -627,6 +627,12 @@
   <data name="High" xml:space="preserve">
     <value>High</value>
   </data>
+  <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
+    <value>HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically.</value>
+  </data>
+  <data name="HyperBoost restore needs confirmation" xml:space="preserve">
+    <value>HyperBoost restore needs confirmation</value>
+  </data>
   <data name="Idle" xml:space="preserve">
     <value>Idle</value>
   </data>
@@ -971,6 +977,9 @@
   </data>
   <data name="Reconnecting to service" xml:space="preserve">
     <value>Reconnecting to service</value>
+  </data>
+  <data name="Recovery needed" xml:space="preserve">
+    <value>Recovery needed</value>
   </data>
   <data name="Refresh rate" xml:space="preserve">
     <value>Refresh rate</value>

@@ -1697,6 +1697,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => ViewModel.CheckCurrentStateAsync(CancellationToken.None),
             nameof(OnCheckCurrentStateClick));
 
+    private async void OnRecoverHyperBoostRestoreClick(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => ViewModel.RecoverHyperBoostRestoreAsync(CancellationToken.None),
+            nameof(OnRecoverHyperBoostRestoreClick));
+
     private async void OnWindowsDynamicLightingToggled(
         object sender,
         RoutedEventArgs args) =>

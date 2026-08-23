@@ -627,6 +627,12 @@
   <data name="High" xml:space="preserve">
     <value>高</value>
   </data>
+  <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
+    <value>HyperBoost 已关闭，但保存的性能和风扇设置尚未确认。重试只会恢复一次该确切设置；OpenBlade 不会自动重试。</value>
+  </data>
+  <data name="HyperBoost restore needs confirmation" xml:space="preserve">
+    <value>HyperBoost 恢复需要确认</value>
+  </data>
   <data name="Idle" xml:space="preserve">
     <value>空闲</value>
   </data>
@@ -971,6 +977,9 @@
   </data>
   <data name="Reconnecting to service" xml:space="preserve">
     <value>正在重新连接服务</value>
+  </data>
+  <data name="Recovery needed" xml:space="preserve">
+    <value>需要恢复</value>
   </data>
   <data name="Refresh rate" xml:space="preserve">
     <value>刷新率</value>

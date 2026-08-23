@@ -106,6 +106,9 @@ public sealed class DiagnosticArchiveProviderTests
             "RazerAppEngine",
             configuration.RootElement.GetProperty("status.potentialControllers").GetString());
         Assert.Equal(
+            bool.FalseString,
+            configuration.RootElement.GetProperty("status.hyperBoostRestorePending").GetString());
+        Assert.Equal(
             "Enumeration warning: [REDACTED]",
             configuration.RootElement.GetProperty("status.controllerDetectionWarning").GetString());
         Assert.Equal(

@@ -1263,7 +1263,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 49
+  field const System.Int32 ProtocolVersion = 50
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1585,6 +1585,19 @@ type sealed class OpenBlade.Contracts.ReapplyChangedSettingsRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ReapplyChangedSettingsRequest left, OpenBlade.Contracts.ReapplyChangedSettingsRequest right)
   method virtual OpenBlade.Contracts.ReapplyChangedSettingsRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.ReapplyChangedSettingsRequest other)
+type sealed class OpenBlade.Contracts.RecoverHyperBoostRestoreRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.RecoverHyperBoostRestoreRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest left, OpenBlade.Contracts.RecoverHyperBoostRestoreRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest left, OpenBlade.Contracts.RecoverHyperBoostRestoreRequest right)
+  method virtual OpenBlade.Contracts.RecoverHyperBoostRestoreRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest other)
 type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   interface System.IEquatable<OpenBlade.Contracts.ResolvedSetting<T>>
   ctor (T Value, OpenBlade.Contracts.SettingValueSource Source)
@@ -1790,6 +1803,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Boolean get_AlwaysOverrideExternalLightingChanges()
   method System.Boolean get_DeviceVerified()
   method System.Boolean get_FullChargeOverride()
+  method System.Boolean get_HyperBoostRestorePending()
   method System.Boolean get_WritesBlocked()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_ExternalChanges()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_UnconfirmedWrites()
@@ -1826,6 +1840,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_FullChargeOverride(System.Boolean value)
   method System.Void set_FunctionKeyPrimary(System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> value)
   method System.Void set_GamingModeEnabled(System.Nullable<System.Boolean> value)
+  method System.Void set_HyperBoostRestorePending(System.Boolean value)
   method System.Void set_KeyboardDriverModeActive(System.Nullable<System.Boolean> value)
   method System.Void set_KeyboardLightingControlMode(OpenBlade.Contracts.KeyboardLightingControlMode value)
   method System.Void set_LightingOverride(OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> value)
@@ -1875,6 +1890,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }
   property System.Boolean DeviceVerified { get; init; }
   property System.Boolean FullChargeOverride { get; init; }
+  property System.Boolean HyperBoostRestorePending { get; init; }
   property System.Boolean WritesBlocked { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> UnconfirmedWrites { get; init; }

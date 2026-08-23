@@ -225,6 +225,9 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>[!! Ímpórt prófílés ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Rétry sávéd HypérBóóst réstóré ~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Réápplý OpenBlade séttíngs ~~~~~~ !!]</value>
   </data>
@@ -1421,6 +1424,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>[!! Récént érrór ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestore.Text" xml:space="preserve">
+    <value>[!! Rétry sávéd séttíng ~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
     <value>[!! Réfrésh ráté ~~~~ !!]</value>
   </data>
@@ -1444,6 +1450,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
     <value>[!! Sávé lógs ánd sýstém détáíls wíth sénsítívé ínfórmátíón rémóvéd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockSavedHyperBoostRestore.Text" xml:space="preserve">
+    <value>[!! Sávéd HypérBóóst réstóré ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
     <value>[!! Scréén régíón ~~~~~ !!]</value>

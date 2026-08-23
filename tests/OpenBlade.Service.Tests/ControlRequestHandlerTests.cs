@@ -49,6 +49,9 @@ public sealed class ControlRequestHandlerTests
             new ReapplyChangedSettingsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
+            new RecoverHyperBoostRestoreRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
             new SetLightingSuppressionRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -96,6 +99,7 @@ public sealed class ControlRequestHandlerTests
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
             "ReapplyChangedSettings",
+            "RecoverHyperBoostRestore",
             "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
@@ -470,6 +474,9 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
             CancellationToken token) => Record("ReapplyChangedSettings");
+
+        public Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(
+            CancellationToken token) => Record("RecoverHyperBoostRestore");
 
         public Task<ControlOperationResult> SetLightingSuppressionAsync(
             LightingSuppressionReason reason,

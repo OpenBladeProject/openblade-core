@@ -272,6 +272,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private string externalChangesText = string.Empty;
     private bool hasUnconfirmedWrites;
     private string unconfirmedWritesText = string.Empty;
+    private bool hasPendingHyperBoostRestore;
     private bool alwaysOverrideExternalLightingChanges;
     private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
@@ -317,6 +318,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isBatteryProtectionOperationInProgress;
     private bool isFullChargeOperationInProgress;
     private bool isReapplyChangedSettingsOperationInProgress;
+    private bool isHyperBoostRestoreRecoveryInProgress;
     private bool isCheckCurrentStateOperationInProgress;
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
@@ -1214,6 +1216,54 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && HasUnconfirmedWrites
         && !IsCheckCurrentStateOperationInProgress;
 
+    public bool HasPendingHyperBoostRestore
+    {
+        get => hasPendingHyperBoostRestore;
+        private set
+        {
+            if (hasPendingHyperBoostRestore == value)
+            {
+                return;
+            }
+
+            SetField(ref hasPendingHyperBoostRestore, value);
+            NotifyPresentationState();
+        }
+    }
+
+    public bool IsHyperBoostRestoreRecoveryInProgress
+    {
+        get => isHyperBoostRestoreRecoveryInProgress;
+        private set
+        {
+            if (isHyperBoostRestoreRecoveryInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isHyperBoostRestoreRecoveryInProgress, value);
+            Notify(nameof(CanRecoverHyperBoostRestore));
+        }
+    }
+
+    public bool CanRecoverHyperBoostRestore => IsConnected
+        && HasPendingHyperBoostRestore
+        && !HasUnconfirmedWrites
+        && latestStatus is
+        {
+            ControlAccess: SessionControlAccess.Active,
+            DeviceVerified: true,
+            ActivePowerSource: PowerSource.PluggedIn,
+            ControllerDetectionWarning: null,
+        }
+        && latestStatus.PotentialControllers.Count == 0
+        && !latestStatus.ExternalChanges.Any(subsystem => subsystem is
+            DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+        && !IsHyperBoostRestoreRecoveryInProgress;
+
+    public string HyperBoostRestoreRecoveryText => TrayText.Get(
+        "HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically.");
+
     public bool ShowReapplyChangedSettings => HasExternalChanges
         && !HasUnconfirmedWrites;
 
@@ -1410,6 +1460,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    public async Task<bool> RecoverHyperBoostRestoreAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!CanRecoverHyperBoostRestore)
+        {
+            return false;
+        }
+
+        IsHyperBoostRestoreRecoveryInProgress = true;
+        try
+        {
+            return await RunOperationAsync(
+                serviceClient.RecoverHyperBoostRestoreAsync,
+                cancellationToken);
+        }
+        finally
+        {
+            IsHyperBoostRestoreRecoveryInProgress = false;
+        }
+    }
+
     public async Task<bool> CheckCurrentStateAsync(CancellationToken cancellationToken)
     {
         if (!CanCheckCurrentState)
@@ -1441,7 +1512,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && (HasControllerAdvisory
             || HasControllerDetectionWarning
             || HasExternalChanges
-            || HasUnconfirmedWrites);
+            || HasUnconfirmedWrites
+            || HasPendingHyperBoostRestore);
 
     public string AttentionSummary
     {
@@ -1454,6 +1526,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasUnconfirmedWrites)
             {
                 return TrayText.Get("State not confirmed");
+            }
+            if (HasPendingHyperBoostRestore)
+            {
+                return TrayText.Get("HyperBoost restore needs confirmation");
             }
             if (HasExternalChanges)
             {
@@ -1471,6 +1547,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? string.Empty
         : HasUnconfirmedWrites
             ? TrayText.Get("State not confirmed")
+            : HasPendingHyperBoostRestore
+            ? TrayText.Get("Recovery needed")
             : HasExternalChanges
             ? TrayText.Get("Changed outside OpenBlade")
             : HasControllerDetectionWarning
@@ -1489,6 +1567,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasUnconfirmedWrites)
             {
                 details.Add(UnconfirmedWritesText);
+            }
+            if (HasPendingHyperBoostRestore)
+            {
+                details.Add(HyperBoostRestoreRecoveryText);
             }
             if (HasExternalChanges)
             {
@@ -4817,6 +4899,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 "OpenBlade could not confirm {0} after a write. The last confirmed values remain shown. Checking the current state is read-only; OpenBlade will not retry the write automatically.",
                 string.Join(", ", unconfirmedWrites.Select(SubsystemLabel)))
             : string.Empty;
+        HasPendingHyperBoostRestore = status.HyperBoostRestorePending;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
         LightingRefreshRate = status.LightingRefreshRate;
@@ -9296,6 +9379,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(ControlAccessStatus));
         Notify(nameof(CanRequestHardwareControl));
         Notify(nameof(CanReapplyChangedSettings));
+        Notify(nameof(CanRecoverHyperBoostRestore));
         Notify(nameof(CanCheckCurrentState));
         Notify(nameof(ShowReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));

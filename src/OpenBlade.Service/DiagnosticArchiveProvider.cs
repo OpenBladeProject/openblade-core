@@ -498,6 +498,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["status.revision"] = status.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["status.deviceVerified"] = status.DeviceVerified.ToString(),
             ["status.writesBlocked"] = status.WritesBlocked.ToString(),
+            ["status.hyperBoostRestorePending"] =
+                status.HyperBoostRestorePending.ToString(),
             ["status.potentialControllers"] = string.Join(", ", status.PotentialControllers),
             ["status.controllerDetectionWarning"] =
                 status.ControllerDetectionWarning ?? "Unavailable",

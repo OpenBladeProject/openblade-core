@@ -148,6 +148,9 @@ public sealed class IpcMessageCodecTests
         new ReapplyChangedSettingsRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
+        new RecoverHyperBoostRestoreRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid()),
         new SetLightingSuppressionRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -464,7 +467,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(50, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1049,7 +1052,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(50, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

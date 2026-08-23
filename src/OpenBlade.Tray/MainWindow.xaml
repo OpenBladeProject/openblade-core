@@ -2317,6 +2317,20 @@
                                                                 <TextBlock x:Uid="MainWindow_TextBlockCheckCurrentState" Text="Check current state" />
                                                             </StackPanel>
                                                         </Button>
+                                                        <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestore" HorizontalAlignment="Left"
+                                                                Margin="0,4,0,0"
+                                                                IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
+                                                                Visibility="{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}"
+                                                                Click="OnRecoverHyperBoostRestoreClick"
+                                                                AutomationProperties.Name="Retry saved HyperBoost restore">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <ProgressRing Width="14"
+                                                                              Height="14"
+                                                                              IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
+                                                                              Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
+                                                                <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestore" Text="Retry saved setting" />
+                                                            </StackPanel>
+                                                        </Button>
                                                     </StackPanel>
                                                 </Flyout>
                                             </Button.Flyout>
@@ -4539,6 +4553,31 @@
                                                     </Grid>
                                                 </Button>
                                             </Grid>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}"
+                                            Visibility="{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}">
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_TextBlockSavedHyperBoostRestore" Text="Saved HyperBoost restore" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <StackPanel Grid.Column="1" Spacing="8">
+                                                <TextBlock Text="{x:Bind ViewModel.HyperBoostRestoreRecoveryText, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}"
+                                                           TextWrapping="Wrap" />
+                                                <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestore"
+                                                        HorizontalAlignment="Left"
+                                                        IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
+                                                        Click="OnRecoverHyperBoostRestoreClick"
+                                                        AutomationProperties.Name="Retry saved HyperBoost restore">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <ProgressRing Width="14"
+                                                                      Height="14"
+                                                                      IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
+                                                                      Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
+                                                        <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestore" Text="Retry saved setting" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">

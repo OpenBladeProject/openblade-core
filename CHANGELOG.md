@@ -24,7 +24,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   The Tray also synchronizes its HyperBoost toggle directly from authoritative
   state after commands and confirmed reconciliation, including failed or
   indeterminate transitions where a user-mutated binding would otherwise stay
-  visually stale.
+  visually stale. If an indeterminate exit leaves an exact saved manual-fan
+  intent unconfirmed, OpenBlade now keeps all writes blocked and offers one
+  explicit, safety-gated restore attempt without automatic retries; repeated
+  observations no longer flood the bounded diagnostic history with the same
+  retained-journal message.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

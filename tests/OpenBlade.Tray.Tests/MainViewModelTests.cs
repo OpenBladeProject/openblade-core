@@ -2025,6 +2025,50 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PendingHyperBoostRestore_OffersOnlyTheExplicitRecoveryAction()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "The saved Performance performance and fan intent was restored after one user-authorized retry."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot pending = CreateStatus(verified: true, blocked: true) with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            HyperBoostRestorePending = true,
+        };
+        client.Publish(pending);
+        await WaitUntilAsync(() => viewModel.HasPendingHyperBoostRestore);
+
+        Assert.True(viewModel.HasAttention);
+        Assert.Equal(
+            "HyperBoost restore needs confirmation",
+            viewModel.AttentionSummary);
+        Assert.Equal("Recovery needed", viewModel.AttentionBadgeLabel);
+        Assert.Contains("exact saved setting once", viewModel.AttentionDetails);
+        Assert.True(viewModel.CanRecoverHyperBoostRestore);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.CanCheckCurrentState);
+
+        bool accepted = await viewModel.RecoverHyperBoostRestoreAsync(
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.Equal(1, client.RecoverHyperBoostRestoreCalls);
+        Assert.False(viewModel.IsHyperBoostRestoreRecoveryInProgress);
+
+        client.Publish(pending with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => !viewModel.CanRecoverHyperBoostRestore);
+    }
+
+    [Fact]
     public async Task UnconfirmedWrite_OffersReadOnlyCheckAndHidesReapply()
     {
         var observation = new TaskCompletionSource<ServiceStatusSnapshot>(
@@ -8839,6 +8883,7 @@ public sealed class MainViewModelTests
         public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
+        public int RecoverHyperBoostRestoreCalls { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public BatteryPolicy? BatteryPolicy { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
@@ -9057,6 +9102,13 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ReapplyChangedSettingsCalls++;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(
+            CancellationToken token)
+        {
+            RecoverHyperBoostRestoreCalls++;
             return MutateAsync(token);
         }
 

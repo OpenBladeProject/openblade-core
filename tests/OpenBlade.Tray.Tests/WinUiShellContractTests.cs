@@ -1343,6 +1343,23 @@ public sealed class WinUiShellContractTests
             "ViewModel.CheckCurrentStateAsync(CancellationToken.None)",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Retry saved HyperBoost restore\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("OnRecoverHyperBoostRestoreClick", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RecoverHyperBoostRestoreAsync(CancellationToken.None)",
+            window,
+            StringComparison.Ordinal);
     }
 
     [Fact]

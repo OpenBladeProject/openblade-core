@@ -103,6 +103,8 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ControlOperationResult> ReapplyChangedSettingsAsync(CancellationToken token);
 
+    Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(CancellationToken token);
+
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,
