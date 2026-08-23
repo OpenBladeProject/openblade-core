@@ -627,6 +627,9 @@
   <data name="High" xml:space="preserve">
     <value>高</value>
   </data>
+  <data name="HyperBoost" xml:space="preserve">
+    <value>HyperBoost</value>
+  </data>
   <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
     <value>HyperBoost 已关闭，但保存的性能和风扇设置尚未确认。重试只会恢复一次该确切设置；OpenBlade 不会自动重试。</value>
   </data>

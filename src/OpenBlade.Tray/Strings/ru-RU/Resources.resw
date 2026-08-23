@@ -1898,15 +1898,6 @@
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
     <value>Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.</value>
   </data>
-  <data name="MainWindow_TextBlockHyperBoost.Text" xml:space="preserve">
-    <value>HyperBoost</value>
-  </data>
-  <data name="MainWindow_ProgressRingApplyingHyperBoost.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Применение HyperBoost</value>
-  </data>
-  <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>HyperBoost</value>
-  </data>
   <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
     <value>Действие клавиши {0}</value>
   </data>

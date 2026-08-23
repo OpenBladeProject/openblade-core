@@ -73,8 +73,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private ResponsiveChoiceSelector? windowsPowerModeSelector;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
-    private bool changingHyperBoost;
-    private ToggleSwitch? hyperBoostToggle;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -868,18 +866,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             else
             {
                 dispatcherQueue.TryEnqueue(SynchronizeWindowsPowerModeSelection);
-            }
-        }
-
-        if (args.PropertyName == nameof(MainViewModel.HyperBoostActive))
-        {
-            if (dispatcherQueue.HasThreadAccess)
-            {
-                SynchronizeHyperBoostToggle();
-            }
-            else
-            {
-                dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);
             }
         }
 
@@ -1828,15 +1814,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
             || sender is not ResponsiveChoiceSelector selector
-            || args.SelectedItem is not PerformancePresetOption selected
-            || selected.Value == ViewModel.SelectedPerformance)
+            || args.SelectedItem is not LaptopPerformanceOption selected
+            || selected == ViewModel.SelectedLaptopPerformanceOption)
         {
             return;
         }
 
         changingPerformanceSelection = true;
-        if (ViewModel.SetPerformanceCommand is not AsyncRelayCommand command
-            || !command.CanExecute(selected.Value))
+        if (!ViewModel.CanSelectLaptopPerformance)
         {
             selector.RestoreAuthoritativeSelection();
             changingPerformanceSelection = false;
@@ -1845,7 +1830,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            await command.ExecuteAsync(selected.Value);
+            await ViewModel.SetLaptopPerformanceOptionAsync(
+                selected,
+                CancellationToken.None);
         }
         catch (Exception exception)
         {
@@ -2260,78 +2247,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             toggle.IsOn = ViewModel.IsGpuClockTuningEnabled;
             changingGpuClockTuning = false;
-        }
-    }
-
-    private async void OnHyperBoostToggled(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(
-            () => HandleHyperBoostToggledAsync(sender),
-            nameof(OnHyperBoostToggled));
-
-    private void OnHyperBoostToggleLoaded(object sender, RoutedEventArgs args)
-    {
-        if (Volatile.Read(ref disposed) != 0 || sender is not ToggleSwitch toggle)
-        {
-            return;
-        }
-
-        hyperBoostToggle = toggle;
-        SynchronizeHyperBoostToggle(toggle);
-    }
-
-    private void OnHyperBoostToggleUnloaded(object sender, RoutedEventArgs args)
-    {
-        if (ReferenceEquals(hyperBoostToggle, sender))
-        {
-            hyperBoostToggle = null;
-        }
-    }
-
-    private async Task HandleHyperBoostToggledAsync(object sender)
-    {
-        if (changingHyperBoost
-            || Volatile.Read(ref disposed) != 0
-            || sender is not ToggleSwitch toggle
-            || toggle.IsOn == ViewModel.HyperBoostActive)
-        {
-            return;
-        }
-
-        changingHyperBoost = true;
-        try
-        {
-            await ViewModel.SetHyperBoostEnabledAsync(
-                toggle.IsOn,
-                CancellationToken.None);
-        }
-        finally
-        {
-            changingHyperBoost = false;
-            dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);
-        }
-    }
-
-    private void SynchronizeHyperBoostToggle() =>
-        SynchronizeHyperBoostToggle(hyperBoostToggle);
-
-    private void SynchronizeHyperBoostToggle(ToggleSwitch? toggle)
-    {
-        if (Volatile.Read(ref disposed) != 0
-            || toggle is null
-            || toggle.IsOn == ViewModel.HyperBoostActive)
-        {
-            return;
-        }
-
-        bool wasChangingHyperBoost = changingHyperBoost;
-        changingHyperBoost = true;
-        try
-        {
-            toggle.IsOn = ViewModel.HyperBoostActive;
-        }
-        finally
-        {
-            changingHyperBoost = wasChangingHyperBoost;
         }
     }
 
@@ -3124,7 +3039,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 DispatcherQueuePriority.Low,
                 () =>
                 {
-                    SynchronizeHyperBoostToggle();
                     RefreshDashboardCards();
                     UpdateDashboardLayout();
                 });

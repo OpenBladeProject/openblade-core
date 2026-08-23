@@ -75,6 +75,35 @@ public sealed class PerformancePresetPresentationTests
     }
 
     [Fact]
+    public void CreateLaptopOptions_AppendsTransientHyperBoostWithoutChangingPresets()
+    {
+        IReadOnlyList<PerformancePresetOption> presets =
+        [
+            new(PerformancePreset.Balanced, "Balanced"),
+            new(PerformancePreset.Performance, "Performance"),
+        ];
+
+        IReadOnlyList<LaptopPerformanceOption> withoutHyperBoost =
+            PerformancePresetPresentation.CreateLaptopOptions(
+                presets,
+                includeHyperBoost: false);
+        IReadOnlyList<LaptopPerformanceOption> withHyperBoost =
+            PerformancePresetPresentation.CreateLaptopOptions(
+                presets,
+                includeHyperBoost: true);
+
+        Assert.Equal(
+            [PerformancePreset.Balanced, PerformancePreset.Performance],
+            withoutHyperBoost.Select(option => option.Value));
+        Assert.Equal(
+            ["Balanced", "Performance", "HyperBoost"],
+            withHyperBoost.Select(option => option.Label));
+        Assert.True(withHyperBoost[^1].IsHyperBoost);
+        Assert.Null(withHyperBoost[^1].Value);
+        Assert.Equal(2, presets.Count);
+    }
+
+    [Fact]
     public void IsAvailable_UsesExplicitPowerSourceRules()
     {
         Assert.True(PerformancePresetPresentation.IsAvailable(

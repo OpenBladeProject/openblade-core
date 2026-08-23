@@ -567,7 +567,6 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
-                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
@@ -578,24 +577,30 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock x:Uid="MainWindow_TextBlockLaptopPerformance" Text="Laptop performance"
-                                                   Style="{StaticResource CardTitleStyle}"
-                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{Binding HyperBoostDescription}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   HorizontalAlignment="Left"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="520"
+                                                   Visibility="Collapsed"
+                                                   local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostVisible}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
                                                 Spacing="10"
                                                 VerticalAlignment="Center">
                                         <ProgressRing x:Uid="MainWindow_ProgressRingApplyingPowerMode" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{Binding IsPerformanceOperationInProgress}"
+                                                      IsActive="{Binding IsLaptopPerformanceOperationInProgress}"
                                                       AutomationProperties.Name="Applying power mode" />
                                         <local:ResponsiveChoiceSelector x:Uid="MainWindow_DashboardPerformanceSelectorText" x:Name="DashboardPerformanceSelector"
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Laptop performance"
-                                                                        IsEnabled="{Binding CanEditPerformance}"
-                                                                        ItemsSource="{Binding AvailableActivePerformanceOptions}"
+                                                                        IsEnabled="{Binding CanSelectLaptopPerformance}"
+                                                                        ItemsSource="{Binding AvailableLaptopPerformanceOptions}"
                                                                         DisplayMemberPath="Label"
-                                                                        SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                                                        SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
                                                                         SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -626,45 +631,6 @@
                                                                     SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
                                                                     Loaded="OnWindowsPowerModeSelectorLoaded"
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
-                                </Grid>
-                            </Border>
-                            <Border x:Name="HyperBoostCard"
-                                    Style="{StaticResource SettingsNeutralSubcardStyle}"
-                                    Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostVisible}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock x:Uid="MainWindow_TextBlockHyperBoost"
-                                                   Text="HyperBoost"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{Binding HyperBoostDescription}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="10"
-                                                VerticalAlignment="Center">
-                                        <ProgressRing x:Uid="MainWindow_ProgressRingApplyingHyperBoost"
-                                                      Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{Binding IsHyperBoostOperationInProgress}"
-                                                      AutomationProperties.Name="Applying HyperBoost" />
-                                        <ToggleSwitch x:Name="HyperBoostToggle"
-                                                      x:Uid="MainWindow_HyperBoostToggle"
-                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                      MinWidth="0"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsEnabled="{Binding CanToggleHyperBoost}"
-                                                      AutomationProperties.Name="HyperBoost"
-                                                      Loaded="OnHyperBoostToggleLoaded"
-                                                      Unloaded="OnHyperBoostToggleUnloaded"
-                                                      Toggled="OnHyperBoostToggled" />
-                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"

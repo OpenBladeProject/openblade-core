@@ -627,6 +627,9 @@
   <data name="High" xml:space="preserve">
     <value>[!! Hígh ~~ !!]</value>
   </data>
+  <data name="HyperBoost" xml:space="preserve">
+    <value>[!! HypérBóóst ~~~~ !!]</value>
+  </data>
   <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
     <value>[!! HypérBóóst ís óff, bút thé sávéd pérfórmáncé ánd fán séttíng wás nót cónfírméd. Rétry réstórés thát éxáct sávéd séttíng óncé; OpenBlade wíll nót rétry áútómátícálly. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>

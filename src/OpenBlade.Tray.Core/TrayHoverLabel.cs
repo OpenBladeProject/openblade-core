@@ -54,7 +54,8 @@ public static class TrayHoverLabelFormatter
         int? cpuTemperatureCelsius,
         int? gpuTemperatureCelsius,
         int? fan1Rpm,
-        int? fan2Rpm)
+        int? fan2Rpm,
+        string? performanceLabelOverride = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         TrayHoverLabelItemKind[] selectedItems = items
@@ -75,9 +76,11 @@ public static class TrayHoverLabelFormatter
             .Where(item => item != TrayHoverLabelItemKind.AppName)
             .Select(item => (Kind: item, Value: item switch
             {
-                TrayHoverLabelItemKind.ActiveProfile => FormatProfile(powerSource, performance),
+                TrayHoverLabelItemKind.ActiveProfile =>
+                    FormatProfile(powerSource, performance, performanceLabelOverride),
                 TrayHoverLabelItemKind.PowerSource => FormatPowerSource(powerSource),
-                TrayHoverLabelItemKind.PowerMode => PerformancePresetPresentation.Label(performance),
+                TrayHoverLabelItemKind.PowerMode => performanceLabelOverride
+                    ?? PerformancePresetPresentation.Label(performance),
                 TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
                 TrayHoverLabelItemKind.CpuTemperature => FormatTemperature("CPU", cpuTemperatureCelsius),
                 // A missing NVIDIA reading means the discrete GPU is unavailable
@@ -150,23 +153,29 @@ public static class TrayHoverLabelFormatter
 
     private static string FormatProfile(
         PowerSource powerSource,
-        PerformancePreset performance) => powerSource switch
+        PerformancePreset performance,
+        string? performanceLabelOverride = null)
+    {
+        string performanceLabel = performanceLabelOverride
+            ?? PerformancePresetPresentation.Label(performance);
+        return powerSource switch
         {
             PowerSource.PluggedIn =>
                 TrayText.Format(
                     "AC · {0}",
-                    PerformancePresetPresentation.Label(performance)),
+                    performanceLabel),
             PowerSource.Battery =>
                 TrayText.Format(
                     "Battery · {0}",
-                    PerformancePresetPresentation.Label(performance)),
+                    performanceLabel),
             PowerSource.UsbC =>
                 TrayText.Format(
                     "USB-C · {0}",
-                    PerformancePresetPresentation.Label(performance)),
+                    performanceLabel),
             PowerSource.ExternalUnknown => PowerSourcePresentation.Label(powerSource),
             _ => TrayText.Get("Power source unavailable"),
         };
+    }
 
     private static string FormatPowerSource(PowerSource powerSource) =>
         PowerSourcePresentation.Label(powerSource);

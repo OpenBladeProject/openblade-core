@@ -21,17 +21,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
   submission itself becomes indeterminate, one fresh scoped readback now
   confirms an applied target or an unchanged prior state without retrying the
   hardware write; unavailable or contradictory readback remains fail-closed.
-  The Tray also synchronizes its HyperBoost toggle directly from authoritative
+  The Tray now presents HyperBoost as a transient Laptop performance choice on
+  both dashboards and synchronizes that selection directly from authoritative
   state after commands and confirmed reconciliation, including failed or
-  indeterminate transitions where a user-mutated binding would otherwise stay
-  visually stale. If an indeterminate exit leaves an exact saved manual-fan
-  intent unconfirmed, OpenBlade now keeps all writes blocked and offers one
-  explicit, safety-gated restore attempt without automatic retries; repeated
-  observations no longer flood the bounded diagnostic history with the same
-  retained-journal message. A successful attended recovery now keeps the saved
-  performance and fan intent active until the power source changes, preventing
-  normal profile reconciliation from immediately replacing it, and journal
-  retirement preserves that exact intent until its final clear succeeds.
+  indeterminate transitions where a user selection would otherwise stay
+  visually stale. Selecting another performance choice exits HyperBoost first,
+  restores the saved baseline, and applies a different requested preset only
+  after that restoration is confirmed. If an indeterminate exit leaves an
+  exact saved manual-fan intent unconfirmed, OpenBlade now keeps all writes
+  blocked and offers one explicit, safety-gated restore attempt without
+  automatic retries; repeated observations no longer flood the bounded
+  diagnostic history with the same retained-journal message. A successful
+  attended recovery now keeps the saved performance and fan intent active until
+  the power source changes, preventing normal profile reconciliation from
+  immediately replacing it, and journal retirement preserves that exact intent
+  until its final clear succeeds.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and
@@ -55,8 +59,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Refreshed the fan-mode selector immediately when HyperBoost activates or
   exits so its enabled state stays synchronized with the authoritative control
   gate.
-- Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
-  labels in Simplified Chinese and Russian instead of falling back to English.
+- Localized the HyperBoost performance choice and cooling-pad guidance in
+  Simplified Chinese and Russian instead of falling back to English.
 - Wired the HyperBoost ownership journal into the production Service composition
   so a confirmed activation is durably recorded before lifecycle recovery is
   armed.
@@ -67,9 +71,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
   low-power, and unexpected-exit evidence now admits production use without
   the cooling pad. Safety boundaries never retry an indeterminate write.
-- Presented padless HyperBoost status in Quick Controls and noted that full
-  cooling-pad integration is planned for a future update. The toggle is
-  available only when the service reports reviewed write access.
+- Presented padless HyperBoost as a transient Laptop performance choice on the
+  main dashboard and in Quick Controls, while keeping saved profiles unchanged.
+  The choice is available only when the service reports reviewed write access
+  and confirms the required full-power, cooling-pad-absent state.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,

@@ -194,7 +194,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            6,
+            5,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -1411,7 +1411,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -3587,6 +3587,23 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "ItemsSource=\"{Binding AvailableLaptopPerformanceOptions, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{Binding SelectedLaptopPerformanceOption, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                dashboardXaml,
+                "IsEnabled=\"{Binding CanSelectLaptopPerformance, Mode=OneWay}\""));
+        Assert.Contains(
+            "ViewModel.SetLaptopPerformanceOptionAsync(",
+            dashboardWindow,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("private void OnRootSizeChanged(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);

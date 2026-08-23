@@ -281,6 +281,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableUsbCPerformanceOptions = [];
+    private IReadOnlyList<LaptopPerformanceOption> availableLaptopPerformanceOptions = [];
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<FanModeOption> availableFanModeOptions = [];
@@ -988,6 +989,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsUsbCProfileActive));
             Notify(nameof(AvailableActivePerformanceOptions));
             Notify(nameof(SelectedPerformanceOption));
+            RefreshLaptopPerformanceOptions();
             Notify(nameof(SelectedWindowsPowerModeOption));
             Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(CanEditWindowsPowerMode));
@@ -1047,7 +1049,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string ActivePerformanceLabel => IsConnected
-        ? PerformancePresetPresentation.Label(SelectedPerformance)
+        ? HyperBoostActive
+            ? TrayText.Get("HyperBoost")
+            : PerformancePresetPresentation.Label(SelectedPerformance)
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
@@ -1824,8 +1828,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             _ => [],
         };
 
+    public IReadOnlyList<LaptopPerformanceOption> AvailableLaptopPerformanceOptions
+    {
+        get => availableLaptopPerformanceOptions;
+        private set => SetField(ref availableLaptopPerformanceOptions, value);
+    }
+
     public PerformancePresetOption? SelectedPerformanceOption =>
         FindPerformanceOption(AvailableActivePerformanceOptions, SelectedPerformance);
+
+    public LaptopPerformanceOption? SelectedLaptopPerformanceOption =>
+        HyperBoostActive
+            ? AvailableLaptopPerformanceOptions.FirstOrDefault(option => option.IsHyperBoost)
+            : AvailableLaptopPerformanceOptions.FirstOrDefault(
+                option => option.Value == SelectedPerformance);
 
     public IReadOnlyList<WindowsPowerModeOption> AvailableWindowsPowerModeOptions =>
         WindowsPowerModeOptions;
@@ -2007,6 +2023,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SetField(ref selectedPerformance, value);
             Notify(nameof(ActivePerformanceLabel));
             Notify(nameof(SelectedPerformanceOption));
+            RefreshLaptopPerformanceOptions();
+            Notify(nameof(SelectedLaptopPerformanceOption));
             Notify(nameof(SelectedWindowsPowerModeOption));
             Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(IsSilentSelected));
@@ -2280,6 +2298,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive;
 
+    public bool CanSelectLaptopPerformance =>
+        !IsPerformanceOperationInProgress
+        && !IsHyperBoostOperationInProgress
+        && (HyperBoostActive ? CanToggleHyperBoost : CanEditPerformance);
+
+    public bool IsLaptopPerformanceOperationInProgress =>
+        IsPerformanceOperationInProgress || IsHyperBoostOperationInProgress;
+
     public bool CanEditGpuClockTuning =>
         CanToggleGpuClockTuning
         && IsGpuClockTuningEnabled
@@ -2300,6 +2326,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SetField(ref isPerformanceOperationInProgress, value);
                 NotifyCommands();
                 Notify(nameof(CanEditPerformance));
+                Notify(nameof(CanSelectLaptopPerformance));
+                Notify(nameof(IsLaptopPerformanceOperationInProgress));
                 Notify(nameof(CanToggleGpuClockTuning));
                 Notify(nameof(CanEditGpuClockTuning));
             }
@@ -2608,9 +2636,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref hyperBoostActive, value);
+            RefreshLaptopPerformanceOptions();
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
             Notify(nameof(CanEditPerformance));
+            Notify(nameof(CanSelectLaptopPerformance));
+            Notify(nameof(SelectedLaptopPerformanceOption));
+            Notify(nameof(ActivePerformanceLabel));
+            NotifyTrayHoverLabel();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyCommands();
@@ -2629,6 +2662,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref isHyperBoostOperationInProgress, value);
             Notify(nameof(CanToggleHyperBoost));
+            Notify(nameof(CanSelectLaptopPerformance));
+            Notify(nameof(IsLaptopPerformanceOperationInProgress));
+            RefreshLaptopPerformanceOptions();
         }
     }
 
@@ -5013,6 +5049,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(BatteryPerformanceOption));
             Notify(nameof(UsbCPerformanceOption));
         }
+        RefreshLaptopPerformanceOptions();
         FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
             .Order()
@@ -5287,6 +5324,35 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
         }
+    }
+
+    private void RefreshLaptopPerformanceOptions()
+    {
+        IReadOnlyList<PerformancePresetOption> presets = ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
+            PowerSource.Battery => AvailableBatteryPerformanceOptions,
+            PowerSource.UsbC => AvailableUsbCPerformanceOptions,
+            PowerSource.ExternalUnknown => [],
+            _ => [],
+        };
+        bool includeHyperBoost = IsHyperBoostVisible
+            && (HyperBoostActive
+                || IsHyperBoostOperationInProgress
+                || CanToggleHyperBoost);
+        IReadOnlyList<LaptopPerformanceOption> options =
+            StableOptionCollection.ReuseEquivalent(
+                AvailableLaptopPerformanceOptions,
+                PerformancePresetPresentation.CreateLaptopOptions(
+                    presets,
+                    includeHyperBoost));
+        if (ReferenceEquals(AvailableLaptopPerformanceOptions, options))
+        {
+            return;
+        }
+
+        AvailableLaptopPerformanceOptions = options;
+        Notify(nameof(SelectedLaptopPerformanceOption));
     }
 
     public bool HasEnabledTrayHoverLiveReadings =>
@@ -5638,6 +5704,48 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return ApplyGpuClockTuningAsync(
             new GpuClockTuningSettings(enabled, CurrentGpuClockOffsets),
             token);
+    }
+
+    public async Task SetLaptopPerformanceOptionAsync(
+        LaptopPerformanceOption option,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+        if (!AvailableLaptopPerformanceOptions.Contains(option))
+        {
+            throw new InvalidOperationException("Laptop performance option is unavailable.");
+        }
+
+        if (option.IsHyperBoost)
+        {
+            await SetHyperBoostEnabledAsync(enabled: true, token);
+            return;
+        }
+
+        if (option.Value is not { } requested)
+        {
+            throw new InvalidOperationException("Laptop performance option is invalid.");
+        }
+
+        if (HyperBoostActive)
+        {
+            await SetHyperBoostEnabledAsync(enabled: false, token);
+            if (HyperBoostActive || HasPendingHyperBoostRestore || HasUnconfirmedWrites)
+            {
+                return;
+            }
+        }
+
+        if (requested == SelectedPerformance)
+        {
+            return;
+        }
+        if (!CanSetPerformance(requested))
+        {
+            throw new InvalidOperationException("Laptop performance control is unavailable.");
+        }
+
+        await SetPerformanceAsync(requested, token);
     }
 
     public async Task SetHyperBoostEnabledAsync(
@@ -9383,6 +9491,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanCheckCurrentState));
         Notify(nameof(ShowReapplyChangedSettings));
         Notify(nameof(CanEditPerformance));
+        Notify(nameof(CanSelectLaptopPerformance));
         Notify(nameof(CanEditWindowsPowerMode));
         Notify(nameof(CanToggleGpuClockTuning));
         Notify(nameof(CanEditGpuClockTuning));
@@ -9390,6 +9499,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(IsHyperBoostWritable));
         Notify(nameof(CanToggleHyperBoost));
         Notify(nameof(HyperBoostDescription));
+        Notify(nameof(AvailableLaptopPerformanceOptions));
+        Notify(nameof(SelectedLaptopPerformanceOption));
         Notify(nameof(CanEditFanControl));
         Notify(nameof(CanChangeFanMode));
         NotifyGamingModeKeyPolicy();
@@ -9464,7 +9575,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LiveReadings?.CpuTemperatureCelsius,
             LiveReadings?.GpuTemperatureCelsius,
             LiveReadings?.Fan1Rpm,
-            LiveReadings?.Fan2Rpm);
+            LiveReadings?.Fan2Rpm,
+            HyperBoostActive ? TrayText.Get("HyperBoost") : null);
 
     private void NotifyTrayHoverLabel()
     {

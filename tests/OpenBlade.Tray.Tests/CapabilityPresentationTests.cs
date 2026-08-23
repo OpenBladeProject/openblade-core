@@ -27,140 +27,65 @@ public sealed class CapabilityPresentationTests
     ];
 
     [Fact]
-    public void MainWindow_HyperBoostUsesCapabilityGatedConfirmedToggle()
+    public void MainWindow_HyperBoostUsesCapabilityGatedLaptopPerformanceChoice()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
-        XElement card = NamedElement(document, "Border", "HyperBoostCard");
-        string presentation = card.ToString();
+        XElement selector = NamedElement(
+            document,
+            "ResponsiveChoiceSelector",
+            "DashboardPerformanceSelector");
+        XElement row = selector.Ancestors().First(element =>
+            element.Name.LocalName == "Border");
 
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Name") == "HyperBoostCard"
+            || Attribute(element, "Name") == "HyperBoostToggle");
+        Assert.Equal(
+            "{Binding AvailableLaptopPerformanceOptions}",
+            Attribute(selector, "ItemsSource"));
+        Assert.Equal(
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
+            Attribute(selector, "SelectedItem"));
+        Assert.Equal(
+            "{Binding CanSelectLaptopPerformance}",
+            Attribute(selector, "IsEnabled"));
+        XElement guidance = Assert.Single(row.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{Binding HyperBoostDescription}");
         Assert.Equal(
             "{Binding IsHyperBoostVisible}",
-            Attribute(card, "AnimatedVisibility.IsVisible"));
-        XElement toggle = Assert.Single(
-            card.Descendants(),
-            element => element.Name.LocalName == "ToggleSwitch");
-        Assert.Null(Attribute(toggle, "IsOn"));
-        Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
-        Assert.Equal("OnHyperBoostToggleLoaded", Attribute(toggle, "Loaded"));
-        Assert.Equal("OnHyperBoostToggleUnloaded", Attribute(toggle, "Unloaded"));
-        Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
-        Assert.Equal("MainWindow_HyperBoostToggle", Attribute(toggle, "Uid"));
-        Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
-        Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "HyperBoostCoolingPadDisclaimer",
-            presentation,
-            StringComparison.Ordinal);
+            Attribute(guidance, "AnimatedVisibility.IsVisible"));
         XElement progress = Assert.Single(
-            card.Descendants(),
+            row.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
         Assert.Equal(
-            "MainWindow_ProgressRingApplyingHyperBoost",
-            Attribute(progress, "Uid"));
-        Assert.Equal(
-            "{Binding IsHyperBoostOperationInProgress}",
+            "{Binding IsLaptopPerformanceOperationInProgress}",
             Attribute(progress, "IsActive"));
-        XElement title = Assert.Single(
-            card.Descendants(),
-            element => element.Name.LocalName == "TextBlock"
-                && Attribute(element, "Text") == "HyperBoost");
-        Assert.Equal("MainWindow_TextBlockHyperBoost", Attribute(title, "Uid"));
     }
 
     [Fact]
-    public void MainWindow_HyperBoostSynchronizesFromItsAuthoritativeOwner()
+    public void MainWindow_HyperBoostSelectionRoutesThroughUnifiedOperation()
     {
         string window = ReadTraySource("MainWindow.xaml.cs");
         int handlerStart = window.IndexOf(
-            "private async Task HandleHyperBoostToggledAsync(",
+            "private async void OnDashboardPerformanceChanged(",
             StringComparison.Ordinal);
         int handlerEnd = window.IndexOf(
-            "private async void OnBlockWindowsKeyInGamingModeToggled(",
+            "private void OnWindowsPowerModeChanged(",
             handlerStart,
             StringComparison.Ordinal);
         Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
         string handler = window[handlerStart..handlerEnd];
-        int loadedStart = window.IndexOf(
-            "private void OnHyperBoostToggleLoaded(",
-            StringComparison.Ordinal);
-        int unloadedStart = window.IndexOf(
-            "private void OnHyperBoostToggleUnloaded(",
-            loadedStart,
-            StringComparison.Ordinal);
-        Assert.True(loadedStart >= 0 && unloadedStart > loadedStart);
-        string loadedHandler = window[loadedStart..unloadedStart];
-        int synchronizeStart = handler.IndexOf(
-            "private void SynchronizeHyperBoostToggle() =>",
-            StringComparison.Ordinal);
-        Assert.True(synchronizeStart >= 0);
-        string synchronization = handler[synchronizeStart..];
 
-        Assert.DoesNotContain(
-            "SynchronizeHyperBoostToggle(toggle);",
+        Assert.Contains("LaptopPerformanceOption selected", handler, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CanSelectLaptopPerformance", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.SetLaptopPerformanceOptionAsync(",
             handler,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("toggle.SetBinding(", handler, StringComparison.Ordinal);
-        Assert.True(
-            handler.IndexOf(
-                "changingHyperBoost = false;",
-                StringComparison.Ordinal)
-            < handler.IndexOf(
-                "dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);",
-                StringComparison.Ordinal));
-        Assert.Contains(
-            "if (args.PropertyName == nameof(MainViewModel.HyperBoostActive))",
-            window,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);",
-            window,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "hyperBoostToggle = toggle;",
-            loadedHandler,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "SynchronizeHyperBoostToggle(toggle);",
-            loadedHandler,
-            StringComparison.Ordinal);
-        Assert.True(
-            loadedHandler.IndexOf("hyperBoostToggle = toggle;", StringComparison.Ordinal)
-            < loadedHandler.IndexOf(
-                "SynchronizeHyperBoostToggle(toggle);",
-                StringComparison.Ordinal));
-        Assert.Contains(
-            "if (ReferenceEquals(hyperBoostToggle, sender))",
-            window,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "toggle.IsOn = ViewModel.HyperBoostActive;",
-            synchronization,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "changingHyperBoost = true;",
-            synchronization,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "changingHyperBoost = wasChangingHyperBoost;",
-            synchronization,
-            StringComparison.Ordinal);
-        int navigationStart = window.IndexOf(
-            "private void ApplyNavigationDestination(string destination)",
-            StringComparison.Ordinal);
-        int navigationEnd = window.IndexOf(
-            "internal void SelectLocalizationSnapshotPage(string destination)",
-            navigationStart,
-            StringComparison.Ordinal);
-        Assert.True(navigationStart >= 0 && navigationEnd > navigationStart);
-        string navigation = window[navigationStart..navigationEnd];
-        int homeBranch = navigation.IndexOf(
-            "else if (destination == \"home\")",
-            StringComparison.Ordinal);
-        Assert.True(homeBranch >= 0);
-        Assert.Contains(
-            "SynchronizeHyperBoostToggle();",
-            navigation[homeBranch..],
-            StringComparison.Ordinal);
+        Assert.Contains("selector.RestoreAuthoritativeSelection();", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("HyperBoostToggle", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnHyperBoostToggled", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -637,7 +562,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Padding") == compactPaddingReference)
             .ToArray();
 
-        Assert.Equal(15, compactRows.Length);
+        Assert.Equal(14, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -656,7 +581,6 @@ public sealed class CapabilityPresentationTests
         });
         Assert.Equal(
             [
-                "Laptop performance",
                 "GPU core clock offset",
                 "GPU memory clock offset",
                 "CPU",
@@ -680,7 +604,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(9, animatedCompactRows.Length);
+        Assert.Equal(8, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -947,13 +871,13 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
-            "{Binding AvailableActivePerformanceOptions}",
+            "{Binding AvailableLaptopPerformanceOptions}",
             Attribute(performance, "ItemsSource"));
         Assert.Equal(
-            "{Binding SelectedPerformanceOption, Mode=OneWay}",
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
-            "{Binding CanEditPerformance}",
+            "{Binding CanSelectLaptopPerformance}",
             Attribute(performance, "IsEnabled"));
         Assert.All(
             new[]
@@ -1202,6 +1126,7 @@ public sealed class CapabilityPresentationTests
         string[] forbiddenAssignments =
         [
             "selector.SelectedItem = ViewModel.SelectedPerformanceOption;",
+            "selector.SelectedItem = ViewModel.SelectedLaptopPerformanceOption;",
             "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
             "selector.SelectedItem = selector.Name == \"DashboardCustomCpuSelector\"",
             "selector.SelectedItem = ViewModel.SelectedFanModeOption;",
