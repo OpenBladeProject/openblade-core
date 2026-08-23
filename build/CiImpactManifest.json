@@ -177,6 +177,10 @@
       "patterns": ["build/PullRequestVersion.ps1", ".github/workflows/pr-version.yml", ".github/workflows/ci.yml", ".github/PULL_REQUEST_TEMPLATE.md"]
     },
     {
+      "test": "tests/Build.Tests/SparkAgentWorkflow.Tests.ps1",
+      "patterns": [".agents/skills/openblade-spark-operators/*", ".codex/agents/*"]
+    },
+    {
       "test": "tests/Build.Tests/RazerBrightnessDriverPackage.Tests.ps1",
       "patterns": ["build/Export-RazerBrightnessDriverPackage.ps1", "src/OpenBlade.Service/WindowsRazerDisplayBrightnessHidTransport.cs", "docs/razer-brightness-driver-package.md", ".gitattributes"]
     },

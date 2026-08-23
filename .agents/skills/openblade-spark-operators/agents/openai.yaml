@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenBlade Spark Operators"
+  short_description: "Delegate bounded OpenBlade operations to Spark"
+  default_prompt: "Use $openblade-spark-operators to verify exact named-agent support, then run the appropriate bounded OpenBlade validation or publishing workflow."
