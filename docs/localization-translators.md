@@ -99,11 +99,13 @@ This makes a concurrent editor save fail instead of silently losing either versi
 The importer validates complete .NET composite-format items, markup, access-key
 counts, and collisions among simultaneously visible installer actions, significant
 whitespace, line breaks,
-punctuation-only values, protected technical identifiers, control characters, and
-spreadsheet-formula prefixes. If writing or repository localization validation fails,
+punctuation-only values, protected technical identifiers, control and unsafe Unicode
+format characters, and spreadsheet-formula prefixes. If writing or repository
+localization validation fails,
 all touched catalogs are restored. Import never edits language admission or packaging;
-adding a production locale remains a separate reviewed change. `qps-ploc` is always
-rejected as a translator target and remains development-only.
+export and import accept only the currently admitted `zh-CN` and `ru-RU` production
+locales. Adding another production locale remains a separate reviewed change.
+`qps-ploc` is always rejected as a translator target and remains development-only.
 
 The workbook's stable identity is `Surface + Key`. Format version 2 gives each row a
 SHA-256 hash over its immutable source/context fields, repeats a source catalog hash

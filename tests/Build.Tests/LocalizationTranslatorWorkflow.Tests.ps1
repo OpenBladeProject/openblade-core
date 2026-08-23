@@ -172,6 +172,10 @@ try {
         Export-LocalizationWorkbook -Repository $repository -Locale 'qps-ploc' `
             -Path (Join-Path $testRoot 'qps.csv')
     } 'Pseudo-localization must not be exportable.'
+    Assert-Throws 'not an admitted production translation locale' {
+        Export-LocalizationWorkbook -Repository $repository -Locale 'fr-FR' `
+            -Path (Join-Path $testRoot 'fr-FR.csv')
+    } 'Translator tooling must not admit a new production locale implicitly.'
 
     $cases = @(
         @('duplicate', 'duplicate row', {
@@ -306,6 +310,24 @@ try {
             $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
             $candidate.Translation = $candidate.Translation.Insert(1, [string][char]0x2028)
             return $copy
+        }),
+        @('zero-width-space', 'forbidden control character or line separator', {
+            param($copy)
+            $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
+            $candidate.Translation = [string][char]0x200B
+            return $copy
+        }),
+        @('bidi-override', 'forbidden control character or line separator', {
+            param($copy)
+            $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
+            $candidate.Translation = $candidate.Translation.Insert(1, [string][char]0x202E)
+            return $copy
+        }),
+        @('zero-width-joiner-only', 'is blank', {
+            param($copy)
+            $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
+            $candidate.Translation = [string][char]0x200D
+            return $copy
         }))
     foreach ($case in $cases) {
         $copy = @(Import-Csv -LiteralPath $first)
@@ -330,6 +352,34 @@ try {
         Import-LocalizationWorkbook `
             -Repository $repository -Path $accessCollision -ValidateOnly
     } 'Simultaneously visible installer actions must use distinct access keys.'
+
+    $accessGroupFixture = New-TranslatorFixture
+    try {
+        Import-Module (Join-Path $accessGroupFixture `
+            'build\LocalizationTranslatorWorkflow.psm1') -Force
+        foreach ($relative in @(
+                'build\installer\OpenBlade.Installer.UI\Properties\Resources.resx',
+                'build\installer\OpenBlade.Installer.UI\Properties\Resources.ru-RU.resx')) {
+            $path = Join-Path $accessGroupFixture $relative
+            [xml]$document = [IO.File]::ReadAllText($path)
+            $node = @($document.root.data | Where-Object {
+                    [string]$_.name -ceq '_Install'
+                })[0]
+            [void]$document.root.RemoveChild($node)
+            $document.Save($path)
+        }
+        $accessGroupWorkbook = Join-Path $testRoot 'access-group-drift.csv'
+        [void](Export-LocalizationWorkbook `
+            -Repository $accessGroupFixture -Locale 'ru-RU' -Path $accessGroupWorkbook)
+        Assert-Throws 'references missing resource.*installer/_Install' {
+            Import-LocalizationWorkbook `
+                -Repository $accessGroupFixture -Path $accessGroupWorkbook -ValidateOnly
+        } 'Access-key groups must fail closed when an authoritative key is renamed.'
+    }
+    finally {
+        Import-Module $modulePath -Force
+        Remove-Item -LiteralPath $accessGroupFixture -Recurse -Force
+    }
 
     $screenshotFixture = Join-Path $testRoot 'screenshot-set'
     $screenshotMap = Get-Content -LiteralPath (Join-Path $repository `
@@ -363,6 +413,16 @@ try {
     Assert-Throws 'row has 13 fields; expected 12' {
         Import-LocalizationWorkbook -Repository $repository -Path $extraField -ValidateOnly
     } 'Extra data fields must fail closed instead of being silently discarded.'
+
+    $invalidUtf8 = Join-Path $testRoot 'invalid-utf8.csv'
+    $validUtf8Bytes = [IO.File]::ReadAllBytes($first)
+    $invalidUtf8Bytes = [byte[]]::new($validUtf8Bytes.Length + 1)
+    [Buffer]::BlockCopy($validUtf8Bytes, 0, $invalidUtf8Bytes, 0, $validUtf8Bytes.Length)
+    $invalidUtf8Bytes[$invalidUtf8Bytes.Length - 1] = 0xC3
+    [IO.File]::WriteAllBytes($invalidUtf8, $invalidUtf8Bytes)
+    Assert-Throws 'not valid UTF-8 CSV' {
+        Import-LocalizationWorkbook -Repository $repository -Path $invalidUtf8 -ValidateOnly
+    } 'A BOM-prefixed workbook with malformed UTF-8 must fail during decoding.'
 
     $pseudoImport = Join-Path $testRoot 'pseudo-import.csv'
     $pseudoRows = @(Import-Csv -LiteralPath $first)
@@ -718,14 +778,12 @@ throw 'Target catalog was not write-locked during import.'
     $sentinel = Join-Path $protectedPackage 'sentinel.txt'
     [IO.File]::WriteAllText($sentinel, 'preserve')
     Assert-Throws 'cannot be used as a translator target' {
-        & $packageScript -Locale qps-ploc -OutputDirectory $packageRoot `
-            -SkipScreenshots -Force
+        & $packageScript -Locale qps-ploc -OutputDirectory $packageRoot -Force
     } 'Locale validation must happen before replacing an existing package.'
     Assert-True (Test-Path -LiteralPath $sentinel -PathType Leaf) `
         'A rejected locale must not delete an existing package path.'
 
-    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot `
-        -SkipScreenshots -Force
+    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
     $archive = Join-Path $packageRoot 'OpenBlade-ru-RU-translator.zip'
     $firstArchiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
@@ -738,8 +796,7 @@ throw 'Target catalog was not write-locked during import.'
     $generatedRows = @(Import-Csv -LiteralPath $generatedWorkbook)
     Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
         'The package manifest must expose the workbook target-catalog binding.'
-    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot `
-        -SkipScreenshots -Force
+    & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
     Assert-Equal $firstArchiveHash `
         (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash `
         'Repeated package exports must produce the same archive bytes.'

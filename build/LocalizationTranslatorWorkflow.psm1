@@ -2,6 +2,7 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $script:WorkbookFormatVersion = '2'
+$script:TranslatorLocales = @('zh-CN', 'ru-RU')
 $script:WorkbookHeaders = @(
     'FormatVersion',
     'Locale',
@@ -124,6 +125,10 @@ function Assert-TranslatorLocale {
     }
     if ($culture.IsNeutralCulture -or $culture.Name -cne $Locale) {
         throw "Translator locale '$Locale' must be a canonical, specific culture name."
+    }
+    if ($script:TranslatorLocales -cnotcontains $Locale) {
+        throw "Locale '$Locale' is not an admitted production translation locale. " +
+            'Add and review language admission before exporting or importing it.'
     }
 }
 
@@ -541,7 +546,8 @@ function Assert-SafeCellText {
 
     if ([regex]::IsMatch(
             $Value,
-            '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u2028\u2029]') -or
+            '(?:[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u2028\u2029]|' +
+            '[\p{Cf}-[\u200C\u200D]])') -or
         [regex]::IsMatch($Value, '\r(?!\n)')) {
         throw "$Description contains a forbidden control character or line separator."
     }
@@ -556,10 +562,11 @@ function Assert-TranslationValue {
         [Parameter(Mandatory)][string]$Translation,
         [Parameter(Mandatory)][string]$Description)
 
-    if ([string]::IsNullOrWhiteSpace($Translation)) {
+    Assert-SafeCellText $Translation $Description
+    if ([string]::IsNullOrWhiteSpace($Translation) -or
+        -not [regex]::IsMatch($Translation, '[^\p{C}\p{Z}]')) {
         throw "$Description is blank."
     }
-    Assert-SafeCellText $Translation $Description
     Assert-ValidCompositeFormat $Translation $Description
 
     $sourceItems = @(Get-CompositeFormatItems $Source)
@@ -609,7 +616,8 @@ function Assert-AccessKeyGroups {
         foreach ($key in @($group.Keys)) {
             $identity = [string]$group.Surface + "`0" + [string]$key
             if (-not $RowsByIdentity.ContainsKey($identity)) {
-                continue
+                throw "Access-key group '$($group.Context)' references missing resource " +
+                    "'$($group.Surface)/$key'. Update the group with the authoritative catalog."
             }
             $row = $RowsByIdentity[$identity]
             foreach ($marker in @(Get-AccessKeys ([string]$row.Translation))) {
@@ -862,9 +870,16 @@ function Read-TranslatorWorkbookRows {
     $parser = $null
     $textReader = $null
     try {
-        $text = [IO.File]::ReadAllText(
-            $Path,
-            [Text.UTF8Encoding]::new($false, $true))
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        $offset = if ($bytes.Length -ge 3 -and
+            $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            3
+        }
+        else { 0 }
+        $text = [Text.UTF8Encoding]::new($false, $true).GetString(
+            $bytes,
+            $offset,
+            $bytes.Length - $offset)
         Add-Type -AssemblyName Microsoft.VisualBasic
         $textReader = [IO.StringReader]::new($text)
         $parser = [Microsoft.VisualBasic.FileIO.TextFieldParser]::new($textReader)
@@ -1164,6 +1179,7 @@ function Test-LocalizationScreenshotSet {
 }
 
 Export-ModuleMember -Function @(
+    'Assert-TranslatorLocale',
     'Export-LocalizationWorkbook',
     'Import-LocalizationWorkbook',
     'Test-LocalizationScreenshotSet')

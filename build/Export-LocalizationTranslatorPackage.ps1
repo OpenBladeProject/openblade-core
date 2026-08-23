@@ -8,8 +8,6 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
-    [switch]$SkipScreenshots,
-
     [switch]$Force
 )
 
@@ -18,19 +16,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot 'LocalizationTranslatorWorkflow.psm1') -Force
 
-if ([string]::Equals($Locale, 'en-US', [StringComparison]::OrdinalIgnoreCase) -or
-    [string]::Equals($Locale, 'qps-ploc', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Locale '$Locale' cannot be used as a translator target."
-}
-try {
-    $targetCulture = [Globalization.CultureInfo]::GetCultureInfo($Locale)
-}
-catch {
-    throw "Translator locale '$Locale' is not a recognized .NET culture."
-}
-if ($targetCulture.IsNeutralCulture -or $targetCulture.Name -cne $Locale) {
-    throw "Translator locale '$Locale' must be a canonical, specific culture name."
-}
+Assert-TranslatorLocale $Locale
 
 $outputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
     [IO.Path]::GetFullPath($OutputDirectory)
@@ -82,56 +68,58 @@ controlling hardware.
         $readme.Replace("`r`n", "`n").Replace("`r", "`n").Replace("`n", "`r`n"),
         [Text.UTF8Encoding]::new($false))
 
-    $screenshotsIncluded = -not $SkipScreenshots
-    $screenshotRenderProfile = $null
-    if ($screenshotsIncluded) {
-        $captureRoot = Join-Path $temporaryPath '.snapshot-source'
-        & (Join-Path $PSScriptRoot 'Capture-LocalizationSnapshots.ps1') `
-            -OutputDirectory $captureRoot `
-            -Configuration $Configuration `
-            -Culture 'en-US'
-        $capturedCulture = Join-Path $captureRoot 'en-US'
-        $captureManifest = Get-Content `
-            -LiteralPath (Join-Path $capturedCulture 'manifest.json') `
-            -Raw | ConvertFrom-Json
-        if ($captureManifest.schemaVersion -ne 2 -or
-            [string]$captureManifest.culture -cne 'en-US' -or
-            [string]$captureManifest.renderProfile.dpi -cne
-                '96-process-local-DPIUNAWARE') {
-            throw 'Localization snapshot manifest has an unexpected render profile.'
-        }
-        $screenshotRenderProfile = $captureManifest.renderProfile
-        $contextPath = Join-Path $temporaryPath 'context'
-        [IO.Directory]::CreateDirectory($contextPath) | Out-Null
-        foreach ($image in @(Get-ChildItem -LiteralPath $capturedCulture `
-                -Filter '*.png' -File -Recurse | Sort-Object FullName)) {
-            $prefix = [IO.Path]::GetFullPath($capturedCulture).TrimEnd('\') + '\'
-            $relative = [IO.Path]::GetFullPath($image.FullName).Substring($prefix.Length)
-            $destination = Join-Path $contextPath $relative
-            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) |
-                Out-Null
-            Copy-Item -LiteralPath $image.FullName -Destination $destination
-        }
-        Test-LocalizationScreenshotSet `
-            -Repository $repository `
-            -ContextDirectory $contextPath
-        Remove-Item -LiteralPath $captureRoot -Recurse -Force
+    $captureRoot = Join-Path $temporaryPath '.snapshot-source'
+    $powershell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') {
+        'pwsh.exe'
+    } else {
+        'powershell.exe'
+    })
+    & $powershell -NoProfile -ExecutionPolicy Bypass `
+        -File (Join-Path $PSScriptRoot 'Capture-LocalizationSnapshots.ps1') `
+        -OutputDirectory $captureRoot `
+        -Configuration $Configuration `
+        -Culture 'en-US'
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Localization context snapshot generation failed.'
     }
+    $capturedCulture = Join-Path $captureRoot 'en-US'
+    $captureManifest = Get-Content `
+        -LiteralPath (Join-Path $capturedCulture 'manifest.json') `
+        -Raw | ConvertFrom-Json
+    if ($captureManifest.schemaVersion -ne 2 -or
+        [string]$captureManifest.culture -cne 'en-US' -or
+        [string]$captureManifest.renderProfile.dpi -cne
+            '96-process-local-DPIUNAWARE') {
+        throw 'Localization snapshot manifest has an unexpected render profile.'
+    }
+    $screenshotRenderProfile = $captureManifest.renderProfile
+    $contextPath = Join-Path $temporaryPath 'context'
+    [IO.Directory]::CreateDirectory($contextPath) | Out-Null
+    foreach ($image in @(Get-ChildItem -LiteralPath $capturedCulture `
+            -Filter '*.png' -File -Recurse | Sort-Object FullName)) {
+        $prefix = [IO.Path]::GetFullPath($capturedCulture).TrimEnd('\') + '\'
+        $relative = [IO.Path]::GetFullPath($image.FullName).Substring($prefix.Length)
+        $destination = Join-Path $contextPath $relative
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) |
+            Out-Null
+        Copy-Item -LiteralPath $image.FullName -Destination $destination
+    }
+    Test-LocalizationScreenshotSet `
+        -Repository $repository `
+        -ContextDirectory $contextPath
+    Remove-Item -LiteralPath $captureRoot -Recurse -Force
 
-    $manifestImages = @()
-    if ($screenshotsIncluded) {
-        $manifestImages = @(Get-ChildItem (Join-Path $temporaryPath 'context') `
-            -Filter '*.png' -File -Recurse | Sort-Object FullName | ForEach-Object {
-                $prefix = [IO.Path]::GetFullPath($temporaryPath).TrimEnd('\') + '\'
-                [ordered]@{
-                    path = [IO.Path]::GetFullPath($_.FullName).Substring(
-                        $prefix.Length).Replace('\', '/')
-                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).
-                        Hash.ToLowerInvariant()
-                    bytes = $_.Length
-                }
-            })
-    }
+    $manifestImages = @(Get-ChildItem (Join-Path $temporaryPath 'context') `
+        -Filter '*.png' -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $prefix = [IO.Path]::GetFullPath($temporaryPath).TrimEnd('\') + '\'
+            [ordered]@{
+                path = [IO.Path]::GetFullPath($_.FullName).Substring(
+                    $prefix.Length).Replace('\', '/')
+                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).
+                    Hash.ToLowerInvariant()
+                bytes = $_.Length
+            }
+        })
     $manifest = [ordered]@{
         schemaVersion = 1
         locale = $Locale
@@ -141,7 +129,7 @@ controlling hardware.
         rowCount = @($model.Rows).Count
         catalogHash = $model.CatalogHash
         targetCatalogHash = $model.TargetCatalogHash
-        screenshotsIncluded = $screenshotsIncluded
+        screenshotsIncluded = $true
         screenshotRenderProfile = $screenshotRenderProfile
         screenshots = $manifestImages
     }
