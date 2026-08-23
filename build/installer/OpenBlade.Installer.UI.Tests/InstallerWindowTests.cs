@@ -303,8 +303,8 @@ public sealed class InstallerWindowTests
                     ShowInTaskbar = false,
                     Topmost = true,
                 };
-                InstallerTheme.Apply(window, dark: false);
                 window.Show();
+                InstallerTheme.Apply(window, dark: false);
                 try
                 {
                     showState(window);
