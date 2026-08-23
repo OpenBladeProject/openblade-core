@@ -314,6 +314,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isPerformanceOperationInProgress;
     private bool isHyperBoostOperationInProgress;
     private bool hyperBoostActive;
+    private PerformancePreset? pluggedInHyperBoostRestorePerformance;
     private bool isLightingOperationInProgress;
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
@@ -2637,6 +2638,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref hyperBoostActive, value);
+            if (!value)
+            {
+                pluggedInHyperBoostRestorePerformance = null;
+            }
             RefreshLaptopPerformanceOptions();
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
@@ -4751,6 +4756,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status,
             previousStatus);
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        UpdateHyperBoostRestorePerformance(status, previousStatus);
         ApplyDeviceStatePresentation(
             status,
             confirmed,
@@ -5728,8 +5734,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             throw new InvalidOperationException("Laptop performance option is invalid.");
         }
 
-        PerformancePreset restoredPerformance = latestStatus
-            ?.DesiredState.Performance.Value ?? SelectedPerformance;
+        PerformancePreset? pluggedInRestorePerformance =
+            pluggedInHyperBoostRestorePerformance;
         if (HyperBoostActive)
         {
             await SetHyperBoostEnabledAsync(enabled: false, token);
@@ -5738,9 +5744,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
 
-            restoredPerformance = latestStatus
-                ?.DesiredState.Performance.Value ?? restoredPerformance;
-            if (requested == restoredPerformance)
+            PerformancePreset? restoredPerformance = ActivePowerSource switch
+            {
+                PowerSource.PluggedIn => pluggedInRestorePerformance,
+                PowerSource.Battery or PowerSource.UsbC =>
+                    latestStatus?.DesiredState.Performance.Value,
+                _ => null,
+            };
+            if (restoredPerformance is { } restored && requested == restored)
             {
                 return;
             }
@@ -5766,6 +5777,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             throw new InvalidOperationException("HyperBoost control is unavailable.");
         }
 
+        PerformancePreset? entryPerformance = enabled
+            ? latestStatus?.DesiredState.Performance.Value ?? SelectedPerformance
+            : null;
         IsHyperBoostOperationInProgress = true;
         try
         {
@@ -5778,6 +5792,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     if (result.Status == ControlOperationStatus.Applied)
                     {
+                        if (enabled)
+                        {
+                            pluggedInHyperBoostRestorePerformance = entryPerformance;
+                        }
                         HyperBoostActive = enabled;
                     }
                 });
@@ -9721,6 +9739,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && PerformancePresetPresentation.IsAvailable(status.ActivePowerSource, observed)
                 ? observed
                 : desired;
+    }
+
+    private void UpdateHyperBoostRestorePerformance(
+        ServiceStatusSnapshot status,
+        ServiceStatusSnapshot? previousStatus)
+    {
+        if (status.ConfirmedState?.HyperBoostActive != true)
+        {
+            pluggedInHyperBoostRestorePerformance = null;
+            return;
+        }
+
+        if (previousStatus?.ConfirmedState?.HyperBoostActive == true)
+        {
+            return;
+        }
+
+        pluggedInHyperBoostRestorePerformance = previousStatus
+            ?.DesiredState.Performance.Value;
     }
 
     private static FanMode ResolvePresentedFanMode(

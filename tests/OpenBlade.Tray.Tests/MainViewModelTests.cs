@@ -8487,7 +8487,7 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
-        client.Publish(CreatePadlessHyperBoostStatus(baseline) with
+        ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
         {
             DesiredState = baseline.DesiredState with
             {
@@ -8496,6 +8496,17 @@ public sealed class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
             ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Silent,
+                HyperBoostActive = false,
+            },
+        };
+        client.Publish(inactive);
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Silent);
+        client.Publish(inactive with
+        {
+            Revision = inactive.Revision + 1,
+            ConfirmedState = inactive.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
                 HyperBoostActive = true,
@@ -8519,7 +8530,7 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
-        client.Publish(CreatePadlessHyperBoostStatus(baseline) with
+        ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
         {
             DesiredState = baseline.DesiredState with
             {
@@ -8529,21 +8540,44 @@ public sealed class MainViewModelTests
             },
             ConfirmedState = baseline.ConfirmedState! with
             {
+                Performance = PerformancePreset.Silent,
+                HyperBoostActive = false,
+            },
+        };
+        client.Publish(inactive);
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Silent);
+        ServiceStatusSnapshot active = inactive with
+        {
+            Revision = inactive.Revision + 1,
+            ConfirmedState = inactive.ConfirmedState! with
+            {
                 Performance = PerformancePreset.Balanced,
                 HyperBoostActive = true,
             },
-        });
+        };
+        client.Publish(active);
         await WaitUntilAsync(() => viewModel.HyperBoostActive);
-        LaptopPerformanceOption balanced = viewModel.AvailableLaptopPerformanceOptions
-            .Single(option => option.Value == PerformancePreset.Balanced);
+        client.Publish(active with
+        {
+            Revision = active.Revision + 1,
+            DesiredState = active.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+        LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Performance);
 
-        await viewModel.SetLaptopPerformanceOptionAsync(balanced, default);
+        await viewModel.SetLaptopPerformanceOptionAsync(performance, default);
 
         Assert.Equal(
-            ["hyperBoost:False", "performance:Balanced"],
+            ["hyperBoost:False", "performance:Performance"],
             client.MutationOperations);
         Assert.False(viewModel.HyperBoostActive);
-        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
     }
 
     [Fact]
