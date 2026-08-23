@@ -2157,9 +2157,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.Observe(restored);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+            RestoreRecoveredHyperBoostIntentInAutomation(restoreIntent);
             bool retired = await RetireHyperBoostOwnershipJournalAsync(
                     journal.BaseMode,
                     journal.RequiresCoolingPad,
+                    journal.RestoreIntent,
                     "The user-authorized HyperBoost restore completed, but its ownership journal could not be retired.")
                 .ConfigureAwait(false);
             hyperBoostRestorePending = !retired;
@@ -2198,12 +2200,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         var result = new ControlOperationResult(status, message);
         history.RecordSummary(status, message);
         ServiceStatusSnapshot current = GetStatus();
+        ConfirmedDeviceState effectiveConfirmed = confirmed
+            ?? current.ConfirmedState
+            ?? UnknownConfirmedState;
         PublishIfChanged(current with
         {
             ConfirmedState = confirmed ?? current.ConfirmedState,
+            DesiredState = Automation.Resolve(effectiveConfirmed),
             ExternalChanges = driftTracker.ExternalChanges,
             WritesBlocked = restorePending || HasPendingWriteConfirmations(),
             HyperBoostRestorePending = restorePending,
+            PerformanceOverride = Automation.PerformanceOverride,
+            FanOverride = Automation.FanOverride,
+            FanControlOverride = Automation.FanControlOverride,
             Message = message,
         });
         return result;
@@ -3400,6 +3409,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         : await RetireHyperBoostOwnershipJournalAsync(
                                 requestedBaseMode,
                                 ownedHyperBoostRequiresCoolingPad,
+                                transitionIntent!,
                                 "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.")
                             .ConfigureAwait(false);
                 }
@@ -3804,6 +3814,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 CreateHyperBoostRestoreIntent(current.DesiredState),
             _ => HyperBoostRestoreIntent.BalancedAutomatic,
         };
+
+    private void RestoreRecoveredHyperBoostIntentInAutomation(
+        HyperBoostRestoreIntent intent)
+        => Automation.RestoreHyperBoostIntentUntilPowerSourceChange(intent);
 
     private static bool IsSupportedFullPowerHyperBoostIntent(
         DeviceCapabilities capabilities,
@@ -4508,6 +4522,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 bool retired = await RetireHyperBoostOwnershipJournalAsync(
                         baseMode,
                         requiresCoolingPad,
+                        restoreIntent,
                         "HyperBoost was restored after its ownership journal could not be finalized.")
                     .ConfigureAwait(false);
                 hyperBoostOwnershipGeneration++;
@@ -4578,6 +4593,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<bool> RetireHyperBoostOwnershipJournalAsync(
         PerformancePreset baseMode,
         bool requiresCoolingPad,
+        HyperBoostRestoreIntent restoreIntent,
         string failureMessage)
     {
         bool relinquished = false;
@@ -4588,7 +4604,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         HyperBoostOwnershipJournalState.Relinquished,
                         baseMode,
                         requiresCoolingPad,
-                        timeProvider.GetUtcNow()),
+                        timeProvider.GetUtcNow())
+                    {
+                        RestoreIntent = restoreIntent,
+                    },
                     CancellationToken.None)
                 .ConfigureAwait(false);
             relinquished = true;
@@ -4702,6 +4721,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return await RetireHyperBoostOwnershipJournalAsync(
                 journal.BaseMode,
                 journal.RequiresCoolingPad,
+                journal.RestoreIntent,
                 failureMessage)
             .ConfigureAwait(false);
     }

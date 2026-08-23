@@ -5,10 +5,13 @@ namespace OpenBlade.Service;
 public sealed class ProfileAutomationState
 {
     private ProfileSet profiles;
+    private PerformanceOverride? recoveredHyperBoostPerformance;
     private PerformanceOverride? temporaryPerformance;
     private PerformanceOverride? persistentPerformance;
+    private ManualOverride<FanMode>? recoveredHyperBoostFans;
     private ManualOverride<FanMode>? temporaryFans;
     private ManualOverride<FanMode>? persistentFans;
+    private FanControlSettings? recoveredHyperBoostFanControl;
     private FanControlSettings? temporaryFanControl;
     private FanControlSettings? persistentFanControl;
     private ManualOverride<LightingSettings>? temporaryLighting;
@@ -89,12 +92,19 @@ public sealed class ProfileAutomationState
     public ProfileSet Profiles => profiles;
 
     public PerformanceOverride? PerformanceOverride =>
-        persistentPerformance ?? temporaryPerformance;
+        recoveredHyperBoostPerformance
+            ?? persistentPerformance
+            ?? temporaryPerformance;
 
-    public ManualOverride<FanMode>? FanOverride => persistentFans ?? temporaryFans;
+    public ManualOverride<FanMode>? FanOverride =>
+        recoveredHyperBoostFans ?? persistentFans ?? temporaryFans;
 
     public FanControlSettings? FanControlOverride =>
-        persistentFans is not null ? persistentFanControl : temporaryFanControl;
+        recoveredHyperBoostFans is not null
+            ? recoveredHyperBoostFanControl
+            : persistentFans is not null
+                ? persistentFanControl
+                : temporaryFanControl;
 
     public ManualOverride<LightingSettings>? LightingOverride =>
         persistentLighting ?? temporaryLighting;
@@ -144,6 +154,9 @@ public sealed class ProfileAutomationState
         }
 
         PowerSource = powerSource;
+        recoveredHyperBoostPerformance = null;
+        recoveredHyperBoostFans = null;
+        recoveredHyperBoostFanControl = null;
         temporaryPerformance = null;
         temporaryFans = null;
         temporaryFanControl = null;
@@ -157,8 +170,11 @@ public sealed class ProfileAutomationState
         return true;
     }
 
-    public void SetPerformanceOverride(PerformanceOverride? value) =>
+    public void SetPerformanceOverride(PerformanceOverride? value)
+    {
+        recoveredHyperBoostPerformance = null;
         SetOverride(value, ref temporaryPerformance, ref persistentPerformance);
+    }
 
     public void SetPerformanceOverride(ManualOverride<PerformancePreset>? value) =>
         SetPerformanceOverride(
@@ -177,10 +193,12 @@ public sealed class ProfileAutomationState
             {
                 throw new ArgumentException(
                     "The fan override mode and fan settings do not match.",
-                    nameof(settings));
+                nameof(settings));
             }
         }
 
+        recoveredHyperBoostFans = null;
+        recoveredHyperBoostFanControl = null;
         SetOverride(value, ref temporaryFans, ref persistentFans);
         switch (value?.Lifetime)
         {
@@ -195,6 +213,23 @@ public sealed class ProfileAutomationState
                 persistentFanControl = null;
                 break;
         }
+    }
+
+    internal void RestoreHyperBoostIntentUntilPowerSourceChange(
+        HyperBoostRestoreIntent intent)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        recoveredHyperBoostPerformance = new PerformanceOverride(
+            intent.Performance,
+            OverrideLifetime.UntilPowerSourceChange,
+            intent.CustomPerformance)
+        {
+            GpuClockTuning = intent.GpuClockTuning,
+        };
+        recoveredHyperBoostFans = new ManualOverride<FanMode>(
+            intent.FanControl.Mode,
+            OverrideLifetime.UntilPowerSourceChange);
+        recoveredHyperBoostFanControl = intent.FanControl;
     }
 
     public void SetLightingOverride(ManualOverride<LightingSettings>? value) =>
@@ -233,6 +268,16 @@ public sealed class ProfileAutomationState
             && IsPerformanceCompatibleWithSource(temporary.Value, PowerSource)
                 ? temporary
                 : null;
+        PerformanceOverride? activeRecoveredPerformance =
+            recoveredHyperBoostPerformance is { } recovered
+            && IsPerformanceCompatibleWithSource(recovered.Value, PowerSource)
+                ? recovered
+                : null;
+        ManualOverride<FanMode>? activeRecoveredFans =
+            recoveredHyperBoostFans is { } recoveredFan
+            && IsFanCompatibleWithSource(recoveredFan.Value, PowerSource)
+                ? recoveredFan
+                : null;
         ManualOverride<FanMode>? activeTemporaryFans =
             temporaryFans is { } temporaryFan
             && IsFanCompatibleWithSource(temporaryFan.Value, PowerSource)
@@ -243,20 +288,27 @@ public sealed class ProfileAutomationState
             && IsFanCompatibleWithSource(persistentFan.Value, PowerSource)
                 ? persistentFan
                 : null;
-        ResolvedSetting<PerformancePreset> resolvedPerformance = ResolvePerformance(
-            profile.Performance,
-            activeTemporaryPerformance,
-            activePersistentPerformance);
+        ResolvedSetting<PerformancePreset> resolvedPerformance =
+            activeRecoveredPerformance is { } recoveredPerformance
+                ? new ResolvedSetting<PerformancePreset>(
+                    recoveredPerformance.Value,
+                    SettingValueSource.TemporaryOverride)
+                : ResolvePerformance(
+                    profile.Performance,
+                    activeTemporaryPerformance,
+                    activePersistentPerformance);
         CustomPerformanceSettings? customPerformance = resolvedPerformance.Value
             == PerformancePreset.Custom
-                ? activePersistentPerformance?.CustomPerformance
+                ? activeRecoveredPerformance?.CustomPerformance
+                    ?? activePersistentPerformance?.CustomPerformance
                     ?? activeTemporaryPerformance?.CustomPerformance
                     ?? profile.CustomPerformance
                     ?? confirmed.CustomPerformance
                     ?? CustomPerformanceSettings.Default
                 : null;
         GpuClockTuningSettings? gpuClockTuning = PowerSource == PowerSource.PluggedIn
-            ? activePersistentPerformance?.GpuClockTuning
+            ? activeRecoveredPerformance?.GpuClockTuning
+                ?? activePersistentPerformance?.GpuClockTuning
                 ?? activeTemporaryPerformance?.GpuClockTuning
                 ?? profile.GpuClockTuning
             : null;
@@ -271,17 +323,25 @@ public sealed class ProfileAutomationState
             customPerformance = customPerformance with { GpuClockOffsets = null };
         }
 
-        ResolvedSetting<FanMode> resolvedFans = OverrideResolver.Resolve<FanMode>(
-            profile.Fans,
-            confirmed.Fans.GetValueOrDefault(),
-            activeTemporaryFans,
-            activePersistentFans);
+        ResolvedSetting<FanMode> resolvedFans = activeRecoveredFans is { } recoveredFans
+            ? new ResolvedSetting<FanMode>(
+                recoveredFans.Value,
+                SettingValueSource.TemporaryOverride)
+            : OverrideResolver.Resolve<FanMode>(
+                profile.Fans,
+                confirmed.Fans.GetValueOrDefault(),
+                activeTemporaryFans,
+                activePersistentFans);
         ResolvedSetting<LightingSettings> resolvedLighting =
             ResolveLighting(profile, confirmed);
         FanControlSettings profileFanControl = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
         FanControlSettings selectedFanControl = resolvedFans.Source switch
         {
+            SettingValueSource.TemporaryOverride
+                when activeRecoveredFans is not null =>
+                    recoveredHyperBoostFanControl
+                        ?? WithMode(profileFanControl, resolvedFans.Value),
             SettingValueSource.PersistentOverride => persistentFanControl
                 ?? WithMode(profileFanControl, resolvedFans.Value),
             SettingValueSource.TemporaryOverride => temporaryFanControl

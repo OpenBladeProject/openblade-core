@@ -28,7 +28,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   intent unconfirmed, OpenBlade now keeps all writes blocked and offers one
   explicit, safety-gated restore attempt without automatic retries; repeated
   observations no longer flood the bounded diagnostic history with the same
-  retained-journal message.
+  retained-journal message. A successful attended recovery now keeps the saved
+  performance and fan intent active until the power source changes, preventing
+  normal profile reconciliation from immediately replacing it, and journal
+  retirement preserves that exact intent until its final clear succeeds.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

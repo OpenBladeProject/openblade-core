@@ -13319,6 +13319,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 context.Device.ConfirmedState = context.Device.ConfirmedState with
                 {
+                    Fans = FanMode.Maximum,
                     Performance = null,
                 };
             }
@@ -13334,17 +13335,131 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(settersBeforeRecovery + 1, context.Device.TotalSetterCalls);
         Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
         Assert.Null(context.Device.ConfirmedState.Performance);
-        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
         Assert.Null(journal.Journal);
-        Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
-        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        ServiceStatusSnapshot restored = context.Runtime.GetStatus();
+        Assert.False(restored.WritesBlocked);
+        Assert.False(restored.HyperBoostRestorePending);
+        Assert.Empty(restored.ExternalChanges);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            restored.DesiredState.Performance.Value);
+        Assert.Equal(fanControl, restored.DesiredState.FanControl);
+        Assert.Equal(
+            new PerformanceOverride(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            restored.PerformanceOverride);
+        Assert.Equal(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            restored.FanOverride);
+
+        int fanWritesAfterRecovery = context.Device.FanControlWrites.Count;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(fanWritesAfterRecovery, context.Device.FanControlWrites.Count);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
 
         ControlOperationResult noOp =
             await context.Runtime.RecoverHyperBoostRestoreAsync(
                 CancellationToken.None);
         Assert.Equal(ControlOperationStatus.Stored, noOp.Status);
         Assert.Equal(settersBeforeRecovery + 1, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task RecoverHyperBoostRestore_PreservesPersistentOverridesAcrossPowerTransition()
+    {
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = CreateRestorePendingJournal(fanControl),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            configuration,
+            PowerSource.PluggedIn,
+            new PersistentOverrideState(
+                PerformancePreset.Performance,
+                FanMode.Fixed,
+                Lighting: null,
+                FanControl: fanControl));
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            context.Runtime.GetStatus().PerformanceOverride?.Lifetime);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            context.Runtime.GetStatus().FanOverride?.Lifetime);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot restored = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, restored.ActivePowerSource);
+        Assert.Equal(PerformancePreset.Performance, restored.DesiredState.Performance.Value);
+        Assert.Equal(fanControl, restored.DesiredState.FanControl);
+        Assert.Equal(
+            OverrideLifetime.Persistent,
+            restored.PerformanceOverride?.Lifetime);
+        Assert.Equal(OverrideLifetime.Persistent, restored.FanOverride?.Lifetime);
+    }
+
+    [Fact]
+    public async Task RecoverHyperBoostRestore_ClearFailureRetainsExactIntentInRelinquishedMarker()
+    {
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        HyperBoostOwnershipJournal original = CreateRestorePendingJournal(fanControl);
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = original,
+            FailClear = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
+        HyperBoostOwnershipJournal retained = Assert.IsType<HyperBoostOwnershipJournal>(
+            journal.Journal);
+        Assert.Equal(HyperBoostOwnershipJournalState.Relinquished, retained.State);
+        Assert.Equal(original.RestoreIntent, retained.RestoreIntent);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
