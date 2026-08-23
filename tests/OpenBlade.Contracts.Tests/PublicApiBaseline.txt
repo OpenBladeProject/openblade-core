@@ -229,8 +229,10 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   ctor (OpenBlade.Contracts.ControlOperationStatus Status, System.String Message)
   method OpenBlade.Contracts.ControlOperationResult <Clone>$()
   method OpenBlade.Contracts.ControlOperationStatus get_Status()
+  method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_HyperBoostRestoredPerformance()
   method System.String get_Message()
   method System.Void Deconstruct(out OpenBlade.Contracts.ControlOperationStatus Status, out System.String Message)
+  method System.Void set_HyperBoostRestoredPerformance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_Message(System.String value)
   method System.Void set_Status(OpenBlade.Contracts.ControlOperationStatus value)
   method override System.Boolean Equals(System.Object obj)
@@ -240,6 +242,7 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ControlOperationResult left, OpenBlade.Contracts.ControlOperationResult right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.ControlOperationResult other)
   property OpenBlade.Contracts.ControlOperationStatus Status { get; init; }
+  property System.Nullable<OpenBlade.Contracts.PerformancePreset> HyperBoostRestoredPerformance { get; init; }
   property System.String Message { get; init; }
 type enum OpenBlade.Contracts.ControlOperationStatus
   field System.Int32 value__
@@ -1263,7 +1266,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 50
+  field const System.Int32 ProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

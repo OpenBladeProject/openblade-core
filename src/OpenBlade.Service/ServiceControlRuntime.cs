@@ -3570,7 +3570,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 disableJournalCleared
                     ? ControlOperationStatus.Applied
                     : ControlOperationStatus.Failed,
-                resultMessage);
+                resultMessage)
+            {
+                HyperBoostRestoredPerformance = !enabled && disableJournalCleared
+                    ? transitionIntent?.Performance ?? requestedBaseMode
+                    : null,
+            };
             history.RecordSummary(result.Status, result.Message);
             PublishIfChanged(current with
             {

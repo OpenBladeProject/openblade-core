@@ -10840,6 +10840,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
         Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.Null(enabled.HyperBoostRestoredPerformance);
+        Assert.Equal(performance, disabled.HyperBoostRestoredPerformance);
         Assert.Equal(2, context.Device.HyperBoostSetCalls);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(fanMode, context.Device.ConfirmedState.Fans);

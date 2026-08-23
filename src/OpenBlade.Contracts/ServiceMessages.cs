@@ -10,7 +10,13 @@ public enum ControlOperationStatus
     Failed,
 }
 
-public sealed record ControlOperationResult(ControlOperationStatus Status, string Message);
+public sealed record ControlOperationResult(ControlOperationStatus Status, string Message)
+{
+    // Optional so an omitted result remains safe: the tray performs the requested
+    // performance write when the authoritative HyperBoost restoration is unknown.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PerformancePreset? HyperBoostRestoredPerformance { get; init; }
+}
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]

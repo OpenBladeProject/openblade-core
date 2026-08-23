@@ -26,8 +26,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   state after commands and confirmed reconciliation, including failed or
   indeterminate transitions where a user selection would otherwise stay
   visually stale. Selecting another performance choice exits HyperBoost first,
-  restores the saved baseline, and applies a different requested preset only
-  after that restoration is confirmed. If an indeterminate exit leaves an
+  then uses the service's exact restored performance to preserve the selection
+  without a dropped or redundant follow-up write. If an indeterminate exit leaves an
   exact saved manual-fan intent unconfirmed, OpenBlade now keeps all writes
   blocked and offers one explicit, safety-gated restore attempt without
   automatic retries; repeated observations no longer flood the bounded
