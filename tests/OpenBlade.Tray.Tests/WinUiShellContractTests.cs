@@ -2118,6 +2118,12 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
+            "CanonicalizeLocalizationSnapshotPixels(\r\n            pixelBytes,\r\n            bitmap.PixelWidth,\r\n            bitmap.PixelHeight)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("majorityCount >= 6", app, StringComparison.Ordinal);
+        Assert.Contains("channelDelta > 16", app, StringComparison.Ordinal);
+        Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
             capture,
             StringComparison.Ordinal);

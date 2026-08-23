@@ -807,7 +807,7 @@ throw 'Target catalog was not write-locked during import.'
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
     $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
         ConvertFrom-Json
-    Assert-Equal 'bgra8-4-bit-midpoint' `
+    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-v1' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
     $generatedWorkbook = Join-Path $generatedFolder 'OpenBlade-ru-RU.csv'

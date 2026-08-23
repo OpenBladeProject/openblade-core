@@ -129,7 +129,7 @@ $manifest = [ordered]@{
         theme = 'light'
         dpi = '96-process-local-DPIUNAWARE'
         installerRendering = 'software'
-        pixelCanonicalization = 'bgra8-4-bit-midpoint'
+        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v1'
         data = 'sanitized-fixed-preview'
     }
     images = $images
