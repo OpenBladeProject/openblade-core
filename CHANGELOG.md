@@ -36,6 +36,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the power source changes, preventing normal profile reconciliation from
   immediately replacing it, and journal retirement preserves that exact intent
   until its final clear succeeds.
+- Prevented a missed function-row keyboard hook from executing both the media
+  action and its underlying F-key while the Session Agent restores the hook.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and

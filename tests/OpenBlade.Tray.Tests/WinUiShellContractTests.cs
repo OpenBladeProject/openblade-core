@@ -1456,18 +1456,20 @@ public sealed class WinUiShellContractTests
             "VirtualKeyPageUp",
             source,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "!TryGetInputDeviceKind(header.Device",
-            source,
-            StringComparison.Ordinal);
+        Assert.Contains("header.Type != RawInputTypeKeyboard", source, StringComparison.Ordinal);
+        Assert.Contains("&& !targetDevice", source, StringComparison.Ordinal);
+        Assert.True(
+            source.IndexOf("hookHealth.Consume(", StringComparison.Ordinal)
+                < source.IndexOf("EvaluateTargetPacket(", StringComparison.Ordinal),
+            "Every keyboard packet must drain hook correlation before target recovery is evaluated.");
         Assert.DoesNotContain(
             "nint buffer = Marshal.AllocHGlobal(checked((int)size))",
             source,
             StringComparison.Ordinal);
         Assert.True(
-            source.IndexOf("!TryGetInputDeviceKind(header.Device", StringComparison.Ordinal)
+            source.IndexOf("header.Type != RawInputTypeKeyboard", StringComparison.Ordinal)
                 < source.IndexOf("EnsureRawInputBuffer(size)", StringComparison.Ordinal),
-            "Non-target Raw Input packets must be rejected before the full packet buffer is acquired.");
+            "Non-target non-keyboard packets must be rejected before the full packet buffer is acquired.");
         Assert.DoesNotContain("GetForegroundWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
         Assert.Contains("ServiceReactiveLightingLoop", agent, StringComparison.Ordinal);
