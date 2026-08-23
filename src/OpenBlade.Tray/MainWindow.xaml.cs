@@ -2299,8 +2299,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            SynchronizeHyperBoostToggle(toggle);
             changingHyperBoost = false;
+            dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);
         }
     }
 
@@ -3117,6 +3117,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 DispatcherQueuePriority.Low,
                 () =>
                 {
+                    SynchronizeHyperBoostToggle();
                     RefreshDashboardCards();
                     UpdateDashboardLayout();
                 });

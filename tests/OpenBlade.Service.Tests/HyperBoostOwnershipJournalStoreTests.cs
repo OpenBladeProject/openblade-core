@@ -44,6 +44,35 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.Equal(expected, loaded.Journal);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task WriteAndLoad_RoundTripsLowPowerRestoreIntent(
+        PerformancePreset restorePerformance)
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var expected = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            new DateTimeOffset(2026, 8, 23, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                restorePerformance,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+        };
+
+        await store.WriteAsync(expected, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(expected, loaded.Journal);
+    }
+
     [Fact]
     public async Task Load_MalformedJournalFailsClosedWithoutDeletingEvidence()
     {

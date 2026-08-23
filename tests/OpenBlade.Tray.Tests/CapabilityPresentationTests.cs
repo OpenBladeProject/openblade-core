@@ -95,16 +95,18 @@ public sealed class CapabilityPresentationTests
         Assert.True(synchronizeStart >= 0);
         string synchronization = handler[synchronizeStart..];
 
-        Assert.Contains(
+        Assert.DoesNotContain(
             "SynchronizeHyperBoostToggle(toggle);",
             handler,
             StringComparison.Ordinal);
         Assert.DoesNotContain("toggle.SetBinding(", handler, StringComparison.Ordinal);
         Assert.True(
             handler.IndexOf(
-                "SynchronizeHyperBoostToggle(toggle);",
+                "changingHyperBoost = false;",
                 StringComparison.Ordinal)
-            < handler.IndexOf("changingHyperBoost = false;", StringComparison.Ordinal));
+            < handler.IndexOf(
+                "dispatcherQueue.TryEnqueue(SynchronizeHyperBoostToggle);",
+                StringComparison.Ordinal));
         Assert.Contains(
             "if (args.PropertyName == nameof(MainViewModel.HyperBoostActive))",
             window,
@@ -141,6 +143,23 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(
             "changingHyperBoost = wasChangingHyperBoost;",
             synchronization,
+            StringComparison.Ordinal);
+        int navigationStart = window.IndexOf(
+            "private void ApplyNavigationDestination(string destination)",
+            StringComparison.Ordinal);
+        int navigationEnd = window.IndexOf(
+            "internal void SelectLocalizationSnapshotPage(string destination)",
+            navigationStart,
+            StringComparison.Ordinal);
+        Assert.True(navigationStart >= 0 && navigationEnd > navigationStart);
+        string navigation = window[navigationStart..navigationEnd];
+        int homeBranch = navigation.IndexOf(
+            "else if (destination == \"home\")",
+            StringComparison.Ordinal);
+        Assert.True(homeBranch >= 0);
+        Assert.Contains(
+            "SynchronizeHyperBoostToggle();",
+            navigation[homeBranch..],
             StringComparison.Ordinal);
     }
 

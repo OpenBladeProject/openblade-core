@@ -13638,6 +13638,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!journal.IsWellFormed)
+            {
+                throw new ArgumentException(
+                    "The HyperBoost ownership journal is invalid.",
+                    nameof(journal));
+            }
+
             WriteCalls++;
             if (FailWrite || WriteCalls == FailWriteOnCall)
             {

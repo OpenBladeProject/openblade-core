@@ -24,7 +24,9 @@ internal sealed record HyperBoostRestoreIntent(
         FanControlSettings.FromLegacy(FanMode.Automatic));
 
     internal bool IsWellFormed =>
-        Performance is (PerformancePreset.Silent
+        Performance is (PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
+            or PerformancePreset.Silent
             or PerformancePreset.Balanced
             or PerformancePreset.Performance
             or PerformancePreset.Custom)
