@@ -233,6 +233,14 @@ foreach ($translatorPath in @(
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
         "Translator workflow path '$translatorPath' must run its adversarial contracts."
 }
+$translatorRestore = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'build/LocalizationTranslatorWorkflow.psm1')
+foreach ($restoreProject in @(
+        'src/OpenBlade.Tray/OpenBlade.Tray.csproj',
+        'build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj')) {
+    Assert-Contains $translatorRestore.ContractRestoreProjects $restoreProject `
+        'Translator contracts must restore every disconnected snapshot renderer.'
+}
 
 foreach ($globalPath in @(
         'Directory.Build.props',

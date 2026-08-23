@@ -89,7 +89,9 @@ controlling hardware.
     if ($captureManifest.schemaVersion -ne 2 -or
         [string]$captureManifest.culture -cne 'en-US' -or
         [string]$captureManifest.renderProfile.dpi -cne
-            '96-process-local-DPIUNAWARE') {
+            '96-process-local-DPIUNAWARE' -or
+        [string]$captureManifest.renderProfile.pixelCanonicalization -cne
+            'bgra8-4-bit-midpoint') {
         throw 'Localization snapshot manifest has an unexpected render profile.'
     }
     $screenshotRenderProfile = $captureManifest.renderProfile

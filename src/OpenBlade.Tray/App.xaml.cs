@@ -958,6 +958,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         using var pixelReader = DataReader.FromBuffer(pixels);
         byte[] pixelBytes = new byte[checked((int)pixels.Length)];
         pixelReader.ReadBytes(pixelBytes);
+        CanonicalizeLocalizationSnapshotPixels(pixelBytes);
         encoder.SetPixelData(
             BitmapPixelFormat.Bgra8,
             BitmapAlphaMode.Premultiplied,
@@ -974,6 +975,28 @@ public partial class App : Microsoft.UI.Xaml.Application
         byte[] encoded = new byte[checked((int)stream.Size)];
         reader.ReadBytes(encoded);
         await File.WriteAllBytesAsync(path, encoded);
+    }
+
+    private static void CanonicalizeLocalizationSnapshotPixels(byte[] pixels)
+    {
+        if (pixels.Length % 4 != 0)
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot pixel buffer is not BGRA8 data.");
+        }
+
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            byte alpha = pixels[index + 3];
+            for (int channel = 0; channel < 3; channel++)
+            {
+                byte value = pixels[index + channel];
+                byte canonical = value is 0 or 255
+                    ? value
+                    : (byte)((value & 0xF0) | 0x07);
+                pixels[index + channel] = Math.Min(canonical, alpha);
+            }
+        }
     }
 
     private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)

@@ -311,6 +311,12 @@ try {
             $candidate.Translation = $candidate.Translation.Insert(1, [string][char]0x2028)
             return $copy
         }),
+        @('empty-translation', 'is blank', {
+            param($copy)
+            $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
+            $candidate.Translation = ''
+            return $copy
+        }),
         @('zero-width-space', 'forbidden control character or line separator', {
             param($copy)
             $candidate = @($copy | Where-Object Constraints -like 'Translate naturally*')[0]
@@ -758,6 +764,18 @@ throw 'Target catalog was not write-locked during import.'
             Import-LocalizationWorkbook `
                 -Repository $markupFixture -Path $markupWorkbook -ValidateOnly
         } 'Protected technical identifiers must remain exact.'
+
+        [void](Export-LocalizationWorkbook `
+            -Repository $markupFixture -Locale 'ru-RU' -Path $markupWorkbook)
+        $injectedTokenRows = @(Import-Csv $markupWorkbook)
+        $injectedTokenRow = @($injectedTokenRows |
+            Where-Object Constraints -like 'Translate naturally*')[0]
+        $injectedTokenRow.Translation += ' https://example.invalid/payload.exe'
+        Write-CsvRows $injectedTokenRows $markupWorkbook
+        Assert-Throws 'protected token' {
+            Import-LocalizationWorkbook `
+                -Repository $markupFixture -Path $markupWorkbook -ValidateOnly
+        } 'Translations must not inject protected technical identifiers.'
     }
     finally {
         Import-Module $modulePath -Force
@@ -789,6 +807,9 @@ throw 'Target catalog was not write-locked during import.'
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
     $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
         ConvertFrom-Json
+    Assert-Equal 'bgra8-4-bit-midpoint' `
+        $manifest.screenshotRenderProfile.pixelCanonicalization `
+        'The package manifest must record deterministic pixel canonicalization.'
     $generatedWorkbook = Join-Path $generatedFolder 'OpenBlade-ru-RU.csv'
     Assert-Equal ((Get-FileHash -LiteralPath $generatedWorkbook -Algorithm SHA256).
         Hash.ToLowerInvariant()) $manifest.workbookSha256 `

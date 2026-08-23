@@ -559,7 +559,7 @@ function Assert-SafeCellText {
 function Assert-TranslationValue {
     param(
         [Parameter(Mandatory)][string]$Source,
-        [Parameter(Mandatory)][string]$Translation,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Translation,
         [Parameter(Mandatory)][string]$Description)
 
     Assert-SafeCellText $Translation $Description
@@ -599,11 +599,8 @@ function Assert-TranslationValue {
     }
     $sourceInvariants = @(Get-InvariantTokens $Source)
     $translationInvariants = @(Get-InvariantTokens $Translation)
-    foreach ($group in @($sourceInvariants | Group-Object -CaseSensitive)) {
-        $actualCount = @($translationInvariants | Where-Object { $_ -ceq $group.Name }).Count
-        if ($actualCount -ne $group.Count) {
-            throw "$Description changed protected token '$($group.Name)'."
-        }
+    if (-not (Test-OrdinalSequenceEqual $sourceInvariants $translationInvariants)) {
+        throw "$Description changed its protected token sequence."
     }
 }
 

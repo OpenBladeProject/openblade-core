@@ -235,7 +235,13 @@ jobs:
 
       - name: Restore
         if: inputs.validation-mode == 'full'
-        run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+        run: |
+          dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Solution restore failed.' }
+          dotnet restore .\src\OpenBlade.Tray\OpenBlade.Tray.csproj -p:NuGetAudit=false -p:OpenBladeLocalizationPreview=true
+          if ($LASTEXITCODE -ne 0) { throw 'Localization preview restore failed.' }
+          dotnet restore .\build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Installer snapshot test restore failed.' }
 
       # This lane intentionally does not build the solution first. Contract
       # scripts inspect source or produce their own isolated build outputs;

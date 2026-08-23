@@ -346,8 +346,21 @@ public sealed class InstallerWindowTests
                         4,
                         0);
                     Assert.Equal(new byte[] { 0xF7, 0xF7, 0xF7, 0xFF }, topLeftPixel);
+                    int stride = width * 4;
+                    byte[] pixels = new byte[stride * height];
+                    bitmap.CopyPixels(pixels, stride, 0);
+                    CanonicalizeLocalizationSnapshotPixels(pixels);
+                    BitmapSource canonicalBitmap = BitmapSource.Create(
+                        width,
+                        height,
+                        96,
+                        96,
+                        PixelFormats.Pbgra32,
+                        null,
+                        pixels,
+                        stride);
                     var encoder = new PngBitmapEncoder();
-                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    encoder.Frames.Add(BitmapFrame.Create(canonicalBitmap));
                     using FileStream stream = File.Create(
                         Path.Combine(outputDirectory, name + ".png"));
                     encoder.Save(stream);
@@ -357,6 +370,22 @@ public sealed class InstallerWindowTests
                     window.Close();
                 }
             });
+        }
+    }
+
+    private static void CanonicalizeLocalizationSnapshotPixels(byte[] pixels)
+    {
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            byte alpha = pixels[index + 3];
+            for (int channel = 0; channel < 3; channel++)
+            {
+                byte value = pixels[index + channel];
+                byte canonical = value is 0 or 255
+                    ? value
+                    : (byte)((value & 0xF0) | 0x07);
+                pixels[index + channel] = Math.Min(canonical, alpha);
+            }
         }
     }
 
