@@ -11,6 +11,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   invisible or bidirectional format controls, injected protected identifiers, and
   stale installer mnemonic groups, with precise blank-cell feedback; every package
   now requires context screenshots, and CI restores both disconnected renderers.
+- Prevented a missed function-row keyboard hook from executing both the media
+  action and its underlying F-key while the Session Agent restores the hook.
 - Kept the Session Agent and media-key handling alive when a client closes a
   named-pipe connection before Windows completes the server-side accept.
 - Localized every M1-M5 shortcut action, row label, validation message, and
