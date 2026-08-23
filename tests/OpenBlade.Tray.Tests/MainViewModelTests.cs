@@ -8528,7 +8528,7 @@ public sealed class MainViewModelTests
 
         Assert.Equal(["hyperBoost:False"], client.MutationOperations);
         Assert.False(viewModel.HyperBoostActive);
-        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
     }
 
     [Fact]
@@ -8543,7 +8543,8 @@ public sealed class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Silent,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
@@ -8573,6 +8574,7 @@ public sealed class MainViewModelTests
         };
         client.Publish(active);
         await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        int completedCalls = dispatcher.CompletedCalls;
         client.Publish(active with
         {
             Revision = active.Revision + 1,
@@ -8583,7 +8585,7 @@ public sealed class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         });
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls);
         LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Performance);
 
@@ -8656,6 +8658,50 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LaptopPerformanceChoice_FailedFollowUpKeepsRestoredPresentation()
+    {
+        var client = new FakeServiceClient();
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Applied,
+            "Restored")
+        {
+            HyperBoostRestoredPerformance = PerformancePreset.Silent,
+        });
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            "Performance write failed."));
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(CreatePadlessHyperBoostStatus(baseline) with
+        {
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                HyperBoostActive = true,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Performance);
+
+        await viewModel.SetLaptopPerformanceOptionAsync(performance, default);
+
+        Assert.Equal(
+            ["hyperBoost:False", "performance:Performance"],
+            client.MutationOperations);
+        Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+        Assert.Equal("Performance write failed.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
     public async Task LaptopPerformanceChoice_AppliesSelectionWhenRestoreResultIsOmitted()
     {
         var client = new FakeServiceClient();
@@ -8670,7 +8716,10 @@ public sealed class MainViewModelTests
                 HyperBoostActive = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        await WaitUntilAsync(() =>
+            viewModel.HyperBoostActive
+            && viewModel.AvailableLaptopPerformanceOptions.Any(
+                option => option.Value == PerformancePreset.Performance));
         LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Performance);
 

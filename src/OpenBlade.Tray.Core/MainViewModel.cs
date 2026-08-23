@@ -5781,6 +5781,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     if (result.Status == ControlOperationStatus.Applied)
                     {
                         restoredPerformance = result.HyperBoostRestoredPerformance;
+                        if (!enabled && restoredPerformance is { } restored)
+                        {
+                            SelectedPerformance = restored;
+                        }
                         HyperBoostActive = enabled;
                     }
                 });
