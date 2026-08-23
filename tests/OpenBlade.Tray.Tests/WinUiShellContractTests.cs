@@ -3597,6 +3597,10 @@ public sealed class WinUiShellContractTests
             "SelectedItem=\"{Binding SelectedLaptopPerformanceOption, Mode=OneWay}\"",
             dashboardXaml,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{Binding ActivePerformanceLabel, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
         Assert.Equal(
             2,
             CountOccurrences(

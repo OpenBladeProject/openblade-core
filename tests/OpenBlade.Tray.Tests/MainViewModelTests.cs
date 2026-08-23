@@ -8481,7 +8481,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task LaptopPerformanceChoice_ExitsHyperBoostWithoutRedundantBaselineWrite()
+    public async Task LaptopPerformanceChoice_ExitsWithoutRewritingRestoredIntent()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -8489,6 +8489,12 @@ public sealed class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline) with
         {
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    SettingValueSource.PowerProfile),
+            },
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
@@ -8496,10 +8502,10 @@ public sealed class MainViewModelTests
             },
         });
         await WaitUntilAsync(() => viewModel.HyperBoostActive);
-        LaptopPerformanceOption balanced = viewModel.AvailableLaptopPerformanceOptions
-            .Single(option => option.Value == PerformancePreset.Balanced);
+        LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Silent);
 
-        await viewModel.SetLaptopPerformanceOptionAsync(balanced, default);
+        await viewModel.SetLaptopPerformanceOptionAsync(silent, default);
 
         Assert.Equal(["hyperBoost:False"], client.MutationOperations);
         Assert.False(viewModel.HyperBoostActive);
@@ -8515,6 +8521,12 @@ public sealed class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline) with
         {
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    SettingValueSource.PowerProfile),
+            },
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
@@ -8522,16 +8534,16 @@ public sealed class MainViewModelTests
             },
         });
         await WaitUntilAsync(() => viewModel.HyperBoostActive);
-        LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
-            .Single(option => option.Value == PerformancePreset.Performance);
+        LaptopPerformanceOption balanced = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Balanced);
 
-        await viewModel.SetLaptopPerformanceOptionAsync(performance, default);
+        await viewModel.SetLaptopPerformanceOptionAsync(balanced, default);
 
         Assert.Equal(
-            ["hyperBoost:False", "performance:Performance"],
+            ["hyperBoost:False", "performance:Balanced"],
             client.MutationOperations);
         Assert.False(viewModel.HyperBoostActive);
-        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
     }
 
     [Fact]
@@ -8818,6 +8830,43 @@ public sealed class MainViewModelTests
             option => option.IsHyperBoost);
         Assert.Contains(
             "current admission evidence",
+            viewModel.HyperBoostDescription,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ActiveHyperBoostWithoutPadlessAdmission_RemainsPresentedReadOnly()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = null,
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = true,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+
+        Assert.True(viewModel.IsHyperBoostVisible);
+        Assert.False(viewModel.IsHyperBoostWritable);
+        Assert.False(viewModel.CanSelectLaptopPerformance);
+        Assert.True(viewModel.SelectedLaptopPerformanceOption?.IsHyperBoost);
+        Assert.Contains(
+            viewModel.AvailableLaptopPerformanceOptions,
+            option => option.IsHyperBoost);
+        Assert.Equal("HyperBoost", viewModel.ActivePerformanceLabel);
+        Assert.Contains(
+            "cannot safely change",
             viewModel.HyperBoostDescription,
             StringComparison.OrdinalIgnoreCase);
     }

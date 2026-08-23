@@ -2620,7 +2620,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool HasOneShotLaptopControls => Capabilities.OneShotLaptopControls.Count > 0;
 
     public bool IsHyperBoostVisible =>
-        Capabilities.HyperBoostWithoutCoolingPadAccess is not null;
+        Capabilities.HyperBoostAccess is not null
+        || Capabilities.HyperBoostWithoutCoolingPadAccess is not null;
 
     public bool IsHyperBoostWritable =>
         Capabilities.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite;
@@ -5727,6 +5728,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             throw new InvalidOperationException("Laptop performance option is invalid.");
         }
 
+        PerformancePreset restoredPerformance = latestStatus
+            ?.DesiredState.Performance.Value ?? SelectedPerformance;
         if (HyperBoostActive)
         {
             await SetHyperBoostEnabledAsync(enabled: false, token);
@@ -5734,9 +5737,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return;
             }
-        }
 
-        if (requested == SelectedPerformance)
+            restoredPerformance = latestStatus
+                ?.DesiredState.Performance.Value ?? restoredPerformance;
+            if (requested == restoredPerformance)
+            {
+                return;
+            }
+        }
+        else if (requested == SelectedPerformance)
         {
             return;
         }
