@@ -1434,69 +1434,17 @@ public sealed class ControlCoordinator
                 && exception.SubmissionState is WriteSubmissionState.Indeterminate
                 && resolveIndeterminateWriteByReadback)
         {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ConfirmedDeviceState final = await readState(cancellationToken)
-                    .ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (matches(final))
-                {
-                    return new ScopedApplyOutcome(
-                        new ControlResult(
-                            ControlResultStatus.Applied,
-                            $"{name} setting applied and confirmed by fresh readback after an indeterminate submission."),
-                        final,
-                        WriteAttempted: true,
-                        ReadbackMatched: true,
-                        capabilities,
-                        DeviceAccessFailed: false);
-                }
-
-                if (initial is not null
-                    && unchangedAfterIndeterminateWrite?.Invoke(initial, final) == true)
-                {
-                    return new ScopedApplyOutcome(
-                        new ControlResult(
-                            ControlResultStatus.Failed,
-                            $"{Indeterminate(name, exception).Message} Fresh readback confirmed that the prior {name.ToLowerInvariant()} state remained active."),
-                        final,
-                        WriteAttempted: false,
-                        ReadbackMatched: false,
-                        capabilities,
-                        DeviceAccessFailed: false);
-                }
-
-                return new ScopedApplyOutcome(
-                    new ControlResult(
-                        ControlResultStatus.Failed,
-                        $"{Indeterminate(name, exception).Message} Fresh readback did not match the requested or prior {name.ToLowerInvariant()} state."),
-                    final,
-                    WriteAttempted: true,
-                    ReadbackMatched: false,
+            return await ResolveIndeterminateWriteByReadbackAsync(
+                    subsystem,
+                    name,
+                    exception,
+                    matches,
+                    unchangedAfterIndeterminateWrite,
+                    readState,
+                    initial,
                     capabilities,
-                    DeviceAccessFailed: false);
-            }
-            catch (OperationCanceledException cancellationException)
-                when (cancellationToken.IsCancellationRequested)
-            {
-                throw new IntentionalWriteCanceledException(
-                    new HashSet<DeviceSubsystem> { subsystem },
-                    cancellationToken,
-                    cancellationException);
-            }
-            catch
-            {
-                return new ScopedApplyOutcome(
-                    Indeterminate(name, exception),
-                    null,
-                    WriteAttempted: true,
-                    ReadbackMatched: false,
-                    capabilities,
-                    DeviceAccessFailed: true,
-                    ConfirmationUnavailable: initial is not null,
-                    PreWriteState: initial);
-            }
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && writeAttempted)
@@ -1527,6 +1475,21 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
+            if (setterCompleted && resolveIndeterminateWriteByReadback)
+            {
+                return await ResolveIndeterminateWriteByReadbackAsync(
+                        subsystem,
+                        name,
+                        exception,
+                        matches,
+                        unchangedAfterIndeterminateWrite,
+                        readState,
+                        initial,
+                        capabilities,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return new ScopedApplyOutcome(
                 writeAttempted
                     ? Indeterminate(name, exception)
@@ -1540,6 +1503,84 @@ public sealed class ControlCoordinator
                     || IsTerminalDeviceFailure(exception),
                 ConfirmationUnavailable: setterCompleted,
                 PreWriteState: setterCompleted ? initial : null);
+        }
+    }
+
+    private static async Task<ScopedApplyOutcome>
+        ResolveIndeterminateWriteByReadbackAsync(
+        DeviceSubsystem subsystem,
+        string name,
+        Exception exception,
+        Func<ConfirmedDeviceState, bool> matches,
+        Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
+            unchangedAfterIndeterminateWrite,
+        Func<CancellationToken, Task<ConfirmedDeviceState>> readState,
+        ConfirmedDeviceState? initial,
+        DeviceCapabilities? capabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final = await readState(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (matches(final))
+            {
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Applied,
+                        $"{name} setting applied and confirmed by fresh readback after an indeterminate submission."),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            if (initial is not null
+                && unchangedAfterIndeterminateWrite?.Invoke(initial, final) == true)
+            {
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{Indeterminate(name, exception).Message} Fresh readback confirmed that the prior {name.ToLowerInvariant()} state remained active."),
+                    final,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            return new ScopedApplyOutcome(
+                new ControlResult(
+                    ControlResultStatus.Failed,
+                    $"{Indeterminate(name, exception).Message} Fresh readback did not match the requested or prior {name.ToLowerInvariant()} state."),
+                final,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (OperationCanceledException cancellationException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem> { subsystem },
+                cancellationToken,
+                cancellationException);
+        }
+        catch
+        {
+            return new ScopedApplyOutcome(
+                Indeterminate(name, exception),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: true,
+                ConfirmationUnavailable: initial is not null,
+                PreWriteState: initial);
         }
     }
 

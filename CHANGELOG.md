@@ -18,9 +18,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
   remain non-retryable. HyperBoost thermal transitions now use their scoped,
   paired performance-and-fan readback so unrelated battery or lighting query
   failures cannot abort an otherwise confirmed transition. When a performance
-  submission itself becomes indeterminate, one fresh scoped readback now
-  confirms an applied target or an unchanged prior state without retrying the
-  hardware write; unavailable or contradictory readback remains fail-closed.
+  submission becomes indeterminate, including when its setter completes before
+  a transient confirmation-read failure, one fresh scoped readback now confirms
+  an applied target or an unchanged prior state without retrying the hardware
+  write. Direct HyperBoost submissions use the same immediate read-only
+  resolution after refreshing the power-source classification, so a concurrent
+  unplug restores the destination profile; unavailable or contradictory
+  readback remains fail-closed.
   The Tray now presents HyperBoost as a transient Laptop performance choice on
   both dashboards and synchronizes that selection directly from authoritative
   state after commands and confirmed reconciliation, including failed or

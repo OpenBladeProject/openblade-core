@@ -8204,11 +8204,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ScopedReadbackFailure_PreservesConfirmedAndWaitsForReadOnlyConfirmation()
+    public async Task ScopedReadbackFailure_UsesOneFreshReadWithoutRetry()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
+        int readsBeforeWrite = context.Device.StateReadCalls;
         context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
 
         ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
@@ -8217,41 +8217,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.Persistent),
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.Same(before, context.Runtime.GetStatus().ConfirmedState);
-        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
-            [DeviceSubsystem.Performance],
-            context.Runtime.GetStatus().UnconfirmedWrites);
-        Assert.Equal(1, context.Device.PerformanceSetCalls);
-        Assert.Equal(3, context.Device.StateReadCalls);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
-
-        int readsBeforeGuard = context.Device.StateReadCalls;
-        ControlOperationResult blocked = await context.Runtime.SetPerformanceOverrideAsync(
-            new ManualOverride<PerformancePreset>(
-                PerformancePreset.Balanced,
-                OverrideLifetime.Persistent),
-            CancellationToken.None);
-        ControlOperationResult reapply = await context.Runtime.ReapplyChangedSettingsAsync(
-            CancellationToken.None);
-        ControlOperationResult shortcut = await context.Runtime.CyclePerformanceShortcutAsync(
-            PerformanceShortcutSource.FunctionP,
-            CancellationToken.None);
-
-        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
-        Assert.Equal(ControlOperationStatus.Blocked, reapply.Status);
-        Assert.Equal(ControlOperationStatus.Blocked, shortcut.Status);
-        Assert.Equal(readsBeforeGuard, context.Device.StateReadCalls);
-        Assert.Equal(1, context.Device.PerformanceSetCalls);
-
-        context.Device.ReadStateFailureOnCall = null;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
-        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().ConfirmedState?.Performance);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
-        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(readsBeforeWrite + 3, context.Device.StateReadCalls);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -8295,17 +8269,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 },
                 CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
             GpuClockOffsetManagementState.ResetConfirmed,
             context.Device.GpuClockOffsetManagementState);
-        Assert.Equal(
-            [DeviceSubsystem.Performance],
-            context.Runtime.GetStatus().UnconfirmedWrites);
-
-        context.Device.ReadStateFailureOnCall = null;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
@@ -8336,17 +8303,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 },
                 CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
             GpuClockOffsetManagementState.Relinquished,
             context.Device.GpuClockOffsetManagementState);
-        Assert.Equal(
-            [DeviceSubsystem.Performance],
-            context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         int setters = context.Device.TotalSetterCalls;
-
-        context.Device.ReadStateFailureOnCall = null;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
@@ -8413,13 +8375,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                         target,
                         OverrideLifetime.UntilPowerSourceChange),
                     CancellationToken.None);
-            Assert.Equal(ControlOperationStatus.Failed, result.Status);
-            Assert.Contains(
-                DeviceSubsystem.Performance,
-                context.Runtime.GetStatus().UnconfirmedWrites);
-
-            context.Device.ReadStateFailureOnCall = null;
-            await context.Runtime.ObserveAsync(CancellationToken.None);
+            Assert.Equal(ControlOperationStatus.Applied, result.Status);
             Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         }
 
@@ -11891,7 +11847,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.BatterySaver,
             pending.DesiredState.Performance.Value);
-        Assert.True(pending.WritesBlocked);
+        Assert.False(pending.WritesBlocked);
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(
             hyperBoostWritesBeforeChange + 1,
@@ -11901,7 +11857,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Device.PerformanceSetCalls);
         Assert.Equal(fanWritesBeforeChange, context.Device.FanSetCalls);
         Assert.Equal(
-            HyperBoostOwnershipJournalState.RestorePending,
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
             journal.Journal?.State);
         Assert.Equal(
             PerformancePreset.BatterySaver,
@@ -12689,19 +12645,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 3;
 
-        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(
             true,
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Equal(
-            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
-            context.Runtime.GetStatus().UnconfirmedWrites);
-
-        context.Device.ReadStateFailureOnCall = null;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Equal(1, context.Device.HyperBoostSetCalls);
@@ -12716,6 +12664,115 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_PostWriteReadFailureConfirmsPriorWithoutRetry()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.SuppressHyperBoostMutation = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeEntry + 3;
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_PostWriteAndFreshReadFailuresStayPending()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureCalls.UnionWith(
+            [readsBeforeEntry + 3, readsBeforeEntry + 4]);
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_ImmediateResolutionUsesFreshPowerSource()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.HyperBoostFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate enable."));
+        context.Device.AfterHyperBoostFailure = () =>
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = false,
+            };
+        };
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Null(journal.Journal);
     }
 
@@ -12781,15 +12838,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             true,
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
             performanceWritesBeforeEntry + 1,
             context.Device.PerformanceSetCalls);
-        Assert.Equal(0, context.Device.HyperBoostSetCalls);
-        Assert.Equal(3, context.Device.PerformanceFanStateReadCalls);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.True(context.Device.PerformanceFanStateReadCalls > 3);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(
-            HyperBoostOwnershipJournalState.EnablePending,
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
             journal.Journal?.State);
     }
 
@@ -12850,7 +12908,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         int settersAfterReconciliation = context.Device.TotalSetterCalls;
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(ControlOperationStatus.Applied, failed.Status);
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
@@ -12911,18 +12969,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, failed.Status);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Equal(
-            HyperBoostOwnershipJournalState.EnablePending,
-            journal.Journal?.State);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Null(journal.Journal);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
-        Assert.Equal(
-            PerformancePreset.Balanced,
-            context.Device.ConfirmedState.Performance);
-        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Null(context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        string restorationMessage = context.Runtime.GetStatus().Message;
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        string restorationMessage = context.Runtime.GetStatus().Message;
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot restored = context.Runtime.GetStatus();
@@ -13002,11 +13056,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             false,
             CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Equal(
-            HyperBoostOwnershipJournalState.RestorePending,
-            journal.Journal?.State);
+        Assert.Equal(ControlOperationStatus.Applied, failed.Status);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Null(journal.Journal);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
@@ -13024,6 +13076,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformancePreset.Performance,
             restored.DesiredState.Performance.Value);
         Assert.Equal(FanMode.Fixed, restored.DesiredState.Fans.Value);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_RestorationReadFailureUsesFreshReadWithoutRetry()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int performanceWritesBeforeExit = context.Device.PerformanceSetCalls;
+        int readsBeforeExit = context.Device.PerformanceFanStateReadCalls;
+        context.Device.HyperBoostFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate disable."));
+        context.Device.AfterHyperBoostFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = false,
+            };
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeExit + 3;
+
+        ControlOperationResult restored = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            performanceWritesBeforeExit + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Null(journal.Journal);
     }
 
@@ -13053,7 +13160,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, failed.Status);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            journal.Journal?.State);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
@@ -13073,6 +13183,86 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(3, context.Device.HyperBoostSetCalls);
         Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_IndeterminateEnableFreshReadFailureStaysPending()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.HyperBoostFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate enable."));
+        context.Device.PerformanceFanStateReadFailureOnCall =
+            readsBeforeEntry + 3;
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            readsBeforeEntry + 3,
+            context.Device.PerformanceFanStateReadCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_IndeterminateDisableFreshReadFailureStaysPending()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int readsBeforeExit = context.Device.PerformanceFanStateReadCalls;
+        context.Device.HyperBoostFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate disable."));
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeExit + 1;
+
+        ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            readsBeforeExit + 1,
+            context.Device.PerformanceFanStateReadCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().UnconfirmedWrites);
     }
 
     [Fact]
@@ -14492,6 +14682,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int? PerformanceFanStateReadFailureOnCall { get; set; }
 
+        public HashSet<int> PerformanceFanStateReadFailureCalls { get; } = [];
+
         public Exception? PerformanceFanStateReadFailureOnCallException { get; set; }
 
         public Action<int>? BeforePerformanceFanStateReadResult { get; set; }
@@ -14559,7 +14751,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformanceFanStateReadCalls);
             cancellationToken.ThrowIfCancellationRequested();
             if (PerformanceFanStateReadFailureOnCall
-                == PerformanceFanStateReadCalls)
+                    == PerformanceFanStateReadCalls
+                || PerformanceFanStateReadFailureCalls.Contains(
+                    PerformanceFanStateReadCalls))
             {
                 throw PerformanceFanStateReadFailureOnCallException
                     ?? new IOException("scoped thermal readback failed");

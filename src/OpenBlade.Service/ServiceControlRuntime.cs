@@ -3097,6 +3097,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool baselineTransitionChanged = false;
         bool baselineTransitionCompleted = false;
         bool hyperBoostWriteAttempted = false;
+        bool finalHyperBoostReadbackCompleted = false;
         if (!operationGateAlreadyHeld)
         {
             await operationGate.WaitAsync(token).ConfigureAwait(false);
@@ -3369,6 +3370,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     current.ConfirmedState,
                     token)
                 .ConfigureAwait(false);
+            finalHyperBoostReadbackCompleted = true;
             bool matched = readback.HyperBoostActive == enabled
                 && (enabled
                     || readback is
@@ -3684,6 +3686,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
                 PublishPendingHyperBoostStatus(exception.Message);
+
+                if (hyperBoostWriteAttempted
+                    && !setterCompleted
+                    && transitionDevice is not null
+                    && writeBaseline?.ConfirmedState is not null)
+                {
+                    ControlOperationResult? resolved =
+                        await TryResolveIndeterminateHyperBoostWriteAsync(
+                                enabled,
+                                transitionDevice,
+                                writeBaseline)
+                            .ConfigureAwait(false);
+                    if (resolved is not null)
+                    {
+                        return resolved;
+                    }
+                }
             }
             else if (ownershipJournalPrepared)
             {
@@ -3747,6 +3766,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
                 PublishPendingHyperBoostStatus(
                     "HyperBoost was submitted, but final readback failed. Thermal writes remain blocked until a fresh observation resolves it.");
+                if (!finalHyperBoostReadbackCompleted
+                    && transitionDevice is not null
+                    && writeBaseline?.ConfirmedState is not null)
+                {
+                    ControlOperationResult? resolved =
+                        await TryResolveIndeterminateHyperBoostWriteAsync(
+                                enabled,
+                                transitionDevice,
+                                writeBaseline)
+                            .ConfigureAwait(false);
+                    if (resolved is not null)
+                    {
+                        return resolved;
+                    }
+                }
             }
             else if (ownershipJournalPrepared)
             {
@@ -4106,6 +4140,86 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? thermalState;
     }
 
+    private async Task<ControlOperationResult?>
+        TryResolveIndeterminateHyperBoostWriteAsync(
+        bool enabled,
+        IBladeDevice device,
+        ServiceStatusSnapshot baseline)
+    {
+        PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        if (powerSource == PowerSource.ExternalUnknown)
+        {
+            return null;
+        }
+
+        ConfirmedDeviceState readback;
+        try
+        {
+            readback = await ReadHyperBoostThermalStateAsync(
+                    device,
+                    baseline.ConfirmedState,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        bool deferPowerSourceChange = readback.HyperBoostActive
+            && Automation.PowerSource != powerSource;
+        if (!deferPowerSourceChange)
+        {
+            _ = ChangePowerSourceCore(powerSource);
+        }
+        ObserveAutomaticState(readback);
+        ReconcilePendingWriteConfirmations(readback, powerSource, device);
+        IndeterminateHyperBoostReconciliation reconciliation = enabled
+            ? await ReconcileIndeterminateHyperBoostEntryAsync(
+                    readback,
+                    powerSource,
+                    device,
+                    CancellationToken.None)
+                .ConfigureAwait(false)
+            : await ReconcileIndeterminateHyperBoostExitAsync(
+                    readback,
+                    powerSource,
+                    device,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        if (reconciliation.Resolution == IndeterminateHyperBoostResolution.None
+            || reconciliation.Message is null)
+        {
+            return null;
+        }
+
+        PublishIfChanged(GetStatus() with
+        {
+            ConfirmedState = reconciliation.Confirmed,
+            ExternalChanges = driftTracker.ExternalChanges,
+            WritesBlocked = reconciliation.Resolution
+                == IndeterminateHyperBoostResolution.Unsafe,
+            ActivePowerSource = deferPowerSourceChange
+                ? baseline.ActivePowerSource
+                : powerSource,
+            DesiredState = Automation.Resolve(reconciliation.Confirmed),
+            Message = reconciliation.Message,
+        });
+        return new ControlOperationResult(
+            reconciliation.Resolution == IndeterminateHyperBoostResolution.Applied
+                ? ControlOperationStatus.Applied
+                : ControlOperationStatus.Failed,
+            reconciliation.Message)
+        {
+            HyperBoostRestoredPerformance =
+                reconciliation.Resolution == IndeterminateHyperBoostResolution.Applied
+                    ? reconciliation.RestoredPerformance
+                    : null,
+        };
+    }
+
     private static ConfirmedDeviceState? MergeHyperBoostThermalState(
         ConfirmedDeviceState? preservedState,
         ConfirmedDeviceState? thermalState)
@@ -4131,21 +4245,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && outcome.DeviceAccessFailed
         && !outcome.WriteAttempted;
 
-    private async Task<(
-        FullDeviceObservation Observation,
-        bool SuppressInactiveJournalRetirement,
-        string? Message)> ReconcileIndeterminateHyperBoostExitAsync(
-            FullDeviceObservation observation,
+    private async Task<IndeterminateHyperBoostReconciliation>
+        ReconcileIndeterminateHyperBoostExitAsync(
+            ConfirmedDeviceState confirmed,
             PowerSource powerSource,
             IBladeDevice device,
             CancellationToken cancellationToken)
     {
         if (pendingIndeterminateHyperBoostExitIntent is not { } savedIntent)
         {
-            return (observation, false, null);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: false,
+                Message: null,
+                IndeterminateHyperBoostResolution.None);
         }
 
-        if (observation.Confirmed.HyperBoostActive)
+        if (confirmed.HyperBoostActive)
         {
             bool journalRecovered = await TryWriteHyperBoostOwnershipJournalAsync(
                     HyperBoostOwnershipJournalState.OwnedConfirmed,
@@ -4154,7 +4270,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Fresh readback confirmed that an indeterminate HyperBoost disable did not apply, but its ownership journal could not be returned to owned state.",
                     savedIntent)
                 .ConfigureAwait(false);
-            driftTracker.Observe(observation.Confirmed);
+            driftTracker.Observe(confirmed);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
             string activeMessage = journalRecovered
@@ -4166,7 +4282,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : ControlOperationStatus.Failed,
                 activeMessage);
             pendingIndeterminateHyperBoostExitIntent = null;
-            return (observation, false, activeMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: false,
+                activeMessage,
+                journalRecovered
+                    ? IndeterminateHyperBoostResolution.NotApplied
+                    : IndeterminateHyperBoostResolution.Unsafe);
         }
 
         ServiceStatusSnapshot current = GetStatus();
@@ -4181,10 +4303,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             const string blockedMessage =
                 "Fresh readback confirmed that HyperBoost is off after an indeterminate disable, but the prior performance and fan intent could not be restored because write safety is not confirmed. OpenBlade did not retry the HyperBoost write; control writes remain blocked.";
             history.RecordSummary(ControlOperationStatus.Failed, blockedMessage);
-            return (observation, true, blockedMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: true,
+                blockedMessage,
+                IndeterminateHyperBoostResolution.Unsafe);
         }
 
-        DesiredDeviceState currentDesired = Automation.Resolve(observation.Confirmed);
+        DesiredDeviceState currentDesired = Automation.Resolve(confirmed);
         HyperBoostRestoreIntent restoreIntent = powerSource switch
         {
             PowerSource.PluggedIn => savedIntent,
@@ -4196,12 +4322,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreHyperBoostIntentAsync(
                     device,
                     restoreIntent,
-                    observation.Confirmed,
+                    confirmed,
                     cancellationToken)
                 .ConfigureAwait(false);
         pendingIndeterminateHyperBoostExitIntent = null;
         ConfirmedDeviceState restored = restoration.Readback
-            ?? observation.Confirmed;
+            ?? confirmed;
         ClearOwnedHyperBoostState();
         if (!restoration.Succeeded)
         {
@@ -4209,10 +4335,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string failedMessage =
                 $"Fresh readback confirmed that HyperBoost is off after an indeterminate disable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked.";
             history.RecordSummary(ControlOperationStatus.Failed, failedMessage);
-            return (
-                observation with { Confirmed = restored },
-                true,
-                failedMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                restored,
+                SuppressInactiveJournalRetirement: true,
+                failedMessage,
+                IndeterminateHyperBoostResolution.Unsafe);
         }
 
         driftTracker.Observe(restored);
@@ -4229,28 +4356,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? ControlOperationStatus.Applied
                 : ControlOperationStatus.Failed,
             restoredMessage);
-        return (
-            observation with { Confirmed = restored },
-            !journalRetired,
-            restoredMessage);
+        return new IndeterminateHyperBoostReconciliation(
+            restored,
+            SuppressInactiveJournalRetirement: !journalRetired,
+            restoredMessage,
+            journalRetired
+                ? IndeterminateHyperBoostResolution.Applied
+                : IndeterminateHyperBoostResolution.Unsafe,
+            RestoredPerformance: journalRetired
+                ? restoreIntent.Performance
+                : null);
     }
 
-    private async Task<(
-        FullDeviceObservation Observation,
-        bool SuppressInactiveJournalRetirement,
-        string? Message)> ReconcileIndeterminateHyperBoostEntryAsync(
-            FullDeviceObservation observation,
+    private async Task<IndeterminateHyperBoostReconciliation>
+        ReconcileIndeterminateHyperBoostEntryAsync(
+            ConfirmedDeviceState confirmed,
             PowerSource powerSource,
             IBladeDevice device,
             CancellationToken cancellationToken)
     {
         if (pendingIndeterminateHyperBoostEntryIntent is not { } savedIntent)
         {
-            return (observation, false, null);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: false,
+                Message: null,
+                IndeterminateHyperBoostResolution.None);
         }
 
         PerformancePreset baseMode = pendingIndeterminateHyperBoostEntryBaseMode;
-        if (observation.Confirmed.HyperBoostActive)
+        if (confirmed.HyperBoostActive)
         {
             bool journalFinalized = await TryWriteHyperBoostOwnershipJournalAsync(
                     HyperBoostOwnershipJournalState.OwnedConfirmed,
@@ -4269,7 +4404,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ownedHyperBoostRequiresCoolingPad = false;
             }
 
-            driftTracker.Observe(observation.Confirmed);
+            driftTracker.Observe(confirmed);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
             string activeMessage = journalFinalized
@@ -4280,7 +4415,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? ControlOperationStatus.Stored
                     : ControlOperationStatus.Failed,
                 activeMessage);
-            return (observation, false, activeMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: false,
+                activeMessage,
+                journalFinalized
+                    ? IndeterminateHyperBoostResolution.Applied
+                    : IndeterminateHyperBoostResolution.Unsafe);
         }
 
         ServiceStatusSnapshot current = GetStatus();
@@ -4295,10 +4436,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             const string blockedMessage =
                 "Fresh readback confirmed that HyperBoost stayed off after an indeterminate enable, but the prior performance and fan intent could not be restored because write safety is not confirmed. OpenBlade did not retry the HyperBoost write; control writes remain blocked.";
             history.RecordSummary(ControlOperationStatus.Failed, blockedMessage);
-            return (observation, true, blockedMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: true,
+                blockedMessage,
+                IndeterminateHyperBoostResolution.Unsafe);
         }
 
-        DesiredDeviceState currentDesired = Automation.Resolve(observation.Confirmed);
+        DesiredDeviceState currentDesired = Automation.Resolve(confirmed);
         HyperBoostRestoreIntent restoreIntent = powerSource switch
         {
             PowerSource.PluggedIn => savedIntent,
@@ -4310,12 +4455,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RestoreHyperBoostIntentAsync(
                     device,
                     restoreIntent,
-                    observation.Confirmed,
+                    confirmed,
                     cancellationToken)
                 .ConfigureAwait(false);
         pendingIndeterminateHyperBoostEntryIntent = null;
         ConfirmedDeviceState restored = restoration.Readback
-            ?? observation.Confirmed;
+            ?? confirmed;
         ClearOwnedHyperBoostState();
         if (!restoration.Succeeded)
         {
@@ -4323,10 +4468,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string failedMessage =
                 $"Fresh readback confirmed that HyperBoost stayed off after an indeterminate enable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked.";
             history.RecordSummary(ControlOperationStatus.Failed, failedMessage);
-            return (
-                observation with { Confirmed = restored },
-                true,
-                failedMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                restored,
+                SuppressInactiveJournalRetirement: true,
+                failedMessage,
+                IndeterminateHyperBoostResolution.Unsafe);
         }
 
         driftTracker.Observe(restored);
@@ -4343,10 +4489,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? ControlOperationStatus.Applied
                 : ControlOperationStatus.Failed,
             restoredMessage);
-        return (
-            observation with { Confirmed = restored },
-            true,
-            restoredMessage);
+        return new IndeterminateHyperBoostReconciliation(
+            restored,
+            SuppressInactiveJournalRetirement: true,
+            restoredMessage,
+            journalRetired
+                ? IndeterminateHyperBoostResolution.NotApplied
+                : IndeterminateHyperBoostResolution.Unsafe);
     }
 
     private void ClearOwnedHyperBoostState()
@@ -9314,30 +9463,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string? pendingHyperBoostMessage = null;
             if (powerSourceConfirmed)
             {
-                (FullDeviceObservation entryObservation,
-                    bool suppressAfterEntry,
-                    string? pendingHyperBoostEntryMessage) =
+                IndeterminateHyperBoostReconciliation entry =
                     await ReconcileIndeterminateHyperBoostEntryAsync(
-                            observation,
+                            observation.Confirmed,
                             powerSource,
                             device,
                             cancellationToken)
                         .ConfigureAwait(false);
-                observation = entryObservation;
-                (FullDeviceObservation exitObservation,
-                    bool suppressAfterExit,
-                    string? pendingHyperBoostExitMessage) =
+                observation = observation with { Confirmed = entry.Confirmed };
+                IndeterminateHyperBoostReconciliation exit =
                     await ReconcileIndeterminateHyperBoostExitAsync(
-                            observation,
+                            observation.Confirmed,
                             powerSource,
                             device,
                             cancellationToken)
                         .ConfigureAwait(false);
-                observation = exitObservation;
+                observation = observation with { Confirmed = exit.Confirmed };
                 suppressInactiveHyperBoostJournalRetirement =
-                    suppressAfterEntry || suppressAfterExit;
+                    entry.SuppressInactiveJournalRetirement
+                    || exit.SuppressInactiveJournalRetirement;
                 pendingHyperBoostMessage =
-                    pendingHyperBoostExitMessage ?? pendingHyperBoostEntryMessage;
+                    exit.Message ?? entry.Message;
             }
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
@@ -11748,6 +11894,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState? Observed,
         long? ObservationWindowStartedAt,
         bool GpuClockOffsetConfirmationInvalidated = false);
+
+    private enum IndeterminateHyperBoostResolution
+    {
+        None,
+        Applied,
+        NotApplied,
+        Unsafe,
+    }
+
+    private sealed record IndeterminateHyperBoostReconciliation(
+        ConfirmedDeviceState Confirmed,
+        bool SuppressInactiveJournalRetirement,
+        string? Message,
+        IndeterminateHyperBoostResolution Resolution,
+        PerformancePreset? RestoredPerformance = null);
 
     private sealed record FullDeviceObservation(
         DeviceCapabilities Capabilities,
