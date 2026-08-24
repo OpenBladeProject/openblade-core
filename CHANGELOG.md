@@ -42,7 +42,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   until its final clear succeeds. The recovery remains available when the only
   thermal drift is the exact journaled HyperBoost transition baseline, while a
   different fresh performance or fan state still blocks the retry without a
-  write.
+  write. An indeterminate enable that stays off now preserves an indeterminate
+  entry-intent restoration as the same explicit recovery instead of retiring
+  its pending journal and silently leaving the transition baseline active. If
+  power changes during that failure, low-power writes remain blocked and the
+  journal becomes recoverable only after full-power AC returns, using the then-
+  current destination intent instead of a stale Battery or USB-C profile.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
   invisible or bidirectional format controls, injected protected identifiers, and
   stale installer mnemonic groups, with precise blank-cell feedback; every package

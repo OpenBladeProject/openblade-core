@@ -4482,9 +4482,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ClearOwnedHyperBoostState();
         if (!restoration.Succeeded)
         {
+            bool restoreMarkerWritten = powerSource == PowerSource.PluggedIn
+                && await TryWriteHyperBoostOwnershipJournalAsync(
+                            HyperBoostOwnershipJournalState.RestorePending,
+                            baseMode,
+                            requiresCoolingPad: false,
+                            "The failed HyperBoost entry restore could not be preserved for one explicit recovery.",
+                            restoreIntent)
+                        .ConfigureAwait(false);
             hyperBoostJournalSafetyBlock = true;
+            hyperBoostRestorePending = restoreMarkerWritten;
             string failedMessage =
-                $"Fresh readback confirmed that HyperBoost stayed off after an indeterminate enable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked.";
+                $"Fresh readback confirmed that HyperBoost stayed off after an indeterminate enable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked."
+                + (restoreMarkerWritten
+                    ? " The exact saved intent remains pending for one explicit recovery."
+                    : powerSource is PowerSource.Battery or PowerSource.UsbC
+                        ? " The pending entry journal remains blocked until full-power AC returns, when OpenBlade can save the current destination intent without a hardware write."
+                        : " The exact saved intent could not be recorded for recovery.");
             history.RecordSummary(ControlOperationStatus.Failed, failedMessage);
             return new IndeterminateHyperBoostReconciliation(
                 restored,
@@ -4883,6 +4897,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Failed,
                     $"{failureMessage} The pending restore marker was preserved because inactive HyperBoost does not confirm the saved performance and fan intent.");
                 lastReportedRetainedHyperBoostRestoreJournal = journal;
+            }
+            return false;
+        }
+
+        if (hyperBoostJournalSafetyBlock
+            && journal.State == HyperBoostOwnershipJournalState.EnablePending)
+        {
+            if (confirmed is not null
+                && Automation.PowerSource == PowerSource.PluggedIn)
+            {
+                HyperBoostRestoreIntent destinationIntent =
+                    CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed));
+                ServiceStatusSnapshot current = GetStatus();
+                if (current.Capabilities is not null
+                    && IsSupportedFullPowerHyperBoostIntent(
+                        current.Capabilities,
+                        destinationIntent))
+                {
+                    bool converted =
+                        await TryWriteHyperBoostOwnershipJournalAsync(
+                                HyperBoostOwnershipJournalState.RestorePending,
+                                journal.BaseMode,
+                                journal.RequiresCoolingPad,
+                                "The pending HyperBoost entry could not be converted to the current full-power destination recovery.",
+                                destinationIntent)
+                            .ConfigureAwait(false);
+                    hyperBoostJournalSafetyBlock = true;
+                    hyperBoostRestorePending = converted;
+                }
             }
             return false;
         }
@@ -8706,6 +8749,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveObservedExternalChanges = true)
     {
         ServiceStatusSnapshot current = GetStatus();
+        if (hyperBoostJournalSafetyBlock && !ownsHyperBoost)
+        {
+            LiveReadings? retainedLiveReadings = preserveLiveReadings
+                ? current.LiveReadings
+                : null;
+            await ObserveCoreAsync(
+                    PowerSourceForStatus(powerSource),
+                    powerSource != PowerSource.ExternalUnknown,
+                    requestedLiveReadings: LiveReadingSensors.None,
+                    batteryPowerFlowMilliwatts: null,
+                    token)
+                .ConfigureAwait(false);
+            if (preserveLiveReadings)
+            {
+                PublishIfChanged(GetStatus() with
+                {
+                    LiveReadings = retainedLiveReadings,
+                });
+            }
+            return;
+        }
+
         if (powerSource is PowerSource.Battery or PowerSource.UsbC
             && ownsHyperBoost
             && current.ActivePowerSource != powerSource
