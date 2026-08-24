@@ -66,6 +66,12 @@ Assert-True (-not $qualityJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
     'The quality lane must not serialize build contracts after solution tests.'
 Assert-True ($contractJob.Contains('Get-ChildItem .\tests\Build.Tests')) `
     'The build-contract lane must own the PowerShell contract suites.'
+Assert-True ($contractJob.Contains(
+        'dotnet restore .\src\OpenBlade.Tray\OpenBlade.Tray.csproj -p:NuGetAudit=false -p:OpenBladeLocalizationPreview=true')) `
+    'The full contract lane must restore localization-preview assets.'
+Assert-True ($contractJob.Contains(
+        'dotnet restore .\build\installer\OpenBlade.Installer.UI.Tests\OpenBlade.Installer.UI.Tests.csproj -p:NuGetAudit=false')) `
+    'The full contract lane must restore the disconnected installer renderer.'
 Assert-True ($contractJob.Contains('submodules: recursive')) `
     'The build-contract lane must check out capture tools used by contract tests.'
 Assert-True (-not $contractJob.Contains('.\build\Publish.ps1')) `

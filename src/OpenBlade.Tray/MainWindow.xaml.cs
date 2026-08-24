@@ -161,7 +161,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
         IServiceClient serviceClient = new ServiceClient();
-        string uiVersion = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);
+        string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
@@ -235,6 +235,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
         gpuClockOffsetCommitTimer.IsRepeating = false;
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
+        if (localizationSnapshotMode)
+        {
+            Root.RequestedTheme = ElementTheme.Light;
+            AppTitleBar.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black);
+        }
         micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
         {
@@ -271,6 +276,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true);
+
+    private static string ReadPresentedProductVersion(bool localizationSnapshotMode)
+    {
+        string version = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);
+        if (!localizationSnapshotMode)
+        {
+            return version;
+        }
+
+        int metadataSeparator = version.IndexOf('+', StringComparison.Ordinal);
+        return metadataSeparator < 0 ? version : version[..metadataSeparator];
+    }
 
     internal string LocalizedAppLanguageHeading => AppLanguageHeading.Text;
 

@@ -1,17 +1,21 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = 'artifacts\localization\issue-233',
+    [string]$OutputDirectory = 'artifacts\localization\snapshots',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]
+    [ValidateSet('en-US', 'qps-ploc', 'zh-CN', 'ru-RU')]
     [string]$Culture = 'qps-ploc'
 )
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
-$resolvedOutput = [IO.Path]::GetFullPath((
-    Join-Path (Join-Path $repository $OutputDirectory) $Culture))
+$resolvedOutputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
+    [IO.Path]::GetFullPath($OutputDirectory)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repository $OutputDirectory))
+}
+$resolvedOutput = [IO.Path]::GetFullPath((Join-Path $resolvedOutputRoot $Culture))
 $trayOutput = Join-Path $resolvedOutput 'tray'
 $installerOutput = Join-Path $resolvedOutput 'installer'
 [IO.Directory]::CreateDirectory($trayOutput) | Out-Null
@@ -36,7 +40,11 @@ $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
+$previousCompatibilityLayer = $env:__COMPAT_LAYER
 try {
+    # Constrain every child renderer to a 96-DPI logical desktop without
+    # changing the user's display configuration or machine-wide settings.
+    $env:__COMPAT_LAYER = 'DPIUNAWARE'
     $env:OPENBLADE_PSEUDO_LOCALIZATION = if ($Culture -eq 'qps-ploc') { '1' } else { $null }
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $installerOutput
@@ -101,40 +109,36 @@ finally {
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
+    $env:__COMPAT_LAYER = $previousCompatibilityLayer
 }
 
-$appliedDpi = try {
-    (Get-ItemProperty -LiteralPath 'HKCU:\Control Panel\Desktop\WindowMetrics' `
-        -Name AppliedDPI -ErrorAction Stop).AppliedDPI
-} catch { $null }
-$lightTheme = try {
-    (Get-ItemProperty -LiteralPath (
-        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') `
-        -Name AppsUseLightTheme -ErrorAction Stop).AppsUseLightTheme
-} catch { $null }
 $images = @(Get-ChildItem -LiteralPath $resolvedOutput -Filter '*.png' -File -Recurse |
     Sort-Object FullName |
     ForEach-Object {
         [ordered]@{
-            path = Get-SnapshotRelativePath $resolvedOutput $_.FullName
+            path = (Get-SnapshotRelativePath $resolvedOutput $_.FullName).Replace('\', '/')
             sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             bytes = $_.Length
         }
     })
 $manifest = [ordered]@{
-    sourceRevision = (git -C $repository rev-parse HEAD).Trim()
-    workingTreeDiff = (git -C $repository diff --stat)
-    generatedAtUtc = [DateTime]::UtcNow.ToString('O')
+    schemaVersion = 2
     culture = $Culture
-    operatingSystem = [Environment]::OSVersion.VersionString
-    appliedDpi = $appliedDpi
-    appTheme = if ($null -eq $lightTheme) { 'unknown' }
-        elseif ($lightTheme -eq 0) { 'dark' } else { 'light' }
+    renderProfile = [ordered]@{
+        language = $Culture
+        theme = 'light'
+        dpi = '96-process-local-DPIUNAWARE'
+        installerRendering = 'software'
+        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v1'
+        data = 'sanitized-fixed-preview'
+    }
     images = $images
 }
+$manifestJson = $manifest | ConvertTo-Json -Depth 5
+$manifestJson = $manifestJson.Replace("`r`n", "`n").Replace("`r", "`n") + "`n"
 [IO.File]::WriteAllText(
     (Join-Path $resolvedOutput 'manifest.json'),
-    ($manifest | ConvertTo-Json -Depth 5),
+    $manifestJson,
     [Text.UTF8Encoding]::new($false))
 
 Write-Host "Localization snapshots written to $resolvedOutput"

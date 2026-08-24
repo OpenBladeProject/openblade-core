@@ -2098,9 +2098,31 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "[ValidateSet('qps-ploc', 'zh-CN', 'ru-RU')]",
+            "[ValidateSet('en-US', 'qps-ploc', 'zh-CN', 'ru-RU')]",
             capture,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Root.RequestedTheme = ElementTheme.Light",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReadPresentedProductVersion(localizationSnapshotMode)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "version.IndexOf('+', StringComparison.Ordinal)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "return metadataSeparator < 0 ? version : version[..metadataSeparator]",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CanonicalizeLocalizationSnapshotPixels(\r\n            pixelBytes,\r\n            bitmap.PixelWidth,\r\n            bitmap.PixelHeight)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("majorityCount >= 6", app, StringComparison.Ordinal);
+        Assert.Contains("channelDelta > 16", app, StringComparison.Ordinal);
         Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
             capture,
@@ -3691,7 +3713,7 @@ public sealed class WinUiShellContractTests
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.Contains(
-            "string uiVersion = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);",
+            "string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);",
             window,
             StringComparison.Ordinal);
         Assert.Contains(

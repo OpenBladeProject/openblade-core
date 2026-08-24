@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "screenshots": [
+    "installer/installer-cancel.png",
+    "installer/installer-failure.png",
+    "installer/installer-install.png",
+    "installer/installer-maintenance.png",
+    "installer/installer-newer-version.png",
+    "installer/installer-progress.png",
+    "installer/installer-success.png",
+    "tray/main-about.png",
+    "tray/main-display.png",
+    "tray/main-home.png",
+    "tray/main-laptop.png",
+    "tray/main-lighting.png",
+    "tray/main-profiles.png",
+    "tray/main-profiles-narrow.png",
+    "tray/main-profiles-wide.png",
+    "tray/main-settings-appearance.png",
+    "tray/main-settings.png",
+    "tray/tray-dashboard.png"
+  ],
+  "rules": [
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^(?:TrayDashboard|TrayIconMenu)",
+      "context": "Tray dashboard or notification-area menu.",
+      "screenshots": ["tray/tray-dashboard.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:lighting|keyboard|logo|chroma|ambient|audioMeter|spectrum)",
+      "context": "Lighting page control, status, or accessibility text.",
+      "screenshots": ["tray/main-lighting.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:display|brightness|refresh|resolution|gpuApp)",
+      "context": "Display page control, status, or accessibility text.",
+      "screenshots": ["tray/main-display.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:profile|automation)",
+      "context": "Profiles and automation page control or status.",
+      "screenshots": ["tray/main-profiles.png", "tray/main-profiles-narrow.png", "tray/main-profiles-wide.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:AppLanguage|appearance|theme|accent|density)",
+      "context": "Appearance and language settings control.",
+      "screenshots": ["tray/main-settings-appearance.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:setting|startup|notification|update|specialKey|exitDialog)",
+      "context": "Settings page control, dialog, or status.",
+      "screenshots": ["tray/main-settings.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:about|firmware|version|diagnostic|component|ForGamersByTheCommunity)",
+      "context": "About, diagnostics, version, or firmware information.",
+      "screenshots": ["tray/main-about.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "(?i)(?:laptop|fan|performance|hyperBoost|battery|charge|power|temperature|clock|voltage)",
+      "context": "Laptop page hardware status or control shown with deterministic mock data.",
+      "screenshots": ["tray/main-laptop.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": ".*",
+      "context": "Main OpenBlade window navigation, status, dialog, or common action.",
+      "screenshots": ["tray/main-home.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:lighting|keyboard|logo|chroma|ambient|audio meter|spectrum)",
+      "context": "Runtime lighting presentation text used by the tray and dashboard.",
+      "screenshots": ["tray/main-lighting.png", "tray/tray-dashboard.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:display|brightness|refresh rate|resolution|GPU application)",
+      "context": "Runtime display presentation text.",
+      "screenshots": ["tray/main-display.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:profile|automation)",
+      "context": "Runtime profile and automation presentation text.",
+      "screenshots": ["tray/main-profiles.png", "tray/main-profiles-narrow.png", "tray/main-profiles-wide.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:firmware|BIOS|VBIOS|version|diagnostic|update)",
+      "context": "Runtime diagnostics, version, update, or firmware text.",
+      "screenshots": ["tray/main-about.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:fan|performance|battery|charge|power|temperature|RPM|MHz|voltage|HyperBoost)",
+      "context": "Runtime laptop status or control text shown with deterministic mock data.",
+      "screenshots": ["tray/main-laptop.png", "tray/main-home.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": ".*",
+      "context": "Shared runtime presentation text used in the main window or tray dashboard.",
+      "screenshots": ["tray/main-home.png", "tray/tray-dashboard.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:cancel|rollback|keep working)",
+      "context": "Installer cancellation and safe rollback state.",
+      "screenshots": ["installer/installer-cancel.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:failed|could not|unavailable|missing|malformed|recovery)",
+      "context": "Installer failure or recovery guidance.",
+      "screenshots": ["installer/installer-failure.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:newer|overwrite|already installed|already registered)",
+      "context": "Newer-version or overwrite confirmation.",
+      "screenshots": ["installer/installer-newer-version.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:repair|uninstall|maintenance|remove)",
+      "context": "Installed-product maintenance, repair, or removal state.",
+      "screenshots": ["installer/installer-maintenance.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:progress|preparing|copying|installing|removing|registering|checking|working|applying|committing|restoring|stopping)",
+      "context": "Installer progress state with sanitized deterministic details.",
+      "screenshots": ["installer/installer-progress.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": "(?i)(?:\\bcomplete(?:d)?\\b|\\bsuccess(?:fully)?\\b|\\bready\\b|\\blaunch\\b)",
+      "context": "Successful setup completion state.",
+      "screenshots": ["installer/installer-success.png"]
+    },
+    {
+      "surface": "installer",
+      "match": "source",
+      "pattern": ".*",
+      "context": "Graphical installer ready-to-install state or common action.",
+      "screenshots": ["installer/installer-install.png"]
+    },
+    {
+      "surface": "setup",
+      "match": "source",
+      "pattern": "(?i)(?:failed|could not)",
+      "context": "Native uninstall failure dialog; graphical installer failure is the closest safe preview.",
+      "screenshots": ["installer/installer-failure.png"]
+    },
+    {
+      "surface": "setup",
+      "match": "source",
+      "pattern": ".*",
+      "context": "Native uninstall confirmation or completion dialog; mapped to the safe graphical maintenance preview.",
+      "screenshots": ["installer/installer-maintenance.png"]
+    }
+  ]
+}

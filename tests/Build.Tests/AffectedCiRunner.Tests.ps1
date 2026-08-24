@@ -96,6 +96,27 @@ try {
     }
 
     $global:OpenBladeMockDotNetCalls.Clear()
+    $contractPlan = [ordered]@{
+        mode = 'affected'
+        contractRestoreProjects = @(
+            'src/OpenBlade.Tray/OpenBlade.Tray.csproj',
+            'build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj')
+        contractTests = @()
+    } | ConvertTo-Json -Compress
+    & $runner -Lane Contracts -PlanJson $contractPlan
+    $contractRestores = @($global:OpenBladeMockDotNetCalls | Where-Object {
+            $_[0] -eq 'restore'
+        })
+    Assert-Equal 2 $contractRestores.Count `
+        'Contracts must restore every declared renderer project.'
+    $previewRestore = @($contractRestores | Where-Object {
+            $_[1] -eq 'src/OpenBlade.Tray/OpenBlade.Tray.csproj'
+        })[0]
+    if (($previewRestore -join '|') -notlike '*OpenBladeLocalizationPreview=true*') {
+        throw 'The Tray contract restore must select localization-preview assets.'
+    }
+
+    $global:OpenBladeMockDotNetCalls.Clear()
     $trayPublishPlan = [ordered]@{
         mode = 'affected'
         publishProjects = @('src/OpenBlade.Tray/OpenBlade.Tray.csproj')

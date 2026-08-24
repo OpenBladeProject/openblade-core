@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Repository
+    [string]$Repository,
+    [switch]$AllowLockedCatalogRead
 )
 
 Set-StrictMode -Version 3.0
@@ -51,9 +52,27 @@ function Read-ResourceCatalog {
         throw "Localization catalog is missing: $Path"
     }
     try {
-        [xml]$document = [IO.File]::ReadAllText(
-            $Path,
-            [Text.UTF8Encoding]::new($false, $true))
+        if ($AllowLockedCatalogRead) {
+            $stream = [IO.File]::Open(
+                $Path,
+                [IO.FileMode]::Open,
+                [IO.FileAccess]::Read,
+                [IO.FileShare]::ReadWrite)
+            try {
+                $reader = [IO.StreamReader]::new(
+                    $stream,
+                    [Text.UTF8Encoding]::new($false, $true),
+                    $true)
+                try { [xml]$document = $reader.ReadToEnd() }
+                finally { $reader.Dispose() }
+            }
+            finally { $stream.Dispose() }
+        }
+        else {
+            [xml]$document = [IO.File]::ReadAllText(
+                $Path,
+                [Text.UTF8Encoding]::new($false, $true))
+        }
     }
     catch { throw "Localization catalog is malformed: $Path. $($_.Exception.Message)" }
 
