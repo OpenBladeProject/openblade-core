@@ -208,6 +208,40 @@ foreach ($localizedPath in @(
         "Localization path '$localizedPath' must validate resource contracts."
 }
 
+foreach ($translatorPath in @(
+        'build/Export-LocalizationTranslatorPackage.ps1',
+        'build/Import-LocalizationTranslatorWorkbook.ps1',
+        'build/LocalizationTranslatorWorkflow.psm1',
+        'build/Validate-LocalizationResources.ps1',
+        'build/localization/TranslatorScreenshotMap.json',
+        'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
+        'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
+        'build/installer/OpenBlade.Installer.UI/Properties/Resources.ru-RU.resx',
+        'docs/localization-translators.md',
+        'src/OpenBlade.Setup/Properties/Resources.resx',
+        'src/OpenBlade.Setup/Properties/Resources.ru-RU.resx',
+        'src/OpenBlade.Tray/App.xaml.cs',
+        'src/OpenBlade.Tray/MainWindow.xaml',
+        'src/OpenBlade.Tray/MainWindow.xaml.cs',
+        'src/OpenBlade.Tray/Strings/en-US/Resources.resw',
+        'src/OpenBlade.Tray/Strings/ru-RU/Resources.resw',
+        'src/OpenBlade.Tray.Core/Properties/Resources.resx',
+        'src/OpenBlade.Tray.Core/Properties/Resources.ru-RU.resx',
+        'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')) {
+    $translator = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($translatorPath)
+    Assert-Contains $translator.ContractTests `
+        'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
+        "Translator workflow path '$translatorPath' must run its adversarial contracts."
+}
+$translatorRestore = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'build/LocalizationTranslatorWorkflow.psm1')
+foreach ($restoreProject in @(
+        'src/OpenBlade.Tray/OpenBlade.Tray.csproj',
+        'build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj')) {
+    Assert-Contains $translatorRestore.ContractRestoreProjects $restoreProject `
+        'Translator contracts must restore every disconnected snapshot renderer.'
+}
+
 foreach ($globalPath in @(
         'Directory.Build.props',
         'src/OpenBlade.Service/OpenBlade.Service.csproj',

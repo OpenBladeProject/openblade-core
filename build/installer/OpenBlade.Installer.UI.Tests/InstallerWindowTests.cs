@@ -2,7 +2,6 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Runtime.ExceptionServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -10,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
@@ -247,6 +247,8 @@ public sealed class InstallerWindowTests
                         window.ShowProgress(LaunchAction.Install);
                         window.SetProgress(47, InstallerStrings.Get("Installing OpenBlade"));
                         window.AddDetail("Stable diagnostic detail: OpenBlade.Tray.exe");
+                        window.DetailsText.Text =
+                            "00:00:00  Stable diagnostic detail: OpenBlade.Tray.exe";
                         window.DetailsToggle.IsChecked = true;
                     },
                     window =>
@@ -302,12 +304,18 @@ public sealed class InstallerWindowTests
                     Topmost = true,
                 };
                 window.Show();
+                InstallerTheme.Apply(window, dark: false);
                 try
                 {
                     showState(window);
                     PumpDispatcher(window.Dispatcher);
                     window.UpdateLayout();
-                    FrameworkElement visual = (FrameworkElement)window.Content;
+                    Grid visual = Assert.IsType<Grid>(window.Content);
+                    const int width = 560;
+                    const int height = 560;
+                    visual.Measure(new System.Windows.Size(width, height));
+                    visual.Arrange(new Rect(0, 0, width, height));
+                    visual.UpdateLayout();
                     FrameworkElement[] activeActions = selectActiveActions(window);
                     AssertWithinSnapshot(visual, window.HeaderPanel);
                     AssertWithinSnapshot(visual, window.VersionText);
@@ -315,33 +323,47 @@ public sealed class InstallerWindowTests
                     {
                         AssertWithinSnapshot(visual, action);
                     }
-                    _ = window.Activate();
-                    PumpDispatcher(window.Dispatcher);
-                    // Let the focused button template finish drawing before PrintWindow.
-                    Thread.Sleep(500);
-                    PumpDispatcher(window.Dispatcher);
-                    IntPtr handle = new WindowInteropHelper(window).Handle;
-                    Assert.True(GetWindowRect(handle, out NativeRect windowBounds));
-                    int width = windowBounds.Right - windowBounds.Left;
-                    int height = windowBounds.Bottom - windowBounds.Top;
-                    Assert.True(width > 0 && height > 0);
-                    using var bitmap = new System.Drawing.Bitmap(width, height);
-                    using (System.Drawing.Graphics graphics =
-                           System.Drawing.Graphics.FromImage(bitmap))
+                    var bitmap = new RenderTargetBitmap(
+                        width,
+                        height,
+                        96,
+                        96,
+                        PixelFormats.Pbgra32);
+                    var backgroundVisual = new DrawingVisual();
+                    using (DrawingContext drawing = backgroundVisual.RenderOpen())
                     {
-                        IntPtr deviceContext = graphics.GetHdc();
-                        try
-                        {
-                            Assert.True(PrintWindow(handle, deviceContext, 2));
-                        }
-                        finally
-                        {
-                            graphics.ReleaseHdc(deviceContext);
-                        }
+                        drawing.DrawRectangle(
+                            Assert.IsType<SolidColorBrush>(window.Resources["WindowBrush"]),
+                            null,
+                            new Rect(0, 0, width, height));
                     }
-                    bitmap.Save(
-                        Path.Combine(outputDirectory, name + ".png"),
-                        System.Drawing.Imaging.ImageFormat.Png);
+                    bitmap.Render(backgroundVisual);
+                    bitmap.Render(visual);
+                    byte[] topLeftPixel = new byte[4];
+                    bitmap.CopyPixels(
+                        new Int32Rect(0, 0, 1, 1),
+                        topLeftPixel,
+                        4,
+                        0);
+                    Assert.Equal(new byte[] { 0xF7, 0xF7, 0xF7, 0xFF }, topLeftPixel);
+                    int stride = width * 4;
+                    byte[] pixels = new byte[stride * height];
+                    bitmap.CopyPixels(pixels, stride, 0);
+                    CanonicalizeLocalizationSnapshotPixels(pixels, width, height);
+                    BitmapSource canonicalBitmap = BitmapSource.Create(
+                        width,
+                        height,
+                        96,
+                        96,
+                        PixelFormats.Pbgra32,
+                        null,
+                        pixels,
+                        stride);
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(canonicalBitmap));
+                    using FileStream stream = File.Create(
+                        Path.Combine(outputDirectory, name + ".png"));
+                    encoder.Save(stream);
                 }
                 finally
                 {
@@ -351,21 +373,161 @@ public sealed class InstallerWindowTests
         }
     }
 
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetWindowRect(IntPtr window, out NativeRect bounds);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
+    private static void CanonicalizeLocalizationSnapshotPixels(
+        byte[] pixels,
+        int width,
+        int height)
     {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
+        if (width <= 0 || height <= 0 ||
+            pixels.Length != checked(width * height * 4))
+        {
+            throw new InvalidOperationException(
+                "The localization snapshot pixel buffer is not BGRA8 data.");
+        }
+
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            byte alpha = pixels[index + 3];
+            for (int channel = 0; channel < 3; channel++)
+            {
+                byte value = pixels[index + channel];
+                byte canonical = value is 0 or 255
+                    ? value
+                    : (byte)((value & 0xF0) | 0x07);
+                pixels[index + channel] = Math.Min(canonical, alpha);
+            }
+        }
+
+        byte[] quantized = (byte[])pixels.Clone();
+        for (int y = 1; y < height - 1; y++)
+        {
+            for (int x = 1; x < width - 1; x++)
+            {
+                int centerIndex = ((y * width) + x) * 4;
+                uint center = ReadSnapshotPixel(quantized, centerIndex);
+                uint majority = 0;
+                int majorityBalance = 0;
+                for (int candidateY = y - 1; candidateY <= y + 1; candidateY++)
+                {
+                    for (int candidateX = x - 1; candidateX <= x + 1; candidateX++)
+                    {
+                        if (candidateX == x && candidateY == y)
+                        {
+                            continue;
+                        }
+
+                        uint candidate = ReadSnapshotPixel(
+                            quantized,
+                            ((candidateY * width) + candidateX) * 4);
+                        if (majorityBalance == 0)
+                        {
+                            majority = candidate;
+                            majorityBalance = 1;
+                        }
+                        else
+                        {
+                            majorityBalance += candidate == majority ? 1 : -1;
+                        }
+                    }
+                }
+
+                int majorityCount = 0;
+                for (int neighborY = y - 1; neighborY <= y + 1; neighborY++)
+                {
+                    for (int neighborX = x - 1; neighborX <= x + 1; neighborX++)
+                    {
+                        if ((neighborX != x || neighborY != y) &&
+                            ReadSnapshotPixel(
+                                quantized,
+                                ((neighborY * width) + neighborX) * 4) == majority)
+                        {
+                            majorityCount++;
+                        }
+                    }
+                }
+
+                if (majorityCount >= 6 &&
+                    IsAdjacentSnapshotPaletteColor(center, majority))
+                {
+                    WriteSnapshotPixel(pixels, centerIndex, majority);
+                }
+            }
+        }
+    }
+
+    private static uint ReadSnapshotPixel(byte[] pixels, int index)
+    {
+        return (uint)(pixels[index] |
+            (pixels[index + 1] << 8) |
+            (pixels[index + 2] << 16) |
+            (pixels[index + 3] << 24));
+    }
+
+    private static void WriteSnapshotPixel(byte[] pixels, int index, uint value)
+    {
+        pixels[index] = (byte)value;
+        pixels[index + 1] = (byte)(value >> 8);
+        pixels[index + 2] = (byte)(value >> 16);
+        pixels[index + 3] = (byte)(value >> 24);
+    }
+
+    private static bool IsAdjacentSnapshotPaletteColor(uint value, uint candidate)
+    {
+        if ((byte)(value >> 24) != (byte)(candidate >> 24))
+        {
+            return false;
+        }
+
+        bool differs = false;
+        for (int shift = 0; shift <= 16; shift += 8)
+        {
+            int channelDelta = Math.Abs(
+                (byte)(value >> shift) - (byte)(candidate >> shift));
+            if (channelDelta > 16)
+            {
+                return false;
+            }
+
+            differs |= channelDelta != 0;
+        }
+
+        return differs;
+    }
+
+    [Fact]
+    public void LocalizationSnapshotCanonicalizationRepairsOnlyAdjacentOutliers()
+    {
+        const int width = 3;
+        const int height = 3;
+        byte[] pixels = new byte[width * height * 4];
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            pixels[index] = 231;
+            pixels[index + 1] = 231;
+            pixels[index + 2] = 231;
+            pixels[index + 3] = 255;
+        }
+
+        int center = ((1 * width) + 1) * 4;
+        pixels[center] = 215;
+        pixels[center + 1] = 215;
+        pixels[center + 2] = 215;
+
+        CanonicalizeLocalizationSnapshotPixels(pixels, width, height);
+
+        Assert.Equal(231, pixels[center]);
+        Assert.Equal(231, pixels[center + 1]);
+        Assert.Equal(231, pixels[center + 2]);
+        Assert.Equal(255, pixels[center + 3]);
+
+        pixels[center] = 199;
+        pixels[center + 1] = 199;
+        pixels[center + 2] = 199;
+        CanonicalizeLocalizationSnapshotPixels(pixels, width, height);
+        Assert.Equal(199, pixels[center]);
+        Assert.Equal(199, pixels[center + 1]);
+        Assert.Equal(199, pixels[center + 2]);
+        Assert.Equal(255, pixels[center + 3]);
     }
 
     private static void AssertWithinSnapshot(

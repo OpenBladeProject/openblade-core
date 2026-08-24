@@ -31,9 +31,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   indeterminate transitions where a user selection would otherwise stay
   visually stale. Selecting another performance choice exits HyperBoost first,
   then uses the service's exact restored performance to preserve the selection
-  without a dropped or redundant follow-up write. If an indeterminate exit leaves an
-  exact saved manual-fan intent unconfirmed, OpenBlade now keeps all writes
-  blocked and offers one explicit, safety-gated restore attempt without
+  without a dropped or redundant follow-up write. If an indeterminate exit
+  leaves an exact saved manual-fan intent unconfirmed, OpenBlade now keeps all
+  writes blocked and offers one explicit, safety-gated restore attempt without
   automatic retries; repeated observations no longer flood the bounded
   diagnostic history with the same retained-journal message. A successful
   attended recovery now keeps the saved performance and fan intent active until
@@ -43,6 +43,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   thermal drift is the exact journaled HyperBoost transition baseline, while a
   different fresh performance or fan state still blocks the retry without a
   write.
+- Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
+  invisible or bidirectional format controls, injected protected identifiers, and
+  stale installer mnemonic groups, with precise blank-cell feedback; every package
+  now requires context screenshots, and CI restores both disconnected renderers.
 - Prevented a missed function-row keyboard hook from executing both the media
   action and its underlying F-key while the Session Agent restores the hook.
 - Kept the Session Agent and media-key handling alive when a client closes a
@@ -76,6 +80,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an Excel-compatible translator package workflow for all four localization
+  surfaces, with sanitized context screenshots, deterministic source and target
+  catalog hashes, locked source and target transactions, synchronized source keysets,
+  complete composite-format, shortcut, and mnemonic validation, build-metadata-free
+  context renders, and a plain-language contributor guide.
 - Added a fail-closed padless HyperBoost admission path on RZ09-0581. The
   reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
   low-power, and unexpected-exit evidence now admits production use without

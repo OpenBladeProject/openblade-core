@@ -132,8 +132,12 @@ switch ($Lane) {
             -AllowedPrefix @('tests/Build.Tests/')
 
         foreach ($project in $restoreProjects) {
-            Invoke-DotNetChecked -Operation "restore $project" -Arguments @(
-                'restore', $project, '-p:NuGetAudit=false')
+            $restoreArguments = @('restore', $project, '-p:NuGetAudit=false')
+            if ($project -ceq 'src/OpenBlade.Tray/OpenBlade.Tray.csproj') {
+                $restoreArguments += '-p:OpenBladeLocalizationPreview=true'
+            }
+            Invoke-DotNetChecked -Operation "restore $project" `
+                -Arguments $restoreArguments
         }
         foreach ($test in $contractTests) {
             $global:LASTEXITCODE = 0
