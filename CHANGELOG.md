@@ -48,6 +48,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   power changes during that failure, low-power writes remain blocked and the
   journal becomes recoverable only after full-power AC returns, using the then-
   current destination intent instead of a stale Battery or USB-C profile.
+  Safely restored failed entries are now recorded as failures rather than
+  applied transitions, and Quick Controls shows the same localized operation
+  error as the main Dashboard instead of only snapping back to the confirmed
+  performance choice.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
   invisible or bidirectional format controls, injected protected identifiers, and
   stale installer mnemonic groups, with precise blank-cell feedback; every package

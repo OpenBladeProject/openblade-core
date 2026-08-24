@@ -12993,6 +12993,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             restored.DesiredState.Performance.Value);
         Assert.Equal(FanMode.Fixed, restored.DesiredState.Fans.Value);
         Assert.Contains("restored without retrying", restorationMessage);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Failed"
+                && entry.Detail is { } detail
+                && detail.Contains("stayed off", StringComparison.OrdinalIgnoreCase)
+                && detail.Contains(
+                    "restored without retrying",
+                    StringComparison.OrdinalIgnoreCase));
         Assert.Null(journal.Journal);
     }
 

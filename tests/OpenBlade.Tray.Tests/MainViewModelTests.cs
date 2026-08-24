@@ -8504,6 +8504,61 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task HyperBoostFailedEntry_PreservesCustomSelectionAndReportsFailure()
+    {
+        const string failure =
+            "Fresh readback confirmed that HyperBoost stayed off and Custom was restored.";
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                failure),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot custom = CreatePadlessHyperBoostStatus(baseline) with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High),
+                HyperBoostActive = false,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.TemporaryOverride),
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High),
+            },
+        };
+        client.Publish(custom);
+        await WaitUntilAsync(() =>
+            viewModel.SelectedPerformance == PerformancePreset.Custom
+            && viewModel.CanToggleHyperBoost);
+        LaptopPerformanceOption hyperBoost = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.IsHyperBoost);
+
+        await viewModel.SetLaptopPerformanceOptionAsync(hyperBoost, default);
+
+        Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Custom, viewModel.SelectedPerformance);
+        Assert.Equal(
+            PerformancePreset.Custom,
+            viewModel.SelectedLaptopPerformanceOption?.Value);
+        Assert.Equal(
+            "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
+            viewModel.OperationFeedbackMessage);
+        Assert.Equal(failure, viewModel.OperationStatusMessage);
+        Assert.Equal(failure.TrimEnd('.'), viewModel.TroubleshootingRecentErrorStatus);
+    }
+
+    [Fact]
     public async Task LaptopPerformanceChoice_ExitsWithoutRewritingRestoredIntent()
     {
         var client = new FakeServiceClient

@@ -4517,9 +4517,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ? $"Fresh readback confirmed that HyperBoost stayed off and the prior {PerformanceLabel(restoreIntent.Performance)} performance and fan intent was restored without retrying the HyperBoost write."
             : $"Fresh readback confirmed that HyperBoost stayed off and the prior {PerformanceLabel(restoreIntent.Performance)} performance and fan intent was restored without retrying the HyperBoost write, but its ownership journal could not be cleared; control writes remain blocked.";
         history.RecordSummary(
-            journalRetired
-                ? ControlOperationStatus.Applied
-                : ControlOperationStatus.Failed,
+            ControlOperationStatus.Failed,
             restoredMessage);
         return new IndeterminateHyperBoostReconciliation(
             restored,

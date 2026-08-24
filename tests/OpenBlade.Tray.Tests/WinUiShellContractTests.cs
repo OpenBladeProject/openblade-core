@@ -3067,6 +3067,38 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayDashboardShowsOperationFailuresAcrossDashboardAndDetailPages()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "TrayDashboardWindow.xaml"));
+        XElement operationError = NamedElement(
+            document,
+            "InfoBar",
+            "QuickControlsOperationErrorInfoBar");
+
+        Assert.Equal("Error", Attribute(operationError, "Severity"));
+        Assert.Equal("True", Attribute(operationError, "IsClosable"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
+            Attribute(operationError, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
+            Attribute(operationError, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}",
+            Attribute(operationError, "Message"));
+        Assert.Equal(
+            "MainWindow_OperationErrorInfoBarText",
+            Attribute(operationError, "Uid"));
+        Assert.Equal("1", Attribute(
+            NamedElement(document, "Grid", "DashboardPage"),
+            "Grid.Row"));
+        Assert.Equal("1", Attribute(
+            NamedElement(document, "Grid", "DetailPage"),
+            "Grid.Row"));
+    }
+
+    [Fact]
     public void TrayDashboardUsesSingleClickAndSettingsOwnedLiveCustomization()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
@@ -3511,7 +3543,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
         int dashboardPage = dashboardXaml.IndexOf(
-            "<Grid x:Name=\"DashboardPage\">",
+            "<Grid x:Name=\"DashboardPage\"",
             StringComparison.Ordinal);
         int controlScroller = dashboardXaml.IndexOf(
             "<ScrollViewer x:Name=\"ControlScroller\"",

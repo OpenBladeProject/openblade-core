@@ -93,11 +93,22 @@
         </Grid.Resources>
 
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="DashboardPage">
+        <InfoBar x:Uid="MainWindow_OperationErrorInfoBarText"
+                 x:Name="QuickControlsOperationErrorInfoBar"
+                 IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                 Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                 Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
+                 Severity="Error"
+                 IsClosable="True"
+                 Margin="14,8,14,4"
+                 AutomationProperties.Name="Operation error" />
+
+        <Grid x:Name="DashboardPage" Grid.Row="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
@@ -483,7 +494,7 @@
             </Border>
         </Grid>
 
-        <Grid x:Name="DetailPage" Visibility="Collapsed">
+        <Grid x:Name="DetailPage" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -571,7 +582,7 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 Height="48"
                 Padding="20,0"
                 BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
