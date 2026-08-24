@@ -1695,7 +1695,24 @@ internal sealed class ProductionBatteryPort :
                 .ConfigureAwait(false);
         if (adapter.Failure is not null)
         {
-            ThrowReadFailure(adapter.Failure.Value, adapter.Diagnostic, cancellationToken);
+            HidSessionFailureKind failure = adapter.Failure.Value;
+            try
+            {
+                ThrowReadFailure(failure, adapter.Diagnostic, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                IsTransientHyperBoostAdapterReadFailure(failure))
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                    "The HyperBoost adapter preflight read failed before any HyperBoost command was submitted.",
+                    exception);
+            }
         }
 
         bool adapterEligible = padAbsentEligibility
@@ -1708,6 +1725,11 @@ internal sealed class ProductionBatteryPort :
                 "HyperBoost requires a confirmed admitted full-power adapter.");
         }
     }
+
+    private static bool IsTransientHyperBoostAdapterReadFailure(
+        HidSessionFailureKind failure) => failure is
+        HidSessionFailureKind.Timeout or
+        HidSessionFailureKind.NativeIoFailure;
 
     private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
         CancellationToken cancellationToken)

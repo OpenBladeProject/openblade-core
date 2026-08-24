@@ -76,6 +76,74 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task HyperBoost_TransientAdapterReadFailureIsTaggedBeforeSubmission()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        DeviceCommandCatalog hyperBoostCatalog = Catalog(
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x07, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x07, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x00, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState>
+                {
+                    AdapterPowerState.FullPower330W,
+                },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(
+                CoolingPadConnectionState.Absent));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+            error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Equal(3, session.Commands.Count);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.Arguments.Span.Contains((byte)0x07));
+    }
+
+    [Fact]
     public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
     {
         var session = new ScriptedSession(Success([0x01, 0x05, 0x00, 0x00]));
@@ -1559,6 +1627,12 @@ public sealed class ProductionBatteryPortTests
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class FixedHyperBoostEligibilitySource(
+        CoolingPadConnectionState state) : IHyperBoostEligibilitySource
+    {
+        public CoolingPadConnectionState ObserveCoolingPad() => state;
     }
 
     private sealed class CancelAfterFirstWriteSession(CancellationTokenSource cancellation)

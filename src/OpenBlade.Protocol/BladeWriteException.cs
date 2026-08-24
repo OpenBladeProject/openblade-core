@@ -6,6 +6,12 @@ public enum WriteSubmissionState
     Indeterminate,
 }
 
+internal enum BladeWriteFailurePhase
+{
+    Unspecified,
+    HyperBoostAdapterEligibilityRead,
+}
+
 public sealed class BladeWriteException : Exception
 {
     public BladeWriteException(
@@ -15,7 +21,21 @@ public sealed class BladeWriteException : Exception
         : base(message, innerException)
     {
         SubmissionState = submissionState;
+        FailurePhase = BladeWriteFailurePhase.Unspecified;
+    }
+
+    internal BladeWriteException(
+        WriteSubmissionState submissionState,
+        BladeWriteFailurePhase failurePhase,
+        string message,
+        Exception? innerException = null)
+        : base(message, innerException)
+    {
+        SubmissionState = submissionState;
+        FailurePhase = failurePhase;
     }
 
     public WriteSubmissionState SubmissionState { get; }
+
+    internal BladeWriteFailurePhase FailurePhase { get; }
 }

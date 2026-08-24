@@ -1299,7 +1299,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     enabled,
                     baseMode,
                     cancellationToken),
-                cancellationToken);
+                cancellationToken,
+                retryHyperBoostAdapterPreflight: true);
 
         public Task EnablePadlessHyperBoostLifecycleValidationAsync(
             CancellationToken cancellationToken)
@@ -1316,7 +1317,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken)
                     : Task.FromException(new CapabilityUnavailableException(
                         "The exact validation-only pad-less HyperBoost port is unavailable.")),
-                cancellationToken);
+                cancellationToken,
+                retryHyperBoostAdapterPreflight: true);
         }
 
         public async Task SetGpuClockOffsetsAsync(
@@ -2011,10 +2013,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             Func<IProductionBatteryPort, Task> write,
             CancellationToken cancellationToken,
             Action? beforeWrite = null,
-            Action? afterWrite = null)
+            Action? afterWrite = null,
+            bool retryHyperBoostAdapterPreflight = false)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
+            BladeWriteException? exhaustedHyperBoostAdapterPreflight = null;
+            BladeWriteException? canceledHyperBoostAdapterRetry = null;
+            bool hyperBoostAdapterRetryPreWrite = false;
             try
             {
                 await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -2035,33 +2041,79 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             try
             {
-                beforeWrite?.Invoke();
-                cancellationToken.ThrowIfCancellationRequested();
-                HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
-                if (opened.Value is not { } port)
+                int attemptCount = retryHyperBoostAdapterPreflight ? 2 : 1;
+                for (int attempt = 0; attempt < attemptCount; attempt++)
                 {
-                    throw MapWriteOpenFailure(opened.Failure);
-                }
-
-                await using (port.ConfigureAwait(false))
-                {
-                    if (opened.Failure is not null)
-                    {
-                        throw MapWriteOpenFailure(opened.Failure);
-                    }
-
-                    await write(port).ConfigureAwait(false);
+                    bool isHyperBoostAdapterRetry = attempt > 0;
+                    hyperBoostAdapterRetryPreWrite = isHyperBoostAdapterRetry;
                     try
                     {
-                        afterWrite?.Invoke();
+                        beforeWrite?.Invoke();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        HidSessionResult<IProductionBatteryPort> opened =
+                            await batteryFactory.OpenAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                        if (opened.Value is not { } port)
+                        {
+                            throw MapWriteOpenFailure(opened.Failure);
+                        }
+
+                        await using (port.ConfigureAwait(false))
+                        {
+                            if (opened.Failure is not null)
+                            {
+                                throw MapWriteOpenFailure(opened.Failure);
+                            }
+
+                            cancellationToken.ThrowIfCancellationRequested();
+                            hyperBoostAdapterRetryPreWrite = false;
+                            await write(port).ConfigureAwait(false);
+                            try
+                            {
+                                afterWrite?.Invoke();
+                            }
+                            catch (BladeWriteException exception)
+                            {
+                                // Preserve only the paired post-write failure.
+                                // Other port failures retain the provider's
+                                // conservative indeterminate mapping unless an
+                                // exact pre-submission phase is handled below.
+                                afterWriteFailure = exception;
+                                throw;
+                            }
+                        }
+
+                        return;
                     }
-                    catch (BladeWriteException exception)
+                    catch (BladeWriteException exception) when (
+                        retryHyperBoostAdapterPreflight
+                        && exception.SubmissionState
+                            == WriteSubmissionState.KnownNotApplied
+                        && exception.FailurePhase
+                            == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead)
                     {
-                        // Preserve only the paired post-write failure. BladeWriteException
-                        // instances from the port retain the existing indeterminate mapping.
-                        afterWriteFailure = exception;
+                        if (attempt + 1 < attemptCount)
+                        {
+                            logger?.LogInformation(
+                                "HyperBoost adapter preflight failed before submission; retrying once on a fresh verified session.");
+                            continue;
+                        }
+
+                        exhaustedHyperBoostAdapterPreflight = exception;
                         throw;
+                    }
+                    catch (BladeWriteException exception) when (
+                        isHyperBoostAdapterRetry
+                        && cancellationToken.IsCancellationRequested
+                        && exception.SubmissionState
+                            == WriteSubmissionState.KnownNotApplied)
+                    {
+                        canceledHyperBoostAdapterRetry = new BladeWriteException(
+                            WriteSubmissionState.KnownNotApplied,
+                            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                            "The HyperBoost adapter preflight retry was canceled before any HyperBoost command was submitted.",
+                            exception);
+                        throw canceledHyperBoostAdapterRetry;
                     }
                 }
             }
@@ -2070,12 +2122,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 throw;
             }
             catch (BladeWriteException exception)
-                when (ReferenceEquals(exception, afterWriteFailure))
+                when (ReferenceEquals(exception, afterWriteFailure)
+                    || ReferenceEquals(
+                        exception,
+                        exhaustedHyperBoostAdapterPreflight)
+                    || ReferenceEquals(exception, canceledHyperBoostAdapterRetry))
             {
                 throw;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (hyperBoostAdapterRetryPreWrite)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                        "The HyperBoost adapter preflight retry was canceled before any HyperBoost command was submitted.");
+                }
+
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
                     "The hardware write was canceled after a verified session opened.");
