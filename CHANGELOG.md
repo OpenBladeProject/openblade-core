@@ -39,7 +39,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   attended recovery now keeps the saved performance and fan intent active until
   the power source changes, preventing normal profile reconciliation from
   immediately replacing it, and journal retirement preserves that exact intent
-  until its final clear succeeds.
+  until its final clear succeeds. The recovery remains available when the only
+  thermal drift is the exact journaled HyperBoost transition baseline, while a
+  different fresh performance or fan state still blocks the retry without a
+  write.
 - Prevented a missed function-row keyboard hook from executing both the media
   action and its underlying F-key while the Session Agent restores the hook.
 - Kept the Session Agent and media-key handling alive when a client closes a

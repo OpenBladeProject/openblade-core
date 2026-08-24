@@ -2039,6 +2039,7 @@ public sealed class MainViewModelTests
         {
             ActivePowerSource = PowerSource.PluggedIn,
             HyperBoostRestorePending = true,
+            ExternalChanges = [DeviceSubsystem.Performance],
         };
         client.Publish(pending);
         await WaitUntilAsync(() => viewModel.HasPendingHyperBoostRestore);

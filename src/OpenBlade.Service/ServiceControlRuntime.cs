@@ -2089,7 +2089,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || HasPendingWriteConfirmations()
                 || current.ControllerDetectionWarning is not null
                 || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
-                || thermalExternalChange
                 || powerSource != PowerSource.PluggedIn
                 || current.ActivePowerSource != PowerSource.PluggedIn
                 || current.Capabilities is null
@@ -2132,6 +2131,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return PublishHyperBoostRestoreRecoveryResult(
                     ControlOperationStatus.Blocked,
                     "The saved restore was not retried because fresh readback shows HyperBoost is active.",
+                    fresh,
+                    restorePending: true);
+            }
+
+            if (thermalExternalChange
+                && !ConfirmedStateMatchesHyperBoostTransitionBaseline(
+                    fresh,
+                    journal.BaseMode))
+            {
+                return PublishHyperBoostRestoreRecoveryResult(
+                    ControlOperationStatus.Blocked,
+                    "The saved restore was not retried because fresh thermal readback no longer matches the known HyperBoost transition baseline.",
                     fresh,
                     restorePending: true);
             }
@@ -3903,6 +3914,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && intent.FanControl.Mode == FanMode.Automatic
         && confirmed.Fans == FanMode.Automatic
         && intent.GpuClockTuning is null;
+
+    private static bool ConfirmedStateMatchesHyperBoostTransitionBaseline(
+        ConfirmedDeviceState confirmed,
+        PerformancePreset baseMode) =>
+        !confirmed.HyperBoostActive
+        && confirmed.Performance == baseMode
+        && confirmed.Fans == FanMode.Automatic;
 
     private static bool HyperBoostBaselineStepSucceeded(
         ScopedApplyOutcome outcome) => outcome.Result.Status is

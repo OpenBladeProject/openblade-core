@@ -1261,8 +1261,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ControllerDetectionWarning: null,
         }
         && latestStatus.PotentialControllers.Count == 0
-        && !latestStatus.ExternalChanges.Any(subsystem => subsystem is
-            DeviceSubsystem.Performance or DeviceSubsystem.Fans)
         && !IsHyperBoostRestoreRecoveryInProgress;
 
     public string HyperBoostRestoreRecoveryText => TrayText.Get(
