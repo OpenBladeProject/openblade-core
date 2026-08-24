@@ -8440,6 +8440,28 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LaptopSelectors_RestoreAuthoritativeSelectionNotifiesBindings()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+
+        viewModel.RestoreLaptopPerformanceSelection();
+        viewModel.RestoreFanModeSelection();
+
+        Assert.Contains(nameof(viewModel.SelectedLaptopPerformanceOption), changed);
+        Assert.Contains(nameof(viewModel.SelectedFanModeOption), changed);
+    }
+
+    [Fact]
     public async Task HyperBoostFailedCommand_PreservesAuthoritativePresentation()
     {
         var client = new FakeServiceClient
@@ -8590,6 +8612,122 @@ public sealed class MainViewModelTests
             .Single(option => option.Value == PerformancePreset.Performance);
 
         await viewModel.SetLaptopPerformanceOptionAsync(performance, default);
+
+        Assert.Equal(
+            ["hyperBoost:False", "performance:Performance"],
+            client.MutationOperations);
+        Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task LaptopPerformanceChoice_PowerChangeDuringExitStopsBeforePresetWrite()
+    {
+        var client = new FakeServiceClient
+        {
+            BlockMutations = true,
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Restored")
+            {
+                HyperBoostRestoredPerformance = PerformancePreset.Silent,
+            },
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                HyperBoostActive = true,
+            },
+        };
+        client.Publish(active);
+        await WaitUntilAsync(() =>
+            viewModel.HyperBoostActive
+            && viewModel.AvailableLaptopPerformanceOptions.Any(
+                option => option.Value == PerformancePreset.Performance));
+        LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Performance);
+
+        Task operation = viewModel.SetLaptopPerformanceOptionAsync(performance, default);
+        await client.MutationStarted.Task;
+        ServiceStatusSnapshot battery = active with
+        {
+            Revision = active.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+            DesiredState = active.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.BatteryBalanced,
+                    SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = active.ConfirmedState! with
+            {
+                Performance = PerformancePreset.BatteryBalanced,
+                HyperBoostActive = false,
+            },
+        };
+        client.Publish(battery);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+        client.CompleteMutation();
+
+        await operation;
+
+        Assert.Equal(["hyperBoost:False"], client.MutationOperations);
+        Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(PowerSource.Battery, viewModel.ActivePowerSource);
+        Assert.Equal(PerformancePreset.BatteryBalanced, viewModel.SelectedPerformance);
+        Assert.Equal(
+            PerformancePreset.BatteryBalanced,
+            viewModel.SelectedLaptopPerformanceOption?.Value);
+    }
+
+    [Fact]
+    public async Task LaptopPerformanceChoice_StillActiveStatusDuringExitAppliesResult()
+    {
+        var client = new FakeServiceClient
+        {
+            BlockMutations = true,
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Restored")
+            {
+                HyperBoostRestoredPerformance = PerformancePreset.Silent,
+            },
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                HyperBoostActive = true,
+            },
+        };
+        client.Publish(active);
+        await WaitUntilAsync(() =>
+            viewModel.HyperBoostActive
+            && viewModel.AvailableLaptopPerformanceOptions.Any(
+                option => option.Value == PerformancePreset.Performance));
+        LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Performance);
+
+        Task operation = viewModel.SetLaptopPerformanceOptionAsync(performance, default);
+        await client.MutationStarted.Task;
+        client.Publish(active with
+        {
+            Revision = active.Revision + 1,
+            Message = "Still active",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Still active");
+        client.CompleteMutation();
+
+        await operation;
 
         Assert.Equal(
             ["hyperBoost:False", "performance:Performance"],

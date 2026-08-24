@@ -3610,6 +3610,22 @@ public sealed class WinUiShellContractTests
             "ViewModel.SetLaptopPerformanceOptionAsync(",
             dashboardWindow,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RestoreLaptopPerformanceSelection();",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RestoreFanModeSelection();",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "PerformanceDetail.SelectedItem =",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "FansDetail.SelectedItem =",
+            dashboardWindow,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("private void OnRootSizeChanged(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);

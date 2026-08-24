@@ -1843,6 +1843,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : AvailableLaptopPerformanceOptions.FirstOrDefault(
                 option => option.Value == SelectedPerformance);
 
+    public void RestoreLaptopPerformanceSelection() =>
+        Notify(nameof(SelectedLaptopPerformanceOption));
+
+    public void RestoreFanModeSelection() =>
+        Notify(nameof(SelectedFanModeOption));
+
     public IReadOnlyList<WindowsPowerModeOption> AvailableWindowsPowerModeOptions =>
         WindowsPowerModeOptions;
 
@@ -5748,7 +5754,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (!CanSetPerformance(requested))
         {
-            throw new InvalidOperationException("Laptop performance control is unavailable.");
+            return;
         }
 
         await SetPerformanceAsync(requested, token);
@@ -5768,6 +5774,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         PerformancePreset? restoredPerformance = null;
+        ServiceStatusSnapshot? statusAtStart = latestStatus;
         IsHyperBoostOperationInProgress = true;
         try
         {
@@ -5781,6 +5788,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     if (result.Status == ControlOperationStatus.Applied)
                     {
                         restoredPerformance = result.HyperBoostRestoredPerformance;
+                        bool statusSupersedesResult =
+                            !ReferenceEquals(latestStatus, statusAtStart)
+                            && (latestStatus is not { } currentStatus
+                                || statusAtStart is not { } originalStatus
+                                || currentStatus.ActivePowerSource
+                                    != originalStatus.ActivePowerSource
+                                || currentStatus.ConfirmedState?.HyperBoostActive == enabled);
+                        if (statusSupersedesResult)
+                        {
+                            restoredPerformance = enabled ? null : SelectedPerformance;
+                            return;
+                        }
                         if (!enabled && restoredPerformance is { } restored)
                         {
                             SelectedPerformance = restored;

@@ -1201,7 +1201,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            PerformanceDetail.SelectedItem = ViewModel.SelectedLaptopPerformanceOption;
+            ViewModel.RestoreLaptopPerformanceSelection();
             changingPerformance = false;
         }
     }
@@ -1244,7 +1244,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            FansDetail.SelectedItem = ViewModel.SelectedFanModeOption;
+            ViewModel.RestoreFanModeSelection();
             changingFans = false;
         }
     }
