@@ -2104,6 +2104,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     }
                     catch (BladeWriteException exception) when (
                         isHyperBoostAdapterRetry
+                        && hyperBoostAdapterRetryPreWrite
                         && cancellationToken.IsCancellationRequested
                         && exception.SubmissionState
                             == WriteSubmissionState.KnownNotApplied)

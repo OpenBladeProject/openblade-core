@@ -2240,13 +2240,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         .ConfigureAwait(false);
                 restored = failureObservation.State;
                 bool recoveryBaselineUpdated =
-                    await TryWriteHyperBoostOwnershipJournalAsync(
+                    failureObservation.RecoveryBaseline is { } failedBaseline
+                    && await TryWriteHyperBoostOwnershipJournalAsync(
                             HyperBoostOwnershipJournalState.RestorePending,
                             journal.BaseMode,
                             journal.RequiresCoolingPad,
                             "The failed user-authorized HyperBoost restore could not preserve its fresh recovery baseline.",
                             restoreIntent,
-                            failureObservation.RecoveryBaseline)
+                            failedBaseline)
                         .ConfigureAwait(false);
                 hyperBoostJournalSafetyBlock = true;
                 return PublishHyperBoostRestoreRecoveryResult(

@@ -14489,6 +14489,64 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RecoverHyperBoostRestore_FailedObservationPreservesRecordedBaseline()
+    {
+        var recoveryBaseline = new HyperBoostRecoveryBaseline(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            HyperBoostActive: false);
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = CreateRestorePendingJournal(
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                recoveryBaseline),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.PerformanceFailures.Enqueue(
+            new CapabilityUnavailableException(
+                "Injected explicit recovery refusal."));
+        context.Device.BeforeQueuedPerformanceFailure = () =>
+            context.Device.PerformanceFanStateReadFailureOnCall =
+                context.Device.PerformanceFanStateReadCalls + 1;
+
+        ControlOperationResult failed =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Contains("could not be recorded", failed.Message);
+        Assert.Equal(recoveryBaseline, journal.Journal?.RecoveryBaseline);
+        Assert.Empty(journal.Writes);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        context.Device.BeforeQueuedPerformanceFailure = null;
+        context.Device.PerformanceFanStateReadFailureOnCall = null;
+        ControlOperationResult recovered =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
     public async Task RecoverHyperBoostRestore_CanceledLegacyRetryRefreshesBaseline()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore

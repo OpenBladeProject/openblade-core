@@ -1939,6 +1939,52 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task HyperBoostCanceledDuringFreshSetterDoesNotMasqueradeAsPreflightCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+        };
+        var setterFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "Injected setter refusal after adapter preflight.");
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = setterFailure,
+            BeforeHyperBoostFailure = cancellation.Cancel,
+        };
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
+        Assert.Same(setterFailure, error.InnerException);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(1, secondPort.SetHyperBoostCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Fact]
     public async Task HyperBoostIndeterminatePortFailureIsNeverRetried()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
