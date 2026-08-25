@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -825,16 +826,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 return null;
             }
 
-            try
-            {
-                return new HyperBoostLifecycleServiceProcess(
-                    processes[0].Id,
-                    processes[0].StartTime.ToUniversalTime().Ticks);
-            }
-            catch
-            {
-                return null;
-            }
+            return CaptureProcessIdentity(processes[0].Id);
         }
         finally
         {
@@ -845,23 +837,76 @@ internal sealed class HyperBoostLifecycleValidationRunner
         }
     }
 
-    private static bool IsProcessAlive(HyperBoostLifecycleServiceProcess identity)
+    internal static HyperBoostLifecycleServiceProcess? CaptureProcessIdentity(
+        int processId)
     {
+        const uint processQueryLimitedInformation = 0x1000;
+        nint handle = OpenProcess(
+            processQueryLimitedInformation,
+            inheritHandle: false,
+            processId);
+        if (handle == 0)
+        {
+            return null;
+        }
+
         try
         {
-            using Process process = Process.GetProcessById(identity.ProcessId);
-            return !process.HasExited
-                && process.StartTime.ToUniversalTime().Ticks == identity.StartUtcTicks;
+            if (!GetProcessTimes(
+                    handle,
+                    out ProcessFileTime creationTime,
+                    out _,
+                    out _,
+                    out _))
+            {
+                return null;
+            }
+
+            long fileTime = unchecked((long)(
+                (ulong)creationTime.HighDateTime << 32
+                | creationTime.LowDateTime));
+            return new HyperBoostLifecycleServiceProcess(
+                processId,
+                DateTime.FromFileTimeUtc(fileTime).Ticks);
         }
-        catch (ArgumentException)
+        catch (ArgumentOutOfRangeException)
         {
-            return false;
+            return null;
         }
-        catch
+        finally
         {
-            return true;
+            _ = CloseHandle(handle);
         }
     }
+
+    internal static bool IsProcessAlive(HyperBoostLifecycleServiceProcess identity) =>
+        CaptureProcessIdentity(identity.ProcessId) == identity;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct ProcessFileTime
+    {
+        internal readonly uint LowDateTime;
+        internal readonly uint HighDateTime;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern nint OpenProcess(
+        uint desiredAccess,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+        int processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessTimes(
+        nint processHandle,
+        out ProcessFileTime creationTime,
+        out ProcessFileTime exitTime,
+        out ProcessFileTime kernelTime,
+        out ProcessFileTime userTime);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(nint handle);
 
     private static async Task<HyperBoostLifecycleJournalObservation>
         ObserveInstalledOwnershipJournalAsync(CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 using OpenBlade.Contracts;
 using OpenBlade.FirmwareSmoke;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace OpenBlade.FirmwareSmoke.Tests;
@@ -10,6 +11,25 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Path.GetTempPath(),
         "OpenBlade.HyperBoostLifecycleValidationTests",
         Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void ProcessIdentityProbe_UsesLimitedInformationAndFailsClosed()
+    {
+        using Process process = Process.GetCurrentProcess();
+
+        HyperBoostLifecycleServiceProcess identity = Assert.IsType<
+            HyperBoostLifecycleServiceProcess>(
+                HyperBoostLifecycleValidationRunner.CaptureProcessIdentity(
+                    process.Id));
+
+        Assert.Equal(process.Id, identity.ProcessId);
+        Assert.Equal(process.StartTime.ToUniversalTime().Ticks, identity.StartUtcTicks);
+        Assert.True(HyperBoostLifecycleValidationRunner.IsProcessAlive(identity));
+        Assert.False(HyperBoostLifecycleValidationRunner.IsProcessAlive(
+            identity with { StartUtcTicks = identity.StartUtcTicks + 1 }));
+        Assert.Null(HyperBoostLifecycleValidationRunner.CaptureProcessIdentity(
+            int.MaxValue));
+    }
 
     [Fact]
     public async Task ArmAsync_UsesTypedServiceAndCreatesOwnedMarker()

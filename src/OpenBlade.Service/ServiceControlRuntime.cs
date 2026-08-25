@@ -3220,6 +3220,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Stored,
                     "HyperBoost lifecycle restoration was skipped because OpenBlade ownership changed before the write.");
             }
+            if (enabled
+                && (current.ControllerDetectionWarning is not null
+                    || current.PotentialControllers.Count > 0))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "HyperBoost entry is blocked until competing-controller detection succeeds and no Razer controller is active.");
+            }
             bool ownedLifecycleRestore = !enabled
                 && expectedOwnershipGeneration is not null
                 && ownsHyperBoost

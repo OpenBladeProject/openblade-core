@@ -10707,6 +10707,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().PadlessHyperBoostEligibility);
     }
 
+    [Theory]
+    [InlineData("RazerAppEngine", null)]
+    [InlineData("razerwdl", null)]
+    [InlineData(null, "Controller detection was incomplete.")]
+    public async Task PadlessHyperBoost_CompetingControllerAdmissionDoesNotWrite(
+        string? controller,
+        string? detectionWarning)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: controller is null ? null : [controller],
+            detectionFailure: detectionWarning,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent));
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeEntry = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(settersBeforeEntry, context.Device.TotalSetterCalls);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
     public static TheoryData<PerformancePreset, FanMode>
         PadlessHyperBoostTransitionMatrix()
     {

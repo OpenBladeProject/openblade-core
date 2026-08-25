@@ -2680,6 +2680,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsHyperBoostOperationInProgress
         && (HyperBoostActive
             || ActivePowerSource == PowerSource.PluggedIn
+                && !HasControllerDetectionWarning
+                && !HasControllerAdvisory
                 && PerformancePresetPresentation.IsAvailable(
                     PowerSource.PluggedIn,
                     SelectedPerformance)

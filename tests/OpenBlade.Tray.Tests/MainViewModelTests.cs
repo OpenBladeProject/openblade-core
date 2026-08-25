@@ -9029,6 +9029,34 @@ public sealed class MainViewModelTests
         Assert.Null(client.HyperBoostEnabled);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HyperBoostPadlessPath_OmitsEntryDuringControllerConflict(
+        bool controllerDetected)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false));
+
+        client.Publish(admitted with
+        {
+            PotentialControllers = controllerDetected ? ["RazerAppEngine"] : [],
+            ControllerDetectionWarning = controllerDetected
+                ? null
+                : "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.IsHyperBoostWritable);
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.DoesNotContain(
+            viewModel.AvailableLaptopPerformanceOptions,
+            option => option.IsHyperBoost);
+        Assert.Null(client.HyperBoostEnabled);
+    }
+
     [Fact]
     public async Task HyperBoostPadlessPath_BlocksInactiveSessionAndRetainedRecheck()
     {

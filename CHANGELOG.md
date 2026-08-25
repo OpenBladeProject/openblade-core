@@ -7,15 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Allowed HyperBoost to start from every supported full-power performance and
-  fan setting while retaining the captured Balanced and Automatic transition,
-  exact-device, adapter, controller, readback, and no-retry safety gates.
-  Same-source exits restore the exact entry intent; Battery and USB-C exits
-  restore their destination profile. Dashboard and Quick Controls now present
-  HyperBoost as a transient Laptop performance choice and stay synchronized
-  with authoritative state. Failed restorations preserve one exact,
-  safety-gated recovery without blind writes, and safely restored failed
-  entries remain reported as failures with localized error feedback.
+- Made HyperBoost a transient Laptop performance choice available from every
+  admitted full-power profile and fan mode, with captured transition safety and
+  exact intent restoration on every exit.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
