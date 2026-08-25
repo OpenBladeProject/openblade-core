@@ -12892,7 +12892,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.HyperBoostFailures.Enqueue(
             new BladeWriteException(
                 WriteSubmissionState.Indeterminate,
-                "Injected indeterminate enable."));
+                BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                "The thermal commands were acknowledged, but final state readback failed."));
         context.Device.AfterHyperBoostFailure = () =>
             context.Device.ConfirmedState = context.Device.ConfirmedState with
             {
@@ -12918,6 +12919,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostOwnershipJournalState.OwnedConfirmed,
             journal.Journal?.State);
         Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Status == "Stored"
+                && entry.Detail is { } detail
+                && detail.Contains(
+                    "commands were acknowledged",
+                    StringComparison.OrdinalIgnoreCase)
+                && detail.Contains(
+                    "attempt to resolve",
+                    StringComparison.OrdinalIgnoreCase)
+                && detail.Contains(
+                    "one fresh readback without retrying",
+                    StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

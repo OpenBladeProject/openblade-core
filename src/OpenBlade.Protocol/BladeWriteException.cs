@@ -10,6 +10,7 @@ internal enum BladeWriteFailurePhase
 {
     Unspecified,
     HyperBoostAdapterEligibilityRead,
+    ThermalFinalConfirmationRead,
 }
 
 public sealed class BladeWriteException : Exception

@@ -24,8 +24,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   write. A transient full-power-adapter read failure that is positively tagged
   before any HyperBoost command is submitted now reopens one fresh exact-device
   session and retries only that preflight once; semantic, protocol, setter, and
-  indeterminate failures remain non-retryable. Direct HyperBoost submissions use
-  the same immediate read-only
+  indeterminate failures remain non-retryable. Indeterminate thermal submissions
+  now preserve whether the setter exchange or its final post-acknowledgement
+  readback failed, without retrying the hardware write. Direct HyperBoost
+  submissions use the same immediate read-only
   resolution after refreshing the power-source classification, so a concurrent
   unplug restores the destination profile; unavailable or contradictory
   readback remains fail-closed.

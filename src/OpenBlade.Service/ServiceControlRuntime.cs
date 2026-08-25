@@ -3696,6 +3696,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
 
                 LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
+                if (exception.FailurePhase
+                    == BladeWriteFailurePhase.ThermalFinalConfirmationRead)
+                {
+                    history.RecordSummary(
+                        ControlOperationStatus.Stored,
+                        $"{exception.Message} OpenBlade will attempt to resolve the indeterminate HyperBoost submission through one fresh readback without retrying the write.");
+                }
                 PublishPendingHyperBoostStatus(exception.Message);
 
                 if (hyperBoostWriteAttempted

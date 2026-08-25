@@ -1588,14 +1588,29 @@ internal sealed class ProductionBatteryPort :
 
             if (verifyFinalState || exitedHyperBoost)
             {
-                ProductionPerformanceFanState final =
-                    await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                ProductionPerformanceFanState final;
+                try
+                {
+                    final = await QueryPerformanceFanStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    poisoned = true;
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                        "The thermal commands were acknowledged, but final state readback failed.",
+                        exception);
+                }
+
                 if (!alreadyMatches(final))
                 {
                     poisoned = true;
-                    throw Indeterminate(
-                        "The final thermal state did not match the admitted target.");
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                        "The acknowledged thermal commands did not match the final state readback.");
                 }
             }
         }

@@ -1944,6 +1944,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var firstFailure = new BladeWriteException(
             WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
             "ambiguous HyperBoost submission");
         var firstPort = new FakeProductionPort(
             capabilities,
@@ -1969,7 +1970,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
                 PerformancePreset.Balanced,
                 default));
 
+        Assert.Same(firstFailure, error);
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
         Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, firstPort.SetHyperBoostCount);
         Assert.Equal(0, unusedPort.SetHyperBoostCount);

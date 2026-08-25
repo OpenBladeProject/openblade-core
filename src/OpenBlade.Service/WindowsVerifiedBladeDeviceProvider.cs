@@ -2130,6 +2130,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw;
             }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState == WriteSubmissionState.Indeterminate
+                    && exception.FailurePhase
+                        == BladeWriteFailurePhase.ThermalFinalConfirmationRead)
+            {
+                throw;
+            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 if (hyperBoostAdapterRetryPreWrite)
