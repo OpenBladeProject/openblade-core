@@ -143,8 +143,10 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
             bool supportsPlaybackMuteIndicator = true,
             bool subscriptionOpened = false) =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
-                Status(supportsPlaybackMuteIndicator),
-                subscriptionOpened));
+                Status(supportsPlaybackMuteIndicator))
+            {
+                SubscriptionOpened = subscriptionOpened,
+            });
 
         public void PublishReconnecting() => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Reconnecting());

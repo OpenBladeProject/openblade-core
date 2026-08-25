@@ -9,6 +9,21 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ServiceClientTests
 {
     [Fact]
+    public void ConnectedUpdate_PreservesSingleStatusRecordShape()
+    {
+        ServiceStatusSnapshot status = CreateStatus(1);
+        var update = new ServiceWatchUpdate.Connected(status)
+        {
+            SubscriptionOpened = true,
+        };
+
+        update.Deconstruct(out ServiceStatusSnapshot deconstructed);
+
+        Assert.Same(status, deconstructed);
+        Assert.True(update.SubscriptionOpened);
+    }
+
+    [Fact]
     public async Task GetStatusAsync_ValidatesVersionRequestIdAndResponseSubtype()
     {
         string pipeName = NewPipeName();

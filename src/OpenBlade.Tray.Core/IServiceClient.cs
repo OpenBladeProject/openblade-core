@@ -8,9 +8,10 @@ public abstract record ServiceWatchUpdate
     {
     }
 
-    public sealed record Connected(
-        ServiceStatusSnapshot Status,
-        bool SubscriptionOpened = false) : ServiceWatchUpdate;
+    public sealed record Connected(ServiceStatusSnapshot Status) : ServiceWatchUpdate
+    {
+        public bool SubscriptionOpened { get; init; }
+    }
 
     public sealed record Reconnecting : ServiceWatchUpdate;
 }
