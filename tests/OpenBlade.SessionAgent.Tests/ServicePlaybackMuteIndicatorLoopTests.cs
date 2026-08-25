@@ -42,6 +42,33 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
     }
 
     [Fact]
+    public async Task ReopenedSubscriptionResendsStateWithoutOrdinaryStatusDuplicates()
+    {
+        var client = new WatchClient();
+        var source = new MutableMuteSource();
+        var loop = new ServicePlaybackMuteIndicatorLoop(client, source);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        source.Publish(false);
+        client.PublishConnected(subscriptionOpened: true);
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+
+        client.PublishConnected();
+        await WaitUntilAsync(
+            () => client.StatusUpdatesAcknowledged >= 2,
+            cancellation.Token);
+        Assert.Equal([false], client.Requests);
+
+        client.PublishConnected(subscriptionOpened: true);
+        await WaitUntilAsync(() => client.Requests.Count == 2, cancellation.Token);
+        Assert.Equal([false, false], client.Requests);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
     public async Task UnavailableEndpointDoesNotSendOrReportFailure()
     {
         var client = new WatchClient();
@@ -105,12 +132,19 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
     {
         private readonly Channel<ServiceWatchUpdate> updates =
             Channel.CreateUnbounded<ServiceWatchUpdate>();
+        private int statusUpdatesAcknowledged;
 
         public ConcurrentQueue<bool> Requests { get; } = new();
 
-        public void PublishConnected(bool supportsPlaybackMuteIndicator = true) =>
+        public int StatusUpdatesAcknowledged =>
+            Volatile.Read(ref statusUpdatesAcknowledged);
+
+        public void PublishConnected(
+            bool supportsPlaybackMuteIndicator = true,
+            bool subscriptionOpened = false) =>
             updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(
-                Status(supportsPlaybackMuteIndicator)));
+                Status(supportsPlaybackMuteIndicator),
+                subscriptionOpened));
 
         public void PublishReconnecting() => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Reconnecting());
@@ -122,6 +156,7 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
             await foreach (ServiceWatchUpdate update in updates.Reader.ReadAllAsync(token))
             {
                 yield return update;
+                Interlocked.Increment(ref statusUpdatesAcknowledged);
             }
         }
 
