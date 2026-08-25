@@ -39,6 +39,23 @@ internal sealed record HyperBoostRestoreIntent(
         && Enum.IsDefined(FanControl.Mode);
 }
 
+internal sealed record HyperBoostRecoveryBaseline(
+    PerformancePreset? Performance,
+    FanMode Fans,
+    bool HyperBoostActive,
+    CustomPerformanceSettings? CustomPerformance = null,
+    GpuClockOffsetSettings? GpuClockOffsets = null)
+{
+    internal bool IsWellFormed =>
+        Performance is null
+        && DeviceSubsystemOrder.IsManualFanMode(Fans)
+        && !HyperBoostActive
+        && (CustomPerformance is null
+            || CustomPerformanceSettings.IsWellFormed(CustomPerformance))
+        && (GpuClockOffsets is null
+            || GpuClockOffsetSettings.IsWellFormed(GpuClockOffsets));
+}
+
 internal sealed record HyperBoostOwnershipJournal(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
@@ -47,6 +64,8 @@ internal sealed record HyperBoostOwnershipJournal(
 {
     internal HyperBoostRestoreIntent RestoreIntent { get; init; } =
         HyperBoostRestoreIntent.BalancedAutomatic;
+
+    internal HyperBoostRecoveryBaseline? RecoveryBaseline { get; init; }
 
     internal HyperBoostOwnershipJournal(
         HyperBoostOwnershipJournalState state,
@@ -62,6 +81,9 @@ internal sealed record HyperBoostOwnershipJournal(
             or PerformancePreset.Balanced
             or PerformancePreset.Performance)
         && RestoreIntent is { IsWellFormed: true }
+        && (RecoveryBaseline is null
+            || State == HyperBoostOwnershipJournalState.RestorePending
+                && RecoveryBaseline.IsWellFormed)
         && UpdatedAtUtc != default;
 }
 
@@ -83,7 +105,8 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     PerformancePreset? RestorePerformance = null,
     CustomPerformanceSettings? RestoreCustomPerformance = null,
     GpuClockTuningSettings? RestoreGpuClockTuning = null,
-    FanControlSettings? RestoreFanControl = null);
+    FanControlSettings? RestoreFanControl = null,
+    HyperBoostRecoveryBaseline? RecoveryBaseline = null);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -129,7 +152,7 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -173,14 +196,14 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     or { SchemaVersion: 2, RequiresCoolingPad: not null }
                     or
                 {
-                    SchemaVersion: CurrentSchemaVersion,
+                    SchemaVersion: 3 or CurrentSchemaVersion,
                     RequiresCoolingPad: not null,
                     RestorePerformance: not null,
                     RestoreFanControl: not null,
                 };
                 HyperBoostRestoreIntent restoreIntent = document is
                 {
-                    SchemaVersion: CurrentSchemaVersion,
+                    SchemaVersion: 3 or CurrentSchemaVersion,
                     RestorePerformance: { } restorePerformance,
                     RestoreFanControl: { } restoreFanControl,
                 }
@@ -207,6 +230,10 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         document.UpdatedAtUtc)
                     {
                         RestoreIntent = restoreIntent,
+                        RecoveryBaseline = document.SchemaVersion
+                            == CurrentSchemaVersion
+                                ? document.RecoveryBaseline
+                                : null,
                     };
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
@@ -254,7 +281,8 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     journal.RestoreIntent.Performance,
                     journal.RestoreIntent.CustomPerformance,
                     journal.RestoreIntent.GpuClockTuning,
-                    journal.RestoreIntent.FanControl),
+                    journal.RestoreIntent.FanControl,
+                    journal.RecoveryBaseline),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

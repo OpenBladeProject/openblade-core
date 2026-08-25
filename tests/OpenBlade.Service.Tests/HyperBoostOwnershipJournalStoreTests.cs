@@ -34,6 +34,15 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                     FanMode.Fixed,
                     3200,
                     ManualFanCurve.Default)),
+            RecoveryBaseline = state ==
+                    HyperBoostOwnershipJournalState.RestorePending
+                ? new HyperBoostRecoveryBaseline(
+                    Performance: null,
+                    FanMode.Maximum,
+                    HyperBoostActive: false,
+                    CustomPerformanceSettings.Default,
+                    new GpuClockOffsetSettings(75, 150))
+                : null,
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -142,6 +151,98 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.False(loaded.Invalid);
         Assert.Equal(PerformancePreset.Performance, journal.RestoreIntent.Performance);
         Assert.Equal(FanMode.Automatic, journal.RestoreIntent.FanControl.Mode);
+    }
+
+    [Fact]
+    public async Task Load_SchemaThreeDefaultsRecoveryBaselineToNull()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 3,
+              "state": 2,
+              "baseMode": 1,
+              "requiresCoolingPad": false,
+              "updatedAtUtc": "2026-08-11T12:00:00Z",
+              "restorePerformance": 2,
+              "restoreFanControl": {
+                "mode": 1,
+                "fixedSpeedRpm": 3200,
+                "manualCurve": {
+                  "cpu": [
+                    { "temperatureCelsius": 40, "speedRpm": 2000 },
+                    { "temperatureCelsius": 90, "speedRpm": 5400 }
+                  ],
+                  "gpu": [
+                    { "temperatureCelsius": 35, "speedRpm": 2000 },
+                    { "temperatureCelsius": 85, "speedRpm": 5400 }
+                  ],
+                  "useHigherTemperatureForBoth": true
+                }
+              }
+            }
+            """,
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        HyperBoostOwnershipJournal journal =
+            Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal);
+        Assert.False(loaded.Invalid);
+        Assert.Null(journal.RecoveryBaseline);
+    }
+
+    [Fact]
+    public async Task Load_RecoveryBaselineOnOwnedJournalFailsClosed()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 4,
+              "state": 1,
+              "baseMode": 1,
+              "requiresCoolingPad": false,
+              "updatedAtUtc": "2026-08-11T12:00:00Z",
+              "restorePerformance": 2,
+              "restoreFanControl": {
+                "mode": 0,
+                "fixedSpeedRpm": 3700,
+                "manualCurve": {
+                  "cpu": [
+                    { "temperatureCelsius": 40, "speedRpm": 2000 },
+                    { "temperatureCelsius": 90, "speedRpm": 5400 }
+                  ],
+                  "gpu": [
+                    { "temperatureCelsius": 35, "speedRpm": 2000 },
+                    { "temperatureCelsius": 85, "speedRpm": 5400 }
+                  ],
+                  "useHigherTemperatureForBoth": true
+                }
+              },
+              "recoveryBaseline": {
+                "performance": null,
+                "fans": 3,
+                "hyperBoostActive": false
+              }
+            }
+            """,
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.True(loaded.Invalid);
+        Assert.Null(loaded.Journal);
+        Assert.True(File.Exists(path));
     }
 
     [Theory]

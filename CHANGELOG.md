@@ -41,7 +41,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   leaves an exact saved manual-fan intent unconfirmed, OpenBlade now keeps all
   writes blocked and offers one explicit, safety-gated restore attempt without
   automatic retries; repeated observations no longer flood the bounded
-  diagnostic history with the same retained-journal message. A successful
+  diagnostic history with the same retained-journal message. Failed manual-fan
+  restorations now preserve their exact fresh post-failure topology, keeping
+  that explicit recovery available only while a later readback still matches
+  the recorded topology or the original transition baseline. A successful
   attended recovery now keeps the saved performance and fan intent active until
   the power source changes, preventing normal profile reconciliation from
   immediately replacing it, and journal retirement preserves that exact intent
