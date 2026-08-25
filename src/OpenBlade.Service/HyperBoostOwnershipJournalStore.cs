@@ -48,6 +48,8 @@ internal sealed record HyperBoostRecoveryBaseline(
 {
     internal bool IsWellFormed =>
         (Performance is null
+            or PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
             or PerformancePreset.Silent
             or PerformancePreset.Balanced
             or PerformancePreset.Performance
@@ -247,7 +249,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         journal,
                         Invalid: false,
                         AllowsExplicitRecoveryBaselineCapture:
-                            document!.SchemaVersion == 3
+                            document!.SchemaVersion is 3 or CurrentSchemaVersion
                             && journal.State
                                 == HyperBoostOwnershipJournalState.RestorePending
                             && journal.RecoveryBaseline is null);

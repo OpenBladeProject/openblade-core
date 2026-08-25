@@ -72,6 +72,10 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                 CustomPerformance: null,
                 GpuClockTuning: null,
                 FanControlSettings.FromLegacy(FanMode.Automatic)),
+            RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                restorePerformance,
+                FanMode.Automatic,
+                HyperBoostActive: false),
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -80,6 +84,36 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+    }
+
+    [Fact]
+    public async Task WriteAndLoad_CurrentRestorePendingWithoutBaselineAllowsExplicitCapture()
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var expected = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            new DateTimeOffset(2026, 8, 26, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.Performance,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3200,
+                    ManualFanCurve.Default)),
+        };
+
+        await store.WriteAsync(expected, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(expected, loaded.Journal);
+        Assert.True(loaded.AllowsExplicitRecoveryBaselineCapture);
     }
 
     [Fact]

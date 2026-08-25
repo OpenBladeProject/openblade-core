@@ -14324,6 +14324,49 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RecoverHyperBoostRestore_CurrentJournalCapturesManualCrashBaseline()
+    {
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        string journalPath = Path.Combine(
+            directory,
+            "current-schema-hyperboost-ownership.json");
+        var journal = new HyperBoostOwnershipJournalStore(journalPath);
+        await journal.WriteAsync(
+            CreateRestorePendingJournal(fanControl),
+            CancellationToken.None);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+
+        ControlOperationResult recovered =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.True(context.Device.TotalSetterCalls > settersBeforeRecovery);
+        Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
+        HyperBoostOwnershipJournalLoadResult retired =
+            await journal.LoadAsync(CancellationToken.None);
+        Assert.False(retired.Invalid);
+        Assert.Null(retired.Journal);
+    }
+
+    [Fact]
     public async Task RecoverHyperBoostRestore_LegacyJournalRecordsExactBaselineBeforeWrite()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore
