@@ -2137,11 +2137,44 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ConfirmedStateMatchesHyperBoostTransitionBaseline(
                     fresh,
                     journal);
+            HyperBoostRecoveryBaseline? recoveryBaseline =
+                journal.RecoveryBaseline;
             bool matchesRecordedRecoveryBaseline =
-                journal.RecoveryBaseline is { } recoveryBaseline
+                recoveryBaseline is not null
                 && ConfirmedStateMatchesHyperBoostRecoveryBaseline(
                     fresh,
                     recoveryBaseline);
+            if (!matchesTransitionBaseline
+                && recoveryBaseline is null
+                && load.AllowsExplicitRecoveryBaselineCapture)
+            {
+                recoveryBaseline = CreateExactHyperBoostRecoveryBaseline(fresh);
+                if (recoveryBaseline is not null)
+                {
+                    bool baselineRecorded =
+                        await TryWriteHyperBoostOwnershipJournalAsync(
+                                HyperBoostOwnershipJournalState.RestorePending,
+                                journal.BaseMode,
+                                journal.RequiresCoolingPad,
+                                "The legacy HyperBoost restore could not preserve its fresh recovery baseline.",
+                                restoreIntent,
+                                recoveryBaseline)
+                            .ConfigureAwait(false);
+                    if (!baselineRecorded)
+                    {
+                        return PublishHyperBoostRestoreRecoveryResult(
+                            ControlOperationStatus.Failed,
+                            "The legacy saved restore was not retried because its fresh recovery baseline could not be durably recorded.",
+                            fresh,
+                            restorePending: true);
+                    }
+
+                    matchesRecordedRecoveryBaseline =
+                        ConfirmedStateMatchesHyperBoostRecoveryBaseline(
+                            fresh,
+                            recoveryBaseline);
+                }
+            }
             if (!matchesTransitionBaseline
                 && !matchesRecordedRecoveryBaseline)
             {
@@ -2152,13 +2185,49 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     restorePending: true);
             }
 
-            HyperBoostIntentRestorationResult restoration =
-                await RestoreHyperBoostIntentAsync(
-                        device,
-                        restoreIntent,
-                        fresh,
-                        token)
-                    .ConfigureAwait(false);
+            HyperBoostIntentRestorationResult restoration;
+            try
+            {
+                restoration = await RestoreHyperBoostIntentAsync(
+                            device,
+                            restoreIntent,
+                            fresh,
+                            token)
+                        .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                FailedHyperBoostRestoreObservation cancellationObservation =
+                    await CaptureFailedHyperBoostRestoreObservationAsync(
+                            device,
+                            restoreIntent,
+                            new HyperBoostIntentRestorationResult(
+                                false,
+                                fresh,
+                                "The user-authorized restore was canceled."),
+                            fresh)
+                        .ConfigureAwait(false);
+                bool recoveryBaselineUpdated =
+                    cancellationObservation.RecoveryBaseline is { } canceledBaseline
+                    && await TryWriteHyperBoostOwnershipJournalAsync(
+                            HyperBoostOwnershipJournalState.RestorePending,
+                            journal.BaseMode,
+                            journal.RequiresCoolingPad,
+                            "The canceled user-authorized HyperBoost restore could not preserve its fresh recovery baseline.",
+                            restoreIntent,
+                            canceledBaseline)
+                        .ConfigureAwait(false);
+                hyperBoostJournalSafetyBlock = true;
+                PublishHyperBoostRestoreRecoveryResult(
+                    ControlOperationStatus.Failed,
+                    "The user-authorized HyperBoost restore was canceled. The saved restore remains blocked and will not be retried automatically."
+                    + (recoveryBaselineUpdated
+                        ? " Its fresh post-cancellation topology was recorded for a later explicit retry."
+                        : " Its fresh post-cancellation topology could not be recorded."),
+                    cancellationObservation.State,
+                    restorePending: true);
+                throw;
+            }
             ConfirmedDeviceState restored = restoration.Readback ?? fresh;
             if (!restoration.Succeeded)
             {
@@ -4029,6 +4098,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && confirmed.CustomPerformance == baseline.CustomPerformance
         && confirmed.GpuClockOffsets?.Current == baseline.GpuClockOffsets;
 
+    private static HyperBoostRecoveryBaseline?
+        CreateExactHyperBoostRecoveryBaseline(ConfirmedDeviceState confirmed)
+    {
+        if (confirmed.Performance is not null
+            || confirmed.Fans is not { } fans
+            || !DeviceSubsystemOrder.IsManualFanMode(fans)
+            || confirmed.HyperBoostActive)
+        {
+            return null;
+        }
+
+        var baseline = new HyperBoostRecoveryBaseline(
+            confirmed.Performance,
+            fans,
+            confirmed.HyperBoostActive,
+            confirmed.CustomPerformance,
+            confirmed.GpuClockOffsets?.Current);
+        return baseline.IsWellFormed ? baseline : null;
+    }
+
     private static bool HyperBoostBaselineStepSucceeded(
         ScopedApplyOutcome outcome) => outcome.Result.Status is
         ControlResultStatus.Applied or ControlResultStatus.Unchanged;
@@ -4209,6 +4298,63 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 fans.Result.Message);
         }
 
+        if (preservedState?.Fans is { } preservedFans
+            && DeviceSubsystemOrder.IsManualFanMode(preservedFans))
+        {
+            ScopedApplyOutcome automaticBaseline = await coordinator
+                .ApplyFanControlOutcomeAsync(
+                    FanControlSettings.FromLegacy(FanMode.Automatic),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (ShouldRetryHyperBoostRestorationPreWriteRead(automaticBaseline))
+            {
+                automaticBaseline = await coordinator
+                    .ApplyFanControlOutcomeAsync(
+                        FanControlSettings.FromLegacy(FanMode.Automatic),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            UpdateOwnedFanControlSettings(
+                intent.FanControl,
+                automaticBaseline.Result,
+                automaticBaseline.WriteAttempted);
+            ConfirmedDeviceState? automaticState =
+                MergeHyperBoostThermalState(
+                    preservedState,
+                    automaticBaseline.Readback);
+            if (!HyperBoostBaselineStepSucceeded(automaticBaseline))
+            {
+                return new HyperBoostIntentRestorationResult(
+                    Succeeded: false,
+                    automaticState,
+                    automaticBaseline.Result.Message);
+            }
+
+            ScopedApplyOutcome restoredPerformance = await coordinator
+                .ApplyPerformanceOutcomeAsync(
+                    intent.Performance,
+                    intent.CustomPerformance,
+                    intent.GpuClockTuning,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (ShouldRetryHyperBoostRestorationPreWriteRead(restoredPerformance))
+            {
+                restoredPerformance = await coordinator
+                    .ApplyPerformanceOutcomeAsync(
+                        intent.Performance,
+                        intent.CustomPerformance,
+                        intent.GpuClockTuning,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            return new HyperBoostIntentRestorationResult(
+                HyperBoostBaselineStepSucceeded(restoredPerformance),
+                MergeHyperBoostThermalState(
+                    automaticState,
+                    restoredPerformance.Readback),
+                restoredPerformance.Result.Message);
+        }
+
         ScopedApplyOutcome performance = await coordinator
             .ApplyPerformanceOutcomeAsync(
                 intent.Performance,
@@ -4283,14 +4429,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? preservedState;
         HyperBoostRecoveryBaseline? recoveryBaseline =
             confirmedAfterFailure is not null
-                && DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode)
-                    ? new HyperBoostRecoveryBaseline(
-                        confirmedAfterFailure.Performance,
-                        confirmedAfterFailure.Fans ?? FanMode.Automatic,
-                        confirmedAfterFailure.HyperBoostActive,
-                        confirmedAfterFailure.CustomPerformance,
-                        confirmedAfterFailure.GpuClockOffsets?.Current)
-                    : null;
+                ? new HyperBoostRecoveryBaseline(
+                    confirmedAfterFailure.Performance,
+                    confirmedAfterFailure.Fans ?? FanMode.Automatic,
+                    confirmedAfterFailure.HyperBoostActive,
+                    confirmedAfterFailure.CustomPerformance,
+                    confirmedAfterFailure.GpuClockOffsets?.Current)
+                : null;
         if (recoveryBaseline is not { IsWellFormed: true })
         {
             recoveryBaseline = null;

@@ -14324,6 +14324,235 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RecoverHyperBoostRestore_LegacyJournalRecordsExactBaselineBeforeWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            },
+            AllowsExplicitRecoveryBaselineCapture = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 400, 75),
+                new GpuClockOffsetRange(-1000, 3000, 150)),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+        context.Device.AfterSetter = _ => Assert.Single(journal.Writes);
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.True(
+            result.Status == ControlOperationStatus.Applied,
+            result.Message);
+        Assert.True(context.Device.TotalSetterCalls > settersBeforeRecovery);
+        Assert.Equal(2, journal.Writes.Count);
+        HyperBoostOwnershipJournal seeded = journal.Writes[0];
+        Assert.Equal(
+            new HyperBoostRecoveryBaseline(
+                Performance: null,
+                FanMode.Maximum,
+                HyperBoostActive: false,
+                CustomPerformanceSettings.Default,
+                new GpuClockOffsetSettings(75, 150)),
+            seeded.RecoveryBaseline);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.Relinquished,
+            journal.Writes[1].State);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
+    public async Task RecoverHyperBoostRestore_LegacyBaselineWriteFailureDoesNotWriteHardware()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            },
+            AllowsExplicitRecoveryBaselineCapture = true,
+            FailWrite = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("durably recorded", result.Message);
+        Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
+        Assert.NotNull(journal.Journal);
+        Assert.Empty(journal.Writes);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+    }
+
+    [Fact]
+    public async Task RecoverHyperBoostRestore_LegacyRetryFailureRefreshesAutomaticBaseline()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            },
+            AllowsExplicitRecoveryBaselineCapture = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.PerformanceFailures.Enqueue(
+            new CapabilityUnavailableException(
+                "Injected first legacy recovery refusal."));
+
+        ControlOperationResult failed =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, failed.Status);
+        Assert.Equal(
+            new HyperBoostRecoveryBaseline(
+                Performance: null,
+                FanMode.Automatic,
+                HyperBoostActive: false),
+            journal.Journal?.RecoveryBaseline);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        ControlOperationResult recovered =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
+    public async Task RecoverHyperBoostRestore_CanceledLegacyRetryRefreshesBaseline()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            },
+            AllowsExplicitRecoveryBaselineCapture = true,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans
+                && context.Device.ConfirmedState.Fans == FanMode.Automatic)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.RecoverHyperBoostRestoreAsync(
+                cancellation.Token));
+
+        Assert.Equal(
+            new HyperBoostRecoveryBaseline(
+                Performance: null,
+                FanMode.Automatic,
+                HyperBoostActive: false),
+            journal.Journal?.RecoveryBaseline);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+
+        context.Device.AfterSetter = null;
+        ControlOperationResult recovered =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
     public async Task RecoverHyperBoostRestore_BaselineLessTransitionWithUnrecordedGpuOffsetsDoesNotWrite()
     {
         var fanControl = new FanControlSettings(
@@ -14901,6 +15130,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool FailLoad { get; set; }
 
+        public bool AllowsExplicitRecoveryBaselineCapture { get; set; }
+
         public bool FailWrite { get; set; }
 
         public int? FailWriteOnCall { get; set; }
@@ -14922,7 +15153,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     new IOException("journal load failed"))
                 : Task.FromResult(new HyperBoostOwnershipJournalLoadResult(
                     Journal,
-                    Invalid: false));
+                    Invalid: false,
+                    AllowsExplicitRecoveryBaselineCapture:
+                        AllowsExplicitRecoveryBaselineCapture));
         }
 
         public Task WriteAsync(

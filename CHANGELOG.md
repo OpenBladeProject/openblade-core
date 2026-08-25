@@ -57,6 +57,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   power changes during that failure, low-power writes remain blocked and the
   journal becomes recoverable only after full-power AC returns, using the then-
   current destination intent instead of a stale Battery or USB-C profile.
+  Legacy pending restores now durably capture their complete fresh manual-fan
+  recovery topology before one explicit retry, allowing an attended upgrade
+  recovery without bypassing the exact-state gate or issuing a blind write.
   Safely restored failed entries are now recorded as failures rather than
   applied transitions, and Quick Controls shows the same localized operation
   error as the main Dashboard instead of only snapping back to the confirmed

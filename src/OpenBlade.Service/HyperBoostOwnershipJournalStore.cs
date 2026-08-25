@@ -47,8 +47,12 @@ internal sealed record HyperBoostRecoveryBaseline(
     GpuClockOffsetSettings? GpuClockOffsets = null)
 {
     internal bool IsWellFormed =>
-        Performance is null
-        && DeviceSubsystemOrder.IsManualFanMode(Fans)
+        (Performance is null
+            or PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom)
+        && Enum.IsDefined(Fans)
         && !HyperBoostActive
         && (CustomPerformance is null
             || CustomPerformanceSettings.IsWellFormed(CustomPerformance))
@@ -89,7 +93,8 @@ internal sealed record HyperBoostOwnershipJournal(
 
 internal readonly record struct HyperBoostOwnershipJournalLoadResult(
     HyperBoostOwnershipJournal? Journal,
-    bool Invalid);
+    bool Invalid,
+    bool AllowsExplicitRecoveryBaselineCapture = false);
 
 public interface IServiceOwnershipJournalCleaner
 {
@@ -238,7 +243,14 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
                     ? new HyperBoostOwnershipJournalLoadResult(null, true)
-                    : new HyperBoostOwnershipJournalLoadResult(journal, false);
+                    : new HyperBoostOwnershipJournalLoadResult(
+                        journal,
+                        Invalid: false,
+                        AllowsExplicitRecoveryBaselineCapture:
+                            document!.SchemaVersion == 3
+                            && journal.State
+                                == HyperBoostOwnershipJournalState.RestorePending
+                            && journal.RecoveryBaseline is null);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)

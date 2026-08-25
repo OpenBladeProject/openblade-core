@@ -195,6 +195,7 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
             Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal);
         Assert.False(loaded.Invalid);
         Assert.Null(journal.RecoveryBaseline);
+        Assert.True(loaded.AllowsExplicitRecoveryBaselineCapture);
     }
 
     [Fact]
