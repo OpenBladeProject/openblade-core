@@ -67,6 +67,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   applied transitions, and Quick Controls shows the same localized operation
   error as the main Dashboard instead of only snapping back to the confirmed
   performance choice.
+- Resynchronized the playback-mute key light after a healthy service-status
+  subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
   invisible or bidirectional format controls, injected protected identifiers, and
   stale installer mnemonic groups, with precise blank-cell feedback; every package

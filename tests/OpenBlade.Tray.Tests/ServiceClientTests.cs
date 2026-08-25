@@ -9,6 +9,21 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ServiceClientTests
 {
     [Fact]
+    public void ConnectedUpdate_PreservesSingleStatusRecordShape()
+    {
+        ServiceStatusSnapshot status = CreateStatus(1);
+        var update = new ServiceWatchUpdate.Connected(status)
+        {
+            SubscriptionOpened = true,
+        };
+
+        update.Deconstruct(out ServiceStatusSnapshot deconstructed);
+
+        Assert.Same(status, deconstructed);
+        Assert.True(update.SubscriptionOpened);
+    }
+
+    [Fact]
     public async Task GetStatusAsync_ValidatesVersionRequestIdAndResponseSubtype()
     {
         string pipeName = NewPipeName();
@@ -662,11 +677,20 @@ public sealed class ServiceClientTests
             client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
 
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(4, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        ServiceWatchUpdate.Connected initial =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current);
+        Assert.Equal(4, initial.Status.Revision);
+        Assert.True(initial.SubscriptionOpened);
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(5, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        ServiceWatchUpdate.Connected firstEvent =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current);
+        Assert.Equal(5, firstEvent.Status.Revision);
+        Assert.False(firstEvent.SubscriptionOpened);
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(6, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        ServiceWatchUpdate.Connected secondEvent =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current);
+        Assert.Equal(6, secondEvent.Status.Revision);
+        Assert.False(secondEvent.SubscriptionOpened);
         await server;
     }
 
@@ -821,13 +845,19 @@ public sealed class ServiceClientTests
         await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(1, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        ServiceWatchUpdate.Connected first =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current);
+        Assert.Equal(1, first.Status.Revision);
+        Assert.True(first.SubscriptionOpened);
         await firstServer;
         Task secondServer = RunSubscriptionServerAsync(
             pipeName, CreateStatus(2), [], cancellation.Token);
 
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(2, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        ServiceWatchUpdate.Connected second =
+            Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current);
+        Assert.Equal(2, second.Status.Revision);
+        Assert.True(second.SubscriptionOpened);
         Assert.Empty(time.Delays);
         await secondServer;
     }

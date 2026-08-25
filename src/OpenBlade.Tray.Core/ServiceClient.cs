@@ -435,7 +435,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             await using (connection.ConfigureAwait(false))
             {
                 reconnectDelay = InitialReconnectDelay;
-                yield return new ServiceWatchUpdate.Connected(openResult.InitialStatus!);
+                yield return new ServiceWatchUpdate.Connected(openResult.InitialStatus!)
+                {
+                    SubscriptionOpened = true,
+                };
 
                 while (true)
                 {
