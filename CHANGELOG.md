@@ -7,66 +7,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Allowed HyperBoost to start from every supported full-power-adapter
-  performance profile and fan setting while preserving the capture-backed
-  Balanced and Automatic transition baseline, then restored the entry-time
-  intent on same-source exits and the destination profile after a power-source
-  change, including when fresh readback resolves an indeterminate entry or
-  exit, without misreporting the restored manual fan state as an external
-  change on the next observation. A transient device read before an affected
-  restoration write is retried once; indeterminate and post-write failures
-  remain non-retryable. HyperBoost thermal transitions now use their scoped,
-  paired performance-and-fan readback so unrelated battery or lighting query
-  failures cannot abort an otherwise confirmed transition. When a performance
-  submission becomes indeterminate, including when its setter completes before
-  a transient confirmation-read failure, one fresh scoped readback now confirms
-  an applied target or an unchanged prior state without retrying the hardware
-  write. A transient full-power-adapter read failure that is positively tagged
-  before any HyperBoost command is submitted now reopens one fresh exact-device
-  session and retries only that preflight once; semantic, protocol, setter, and
-  indeterminate failures remain non-retryable. Indeterminate thermal submissions
-  now preserve whether the setter exchange or its final post-acknowledgement
-  readback failed, without retrying the hardware write. Direct HyperBoost
-  submissions use the same immediate read-only
-  resolution after refreshing the power-source classification, so a concurrent
-  unplug restores the destination profile; unavailable or contradictory
-  readback remains fail-closed.
-  The Tray now presents HyperBoost as a transient Laptop performance choice on
-  both dashboards and synchronizes that selection directly from authoritative
-  state after commands and confirmed reconciliation, including failed or
-  indeterminate transitions where a user selection would otherwise stay
-  visually stale. Selecting another performance choice exits HyperBoost first,
-  then uses the service's exact restored performance to preserve the selection
-  without a dropped or redundant follow-up write. If an indeterminate exit
-  leaves an exact saved manual-fan intent unconfirmed, OpenBlade now keeps all
-  writes blocked and offers one explicit, safety-gated restore attempt without
-  automatic retries; repeated observations no longer flood the bounded
-  diagnostic history with the same retained-journal message. Failed manual-fan
-  restorations now preserve their exact fresh post-failure topology, keeping
-  that explicit recovery available only while a later readback still matches
-  the recorded topology or the original transition baseline. A successful
-  attended recovery now keeps the saved performance and fan intent active until
-  the power source changes, preventing normal profile reconciliation from
-  immediately replacing it, and journal retirement preserves that exact intent
-  until its final clear succeeds. The recovery remains available when the only
-  thermal drift is the exact journaled HyperBoost transition baseline, while a
-  different fresh performance or fan state still blocks the retry without a
-  write. An indeterminate enable that stays off now preserves an indeterminate
-  entry-intent restoration as the same explicit recovery instead of retiring
-  its pending journal and silently leaving the transition baseline active. If
-  power changes during that failure, low-power writes remain blocked and the
-  journal becomes recoverable only after full-power AC returns, using the then-
-  current destination intent instead of a stale Battery or USB-C profile.
-  Legacy pending restores now durably capture their complete fresh manual-fan
-  recovery topology before one explicit retry, allowing an attended upgrade
-  recovery without bypassing the exact-state gate or issuing a blind write.
-  FirmwareSmoke lifecycle validation now recognizes the service's current
-  schema-4 ownership journal while retaining legacy schema support and rejecting
-  unknown future schemas.
-  Safely restored failed entries are now recorded as failures rather than
-  applied transitions, and Quick Controls shows the same localized operation
-  error as the main Dashboard instead of only snapping back to the confirmed
-  performance choice.
+- Allowed HyperBoost to start from every supported full-power performance and
+  fan setting while retaining the captured Balanced and Automatic transition,
+  exact-device, adapter, controller, readback, and no-retry safety gates.
+  Same-source exits restore the exact entry intent; Battery and USB-C exits
+  restore their destination profile. Dashboard and Quick Controls now present
+  HyperBoost as a transient Laptop performance choice and stay synchronized
+  with authoritative state. Failed restorations preserve one exact,
+  safety-gated recovery without blind writes, and safely restored failed
+  entries remain reported as failures with localized error feedback.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
