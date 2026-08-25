@@ -570,8 +570,10 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             current));
     }
 
-    [Fact]
-    public void ParseOwnershipJournal_AcceptsSchemaThreeRestoreIntent()
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void ParseOwnershipJournal_AcceptsTypedRestoreIntent(int schemaVersion)
     {
         HyperBoostLifecycleRestoreIntent expected = RestoreIntent(
             PerformancePreset.Custom,
@@ -579,7 +581,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
             new
             {
-                schemaVersion = 3,
+                schemaVersion,
                 state = 1,
                 baseMode = (int)PerformancePreset.Balanced,
                 updatedAtUtc = DateTimeOffset.UtcNow,
@@ -599,6 +601,86 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(PerformancePreset.Balanced, observation.BaseMode);
         Assert.Equal(expected, observation.RestoreIntent);
         Assert.False(observation.RequiresCoolingPad);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournal_RejectsUnknownFutureSchema()
+    {
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                schemaVersion = 5,
+                state = 1,
+                baseMode = (int)PerformancePreset.Balanced,
+                updatedAtUtc = DateTimeOffset.UtcNow,
+                requiresCoolingPad = false,
+                restorePerformance = (int)PerformancePreset.Balanced,
+                restoreCustomPerformance = (CustomPerformanceSettings?)null,
+                restoreGpuClockTuning = (GpuClockTuningSettings?)null,
+                restoreFanControl = FanControlSettings.Default,
+            },
+            FirmwareSmokeFiles.JsonOptions);
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.False(observation.Valid);
+        Assert.Null(observation.BaseMode);
+        Assert.Null(observation.RestoreIntent);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournal_RejectsRecoveryBaselineOnOwnedSchemaFourJournal()
+    {
+        byte[] bytes = SchemaFourJournalBytes(
+            state: 1,
+            recoveryBaseline: new
+            {
+                performance = (int?)null,
+                fans = (int)FanMode.Maximum,
+                hyperBoostActive = false,
+            });
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.False(observation.Valid);
+        Assert.Null(observation.BaseMode);
+        Assert.Null(observation.RestoreIntent);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournal_AcceptsRecoveryBaselineOnRestorePendingSchemaFourJournal()
+    {
+        byte[] bytes = SchemaFourJournalBytes(
+            state: 2,
+            recoveryBaseline: new
+            {
+                performance = (int?)null,
+                fans = (int)FanMode.Maximum,
+                hyperBoostActive = false,
+            });
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.True(observation.Valid);
+        Assert.Equal("RestorePending", observation.State);
+        Assert.Equal(PerformancePreset.Balanced, observation.BaseMode);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournal_RejectsDefaultUpdateTimestamp()
+    {
+        byte[] bytes = SchemaFourJournalBytes(
+            state: 1,
+            recoveryBaseline: null,
+            updatedAtUtc: DateTimeOffset.MinValue);
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.False(observation.Valid);
     }
 
     [Theory]
@@ -629,6 +711,26 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    private static byte[] SchemaFourJournalBytes(
+        int state,
+        object? recoveryBaseline,
+        DateTimeOffset? updatedAtUtc = null) =>
+        JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                schemaVersion = 4,
+                state,
+                baseMode = (int)PerformancePreset.Balanced,
+                updatedAtUtc = updatedAtUtc ?? DateTimeOffset.UtcNow,
+                requiresCoolingPad = false,
+                restorePerformance = (int)PerformancePreset.Balanced,
+                restoreCustomPerformance = (CustomPerformanceSettings?)null,
+                restoreGpuClockTuning = (GpuClockTuningSettings?)null,
+                restoreFanControl = FanControlSettings.Default,
+                recoveryBaseline,
+            },
+            FirmwareSmokeFiles.JsonOptions);
 
     private static HyperBoostLifecycleValidationRunner Runner(
         FakeClient client,

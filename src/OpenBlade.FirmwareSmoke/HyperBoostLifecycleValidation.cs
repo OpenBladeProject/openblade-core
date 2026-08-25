@@ -70,6 +70,27 @@ internal sealed record HyperBoostLifecycleRestoreIntent(
         && Enum.IsDefined(FanControl.Mode);
 }
 
+internal sealed record HyperBoostLifecycleRecoveryBaseline(
+    PerformancePreset? Performance,
+    FanMode Fans,
+    bool HyperBoostActive,
+    CustomPerformanceSettings? CustomPerformance = null,
+    GpuClockOffsetSettings? GpuClockOffsets = null)
+{
+    internal bool IsWellFormed =>
+        Performance is null
+            or PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom
+        && Enum.IsDefined(Fans)
+        && !HyperBoostActive
+        && (CustomPerformance is null
+            || CustomPerformanceSettings.IsWellFormed(CustomPerformance))
+        && (GpuClockOffsets is null
+            || GpuClockOffsetSettings.IsWellFormed(GpuClockOffsets));
+}
+
 internal sealed record HyperBoostLifecycleMarker(
     int SchemaVersion,
     HyperBoostLifecycleScenario Scenario,
@@ -886,6 +907,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         int schemaVersion = root.GetProperty("schemaVersion").GetInt32();
         int state = root.GetProperty("state").GetInt32();
         int baseMode = root.GetProperty("baseMode").GetInt32();
+        DateTimeOffset updatedAtUtc = root.GetProperty("updatedAtUtc").GetDateTimeOffset();
         bool requiresPad = root.GetProperty("requiresCoolingPad").GetBoolean();
         string? stateName = state switch
         {
@@ -903,7 +925,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 CustomPerformance: null,
                 GpuClockTuning: null,
                 FanControlSettings.FromLegacy(FanMode.Automatic)),
-            3 => new HyperBoostLifecycleRestoreIntent(
+            3 or 4 => new HyperBoostLifecycleRestoreIntent(
                 (PerformancePreset)root.GetProperty("restorePerformance").GetInt32(),
                 root.TryGetProperty("restoreCustomPerformance", out JsonElement custom)
                     && custom.ValueKind != JsonValueKind.Null
@@ -919,10 +941,21 @@ internal sealed class HyperBoostLifecycleValidationRunner
                     .Deserialize<FanControlSettings>(FirmwareSmokeFiles.JsonOptions)!),
             _ => null,
         };
-        bool valid = schemaVersion is 2 or 3
+        HyperBoostLifecycleRecoveryBaseline? recoveryBaseline =
+            schemaVersion == 4
+            && root.TryGetProperty("recoveryBaseline", out JsonElement recovery)
+            && recovery.ValueKind != JsonValueKind.Null
+                ? recovery.Deserialize<HyperBoostLifecycleRecoveryBaseline>(
+                    FirmwareSmokeFiles.JsonOptions)
+                : null;
+        bool valid = schemaVersion is 2 or 3 or 4
             && stateName is not null
             && parsedBase == PerformancePreset.Balanced
-            && restoreIntent is { IsWellFormed: true };
+            && updatedAtUtc != default
+            && restoreIntent is { IsWellFormed: true }
+            && (recoveryBaseline is null
+                || stateName == "RestorePending"
+                    && recoveryBaseline.IsWellFormed);
         return new HyperBoostLifecycleJournalObservation(
             true,
             valid,

@@ -60,6 +60,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Legacy pending restores now durably capture their complete fresh manual-fan
   recovery topology before one explicit retry, allowing an attended upgrade
   recovery without bypassing the exact-state gate or issuing a blind write.
+  FirmwareSmoke lifecycle validation now recognizes the service's current
+  schema-4 ownership journal while retaining legacy schema support and rejecting
+  unknown future schemas.
   Safely restored failed entries are now recorded as failures rather than
   applied transitions, and Quick Controls shows the same localized operation
   error as the main Dashboard instead of only snapping back to the confirmed
