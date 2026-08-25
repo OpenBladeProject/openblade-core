@@ -98,7 +98,9 @@ internal sealed class ServiceMuteIndicatorLoop
                     bool deliveryChanged =
                         Interlocked.Exchange(ref deliveryEnabled, nextEnabled)
                             != nextEnabled;
-                    if (connectionChanged || deliveryChanged)
+                    if (connectionChanged
+                        || deliveryChanged
+                        || connectedUpdate.SubscriptionOpened)
                     {
                         Interlocked.Exchange(ref lastSentState, -1);
                     }
