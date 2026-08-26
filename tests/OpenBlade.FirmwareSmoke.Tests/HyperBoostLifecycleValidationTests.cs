@@ -37,6 +37,20 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             identity with { StartUtcTicks = identity.StartUtcTicks + 1 }));
         Assert.Null(HyperBoostLifecycleValidationRunner.CaptureProcessIdentity(
             int.MaxValue));
+        Assert.True(HyperBoostLifecycleValidationRunner.IsProcessAlive(
+            identity,
+            new HyperBoostLifecycleProcessProbe(false, null)));
+        Assert.False(HyperBoostLifecycleValidationRunner.IsProcessAlive(
+            identity,
+            new HyperBoostLifecycleProcessProbe(true, null)));
+        Assert.True(HyperBoostLifecycleValidationRunner.IsProcessAlive(
+            identity,
+            new HyperBoostLifecycleProcessProbe(true, identity)));
+        Assert.False(HyperBoostLifecycleValidationRunner.IsProcessAlive(
+            identity,
+            new HyperBoostLifecycleProcessProbe(
+                true,
+                identity with { StartUtcTicks = identity.StartUtcTicks + 1 })));
     }
 
     [Fact]

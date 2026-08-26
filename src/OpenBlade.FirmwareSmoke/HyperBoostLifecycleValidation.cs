@@ -38,6 +38,10 @@ internal sealed record HyperBoostLifecycleServiceProcess(
     int ProcessId,
     long StartUtcTicks);
 
+internal sealed record HyperBoostLifecycleProcessProbe(
+    bool Succeeded,
+    HyperBoostLifecycleServiceProcess? Identity);
+
 internal sealed record HyperBoostLifecycleJournalObservation(
     bool Exists,
     bool Valid,
@@ -838,11 +842,20 @@ internal sealed class HyperBoostLifecycleValidationRunner
     }
 
     internal static HyperBoostLifecycleServiceProcess? CaptureProcessIdentity(
+        int processId) => ProbeProcessIdentity(processId) is
+        {
+            Succeeded: true,
+            Identity: { } identity,
+        }
+            ? identity
+            : null;
+
+    private static HyperBoostLifecycleProcessProbe ProbeProcessIdentity(
         int processId)
     {
         if (processId <= 0)
         {
-            return null;
+            return new(false, null);
         }
 
         try
@@ -859,7 +872,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                         || Convert.ToInt32(match["ProcessId"]) != processId
                         || match["CreationDate"] is not string creationDate)
                     {
-                        return null;
+                        return new(false, null);
                     }
 
                     DateTime started = ManagementDateTimeConverter.ToDateTime(
@@ -870,16 +883,21 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 }
             }
 
-            return identity;
+            return new(true, identity);
         }
         catch
         {
-            return null;
+            return new(false, null);
         }
     }
 
     internal static bool IsProcessAlive(HyperBoostLifecycleServiceProcess identity) =>
-        CaptureProcessIdentity(identity.ProcessId) == identity;
+        IsProcessAlive(identity, ProbeProcessIdentity(identity.ProcessId));
+
+    internal static bool IsProcessAlive(
+        HyperBoostLifecycleServiceProcess identity,
+        HyperBoostLifecycleProcessProbe probe) =>
+        !probe.Succeeded || probe.Identity == identity;
 
     private static async Task<HyperBoostLifecycleJournalObservation>
         ObserveInstalledOwnershipJournalAsync(CancellationToken cancellationToken)
