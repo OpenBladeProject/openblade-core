@@ -59,7 +59,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         TimeSpan? shutdownBudget = null,
         Action? onClosing = null,
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
-        IGpuActivitySource? gpuActivitySource = null)
+        IGpuActivitySource? gpuActivitySource = null,
+        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -79,7 +80,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             gpuActivitySource ?? InactiveGpuActivitySource.Instance,
             logger,
             effectiveShutdownBudget,
-            onClosing);
+            onClosing,
+            preWriteRetryDelay ?? Task.Delay);
     }
 
     public void SetAllowUntestedFirmware(bool enabled)
@@ -321,6 +323,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IDisposable
     {
         private const int MaximumStateReadAttempts = 3;
+        private static readonly TimeSpan PreWriteRetryDelay =
+            TimeSpan.FromMilliseconds(750);
 
         private readonly record struct TransitionLightingReadResult(
             LightingSettings? State,
@@ -334,6 +338,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
         private readonly TimeSpan shutdownBudget;
         private readonly Action? onClosing;
+        private readonly Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay;
         private readonly object lifecycleSync = new();
         private readonly object gpuClockOffsetManagementSync = new();
         private readonly object lightingPortOpenDiagnosticSync = new();
@@ -412,7 +417,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             IGpuActivitySource gpuActivitySource,
             ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
             TimeSpan shutdownBudget,
-            Action? onClosing)
+            Action? onClosing,
+            Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
@@ -422,6 +428,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             this.logger = logger;
             this.shutdownBudget = shutdownBudget;
             this.onClosing = onClosing;
+            this.preWriteRetryDelay = preWriteRetryDelay;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -2049,6 +2056,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     retryPreWriteOpen = isFreshPreWriteRetry;
                     try
                     {
+                        if (isFreshPreWriteRetry)
+                        {
+                            await preWriteRetryDelay(
+                                    PreWriteRetryDelay,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+
                         beforeWrite?.Invoke();
                         cancellationToken.ThrowIfCancellationRequested();
                         HidSessionResult<IProductionBatteryPort> opened =

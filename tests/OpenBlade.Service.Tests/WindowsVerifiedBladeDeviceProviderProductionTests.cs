@@ -1784,6 +1784,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Fact]
     public async Task ThermalPreWriteReadFailureRetriesOneFreshVerifiedSession()
     {
+        var retryDelays = new List<TimeSpan>();
         DeviceCapabilities capabilities = ThermalCapabilities(
             new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             new HashSet<FanMode> { FanMode.Automatic });
@@ -1799,7 +1800,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             BatteryValidationSetting.Limit80,
             temporary: null);
         var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
-        using var provider = ReadyProvider(factory);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (delay, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
         await device.SetPerformanceAsync(PerformancePreset.Balanced, default);
@@ -1809,6 +1817,48 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, secondPort.SetPerformanceCount);
         Assert.Equal(1, firstPort.DisposeCount);
         Assert.Equal(1, secondPort.DisposeCount);
+        Assert.Equal([TimeSpan.FromMilliseconds(750)], retryDelays);
+    }
+
+    [Fact]
+    public async Task ThermalPreWriteRetryDelayCancellationStopsBeforeFreshSession()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, cancellationToken) =>
+            {
+                cancellation.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPerformanceAsync(
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(0, secondPort.SetPerformanceCount);
     }
 
     [Fact]
@@ -2177,12 +2227,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IProductionBatteryPortFactory factory,
         IGpuClockOffsetController? gpuClockOffsets = null,
-        IGpuActivitySource? gpuActivitySource = null) => new(
+        IGpuActivitySource? gpuActivitySource = null,
+        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
             factory,
             new UnavailableFanRpmFactory(),
             gpuClockOffsets: gpuClockOffsets,
-            gpuActivitySource: gpuActivitySource);
+            gpuActivitySource: gpuActivitySource,
+            preWriteRetryDelay: preWriteRetryDelay ?? ((_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }));
 
     private static DeviceCapabilities BatteryCapabilities(
         IReadOnlySet<int> limits,
