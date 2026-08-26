@@ -62,7 +62,9 @@ internal sealed record HyperBoostLifecycleRestoreIntent(
     FanControlSettings FanControl)
 {
     internal bool IsWellFormed =>
-        Performance is PerformancePreset.Silent
+        Performance is PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
+            or PerformancePreset.Silent
             or PerformancePreset.Balanced
             or PerformancePreset.Performance
             or PerformancePreset.Custom
@@ -73,6 +75,12 @@ internal sealed record HyperBoostLifecycleRestoreIntent(
             || GpuClockTuningSettings.IsWellFormed(GpuClockTuning))
         && FanControl is not null
         && Enum.IsDefined(FanControl.Mode);
+
+    internal bool IsFullPowerProfile =>
+        Performance is PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom;
 }
 
 internal sealed record HyperBoostLifecycleRecoveryBaseline(
@@ -84,6 +92,8 @@ internal sealed record HyperBoostLifecycleRecoveryBaseline(
 {
     internal bool IsWellFormed =>
         Performance is null
+            or PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
             or PerformancePreset.Silent
             or PerformancePreset.Balanced
             or PerformancePreset.Performance
@@ -116,10 +126,17 @@ internal sealed record HyperBoostLifecycleMarker(
         && !string.IsNullOrWhiteSpace(TargetModel)
         && IsSha256(InstalledGenerationSha256)
         && BaseMode == PerformancePreset.Balanced
-        && RestoreIntent is { IsWellFormed: true }
+        && RestoreIntent is
+        {
+            IsWellFormed: true,
+            IsFullPowerProfile: true,
+        }
         && ArmedAtUtc != default
-        && ServiceProcess.ProcessId > 0
-        && ServiceProcess.StartUtcTicks > 0
+        && ServiceProcess is
+        {
+            ProcessId: > 0,
+            StartUtcTicks: > 0,
+        }
         && IsSha256(OwnershipJournalSha256);
 
     private static bool IsSha256(string? value) =>

@@ -54,6 +54,52 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public void MarkerIsWellFormed_RejectsMissingServiceProcessWithoutThrowing()
+    {
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                schemaVersion = HyperBoostLifecycleMarker.CurrentSchemaVersion,
+                scenario = HyperBoostLifecycleScenario.UnexpectedExit,
+                targetModel = "RZ09-0581",
+                installedGenerationSha256 = new string('A', 64),
+                baseMode = PerformancePreset.Balanced,
+                requiresCoolingPad = false,
+                armedAtUtc = DateTimeOffset.UtcNow,
+                ownershipJournalSha256 = new string('B', 64),
+                restoreIntent = RestoreIntent(),
+            },
+            FirmwareSmokeFiles.JsonOptions);
+        HyperBoostLifecycleMarker marker = Assert.IsType<HyperBoostLifecycleMarker>(
+            JsonSerializer.Deserialize<HyperBoostLifecycleMarker>(
+                bytes,
+                FirmwareSmokeFiles.JsonOptions));
+
+        Assert.False(marker.IsWellFormed);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void MarkerIsWellFormed_RejectsBatteryRestoreIntent(
+        PerformancePreset performance)
+    {
+        var marker = new HyperBoostLifecycleMarker(
+            HyperBoostLifecycleMarker.CurrentSchemaVersion,
+            HyperBoostLifecycleScenario.LowPower,
+            "RZ09-0581",
+            new string('A', 64),
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow,
+            new HyperBoostLifecycleServiceProcess(42_001, 123_456),
+            new string('B', 64),
+            RestoreIntent(performance));
+
+        Assert.False(marker.IsWellFormed);
+    }
+
+    [Fact]
     public async Task ArmAsync_UsesTypedServiceAndCreatesOwnedMarker()
     {
         Directory.CreateDirectory(directory);
@@ -645,6 +691,30 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.False(observation.RequiresCoolingPad);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void ParseOwnershipJournal_AcceptsBatteryRestoreAndRecoveryState(
+        PerformancePreset performance)
+    {
+        byte[] bytes = SchemaFourJournalBytes(
+            state: 2,
+            recoveryBaseline: new
+            {
+                performance = (int?)performance,
+                fans = (int)FanMode.Automatic,
+                hyperBoostActive = false,
+            },
+            restorePerformance: performance);
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournal(bytes);
+
+        Assert.True(observation.Valid);
+        Assert.Equal("RestorePending", observation.State);
+        Assert.Equal(performance, observation.RestoreIntent?.Performance);
+    }
+
     [Fact]
     public void ParseOwnershipJournal_RejectsUnknownFutureSchema()
     {
@@ -757,7 +827,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     private static byte[] SchemaFourJournalBytes(
         int state,
         object? recoveryBaseline,
-        DateTimeOffset? updatedAtUtc = null) =>
+        DateTimeOffset? updatedAtUtc = null,
+        PerformancePreset restorePerformance = PerformancePreset.Balanced) =>
         JsonSerializer.SerializeToUtf8Bytes(
             new
             {
@@ -766,7 +837,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 baseMode = (int)PerformancePreset.Balanced,
                 updatedAtUtc = updatedAtUtc ?? DateTimeOffset.UtcNow,
                 requiresCoolingPad = false,
-                restorePerformance = (int)PerformancePreset.Balanced,
+                restorePerformance = (int)restorePerformance,
                 restoreCustomPerformance = (CustomPerformanceSettings?)null,
                 restoreGpuClockTuning = (GpuClockTuningSettings?)null,
                 restoreFanControl = FanControlSettings.Default,
