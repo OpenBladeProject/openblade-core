@@ -1782,6 +1782,72 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task ThermalPreWriteReadFailureRetriesOneFreshVerifiedSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetPerformanceAsync(PerformancePreset.Balanced, default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(1, secondPort.SetPerformanceCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task RepeatedThermalPreWriteReadFailureStopsAfterFreshSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        BladeWriteException secondFailure = ThermalPreWriteReadFailure();
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = secondFailure,
+        };
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPerformanceAsync(PerformancePreset.Balanced, default));
+
+        Assert.Same(secondFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(1, secondPort.SetPerformanceCount);
+    }
+
+    [Fact]
     public async Task HyperBoostTransientAdapterPreflightRetriesOneFreshVerifiedSession()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
@@ -2133,6 +2199,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         WriteSubmissionState.KnownNotApplied,
         BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
         "The HyperBoost adapter preflight read failed before any HyperBoost command was submitted.");
+
+    private static BladeWriteException ThermalPreWriteReadFailure() => new(
+        WriteSubmissionState.KnownNotApplied,
+        BladeWriteFailurePhase.ThermalPreWriteRead,
+        "Injected thermal pre-write read failure.");
 
     private sealed class UnavailableFanRpmFactory : IFanRpmQueryRunFactory
     {

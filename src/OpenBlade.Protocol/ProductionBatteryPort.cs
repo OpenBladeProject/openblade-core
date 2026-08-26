@@ -1643,15 +1643,16 @@ internal sealed class ProductionBatteryPort :
             if (submitted)
             {
                 poisoned = true;
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The multi-command thermal write outcome is indeterminate.",
+                    exception);
             }
 
             throw new BladeWriteException(
-                submitted
-                    ? WriteSubmissionState.Indeterminate
-                    : WriteSubmissionState.KnownNotApplied,
-                submitted
-                    ? "The multi-command thermal write outcome is indeterminate."
-                    : "The thermal write was not applied.",
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "The thermal pre-write read failed before submission.",
                 exception);
         }
         finally

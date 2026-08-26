@@ -852,6 +852,37 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task ThermalPreWriteReadFailureReportsExactPreSubmissionPhase()
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceSilentFirstAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x01, 0x05, 0x00]),
+                Fixture(
+                    ProductionBatteryPort.PerformanceSilentSecondAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x02, 0x05, 0x00])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Single(session.Commands);
+        Assert.Equal(0x82, session.Commands[0].CommandId);
+    }
+
+    [Fact]
     public async Task ThermalFailureAfterFirstSubmissionIsIndeterminateAndPoisonsPort()
     {
         byte[] first = [0x01, 0x01, 0x00, 0x00];

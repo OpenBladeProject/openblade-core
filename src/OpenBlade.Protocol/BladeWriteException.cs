@@ -9,6 +9,7 @@ public enum WriteSubmissionState
 internal enum BladeWriteFailurePhase
 {
     Unspecified,
+    ThermalPreWriteRead,
     HyperBoostAdapterEligibilityRead,
     ThermalFinalConfirmationRead,
 }

@@ -2018,9 +2018,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
-            BladeWriteException? exhaustedHyperBoostAdapterPreflight = null;
-            BladeWriteException? canceledHyperBoostAdapterRetry = null;
-            bool hyperBoostAdapterRetryPreWrite = false;
+            BladeWriteException? exhaustedRetriablePreWrite = null;
+            BladeWriteException? canceledRetriablePreWrite = null;
+            BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
+            bool retryPreWriteOpen = false;
             try
             {
                 await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -2041,11 +2042,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             try
             {
-                int attemptCount = retryHyperBoostAdapterPreflight ? 2 : 1;
+                const int attemptCount = 2;
                 for (int attempt = 0; attempt < attemptCount; attempt++)
                 {
-                    bool isHyperBoostAdapterRetry = attempt > 0;
-                    hyperBoostAdapterRetryPreWrite = isHyperBoostAdapterRetry;
+                    bool isFreshPreWriteRetry = attempt > 0;
+                    retryPreWriteOpen = isFreshPreWriteRetry;
                     try
                     {
                         beforeWrite?.Invoke();
@@ -2066,7 +2067,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             }
 
                             cancellationToken.ThrowIfCancellationRequested();
-                            hyperBoostAdapterRetryPreWrite = false;
+                            retryPreWriteOpen = false;
                             await write(port).ConfigureAwait(false);
                             try
                             {
@@ -2086,35 +2087,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         return;
                     }
                     catch (BladeWriteException exception) when (
-                        retryHyperBoostAdapterPreflight
-                        && exception.SubmissionState
-                            == WriteSubmissionState.KnownNotApplied
-                        && exception.FailurePhase
-                            == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead)
+                        exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+                        && (exception.FailurePhase
+                                == BladeWriteFailurePhase.ThermalPreWriteRead
+                            || retryHyperBoostAdapterPreflight
+                                && exception.FailurePhase
+                                    == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead))
                     {
                         if (attempt + 1 < attemptCount)
                         {
+                            retryFailurePhase = exception.FailurePhase;
                             logger?.LogInformation(
-                                "HyperBoost adapter preflight failed before submission; retrying once on a fresh verified session.");
+                                "{PreWritePhase} failed before submission; retrying once on a fresh verified session.",
+                                exception.FailurePhase);
                             continue;
                         }
 
-                        exhaustedHyperBoostAdapterPreflight = exception;
+                        exhaustedRetriablePreWrite = exception;
                         throw;
                     }
                     catch (BladeWriteException exception) when (
-                        isHyperBoostAdapterRetry
-                        && hyperBoostAdapterRetryPreWrite
+                        isFreshPreWriteRetry
+                        && retryPreWriteOpen
                         && cancellationToken.IsCancellationRequested
                         && exception.SubmissionState
                             == WriteSubmissionState.KnownNotApplied)
                     {
-                        canceledHyperBoostAdapterRetry = new BladeWriteException(
+                        canceledRetriablePreWrite = new BladeWriteException(
                             WriteSubmissionState.KnownNotApplied,
-                            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
-                            "The HyperBoost adapter preflight retry was canceled before any HyperBoost command was submitted.",
+                            retryFailurePhase,
+                            "The fresh pre-write read retry was canceled before any hardware command was submitted.",
                             exception);
-                        throw canceledHyperBoostAdapterRetry;
+                        throw canceledRetriablePreWrite;
                     }
                 }
             }
@@ -2126,8 +2130,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 when (ReferenceEquals(exception, afterWriteFailure)
                     || ReferenceEquals(
                         exception,
-                        exhaustedHyperBoostAdapterPreflight)
-                    || ReferenceEquals(exception, canceledHyperBoostAdapterRetry))
+                        exhaustedRetriablePreWrite)
+                    || ReferenceEquals(exception, canceledRetriablePreWrite))
             {
                 throw;
             }
@@ -2149,12 +2153,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (hyperBoostAdapterRetryPreWrite)
+                if (retryPreWriteOpen)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
-                        "The HyperBoost adapter preflight retry was canceled before any HyperBoost command was submitted.");
+                        retryFailurePhase,
+                        "The fresh pre-write read retry was canceled before any hardware command was submitted.");
                 }
 
                 throw new BladeWriteException(
