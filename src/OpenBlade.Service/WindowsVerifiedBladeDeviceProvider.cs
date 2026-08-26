@@ -323,8 +323,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IDisposable
     {
         private const int MaximumStateReadAttempts = 3;
+        // A failed thermal pre-write exchange can leave the EC busy for the
+        // full protocol timeout. Wait that window before the only fresh-session
+        // retry instead of reopening immediately into the same busy interval.
         private static readonly TimeSpan PreWriteRetryDelay =
-            TimeSpan.FromMilliseconds(750);
+            TimeSpan.FromSeconds(3);
 
         private readonly record struct TransitionLightingReadResult(
             LightingSettings? State,
