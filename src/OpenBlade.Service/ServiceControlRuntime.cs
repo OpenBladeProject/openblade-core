@@ -287,6 +287,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         typeof(ServiceControlRuntime).Assembly);
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
         TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan HyperBoostManualFanReadbackRetryDelay =
+        TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
@@ -4222,7 +4224,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && DeviceSubsystemOrder.IsManualFanMode(leftMode)
             && DeviceSubsystemOrder.IsManualFanMode(rightMode);
 
-    private static async Task<ScopedApplyOutcome>
+    private async Task<ScopedApplyOutcome>
         ResolveIndeterminateHyperBoostManualFanRestorationAsync(
             IBladeDevice device,
             FanControlSettings previous,
@@ -4243,55 +4245,68 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return outcome;
         }
 
-        try
+        const int readAttemptCount = 2;
+        for (int attempt = 0; attempt < readAttemptCount; attempt++)
         {
-            ConfirmedDeviceState readback = await device
-                .ReadPerformanceFanStateAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (readback.Fans is { } fans
-                && DeviceSubsystemOrder.IsManualFanMode(fans))
+            try
             {
-                return outcome with
+                if (attempt > 0)
                 {
-                    Result = new ControlResult(
-                        ControlResultStatus.Applied,
-                        "Fans setting applied and confirmed by fresh readback after an indeterminate HyperBoost restoration submission."),
-                    Readback = readback,
-                    ReadbackMatched = true,
-                    DeviceAccessFailed = false,
-                    ConfirmationUnavailable = false,
-                    PreWriteState = null,
-                };
-            }
+                    await transitionRetryDelay(
+                            HyperBoostManualFanReadbackRetryDelay,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
 
-            if (readback.Fans == FanMode.Automatic)
-            {
-                return outcome with
+                ConfirmedDeviceState readback = await device
+                    .ReadPerformanceFanStateAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (readback.Fans is { } fans
+                    && DeviceSubsystemOrder.IsManualFanMode(fans))
                 {
-                    Result = new ControlResult(
-                        ControlResultStatus.Failed,
-                        $"{outcome.Result.Message} Fresh readback confirmed that the prior Automatic fan baseline remained active."),
-                    Readback = readback,
-                    WriteAttempted = false,
-                    ReadbackMatched = false,
-                    DeviceAccessFailed = false,
-                    ConfirmationUnavailable = false,
-                    PreWriteState = null,
-                };
+                    return outcome with
+                    {
+                        Result = new ControlResult(
+                            ControlResultStatus.Applied,
+                            "Fans setting applied and confirmed by bounded fresh readback after an indeterminate HyperBoost restoration submission."),
+                        Readback = readback,
+                        ReadbackMatched = true,
+                        DeviceAccessFailed = false,
+                        ConfirmationUnavailable = false,
+                        PreWriteState = null,
+                    };
+                }
+
+                if (readback.Fans == FanMode.Automatic)
+                {
+                    return outcome with
+                    {
+                        Result = new ControlResult(
+                            ControlResultStatus.Failed,
+                            $"{outcome.Result.Message} Fresh readback confirmed that the prior Automatic fan baseline remained active."),
+                        Readback = readback,
+                        WriteAttempted = false,
+                        ReadbackMatched = false,
+                        DeviceAccessFailed = false,
+                        ConfirmationUnavailable = false,
+                        PreWriteState = null,
+                    };
+                }
             }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The exact manual target may already have applied. Preserve the
-            // original indeterminate outcome so the caller durably records a
-            // pending restore without entering an automatic retry path.
-            return outcome;
-        }
-        catch
-        {
-            // Preserve the indeterminate outcome. A later observation cannot
-            // distinguish exact Fixed, Curve, and Maximum intent, so it must
-            // remain blocked until an explicit recovery.
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The exact manual target may already have applied. Preserve the
+                // original indeterminate outcome so the caller durably records a
+                // pending restore without entering an automatic write retry path.
+                return outcome;
+            }
+            catch
+            {
+                // A possible submission permits read-only reconciliation only.
+                // Use one bounded delayed fresh read, then leave the journal
+                // pending because later generic manual observations cannot prove
+                // which exact Fixed, Curve, or Maximum intent is active.
+            }
         }
 
         return outcome;

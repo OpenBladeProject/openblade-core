@@ -13692,6 +13692,116 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
     }
 
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public async Task PadlessHyperBoost_ManualFanRestoreBoundsFreshReadback(
+        int readFailures,
+        bool expectedApplied)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            transitionRetryDelay: (delay, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                    == FanMode.Automatic
+                        ? context.Device.ConfirmedState with
+                        {
+                            Performance = PerformancePreset.Balanced,
+                        }
+                        : context.Device.ConfirmedState with
+                        {
+                            Performance = null,
+                            Fans = FanMode.Maximum,
+                        };
+            }
+        };
+        var fanControl = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(
+                    FanMode.ManualCurve,
+                    OverrideLifetime.UntilPowerSourceChange),
+                fanControl,
+                CancellationToken.None)).Status);
+        await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(
+                PerformancePreset.Custom,
+                OverrideLifetime.UntilPowerSourceChange,
+                CustomPerformanceSettings.Default),
+            CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int fanWritesBeforeExit = context.Device.FanControlWrites.Count;
+        context.Device.BeforeQueuedFanFailure = () =>
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+            for (int offset = 1; offset <= readFailures; offset++)
+            {
+                context.Device.PerformanceFanStateReadFailureCalls.Add(
+                    context.Device.PerformanceFanStateReadCalls + offset);
+            }
+        };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate manual-curve restore."));
+
+        ControlOperationResult restored = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(
+            expectedApplied
+                ? ControlOperationStatus.Applied
+                : ControlOperationStatus.Failed,
+            restored.Status);
+        Assert.Equal(
+            fanWritesBeforeExit + 1,
+            context.Device.FanControlWrites.Count);
+        Assert.Equal([TimeSpan.FromMilliseconds(750)], retryDelays);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Equal(!expectedApplied, context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(
+            !expectedApplied,
+            context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(
+            expectedApplied
+                ? null
+                : HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
+    }
+
     [Fact]
     public async Task PadlessHyperBoost_IndeterminateEnableRetainsFailedRestoreForExplicitRecovery()
     {

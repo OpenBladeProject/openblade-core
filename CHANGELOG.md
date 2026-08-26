@@ -13,7 +13,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   fresh confirmation when an indeterminate fan handback reached Automatic.
 - Preserved definitive pre-submission failures through the production device
   provider and added one fresh verified-session retry for failed thermal or
-  adjustable-fan pre-write reads, without retrying submitted hardware writes.
+  adjustable-fan pre-write reads, plus one delayed read-only confirmation for
+  indeterminate manual-fan restoration, without retrying submitted writes.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
