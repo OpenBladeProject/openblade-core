@@ -9,7 +9,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Made HyperBoost a transient Laptop performance choice available from every
   admitted full-power profile and fan mode, with captured transition safety and
-  exact intent restoration on every exit without duplicate manual-fan writes.
+  exact intent restoration on every exit, no duplicate manual-fan writes, and
+  fresh confirmation when an indeterminate fan handback reached Automatic.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,

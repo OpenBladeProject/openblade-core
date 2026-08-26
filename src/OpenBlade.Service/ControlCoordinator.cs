@@ -56,6 +56,7 @@ public sealed class ControlCoordinator
     private readonly Func<CancellationToken, Task<ConfirmedDeviceState>>?
         scopedStateReader;
     private readonly bool resolveIndeterminatePerformanceWrites;
+    private readonly bool resolveIndeterminateAutomaticFanWrites;
 
     public ControlCoordinator(IBladeDevice device)
         : this(device, scopedStateReader: null)
@@ -65,12 +66,15 @@ public sealed class ControlCoordinator
     internal ControlCoordinator(
         IBladeDevice device,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader,
-        bool resolveIndeterminatePerformanceWrites = false)
+        bool resolveIndeterminatePerformanceWrites = false,
+        bool resolveIndeterminateAutomaticFanWrites = false)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.scopedStateReader = scopedStateReader;
         this.resolveIndeterminatePerformanceWrites =
             resolveIndeterminatePerformanceWrites;
+        this.resolveIndeterminateAutomaticFanWrites =
+            resolveIndeterminateAutomaticFanWrites;
     }
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
@@ -296,7 +300,11 @@ public sealed class ControlCoordinator
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
             // so every explicit manual-mode action must submit its RPM target.
             forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                || initialStateBlockReason is not null);
+                || initialStateBlockReason is not null,
+            resolveIndeterminateWriteByReadback:
+                resolveIndeterminateAutomaticFanWrites
+                    && value.Mode == FanMode.Automatic,
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches);
     }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(

@@ -8601,7 +8601,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? new ControlCoordinator(
                         device,
                         device.ReadPerformanceFanStateAsync,
-                        resolveIndeterminatePerformanceWrites: true)
+                        resolveIndeterminatePerformanceWrites: true,
+                        resolveIndeterminateAutomaticFanWrites: true)
                     : new ControlCoordinator(device);
             return await apply(coordinator, desired, token);
         }

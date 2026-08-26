@@ -9176,6 +9176,115 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.DoesNotContain(DeviceSubsystem.Fans, restored.ExternalChanges);
     }
 
+    [Fact]
+    public async Task AcManualFans_IndeterminateAutomaticWriteUsesFreshReadbackWithoutDrift()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem != DeviceSubsystem.Fans)
+            {
+                return;
+            }
+
+            context.Device.ConfirmedState = context.Device.ConfirmedState.Fans
+                == FanMode.Automatic
+                    ? context.Device.ConfirmedState with
+                    {
+                        Performance = PerformancePreset.Balanced,
+                    }
+                    : context.Device.ConfirmedState with { Performance = null };
+        };
+        await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+            CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Automatic fan write."));
+        int settersBeforeAutomatic = context.Device.TotalSetterCalls;
+
+        ControlOperationResult automatic = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Automatic,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        int settersAfterAutomatic = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, automatic.Status);
+        Assert.Contains(
+            "fresh readback",
+            automatic.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(settersBeforeAutomatic + 1, settersAfterAutomatic);
+        Assert.Equal(settersAfterAutomatic, context.Device.TotalSetterCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Balanced, status.ConfirmedState!.Performance);
+        Assert.Equal(FanMode.Automatic, status.ConfirmedState.Fans);
+        Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, status.ExternalChanges);
+        Assert.Empty(status.UnconfirmedWrites);
+        Assert.False(status.WritesBlocked);
+    }
+
+    [Fact]
+    public async Task AcManualFans_IndeterminateManualWriteDoesNotTrustGenericReadback()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Fixed fan write."));
+        int settersBeforeFixed = context.Device.TotalSetterCalls;
+
+        ControlOperationResult fixedResult =
+            await context.Runtime.SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(
+                    FanMode.Fixed,
+                    OverrideLifetime.UntilPowerSourceChange),
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                CancellationToken.None);
+        int settersAfterFixed = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, fixedResult.Status);
+        Assert.Contains(
+            "indeterminate",
+            fixedResult.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(settersBeforeFixed + 1, settersAfterFixed);
+        Assert.Equal(settersAfterFixed, context.Device.TotalSetterCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(FanMode.Fixed, status.DesiredState.Fans.Value);
+        Assert.Contains(DeviceSubsystem.Fans, status.ExternalChanges);
+        Assert.False(status.WritesBlocked);
+    }
+
     [Theory]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance)]
     [InlineData(PowerSource.Battery, PerformancePreset.BatteryBalanced)]
