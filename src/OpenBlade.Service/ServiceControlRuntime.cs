@@ -3638,7 +3638,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             device,
                             transitionIntent,
                             readback,
-                            token)
+                            token,
+                            confirmIndeterminateManualRestore: true)
                         .ConfigureAwait(false);
                 readback = restoration.Readback ?? readback;
                 if (!restoration.Succeeded)
@@ -3707,9 +3708,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool disableJournalCleared = true;
             if (!enabled && ownedDisableAttempt)
             {
-                disableJournalCleared = await TryClearHyperBoostOwnershipJournalAsync(
-                        "HyperBoost was restored, but its durable ownership journal could not be cleared.")
-                    .ConfigureAwait(false);
+                disableJournalCleared = transitionIntent is null
+                    ? await TryClearHyperBoostOwnershipJournalAsync(
+                            "HyperBoost was restored, but its durable ownership journal could not be cleared.")
+                        .ConfigureAwait(false)
+                    : await RetireHyperBoostOwnershipJournalAsync(
+                            requestedBaseMode,
+                            journalRequiresCoolingPad,
+                            transitionIntent,
+                            "HyperBoost was restored, but its durable ownership journal could not be retired.")
+                        .ConfigureAwait(false);
             }
 
             hyperBoostOwnershipGeneration++;
@@ -4214,6 +4222,81 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && DeviceSubsystemOrder.IsManualFanMode(leftMode)
             && DeviceSubsystemOrder.IsManualFanMode(rightMode);
 
+    private static async Task<ScopedApplyOutcome>
+        ResolveIndeterminateHyperBoostManualFanRestorationAsync(
+            IBladeDevice device,
+            FanControlSettings previous,
+            FanControlSettings requested,
+            ScopedApplyOutcome outcome,
+            CancellationToken cancellationToken)
+    {
+        if (HyperBoostBaselineStepSucceeded(outcome)
+            || previous.Mode != FanMode.Automatic
+            || !DeviceSubsystemOrder.IsManualFanMode(requested.Mode)
+            || outcome.Result.Status != ControlResultStatus.Failed
+            || !outcome.Result.Message.StartsWith(
+                "Fans write is indeterminate",
+                StringComparison.Ordinal)
+            || !outcome.WriteAttempted
+            || outcome.DeviceAccessFailed)
+        {
+            return outcome;
+        }
+
+        try
+        {
+            ConfirmedDeviceState readback = await device
+                .ReadPerformanceFanStateAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (readback.Fans is { } fans
+                && DeviceSubsystemOrder.IsManualFanMode(fans))
+            {
+                return outcome with
+                {
+                    Result = new ControlResult(
+                        ControlResultStatus.Applied,
+                        "Fans setting applied and confirmed by fresh readback after an indeterminate HyperBoost restoration submission."),
+                    Readback = readback,
+                    ReadbackMatched = true,
+                    DeviceAccessFailed = false,
+                    ConfirmationUnavailable = false,
+                    PreWriteState = null,
+                };
+            }
+
+            if (readback.Fans == FanMode.Automatic)
+            {
+                return outcome with
+                {
+                    Result = new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{outcome.Result.Message} Fresh readback confirmed that the prior Automatic fan baseline remained active."),
+                    Readback = readback,
+                    WriteAttempted = false,
+                    ReadbackMatched = false,
+                    DeviceAccessFailed = false,
+                    ConfirmationUnavailable = false,
+                    PreWriteState = null,
+                };
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The exact manual target may already have applied. Preserve the
+            // original indeterminate outcome so the caller durably records a
+            // pending restore without entering an automatic retry path.
+            return outcome;
+        }
+        catch
+        {
+            // Preserve the indeterminate outcome. A later observation cannot
+            // distinguish exact Fixed, Curve, and Maximum intent, so it must
+            // remain blocked until an explicit recovery.
+        }
+
+        return outcome;
+    }
+
     private async Task<ControlOperationResult>
         FinishFailedHyperBoostBaselineTransitionAsync(
             ServiceStatusSnapshot baseline,
@@ -4285,7 +4368,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             IBladeDevice device,
             HyperBoostRestoreIntent intent,
             ConfirmedDeviceState? preservedState,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool confirmIndeterminateManualRestore = false)
     {
         var coordinator = new ControlCoordinator(
             device,
@@ -4309,6 +4393,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         intent.FanControl,
                         intent.Performance,
                         intent.CustomPerformance,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            if (confirmIndeterminateManualRestore)
+            {
+                // This evidence is valid only inside the direct exit that
+                // began from the confirmed Automatic HyperBoost baseline.
+                // Restart recovery cannot distinguish exact manual targets.
+                fans = await ResolveIndeterminateHyperBoostManualFanRestorationAsync(
+                        device,
+                        FanControlSettings.FromLegacy(FanMode.Automatic),
+                        intent.FanControl,
+                        fans,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
