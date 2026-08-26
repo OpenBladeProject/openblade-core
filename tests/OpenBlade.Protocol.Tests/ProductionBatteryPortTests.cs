@@ -761,6 +761,72 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
         Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("manual entry channel 2 of 2", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanTargetFailureReportsSanitizedStageAndChannel()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x25];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            Success(state2),
+            Success(speed1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.Timeout));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("fan target channel 2 of 2", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
+        Assert.DoesNotContain("0102", error.Message);
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanTargetUpdateFailureReportsTargetStageAndChannel()
+    {
+        byte[] manualState1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] manualState2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x20];
+        var session = new ScriptedSession(
+            Success(manualState1),
+            Success(manualState2),
+            Success(speed1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.Timeout));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanTargetsAsync(3200, 3400, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("fan target channel 2 of 2", error.Message);
+        Assert.DoesNotContain("manual entry", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
+        Assert.DoesNotContain("0102", error.Message);
         Assert.Equal(4, session.Commands.Count);
     }
 

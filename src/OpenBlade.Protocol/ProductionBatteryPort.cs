@@ -1008,8 +1008,18 @@ internal sealed class ProductionBatteryPort :
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                 {
                     poisoned = true;
+                    bool manualEntryCommand = requireAutomaticEntry && index < 2;
+                    string stage = manualEntryCommand ? "manual entry" : "fan target";
+                    int stageIndex = manualEntryCommand
+                        ? index + 1
+                        : requireAutomaticEntry
+                            ? index - 1
+                            : index + 1;
+                    string failure = result.Failure?.ToString()
+                        ?? "UnexpectedAcknowledgement";
                     throw Indeterminate(
-                        "The adjustable fan write outcome is indeterminate.");
+                        "The adjustable fan write outcome is indeterminate after "
+                        + $"{stage} channel {stageIndex} of 2 ({failure}).");
                 }
 
                 if (index < commands.Count - 1)

@@ -1734,14 +1734,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     public async Task IndeterminatePortFailurePreservesSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var portFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "sanitized port diagnostic");
         var port = new FakeProductionPort(
             capabilities,
             BatteryValidationSetting.Limit80,
             temporary: null)
         {
-            WriteFailure = new BladeWriteException(
-                WriteSubmissionState.Indeterminate,
-                "ambiguous submission"),
+            WriteFailure = portFailure,
         };
         var factory = new FakeProductionFactory(capabilities, port);
         using var provider = ReadyProvider(factory);
@@ -1750,7 +1751,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
+        Assert.Same(portFailure, error);
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal("sanitized port diagnostic", error.Message);
         Assert.Equal(1, factory.OpenCount);
     }
 

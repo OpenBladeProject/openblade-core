@@ -15,6 +15,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   provider and added one delayed fresh-session retry for failed thermal or
   adjustable-fan pre-write reads, plus one delayed read-only confirmation for
   indeterminate manual-fan restoration, without retrying submitted writes.
+- Retained sanitized fan phase and channel details when an adjustable fan write
+  becomes indeterminate, without retrying it or exposing raw payloads.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,

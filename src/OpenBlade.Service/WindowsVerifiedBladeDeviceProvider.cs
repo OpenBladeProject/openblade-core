@@ -2154,19 +2154,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 throw;
             }
             catch (BladeWriteException exception)
-                when (exception.SubmissionState == WriteSubmissionState.Indeterminate
-                    && exception.FailurePhase
-                        == BladeWriteFailurePhase.ThermalFinalConfirmationRead)
-            {
-                throw;
-            }
-            catch (BladeWriteException exception)
                 when (exception.SubmissionState
                     == WriteSubmissionState.KnownNotApplied)
             {
                 // The port owns the exact submission boundary. Preserve its
                 // definitive pre-submission classification instead of making a
                 // failed open, query, or precondition look like an uncertain write.
+                throw;
+            }
+            catch (BladeWriteException)
+            {
+                // The production port owns the exact submission boundary and
+                // emits sanitized failure details. Preserve its indeterminate
+                // result without retrying or replacing the diagnostic.
                 throw;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
