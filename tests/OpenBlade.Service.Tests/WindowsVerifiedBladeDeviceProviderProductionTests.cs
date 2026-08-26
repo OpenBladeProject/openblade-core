@@ -1817,7 +1817,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, secondPort.SetPerformanceCount);
         Assert.Equal(1, firstPort.DisposeCount);
         Assert.Equal(1, secondPort.DisposeCount);
-        Assert.Equal([TimeSpan.FromSeconds(3)], retryDelays);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
     }
 
     [Fact]
