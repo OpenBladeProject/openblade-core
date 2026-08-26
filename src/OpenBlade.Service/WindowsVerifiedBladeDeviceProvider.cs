@@ -2138,6 +2138,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 throw;
             }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState
+                    == WriteSubmissionState.KnownNotApplied)
+            {
+                // The port owns the exact submission boundary. Preserve its
+                // definitive pre-submission classification instead of making a
+                // failed open, query, or precondition look like an uncertain write.
+                throw;
+            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 if (hyperBoostAdapterRetryPreWrite)

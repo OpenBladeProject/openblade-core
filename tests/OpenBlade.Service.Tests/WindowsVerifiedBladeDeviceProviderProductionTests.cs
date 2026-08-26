@@ -1755,7 +1755,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task KnownNotAppliedPortFailureRetainsIndeterminateProviderMapping()
+    public async Task KnownNotAppliedPortFailureRetainsSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var portFailure = new BladeWriteException(
@@ -1775,9 +1775,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
-        Assert.Same(portFailure, error.InnerException);
+        Assert.Same(portFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("port rejected write", error.Message);
         Assert.Equal(1, factory.OpenCount);
     }
 
@@ -1939,7 +1939,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task HyperBoostCanceledDuringFreshSetterDoesNotMasqueradeAsPreflightCancellation()
+    public async Task HyperBoostKnownNotAppliedFreshSetterRetainsSubmissionClassification()
     {
         using var cancellation = new CancellationTokenSource();
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
@@ -1974,9 +1974,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
                 PerformancePreset.Balanced,
                 cancellation.Token));
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
-        Assert.Same(setterFailure, error.InnerException);
+        Assert.Same(setterFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("Injected setter refusal after adapter preflight.", error.Message);
         Assert.Equal(2, factory.OpenCount);
         Assert.Equal(1, firstPort.SetHyperBoostCount);
         Assert.Equal(1, secondPort.SetHyperBoostCount);
@@ -2027,7 +2027,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task KnownNotAppliedOpenFailureRetainsIndeterminateProviderMapping()
+    public async Task KnownNotAppliedOpenFailureRetainsSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var factory = new FailingProductionFactory(
@@ -2039,10 +2039,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
-        BladeWriteException openFailure = Assert.IsType<BladeWriteException>(error.InnerException);
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, openFailure.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("The hardware write was blocked before submission.", error.Message);
+        Assert.Null(error.InnerException);
         Assert.Equal(1, factory.OpenCount);
     }
 
