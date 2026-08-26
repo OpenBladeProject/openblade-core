@@ -3247,42 +3247,43 @@ public sealed class WinUiShellContractTests
         Assert.Contains("GetSystemMetrics(VirtualScreenTopMetric)", popupPositioner, StringComparison.Ordinal);
         Assert.DoesNotContain("TopmostWindow = new(-1)", popupPositioner, StringComparison.Ordinal);
         Assert.Contains("WindowsPopupPositioner.DisableTransitions(", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("TryPrimeSurface();", dashboardWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("TryPrimeSurface", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("TryStartDismissAnimation()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("hiding: revealHiding", dashboardWindow, StringComparison.Ordinal);
-        Assert.Contains("ParkSurface();", dashboardWindow, StringComparison.Ordinal);
-        Assert.DoesNotContain("AppWindow.Hide()", dashboardWindow, StringComparison.Ordinal);
-        int primeSurface = dashboardWindow.IndexOf(
-            "private void TryPrimeSurface()",
-            StringComparison.Ordinal);
-        int resolvePlacement = dashboardWindow.IndexOf(
-            "private ResolvedPlacement ResolvePlacement(",
-            primeSurface,
-            StringComparison.Ordinal);
-        string primeSurfaceBody = dashboardWindow[primeSurface..resolvePlacement];
-        int firstOffscreenPosition = primeSurfaceBody.IndexOf(
-            "WindowsPopupPositioner.PositionOffscreen(",
-            StringComparison.Ordinal);
-        int showPrewarmedSurface = primeSurfaceBody.IndexOf(
-            "AppWindow.Show(activateWindow: false);",
-            StringComparison.Ordinal);
-        int secondOffscreenPosition = primeSurfaceBody.IndexOf(
-            "WindowsPopupPositioner.PositionOffscreen(",
-            firstOffscreenPosition + 1,
-            StringComparison.Ordinal);
-        Assert.True(firstOffscreenPosition < showPrewarmedSurface);
-        Assert.True(showPrewarmedSurface < secondOffscreenPosition);
-        int parkSurface = dashboardWindow.IndexOf(
-            "private void ParkSurface()",
+        Assert.Contains("HideSurface();", dashboardWindow, StringComparison.Ordinal);
+        int hideSurface = dashboardWindow.IndexOf(
+            "private void HideSurface()",
             StringComparison.Ordinal);
         int toRect = dashboardWindow.IndexOf(
             "private static RectInt32 ToRectInt32(",
-            parkSurface,
+            hideSurface,
             StringComparison.Ordinal);
-        Assert.Contains(
+        string hideSurfaceBody = dashboardWindow[hideSurface..toRect];
+        int offscreenPosition = hideSurfaceBody.IndexOf(
             "WindowsPopupPositioner.PositionOffscreen(",
-            dashboardWindow[parkSurface..toRect],
             StringComparison.Ordinal);
+        int hideWindow = hideSurfaceBody.IndexOf(
+            "AppWindow.Hide();",
+            StringComparison.Ordinal);
+        int releaseShownState = hideSurfaceBody.IndexOf(
+            "surfaceShown = false;",
+            StringComparison.Ordinal);
+        Assert.True(offscreenPosition < hideWindow);
+        Assert.True(hideWindow < releaseShownState);
+        int tryStartReveal = dashboardWindow.IndexOf(
+            "private bool TryStartReveal(",
+            StringComparison.Ordinal);
+        int advanceReveal = dashboardWindow.IndexOf(
+            "private void AdvanceRevealAnimation()",
+            tryStartReveal,
+            StringComparison.Ordinal);
+        string tryStartRevealBody = dashboardWindow[tryStartReveal..advanceReveal];
+        Assert.True(
+            tryStartRevealBody.IndexOf("Root.UpdateLayout();", StringComparison.Ordinal)
+            < tryStartRevealBody.IndexOf(
+                "AppWindow.Show(activateWindow: false);",
+                StringComparison.Ordinal));
+        Assert.Contains("surfaceShown = true;", tryStartRevealBody, StringComparison.Ordinal);
         Assert.Contains("foregroundTimer.IsRepeating = false", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("ScheduleForegroundCheckOrDismiss()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("ShouldRetryForegroundActivation(", dashboardWindow, StringComparison.Ordinal);
@@ -3373,14 +3374,14 @@ public sealed class WinUiShellContractTests
             revealRendering,
             StringComparison.Ordinal);
         string revealRenderingBody = dashboardWindow[revealRendering..cancelReveal];
-        int parkedDismiss = revealRenderingBody.IndexOf(
-            "ParkSurface();",
+        int hiddenDismiss = revealRenderingBody.IndexOf(
+            "HideSurface();",
             StringComparison.Ordinal);
         int reportedDismissed = revealRenderingBody.IndexOf(
             "ReportVisibility(false);",
-            parkedDismiss,
+            hiddenDismiss,
             StringComparison.Ordinal);
-        Assert.True(parkedDismiss >= 0 && reportedDismissed > parkedDismiss);
+        Assert.True(hiddenDismiss >= 0 && reportedDismissed > hiddenDismiss);
         int completionTimerTick = revealRenderingBody.IndexOf(
             "private void OnRevealCompletionTimerTick(",
             StringComparison.Ordinal);

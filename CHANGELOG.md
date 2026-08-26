@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Released the quick-controls WinUI surface when it is dismissed instead of
+  keeping it rendered off-screen, so the tray does not retain a discrete-GPU
+  context after a game exits.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
