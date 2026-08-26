@@ -714,6 +714,57 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Single(session.Commands);
+        Assert.Equal(0x82, session.Commands[0].CommandId);
+    }
+
+    [Fact]
+    public async Task AdjustableFanFailureAfterSubmissionRemainsIndeterminate()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                FanControlSettings.FromLegacy(FanMode.Maximum),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task ExactDeviceFixedFanSetterUsesCapturedRangeAndRejectsUnadmittedModes()
     {
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];

@@ -953,9 +953,24 @@ internal sealed class ProductionBatteryPort :
         try
         {
             EnsureUsableForWrite();
-            ProductionPerformanceFanState current =
-                await QueryPerformanceFanStateCoreAsync(cancellationToken)
+            ProductionPerformanceFanState current;
+            try
+            {
+                current = await QueryPerformanceFanStateCoreAsync(cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.ThermalPreWriteRead,
+                    "The adjustable fan pre-write read failed before submission.",
+                    exception);
+            }
             bool manual = current.Fans == FanMode.Maximum;
             if (requireAutomaticEntry)
             {

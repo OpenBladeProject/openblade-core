@@ -1812,6 +1812,48 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task FixedFanPreWriteReadFailureRetriesOneFreshVerifiedSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+            }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var requested = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+
+        await device.SetFanControlAsync(requested, default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(1, secondPort.SetFanModeCount);
+        Assert.Equal(requested, secondPort.LastFanControl);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Fact]
     public async Task RepeatedThermalPreWriteReadFailureStopsAfterFreshSession()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
@@ -2329,6 +2371,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public PerformancePreset? LastPerformance { get; private set; }
         public CustomPerformanceSettings? LastCustomPerformance { get; private set; }
         public FanMode? LastFanMode { get; private set; }
+        public FanControlSettings? LastFanControl { get; private set; }
         public int SetLimitCount { get; private set; }
         public int SetProtectionOffCount { get; private set; }
         public int DisposeCount { get; private set; }
@@ -2467,8 +2510,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public Task SetFanControlAsync(
             FanControlSettings value,
-            CancellationToken cancellationToken) =>
-            SetFanModeAsync(value.Mode, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            LastFanControl = value;
+            return SetFanModeAsync(value.Mode, cancellationToken);
+        }
 
         public Task SetFanTargetsAsync(
             int fan1Rpm,
