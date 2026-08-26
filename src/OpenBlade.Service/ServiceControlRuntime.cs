@@ -2086,7 +2086,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || !hyperBoostJournalSafetyBlock
                 || HasPendingWriteConfirmations()
                 || current.ControllerDetectionWarning is not null
-                || current.PotentialControllers.Any(CompetingControllerProcesses.Contains)
+                || current.PotentialControllers.Count > 0
                 || powerSource != PowerSource.PluggedIn
                 || current.ActivePowerSource != PowerSource.PluggedIn
                 || current.Capabilities is null
@@ -3210,9 +3210,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         try
         {
-            await RefreshControllerPresenceAndRelinquishLightingAsync(token)
-                .ConfigureAwait(false);
-            ServiceStatusSnapshot current = GetStatus();
             if (expectedOwnershipGeneration is { } expected
                 && (!ownsHyperBoost || hyperBoostOwnershipGeneration != expected))
             {
@@ -3220,13 +3217,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Stored,
                     "HyperBoost lifecycle restoration was skipped because OpenBlade ownership changed before the write.");
             }
-            if (enabled
-                && (current.ControllerDetectionWarning is not null
-                    || current.PotentialControllers.Count > 0))
+            if (enabled)
             {
+                await RefreshControllerPresenceAndRelinquishLightingAsync(token)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                RefreshControllerPresenceCore(token);
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.ControllerDetectionWarning is not null
+                || current.PotentialControllers.Count > 0)
+            {
+                string transition = enabled ? "entry" : "exit";
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "HyperBoost entry is blocked until competing-controller detection succeeds and no Razer controller is active.");
+                    $"HyperBoost {transition} is blocked until competing-controller detection succeeds and no Razer controller is active.");
             }
             bool ownedLifecycleRestore = !enabled
                 && expectedOwnershipGeneration is not null
@@ -4630,7 +4637,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+            || current.PotentialControllers.Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostExitIntent = null;
@@ -4782,7 +4789,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+            || current.PotentialControllers.Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostEntryIntent = null;
@@ -9036,8 +9043,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || HasPendingWriteConfirmations()
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(
-                CompetingControllerProcesses.Contains))
+            || current.PotentialControllers.Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             ClearOwnedHyperBoostState();

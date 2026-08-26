@@ -10391,7 +10391,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             transactionBoundary = null,
         LowPowerGate? lowPowerGate = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
-        bool explicitAction = true)
+        bool explicitAction = true,
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -10409,7 +10410,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities),
             transactionBoundary: transactionBoundary,
             lowPowerGate: lowPowerGate,
-            userConfigurationRepository: userConfigurationRepository);
+            userConfigurationRepository: userConfigurationRepository,
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
@@ -10734,6 +10736,85 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_ExitRefreshesControllersWithoutRelinquishingLighting()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int controllerScansBeforeExit = context.Monitor.ObserveCount;
+        int relinquishesBeforeExit = context.Provider.RelinquishCount;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(controllerScansBeforeExit + 1, context.Monitor.ObserveCount);
+        Assert.Equal(relinquishesBeforeExit, context.Provider.RelinquishCount);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
+    [InlineData("RazerAppEngine", null)]
+    [InlineData("razerwdl", null)]
+    [InlineData(null, "Controller detection was incomplete.")]
+    public async Task PadlessHyperBoost_ExitControllerSafetyBlockPreservesOwnership(
+        string? controller,
+        string? detectionWarning)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            explicitAction: false,
+            hyperBoostOwnershipJournalStore: journal);
+        IReadOnlySet<LightingEffect> lightingEffects =
+            context.Device.Capabilities.LightingEffects;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LightingEffects = lightingEffects,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            controller is null ? [] : [controller],
+            detectionWarning);
+        context.Provider.RelinquishFailure =
+            new IOException("synthetic handoff failure");
+        int controllerScansBeforeExit = context.Monitor.ObserveCount;
+        int hyperBoostWritesBeforeExit = context.Device.HyperBoostSetCalls;
+        int relinquishesBeforeExit = context.Provider.RelinquishCount;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(controllerScansBeforeExit + 1, context.Monitor.ObserveCount);
+        Assert.Equal(hyperBoostWritesBeforeExit, context.Device.HyperBoostSetCalls);
+        Assert.Equal(relinquishesBeforeExit, context.Provider.RelinquishCount);
+        Assert.NotNull(context.Provider.RelinquishFailure);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            journal.Journal?.State);
     }
 
     public static TheoryData<PerformancePreset, FanMode>
@@ -14971,8 +15052,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
     }
 
-    [Fact]
-    public async Task RecoverHyperBoostRestore_ControllerConflictDoesNotWrite()
+    [Theory]
+    [InlineData("Razer Synapse Service")]
+    [InlineData("RazerAppEngine")]
+    [InlineData("razerwdl")]
+    public async Task RecoverHyperBoostRestore_ControllerConflictDoesNotWrite(
+        string controller)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore
         {
@@ -14984,7 +15069,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         };
         TestContext context = CreateContext(
             providerAvailable: true,
-            conflicts: ["Razer Synapse Service"],
+            conflicts: [controller],
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
                 CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
