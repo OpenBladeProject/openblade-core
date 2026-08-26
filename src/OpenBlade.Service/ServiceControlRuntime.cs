@@ -3869,6 +3869,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     && transitionDevice is not null
                     && writeBaseline?.ConfirmedState is not null)
                 {
+                    if (token.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(
+                            "HyperBoost was submitted, but its final confirmation was canceled. The indeterminate state remains blocked for a later fresh observation.",
+                            exception,
+                            token);
+                    }
+
                     ControlOperationResult? resolved =
                         await TryResolveIndeterminateHyperBoostWriteAsync(
                                 enabled,

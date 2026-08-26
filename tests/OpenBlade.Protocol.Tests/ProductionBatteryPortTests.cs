@@ -220,6 +220,85 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task HyperBoost_FinalConfirmationCancellationPreservesPostAckPhase()
+    {
+        byte[] first = [0x01, 0x01, 0x07, 0x00];
+        byte[] second = [0x01, 0x02, 0x07, 0x00];
+        using var cancellation = new CancellationTokenSource();
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x12, 0x11]),
+            Success(first),
+            Success(second))
+        {
+            BeforeResult = (commandCount, token) =>
+            {
+                if (commandCount == 6)
+                {
+                    cancellation.Cancel();
+                    token.ThrowIfCancellationRequested();
+                }
+            },
+        };
+        DeviceCommandCatalog hyperBoostCatalog = Catalog(
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableFirstAction,
+                0x0D,
+                0x02,
+                first),
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableSecondAction,
+                0x0D,
+                0x02,
+                second),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x00, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState>
+                {
+                    AdapterPowerState.FullPower330W,
+                },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(
+                CoolingPadConnectionState.Absent));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
+        Assert.IsType<OperationCanceledException>(error.InnerException);
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
     {
         var session = new ScriptedSession(Success([0x01, 0x05, 0x00, 0x00]));
@@ -1685,6 +1764,8 @@ public sealed class ProductionBatteryPortTests
 
         public List<RazerCommandSpec> Commands { get; } = [];
 
+        public Action<int, CancellationToken>? BeforeResult { get; init; }
+
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId,
@@ -1694,6 +1775,7 @@ public sealed class ProductionBatteryPortTests
             cancellationToken.ThrowIfCancellationRequested();
             _ = assignTransactionId();
             Commands.Add(command);
+            BeforeResult?.Invoke(Commands.Count, cancellationToken);
             return Task.FromResult(results.Count == 0
                 ? new HidSessionResult<ReadOnlyMemory<byte>>(
                     default,
