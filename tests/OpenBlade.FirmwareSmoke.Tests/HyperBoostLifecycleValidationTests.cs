@@ -13,7 +13,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void ProcessIdentityProbe_UsesLimitedInformationAndFailsClosed()
+    public void ProcessIdentityProbe_UsesNormalUserInventoryAndFailsClosed()
     {
         using Process process = Process.GetCurrentProcess();
 
@@ -23,7 +23,15 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                     process.Id));
 
         Assert.Equal(process.Id, identity.ProcessId);
-        Assert.Equal(process.StartTime.ToUniversalTime().Ticks, identity.StartUtcTicks);
+        Assert.Equal(
+            identity,
+            HyperBoostLifecycleValidationRunner.CaptureProcessIdentity(process.Id));
+        Assert.InRange(
+            Math.Abs(
+                process.StartTime.ToUniversalTime().Ticks
+                - identity.StartUtcTicks),
+            0,
+            9);
         Assert.True(HyperBoostLifecycleValidationRunner.IsProcessAlive(identity));
         Assert.False(HyperBoostLifecycleValidationRunner.IsProcessAlive(
             identity with { StartUtcTicks = identity.StartUtcTicks + 1 }));
