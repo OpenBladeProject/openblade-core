@@ -1,7 +1,7 @@
-using OpenBlade.Contracts;
-using OpenBlade.FirmwareSmoke;
 using System.Diagnostics;
 using System.Text.Json;
+using OpenBlade.Contracts;
+using OpenBlade.FirmwareSmoke;
 
 namespace OpenBlade.FirmwareSmoke.Tests;
 

@@ -225,7 +225,10 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>Import profiles</value>
   </data>
-  <data name="MainWindow_ButtonRecoverHyperBoostRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Retry saved HyperBoost restore</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Retry saved HyperBoost restore</value>
   </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
@@ -623,6 +626,9 @@ Not closeable:
     <value>Official Razer firmware update assistant</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Operation error</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Operation error</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1424,7 +1430,10 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>Recent error</value>
   </data>
-  <data name="MainWindow_TextBlockRecoverHyperBoostRestore.Text" xml:space="preserve">
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>Retry saved setting</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
     <value>Retry saved setting</value>
   </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">

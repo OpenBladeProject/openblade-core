@@ -225,7 +225,10 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>Импортировать профили</value>
   </data>
-  <data name="MainWindow_ButtonRecoverHyperBoostRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Повторить восстановление HyperBoost</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Повторить восстановление HyperBoost</value>
   </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
@@ -623,6 +626,9 @@
     <value>Помощник по официальным обновлениям прошивки Razer</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Ошибка операции</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Ошибка операции</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1427,7 +1433,10 @@
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>Последняя ошибка</value>
   </data>
-  <data name="MainWindow_TextBlockRecoverHyperBoostRestore.Text" xml:space="preserve">
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>Повторить сохранённую настройку</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
     <value>Повторить сохранённую настройку</value>
   </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">

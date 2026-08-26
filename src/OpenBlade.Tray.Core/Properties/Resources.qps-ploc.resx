@@ -628,13 +628,13 @@
     <value>[!! Hígh ~~ !!]</value>
   </data>
   <data name="HyperBoost" xml:space="preserve">
-    <value>[!! HypérBóóst ~~~~ !!]</value>
+    <value>[!! HýpérBóóst ~~~~ !!]</value>
   </data>
   <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
-    <value>[!! HypérBóóst ís óff, bút thé sávéd pérfórmáncé ánd fán séttíng wás nót cónfírméd. Rétry réstórés thát éxáct sávéd séttíng óncé; OpenBlade wíll nót rétry áútómátícálly. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! HýpérBóóst ís óff, bút thé sávéd pérfórmáncé ánd fán séttíng wás nót cónfírméd. Rétrý réstórés thát éxáct sávéd séttíng óncé; OpenBlade wíll nót rétrý áútómátícállý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="HyperBoost restore needs confirmation" xml:space="preserve">
-    <value>[!! HypérBóóst réstóré nééds cónfírmátíón ~~~~~~~~~ !!]</value>
+    <value>[!! HýpérBóóst réstóré nééds cónfírmátíón ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Idle" xml:space="preserve">
     <value>[!! Ídlé ~~ !!]</value>
@@ -982,7 +982,7 @@
     <value>[!! Récónnéctíng tó sérvícé ~~~~~~~~ !!]</value>
   </data>
   <data name="Recovery needed" xml:space="preserve">
-    <value>[!! Récóvéry néédéd ~~~~~ !!]</value>
+    <value>[!! Récóvérý néédéd ~~~~~ !!]</value>
   </data>
   <data name="Refresh rate" xml:space="preserve">
     <value>[!! Réfrésh ráté ~~~~ !!]</value>
@@ -1303,10 +1303,10 @@
     <value>[!! tóp ~~ !!]</value>
   </data>
   <data name="Improves thermal performance so key components can sustain higher power limits." xml:space="preserve">
-    <value>[!! Ímpróvés thérmál pérfórmáncé só kéý cómpónénts cán sústáín híghér pówér límíts. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Ímpróvés thérmál pérfórmáncé só kéý cómpónénts cán sústáín híghér pówér límíts. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
-    <value>[!! Díscónnéct thé cóólíng pád béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Díscónnéct thé cóólíng pád béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>[!! Cóólíng-pád ábséncé cóúld nót bé cónfírméd. Réfrésh thé láptóp státé béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>

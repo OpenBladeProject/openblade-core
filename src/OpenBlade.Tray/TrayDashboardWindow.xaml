@@ -98,7 +98,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <InfoBar x:Uid="MainWindow_OperationErrorInfoBarText"
+        <InfoBar x:Uid="TrayDashboardWindow_OperationErrorInfoBarText"
                  x:Name="QuickControlsOperationErrorInfoBar"
                  IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
                  Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"

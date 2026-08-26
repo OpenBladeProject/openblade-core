@@ -225,7 +225,10 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>导入配置方案</value>
   </data>
-  <data name="MainWindow_ButtonRecoverHyperBoostRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>重试保存的 HyperBoost 恢复</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>重试保存的 HyperBoost 恢复</value>
   </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
@@ -609,6 +612,9 @@
     <value>Razer 官方固件更新助手</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>操作错误</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>操作错误</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1403,7 +1409,10 @@
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>最近一次错误</value>
   </data>
-  <data name="MainWindow_TextBlockRecoverHyperBoostRestore.Text" xml:space="preserve">
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>重试保存的设置</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
     <value>重试保存的设置</value>
   </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">

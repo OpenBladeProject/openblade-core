@@ -2283,7 +2283,7 @@
                                                                 <TextBlock x:Uid="MainWindow_TextBlockCheckCurrentState" Text="Check current state" />
                                                             </StackPanel>
                                                         </Button>
-                                                        <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestore" HorizontalAlignment="Left"
+                                                        <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestoreAttention" HorizontalAlignment="Left"
                                                                 Margin="0,4,0,0"
                                                                 IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
                                                                 Visibility="{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}"
@@ -2294,7 +2294,7 @@
                                                                               Height="14"
                                                                               IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
                                                                               Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
-                                                                <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestore" Text="Retry saved setting" />
+                                                                <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestoreAttention" Text="Retry saved setting" />
                                                             </StackPanel>
                                                         </Button>
                                                     </StackPanel>
@@ -4530,7 +4530,7 @@
                                                 <TextBlock Text="{x:Bind ViewModel.HyperBoostRestoreRecoveryText, Mode=OneWay}"
                                                            Style="{StaticResource TroubleshootingValueStyle}"
                                                            TextWrapping="Wrap" />
-                                                <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestore"
+                                                <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting"
                                                         HorizontalAlignment="Left"
                                                         IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
                                                         Click="OnRecoverHyperBoostRestoreClick"
@@ -4540,7 +4540,7 @@
                                                                       Height="14"
                                                                       IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
                                                                       Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
-                                                        <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestore" Text="Retry saved setting" />
+                                                        <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting" Text="Retry saved setting" />
                                                     </StackPanel>
                                                 </Button>
                                             </StackPanel>

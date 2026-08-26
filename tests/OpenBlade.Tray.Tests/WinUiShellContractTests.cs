@@ -3088,7 +3088,7 @@ public sealed class WinUiShellContractTests
             "{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}",
             Attribute(operationError, "Message"));
         Assert.Equal(
-            "MainWindow_OperationErrorInfoBarText",
+            "TrayDashboardWindow_OperationErrorInfoBarText",
             Attribute(operationError, "Uid"));
         Assert.Equal("1", Attribute(
             NamedElement(document, "Grid", "DashboardPage"),
