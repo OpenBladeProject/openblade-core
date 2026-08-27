@@ -12251,9 +12251,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Device.ConfirmedState.Performance);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
-        Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
-        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        ServiceStatusSnapshot restored = context.Runtime.GetStatus();
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            restored.ConfirmedState?.Performance);
+        Assert.Equal(FanMode.Automatic, restored.ConfirmedState?.Fans);
+        Assert.False(restored.WritesBlocked);
+        Assert.False(restored.HyperBoostRestorePending);
+        Assert.Empty(restored.UnconfirmedWrites);
+        Assert.Contains(
+            "completed the one deferred HyperBoost destination restore",
+            restored.Message,
+            StringComparison.Ordinal);
         Assert.Null(journal.Journal);
 
         int settersAfterRecovery = context.Device.TotalSetterCalls;
@@ -12362,7 +12371,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostRestoreRetryDisposition.None,
             consumed.RestoreRetryDisposition);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        ServiceStatusSnapshot retained = context.Runtime.GetStatus();
+        Assert.True(retained.WritesBlocked);
+        Assert.Contains(
+            "did not complete",
+            retained.Message,
+            StringComparison.Ordinal);
 
         int settersAfterConsumedFailure = context.Device.TotalSetterCalls;
         await context.Runtime.ObserveAsync(CancellationToken.None);

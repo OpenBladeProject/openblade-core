@@ -3365,10 +3365,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     bool hadOwnership = ownsHyperBoost
                         || ownedHyperBoostBaseMode is not null;
-                    bool retired = !hadOwnership
-                        || await RetireInactiveHyperBoostJournalIfPresentAsync(
+                    bool retired = true;
+                    if (hadOwnership)
+                    {
+                        retired = (await RetireInactiveHyperBoostJournalIfPresentAsync(
                                 "HyperBoost was already off, but its ownership journal could not be retired.")
-                            .ConfigureAwait(false);
+                            .ConfigureAwait(false)).Retired;
+                    }
                     if (hadOwnership)
                     {
                         hyperBoostOwnershipGeneration++;
@@ -4158,6 +4161,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private sealed record FailedHyperBoostRestoreObservation(
         ConfirmedDeviceState State,
         HyperBoostRecoveryBaseline? RecoveryBaseline);
+
+    private sealed record InactiveHyperBoostJournalRetirement(
+        bool Retired,
+        ConfirmedDeviceState? ConfirmedState = null,
+        string? Message = null);
 
     private static HyperBoostRestoreIntent CreateHyperBoostRestoreIntent(
         DesiredDeviceState desired)
@@ -5436,7 +5444,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private async Task<bool> RetireInactiveHyperBoostJournalIfPresentAsync(
+    private async Task<InactiveHyperBoostJournalRetirement>
+        RetireInactiveHyperBoostJournalIfPresentAsync(
         string failureMessage,
         ConfirmedDeviceState? confirmed = null,
         IBladeDevice? observedDevice = null,
@@ -5457,7 +5466,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal could not be inspected: {exception.Message}");
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         if (load.Invalid)
@@ -5467,7 +5476,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal is invalid and was preserved for manual inspection.");
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         if (load.Journal is not { } journal)
@@ -5475,7 +5484,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             hyperBoostJournalSafetyBlock = false;
             hyperBoostRestorePending = false;
             lastReportedRetainedHyperBoostRestoreJournal = null;
-            return true;
+            return new InactiveHyperBoostJournalRetirement(true);
         }
 
         if (journal.State == HyperBoostOwnershipJournalState.RestorePending)
@@ -5517,7 +5526,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         ControlOperationStatus.Applied,
                         $"Fresh readback confirmed that HyperBoost is off and the saved {PerformanceLabel(journal.RestoreIntent.Performance)} performance and Automatic fan intent is restored. The pending ownership journal was retired without another hardware write.");
                 }
-                return cleared;
+                return new InactiveHyperBoostJournalRetirement(cleared);
             }
 
             hyperBoostJournalSafetyBlock = true;
@@ -5528,7 +5537,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     $"{failureMessage} The pending restore marker was preserved because inactive HyperBoost does not confirm the saved performance and fan intent.");
                 lastReportedRetainedHyperBoostRestoreJournal = journal;
             }
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         if (hyperBoostJournalSafetyBlock
@@ -5557,21 +5566,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     hyperBoostRestorePending = converted;
                 }
             }
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         hyperBoostRestorePending = false;
         lastReportedRetainedHyperBoostRestoreJournal = null;
 
-        return await RetireHyperBoostOwnershipJournalAsync(
+        bool retired = await RetireHyperBoostOwnershipJournalAsync(
                 journal.BaseMode,
                 journal.RequiresCoolingPad,
                 journal.RestoreIntent,
                 failureMessage)
             .ConfigureAwait(false);
+        return new InactiveHyperBoostJournalRetirement(retired);
     }
 
-    private async Task<bool> TryCompleteDeferredHyperBoostRestoreAsync(
+    private async Task<InactiveHyperBoostJournalRetirement>
+        TryCompleteDeferredHyperBoostRestoreAsync(
         HyperBoostOwnershipJournal journal,
         ConfirmedDeviceState confirmed,
         IBladeDevice observedDevice,
@@ -5581,7 +5592,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (powerSource is PowerSource.ExternalUnknown)
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         PowerSource freshPowerSource = await ResolveCurrentPowerSourceAsync(
@@ -5591,7 +5602,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || Automation.PowerSource != powerSource)
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         RefreshControllerPresenceCore(cancellationToken);
@@ -5604,7 +5615,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice verifiedDevice))
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         HyperBoostRestoreIntent destinationIntent =
@@ -5614,7 +5625,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 destinationIntent))
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         if (ConfirmedStateMatchesHyperBoostRestoreIntent(
@@ -5633,7 +5644,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     DeviceSubsystem.Fans,
                     matched: true);
             }
-            return cleared;
+            return new InactiveHyperBoostJournalRetirement(cleared);
         }
 
         if (journal.RecoveryBaseline is not { } recoveryBaseline
@@ -5642,7 +5653,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 recoveryBaseline))
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         var retryBaseline = new HyperBoostRecoveryBaseline(
@@ -5654,7 +5665,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!retryBaseline.IsWellFormed)
         {
             hyperBoostJournalSafetyBlock = true;
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         bool retryClaimed = await TryWriteHyperBoostOwnershipJournalAsync(
@@ -5669,7 +5680,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         hyperBoostJournalSafetyBlock = true;
         if (!retryClaimed)
         {
-            return false;
+            return new InactiveHyperBoostJournalRetirement(false);
         }
 
         HyperBoostIntentRestorationResult restoration;
@@ -5712,14 +5723,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"The one deferred HyperBoost destination restore did not complete. {restoration.Message} The saved restore remains blocked and will not be retried automatically.");
-            PublishIfChanged(GetStatus() with
-            {
-                ConfirmedState = restored,
-                WritesBlocked = true,
-                Message =
-                    $"The one deferred HyperBoost destination restore did not complete. {restoration.Message} The saved restore remains blocked and will not be retried automatically.",
-            });
-            return false;
+            string restoreFailureMessage =
+                $"The one deferred HyperBoost destination restore did not complete. {restoration.Message} The saved restore remains blocked and will not be retried automatically.";
+            return new InactiveHyperBoostJournalRetirement(
+                false,
+                restored,
+                restoreFailureMessage);
         }
 
         driftTracker.Observe(restored);
@@ -5739,16 +5748,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? ControlOperationStatus.Applied
                 : ControlOperationStatus.Failed,
             message);
-        PublishIfChanged(GetStatus() with
-        {
-            ConfirmedState = restored,
-            DesiredState = Automation.Resolve(restored),
-            ExternalChanges = driftTracker.ExternalChanges,
-            WritesBlocked = !retired,
-            ActivePowerSource = powerSource,
-            Message = message,
-        });
-        return retired;
+        return new InactiveHyperBoostJournalRetirement(
+            retired,
+            restored,
+            message);
     }
 
 
@@ -6235,9 +6238,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (!confirmed.HyperBoostActive)
                 {
-                    bool retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                    bool retired = (await RetireInactiveHyperBoostJournalIfPresentAsync(
                             "Inactive HyperBoost was confirmed after an unexpected exit, but its stale ownership journal could not be retired.")
-                        .ConfigureAwait(false);
+                        .ConfigureAwait(false)).Retired;
                     if (!retired)
                     {
                         const string retirementFailed =
@@ -7504,9 +7507,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (current.ConfirmedState?.HyperBoostActive != true)
                 {
-                    bool retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                    bool retired = (await RetireInactiveHyperBoostJournalIfPresentAsync(
                             "HyperBoost was already inactive at the lifecycle boundary, but its ownership journal could not be retired.")
-                        .ConfigureAwait(false);
+                        .ConfigureAwait(false)).Retired;
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
@@ -8822,9 +8825,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool retired = true;
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {
-                retired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                retired = (await RetireInactiveHyperBoostJournalIfPresentAsync(
                         "A confirmed inactive observation relinquished HyperBoost ownership, but its journal could not be retired.")
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(false)).Retired;
                 hyperBoostOwnershipGeneration++;
             }
             ownsHyperBoost = false;
@@ -9884,9 +9887,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (confirmed is { HyperBoostActive: false })
         {
             hyperBoostJournalRetired =
-                await RetireInactiveHyperBoostJournalIfPresentAsync(
+                (await RetireInactiveHyperBoostJournalIfPresentAsync(
                         "HyperBoost was confirmed inactive, but its ownership journal could not be retired.")
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(false)).Retired;
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {
                 hyperBoostOwnershipGeneration++;
@@ -10411,10 +10414,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             BatteryHealthStatus? batteryHealth =
                 CaptureBatteryHealthAfterFirstVerificationCore();
             bool journalRetired = true;
+            string? journalRetirementMessage = null;
             if (!observation.Confirmed.HyperBoostActive
                 && !suppressInactiveHyperBoostJournalRetirement)
             {
-                journalRetired = await RetireInactiveHyperBoostJournalIfPresentAsync(
+                InactiveHyperBoostJournalRetirement retirement =
+                    await RetireInactiveHyperBoostJournalIfPresentAsync(
                         "A fresh inactive HyperBoost observation relinquished ownership, but its journal could not be retired.",
                         observation.Confirmed,
                         device,
@@ -10422,6 +10427,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         powerSourceConfirmed,
                         cancellationToken)
                     .ConfigureAwait(false);
+                journalRetired = retirement.Retired;
+                journalRetirementMessage = retirement.Message;
+                if (retirement.ConfirmedState is { } restored)
+                {
+                    observation = observation with { Confirmed = restored };
+                    pendingHyperBoostMessage = retirement.Message
+                        ?? pendingHyperBoostMessage;
+                }
             }
             PublishVerifiedDeviceObservation(
                 powerSource,
@@ -10443,8 +10456,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishIfChanged(GetStatus() with
                 {
                     WritesBlocked = true,
-                    Message =
-                        "HyperBoost is inactive, but its ownership journal could not be retired. Control writes remain blocked.",
+                    Message = journalRetirementMessage
+                        ?? "HyperBoost is inactive, but its ownership journal could not be retired. Control writes remain blocked.",
                 });
             }
 

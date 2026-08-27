@@ -21,7 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Let the lifecycle validator verify the protected HyperBoost journal through
   read-only service diagnostics and refuse mismatched tool builds before writes.
 - Deferred a HyperBoost power-boundary restore only after a proven pre-submission
-  failure, then rechecked safety and the current power-source destination once.
+  failure, then rechecked safety and the current power-source destination once
+  and published the restored authoritative state immediately.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
