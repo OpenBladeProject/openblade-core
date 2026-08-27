@@ -431,6 +431,41 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task ArmAsync_InactiveFailedEntryRequiresExactRestoreConfirmation()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(PerformancePreset.Silent)
+        {
+            FailEnableAfterTransitionBaseline = true,
+        };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_011, 123_468),
+            () => HyperBoostLifecycleJournalObservation.Missing);
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            Path.Combine(directory, "inactive-failed-entry.json"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(result.HyperBoostConfirmed);
+        Assert.False(result.CleanupAttempted);
+        Assert.False(result.FinalRestorationConfirmed);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            client.Status.ConfirmedState?.Performance);
+        Assert.Equal(FanMode.Automatic, client.Status.ConfirmedState?.Fans);
+        Assert.False(client.Status.ConfirmedState?.HyperBoostActive);
+    }
+
+    [Fact]
     public async Task VerifyAsync_LowPowerRequiresSameProcessOneRestoreAndRetiredJournal()
     {
         Directory.CreateDirectory(directory);
@@ -1169,6 +1204,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         internal bool ThrowAfterEnable { get; init; }
 
+        internal bool FailEnableAfterTransitionBaseline { get; init; }
+
         internal void RestoreWithoutClientWrite() => Status = Status with
         {
             ConfirmedState = Status.ConfirmedState! with
@@ -1200,6 +1237,22 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             else
             {
                 DisableCalls++;
+            }
+            if (enabled && FailEnableAfterTransitionBaseline)
+            {
+                Status = Status with
+                {
+                    ConfirmedState = Status.ConfirmedState! with
+                    {
+                        HyperBoostActive = false,
+                        Performance = PerformancePreset.Balanced,
+                        Fans = FanMode.Automatic,
+                        CustomPerformance = null,
+                    },
+                };
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "HyperBoost entry failed after staging the transition baseline."));
             }
             Status = Status with
             {

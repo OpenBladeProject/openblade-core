@@ -607,7 +607,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         CancellationToken cancellationToken)
     {
         bool cleanupAttempted = hyperBoostConfirmed;
-        bool restored = !hyperBoostConfirmed || await RestoreOnceAsync(
+        bool restored = await RestoreOnceAsync(
                 restoreIntent,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -619,7 +619,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             false,
             cleanupAttempted,
             restored,
-            hyperBoostConfirmed && !restored,
+            !restored,
             toolProductVersion,
             message,
             null);

@@ -778,6 +778,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             load.Sha256)
         {
             RestoreRetryDisposition = journal.RestoreRetryDisposition.ToString(),
+            RestoreRetryTarget = journal.RestoreRetryTarget.ToString(),
         };
     }
 
@@ -3778,7 +3779,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             "The failed HyperBoost exit restore could not preserve its fresh recovery baseline.",
                             transitionIntent,
                             failureObservation.RecoveryBaseline,
-                            retryDisposition)
+                            retryDisposition,
+                            retryDisposition
+                                == HyperBoostRestoreRetryDisposition
+                                    .DeferredPreSubmission
+                                    ? HyperBoostRestoreRetryTarget
+                                        .CurrentPowerDestination
+                                    : HyperBoostRestoreRetryTarget.None)
                         .ConfigureAwait(false);
                     hyperBoostJournalSafetyBlock = true;
                     hyperBoostRestorePending = true;
@@ -4904,7 +4911,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The indeterminate HyperBoost exit restore could not preserve its fresh recovery baseline.",
                     restoreIntent,
                     failureObservation.RecoveryBaseline,
-                    retryDisposition)
+                    retryDisposition,
+                    retryDisposition
+                        == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
+                            ? powerSource == PowerSource.PluggedIn
+                                ? HyperBoostRestoreRetryTarget.ExactJournalIntent
+                                : HyperBoostRestoreRetryTarget
+                                    .CurrentPowerDestination
+                            : HyperBoostRestoreRetryTarget.None)
                 .ConfigureAwait(false);
             hyperBoostJournalSafetyBlock = true;
             string failedMessage =
@@ -5205,7 +5219,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HyperBoostRestoreIntent? restoreIntent = null,
         HyperBoostRecoveryBaseline? recoveryBaseline = null,
         HyperBoostRestoreRetryDisposition restoreRetryDisposition =
-            HyperBoostRestoreRetryDisposition.None)
+            HyperBoostRestoreRetryDisposition.None,
+        HyperBoostRestoreRetryTarget restoreRetryTarget =
+            HyperBoostRestoreRetryTarget.None)
     {
         try
         {
@@ -5221,6 +5237,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         ?? HyperBoostRestoreIntent.BalancedAutomatic,
                     RecoveryBaseline = recoveryBaseline,
                     RestoreRetryDisposition = restoreRetryDisposition,
+                    RestoreRetryTarget = restoreRetryTarget,
                 },
                 CancellationToken.None)
             .ConfigureAwait(false);
@@ -5618,8 +5635,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new InactiveHyperBoostJournalRetirement(false);
         }
 
-        HyperBoostRestoreIntent destinationIntent =
-            CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed));
+        HyperBoostRestoreIntent destinationIntent;
+        switch (journal.RestoreRetryTarget)
+        {
+            case HyperBoostRestoreRetryTarget.ExactJournalIntent:
+                if (powerSource != PowerSource.PluggedIn)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return new InactiveHyperBoostJournalRetirement(false);
+                }
+                destinationIntent = journal.RestoreIntent;
+                break;
+            case HyperBoostRestoreRetryTarget.CurrentPowerDestination:
+                destinationIntent =
+                    CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed));
+                break;
+            default:
+                hyperBoostJournalSafetyBlock = true;
+                return new InactiveHyperBoostJournalRetirement(false);
+        }
         if (!IsSupportedHyperBoostRestoreIntent(
                 current.Capabilities,
                 destinationIntent))
@@ -9539,7 +9573,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The failed HyperBoost power-boundary restore could not preserve its fresh recovery baseline.",
                     restoreIntent,
                     failureObservation.RecoveryBaseline,
-                    retryDisposition)
+                    retryDisposition,
+                    retryDisposition
+                        == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
+                            ? HyperBoostRestoreRetryTarget.CurrentPowerDestination
+                            : HyperBoostRestoreRetryTarget.None)
                 .ConfigureAwait(false);
             hyperBoostJournalSafetyBlock = true;
             string failure =

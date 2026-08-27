@@ -18,6 +18,13 @@ internal enum HyperBoostRestoreRetryDisposition
     DeferredPreSubmission,
 }
 
+internal enum HyperBoostRestoreRetryTarget
+{
+    None,
+    ExactJournalIntent,
+    CurrentPowerDestination,
+}
+
 internal sealed record HyperBoostRestoreIntent(
     PerformancePreset Performance,
     CustomPerformanceSettings? CustomPerformance,
@@ -82,6 +89,8 @@ internal sealed record HyperBoostOwnershipJournal(
 
     internal HyperBoostRestoreRetryDisposition RestoreRetryDisposition { get; init; }
 
+    internal HyperBoostRestoreRetryTarget RestoreRetryTarget { get; init; }
+
     internal HyperBoostOwnershipJournal(
         HyperBoostOwnershipJournalState state,
         PerformancePreset baseMode,
@@ -97,12 +106,17 @@ internal sealed record HyperBoostOwnershipJournal(
             or PerformancePreset.Performance)
         && RestoreIntent is { IsWellFormed: true }
         && Enum.IsDefined(RestoreRetryDisposition)
+        && Enum.IsDefined(RestoreRetryTarget)
         && (RecoveryBaseline is null
             || State == HyperBoostOwnershipJournalState.RestorePending
                 && RecoveryBaseline.IsWellFormed)
         && (RestoreRetryDisposition == HyperBoostRestoreRetryDisposition.None
-            || State == HyperBoostOwnershipJournalState.RestorePending
-                && RecoveryBaseline is { IsWellFormed: true })
+            ? RestoreRetryTarget == HyperBoostRestoreRetryTarget.None
+            : State == HyperBoostOwnershipJournalState.RestorePending
+                && RecoveryBaseline is { IsWellFormed: true }
+                && RestoreRetryTarget is
+                    (HyperBoostRestoreRetryTarget.ExactJournalIntent
+                    or HyperBoostRestoreRetryTarget.CurrentPowerDestination))
         && UpdatedAtUtc != default;
 }
 
@@ -128,7 +142,8 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     GpuClockTuningSettings? RestoreGpuClockTuning = null,
     FanControlSettings? RestoreFanControl = null,
     HyperBoostRecoveryBaseline? RecoveryBaseline = null,
-    HyperBoostRestoreRetryDisposition? RestoreRetryDisposition = null);
+    HyperBoostRestoreRetryDisposition? RestoreRetryDisposition = null,
+    HyperBoostRestoreRetryTarget? RestoreRetryTarget = null);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -174,7 +189,8 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 6;
+    private const int RetryDispositionSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -218,14 +234,16 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     or { SchemaVersion: 2, RequiresCoolingPad: not null }
                     or
                 {
-                    SchemaVersion: 3 or 4 or CurrentSchemaVersion,
+                    SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
+                        or CurrentSchemaVersion,
                     RequiresCoolingPad: not null,
                     RestorePerformance: not null,
                     RestoreFanControl: not null,
                 };
                 HyperBoostRestoreIntent restoreIntent = document is
                 {
-                    SchemaVersion: 3 or 4 or CurrentSchemaVersion,
+                    SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
+                        or CurrentSchemaVersion,
                     RestorePerformance: { } restorePerformance,
                     RestoreFanControl: { } restoreFanControl,
                 }
@@ -253,14 +271,21 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = document.SchemaVersion
-                            is 4 or CurrentSchemaVersion
+                            is 4 or RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
                                 ? document.RecoveryBaseline
                                 : null,
                         RestoreRetryDisposition = document.SchemaVersion
-                            == CurrentSchemaVersion
+                            is RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
                                 ? document.RestoreRetryDisposition
                                     ?? HyperBoostRestoreRetryDisposition.None
                                 : HyperBoostRestoreRetryDisposition.None,
+                        RestoreRetryTarget = document.SchemaVersion
+                            == CurrentSchemaVersion
+                                ? document.RestoreRetryTarget
+                                    ?? HyperBoostRestoreRetryTarget.None
+                                : HyperBoostRestoreRetryTarget.None,
                     };
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
@@ -269,7 +294,9 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         journal,
                         Invalid: false,
                         AllowsExplicitRecoveryBaselineCapture:
-                            document!.SchemaVersion is 3 or 4 or CurrentSchemaVersion
+                            document!.SchemaVersion is 3 or 4
+                                or RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
                             && journal.State
                                 == HyperBoostOwnershipJournalState.RestorePending
                             && journal.RecoveryBaseline is null,
@@ -318,7 +345,8 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     journal.RestoreIntent.GpuClockTuning,
                     journal.RestoreIntent.FanControl,
                     journal.RecoveryBaseline,
-                    journal.RestoreRetryDisposition),
+                    journal.RestoreRetryDisposition,
+                    journal.RestoreRetryTarget),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

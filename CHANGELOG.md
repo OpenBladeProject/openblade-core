@@ -19,10 +19,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   fresh readback and target-only continuation, without replaying a submitted
   mode command or exposing raw payloads.
 - Let the lifecycle validator verify the protected HyperBoost journal through
-  read-only service diagnostics and refuse mismatched tool builds before writes.
+  read-only service diagnostics, refuse mismatched tool builds before writes,
+  and require exact prior intent after a failed arm.
 - Deferred a HyperBoost power-boundary restore only after a proven pre-submission
-  failure, then rechecked safety and the current power-source destination once
-  and published the restored authoritative state immediately.
+  failure, then rechecked safety once, preserved exact-prior versus current-
+  power-destination targeting, and published the result immediately.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,

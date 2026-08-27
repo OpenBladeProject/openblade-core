@@ -47,6 +47,10 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                     HyperBoostOwnershipJournalState.RestorePending
                 ? HyperBoostRestoreRetryDisposition.DeferredPreSubmission
                 : HyperBoostRestoreRetryDisposition.None,
+            RestoreRetryTarget = state ==
+                    HyperBoostOwnershipJournalState.RestorePending
+                ? HyperBoostRestoreRetryTarget.ExactJournalIntent
+                : HyperBoostRestoreRetryTarget.None,
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -65,6 +69,9 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.Equal(
             expected.RestoreRetryDisposition.ToString(),
             diagnostics.RestoreRetryDisposition);
+        Assert.Equal(
+            expected.RestoreRetryTarget.ToString(),
+            diagnostics.RestoreRetryTarget);
         Assert.Equal(loaded.Sha256, diagnostics.Sha256);
     }
 
@@ -93,6 +100,8 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                 HyperBoostActive: false),
             RestoreRetryDisposition =
                 HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
+            RestoreRetryTarget =
+                HyperBoostRestoreRetryTarget.CurrentPowerDestination,
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -352,7 +361,7 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Load_DeferredRetryWithoutRecoveryBaselineFailsClosed()
+    public async Task Load_SchemaFiveDeferredRetryWithoutTargetFailsClosed()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "hyperboost-ownership.json");
@@ -380,6 +389,11 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                   ],
                   "useHigherTemperatureForBoth": true
                 }
+              },
+              "recoveryBaseline": {
+                "performance": 1,
+                "fans": 0,
+                "hyperBoostActive": false
               },
               "restoreRetryDisposition": 1
             }

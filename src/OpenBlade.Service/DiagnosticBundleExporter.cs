@@ -48,6 +48,8 @@ public sealed record DiagnosticHyperBoostOwnershipJournal(
 {
     public string? RestoreRetryDisposition { get; init; }
 
+    public string? RestoreRetryTarget { get; init; }
+
     public static DiagnosticHyperBoostOwnershipJournal Missing { get; } = new(
         Exists: false,
         Valid: true,
