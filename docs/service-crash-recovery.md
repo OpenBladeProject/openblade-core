@@ -97,9 +97,13 @@ controller active and with the operator available to restore state.
    one host-rendered lighting effect, then confirm both are active.
 3. From an elevated shell, record the service PID and force-terminate only that
    exact `%ProgramFiles%\OpenBlade\OpenBlade.Service.exe` process.
-4. Wait up to 30 seconds for SCM to start one replacement service process with
-   a different PID and for the active Tray or Session Agent to reconnect and
-   load that user's recovery intent. Do not start a second service or watchdog.
+4. Wait for SCM to start one replacement service process with a different PID
+   and for the active Tray or Session Agent to reconnect and load that user's
+   recovery intent. Allow the configured delay plus 30 seconds for service and
+   typed-client readiness: 35 seconds after the first failure, 45 seconds after
+   the second, and 90 seconds after the third. When the current failure ordinal
+   is unknown, use the worst-case 90-second bound. Do not start a second service
+   or watchdog.
 5. Use the typed status or firmware-smoke client to confirm exact-device
    verification completed, the manual curve produced a fresh target, the
    lighting renderer reconnected once, and no external-change latch was
