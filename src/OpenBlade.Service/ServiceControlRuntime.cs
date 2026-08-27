@@ -5507,6 +5507,40 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (journal.State == HyperBoostOwnershipJournalState.RestorePending)
         {
             hyperBoostRestorePending = true;
+            if (confirmed is { } matchingConfirmed
+                && (journal.RestoreRetryDisposition
+                        != HyperBoostRestoreRetryDisposition.DeferredPreSubmission
+                    || journal.RestoreRetryTarget
+                        == HyperBoostRestoreRetryTarget.ExactJournalIntent))
+            {
+                if (ConfirmedStateMatchesHyperBoostRestoreIntent(
+                        matchingConfirmed,
+                        journal.RestoreIntent))
+                {
+                    string message =
+                        $"Fresh readback confirmed that HyperBoost is off and the saved {PerformanceLabel(journal.RestoreIntent.Performance)} performance and fan intent is restored. The pending ownership journal was retired without another hardware write.";
+                    bool cleared = await TryClearHyperBoostOwnershipJournalAsync(
+                            "Fresh readback confirmed the saved HyperBoost restore intent, but its ownership journal could not be cleared.")
+                        .ConfigureAwait(false);
+                    if (cleared)
+                    {
+                        driftTracker.ConfirmIntentional(
+                            DeviceSubsystem.Performance,
+                            matched: true);
+                        driftTracker.ConfirmIntentional(
+                            DeviceSubsystem.Fans,
+                            matched: true);
+                        history.RecordSummary(
+                            ControlOperationStatus.Applied,
+                            message);
+                    }
+                    return new InactiveHyperBoostJournalRetirement(
+                        cleared,
+                        cleared ? matchingConfirmed : null,
+                        cleared ? message : null);
+                }
+            }
+
             if (journal.RestoreRetryDisposition
                     == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
                 && confirmed is not null
@@ -5521,29 +5555,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         powerSource,
                         cancellationToken)
                     .ConfigureAwait(false);
-            }
-
-            if (confirmed is not null
-                && ConfirmedStateMatchesHyperBoostRestoreIntent(
-                    confirmed,
-                    journal.RestoreIntent))
-            {
-                bool cleared = await TryClearHyperBoostOwnershipJournalAsync(
-                        "Fresh readback confirmed the saved HyperBoost restore intent, but its ownership journal could not be cleared.")
-                    .ConfigureAwait(false);
-                if (cleared)
-                {
-                    driftTracker.ConfirmIntentional(
-                        DeviceSubsystem.Performance,
-                        matched: true);
-                    driftTracker.ConfirmIntentional(
-                        DeviceSubsystem.Fans,
-                        matched: true);
-                    history.RecordSummary(
-                        ControlOperationStatus.Applied,
-                        $"Fresh readback confirmed that HyperBoost is off and the saved {PerformanceLabel(journal.RestoreIntent.Performance)} performance and Automatic fan intent is restored. The pending ownership journal was retired without another hardware write.");
-                }
-                return new InactiveHyperBoostJournalRetirement(cleared);
             }
 
             hyperBoostJournalSafetyBlock = true;
@@ -5666,6 +5677,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 confirmed,
                 destinationIntent))
         {
+            string matchedMessage =
+                $"Fresh readback confirmed that HyperBoost is off and the deferred {PerformanceLabel(destinationIntent.Performance)} performance and saved fan destination is already restored. The pending ownership journal was retired without another hardware write.";
             bool cleared = await TryClearHyperBoostOwnershipJournalAsync(
                     "The deferred HyperBoost destination already matched fresh readback, but its ownership journal could not be cleared.")
                 .ConfigureAwait(false);
@@ -5677,8 +5690,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(
                     DeviceSubsystem.Fans,
                     matched: true);
+                history.RecordSummary(
+                    ControlOperationStatus.Applied,
+                    matchedMessage);
             }
-            return new InactiveHyperBoostJournalRetirement(cleared);
+            return new InactiveHyperBoostJournalRetirement(
+                cleared,
+                cleared ? confirmed : null,
+                cleared ? matchedMessage : null);
         }
 
         if (journal.RecoveryBaseline is not { } recoveryBaseline

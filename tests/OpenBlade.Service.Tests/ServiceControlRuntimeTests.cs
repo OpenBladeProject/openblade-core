@@ -12739,6 +12739,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.Silent,
             context.Runtime.GetStatus().ConfirmedState?.Performance);
+        Assert.Contains(
+            "retired without another hardware write",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            context.History.Snapshot().CommandResults,
+            result => result.Status == ControlOperationStatus.Applied.ToString()
+                && result.Detail?.Contains(
+                    "retired without another hardware write",
+                    StringComparison.Ordinal) == true);
     }
 
     [Theory]
@@ -12788,6 +12798,59 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostRestoreRetryTarget.ExactJournalIntent,
             journal.Journal?.RestoreRetryTarget);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task PadlessHyperBoost_DeferredExactRestoreRetiresMatchingIntentOnLowPower(
+        PowerSource powerSource)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Silent,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.FromLegacy(FanMode.Automatic)),
+                RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    HyperBoostActive: false),
+                RestoreRetryDisposition =
+                    HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
+                RestoreRetryTarget =
+                    HyperBoostRestoreRetryTarget.ExactJournalIntent,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: powerSource,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+        };
+        int settersBeforeObservation = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "retired without another hardware write",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
