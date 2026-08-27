@@ -584,7 +584,7 @@
                                                    TextWrapping="Wrap"
                                                    MaxWidth="520"
                                                    Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostVisible}" />
+                                                   local:AnimatedVisibility.IsVisible="{Binding HyperBoostActive}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"

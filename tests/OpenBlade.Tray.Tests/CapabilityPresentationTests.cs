@@ -53,7 +53,7 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "{Binding HyperBoostDescription}");
         Assert.Equal(
-            "{Binding IsHyperBoostVisible}",
+            "{Binding HyperBoostActive}",
             Attribute(guidance, "AnimatedVisibility.IsVisible"));
         XElement progress = Assert.Single(
             row.Descendants(),

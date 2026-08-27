@@ -8,9 +8,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Made HyperBoost a transient Laptop performance choice available from every
-  admitted full-power profile and fan mode, with captured transition safety and
-  exact intent restoration on every exit, no duplicate manual-fan writes, and
-  fresh confirmation when an indeterminate fan handback reached Automatic.
+  admitted full-power profile and fan mode. Its guidance now appears only while
+  HyperBoost is selected, and every exit restores exact prior intent without
+  duplicate manual-fan writes.
 - Preserved definitive pre-submission failures through the production device
   provider and added one delayed fresh-session retry for failed thermal or
   adjustable-fan pre-write reads, plus one delayed read-only confirmation for
