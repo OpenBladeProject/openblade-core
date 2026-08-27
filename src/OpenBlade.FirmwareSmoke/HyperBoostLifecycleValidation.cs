@@ -164,6 +164,7 @@ internal sealed record HyperBoostLifecycleArmResult(
     bool CleanupAttempted,
     bool FinalRestorationConfirmed,
     bool ManualRecoveryRequired,
+    string ToolProductVersion,
     string Message,
     HyperBoostLifecycleMarker? Marker);
 
@@ -205,6 +206,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         Task<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>> readDiagnostics;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly TimeProvider timeProvider;
+    private readonly string toolProductVersion;
 
     internal HyperBoostLifecycleValidationRunner(
         IFirmwareSmokeClient client,
@@ -217,7 +219,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
             token => ObserveInstalledOwnershipJournalAsync(client, token),
             token => ReadDiagnosticsAsync(client, token),
             static (duration, token) => Task.Delay(duration, token),
-            TimeProvider.System)
+            TimeProvider.System,
+            ReadToolProductVersion())
     {
     }
 
@@ -232,7 +235,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
         Func<CancellationToken,
             Task<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>> readDiagnostics,
         Func<TimeSpan, CancellationToken, Task> delay,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        string toolProductVersion)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.captureSnapshot = captureSnapshot
@@ -248,6 +252,11 @@ internal sealed class HyperBoostLifecycleValidationRunner
         this.delay = delay ?? throw new ArgumentNullException(nameof(delay));
         this.timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
+        this.toolProductVersion = string.IsNullOrWhiteSpace(toolProductVersion)
+            ? throw new ArgumentException(
+                "The FirmwareSmoke product version is required.",
+                nameof(toolProductVersion))
+            : toolProductVersion;
     }
 
     internal async Task<HyperBoostLifecycleArmResult> ArmAsync(
@@ -372,7 +381,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 return await FailArmAndRestoreIfNeededAsync(
                         restoreIntent,
                         hyperBoostConfirmed,
-                        "Durable service ownership was not confirmed after activation.",
+                        "Durable service ownership was not confirmed after activation. "
+                            + DescribeJournalObservation(journal),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -412,6 +422,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 CleanupAttempted: false,
                 FinalRestorationConfirmed: false,
                 ManualRecoveryRequired: false,
+                ToolProductVersion: toolProductVersion,
                 scenario == HyperBoostLifecycleScenario.LowPower
                     ? "Service-owned HyperBoost is armed. Cross one Windows sleep/resume boundary, then run the verify phase with the same marker."
                     : "Service-owned HyperBoost is armed. Terminate only the OpenBlade Service unexpectedly, allow it to restart, then run the verify phase with the same marker.",
@@ -450,6 +461,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 cleanupAttempted,
                 finalRestorationConfirmed,
                 applyAttempted && !finalRestorationConfirmed,
+                toolProductVersion,
                 $"Lifecycle arming failed: {exception.Message}",
                 null);
         }
@@ -512,6 +524,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         FirmwareSmokeSnapshot current = await captureSnapshot(cancellationToken)
             .ConfigureAwait(false);
         bool exactGeneration = validateInstalledGeneration(baseline, current)
+            && ToolMatchesInstalledGeneration(current)
             && string.Equals(
             InstalledGenerationSha256(current),
             marker.InstalledGenerationSha256,
@@ -607,6 +620,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             cleanupAttempted,
             restored,
             hyperBoostConfirmed && !restored,
+            toolProductVersion,
             message,
             null);
     }
@@ -666,7 +680,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         return false;
     }
 
-    private static bool TryValidateArmPreflight(
+    private bool TryValidateArmPreflight(
         FirmwareSmokeSnapshot baseline,
         FirmwareSmokeSnapshot current,
         ServiceStatusSnapshot status,
@@ -688,6 +702,12 @@ internal sealed class HyperBoostLifecycleValidationRunner
         requiresCoolingPad = false;
         useValidationRequest = false;
         failure = string.Empty;
+        if (!ToolMatchesInstalledGeneration(current))
+        {
+            failure =
+                "The running FirmwareSmoke build must exactly match the installed OpenBlade Service generation.";
+            return false;
+        }
         if (!greenInstalledGeneration
             || serviceProcess is null
             || current.Runtime.ServiceProcessCount != 1
@@ -1008,6 +1028,42 @@ internal sealed class HyperBoostLifecycleValidationRunner
             character is >= '0' and <= '9'
                 or >= 'A' and <= 'F');
 
+    private static string DescribeJournalObservation(
+        HyperBoostLifecycleJournalObservation journal) =>
+        $"Observed journal: Exists={journal.Exists}; Valid={journal.Valid}; "
+        + $"State={journal.State ?? "<null>"}; "
+        + $"BaseMode={journal.BaseMode?.ToString() ?? "<null>"}; "
+        + $"RequiresCoolingPad={journal.RequiresCoolingPad?.ToString() ?? "<null>"}; "
+        + $"RestoreIntent={journal.RestoreIntent?.ToString() ?? "<null>"}; "
+        + $"Sha256Valid={IsSha256(journal.Sha256)}.";
+
+    private bool ToolMatchesInstalledGeneration(FirmwareSmokeSnapshot snapshot)
+    {
+        InstalledComponent[] serviceComponents = snapshot.Runtime
+            .InstalledComponents
+            .Where(component => string.Equals(
+                component.Name,
+                "OpenBlade.Service.exe",
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (serviceComponents.Length != 1
+            || serviceComponents[0].ProductVersion is not { } installedProductVersion)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            installedProductVersion,
+            toolProductVersion,
+            StringComparison.Ordinal);
+    }
+
+    private static string ReadToolProductVersion() =>
+        FileVersionInfo.GetVersionInfo(
+            typeof(HyperBoostLifecycleValidationRunner).Assembly.Location)
+        .ProductVersion
+        ?? "Unavailable";
+
     internal static HyperBoostLifecycleJournalObservation ParseOwnershipJournal(
         byte[] bytes)
     {
@@ -1154,7 +1210,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         }
     }
 
-    private static HyperBoostLifecycleArmResult ArmFailure(string message) => new(
+    private HyperBoostLifecycleArmResult ArmFailure(string message) => new(
         false,
         false,
         false,
@@ -1163,6 +1219,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         false,
         false,
         false,
+        toolProductVersion,
         message,
         null);
 

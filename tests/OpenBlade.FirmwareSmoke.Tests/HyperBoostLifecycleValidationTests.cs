@@ -163,6 +163,34 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(1, client.EnableCalls);
     }
 
+    [Fact]
+    public async Task ArmAsync_StaleFirmwareSmokeBuildFailsBeforeWrite()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_015, 123_470),
+            () => OwnedJournal(),
+            toolProductVersion: "stale");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            Path.Combine(directory, "stale-tool.json"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(result.ValidationAttempted);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.Equal("stale", result.ToolProductVersion);
+        Assert.Equal(
+            "The running FirmwareSmoke build must exactly match the installed OpenBlade Service generation.",
+            result.Message);
+    }
+
     [Theory]
     [InlineData((int)HyperBoostLifecycleScenario.LowPower)]
     [InlineData((int)HyperBoostLifecycleScenario.UnexpectedExit)]
@@ -920,7 +948,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         FirmwareSmokeSnapshot snapshot,
         Func<HyperBoostLifecycleServiceProcess?> process,
         Func<HyperBoostLifecycleJournalObservation> journal,
-        Func<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>? diagnostics = null) =>
+        Func<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>? diagnostics = null,
+        string toolProductVersion = "test") =>
         new(
             client,
             _ => Task.FromResult(snapshot),
@@ -936,7 +965,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 1,
                 0,
                 0,
-                TimeSpan.Zero)));
+                TimeSpan.Zero)),
+            toolProductVersion);
 
     private static HyperBoostLifecycleJournalObservation OwnedJournal(
         PerformancePreset restorePerformance = PerformancePreset.Balanced,
