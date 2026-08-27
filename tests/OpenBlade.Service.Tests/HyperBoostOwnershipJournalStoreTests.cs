@@ -43,6 +43,10 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                     CustomPerformanceSettings.Default,
                     new GpuClockOffsetSettings(75, 150))
                 : null,
+            RestoreRetryDisposition = state ==
+                    HyperBoostOwnershipJournalState.RestorePending
+                ? HyperBoostRestoreRetryDisposition.DeferredPreSubmission
+                : HyperBoostRestoreRetryDisposition.None,
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -58,6 +62,9 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.True(diagnostics.Valid);
         Assert.Equal(state.ToString(), diagnostics.State);
         Assert.Equal(PerformancePreset.Performance, diagnostics.BaseMode);
+        Assert.Equal(
+            expected.RestoreRetryDisposition.ToString(),
+            diagnostics.RestoreRetryDisposition);
         Assert.Equal(loaded.Sha256, diagnostics.Sha256);
     }
 
@@ -84,6 +91,8 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                 restorePerformance,
                 FanMode.Automatic,
                 HyperBoostActive: false),
+            RestoreRetryDisposition =
+                HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
         };
 
         await store.WriteAsync(expected, CancellationToken.None);
@@ -92,6 +101,59 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+    }
+
+    [Fact]
+    public async Task Load_SchemaFourDefaultsDeferredRetryDispositionToNone()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 4,
+              "state": 2,
+              "baseMode": 1,
+              "requiresCoolingPad": false,
+              "updatedAtUtc": "2026-08-27T12:00:00Z",
+              "restorePerformance": 3,
+              "restoreFanControl": {
+                "mode": 0,
+                "fixedSpeedRpm": 3700,
+                "manualCurve": {
+                  "cpu": [
+                    { "temperatureCelsius": 40, "speedRpm": 2000 },
+                    { "temperatureCelsius": 90, "speedRpm": 5400 }
+                  ],
+                  "gpu": [
+                    { "temperatureCelsius": 35, "speedRpm": 2000 },
+                    { "temperatureCelsius": 85, "speedRpm": 5400 }
+                  ],
+                  "useHigherTemperatureForBoth": true
+                }
+              },
+              "recoveryBaseline": {
+                "performance": 1,
+                "fans": 0,
+                "hyperBoostActive": false
+              }
+            }
+            """,
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        HyperBoostOwnershipJournal journal =
+            Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal);
+        Assert.False(loaded.Invalid);
+        Assert.Equal(PerformancePreset.BatterySaver, journal.RestoreIntent.Performance);
+        Assert.Equal(
+            HyperBoostRestoreRetryDisposition.None,
+            journal.RestoreRetryDisposition);
+        Assert.NotNull(journal.RecoveryBaseline);
     }
 
     [Fact]
@@ -276,6 +338,50 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                 "fans": 3,
                 "hyperBoostActive": false
               }
+            }
+            """,
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.True(loaded.Invalid);
+        Assert.Null(loaded.Journal);
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task Load_DeferredRetryWithoutRecoveryBaselineFailsClosed()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "schemaVersion": 5,
+              "state": 2,
+              "baseMode": 1,
+              "requiresCoolingPad": false,
+              "updatedAtUtc": "2026-08-27T12:00:00Z",
+              "restorePerformance": 3,
+              "restoreFanControl": {
+                "mode": 0,
+                "fixedSpeedRpm": 3700,
+                "manualCurve": {
+                  "cpu": [
+                    { "temperatureCelsius": 40, "speedRpm": 2000 },
+                    { "temperatureCelsius": 90, "speedRpm": 5400 }
+                  ],
+                  "gpu": [
+                    { "temperatureCelsius": 35, "speedRpm": 2000 },
+                    { "temperatureCelsius": 85, "speedRpm": 5400 }
+                  ],
+                  "useHigherTemperatureForBoth": true
+                }
+              },
+              "restoreRetryDisposition": 1
             }
             """,
             CancellationToken.None);

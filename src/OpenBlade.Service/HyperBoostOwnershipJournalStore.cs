@@ -12,6 +12,12 @@ internal enum HyperBoostOwnershipJournalState
     Relinquished,
 }
 
+internal enum HyperBoostRestoreRetryDisposition
+{
+    None,
+    DeferredPreSubmission,
+}
+
 internal sealed record HyperBoostRestoreIntent(
     PerformancePreset Performance,
     CustomPerformanceSettings? CustomPerformance,
@@ -74,6 +80,8 @@ internal sealed record HyperBoostOwnershipJournal(
 
     internal HyperBoostRecoveryBaseline? RecoveryBaseline { get; init; }
 
+    internal HyperBoostRestoreRetryDisposition RestoreRetryDisposition { get; init; }
+
     internal HyperBoostOwnershipJournal(
         HyperBoostOwnershipJournalState state,
         PerformancePreset baseMode,
@@ -88,9 +96,13 @@ internal sealed record HyperBoostOwnershipJournal(
             or PerformancePreset.Balanced
             or PerformancePreset.Performance)
         && RestoreIntent is { IsWellFormed: true }
+        && Enum.IsDefined(RestoreRetryDisposition)
         && (RecoveryBaseline is null
             || State == HyperBoostOwnershipJournalState.RestorePending
                 && RecoveryBaseline.IsWellFormed)
+        && (RestoreRetryDisposition == HyperBoostRestoreRetryDisposition.None
+            || State == HyperBoostOwnershipJournalState.RestorePending
+                && RecoveryBaseline is { IsWellFormed: true })
         && UpdatedAtUtc != default;
 }
 
@@ -115,7 +127,8 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     CustomPerformanceSettings? RestoreCustomPerformance = null,
     GpuClockTuningSettings? RestoreGpuClockTuning = null,
     FanControlSettings? RestoreFanControl = null,
-    HyperBoostRecoveryBaseline? RecoveryBaseline = null);
+    HyperBoostRecoveryBaseline? RecoveryBaseline = null,
+    HyperBoostRestoreRetryDisposition? RestoreRetryDisposition = null);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -161,7 +174,7 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -205,14 +218,14 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     or { SchemaVersion: 2, RequiresCoolingPad: not null }
                     or
                 {
-                    SchemaVersion: 3 or CurrentSchemaVersion,
+                    SchemaVersion: 3 or 4 or CurrentSchemaVersion,
                     RequiresCoolingPad: not null,
                     RestorePerformance: not null,
                     RestoreFanControl: not null,
                 };
                 HyperBoostRestoreIntent restoreIntent = document is
                 {
-                    SchemaVersion: 3 or CurrentSchemaVersion,
+                    SchemaVersion: 3 or 4 or CurrentSchemaVersion,
                     RestorePerformance: { } restorePerformance,
                     RestoreFanControl: { } restoreFanControl,
                 }
@@ -240,9 +253,14 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = document.SchemaVersion
-                            == CurrentSchemaVersion
+                            is 4 or CurrentSchemaVersion
                                 ? document.RecoveryBaseline
                                 : null,
+                        RestoreRetryDisposition = document.SchemaVersion
+                            == CurrentSchemaVersion
+                                ? document.RestoreRetryDisposition
+                                    ?? HyperBoostRestoreRetryDisposition.None
+                                : HyperBoostRestoreRetryDisposition.None,
                     };
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
@@ -251,7 +269,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         journal,
                         Invalid: false,
                         AllowsExplicitRecoveryBaselineCapture:
-                            document!.SchemaVersion is 3 or CurrentSchemaVersion
+                            document!.SchemaVersion is 3 or 4 or CurrentSchemaVersion
                             && journal.State
                                 == HyperBoostOwnershipJournalState.RestorePending
                             && journal.RecoveryBaseline is null,
@@ -299,7 +317,8 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     journal.RestoreIntent.CustomPerformance,
                     journal.RestoreIntent.GpuClockTuning,
                     journal.RestoreIntent.FanControl,
-                    journal.RecoveryBaseline),
+                    journal.RecoveryBaseline,
+                    journal.RestoreRetryDisposition),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

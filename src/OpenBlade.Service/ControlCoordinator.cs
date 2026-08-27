@@ -16,7 +16,9 @@ internal sealed record ScopedApplyOutcome(
     IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null,
     bool ConfirmationUnavailable = false,
     ConfirmedDeviceState? PreWriteState = null,
-    DesiredDeviceState? EffectiveDesired = null);
+    DesiredDeviceState? EffectiveDesired = null,
+    WriteSubmissionState? WriteSubmissionState = null,
+    BladeWriteFailurePhase? WriteFailurePhase = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -1223,13 +1225,17 @@ public sealed class ControlCoordinator
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
             {
+                bool preWriteReadFailed = exception.FailurePhase
+                    == BladeWriteFailurePhase.ThermalPreWriteRead;
                 return new ScopedApplyOutcome(
                     WriteRejected(plan.Name, exception),
                     initial,
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: preWriteReadFailed,
+                    WriteSubmissionState: exception.SubmissionState,
+                    WriteFailurePhase: exception.FailurePhase);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -1429,13 +1435,17 @@ public sealed class ControlCoordinator
             when (writeAttempted
                 && exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
         {
+            bool preWriteReadFailed = exception.FailurePhase
+                == BladeWriteFailurePhase.ThermalPreWriteRead;
             return new ScopedApplyOutcome(
                 WriteRejected(name, exception),
                 initial,
                 WriteAttempted: false,
                 ReadbackMatched: false,
                 capabilities,
-                DeviceAccessFailed: false);
+                DeviceAccessFailed: preWriteReadFailed,
+                WriteSubmissionState: exception.SubmissionState,
+                WriteFailurePhase: exception.FailurePhase);
         }
         catch (BladeWriteException exception)
             when (writeAttempted
@@ -1510,7 +1520,13 @@ public sealed class ControlCoordinator
                     || setterCompleted
                     || IsTerminalDeviceFailure(exception),
                 ConfirmationUnavailable: setterCompleted,
-                PreWriteState: setterCompleted ? initial : null);
+                PreWriteState: setterCompleted ? initial : null,
+                WriteSubmissionState: exception is BladeWriteException writeFailure
+                    ? writeFailure.SubmissionState
+                    : null,
+                WriteFailurePhase: exception is BladeWriteException phasedFailure
+                    ? phasedFailure.FailurePhase
+                    : null);
         }
     }
 

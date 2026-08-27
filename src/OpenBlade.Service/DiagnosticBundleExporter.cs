@@ -46,6 +46,8 @@ public sealed record DiagnosticHyperBoostOwnershipJournal(
     DiagnosticHyperBoostRestoreIntent? RestoreIntent,
     string? Sha256)
 {
+    public string? RestoreRetryDisposition { get; init; }
+
     public static DiagnosticHyperBoostOwnershipJournal Missing { get; } = new(
         Exists: false,
         Valid: true,
