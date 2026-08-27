@@ -760,10 +760,36 @@ public sealed class ProductionBatteryPortTests
                 default));
 
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
         Assert.Contains("manual entry channel 2 of 2", error.Message);
         Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
         Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanFirstManualEntryFailureIsNotContinuable()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                FanControlSettings.FromLegacy(FanMode.Maximum),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("manual entry channel 1 of 2", error.Message);
+        Assert.Equal(3, session.Commands.Count);
     }
 
     [Fact]
@@ -892,6 +918,22 @@ public sealed class ProductionBatteryPortTests
             () => port.SetFanTargetsAsync(3000, 3200, default));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task CurveTargetUpdateRefusesMismatchedManualChannelState()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanTargetsAsync(3000, 3200, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
         Assert.Equal(2, session.Commands.Count);
     }
 

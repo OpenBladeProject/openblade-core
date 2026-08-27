@@ -1626,12 +1626,27 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         {
             ArgumentNullException.ThrowIfNull(value);
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null;
+            if (DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                && capabilities.FanSpeedRange is { } fanSpeedRange)
+            {
+                int targetRpm = value.Mode == FanMode.Fixed
+                    ? value.FixedSpeedRpm
+                    : fanSpeedRange.MaximumRpm;
+                continueAfterSecondFanManualEntry = port => port.SetFanTargetsAsync(
+                    targetRpm,
+                    targetRpm,
+                    cancellationToken);
+            }
+
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
                     || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
-                    cancellationToken)
+                    cancellationToken,
+                    continueAfterSecondFanManualEntry:
+                        continueAfterSecondFanManualEntry)
                 : RejectProductionWrite("The requested fan control is not admitted.");
         }
 
@@ -2024,14 +2039,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             CancellationToken cancellationToken,
             Action? beforeWrite = null,
             Action? afterWrite = null,
-            bool retryHyperBoostAdapterPreflight = false)
+            bool retryHyperBoostAdapterPreflight = false,
+            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
             BladeWriteException? exhaustedRetriablePreWrite = null;
             BladeWriteException? canceledRetriablePreWrite = null;
+            BladeWriteException? manualEntryContinuationFailure = null;
             BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
             bool retryPreWriteOpen = false;
+            bool continuingAfterSecondFanManualEntry = false;
+            Func<IProductionBatteryPort, Task> attemptWrite = write;
             try
             {
                 await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -2086,7 +2105,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                             cancellationToken.ThrowIfCancellationRequested();
                             retryPreWriteOpen = false;
-                            await write(port).ConfigureAwait(false);
+                            await attemptWrite(port).ConfigureAwait(false);
                             try
                             {
                                 afterWrite?.Invoke();
@@ -2103,6 +2122,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         }
 
                         return;
+                    }
+                    catch (BladeWriteException exception) when (
+                        continuingAfterSecondFanManualEntry
+                        && exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+                    {
+                        throw new BladeWriteException(
+                            WriteSubmissionState.Indeterminate,
+                            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                            "Adjustable fan manual entry may have applied, but the fresh target-only continuation stopped before any fan target was submitted. "
+                            + exception.Message,
+                            exception);
                     }
                     catch (BladeWriteException exception) when (
                         exception.SubmissionState == WriteSubmissionState.KnownNotApplied
@@ -2125,6 +2155,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         throw;
                     }
                     catch (BladeWriteException exception) when (
+                        exception.SubmissionState == WriteSubmissionState.Indeterminate
+                        && exception.FailurePhase
+                            == BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+                        && continueAfterSecondFanManualEntry is not null
+                        && attempt + 1 < attemptCount)
+                    {
+                        retryFailurePhase = exception.FailurePhase;
+                        manualEntryContinuationFailure = exception;
+                        continuingAfterSecondFanManualEntry = true;
+                        // The fresh port's target-only setter first proves that
+                        // both channel reads agree on manual mode. It cannot
+                        // replay either possibly submitted entry command.
+                        attemptWrite = continueAfterSecondFanManualEntry;
+                        logger?.LogInformation(
+                            "The second adjustable-fan manual-entry submission was indeterminate; opening one fresh verified session to reconfirm both manual channels before continuing with fan targets only.");
+                        continue;
+                    }
+                    catch (BladeWriteException exception) when (
                         isFreshPreWriteRetry
                         && retryPreWriteOpen
                         && cancellationToken.IsCancellationRequested
@@ -2139,6 +2187,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         throw canceledRetriablePreWrite;
                     }
                 }
+            }
+            catch (CapabilityUnavailableException exception) when (
+                continuingAfterSecondFanManualEntry)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                    "Adjustable fan manual entry may have applied, but the fresh target-only continuation was refused before any fan target was submitted.",
+                    exception);
             }
             catch (CapabilityUnavailableException)
             {
@@ -2171,6 +2228,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (continuingAfterSecondFanManualEntry)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                        "Adjustable fan manual entry may have applied, but the fresh target-only continuation was canceled before a fan target submission was confirmed.",
+                        manualEntryContinuationFailure);
+                }
+
                 if (retryPreWriteOpen)
                 {
                     throw new BladeWriteException(
