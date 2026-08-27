@@ -20,7 +20,8 @@ internal static class WindowsSetupPlatformTestFactory
         IInstalledUninstallerWriter? installedUninstallerWriter = null,
         IDynamicLightingIdentityRegistration? dynamicLightingIdentityRegistration = null,
         ISetupProgressReporter? progressReporter = null,
-        string? setupExecutablePath = null) =>
+        string? setupExecutablePath = null,
+        string? currentUserSid = null) =>
         new(
             new WindowsSetupPlatformOptions(
                 ServiceControl: serviceControl,
@@ -38,5 +39,6 @@ internal static class WindowsSetupPlatformTestFactory
                 InstalledUninstallerWriter: installedUninstallerWriter,
                 DynamicLightingIdentityRegistration: dynamicLightingIdentityRegistration,
                 ProgressReporter: progressReporter,
-                SetupExecutablePath: setupExecutablePath));
+                SetupExecutablePath: setupExecutablePath,
+                CurrentUserSid: currentUserSid));
 }

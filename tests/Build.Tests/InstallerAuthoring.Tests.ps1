@@ -185,6 +185,14 @@ Assert-True ($bundleOwnerVariable.GetAttribute('Persisted') -eq 'yes') `
 Assert-True ($bundleOwnerVariable.GetAttribute('Hidden') -ne 'yes') `
     'WiX does not permit a persisted bundle variable to also be hidden.'
 
+foreach ($forbiddenVariable in @(
+        'OpenBladeUnattendedBroker',
+        'OpenBladeEnrolledUserSid')) {
+    Assert-True ($null -eq $bundle.SelectSingleNode(
+            "*[local-name()='Variable'][@Name='$forbiddenVariable']")) `
+        "The published bundle must not expose local-development variable '$forbiddenVariable'."
+}
+
 $search = $bundle.SelectSingleNode(
     "*[local-name()='RegistrySearch'][@Id='OpenBladeBundleOwnershipSearch']")
 Assert-True ($null -ne $search) 'The bundle ownership registry search is missing.'
@@ -235,6 +243,22 @@ foreach ($argument in @('InstallArgument', 'RepairArgument', 'UninstallArgument'
     Assert-True ($progressCommandLine.GetAttribute($argument).Contains(
             '--progress-pipe "[OpenBladeSetupProgressPipe]"')) `
         "The setup package $argument must append the private progress pipe."
+}
+
+foreach ($commandLine in $package.SelectNodes("*[local-name()='CommandLine']")) {
+    foreach ($attribute in @(
+            'Condition',
+            'InstallArgument',
+            'RepairArgument',
+            'UninstallArgument')) {
+        $value = $commandLine.GetAttribute($attribute)
+        Assert-True (-not $value.Contains('OpenBladeUnattendedBroker')) `
+            'The published setup command line must not reference the development broker.'
+        Assert-True (-not $value.Contains('--unattended-broker')) `
+            'The published setup command line must not select development broker mode.'
+        Assert-True (-not $value.Contains('--enrolled-user-sid')) `
+            'The published setup command line must not forward development enrollment.'
+    }
 }
 
 [xml]$window = Get-Content -LiteralPath (
@@ -325,6 +349,8 @@ Assert-True ($bootstrapperSource.Contains('ShowSameVersionMaintenance')) `
     'Interactive setup must offer maintenance for one cached equal-version bundle.'
 Assert-True ($bootstrapperSource.Contains('EnsureBundleOwnerId()')) `
     'Install, repair, and uninstall must validate or create the persisted bundle owner token.'
+Assert-True (-not $bootstrapperSource.Contains('BrokerInstallerLaunchGate')) `
+    'The published managed bootstrapper must not contain a local-development broker launch gate.'
 Assert-True ($bootstrapperSource.Contains('PlanRelatedBundle += OnPlanRelatedBundle')) `
     'Equal-version uninstall must target the installed related bundle.'
 Assert-True ($bootstrapperSource.Contains('SelectRelatedBundleRequestState')) `

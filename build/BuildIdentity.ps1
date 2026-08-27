@@ -5,10 +5,11 @@ function Resolve-OpenBladeBuildIdentity {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$BaseVersion,
-        [ValidateSet('Stable', 'Nightly')]
+        [ValidateSet('Stable', 'Nightly', 'LocalDev')]
         [string]$Channel = 'Stable',
         [ValidateRange(0, 65535)]
         [int]$BuildRevision = 0,
+        [string]$LocalDevVersion,
         [string]$SourceRevision
     )
 
@@ -32,6 +33,10 @@ function Resolve-OpenBladeBuildIdentity {
             throw 'Stable builds must use build revision 0.'
         }
 
+        if (-not [string]::IsNullOrWhiteSpace($LocalDevVersion)) {
+            throw 'Stable builds must not specify a local-development version.'
+        }
+
         return [pscustomobject]@{
             Channel = 'Stable'
             BaseVersion = $normalizedBaseVersion
@@ -45,15 +50,50 @@ function Resolve-OpenBladeBuildIdentity {
         }
     }
 
-    if ($BuildRevision -eq 0) {
-        throw 'Nightly builds require a non-zero build revision.'
-    }
-
     $normalizedSourceRevision = if ([string]::IsNullOrWhiteSpace($SourceRevision)) {
         ''
     }
     else {
         $SourceRevision.Trim().ToLowerInvariant()
+    }
+
+    if ($Channel -eq 'LocalDev') {
+        if ($BuildRevision -ne 0) {
+            throw 'Local-development builds use their reserved four-part version instead of a build revision.'
+        }
+        if ($normalizedSourceRevision -notmatch '^[0-9a-f]{40}$') {
+            throw 'Local-development builds require the full 40-character Git source revision.'
+        }
+        if ([string]::IsNullOrWhiteSpace($LocalDevVersion) -or
+            $LocalDevVersion -notmatch '^65535\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$') {
+            throw 'Local-development builds require a canonical reserved 65535.x.y.z version.'
+        }
+
+        $parsedLocalDevVersion = [Version]$LocalDevVersion
+        foreach ($component in @(
+                $parsedLocalDevVersion.Minor,
+                $parsedLocalDevVersion.Build,
+                $parsedLocalDevVersion.Revision)) {
+            if ($component -lt 0 -or $component -ge 65535) {
+                throw 'Local-development version components after 65535 must be between 0 and 65534.'
+            }
+        }
+
+        return [pscustomobject]@{
+            Channel = 'LocalDev'
+            BaseVersion = $normalizedBaseVersion
+            Version = $LocalDevVersion
+            BundleVersion = $LocalDevVersion
+            AssemblyVersion = $LocalDevVersion
+            FileVersion = $LocalDevVersion
+            InformationalVersion = "$LocalDevVersion+$normalizedSourceRevision"
+            BuildRevision = 0
+            SourceRevision = $normalizedSourceRevision
+        }
+    }
+
+    if ($BuildRevision -eq 0) {
+        throw 'Nightly builds require a non-zero build revision.'
     }
     if ($normalizedSourceRevision -notmatch '^[0-9a-f]{40}$') {
         throw 'Nightly builds require the full 40-character Git source revision.'

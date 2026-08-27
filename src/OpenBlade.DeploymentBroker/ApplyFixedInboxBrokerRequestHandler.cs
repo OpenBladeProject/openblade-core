@@ -1,0 +1,698 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using OpenBlade.Deployment;
+
+namespace OpenBlade.DeploymentBroker;
+
+public sealed record BrokerInstalledState(
+    string Version,
+    string ProductVersion,
+    string PayloadSha256);
+
+public sealed record BrokerPostInstallVerification(
+    bool ExactTargetInstalled,
+    bool ServiceHealthy,
+    bool ExactPreviousStateRestored);
+
+public interface IBrokerInstalledStateVerifier
+{
+    Task<BrokerInstalledState> ReadBeforeInstallAsync(CancellationToken cancellationToken);
+
+    Task<BrokerPostInstallVerification> VerifyAfterInstallAsync(
+        BrokerInstalledState before,
+        OpenBladeVerifiedRelease expectedRelease,
+        CancellationToken cancellationToken);
+
+    Task<BrokerPostInstallVerification> VerifyCurrentStateAsync(
+        BrokerInstalledState before,
+        string expectedVersion,
+        string expectedSourceRevision,
+        CancellationToken cancellationToken);
+}
+
+public sealed record BrokerInstallerExecutionResult(
+    bool ExitObserved,
+    int? ExitCode,
+    bool TimedOut);
+
+public interface IBrokerInstallerProcessRunner
+{
+    Task<BrokerInstallerExecutionResult> RunAsync(
+        ProcessStartInfo startInfo,
+        Action<int> processStarted,
+        CancellationToken cancellationToken);
+}
+
+public sealed class WindowsBrokerInstallerProcessRunner : IBrokerInstallerProcessRunner
+{
+    internal static readonly TimeSpan InstallerTimeout = TimeSpan.FromMinutes(30);
+
+    public async Task<BrokerInstallerExecutionResult> RunAsync(
+        ProcessStartInfo startInfo,
+        Action<int> processStarted,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(startInfo);
+        ArgumentNullException.ThrowIfNull(processStarted);
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The verified OpenBlade installer did not start.");
+        processStarted(process.Id);
+        using CancellationTokenSource deadline = CancellationTokenSource
+            .CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(InstallerTimeout);
+        try
+        {
+            await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
+            return new BrokerInstallerExecutionResult(
+                ExitObserved: true,
+                ExitCode: process.ExitCode,
+                TimedOut: false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Burn may still be completing or rolling back. Killing it would make
+            // state more ambiguous, so the broker records indeterminate and never retries.
+            return new BrokerInstallerExecutionResult(
+                ExitObserved: false,
+                ExitCode: null,
+                TimedOut: !cancellationToken.IsCancellationRequested);
+        }
+    }
+}
+
+public interface IBrokerServiceHealthProbe
+{
+    Task<bool> IsHealthyAsync(CancellationToken cancellationToken);
+}
+
+public sealed class WindowsBrokerInstalledStateVerifier(
+    IBrokerServiceHealthProbe serviceHealthProbe) : IBrokerInstalledStateVerifier
+{
+    private static readonly TimeSpan HealthObservationTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan HealthObservationInterval = TimeSpan.FromMilliseconds(250);
+    internal static readonly IReadOnlyList<string> ProtectedPayloadRelativePaths =
+    [
+        "OpenBlade.Service.exe",
+        "OpenBlade.Service.dll",
+        "OpenBlade.Protocol.dll",
+        "OpenBlade.Contracts.dll",
+        "OpenBlade.SessionAgent.exe",
+        "OpenBlade.SessionAgent.dll",
+        "OpenBlade.Session.dll",
+        "OpenBlade.Tray.exe",
+        "OpenBlade.Tray.dll",
+        "OpenBlade.Tray.Core.dll",
+    ];
+
+    private readonly string installDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        "OpenBlade");
+
+    public Task<BrokerInstalledState> ReadBeforeInstallAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ReadInstalledState());
+    }
+
+    public async Task<BrokerPostInstallVerification> VerifyAfterInstallAsync(
+        BrokerInstalledState before,
+        OpenBladeVerifiedRelease expectedRelease,
+        CancellationToken cancellationToken) => await VerifyCurrentStateAsync(
+            before,
+            expectedRelease.Manifest.Version,
+            expectedRelease.Manifest.SourceRevision,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<BrokerPostInstallVerification> VerifyCurrentStateAsync(
+        BrokerInstalledState before,
+        string expectedVersion,
+        string expectedSourceRevision,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedSourceRevision);
+        BrokerInstalledState? after = null;
+        try
+        {
+            after = ReadInstalledState();
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // Absence or unreadable identity is neither target success nor proven rollback.
+        }
+
+        bool serviceHealthy = await IsServiceHealthyAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return new BrokerPostInstallVerification(
+            ExactTargetInstalled: after is not null
+                && MatchesSignedBuildIdentity(
+                    after.ProductVersion,
+                    expectedVersion,
+                    expectedSourceRevision),
+            ServiceHealthy: serviceHealthy,
+            ExactPreviousStateRestored: after is not null
+                && string.Equals(after.Version, before.Version, StringComparison.Ordinal)
+                && string.Equals(
+                    after.PayloadSha256,
+                    before.PayloadSha256,
+                    StringComparison.Ordinal)
+                && serviceHealthy);
+    }
+
+    private BrokerInstalledState ReadInstalledState()
+    {
+        ProtectedBrokerStorage.RejectReparsePoint(installDirectory);
+        using IncrementalHash payloadHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        string? productVersion = null;
+        foreach (string relativePath in ProtectedPayloadRelativePaths)
+        {
+            string path = Path.Combine(installDirectory, relativePath);
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    "A required installed OpenBlade payload file is unavailable.",
+                    path);
+            }
+
+            ProtectedBrokerStorage.RejectReparsePoint(path);
+            FileVersionInfo identity = FileVersionInfo.GetVersionInfo(path);
+            string fileProductVersion = identity.ProductVersion
+                ?? identity.FileVersion
+                ?? string.Empty;
+            if (productVersion is null)
+            {
+                productVersion = fileProductVersion;
+            }
+            else if (!string.Equals(
+                productVersion,
+                fileProductVersion,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "The installed OpenBlade payload does not share one build identity.");
+            }
+
+            byte[] name = System.Text.Encoding.UTF8.GetBytes(relativePath);
+            payloadHash.AppendData(name);
+            payloadHash.AppendData([0]);
+            using FileStream stream = new(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.SequentialScan);
+            byte[] buffer = new byte[81920];
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                payloadHash.AppendData(buffer, 0, read);
+            }
+        }
+
+        string effectiveProductVersion = productVersion
+            ?? throw new InvalidDataException("The installed OpenBlade payload is empty.");
+        return new BrokerInstalledState(
+            NormalizeVersion(effectiveProductVersion),
+            effectiveProductVersion,
+            Convert.ToHexString(payloadHash.GetHashAndReset()).ToLowerInvariant());
+    }
+
+    private static string NormalizeVersion(string? value)
+    {
+        string candidate = (value ?? string.Empty).Split('+', 2)[0];
+        if (OpenBladeReleaseManifestCodec.IsCanonicalLocalDevVersion(candidate))
+        {
+            return candidate;
+        }
+
+        if (Version.TryParse(candidate, out Version? parsed))
+        {
+            if (parsed.Revision == 0)
+            {
+                return parsed.ToString(3);
+            }
+
+            if (parsed.Revision < 0
+                && parsed.Build >= 0
+                && string.Equals(parsed.ToString(3), candidate, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidDataException("The installed OpenBlade version is unavailable or noncanonical.");
+    }
+
+    private static bool MatchesSignedBuildIdentity(
+        string productVersion,
+        string expectedVersion,
+        string expectedSourceRevision)
+    {
+        string[] parts = productVersion.Split('+', 2);
+        return parts.Length == 2
+            && string.Equals(parts[0], expectedVersion, StringComparison.Ordinal)
+            && string.Equals(parts[1], expectedSourceRevision, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> IsServiceHealthyAsync(CancellationToken cancellationToken)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + HealthObservationTimeout;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await serviceHealthProbe.IsHealthyAsync(cancellationToken)
+                .ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(HealthObservationInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
+}
+
+public sealed class ApplyFixedInboxBrokerRequestHandler(
+    IFixedLocalDevInboxSource inboxSource,
+    IBrokerAcceptedSequenceStore acceptedSequenceStore,
+    BrokerDurableRecordStore durableRecords,
+    BrokerInFlightStore inFlightStore,
+    IBrokerInstalledStateVerifier installedStateVerifier,
+    IBrokerInstallerProcessRunner processRunner,
+    BrokerPaths paths,
+    TimeProvider timeProvider,
+    ILogger<ApplyFixedInboxBrokerRequestHandler> logger) : IBrokerRequestHandler
+{
+    public async Task<BrokerResponse> HandleAsync(
+        BrokerRequest request,
+        BrokerEnrollment enrollment,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(enrollment);
+        if (request.ProtocolVersion != BrokerRequestCodec.ProtocolVersion
+            || request.RequestId == Guid.Empty
+            || request.Action != BrokerAction.ApplyFixedInbox)
+        {
+            return Reject(request.RequestId, "invalid-request-contract");
+        }
+
+        OpenBladeReleaseTrustPolicy trust = new(
+            Enabled: true,
+            TrustedKeys:
+            [
+                new OpenBladeReleaseTrustKey(
+                    enrollment.DevelopmentSigningKeyId,
+                    enrollment.DevelopmentSigningSubjectPublicKeyInfoBase64),
+            ]);
+        try
+        {
+            BrokerTrustPolicyValidator.Validate(new BrokerTrustConfiguration(
+                enrollment.DeploymentPolicyId,
+                trust));
+        }
+        catch (Exception exception) when (exception is
+            InvalidDataException or OpenBladeReleaseVerificationException)
+        {
+            logger.LogWarning(exception, "A deployment request was rejected because local development trust is invalid.");
+            return Reject(request.RequestId, "local-dev-trust-invalid");
+        }
+
+        if (await inFlightStore.LoadAsync(cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "unresolved-deployment");
+        }
+
+        try
+        {
+            await inFlightStore.CreateOnceAsync(
+                request.RequestId,
+                timeProvider.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "unresolved-deployment");
+        }
+
+        await RecordTransitionAsync(request.RequestId, BrokerTransitionKind.Accepted, "request-accepted", cancellationToken)
+            .ConfigureAwait(false);
+        BrokerInstalledState before;
+        StagedVerifiedLocalDevDeployment downloaded;
+        bool stagingCreated = false;
+        try
+        {
+            before = await installedStateVerifier.ReadBeforeInstallAsync(cancellationToken)
+                .ConfigureAwait(false);
+            inFlightStore.BindPreviousState(
+                request.RequestId,
+                before,
+                timeProvider.GetUtcNow());
+            string staging = paths.CreateRequestStagingDirectory(request.RequestId);
+            stagingCreated = true;
+            downloaded = await inboxSource.StageAsync(
+                staging,
+                trust,
+                cancellationToken).ConfigureAwait(false);
+            OpenBladeVerifiedRelease independentlyVerified = OpenBladeSignedReleaseVerifier.Verify(
+                downloaded.ManifestBytes,
+                downloaded.SignatureBytes,
+                trust);
+            if (!string.Equals(
+                    independentlyVerified.SigningKeyId,
+                    downloaded.VerifiedRelease.SigningKeyId,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The local development deployment identity changed across verification boundaries.");
+            }
+
+            if (independentlyVerified.Manifest.InstallationId != enrollment.InstallationId
+                || !string.Equals(
+                    independentlyVerified.Manifest.SigningKeyId,
+                    enrollment.DevelopmentSigningKeyId,
+                    StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    "The signed local development deployment is bound to a different enrollment.");
+            }
+
+            inFlightStore.BindRelease(
+                request.RequestId,
+                independentlyVerified.Manifest.InstallerSha256,
+                independentlyVerified.Manifest.Version,
+                independentlyVerified.Manifest.SourceRevision,
+                BrokerDurableRecordStore.ComputeSha256(downloaded.ManifestBytes),
+                independentlyVerified.SigningKeyId,
+                independentlyVerified.Manifest.Sequence,
+                timeProvider.GetUtcNow());
+            downloaded = downloaded with { VerifiedRelease = independentlyVerified };
+            string expectedInstallerPath = Path.Combine(
+                staging,
+                OpenBladeReleaseManifestCodec.InstallerFileName);
+            if (!string.Equals(
+                    Path.GetFullPath(downloaded.InstallerPath),
+                    expectedInstallerPath,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("The local development inbox returned an unauthorized installer path.");
+            }
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException
+            or InvalidOperationException
+            or ArgumentException or NotSupportedException
+            or OperationCanceledException
+            or OpenBladeReleaseVerificationException)
+        {
+            logger.LogWarning(exception, "The unattended deployment failed closed before installer execution.");
+            bool cleaned = TryCleanPreflightState(request.RequestId, stagingCreated);
+            await RecordTransitionAsync(
+                request.RequestId,
+                cleaned ? BrokerTransitionKind.RollbackVerified : BrokerTransitionKind.Ambiguous,
+                cleaned ? "preflight-cleaned" : "preflight-cleanup-unresolved",
+                CancellationToken.None).ConfigureAwait(false);
+            if (cleaned)
+            {
+                inFlightStore.ClearResolved(request.RequestId);
+                return Reject(request.RequestId, "preflight-rejected");
+            }
+
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "preflight-cleanup-unresolved");
+        }
+
+        await RecordTransitionAsync(
+            request.RequestId,
+            BrokerTransitionKind.ReleaseVerified,
+            "signed-local-dev-deployment-verified",
+            cancellationToken).ConfigureAwait(false);
+        await RecordTransitionAsync(
+            request.RequestId,
+            BrokerTransitionKind.InstallerVerified,
+            "installer-size-hash-verified",
+            cancellationToken).ConfigureAwait(false);
+
+        BrokerInstallerExecutionResult execution;
+        try
+        {
+            await using (FileStream installer = new(
+                downloaded.InstallerPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                await OpenBladeSignedReleaseVerifier.VerifyInstallerAsync(
+                    installer,
+                    downloaded.VerifiedRelease,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await acceptedSequenceStore.ConsumeAsync(
+                downloaded.VerifiedRelease.Manifest.Sequence,
+                cancellationToken).ConfigureAwait(false);
+
+            ProcessStartInfo startInfo = BrokerInstallerProcessPlan.Create(
+                Path.GetDirectoryName(downloaded.InstallerPath)
+                    ?? throw new InvalidDataException("The fixed installer staging directory is unavailable."));
+            await RecordTransitionAsync(
+                request.RequestId,
+                BrokerTransitionKind.InstallerStarted,
+                "verified-installer-starting",
+                cancellationToken).ConfigureAwait(false);
+            execution = await processRunner.RunAsync(
+                startInfo,
+                processId => inFlightStore.BindInstallerProcess(
+                    request.RequestId,
+                    processId,
+                    timeProvider.GetUtcNow()),
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException
+            or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            logger.LogError(exception, "The verified installer launch became indeterminate.");
+            execution = new BrokerInstallerExecutionResult(false, null, false);
+        }
+
+        bool installerResultBindingFailed = false;
+        if (execution.ExitObserved && execution.ExitCode.HasValue)
+        {
+            try
+            {
+                inFlightStore.BindInstallerResult(
+                    request.RequestId,
+                    execution.ExitCode.Value,
+                    timeProvider.GetUtcNow());
+            }
+            catch (Exception exception) when (exception is
+                IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                logger.LogCritical(
+                    exception,
+                    "The observed installer result could not be durably bound to its request.");
+                execution = new BrokerInstallerExecutionResult(false, null, execution.TimedOut);
+                installerResultBindingFailed = true;
+            }
+        }
+        else if (execution.ExitObserved)
+        {
+            logger.LogCritical("The installer reported an observed exit without an exit code.");
+            execution = new BrokerInstallerExecutionResult(false, null, execution.TimedOut);
+            installerResultBindingFailed = true;
+        }
+
+        await RecordTransitionAsync(
+            request.RequestId,
+            execution.ExitObserved
+                ? BrokerTransitionKind.InstallerExited
+                : BrokerTransitionKind.Ambiguous,
+            execution.ExitObserved ? "installer-exit-observed" : "installer-result-unknown",
+            CancellationToken.None).ConfigureAwait(false);
+
+        if (installerResultBindingFailed)
+        {
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "installer-result-unresolved");
+        }
+
+        BrokerPostInstallVerification postInstall;
+        try
+        {
+            using CancellationTokenSource verificationDeadline = new(TimeSpan.FromSeconds(30));
+            postInstall = await installedStateVerifier.VerifyAfterInstallAsync(
+                before,
+                downloaded.VerifiedRelease,
+                verificationDeadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException
+            or InvalidOperationException or OperationCanceledException)
+        {
+            logger.LogError(exception, "Post-install identity or health verification was unavailable.");
+            postInstall = new BrokerPostInstallVerification(false, false, false);
+        }
+
+        BrokerDeploymentDisposition disposition = BrokerDeploymentClassifier.Classify(
+            execution.ExitObserved,
+            execution.ExitCode,
+            postInstall.ExactTargetInstalled,
+            postInstall.ServiceHealthy,
+            postInstall.ExactPreviousStateRestored);
+        if (disposition is BrokerDeploymentDisposition.Succeeded
+            or BrokerDeploymentDisposition.RolledBack)
+        {
+            try
+            {
+                paths.DeleteRequestStagingDirectory(request.RequestId);
+                stagingCreated = false;
+            }
+            catch (Exception exception) when (exception is
+                IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                logger.LogError(
+                    exception,
+                    "Resolved deployment staging could not be safely removed; the request remains unresolved.");
+                disposition = BrokerDeploymentDisposition.Indeterminate;
+            }
+        }
+
+        BrokerTerminalReport report = new(
+            SchemaVersion: 1,
+            RequestId: request.RequestId,
+            InstallationId: enrollment.InstallationId,
+            Sequence: downloaded.VerifiedRelease.Manifest.Sequence,
+            DeploymentPolicyId: enrollment.DeploymentPolicyId,
+            Disposition: disposition,
+            ManifestSha256: BrokerDurableRecordStore.ComputeSha256(downloaded.ManifestBytes),
+            SigningKeyId: downloaded.VerifiedRelease.SigningKeyId,
+            PackageSha256: downloaded.VerifiedRelease.Manifest.InstallerSha256,
+            PreviousVersion: before.Version,
+            TargetVersion: downloaded.VerifiedRelease.Manifest.Version,
+            InstallerExitCode: execution.ExitObserved ? execution.ExitCode : null,
+            ServiceHealthy: postInstall.ServiceHealthy,
+            CompletedAt: timeProvider.GetUtcNow());
+        try
+        {
+            await durableRecords.CreateTerminalReportOnceAsync(report, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            logger.LogCritical(exception, "The terminal deployment report could not be persisted.");
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "terminal-report-unavailable");
+        }
+
+        if (disposition is not BrokerDeploymentDisposition.Indeterminate
+            && execution.ExitObserved
+            && !stagingCreated)
+        {
+            try
+            {
+                inFlightStore.ClearResolved(request.RequestId);
+            }
+            catch (Exception exception) when (exception is
+                IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                logger.LogCritical(
+                    exception,
+                    "The reconciled deployment latch could not be cleared.");
+                return new BrokerResponse(
+                    BrokerRequestCodec.ProtocolVersion,
+                    request.RequestId,
+                    BrokerResponseStatus.Indeterminate,
+                    "unresolved-deployment");
+            }
+        }
+
+        return disposition switch
+        {
+            BrokerDeploymentDisposition.Succeeded => new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Succeeded,
+                "install-succeeded"),
+            BrokerDeploymentDisposition.RolledBack => new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.RolledBack,
+                "install-rolled-back"),
+            _ => new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "install-indeterminate"),
+        };
+    }
+
+    private async Task RecordTransitionAsync(
+        Guid requestId,
+        BrokerTransitionKind kind,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        await durableRecords.AppendTransitionAsync(
+            new BrokerTransition(
+                1,
+                requestId,
+                kind,
+                timeProvider.GetUtcNow(),
+                detail),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool TryCleanPreflightState(Guid requestId, bool stagingCreated)
+    {
+        if (!stagingCreated)
+        {
+            return true;
+        }
+
+        try
+        {
+            paths.DeleteRequestStagingDirectory(requestId);
+            return true;
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            logger.LogError(exception, "Rejected deployment staging could not be safely removed.");
+            return false;
+        }
+    }
+
+    private static BrokerResponse Reject(Guid requestId, string code) => new(
+        BrokerRequestCodec.ProtocolVersion,
+        requestId,
+        BrokerResponseStatus.Rejected,
+        code);
+}

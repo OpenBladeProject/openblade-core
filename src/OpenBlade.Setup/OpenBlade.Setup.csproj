@@ -11,6 +11,14 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(OpenBladeLocalDevDeployment)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_LOCAL_DEV_DEPLOYMENT</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
+    <Compile Remove="LocalDevEnrollmentUser.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
   </ItemGroup>

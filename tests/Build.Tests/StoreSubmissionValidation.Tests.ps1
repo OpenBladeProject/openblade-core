@@ -107,6 +107,16 @@ try {
     Assert-True $verifiedReport.localPreflightPassed `
         'A rendered canonical privacy policy must pass the release preflight.'
 
+    $localDevelopmentArtifact = Join-Path $bundle 'OpenBlade.LocalDevDeployment.json'
+    Set-Content -LiteralPath $localDevelopmentArtifact -Value '{}' -Encoding UTF8
+    Assert-Throws {
+        Write-OpenBladeStoreReadinessReport `
+            -Bundle $bundle `
+            -Installer $installer `
+            -ReportPath $reportPath | Out-Null
+    } 'Store submission contains local-development deployment artifact'
+    Remove-Item -LiteralPath $localDevelopmentArtifact
+
     Assert-Throws {
         Assert-OpenBladePrivacyPolicyResponse `
             -StatusCode 404 `
