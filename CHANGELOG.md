@@ -10,6 +10,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Released the quick-controls WinUI surface when it is dismissed instead of
   keeping it rendered off-screen, so the tray does not retain a discrete-GPU
   context after a game exits.
+- Stabilized disconnected translator screenshots across active and inactive
+  window states so repeated localization package exports remain byte-identical.
 - Made HyperBoost a transient Laptop performance choice available from every
   admitted full-power profile and fan mode. Its guidance now appears only while
   HyperBoost is selected, and every exit restores exact prior intent without

@@ -2122,6 +2122,30 @@ public sealed class WinUiShellContractTests
             "Root.RequestedTheme = ElementTheme.Light",
             window,
             StringComparison.Ordinal);
+        int snapshotTitleForeground = window.IndexOf(
+            "var snapshotTitleForeground",
+            StringComparison.Ordinal);
+        int activeTitleForeground = window.IndexOf(
+            "AppTitleBar.Foreground = snapshotTitleForeground;",
+            snapshotTitleForeground,
+            StringComparison.Ordinal);
+        int inactiveTitleForeground = window.IndexOf(
+            "AppTitleBar.Resources[\"TitleBarDeactivatedForegroundBrush\"]",
+            activeTitleForeground,
+            StringComparison.Ordinal);
+        int inactiveTitleValue = window.IndexOf(
+            "snapshotTitleForeground;",
+            inactiveTitleForeground,
+            StringComparison.Ordinal);
+        int snapshotBackdrop = window.IndexOf(
+            "micaBackdropHost = new MicaBackdropHost",
+            inactiveTitleValue,
+            StringComparison.Ordinal);
+        Assert.True(snapshotTitleForeground >= 0);
+        Assert.True(snapshotTitleForeground < activeTitleForeground);
+        Assert.True(activeTitleForeground < inactiveTitleForeground);
+        Assert.True(inactiveTitleForeground < inactiveTitleValue);
+        Assert.True(inactiveTitleValue < snapshotBackdrop);
         Assert.Contains(
             "ReadPresentedProductVersion(localizationSnapshotMode)",
             window,
@@ -2163,6 +2187,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-narrow'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
+        Assert.Contains(
+            "windowActivation = 'stable-title-foreground-v1'",
+            capture,
+            StringComparison.Ordinal);
         Assert.Contains(
             "ShowLocalizationSnapshotSettingsAppearance()",
             app,
