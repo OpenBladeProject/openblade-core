@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Contracts;
 
@@ -11,12 +12,85 @@ internal enum HyperBoostOwnershipJournalState
     Relinquished,
 }
 
+internal enum HyperBoostRestoreRetryDisposition
+{
+    None,
+    DeferredPreSubmission,
+}
+
+internal enum HyperBoostRestoreRetryTarget
+{
+    None,
+    ExactJournalIntent,
+    CurrentPowerDestination,
+}
+
+internal sealed record HyperBoostRestoreIntent(
+    PerformancePreset Performance,
+    CustomPerformanceSettings? CustomPerformance,
+    GpuClockTuningSettings? GpuClockTuning,
+    FanControlSettings FanControl)
+{
+    internal static HyperBoostRestoreIntent BalancedAutomatic { get; } = new(
+        PerformancePreset.Balanced,
+        CustomPerformance: null,
+        GpuClockTuning: null,
+        FanControlSettings.FromLegacy(FanMode.Automatic));
+
+    internal bool IsWellFormed =>
+        Performance is (PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
+            or PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom)
+        && (Performance == PerformancePreset.Custom
+            ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
+            : CustomPerformance is null)
+        && (GpuClockTuning is null
+            || GpuClockTuningSettings.IsWellFormed(GpuClockTuning))
+        && FanControl is not null
+        && Enum.IsDefined(FanControl.Mode);
+}
+
+internal sealed record HyperBoostRecoveryBaseline(
+    PerformancePreset? Performance,
+    FanMode Fans,
+    bool HyperBoostActive,
+    CustomPerformanceSettings? CustomPerformance = null,
+    GpuClockOffsetSettings? GpuClockOffsets = null)
+{
+    internal bool IsWellFormed =>
+        (Performance is null
+            or PerformancePreset.BatterySaver
+            or PerformancePreset.BatteryBalanced
+            or PerformancePreset.Silent
+            or PerformancePreset.Balanced
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom)
+        && Enum.IsDefined(Fans)
+        && !HyperBoostActive
+        && (CustomPerformance is null
+            || CustomPerformanceSettings.IsWellFormed(CustomPerformance))
+        && (GpuClockOffsets is null
+            || GpuClockOffsetSettings.IsWellFormed(GpuClockOffsets));
+}
+
 internal sealed record HyperBoostOwnershipJournal(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
     bool RequiresCoolingPad,
     DateTimeOffset UpdatedAtUtc)
 {
+    internal HyperBoostRestoreIntent RestoreIntent { get; init; } =
+        HyperBoostRestoreIntent.BalancedAutomatic;
+
+    internal HyperBoostRecoveryBaseline? RecoveryBaseline { get; init; }
+
+    internal HyperBoostRestoreRetryDisposition RestoreRetryDisposition { get; init; }
+
+    internal HyperBoostRestoreRetryTarget RestoreRetryTarget { get; init; }
+
     internal HyperBoostOwnershipJournal(
         HyperBoostOwnershipJournalState state,
         PerformancePreset baseMode,
@@ -27,15 +101,30 @@ internal sealed record HyperBoostOwnershipJournal(
 
     internal bool IsWellFormed =>
         Enum.IsDefined(State)
-        && BaseMode is PerformancePreset.Silent
+        && BaseMode is (PerformancePreset.Silent
             or PerformancePreset.Balanced
-            or PerformancePreset.Performance
+            or PerformancePreset.Performance)
+        && RestoreIntent is { IsWellFormed: true }
+        && Enum.IsDefined(RestoreRetryDisposition)
+        && Enum.IsDefined(RestoreRetryTarget)
+        && (RecoveryBaseline is null
+            || State == HyperBoostOwnershipJournalState.RestorePending
+                && RecoveryBaseline.IsWellFormed)
+        && (RestoreRetryDisposition == HyperBoostRestoreRetryDisposition.None
+            ? RestoreRetryTarget == HyperBoostRestoreRetryTarget.None
+            : State == HyperBoostOwnershipJournalState.RestorePending
+                && RecoveryBaseline is { IsWellFormed: true }
+                && RestoreRetryTarget is
+                    (HyperBoostRestoreRetryTarget.ExactJournalIntent
+                    or HyperBoostRestoreRetryTarget.CurrentPowerDestination))
         && UpdatedAtUtc != default;
 }
 
 internal readonly record struct HyperBoostOwnershipJournalLoadResult(
     HyperBoostOwnershipJournal? Journal,
-    bool Invalid);
+    bool Invalid,
+    bool AllowsExplicitRecoveryBaselineCapture = false,
+    string? Sha256 = null);
 
 public interface IServiceOwnershipJournalCleaner
 {
@@ -47,7 +136,14 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     HyperBoostOwnershipJournalState State,
     PerformancePreset BaseMode,
     DateTimeOffset UpdatedAtUtc,
-    bool? RequiresCoolingPad = null);
+    bool? RequiresCoolingPad = null,
+    PerformancePreset? RestorePerformance = null,
+    CustomPerformanceSettings? RestoreCustomPerformance = null,
+    GpuClockTuningSettings? RestoreGpuClockTuning = null,
+    FanControlSettings? RestoreFanControl = null,
+    HyperBoostRecoveryBaseline? RecoveryBaseline = null,
+    HyperBoostRestoreRetryDisposition? RestoreRetryDisposition = null,
+    HyperBoostRestoreRetryTarget? RestoreRetryTarget = null);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -93,7 +189,8 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 6;
+    private const int RetryDispositionSchemaVersion = 5;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -134,7 +231,34 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         SerializerOptions);
                 bool recognizedSchema = document is
                 { SchemaVersion: 1, RequiresCoolingPad: null }
-                    or { SchemaVersion: CurrentSchemaVersion, RequiresCoolingPad: not null };
+                    or { SchemaVersion: 2, RequiresCoolingPad: not null }
+                    or
+                {
+                    SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
+                        or CurrentSchemaVersion,
+                    RequiresCoolingPad: not null,
+                    RestorePerformance: not null,
+                    RestoreFanControl: not null,
+                };
+                HyperBoostRestoreIntent restoreIntent = document is
+                {
+                    SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
+                        or CurrentSchemaVersion,
+                    RestorePerformance: { } restorePerformance,
+                    RestoreFanControl: { } restoreFanControl,
+                }
+                    ? new HyperBoostRestoreIntent(
+                        restorePerformance,
+                        document.RestoreCustomPerformance,
+                        document.RestoreGpuClockTuning,
+                        restoreFanControl)
+                    : document is null
+                        ? HyperBoostRestoreIntent.BalancedAutomatic
+                        : new HyperBoostRestoreIntent(
+                            document.BaseMode,
+                            CustomPerformance: null,
+                            GpuClockTuning: null,
+                            FanControlSettings.FromLegacy(FanMode.Automatic));
                 var journal = document is null
                     ? null
                     : new HyperBoostOwnershipJournal(
@@ -143,11 +267,40 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         document.SchemaVersion == 1
                             ? true
                             : document.RequiresCoolingPad!.Value,
-                        document.UpdatedAtUtc);
+                        document.UpdatedAtUtc)
+                    {
+                        RestoreIntent = restoreIntent,
+                        RecoveryBaseline = document.SchemaVersion
+                            is 4 or RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
+                                ? document.RecoveryBaseline
+                                : null,
+                        RestoreRetryDisposition = document.SchemaVersion
+                            is RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
+                                ? document.RestoreRetryDisposition
+                                    ?? HyperBoostRestoreRetryDisposition.None
+                                : HyperBoostRestoreRetryDisposition.None,
+                        RestoreRetryTarget = document.SchemaVersion
+                            == CurrentSchemaVersion
+                                ? document.RestoreRetryTarget
+                                    ?? HyperBoostRestoreRetryTarget.None
+                                : HyperBoostRestoreRetryTarget.None,
+                    };
                 return !recognizedSchema
                     || journal is not { IsWellFormed: true }
                     ? new HyperBoostOwnershipJournalLoadResult(null, true)
-                    : new HyperBoostOwnershipJournalLoadResult(journal, false);
+                    : new HyperBoostOwnershipJournalLoadResult(
+                        journal,
+                        Invalid: false,
+                        AllowsExplicitRecoveryBaselineCapture:
+                            document!.SchemaVersion is 3 or 4
+                                or RetryDispositionSchemaVersion
+                                or CurrentSchemaVersion
+                            && journal.State
+                                == HyperBoostOwnershipJournalState.RestorePending
+                            && journal.RecoveryBaseline is null,
+                        Sha256: Convert.ToHexString(SHA256.HashData(json)));
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -186,7 +339,14 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     journal.State,
                     journal.BaseMode,
                     journal.UpdatedAtUtc,
-                    journal.RequiresCoolingPad),
+                    journal.RequiresCoolingPad,
+                    journal.RestoreIntent.Performance,
+                    journal.RestoreIntent.CustomPerformance,
+                    journal.RestoreIntent.GpuClockTuning,
+                    journal.RestoreIntent.FanControl,
+                    journal.RecoveryBaseline,
+                    journal.RestoreRetryDisposition,
+                    journal.RestoreRetryTarget),
                 SerializerOptions);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);

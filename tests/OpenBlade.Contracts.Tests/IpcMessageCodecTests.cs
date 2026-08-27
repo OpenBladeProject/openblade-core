@@ -148,6 +148,9 @@ public sealed class IpcMessageCodecTests
         new ReapplyChangedSettingsRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
+        new RecoverHyperBoostRestoreRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid()),
         new SetLightingSuppressionRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -391,7 +394,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyNineBatteryContracts_RoundTripExactShape()
+    public async Task CurrentProtocolBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -464,7 +467,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1040,7 +1043,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFortyNineStatus_AcceptsCompleteCapabilityCollections()
+    public async Task CurrentProtocolStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -1049,7 +1052,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1430,6 +1433,57 @@ public sealed class IpcMessageCodecTests
                     Assert.IsType<ServiceStatusEvent>(actual).Status);
             }
         }
+    }
+
+    [Fact]
+    public async Task ControlOperationResult_RoundTripsHyperBoostRestoredPerformance()
+    {
+        var expectedResult = new ControlOperationResult(
+            ControlOperationStatus.Applied,
+            "Restored")
+        {
+            HyperBoostRestoredPerformance = PerformancePreset.Custom,
+        };
+        var expected = new ServiceResponse(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Success: true,
+            Error: null,
+            Status: null,
+            Result: expectedResult);
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(stream, expected, CancellationToken.None);
+        stream.Position = 0;
+        ServiceResponse actual = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        Assert.Equal(expectedResult, actual.Result);
+    }
+
+    [Fact]
+    public async Task ControlOperationResult_DefaultsRestorePerformanceWhenPropertyIsOmitted()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""
+            {
+              "frame":"response",
+              "version":{{OpenBladeIpc.ProtocolVersion}},
+              "requestId":"{{requestId}}",
+              "success":true,
+              "error":null,
+              "status":null,
+              "result":{"status":1,"message":"Applied"},
+              "archive":null
+            }
+            """);
+
+        ServiceResponse actual = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        Assert.Equal(requestId, actual.RequestId);
+        Assert.Null(actual.Result!.HyperBoostRestoredPerformance);
     }
 
     [Fact]

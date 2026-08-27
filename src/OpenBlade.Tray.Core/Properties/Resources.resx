@@ -627,6 +627,15 @@
   <data name="High" xml:space="preserve">
     <value>High</value>
   </data>
+  <data name="HyperBoost" xml:space="preserve">
+    <value>HyperBoost</value>
+  </data>
+  <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
+    <value>HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically.</value>
+  </data>
+  <data name="HyperBoost restore needs confirmation" xml:space="preserve">
+    <value>HyperBoost restore needs confirmation</value>
+  </data>
   <data name="Idle" xml:space="preserve">
     <value>Idle</value>
   </data>
@@ -972,6 +981,9 @@
   <data name="Reconnecting to service" xml:space="preserve">
     <value>Reconnecting to service</value>
   </data>
+  <data name="Recovery needed" xml:space="preserve">
+    <value>Recovery needed</value>
+  </data>
   <data name="Refresh rate" xml:space="preserve">
     <value>Refresh rate</value>
   </data>
@@ -1290,14 +1302,11 @@
   <data name="Fragment.Top" xml:space="preserve">
     <value>top</value>
   </data>
-  <data name="Active. OpenBlade will restore Balanced when HyperBoost is turned off." xml:space="preserve">
-    <value>Active. OpenBlade will restore Balanced when HyperBoost is turned off.</value>
+  <data name="Improves thermal performance so key components can sustain higher power limits." xml:space="preserve">
+    <value>Improves thermal performance so key components can sustain higher power limits.</value>
   </data>
-  <data name="HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter." xml:space="preserve">
-    <value>HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter.</value>
-  </data>
-  <data name="Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required." xml:space="preserve">
-    <value>Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required.</value>
+  <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Disconnect the cooling pad before enabling HyperBoost.</value>
   </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
@@ -1307,8 +1316,5 @@
   </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.</value>
-  </data>
-  <data name="Full cooling-pad integration is planned for a future update." xml:space="preserve">
-    <value>Full cooling-pad integration is planned for a future update.</value>
   </data>
 </root>

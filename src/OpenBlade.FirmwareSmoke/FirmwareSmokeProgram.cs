@@ -565,6 +565,7 @@ public static class FirmwareSmokeProgram
             "  hyperboost-lifecycle-arm --baseline <baseline.json> " +
             "--scenario <low-power|unexpected-exit> --marker <private-marker.json> " +
             "--confirm-target <MODEL>-HYPERBOOST-<BOUNDARY>-LIFECYCLE " +
+            "[--validation-build-manifest <manifest.json>] " +
             "[--output <directory>]");
         Console.WriteLine(
             "  hyperboost-lifecycle-verify --baseline <baseline.json> " +

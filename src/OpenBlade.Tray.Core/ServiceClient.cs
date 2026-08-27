@@ -243,6 +243,13 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 Guid.NewGuid()),
             token);
 
+    public Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(
+        CancellationToken token) => SendMutationAsync(
+            new RecoverHyperBoostRestoreRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

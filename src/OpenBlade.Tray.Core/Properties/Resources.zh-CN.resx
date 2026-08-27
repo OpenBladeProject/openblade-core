@@ -627,6 +627,15 @@
   <data name="High" xml:space="preserve">
     <value>高</value>
   </data>
+  <data name="HyperBoost" xml:space="preserve">
+    <value>HyperBoost</value>
+  </data>
+  <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
+    <value>HyperBoost 已关闭，但保存的性能和风扇设置尚未确认。重试只会恢复一次该确切设置；OpenBlade 不会自动重试。</value>
+  </data>
+  <data name="HyperBoost restore needs confirmation" xml:space="preserve">
+    <value>HyperBoost 恢复需要确认</value>
+  </data>
   <data name="Idle" xml:space="preserve">
     <value>空闲</value>
   </data>
@@ -972,6 +981,9 @@
   <data name="Reconnecting to service" xml:space="preserve">
     <value>正在重新连接服务</value>
   </data>
+  <data name="Recovery needed" xml:space="preserve">
+    <value>需要恢复</value>
+  </data>
   <data name="Refresh rate" xml:space="preserve">
     <value>刷新率</value>
   </data>
@@ -1290,14 +1302,11 @@
   <data name="Fragment.Top" xml:space="preserve">
     <value>上</value>
   </data>
-  <data name="Active. OpenBlade will restore Balanced when HyperBoost is turned off." xml:space="preserve">
-    <value>已启用。关闭 HyperBoost 时，OpenBlade 将恢复平衡模式。</value>
+  <data name="Improves thermal performance so key components can sustain higher power limits." xml:space="preserve">
+    <value>提升散热性能，使关键组件能够维持更高的功率上限。</value>
   </data>
-  <data name="HyperBoost is validated without the cooling pad. Start from Balanced with Automatic laptop fans and an admitted full-power adapter." xml:space="preserve">
-    <value>HyperBoost 已验证可在不连接散热垫的情况下使用。启用前请设为平衡模式、笔记本风扇自动模式，并连接已获准的全功率电源适配器。</value>
-  </data>
-  <data name="Disconnect the cooling pad before enabling HyperBoost. Balanced mode, Automatic laptop fans, and an admitted full-power adapter are required." xml:space="preserve">
-    <value>启用 HyperBoost 前请断开散热垫。需要使用平衡模式、笔记本风扇自动模式，并连接已获准的全功率电源适配器。</value>
+  <data name="Disconnect the cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>启用 HyperBoost 前请断开散热垫。</value>
   </data>
   <data name="Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>无法确认散热垫已断开。请刷新笔记本状态后再启用 HyperBoost。</value>
@@ -1307,8 +1316,5 @@
   </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>已在此笔记本上检测到该功能，但根据当前证据，OpenBlade 无法安全地更改它。</value>
-  </data>
-  <data name="Full cooling-pad integration is planned for a future update." xml:space="preserve">
-    <value>后续更新将加入完整的散热垫集成支持。</value>
   </data>
 </root>

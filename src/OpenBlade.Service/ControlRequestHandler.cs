@@ -193,6 +193,9 @@ public sealed class ControlRequestHandler
             ReapplyChangedSettingsRequest => Result(
                 request.RequestId,
                 await runtime.ReapplyChangedSettingsAsync(cancellationToken)),
+            RecoverHyperBoostRestoreRequest => Result(
+                request.RequestId,
+                await runtime.RecoverHyperBoostRestoreAsync(cancellationToken)),
             SetLightingSuppressionRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingSuppressionAsync(

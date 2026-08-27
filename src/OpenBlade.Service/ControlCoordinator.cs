@@ -16,7 +16,9 @@ internal sealed record ScopedApplyOutcome(
     IReadOnlySet<DeviceSubsystem>? ConfirmedCoupledWrites = null,
     bool ConfirmationUnavailable = false,
     ConfirmedDeviceState? PreWriteState = null,
-    DesiredDeviceState? EffectiveDesired = null);
+    DesiredDeviceState? EffectiveDesired = null,
+    WriteSubmissionState? WriteSubmissionState = null,
+    BladeWriteFailurePhase? WriteFailurePhase = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -53,10 +55,28 @@ internal sealed class WriteAuthorityLostException : InvalidOperationException
 public sealed class ControlCoordinator
 {
     private readonly IBladeDevice device;
+    private readonly Func<CancellationToken, Task<ConfirmedDeviceState>>?
+        scopedStateReader;
+    private readonly bool resolveIndeterminatePerformanceWrites;
+    private readonly bool resolveIndeterminateAutomaticFanWrites;
 
     public ControlCoordinator(IBladeDevice device)
+        : this(device, scopedStateReader: null)
+    {
+    }
+
+    internal ControlCoordinator(
+        IBladeDevice device,
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader,
+        bool resolveIndeterminatePerformanceWrites = false,
+        bool resolveIndeterminateAutomaticFanWrites = false)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
+        this.scopedStateReader = scopedStateReader;
+        this.resolveIndeterminatePerformanceWrites =
+            resolveIndeterminatePerformanceWrites;
+        this.resolveIndeterminateAutomaticFanWrites =
+            resolveIndeterminateAutomaticFanWrites;
     }
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
@@ -220,7 +240,11 @@ public sealed class ControlCoordinator
             beforeInitialStateRead: (_, token) =>
                 relinquishWhenUnconfigured && effectiveGpuClockTuning is null
                     ? RelinquishGpuClockOffsetManagementAsync(token)
-                    : Task.CompletedTask).ConfigureAwait(false);
+                    : Task.CompletedTask,
+            resolveIndeterminateWriteByReadback:
+                resolveIndeterminatePerformanceWrites,
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches)
+            .ConfigureAwait(false);
         return requestedDesired is null
             ? outcome
             : outcome with
@@ -278,7 +302,11 @@ public sealed class ControlCoordinator
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
             // so every explicit manual-mode action must submit its RPM target.
             forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                || initialStateBlockReason is not null);
+                || initialStateBlockReason is not null,
+            resolveIndeterminateWriteByReadback:
+                resolveIndeterminateAutomaticFanWrites
+                    && value.Mode == FanMode.Automatic,
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches);
     }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
@@ -1197,13 +1225,17 @@ public sealed class ControlCoordinator
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
             {
+                bool preWriteReadFailed = exception.FailurePhase
+                    == BladeWriteFailurePhase.ThermalPreWriteRead;
                 return new ScopedApplyOutcome(
                     WriteRejected(plan.Name, exception),
                     initial,
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: preWriteReadFailed,
+                    WriteSubmissionState: exception.SubmissionState,
+                    WriteFailurePhase: exception.FailurePhase);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -1283,7 +1315,10 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
         Func<bool>? writeAllowed = null,
-        Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null)
+        Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null,
+        bool resolveIndeterminateWriteByReadback = false,
+        Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
+            unchangedAfterIndeterminateWrite = null)
     {
         if (!valid)
         {
@@ -1301,7 +1336,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities? capabilities = null;
         ConfirmedDeviceState? initial = null;
         Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
-            stateReader ?? device.ReadStateAsync;
+            stateReader ?? scopedStateReader ?? device.ReadStateAsync;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
@@ -1400,13 +1435,34 @@ public sealed class ControlCoordinator
             when (writeAttempted
                 && exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
         {
+            bool preWriteReadFailed = exception.FailurePhase
+                == BladeWriteFailurePhase.ThermalPreWriteRead;
             return new ScopedApplyOutcome(
                 WriteRejected(name, exception),
                 initial,
                 WriteAttempted: false,
                 ReadbackMatched: false,
                 capabilities,
-                DeviceAccessFailed: false);
+                DeviceAccessFailed: preWriteReadFailed,
+                WriteSubmissionState: exception.SubmissionState,
+                WriteFailurePhase: exception.FailurePhase);
+        }
+        catch (BladeWriteException exception)
+            when (writeAttempted
+                && exception.SubmissionState is WriteSubmissionState.Indeterminate
+                && resolveIndeterminateWriteByReadback)
+        {
+            return await ResolveIndeterminateWriteByReadbackAsync(
+                    subsystem,
+                    name,
+                    exception,
+                    matches,
+                    unchangedAfterIndeterminateWrite,
+                    readState,
+                    initial,
+                    capabilities,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && writeAttempted)
@@ -1437,6 +1493,21 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
+            if (setterCompleted && resolveIndeterminateWriteByReadback)
+            {
+                return await ResolveIndeterminateWriteByReadbackAsync(
+                        subsystem,
+                        name,
+                        exception,
+                        matches,
+                        unchangedAfterIndeterminateWrite,
+                        readState,
+                        initial,
+                        capabilities,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return new ScopedApplyOutcome(
                 writeAttempted
                     ? Indeterminate(name, exception)
@@ -1449,7 +1520,91 @@ public sealed class ControlCoordinator
                     || setterCompleted
                     || IsTerminalDeviceFailure(exception),
                 ConfirmationUnavailable: setterCompleted,
-                PreWriteState: setterCompleted ? initial : null);
+                PreWriteState: setterCompleted ? initial : null,
+                WriteSubmissionState: exception is BladeWriteException writeFailure
+                    ? writeFailure.SubmissionState
+                    : null,
+                WriteFailurePhase: exception is BladeWriteException phasedFailure
+                    ? phasedFailure.FailurePhase
+                    : null);
+        }
+    }
+
+    private static async Task<ScopedApplyOutcome>
+        ResolveIndeterminateWriteByReadbackAsync(
+        DeviceSubsystem subsystem,
+        string name,
+        Exception exception,
+        Func<ConfirmedDeviceState, bool> matches,
+        Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
+            unchangedAfterIndeterminateWrite,
+        Func<CancellationToken, Task<ConfirmedDeviceState>> readState,
+        ConfirmedDeviceState? initial,
+        DeviceCapabilities? capabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final = await readState(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (matches(final))
+            {
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Applied,
+                        $"{name} setting applied and confirmed by fresh readback after an indeterminate submission."),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            if (initial is not null
+                && unchangedAfterIndeterminateWrite?.Invoke(initial, final) == true)
+            {
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{Indeterminate(name, exception).Message} Fresh readback confirmed that the prior {name.ToLowerInvariant()} state remained active."),
+                    final,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            return new ScopedApplyOutcome(
+                new ControlResult(
+                    ControlResultStatus.Failed,
+                    $"{Indeterminate(name, exception).Message} Fresh readback did not match the requested or prior {name.ToLowerInvariant()} state."),
+                final,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (OperationCanceledException cancellationException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem> { subsystem },
+                cancellationToken,
+                cancellationException);
+        }
+        catch
+        {
+            return new ScopedApplyOutcome(
+                Indeterminate(name, exception),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: true,
+                ConfirmationUnavailable: initial is not null,
+                PreWriteState: initial);
         }
     }
 
@@ -1839,6 +1994,15 @@ public sealed class ControlCoordinator
                                 .RelinquishedDefaultConfirmed
                     : state.GpuClockOffsets?.Current ==
                         GpuClockOffsetSettings.Default));
+
+    private static bool PerformanceStateMatches(
+        ConfirmedDeviceState left,
+        ConfirmedDeviceState right) =>
+        left.Performance == right.Performance
+        && left.CustomPerformance == right.CustomPerformance
+        && left.GpuClockOffsets?.Current == right.GpuClockOffsets?.Current
+        && left.Fans == right.Fans
+        && left.HyperBoostActive == right.HyperBoostActive;
 
     private void EnsureGpuClockOffsetManagementContract(
         DeviceCapabilities capabilities)

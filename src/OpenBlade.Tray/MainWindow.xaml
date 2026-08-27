@@ -567,7 +567,6 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
-                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
@@ -578,24 +577,30 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock x:Uid="MainWindow_TextBlockLaptopPerformance" Text="Laptop performance"
-                                                   Style="{StaticResource CardTitleStyle}"
-                                                   SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{Binding HyperBoostDescription}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   HorizontalAlignment="Left"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="520"
+                                                   Visibility="Collapsed"
+                                                   local:AnimatedVisibility.IsVisible="{Binding HyperBoostActive}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal"
                                                 Spacing="10"
                                                 VerticalAlignment="Center">
                                         <ProgressRing x:Uid="MainWindow_ProgressRingApplyingPowerMode" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{Binding IsPerformanceOperationInProgress}"
+                                                      IsActive="{Binding IsLaptopPerformanceOperationInProgress}"
                                                       AutomationProperties.Name="Applying power mode" />
                                         <local:ResponsiveChoiceSelector x:Uid="MainWindow_DashboardPerformanceSelectorText" x:Name="DashboardPerformanceSelector"
                                                                         CompactMinWidth="150"
                                                                         ExpandedMinWindowWidth="800"
                                                                         AccessibleName="Laptop performance"
-                                                                        IsEnabled="{Binding CanEditPerformance}"
-                                                                        ItemsSource="{Binding AvailableActivePerformanceOptions}"
+                                                                        IsEnabled="{Binding CanSelectLaptopPerformance}"
+                                                                        ItemsSource="{Binding AvailableLaptopPerformanceOptions}"
                                                                         DisplayMemberPath="Label"
-                                                                        SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                                                        SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
                                                                         SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -626,50 +631,6 @@
                                                                     SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
                                                                     Loaded="OnWindowsPowerModeSelectorLoaded"
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
-                                </Grid>
-                            </Border>
-                            <Border x:Name="HyperBoostCard"
-                                    Style="{StaticResource SettingsNeutralSubcardStyle}"
-                                    Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostVisible}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock x:Uid="MainWindow_TextBlockHyperBoost"
-                                                   Text="HyperBoost"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{Binding HyperBoostDescription}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap" />
-                                        <TextBlock x:Name="HyperBoostCoolingPadDisclaimer"
-                                                   Text="{Binding HyperBoostCoolingPadDisclaimer}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap"
-                                                   Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding IsHyperBoostCoolingPadDisclaimerVisible}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="10"
-                                                VerticalAlignment="Center">
-                                        <ProgressRing x:Uid="MainWindow_ProgressRingApplyingHyperBoost"
-                                                      Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{Binding IsHyperBoostOperationInProgress}"
-                                                      AutomationProperties.Name="Applying HyperBoost" />
-                                        <ToggleSwitch x:Name="HyperBoostToggle"
-                                                      x:Uid="MainWindow_HyperBoostToggle"
-                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
-                                                      MinWidth="0"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsOn="{Binding HyperBoostActive, Mode=OneWay}"
-                                                      IsEnabled="{Binding CanToggleHyperBoost}"
-                                                      AutomationProperties.Name="HyperBoost"
-                                                      Toggled="OnHyperBoostToggled" />
-                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
@@ -2320,6 +2281,20 @@
                                                                               IsActive="{x:Bind ViewModel.IsCheckCurrentStateOperationInProgress, Mode=OneWay}"
                                                                               Visibility="{x:Bind ViewModel.IsCheckCurrentStateOperationInProgress, Mode=OneWay}" />
                                                                 <TextBlock x:Uid="MainWindow_TextBlockCheckCurrentState" Text="Check current state" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestoreAttention" HorizontalAlignment="Left"
+                                                                Margin="0,4,0,0"
+                                                                IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
+                                                                Visibility="{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}"
+                                                                Click="OnRecoverHyperBoostRestoreClick"
+                                                                AutomationProperties.Name="Retry saved HyperBoost restore">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <ProgressRing Width="14"
+                                                                              Height="14"
+                                                                              IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
+                                                                              Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
+                                                                <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestoreAttention" Text="Retry saved setting" />
                                                             </StackPanel>
                                                         </Button>
                                                     </StackPanel>
@@ -4544,6 +4519,31 @@
                                                     </Grid>
                                                 </Button>
                                             </Grid>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}"
+                                            Visibility="{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}">
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Uid="MainWindow_TextBlockSavedHyperBoostRestore" Text="Saved HyperBoost restore" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <StackPanel Grid.Column="1" Spacing="8">
+                                                <TextBlock Text="{x:Bind ViewModel.HyperBoostRestoreRecoveryText, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}"
+                                                           TextWrapping="Wrap" />
+                                                <Button x:Uid="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting"
+                                                        HorizontalAlignment="Left"
+                                                        IsEnabled="{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}"
+                                                        Click="OnRecoverHyperBoostRestoreClick"
+                                                        AutomationProperties.Name="Retry saved HyperBoost restore">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <ProgressRing Width="14"
+                                                                      Height="14"
+                                                                      IsActive="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}"
+                                                                      Visibility="{x:Bind ViewModel.IsHyperBoostRestoreRecoveryInProgress, Mode=OneWay}" />
+                                                        <TextBlock x:Uid="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting" Text="Retry saved setting" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">

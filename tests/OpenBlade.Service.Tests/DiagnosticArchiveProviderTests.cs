@@ -41,7 +41,18 @@ public sealed class DiagnosticArchiveProviderTests
                         LightingEffect.Static,
                     },
             },
-        });
+        }, hyperBoostJournalDiagnostics: new DiagnosticHyperBoostOwnershipJournal(
+            Exists: true,
+            Valid: true,
+            State: "OwnedConfirmed",
+            BaseMode: PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            RestoreIntent: new DiagnosticHyperBoostRestoreIntent(
+                PerformancePreset.Silent,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.Default),
+            Sha256: new string('A', 64)));
         var history = new DiagnosticHistory();
         history.RecordSummary(ControlOperationStatus.Blocked, $"Blocked for {secret}");
         var provider = new DiagnosticArchiveProvider(
@@ -54,6 +65,7 @@ public sealed class DiagnosticArchiveProviderTests
             CancellationToken.None);
 
         Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(1, runtime.JournalDiagnosticReads);
         Assert.Equal(0, runtime.HardwareOrMutationCalls);
         Assert.EndsWith(".zip", result.SuggestedFileName, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(Path.GetFileName(result.SuggestedFileName), result.SuggestedFileName);
@@ -61,7 +73,7 @@ public sealed class DiagnosticArchiveProviderTests
 
         using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
         Assert.Equal(
-            ["versions.json", "device.json", "capabilities.json", "configuration.json", "command-results.json", "logs.jsonl"],
+            ["versions.json", "device.json", "capabilities.json", "configuration.json", "command-results.json", "hyperboost-ownership.json", "logs.jsonl"],
             archive.Entries.Select(entry => entry.FullName));
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
@@ -105,6 +117,17 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "RazerAppEngine",
             configuration.RootElement.GetProperty("status.potentialControllers").GetString());
+        Assert.Equal(
+            bool.FalseString,
+            configuration.RootElement.GetProperty("status.hyperBoostRestorePending").GetString());
+        using JsonDocument ownership = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "hyperboost-ownership.json"));
+        Assert.Equal(
+            "OwnedConfirmed",
+            ownership.RootElement.GetProperty("state").GetString());
+        Assert.Equal(
+            new string('A', 64),
+            ownership.RootElement.GetProperty("sha256").GetString());
         Assert.Equal(
             "Enumeration warning: [REDACTED]",
             configuration.RootElement.GetProperty("status.controllerDetectionWarning").GetString());
@@ -448,10 +471,13 @@ public sealed class DiagnosticArchiveProviderTests
 
     private sealed class SnapshotOnlyRuntime(
         ServiceStatusSnapshot status,
-        Rz090581CapabilityDiagnostics? capabilityDiagnostics = null) : IServiceControlRuntime
+        Rz090581CapabilityDiagnostics? capabilityDiagnostics = null,
+        DiagnosticHyperBoostOwnershipJournal? hyperBoostJournalDiagnostics = null)
+        : IServiceControlRuntime
     {
         public int StatusReads { get; private set; }
         public int CapabilityDiagnosticReads { get; private set; }
+        public int JournalDiagnosticReads { get; private set; }
         public int HardwareOrMutationCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus()
@@ -464,6 +490,17 @@ public sealed class DiagnosticArchiveProviderTests
         {
             CapabilityDiagnosticReads++;
             return capabilityDiagnostics;
+        }
+
+        public Task<DiagnosticHyperBoostOwnershipJournal>
+            GetHyperBoostOwnershipJournalDiagnosticsAsync(
+                CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            JournalDiagnosticReads++;
+            return Task.FromResult(
+                hyperBoostJournalDiagnostics
+                    ?? DiagnosticHyperBoostOwnershipJournal.Missing);
         }
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) => Unexpected();

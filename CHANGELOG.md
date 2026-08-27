@@ -10,6 +10,23 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Released the quick-controls WinUI surface when it is dismissed instead of
   keeping it rendered off-screen, so the tray does not retain a discrete-GPU
   context after a game exits.
+- Made HyperBoost a transient Laptop performance choice available from every
+  admitted full-power profile and fan mode. Its guidance now appears only while
+  HyperBoost is selected, and every exit restores exact prior intent without
+  duplicate manual-fan writes.
+- Preserved definitive pre-submission failures through the production device
+  provider and added one delayed fresh-session retry for failed thermal or
+  adjustable-fan pre-write reads, plus one delayed read-only confirmation for
+  indeterminate manual-fan restoration, without retrying submitted writes.
+- Recovered an indeterminate second-channel manual fan entry through paired
+  fresh readback and target-only continuation, without replaying a submitted
+  mode command or exposing raw payloads.
+- Let the lifecycle validator verify the protected HyperBoost journal through
+  read-only service diagnostics, refuse mismatched tool builds before writes,
+  and require exact prior intent after a failed arm.
+- Deferred a HyperBoost power-boundary restore only after a proven pre-submission
+  failure, then rechecked safety once, preserved exact-prior versus current-
+  power-destination targeting, and published the result immediately.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,
@@ -41,8 +58,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Refreshed the fan-mode selector immediately when HyperBoost activates or
   exits so its enabled state stays synchronized with the authoritative control
   gate.
-- Localized the HyperBoost card, its cooling-pad guidance, and its accessibility
-  labels in Simplified Chinese and Russian instead of falling back to English.
+- Localized the HyperBoost performance choice and cooling-pad guidance in
+  Simplified Chinese and Russian instead of falling back to English.
 - Wired the HyperBoost ownership journal into the production Service composition
   so a confirmed activation is durably recorded before lifecycle recovery is
   armed.
@@ -58,9 +75,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reviewed Balanced-and-Automatic protocol, load, adapter, restoration,
   low-power, and unexpected-exit evidence now admits production use without
   the cooling pad. Safety boundaries never retry an indeterminate write.
-- Presented padless HyperBoost status in Quick Controls and noted that full
-  cooling-pad integration is planned for a future update. The toggle is
-  available only when the service reports reviewed write access.
+- Presented padless HyperBoost as a transient Laptop performance choice on the
+  main dashboard and in Quick Controls, while keeping saved profiles unchanged.
+  The choice is available only when the service reports reviewed write access
+  and confirms the required full-power, cooling-pad-absent state.
 - Added complete Simplified Chinese and Russian translations for the tray,
   graphical installer, and native setup and uninstall experiences. Settings
   now lets the tray follow the Windows UI language or use either translation,

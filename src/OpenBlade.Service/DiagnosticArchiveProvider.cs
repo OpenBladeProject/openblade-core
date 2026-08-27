@@ -323,6 +323,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         ServiceStatusSnapshot status = runtime.GetStatus();
         Rz090581CapabilityDiagnostics? capabilityDiagnostics =
             runtime.GetCachedRz090581CapabilityDiagnostics();
+        DiagnosticHyperBoostOwnershipJournal hyperBoostJournalDiagnostics =
+            await runtime.GetHyperBoostOwnershipJournalDiagnosticsAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
         DiagnosticVersions versions = metadata.Versions;
@@ -343,7 +347,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             CreateConfiguration(status, capabilityDiagnostics, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
-            metadata.SensitiveTokens);
+            metadata.SensitiveTokens,
+            hyperBoostJournalDiagnostics);
 
         await using var destination = new MemoryStream();
         await DiagnosticBundleExporter.ExportAsync(destination, bundle, cancellationToken)
@@ -498,6 +503,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["status.revision"] = status.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["status.deviceVerified"] = status.DeviceVerified.ToString(),
             ["status.writesBlocked"] = status.WritesBlocked.ToString(),
+            ["status.hyperBoostRestorePending"] =
+                status.HyperBoostRestorePending.ToString(),
             ["status.potentialControllers"] = string.Join(", ", status.PotentialControllers),
             ["status.controllerDetectionWarning"] =
                 status.ControllerDetectionWarning ?? "Unavailable",

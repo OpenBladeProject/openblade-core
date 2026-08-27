@@ -953,9 +953,24 @@ internal sealed class ProductionBatteryPort :
         try
         {
             EnsureUsableForWrite();
-            ProductionPerformanceFanState current =
-                await QueryPerformanceFanStateCoreAsync(cancellationToken)
+            ProductionPerformanceFanState current;
+            try
+            {
+                current = await QueryPerformanceFanStateCoreAsync(cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.ThermalPreWriteRead,
+                    "The adjustable fan pre-write read failed before submission.",
+                    exception);
+            }
             bool manual = current.Fans == FanMode.Maximum;
             if (requireAutomaticEntry)
             {
@@ -993,8 +1008,23 @@ internal sealed class ProductionBatteryPort :
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                 {
                     poisoned = true;
-                    throw Indeterminate(
-                        "The adjustable fan write outcome is indeterminate.");
+                    bool manualEntryCommand = requireAutomaticEntry && index < 2;
+                    string stage = manualEntryCommand ? "manual entry" : "fan target";
+                    int stageIndex = manualEntryCommand
+                        ? index + 1
+                        : requireAutomaticEntry
+                            ? index - 1
+                            : index + 1;
+                    string failure = result.Failure?.ToString()
+                        ?? "UnexpectedAcknowledgement";
+                    BladeWriteFailurePhase failurePhase = manualEntryCommand && index == 1
+                        ? BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+                        : BladeWriteFailurePhase.Unspecified;
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        failurePhase,
+                        "The adjustable fan write outcome is indeterminate after "
+                        + $"{stage} channel {stageIndex} of 2 ({failure}).");
                 }
 
                 if (index < commands.Count - 1)
@@ -1588,14 +1618,29 @@ internal sealed class ProductionBatteryPort :
 
             if (verifyFinalState || exitedHyperBoost)
             {
-                ProductionPerformanceFanState final =
-                    await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                ProductionPerformanceFanState final;
+                try
+                {
+                    final = await QueryPerformanceFanStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    poisoned = true;
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                        "The thermal commands were acknowledged, but final state readback failed.",
+                        exception);
+                }
+
                 if (!alreadyMatches(final))
                 {
                     poisoned = true;
-                    throw Indeterminate(
-                        "The final thermal state did not match the admitted target.");
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                        "The acknowledged thermal commands did not match the final state readback.");
                 }
             }
         }
@@ -1628,15 +1673,16 @@ internal sealed class ProductionBatteryPort :
             if (submitted)
             {
                 poisoned = true;
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The multi-command thermal write outcome is indeterminate.",
+                    exception);
             }
 
             throw new BladeWriteException(
-                submitted
-                    ? WriteSubmissionState.Indeterminate
-                    : WriteSubmissionState.KnownNotApplied,
-                submitted
-                    ? "The multi-command thermal write outcome is indeterminate."
-                    : "The thermal write was not applied.",
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "The thermal pre-write read failed before submission.",
                 exception);
         }
         finally
@@ -1695,7 +1741,24 @@ internal sealed class ProductionBatteryPort :
                 .ConfigureAwait(false);
         if (adapter.Failure is not null)
         {
-            ThrowReadFailure(adapter.Failure.Value, adapter.Diagnostic, cancellationToken);
+            HidSessionFailureKind failure = adapter.Failure.Value;
+            try
+            {
+                ThrowReadFailure(failure, adapter.Diagnostic, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                IsTransientHyperBoostAdapterReadFailure(failure))
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                    "The HyperBoost adapter preflight read failed before any HyperBoost command was submitted.",
+                    exception);
+            }
         }
 
         bool adapterEligible = padAbsentEligibility
@@ -1708,6 +1771,11 @@ internal sealed class ProductionBatteryPort :
                 "HyperBoost requires a confirmed admitted full-power adapter.");
         }
     }
+
+    private static bool IsTransientHyperBoostAdapterReadFailure(
+        HidSessionFailureKind failure) => failure is
+        HidSessionFailureKind.Timeout or
+        HidSessionFailureKind.NativeIoFailure;
 
     private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
         CancellationToken cancellationToken)

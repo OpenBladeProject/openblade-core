@@ -225,6 +225,12 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>Import profiles</value>
   </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Retry saved HyperBoost restore</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Retry saved HyperBoost restore</value>
+  </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Reapply OpenBlade settings</value>
   </data>
@@ -620,6 +626,9 @@ Not closeable:
     <value>Official Razer firmware update assistant</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Operation error</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Operation error</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1421,6 +1430,12 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>Recent error</value>
   </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>Retry saved setting</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
+    <value>Retry saved setting</value>
+  </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
     <value>Refresh rate</value>
   </data>
@@ -1444,6 +1459,9 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
     <value>Save logs and system details with sensitive information removed.</value>
+  </data>
+  <data name="MainWindow_TextBlockSavedHyperBoostRestore.Text" xml:space="preserve">
+    <value>Saved HyperBoost restore</value>
   </data>
   <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
     <value>Screen region</value>
@@ -1885,15 +1903,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
     <value>Use your Windows display language, or choose a language. Changes apply immediately.</value>
-  </data>
-  <data name="MainWindow_TextBlockHyperBoost.Text" xml:space="preserve">
-    <value>HyperBoost</value>
-  </data>
-  <data name="MainWindow_ProgressRingApplyingHyperBoost.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Applying HyperBoost</value>
-  </data>
-  <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>HyperBoost</value>
   </data>
   <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
     <value>For gamers. By the community.</value>
