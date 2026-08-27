@@ -23,6 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Blocked control writes when an explicit HyperBoost recovery first encounters
   a late-invalid ownership journal, while preserving the journal unchanged for
   manual inspection.
+- Stopped automatic manual-fan curve maintenance after a target write has an
+  indeterminate outcome, and while low-power preparation is active. Exact fan
+  ownership now returns only after a successful explicit fan action, preventing
+  background replay and uncertain shutdown handback.
 - Preserved confirmed battery-protection and lighting state across performance
   and fan readback so thermal-only observations no longer appear as external
   battery-protection changes.
