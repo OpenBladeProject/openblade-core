@@ -137,7 +137,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
 
         ApplyPreferences(preference);
-        TryPrimeSurface();
     }
 
     public MainViewModel ViewModel { get; }
@@ -374,44 +373,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             placement.Rect.Height);
     }
 
-    private void TryPrimeSurface()
-    {
-        try
-        {
-            DisplayArea displayArea = DisplayArea.Primary;
-            RectInt32 workArea = displayArea.WorkArea;
-            var anchor = new TrayDashboardPoint(
-                checked(workArea.X + workArea.Width - 1),
-                checked(workArea.Y + workArea.Height - 1));
-            ResolvedPlacement placement = ResolvePlacement(anchor, displayArea);
-            revealPlacement = placement.Rect;
-            revealStagingY = placement.Reveal.StagingY;
-            revealCurrentY = revealStagingY;
-            revealWindowHandle = WindowNative.GetWindowHandle(this);
-            WindowsPopupPositioner.DisableTransitions(revealWindowHandle);
-            WindowsPopupPositioner.PositionOffscreen(
-                revealWindowHandle,
-                placement.Rect.Width,
-                placement.Rect.Height);
-            Root.UpdateLayout();
-            if (!surfaceShown)
-            {
-                AppWindow.Show(activateWindow: false);
-                surfaceShown = true;
-            }
-            WindowsPopupPositioner.PositionOffscreen(
-                revealWindowHandle,
-                placement.Rect.Width,
-                placement.Rect.Height);
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceWarning(
-                "OpenBlade tray dashboard surface prewarm failed: {0}",
-                exception.Message);
-        }
-    }
-
     private ResolvedPlacement ResolvePlacement(
         TrayDashboardPoint anchor,
         DisplayArea displayArea)
@@ -612,7 +573,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         if (revealHiding)
         {
-            ParkSurface();
+            HideSurface();
             ReportVisibility(false);
             WindowsPopupPositioner.TryRestoreForeground(
                 revealWindowHandle,
@@ -867,25 +828,40 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         return true;
     }
 
-    private void ParkSurface()
+    private void HideSurface()
     {
-        if (!surfaceShown || revealWindowHandle == 0)
+        if (!surfaceShown)
         {
             return;
         }
 
+        if (revealWindowHandle != 0)
+        {
+            try
+            {
+                WindowsPopupPositioner.PositionOffscreen(
+                    revealWindowHandle,
+                    revealPlacement.Width,
+                    revealPlacement.Height);
+                revealCurrentY = revealStagingY;
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade tray dashboard parking failed: {0}",
+                    exception.Message);
+            }
+        }
+
         try
         {
-            WindowsPopupPositioner.PositionOffscreen(
-                revealWindowHandle,
-                revealPlacement.Width,
-                revealPlacement.Height);
-            revealCurrentY = revealStagingY;
+            AppWindow.Hide();
+            surfaceShown = false;
         }
         catch (Exception exception)
         {
             Trace.TraceWarning(
-                "OpenBlade tray dashboard parking failed: {0}",
+                "OpenBlade tray dashboard hide failed: {0}",
                 exception.Message);
         }
 
@@ -994,7 +970,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         if (!TryStartDismissAnimation())
         {
-            ParkSurface();
+            HideSurface();
             ReportVisibility(false);
             WindowsPopupPositioner.TryRestoreForeground(
                 revealWindowHandle,
