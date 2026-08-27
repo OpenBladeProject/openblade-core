@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Contracts;
 
@@ -96,7 +97,8 @@ internal sealed record HyperBoostOwnershipJournal(
 internal readonly record struct HyperBoostOwnershipJournalLoadResult(
     HyperBoostOwnershipJournal? Journal,
     bool Invalid,
-    bool AllowsExplicitRecoveryBaselineCapture = false);
+    bool AllowsExplicitRecoveryBaselineCapture = false,
+    string? Sha256 = null);
 
 public interface IServiceOwnershipJournalCleaner
 {
@@ -252,7 +254,8 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                             document!.SchemaVersion is 3 or CurrentSchemaVersion
                             && journal.State
                                 == HyperBoostOwnershipJournalState.RestorePending
-                            && journal.RecoveryBaseline is null);
+                            && journal.RecoveryBaseline is null,
+                        Sha256: Convert.ToHexString(SHA256.HashData(json)));
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)

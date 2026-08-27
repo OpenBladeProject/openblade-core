@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Service.Tests;
 
@@ -105,6 +106,51 @@ public sealed class DiagnosticBundleExporterTests
 
         Assert.Equal(2, records.Length);
         Assert.All(records, record => JsonDocument.Parse(record).Dispose());
+    }
+
+    [Fact]
+    public async Task ExportAsync_PreservesTypedJournalEvidenceAcrossTokenCollisions()
+    {
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "3.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [],
+            [],
+            ["fan", "A"],
+            new DiagnosticHyperBoostOwnershipJournal(
+                Exists: true,
+                Valid: true,
+                State: "OwnedConfirmed",
+                BaseMode: PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                RestoreIntent: new DiagnosticHyperBoostRestoreIntent(
+                    PerformancePreset.Silent,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.Default),
+                Sha256: new string('A', 64)));
+
+        await using MemoryStream destination = new();
+        await DiagnosticBundleExporter.ExportAsync(
+            destination,
+            bundle,
+            CancellationToken.None);
+
+        destination.Position = 0;
+        using ZipArchive archive = new(destination, ZipArchiveMode.Read, leaveOpen: true);
+        using JsonDocument ownership = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "hyperboost-ownership.json"));
+        Assert.Equal(
+            "OwnedConfirmed",
+            ownership.RootElement.GetProperty("state").GetString());
+        Assert.Equal(
+            new string('A', 64),
+            ownership.RootElement.GetProperty("sha256").GetString());
+        Assert.True(
+            ownership.RootElement.GetProperty("restoreIntent")
+                .TryGetProperty("fanControl", out _));
     }
 
     [Theory]

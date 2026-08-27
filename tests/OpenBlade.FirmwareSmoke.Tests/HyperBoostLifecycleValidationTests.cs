@@ -795,6 +795,76 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.False(observation.Valid);
     }
 
+    [Fact]
+    public void ParseOwnershipJournalDiagnostics_AcceptsServiceOwnedJournal()
+    {
+        HyperBoostLifecycleRestoreIntent expected = RestoreIntent(
+            PerformancePreset.Silent,
+            FanMode.ManualCurve);
+        string serviceJson = JsonSerializer.Serialize(
+            new
+            {
+                exists = true,
+                valid = true,
+                state = "OwnedConfirmed",
+                baseMode = PerformancePreset.Balanced,
+                requiresCoolingPad = false,
+                restoreIntent = expected,
+                sha256 = new string('A', 64),
+            },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        HyperBoostLifecycleJournalDiagnostic? diagnostic =
+            JsonSerializer.Deserialize<HyperBoostLifecycleJournalDiagnostic>(
+                serviceJson,
+                FirmwareSmokeFiles.JsonOptions);
+
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournalDiagnostics(
+                diagnostic);
+
+        Assert.True(observation.Valid);
+        Assert.Equal("OwnedConfirmed", observation.State);
+        Assert.Equal(PerformancePreset.Balanced, observation.BaseMode);
+        Assert.Equal(expected, observation.RestoreIntent);
+        Assert.False(observation.RequiresCoolingPad);
+        Assert.Equal(new string('A', 64), observation.Sha256);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournalDiagnostics_AcceptsConfirmedAbsence()
+    {
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournalDiagnostics(
+                new HyperBoostLifecycleJournalDiagnostic(
+                    Exists: false,
+                    Valid: true,
+                    State: null,
+                    BaseMode: null,
+                    RequiresCoolingPad: null,
+                    RestoreIntent: null,
+                    Sha256: null));
+
+        Assert.Equal(HyperBoostLifecycleJournalObservation.Missing, observation);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournalDiagnostics_FailsClosedWhenEvidenceIsIncomplete()
+    {
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournalDiagnostics(
+                new HyperBoostLifecycleJournalDiagnostic(
+                    Exists: true,
+                    Valid: true,
+                    State: "OwnedConfirmed",
+                    BaseMode: PerformancePreset.Balanced,
+                    RequiresCoolingPad: false,
+                    RestoreIntent: null,
+                    Sha256: new string('A', 64)));
+
+        Assert.True(observation.Exists);
+        Assert.False(observation.Valid);
+    }
+
     [Theory]
     [InlineData("low-power", (int)HyperBoostLifecycleScenario.LowPower)]
     [InlineData("crash", (int)HyperBoostLifecycleScenario.UnexpectedExit)]

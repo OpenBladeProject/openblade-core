@@ -28,6 +28,14 @@ public interface IServiceControlRuntime
 
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
+    Task<DiagnosticHyperBoostOwnershipJournal>
+        GetHyperBoostOwnershipJournalDiagnosticsAsync(
+            CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(DiagnosticHyperBoostOwnershipJournal.Missing);
+    }
+
     Task ActivateUserAsync(
         SecurityIdentifier userSid,
         CancellationToken cancellationToken) => Task.CompletedTask;
@@ -727,6 +735,48 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() =>
         Volatile.Read(ref rz090581CapabilityDiagnostics);
+
+    public async Task<DiagnosticHyperBoostOwnershipJournal>
+        GetHyperBoostOwnershipJournalDiagnosticsAsync(
+            CancellationToken cancellationToken)
+    {
+        HyperBoostOwnershipJournalLoadResult load =
+            await hyperBoostOwnershipJournalStore.LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+        return CreateHyperBoostOwnershipJournalDiagnostics(load);
+    }
+
+    internal static DiagnosticHyperBoostOwnershipJournal
+        CreateHyperBoostOwnershipJournalDiagnostics(
+            HyperBoostOwnershipJournalLoadResult load)
+    {
+        if (load.Journal is not { } journal)
+        {
+            return load.Invalid
+                ? new DiagnosticHyperBoostOwnershipJournal(
+                    Exists: true,
+                    Valid: false,
+                    State: null,
+                    BaseMode: null,
+                    RequiresCoolingPad: null,
+                    RestoreIntent: null,
+                    Sha256: null)
+                : DiagnosticHyperBoostOwnershipJournal.Missing;
+        }
+
+        return new DiagnosticHyperBoostOwnershipJournal(
+            Exists: true,
+            Valid: !load.Invalid && load.Sha256 is not null,
+            journal.State.ToString(),
+            journal.BaseMode,
+            journal.RequiresCoolingPad,
+            new DiagnosticHyperBoostRestoreIntent(
+                journal.RestoreIntent.Performance,
+                journal.RestoreIntent.CustomPerformance,
+                journal.RestoreIntent.GpuClockTuning,
+                journal.RestoreIntent.FanControl),
+            load.Sha256);
+    }
 
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,

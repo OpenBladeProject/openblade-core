@@ -55,6 +55,15 @@ internal sealed record HyperBoostLifecycleJournalObservation(
         new(false, true, null, null, null, null, null);
 }
 
+internal sealed record HyperBoostLifecycleJournalDiagnostic(
+    bool Exists,
+    bool Valid,
+    string? State,
+    PerformancePreset? BaseMode,
+    bool? RequiresCoolingPad,
+    HyperBoostLifecycleRestoreIntent? RestoreIntent,
+    string? Sha256);
+
 internal sealed record HyperBoostLifecycleRestoreIntent(
     PerformancePreset Performance,
     CustomPerformanceSettings? CustomPerformance,
@@ -205,7 +214,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             collector.CaptureAsync,
             ValidateInstalledGeneration,
             CaptureInstalledServiceProcess,
-            ObserveInstalledOwnershipJournalAsync,
+            token => ObserveInstalledOwnershipJournalAsync(client, token),
             token => ReadDiagnosticsAsync(client, token),
             static (duration, token) => Task.Delay(duration, token),
             TimeProvider.System)
@@ -917,22 +926,33 @@ internal sealed class HyperBoostLifecycleValidationRunner
         !probe.Succeeded || probe.Identity == identity;
 
     private static async Task<HyperBoostLifecycleJournalObservation>
-        ObserveInstalledOwnershipJournalAsync(CancellationToken cancellationToken)
+        ObserveInstalledOwnershipJournalAsync(
+            IFirmwareSmokeClient client,
+            CancellationToken cancellationToken)
     {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "OpenBlade",
-            OwnershipJournalFileName);
-        if (!File.Exists(path))
+        DiagnosticArchive diagnostic = await client.ExportDiagnosticsAsync(
+                liveReadingsEnabled: false,
+                cancellationToken)
+            .ConfigureAwait(false);
+        using var stream = new MemoryStream(diagnostic.ZipBytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        ZipArchiveEntry? entry = archive.GetEntry("hyperboost-ownership.json");
+        if (entry is null)
         {
-            return HyperBoostLifecycleJournalObservation.Missing;
+            return InvalidJournalObservation();
         }
 
         try
         {
-            byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken)
-                .ConfigureAwait(false);
-            return ParseOwnershipJournal(bytes);
+            await using Stream content = entry.Open();
+            HyperBoostLifecycleJournalDiagnostic? journal =
+                await JsonSerializer.DeserializeAsync<
+                        HyperBoostLifecycleJournalDiagnostic>(
+                        content,
+                        FirmwareSmokeFiles.JsonOptions,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            return ParseOwnershipJournalDiagnostics(journal);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -940,16 +960,53 @@ internal sealed class HyperBoostLifecycleValidationRunner
         }
         catch
         {
-            return new HyperBoostLifecycleJournalObservation(
-                true,
-                false,
-                null,
-                null,
-                null,
-                null,
-                null);
+            return InvalidJournalObservation();
         }
     }
+
+    internal static HyperBoostLifecycleJournalObservation
+        ParseOwnershipJournalDiagnostics(
+            HyperBoostLifecycleJournalDiagnostic? journal)
+    {
+        if (journal is null)
+        {
+            return InvalidJournalObservation();
+        }
+        if (!journal.Exists)
+        {
+            return journal.Valid
+                ? HyperBoostLifecycleJournalObservation.Missing
+                : InvalidJournalObservation();
+        }
+
+        if (!journal.Valid
+            || journal.State is null
+            || journal.BaseMode != PerformancePreset.Balanced
+            || journal.RequiresCoolingPad is null
+            || journal.RestoreIntent is not { IsWellFormed: true }
+            || !IsSha256(journal.Sha256))
+        {
+            return InvalidJournalObservation();
+        }
+
+        return new HyperBoostLifecycleJournalObservation(
+            true,
+            true,
+            journal.State,
+            journal.BaseMode,
+            journal.RestoreIntent,
+            journal.RequiresCoolingPad,
+            journal.Sha256);
+    }
+
+    private static HyperBoostLifecycleJournalObservation InvalidJournalObservation() =>
+        new(true, false, null, null, null, null, null);
+
+    private static bool IsSha256(string? value) =>
+        value is { Length: 64 }
+        && value.All(character =>
+            character is >= '0' and <= '9'
+                or >= 'A' and <= 'F');
 
     internal static HyperBoostLifecycleJournalObservation ParseOwnershipJournal(
         byte[] bytes)

@@ -18,6 +18,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Recovered an indeterminate second-channel manual fan entry through paired
   fresh readback and target-only continuation, without replaying a submitted
   mode command or exposing raw payloads.
+- Let the lifecycle validator verify the protected HyperBoost journal through
+  read-only service diagnostics without weakening its file permissions.
 - Resynchronized the playback-mute key light after a healthy service-status
   subscription reconnects, so an unmuted F1 does not remain red.
 - Kept translator imports fail-closed for unadmitted locales, malformed UTF-8,

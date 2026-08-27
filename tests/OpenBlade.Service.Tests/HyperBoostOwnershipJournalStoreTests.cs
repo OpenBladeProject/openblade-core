@@ -51,6 +51,14 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+        Assert.Matches("^[0-9A-F]{64}$", loaded.Sha256);
+        DiagnosticHyperBoostOwnershipJournal diagnostics =
+            ServiceControlRuntime.CreateHyperBoostOwnershipJournalDiagnostics(loaded);
+        Assert.True(diagnostics.Exists);
+        Assert.True(diagnostics.Valid);
+        Assert.Equal(state.ToString(), diagnostics.State);
+        Assert.Equal(PerformancePreset.Performance, diagnostics.BaseMode);
+        Assert.Equal(loaded.Sha256, diagnostics.Sha256);
     }
 
     [Theory]
@@ -129,6 +137,7 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
 
         Assert.True(loaded.Invalid);
         Assert.Null(loaded.Journal);
+        Assert.Null(loaded.Sha256);
         Assert.True(File.Exists(path));
     }
 

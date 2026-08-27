@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
@@ -30,6 +31,31 @@ public sealed record DiagnosticCommandResult(
     string Status,
     string? Detail);
 
+public sealed record DiagnosticHyperBoostRestoreIntent(
+    PerformancePreset Performance,
+    CustomPerformanceSettings? CustomPerformance,
+    GpuClockTuningSettings? GpuClockTuning,
+    FanControlSettings FanControl);
+
+public sealed record DiagnosticHyperBoostOwnershipJournal(
+    bool Exists,
+    bool Valid,
+    string? State,
+    PerformancePreset? BaseMode,
+    bool? RequiresCoolingPad,
+    DiagnosticHyperBoostRestoreIntent? RestoreIntent,
+    string? Sha256)
+{
+    public static DiagnosticHyperBoostOwnershipJournal Missing { get; } = new(
+        Exists: false,
+        Valid: true,
+        State: null,
+        BaseMode: null,
+        RequiresCoolingPad: null,
+        RestoreIntent: null,
+        Sha256: null);
+}
+
 public sealed record DiagnosticBundle(
     DiagnosticVersions Versions,
     DiagnosticDeviceIdentity Device,
@@ -37,7 +63,8 @@ public sealed record DiagnosticBundle(
     IReadOnlyDictionary<string, string> Configuration,
     IReadOnlyList<DiagnosticCommandResult> CommandResults,
     IReadOnlyList<string> LogLines,
-    IReadOnlyCollection<string> SensitiveTokens);
+    IReadOnlyCollection<string> SensitiveTokens,
+    DiagnosticHyperBoostOwnershipJournal? HyperBoostOwnership = null);
 
 public static class DiagnosticBundleExporter
 {
@@ -61,6 +88,18 @@ public static class DiagnosticBundleExporter
         await WriteJsonEntryAsync(archive, "capabilities.json", bundle.Capabilities, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "configuration.json", bundle.Configuration, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "command-results.json", bundle.CommandResults, bundle.SensitiveTokens, cancellationToken);
+        if (bundle.HyperBoostOwnership is { } ownership)
+        {
+            // This narrow typed record contains no user or device identifiers.
+            // Free-text substring redaction would corrupt its property names or
+            // journal hash and make the lifecycle evidence unverifiable.
+            await WriteJsonEntryAsync(
+                archive,
+                "hyperboost-ownership.json",
+                ownership,
+                sensitiveTokens: [],
+                cancellationToken);
+        }
         await WriteLogEntryAsync(archive, bundle.LogLines, bundle.SensitiveTokens, cancellationToken);
     }
 
