@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserved confirmed battery-protection and lighting state across performance
+  and fan readback so thermal-only observations no longer appear as external
+  battery-protection changes.
 - Made HyperBoost a transient Laptop performance choice available from every
   admitted full-power profile and fan mode. Its guidance now appears only while
   HyperBoost is selected, and every exit restores exact prior intent without

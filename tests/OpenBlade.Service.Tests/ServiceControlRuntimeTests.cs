@@ -7863,6 +7863,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        ConfirmedBatteryState? batteryBeforeAction =
+            context.Runtime.GetStatus().ConfirmedState?.Battery;
+        LightingSettings? lightingBeforeAction =
+            context.Runtime.GetStatus().ConfirmedState?.Lighting;
         context.Device.UseScopedPerformanceFanRead = true;
         context.Device.BeforeQueuedPerformanceFailure = () =>
             context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -7895,9 +7899,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.Silent,
             context.Runtime.GetStatus().DesiredState.Performance.Value);
-        Assert.DoesNotContain(
-            DeviceSubsystem.Performance,
-            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            batteryBeforeAction,
+            context.Runtime.GetStatus().ConfirmedState?.Battery);
+        Assert.Equal(
+            lightingBeforeAction,
+            context.Runtime.GetStatus().ConfirmedState?.Lighting);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
@@ -9202,6 +9210,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.UntilPowerSourceChange),
             new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
             CancellationToken.None);
+        ConfirmedBatteryState? batteryBeforeAutomatic =
+            context.Runtime.GetStatus().ConfirmedState?.Battery;
+        LightingSettings? lightingBeforeAutomatic =
+            context.Runtime.GetStatus().ConfirmedState?.Lighting;
         context.Device.UseScopedPerformanceFanRead = true;
         context.Device.BeforeQueuedFanFailure = () =>
             context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -9235,7 +9247,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(PerformancePreset.Balanced, status.ConfirmedState!.Performance);
         Assert.Equal(FanMode.Automatic, status.ConfirmedState.Fans);
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
-        Assert.DoesNotContain(DeviceSubsystem.Fans, status.ExternalChanges);
+        Assert.Equal(batteryBeforeAutomatic, status.ConfirmedState.Battery);
+        Assert.Equal(lightingBeforeAutomatic, status.ConfirmedState.Lighting);
+        Assert.Empty(status.ExternalChanges);
         Assert.Empty(status.UnconfirmedWrites);
         Assert.False(status.WritesBlocked);
     }
