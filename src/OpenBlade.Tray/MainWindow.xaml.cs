@@ -237,7 +237,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (localizationSnapshotMode)
         {
             Root.RequestedTheme = ElementTheme.Light;
-            AppTitleBar.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black);
+            var snapshotTitleForeground = new SolidColorBrush(
+                Microsoft.UI.Colors.Black);
+            AppTitleBar.Foreground = snapshotTitleForeground;
+            AppTitleBar.Resources["TitleBarDeactivatedForegroundBrush"] =
+                snapshotTitleForeground;
         }
         micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
