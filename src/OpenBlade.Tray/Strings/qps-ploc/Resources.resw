@@ -225,6 +225,12 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>[!! Ímpórt prófílés ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Rétrý sávéd HýpérBóóst réstóré ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Rétrý sávéd HýpérBóóst réstóré ~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Réápplý OpenBlade séttíngs ~~~~~~ !!]</value>
   </data>
@@ -620,6 +626,9 @@ Nót clóséáblé:
     <value>[!! Óffícíál Razer fírmwáré úpdáté ássístánt ~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Ópérátíón érrór ~~~~~ !!]</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Ópérátíón érrór ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1421,6 +1430,12 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>[!! Récént érrór ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>[!! Rétrý sávéd séttíng ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
+    <value>[!! Rétrý sávéd séttíng ~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
     <value>[!! Réfrésh ráté ~~~~ !!]</value>
   </data>
@@ -1444,6 +1459,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
     <value>[!! Sávé lógs ánd sýstém détáíls wíth sénsítívé ínfórmátíón rémóvéd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockSavedHyperBoostRestore.Text" xml:space="preserve">
+    <value>[!! Sávéd HýpérBóóst réstóré ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
     <value>[!! Scréén régíón ~~~~~ !!]</value>
@@ -1885,15 +1903,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
     <value>[!! Úsé ýóúr Windows díspláý lángúágé, ór chóósé á lángúágé. Chángés ápplý ímmédíátélý. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockHyperBoost.Text" xml:space="preserve">
-    <value>[!! HýpérBóóst ~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_ProgressRingApplyingHyperBoost.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Ápplýíng HýpérBóóst ~~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! HýpérBóóst ~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
     <value>[!! Fór gámérs. Bý thé cómmúnítý. ~~~~~~~~~ !!]</value>

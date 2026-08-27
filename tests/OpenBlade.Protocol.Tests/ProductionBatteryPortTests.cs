@@ -76,6 +76,229 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task HyperBoost_TransientAdapterReadFailureIsTaggedBeforeSubmission()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        DeviceCommandCatalog hyperBoostCatalog = Catalog(
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x07, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x07, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x00, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState>
+                {
+                    AdapterPowerState.FullPower330W,
+                },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(
+                CoolingPadConnectionState.Absent));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+            error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Equal(3, session.Commands.Count);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => command.Arguments.Span.Contains((byte)0x07));
+    }
+
+    [Fact]
+    public async Task HyperBoost_FinalConfirmationReadFailurePreservesPostAckPhase()
+    {
+        byte[] first = [0x01, 0x01, 0x07, 0x00];
+        byte[] second = [0x01, 0x02, 0x07, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x12, 0x11]),
+            Success(first),
+            Success(second),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.Timeout));
+        DeviceCommandCatalog hyperBoostCatalog = Catalog(
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableFirstAction,
+                0x0D,
+                0x02,
+                first),
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableSecondAction,
+                0x0D,
+                0x02,
+                second),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x00, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState>
+                {
+                    AdapterPowerState.FullPower330W,
+                },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(
+                CoolingPadConnectionState.Absent));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
+        Assert.IsType<TimeoutException>(error.InnerException);
+        Assert.Equal(6, session.Commands.Count);
+        Assert.Equal(
+            ["01010700", "01020700"],
+            session.Commands
+                .Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span))
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task HyperBoost_FinalConfirmationCancellationPreservesPostAckPhase()
+    {
+        byte[] first = [0x01, 0x01, 0x07, 0x00];
+        byte[] second = [0x01, 0x02, 0x07, 0x00];
+        using var cancellation = new CancellationTokenSource();
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x12, 0x11]),
+            Success(first),
+            Success(second))
+        {
+            BeforeResult = (commandCount, token) =>
+            {
+                if (commandCount == 6)
+                {
+                    cancellation.Cancel();
+                    token.ThrowIfCancellationRequested();
+                }
+            },
+        };
+        DeviceCommandCatalog hyperBoostCatalog = Catalog(
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableFirstAction,
+                0x0D,
+                0x02,
+                first),
+            Fixture(
+                ProductionBatteryPort.HyperBoostEnableSecondAction,
+                0x0D,
+                0x02,
+                second),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00]),
+            Fixture(
+                ProductionBatteryPort.HyperBoostRestoreSecondAction,
+                0x0D,
+                0x02,
+                [0x01, 0x02, 0x00, 0x00]));
+        await using var port = new ProductionBatteryPort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            new ValidationRunContext(),
+            TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState>
+                {
+                    AdapterPowerState.FullPower330W,
+                },
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ObservedOnly),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new FixedHyperBoostEligibilitySource(
+                CoolingPadConnectionState.Absent));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
+        Assert.IsType<OperationCanceledException>(error.InnerException);
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
     {
         var session = new ScriptedSession(Success([0x01, 0x05, 0x00, 0x00]));
@@ -491,6 +714,149 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task AdjustableFanPreWriteReadFailureReportsExactPreSubmissionPhase()
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Single(session.Commands);
+        Assert.Equal(0x82, session.Commands[0].CommandId);
+    }
+
+    [Fact]
+    public async Task AdjustableFanFailureAfterSubmissionRemainsIndeterminate()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                FanControlSettings.FromLegacy(FanMode.Maximum),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Contains("manual entry channel 2 of 2", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.NativeIoFailure), error.Message);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanFirstManualEntryFailureIsNotContinuable()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                FanControlSettings.FromLegacy(FanMode.Maximum),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("manual entry channel 1 of 2", error.Message);
+        Assert.Equal(3, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanTargetFailureReportsSanitizedStageAndChannel()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x25];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            Success(state2),
+            Success(speed1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.Timeout));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanControlAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("fan target channel 2 of 2", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
+        Assert.DoesNotContain("0102", error.Message);
+        Assert.Equal(6, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task AdjustableFanTargetUpdateFailureReportsTargetStageAndChannel()
+    {
+        byte[] manualState1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] manualState2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x20];
+        var session = new ScriptedSession(
+            Success(manualState1),
+            Success(manualState2),
+            Success(speed1),
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.Timeout));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanTargetsAsync(3200, 3400, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Contains("fan target channel 2 of 2", error.Message);
+        Assert.DoesNotContain("manual entry", error.Message);
+        Assert.Contains(nameof(HidSessionFailureKind.Timeout), error.Message);
+        Assert.DoesNotContain("0102", error.Message);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task ExactDeviceFixedFanSetterUsesCapturedRangeAndRejectsUnadmittedModes()
     {
         byte[] state1 = [0x01, 0x01, 0x00, 0x01];
@@ -552,6 +918,22 @@ public sealed class ProductionBatteryPortTests
             () => port.SetFanTargetsAsync(3000, 3200, default));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task CurveTargetUpdateRefusesMismatchedManualChannelState()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanTargetsAsync(3000, 3200, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
         Assert.Equal(2, session.Commands.Count);
     }
 
@@ -626,6 +1008,37 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task ThermalPreWriteReadFailureReportsExactPreSubmissionPhase()
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.NativeIoFailure));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceSilentFirstAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x01, 0x05, 0x00]),
+                Fixture(
+                    ProductionBatteryPort.PerformanceSilentSecondAction,
+                    0x0D,
+                    0x02,
+                    [0x01, 0x02, 0x05, 0x00])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.IsType<IOException>(error.InnerException);
+        Assert.Single(session.Commands);
+        Assert.Equal(0x82, session.Commands[0].CommandId);
     }
 
     [Fact]
@@ -870,6 +1283,9 @@ public sealed class ProductionBatteryPortTests
                 default));
 
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
         Assert.Equal(6, session.Commands.Count);
     }
 
@@ -1538,6 +1954,8 @@ public sealed class ProductionBatteryPortTests
 
         public List<RazerCommandSpec> Commands { get; } = [];
 
+        public Action<int, CancellationToken>? BeforeResult { get; init; }
+
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId,
@@ -1547,6 +1965,7 @@ public sealed class ProductionBatteryPortTests
             cancellationToken.ThrowIfCancellationRequested();
             _ = assignTransactionId();
             Commands.Add(command);
+            BeforeResult?.Invoke(Commands.Count, cancellationToken);
             return Task.FromResult(results.Count == 0
                 ? new HidSessionResult<ReadOnlyMemory<byte>>(
                     default,
@@ -1559,6 +1978,12 @@ public sealed class ProductionBatteryPortTests
             Disposition = RazerCommandSessionDisposition.FullyDisposed;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class FixedHyperBoostEligibilitySource(
+        CoolingPadConnectionState state) : IHyperBoostEligibilitySource
+    {
+        public CoolingPadConnectionState ObserveCoolingPad() => state;
     }
 
     private sealed class CancelAfterFirstWriteSession(CancellationTokenSource cancellation)

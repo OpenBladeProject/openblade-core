@@ -27,52 +27,65 @@ public sealed class CapabilityPresentationTests
     ];
 
     [Fact]
-    public void MainWindow_HyperBoostUsesCapabilityGatedConfirmedToggle()
+    public void MainWindow_HyperBoostUsesCapabilityGatedLaptopPerformanceChoice()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
-        XElement card = NamedElement(document, "Border", "HyperBoostCard");
-        string presentation = card.ToString();
-
-        Assert.Equal(
-            "{Binding IsHyperBoostVisible}",
-            Attribute(card, "AnimatedVisibility.IsVisible"));
-        XElement toggle = Assert.Single(
-            card.Descendants(),
-            element => element.Name.LocalName == "ToggleSwitch");
-        Assert.Equal(
-            "{Binding HyperBoostActive, Mode=OneWay}",
-            Attribute(toggle, "IsOn"));
-        Assert.Equal("{Binding CanToggleHyperBoost}", Attribute(toggle, "IsEnabled"));
-        Assert.Equal("OnHyperBoostToggled", Attribute(toggle, "Toggled"));
-        Assert.Equal("MainWindow_HyperBoostToggle", Attribute(toggle, "Uid"));
-        Assert.Equal("HyperBoost", Attribute(toggle, "AutomationProperties.Name"));
-        Assert.Contains("{Binding HyperBoostDescription}", presentation, StringComparison.Ordinal);
-        XElement disclaimer = NamedElement(
+        XElement selector = NamedElement(
             document,
-            "TextBlock",
-            "HyperBoostCoolingPadDisclaimer");
+            "ResponsiveChoiceSelector",
+            "DashboardPerformanceSelector");
+        XElement row = selector.Ancestors().First(element =>
+            element.Name.LocalName == "Border");
+
+        Assert.DoesNotContain(document.Descendants(), element =>
+            Attribute(element, "Name") == "HyperBoostCard"
+            || Attribute(element, "Name") == "HyperBoostToggle");
         Assert.Equal(
-            "{Binding HyperBoostCoolingPadDisclaimer}",
-            Attribute(disclaimer, "Text"));
-        Assert.Equal("Wrap", Attribute(disclaimer, "TextWrapping"));
-        Assert.Equal("Collapsed", Attribute(disclaimer, "Visibility"));
+            "{Binding AvailableLaptopPerformanceOptions}",
+            Attribute(selector, "ItemsSource"));
         Assert.Equal(
-            "{Binding IsHyperBoostCoolingPadDisclaimerVisible}",
-            Attribute(disclaimer, "AnimatedVisibility.IsVisible"));
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
+            Attribute(selector, "SelectedItem"));
+        Assert.Equal(
+            "{Binding CanSelectLaptopPerformance}",
+            Attribute(selector, "IsEnabled"));
+        XElement guidance = Assert.Single(row.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{Binding HyperBoostDescription}");
+        Assert.Equal(
+            "{Binding HyperBoostActive}",
+            Attribute(guidance, "AnimatedVisibility.IsVisible"));
         XElement progress = Assert.Single(
-            card.Descendants(),
+            row.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
         Assert.Equal(
-            "MainWindow_ProgressRingApplyingHyperBoost",
-            Attribute(progress, "Uid"));
-        Assert.Equal(
-            "{Binding IsHyperBoostOperationInProgress}",
+            "{Binding IsLaptopPerformanceOperationInProgress}",
             Attribute(progress, "IsActive"));
-        XElement title = Assert.Single(
-            card.Descendants(),
-            element => element.Name.LocalName == "TextBlock"
-                && Attribute(element, "Text") == "HyperBoost");
-        Assert.Equal("MainWindow_TextBlockHyperBoost", Attribute(title, "Uid"));
+    }
+
+    [Fact]
+    public void MainWindow_HyperBoostSelectionRoutesThroughUnifiedOperation()
+    {
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        int handlerStart = window.IndexOf(
+            "private async void OnDashboardPerformanceChanged(",
+            StringComparison.Ordinal);
+        int handlerEnd = window.IndexOf(
+            "private void OnWindowsPowerModeChanged(",
+            handlerStart,
+            StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        string handler = window[handlerStart..handlerEnd];
+
+        Assert.Contains("LaptopPerformanceOption selected", handler, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CanSelectLaptopPerformance", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.SetLaptopPerformanceOptionAsync(",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("selector.RestoreAuthoritativeSelection();", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("HyperBoostToggle", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnHyperBoostToggled", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -431,7 +444,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(28, animated.Length);
+        Assert.Equal(27, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -549,7 +562,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Padding") == compactPaddingReference)
             .ToArray();
 
-        Assert.Equal(15, compactRows.Length);
+        Assert.Equal(14, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -568,7 +581,6 @@ public sealed class CapabilityPresentationTests
         });
         Assert.Equal(
             [
-                "Laptop performance",
                 "GPU core clock offset",
                 "GPU memory clock offset",
                 "CPU",
@@ -592,7 +604,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(9, animatedCompactRows.Length);
+        Assert.Equal(8, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -859,13 +871,13 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
-            "{Binding AvailableActivePerformanceOptions}",
+            "{Binding AvailableLaptopPerformanceOptions}",
             Attribute(performance, "ItemsSource"));
         Assert.Equal(
-            "{Binding SelectedPerformanceOption, Mode=OneWay}",
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
-            "{Binding CanEditPerformance}",
+            "{Binding CanSelectLaptopPerformance}",
             Attribute(performance, "IsEnabled"));
         Assert.All(
             new[]
@@ -1114,6 +1126,7 @@ public sealed class CapabilityPresentationTests
         string[] forbiddenAssignments =
         [
             "selector.SelectedItem = ViewModel.SelectedPerformanceOption;",
+            "selector.SelectedItem = ViewModel.SelectedLaptopPerformanceOption;",
             "selector.SelectedItem = ViewModel.SelectedWindowsPowerModeOption;",
             "selector.SelectedItem = selector.Name == \"DashboardCustomCpuSelector\"",
             "selector.SelectedItem = ViewModel.SelectedFanModeOption;",

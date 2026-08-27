@@ -10,7 +10,13 @@ public enum ControlOperationStatus
     Failed,
 }
 
-public sealed record ControlOperationResult(ControlOperationStatus Status, string Message);
+public sealed record ControlOperationResult(ControlOperationStatus Status, string Message)
+{
+    // Optional so an omitted result remains safe: the tray performs the requested
+    // performance write when the authoritative HyperBoost restoration is unknown.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PerformancePreset? HyperBoostRestoredPerformance { get; init; }
+}
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]
@@ -32,6 +38,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate")]
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
+[JsonDerivedType(typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
@@ -206,6 +213,9 @@ public sealed record SetFirmwareCompatibilityOverrideRequest(
 public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
+public sealed record RecoverHyperBoostRestoreRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record SetLightingSuppressionRequest(
     int Version,
     Guid RequestId,
@@ -325,6 +335,8 @@ public sealed record ServiceStatusSnapshot(
     public bool? BatteryProtectionOverride { get; init; }
 
     public PadlessHyperBoostEligibilityState PadlessHyperBoostEligibility { get; init; }
+
+    public bool HyperBoostRestorePending { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

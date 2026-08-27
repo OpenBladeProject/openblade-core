@@ -225,6 +225,12 @@
   <data name="MainWindow_ButtonImportProfiles.Content" xml:space="preserve">
     <value>Импортировать профили</value>
   </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreAttention.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Повторить восстановление HyperBoost</value>
+  </data>
+  <data name="MainWindow_ButtonRecoverHyperBoostRestoreTroubleshooting.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Повторить восстановление HyperBoost</value>
+  </data>
   <data name="MainWindow_ButtonReapplyOpenBladeSettings.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Повторно применить параметры OpenBlade</value>
   </data>
@@ -620,6 +626,9 @@
     <value>Помощник по официальным обновлениям прошивки Razer</value>
   </data>
   <data name="MainWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Ошибка операции</value>
+  </data>
+  <data name="TrayDashboardWindow_OperationErrorInfoBarText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Ошибка операции</value>
   </data>
   <data name="MainWindow_ProfileExport_FailedBody" xml:space="preserve">
@@ -1424,6 +1433,12 @@
   <data name="MainWindow_TextBlockRecentError.Text" xml:space="preserve">
     <value>Последняя ошибка</value>
   </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreAttention.Text" xml:space="preserve">
+    <value>Повторить сохранённую настройку</value>
+  </data>
+  <data name="MainWindow_TextBlockRecoverHyperBoostRestoreTroubleshooting.Text" xml:space="preserve">
+    <value>Повторить сохранённую настройку</value>
+  </data>
   <data name="MainWindow_TextBlockRefreshRate.Text" xml:space="preserve">
     <value>Частота обновления</value>
   </data>
@@ -1447,6 +1462,9 @@
   </data>
   <data name="MainWindow_TextBlockSaveLogsAndSystemDetailsWithSensitive.Text" xml:space="preserve">
     <value>Сохранить журналы и сведения о системе с удалённой конфиденциальной информацией.</value>
+  </data>
+  <data name="MainWindow_TextBlockSavedHyperBoostRestore.Text" xml:space="preserve">
+    <value>Сохранённое восстановление HyperBoost</value>
   </data>
   <data name="MainWindow_TextBlockScreenRegion.Text" xml:space="preserve">
     <value>Область экрана</value>
@@ -1888,15 +1906,6 @@
   </data>
   <data name="MainWindow_TextBlockUseYourWindowsDisplayLanguageOrChooseA.Text" xml:space="preserve">
     <value>Используйте язык интерфейса Windows или выберите язык. Изменения применяются сразу.</value>
-  </data>
-  <data name="MainWindow_TextBlockHyperBoost.Text" xml:space="preserve">
-    <value>HyperBoost</value>
-  </data>
-  <data name="MainWindow_ProgressRingApplyingHyperBoost.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Применение HyperBoost</value>
-  </data>
-  <data name="MainWindow_HyperBoostToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>HyperBoost</value>
   </data>
   <data name="SpecialKey_Action_AccessibleName" xml:space="preserve">
     <value>Действие клавиши {0}</value>

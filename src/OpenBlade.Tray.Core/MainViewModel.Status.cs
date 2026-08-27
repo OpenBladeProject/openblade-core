@@ -10,6 +10,7 @@ public sealed partial class MainViewModel
         left.DeviceVerified == right.DeviceVerified
         && left.ControlAccess == right.ControlAccess
         && left.WritesBlocked == right.WritesBlocked
+        && left.HyperBoostRestorePending == right.HyperBoostRestorePending
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
             StringComparer.Ordinal)

@@ -73,7 +73,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private ResponsiveChoiceSelector? windowsPowerModeSelector;
     private bool changingCustomPerformanceSelection;
     private bool changingGpuClockTuning;
-    private bool changingHyperBoost;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
@@ -1701,6 +1700,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             () => ViewModel.CheckCurrentStateAsync(CancellationToken.None),
             nameof(OnCheckCurrentStateClick));
 
+    private async void OnRecoverHyperBoostRestoreClick(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => ViewModel.RecoverHyperBoostRestoreAsync(CancellationToken.None),
+            nameof(OnRecoverHyperBoostRestoreClick));
+
     private async void OnWindowsDynamicLightingToggled(
         object sender,
         RoutedEventArgs args) =>
@@ -1825,15 +1831,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
             || sender is not ResponsiveChoiceSelector selector
-            || args.SelectedItem is not PerformancePresetOption selected
-            || selected.Value == ViewModel.SelectedPerformance)
+            || args.SelectedItem is not LaptopPerformanceOption selected
+            || selected == ViewModel.SelectedLaptopPerformanceOption)
         {
             return;
         }
 
         changingPerformanceSelection = true;
-        if (ViewModel.SetPerformanceCommand is not AsyncRelayCommand command
-            || !command.CanExecute(selected.Value))
+        if (!ViewModel.CanSelectLaptopPerformance)
         {
             selector.RestoreAuthoritativeSelection();
             changingPerformanceSelection = false;
@@ -1842,7 +1847,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            await command.ExecuteAsync(selected.Value);
+            await ViewModel.SetLaptopPerformanceOptionAsync(
+                selected,
+                CancellationToken.None);
         }
         catch (Exception exception)
         {
@@ -2257,35 +2264,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             toggle.IsOn = ViewModel.IsGpuClockTuningEnabled;
             changingGpuClockTuning = false;
-        }
-    }
-
-    private async void OnHyperBoostToggled(object sender, RoutedEventArgs args) =>
-        await RunHandlerAsync(
-            () => HandleHyperBoostToggledAsync(sender),
-            nameof(OnHyperBoostToggled));
-
-    private async Task HandleHyperBoostToggledAsync(object sender)
-    {
-        if (changingHyperBoost
-            || Volatile.Read(ref disposed) != 0
-            || sender is not ToggleSwitch toggle
-            || toggle.IsOn == ViewModel.HyperBoostActive)
-        {
-            return;
-        }
-
-        changingHyperBoost = true;
-        try
-        {
-            await ViewModel.SetHyperBoostEnabledAsync(
-                toggle.IsOn,
-                CancellationToken.None);
-        }
-        finally
-        {
-            toggle.IsOn = ViewModel.HyperBoostActive;
-            changingHyperBoost = false;
         }
     }
 

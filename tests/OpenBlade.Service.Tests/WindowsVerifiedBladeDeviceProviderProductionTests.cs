@@ -7,6 +7,113 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Fact]
+    public async Task ReadPerformanceFanState_SkipsUnrelatedBatteryQueries()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Performance },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: true,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Performance,
+                FanMode.Automatic))
+        {
+            ProtectionFailure = new IOException("unrelated protection failure"),
+            TemporaryFailure = new IOException("unrelated temporary-charge failure"),
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadPerformanceFanStateAsync(default);
+
+        Assert.Equal(PerformancePreset.Performance, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Null(state.Battery);
+        Assert.Null(state.Lighting);
+        Assert.Equal(0, port.ProtectionQueryCount);
+        Assert.Equal(0, port.TemporaryQueryCount);
+        Assert.Equal(1, port.PerformanceFanQueryCount);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task ReadPerformanceFanState_RetriesTransientFailureWithFreshSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var failedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            PerformanceFanFailure = new IOException("temporary thermal read failure"),
+        };
+        var recoveredPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(
+            capabilities,
+            failedPort,
+            recoveredPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadPerformanceFanStateAsync(default);
+
+        Assert.Equal(PerformancePreset.Balanced, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, failedPort.DisposeCount);
+        Assert.Equal(1, recoveredPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadPerformanceFanState_DoesNotRetrySemanticMismatch()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var failedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            PerformanceFanFailure = new RazerProtocolException(
+                "unrecognized thermal state",
+                HidProtocolValidationFailure.PayloadValidator),
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var factory = new FakeProductionFactory(
+            capabilities,
+            failedPort,
+            unusedPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException exception = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadPerformanceFanStateAsync(default));
+
+        Assert.Contains("PayloadValidator", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, failedPort.DisposeCount);
+        Assert.Equal(0, unusedPort.DisposeCount);
+    }
+
+    [Fact]
     public async Task ReadCustomPerformance_DoesNotQueryUnmanagedGpuClockOffsets()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
@@ -1627,14 +1734,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     public async Task IndeterminatePortFailurePreservesSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var portFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "sanitized port diagnostic");
         var port = new FakeProductionPort(
             capabilities,
             BatteryValidationSetting.Limit80,
             temporary: null)
         {
-            WriteFailure = new BladeWriteException(
-                WriteSubmissionState.Indeterminate,
-                "ambiguous submission"),
+            WriteFailure = portFailure,
         };
         var factory = new FakeProductionFactory(capabilities, port);
         using var provider = ReadyProvider(factory);
@@ -1643,12 +1751,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
+        Assert.Same(portFailure, error);
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal("sanitized port diagnostic", error.Message);
         Assert.Equal(1, factory.OpenCount);
     }
 
     [Fact]
-    public async Task KnownNotAppliedPortFailureRetainsIndeterminateProviderMapping()
+    public async Task KnownNotAppliedPortFailureRetainsSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var portFailure = new BladeWriteException(
@@ -1668,14 +1778,608 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
-        Assert.Same(portFailure, error.InnerException);
+        Assert.Same(portFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("port rejected write", error.Message);
         Assert.Equal(1, factory.OpenCount);
     }
 
     [Fact]
-    public async Task KnownNotAppliedOpenFailureRetainsIndeterminateProviderMapping()
+    public async Task ThermalPreWriteReadFailureRetriesOneFreshVerifiedSession()
+    {
+        var retryDelays = new List<TimeSpan>();
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (delay, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetPerformanceAsync(PerformancePreset.Balanced, default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(1, secondPort.SetPerformanceCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+    }
+
+    [Fact]
+    public async Task ThermalPreWriteRetryDelayCancellationStopsBeforeFreshSession()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, cancellationToken) =>
+            {
+                cancellation.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPerformanceAsync(
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(0, secondPort.SetPerformanceCount);
+    }
+
+    [Fact]
+    public async Task FixedFanPreWriteReadFailureRetriesOneFreshVerifiedSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+            }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var requested = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+
+        await device.SetFanControlAsync(requested, default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(1, secondPort.SetFanModeCount);
+        Assert.Equal(requested, secondPort.LastFanControl);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed, 3700, 3700)]
+    [InlineData(FanMode.Maximum, 3700, 5400)]
+    [InlineData(FanMode.ManualCurve, 3700, 5400)]
+    public async Task SecondFanManualEntryFailureContinuesTargetsOnlyOnFreshSession(
+        FanMode mode,
+        int fixedSpeedRpm,
+        int expectedTargetRpm)
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+                FanMode.Maximum,
+                FanMode.ManualCurve,
+            }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = SecondFanManualEntryFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetFanControlAsync(
+            new FanControlSettings(mode, fixedSpeedRpm, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(1, secondPort.SetFanTargetsCount);
+        Assert.Equal(expectedTargetRpm, secondPort.LastFan1TargetRpm);
+        Assert.Equal(expectedTargetRpm, secondPort.LastFan2TargetRpm);
+    }
+
+    [Fact]
+    public async Task SecondFanManualEntryContinuationDoesNotRetryTargetFailure()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = SecondFanManualEntryFailure(),
+        };
+        var targetFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected target failure.");
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = targetFailure,
+        };
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, _) => Task.CompletedTask);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+                default));
+
+        Assert.Same(targetFailure, error);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(1, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SecondFanManualEntryContinuationPreWriteFailureRemainsIndeterminate()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = SecondFanManualEntryFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, _) => Task.CompletedTask);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Contains("before any fan target was submitted", error.Message);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(1, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SecondFanManualEntryContinuationCancellationStopsBeforeFreshSession()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = SecondFanManualEntryFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(
+            factory,
+            preWriteRetryDelay: (_, cancellationToken) =>
+            {
+                cancellation.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetFanControlAsync(
+                new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task RepeatedThermalPreWriteReadFailureStopsAfterFreshSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        BladeWriteException secondFailure = ThermalPreWriteReadFailure();
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = secondFailure,
+        };
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPerformanceAsync(PerformancePreset.Balanced, default));
+
+        Assert.Same(secondFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(1, secondPort.SetPerformanceCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostTransientAdapterPreflightRetriesOneFreshVerifiedSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetHyperBoostAsync(
+            enabled: true,
+            PerformancePreset.Balanced,
+            default);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(1, secondPort.SetHyperBoostCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostRepeatedAdapterPreflightFailureStopsAfterFreshSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+        };
+        var secondFailure = HyperBoostAdapterPreflightFailure();
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = secondFailure,
+        };
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Same(secondFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(1, secondPort.SetHyperBoostCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostCanceledAfterAdapterPreflightDoesNotOpenFreshSession()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+            BeforeHyperBoostFailure = cancellation.Cancel,
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            unusedPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("canceled", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(0, unusedPort.SetHyperBoostCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostCanceledAfterFreshSessionOpenDoesNotInvokeSetter()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            unusedPort)
+        {
+            AfterOpen = openCount =>
+            {
+                if (openCount == 2)
+                {
+                    cancellation.Cancel();
+                }
+            },
+        };
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("canceled", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(0, unusedPort.SetHyperBoostCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, unusedPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostKnownNotAppliedFreshSetterRetainsSubmissionClassification()
+    {
+        using var cancellation = new CancellationTokenSource();
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = HyperBoostAdapterPreflightFailure(),
+        };
+        var setterFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "Injected setter refusal after adapter preflight.");
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = setterFailure,
+            BeforeHyperBoostFailure = cancellation.Cancel,
+        };
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                cancellation.Token));
+
+        Assert.Same(setterFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("Injected setter refusal after adapter preflight.", error.Message);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(1, secondPort.SetHyperBoostCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(1, secondPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task HyperBoostIndeterminatePortFailureIsNeverRetried()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var firstFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            "ambiguous HyperBoost submission");
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            unusedPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetHyperBoostAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(0, unusedPort.SetHyperBoostCount);
+    }
+
+    [Fact]
+    public async Task KnownNotAppliedOpenFailureRetainsSubmissionClassification()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var factory = new FailingProductionFactory(
@@ -1687,10 +2391,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal("The hardware write outcome is indeterminate.", error.Message);
-        BladeWriteException openFailure = Assert.IsType<BladeWriteException>(error.InnerException);
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, openFailure.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal("The hardware write was blocked before submission.", error.Message);
+        Assert.Null(error.InnerException);
         Assert.Equal(1, factory.OpenCount);
     }
 
@@ -1718,12 +2421,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IProductionBatteryPortFactory factory,
         IGpuClockOffsetController? gpuClockOffsets = null,
-        IGpuActivitySource? gpuActivitySource = null) => new(
+        IGpuActivitySource? gpuActivitySource = null,
+        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
             factory,
             new UnavailableFanRpmFactory(),
             gpuClockOffsets: gpuClockOffsets,
-            gpuActivitySource: gpuActivitySource);
+            gpuActivitySource: gpuActivitySource,
+            preWriteRetryDelay: preWriteRetryDelay ?? ((_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }));
 
     private static DeviceCapabilities BatteryCapabilities(
         IReadOnlySet<int> limits,
@@ -1778,6 +2487,21 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         "interleaved response",
         HidProtocolValidationFailure.TransactionMismatch);
 
+    private static BladeWriteException HyperBoostAdapterPreflightFailure() => new(
+        WriteSubmissionState.KnownNotApplied,
+        BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+        "The HyperBoost adapter preflight read failed before any HyperBoost command was submitted.");
+
+    private static BladeWriteException ThermalPreWriteReadFailure() => new(
+        WriteSubmissionState.KnownNotApplied,
+        BladeWriteFailurePhase.ThermalPreWriteRead,
+        "Injected thermal pre-write read failure.");
+
+    private static BladeWriteException SecondFanManualEntryFailure() => new(
+        WriteSubmissionState.Indeterminate,
+        BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+        "Injected second fan manual-entry failure.");
+
     private sealed class UnavailableFanRpmFactory : IFanRpmQueryRunFactory
     {
         public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
@@ -1797,16 +2521,20 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public int OpenCount { get; private set; }
 
+        public Action<int>? AfterOpen { get; init; }
+
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             OpenCount++;
-            return Task.FromResult(ports.Count == 0
+            HidSessionResult<IProductionBatteryPort> result = ports.Count == 0
                 ? new HidSessionResult<IProductionBatteryPort>(
                     null,
                     HidSessionFailureKind.NativeIoFailure)
-                : new HidSessionResult<IProductionBatteryPort>(ports.Dequeue(), null));
+                : new HidSessionResult<IProductionBatteryPort>(ports.Dequeue(), null);
+            AfterOpen?.Invoke(OpenCount);
+            return Task.FromResult(result);
         }
     }
 
@@ -1877,8 +2605,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public BladeWriteException? WriteFailure { get; set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
+        public Exception? PerformanceFanFailure { get; init; }
         public Exception? StartupAnimationFailure { get; init; }
         public Action? AfterPerformanceWrite { get; init; }
+        public Action? BeforeHyperBoostFailure { get; init; }
         public TaskCompletionSource ProtectionQueryStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource WriteStarted { get; } =
@@ -1891,10 +2621,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int Rz090581CapabilityDiagnosticsQueryCount { get; private set; }
         public int SetPerformanceCount { get; private set; }
         public int SetCustomPerformanceCount { get; private set; }
+        public int SetHyperBoostCount { get; private set; }
         public int SetFanModeCount { get; private set; }
+        public int SetFanTargetsCount { get; private set; }
         public PerformancePreset? LastPerformance { get; private set; }
         public CustomPerformanceSettings? LastCustomPerformance { get; private set; }
         public FanMode? LastFanMode { get; private set; }
+        public FanControlSettings? LastFanControl { get; private set; }
+        public int? LastFan1TargetRpm { get; private set; }
+        public int? LastFan2TargetRpm { get; private set; }
         public int SetLimitCount { get; private set; }
         public int SetProtectionOffCount { get; private set; }
         public int DisposeCount { get; private set; }
@@ -1935,8 +2670,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             PerformanceFanQueryCount++;
-            return Task.FromResult(
-                performanceFan ?? new ProductionPerformanceFanState(null, null));
+            return PerformanceFanFailure is null
+                ? Task.FromResult(
+                    performanceFan ?? new ProductionPerformanceFanState(null, null))
+                : Task.FromException<ProductionPerformanceFanState>(
+                    PerformanceFanFailure);
         }
 
         public Task<AdapterPowerState> QueryAdapterPowerStateAsync(
@@ -2007,6 +2745,19 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             }
         }
 
+        public Task SetHyperBoostAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetHyperBoostCount++;
+            BeforeHyperBoostFailure?.Invoke();
+            return WriteFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(WriteFailure);
+        }
+
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -2017,14 +2768,23 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public Task SetFanControlAsync(
             FanControlSettings value,
-            CancellationToken cancellationToken) =>
-            SetFanModeAsync(value.Mode, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            LastFanControl = value;
+            return SetFanModeAsync(value.Mode, cancellationToken);
+        }
 
         public Task SetFanTargetsAsync(
             int fan1Rpm,
             int fan2Rpm,
-            CancellationToken cancellationToken) =>
-            WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetFanTargetsCount++;
+            LastFan1TargetRpm = fan1Rpm;
+            LastFan2TargetRpm = fan2Rpm;
+            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+        }
 
         public async Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)
         {

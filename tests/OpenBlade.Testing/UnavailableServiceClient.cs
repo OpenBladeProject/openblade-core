@@ -116,6 +116,10 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("Changed settings cannot be reapplied.");
 
+    public virtual Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(
+        CancellationToken token) =>
+        Unavailable("The saved HyperBoost restore cannot be retried.");
+
     public virtual Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

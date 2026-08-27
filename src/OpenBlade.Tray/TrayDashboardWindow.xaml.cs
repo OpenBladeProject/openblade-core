@@ -1167,8 +1167,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         if (changingPerformance
             || Volatile.Read(ref disposed) != 0
             || sender is not Microsoft.UI.Xaml.Controls.ListView selector
-            || selector.SelectedItem is not PerformancePresetOption selected
-            || selected.Value == ViewModel.SelectedPerformance)
+            || selector.SelectedItem is not LaptopPerformanceOption selected
+            || selected == ViewModel.SelectedLaptopPerformanceOption)
         {
             return;
         }
@@ -1176,7 +1176,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         await ApplyPerformanceOptionAsync(selected);
     }
 
-    private async Task ApplyPerformanceOptionAsync(PerformancePresetOption selected)
+    private async Task ApplyPerformanceOptionAsync(LaptopPerformanceOption selected)
     {
         if (changingPerformance || Volatile.Read(ref disposed) != 0)
         {
@@ -1186,10 +1186,11 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         changingPerformance = true;
         try
         {
-            if (ViewModel.SetPerformanceCommand is AsyncRelayCommand command
-                && command.CanExecute(selected.Value))
+            if (ViewModel.CanSelectLaptopPerformance)
             {
-                await command.ExecuteAsync(selected.Value);
+                await ViewModel.SetLaptopPerformanceOptionAsync(
+                    selected,
+                    CancellationToken.None);
             }
         }
         catch (Exception exception)
@@ -1200,7 +1201,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            PerformanceDetail.SelectedItem = ViewModel.SelectedPerformanceOption;
+            ViewModel.RestoreLaptopPerformanceSelection();
             changingPerformance = false;
         }
     }
@@ -1243,19 +1244,19 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         }
         finally
         {
-            FansDetail.SelectedItem = ViewModel.SelectedFanModeOption;
+            ViewModel.RestoreFanModeSelection();
             changingFans = false;
         }
     }
 
     private async void OnPerformanceCycleClick(object sender, RoutedEventArgs args)
     {
-        IReadOnlyList<PerformancePresetOption> options =
-            ViewModel.AvailableActivePerformanceOptions;
+        IReadOnlyList<LaptopPerformanceOption> options =
+            ViewModel.AvailableLaptopPerformanceOptions;
         int next = TrayDashboardInteractionPolicy.ResolveNextIndex(
             options.Count,
             FindIndex(options, option =>
-                option.Value == ViewModel.SelectedPerformance));
+                option == ViewModel.SelectedLaptopPerformanceOption));
         if (next >= 0)
         {
             await ApplyPerformanceOptionAsync(options[next]);

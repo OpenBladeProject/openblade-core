@@ -59,7 +59,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         TimeSpan? shutdownBudget = null,
         Action? onClosing = null,
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
-        IGpuActivitySource? gpuActivitySource = null)
+        IGpuActivitySource? gpuActivitySource = null,
+        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -79,7 +80,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             gpuActivitySource ?? InactiveGpuActivitySource.Instance,
             logger,
             effectiveShutdownBudget,
-            onClosing);
+            onClosing,
+            preWriteRetryDelay ?? Task.Delay);
     }
 
     public void SetAllowUntestedFirmware(bool enabled)
@@ -320,7 +322,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IPadlessHyperBoostLifecycleValidationDevice,
         IDisposable
     {
-        private const int MaximumBatteryReadAttempts = 3;
+        private const int MaximumStateReadAttempts = 3;
+        // A failed thermal pre-write exchange can leave the EC busy through the
+        // full protocol timeout. Wait that window plus a bounded settling margin
+        // before the only fresh-session retry.
+        private static readonly TimeSpan PreWriteRetryDelay =
+            TimeSpan.FromSeconds(5);
 
         private readonly record struct TransitionLightingReadResult(
             LightingSettings? State,
@@ -334,6 +341,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
         private readonly TimeSpan shutdownBudget;
         private readonly Action? onClosing;
+        private readonly Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay;
         private readonly object lifecycleSync = new();
         private readonly object gpuClockOffsetManagementSync = new();
         private readonly object lightingPortOpenDiagnosticSync = new();
@@ -412,7 +420,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             IGpuActivitySource gpuActivitySource,
             ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
             TimeSpan shutdownBudget,
-            Action? onClosing)
+            Action? onClosing,
+            Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
@@ -422,6 +431,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             this.logger = logger;
             this.shutdownBudget = shutdownBudget;
             this.onClosing = onClosing;
+            this.preWriteRetryDelay = preWriteRetryDelay;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -523,6 +533,86 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 confirmTransientLightingOff: true,
                 cancellationToken);
 
+        public async Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                bool observedTimeout = false;
+                for (int attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        return await ReadPerformanceFanStateOnceAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (RazerProtocolException exception) when (
+                        attempt < MaximumStateReadAttempts - 1 &&
+                        exception.ValidationFailure is
+                            HidProtocolValidationFailure.TransactionMismatch or
+                            HidProtocolValidationFailure.CommandClassMismatch or
+                            HidProtocolValidationFailure.CommandIdMismatch)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException or TimeoutException)
+                    {
+                        observedTimeout |= exception is TimeoutException;
+                        if (attempt >= MaximumStateReadAttempts - 1)
+                        {
+                            if (observedTimeout && exception is IOException)
+                            {
+                                throw new TimeoutException(
+                                    "Performance and fan state query timed out.");
+                            }
+
+                            throw;
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException("Performance and fan state query timed out.");
+            }
+            catch (RazerProtocolException exception)
+            {
+                throw new RazerProtocolException(
+                    $"Performance and fan state query failed protocol validation ({exception.ValidationFailure}).",
+                    exception.ValidationFailure);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch (FailClosedDeviceException exception)
+            {
+                throw new IOException(exception.Message);
+            }
+            catch
+            {
+                throw new IOException("Performance and fan state query failed.");
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         private async Task<PowerTransitionDeviceStateReadResult> ReadStateCoreAsync(
             bool confirmTransientLightingOff,
             CancellationToken cancellationToken)
@@ -546,7 +636,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             .ConfigureAwait(false);
                     }
                     catch (RazerProtocolException exception) when (
-                        attempt < MaximumBatteryReadAttempts - 1 &&
+                        attempt < MaximumStateReadAttempts - 1 &&
                         exception.ValidationFailure is
                             HidProtocolValidationFailure.TransactionMismatch or
                             HidProtocolValidationFailure.CommandClassMismatch or
@@ -561,7 +651,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         exception is IOException or TimeoutException)
                     {
                         observedTimeout |= exception is TimeoutException;
-                        if (attempt >= MaximumBatteryReadAttempts - 1)
+                        if (attempt >= MaximumStateReadAttempts - 1)
                         {
                             if (observedTimeout && exception is IOException)
                             {
@@ -695,6 +785,41 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LogoLighting = logo,
                     },
                     lightingRead.OffConfirmationUnavailable);
+            }
+        }
+
+        private async Task<ConfirmedDeviceState> ReadPerformanceFanStateOnceAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<IProductionBatteryPort> opened =
+                await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (opened.Value is not { } port)
+            {
+                ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                throw new IOException(
+                    "Performance and fan state query did not provide a verified session.");
+            }
+
+            await using (port.ConfigureAwait(false))
+            {
+                if (opened.Failure is not null)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                }
+
+                ProductionPerformanceFanState performanceFan =
+                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                return new ConfirmedDeviceState(
+                    performanceFan.Performance,
+                    performanceFan.Fans,
+                    Battery: null,
+                    Lighting: null)
+                {
+                    HyperBoostActive = performanceFan.HyperBoostActive,
+                    CustomPerformance = performanceFan.CustomPerformance,
+                    GpuClockOffsets = ReadManagedGpuClockOffsets(),
+                };
             }
         }
 
@@ -1184,7 +1309,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     enabled,
                     baseMode,
                     cancellationToken),
-                cancellationToken);
+                cancellationToken,
+                retryHyperBoostAdapterPreflight: true);
 
         public Task EnablePadlessHyperBoostLifecycleValidationAsync(
             CancellationToken cancellationToken)
@@ -1201,7 +1327,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken)
                     : Task.FromException(new CapabilityUnavailableException(
                         "The exact validation-only pad-less HyperBoost port is unavailable.")),
-                cancellationToken);
+                cancellationToken,
+                retryHyperBoostAdapterPreflight: true);
         }
 
         public async Task SetGpuClockOffsetsAsync(
@@ -1499,12 +1626,27 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         {
             ArgumentNullException.ThrowIfNull(value);
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null;
+            if (DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+                && capabilities.FanSpeedRange is { } fanSpeedRange)
+            {
+                int targetRpm = value.Mode == FanMode.Fixed
+                    ? value.FixedSpeedRpm
+                    : fanSpeedRange.MaximumRpm;
+                continueAfterSecondFanManualEntry = port => port.SetFanTargetsAsync(
+                    targetRpm,
+                    targetRpm,
+                    cancellationToken);
+            }
+
             return capabilities.FanModes.Contains(value.Mode)
                 && (value.Mode != FanMode.Fixed
                     || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
-                    cancellationToken)
+                    cancellationToken,
+                    continueAfterSecondFanManualEntry:
+                        continueAfterSecondFanManualEntry)
                 : RejectProductionWrite("The requested fan control is not admitted.");
         }
 
@@ -1896,10 +2038,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             Func<IProductionBatteryPort, Task> write,
             CancellationToken cancellationToken,
             Action? beforeWrite = null,
-            Action? afterWrite = null)
+            Action? afterWrite = null,
+            bool retryHyperBoostAdapterPreflight = false,
+            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
+            BladeWriteException? exhaustedRetriablePreWrite = null;
+            BladeWriteException? canceledRetriablePreWrite = null;
+            BladeWriteException? manualEntryContinuationFailure = null;
+            BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
+            bool retryPreWriteOpen = false;
+            bool continuingAfterSecondFanManualEntry = false;
+            Func<IProductionBatteryPort, Task> attemptWrite = write;
             try
             {
                 await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
@@ -1920,47 +2071,180 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             try
             {
-                beforeWrite?.Invoke();
-                cancellationToken.ThrowIfCancellationRequested();
-                HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
-                if (opened.Value is not { } port)
+                const int attemptCount = 2;
+                for (int attempt = 0; attempt < attemptCount; attempt++)
                 {
-                    throw MapWriteOpenFailure(opened.Failure);
-                }
-
-                await using (port.ConfigureAwait(false))
-                {
-                    if (opened.Failure is not null)
-                    {
-                        throw MapWriteOpenFailure(opened.Failure);
-                    }
-
-                    await write(port).ConfigureAwait(false);
+                    bool isFreshPreWriteRetry = attempt > 0;
+                    retryPreWriteOpen = isFreshPreWriteRetry;
                     try
                     {
-                        afterWrite?.Invoke();
+                        if (isFreshPreWriteRetry)
+                        {
+                            await preWriteRetryDelay(
+                                    PreWriteRetryDelay,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+
+                        beforeWrite?.Invoke();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        HidSessionResult<IProductionBatteryPort> opened =
+                            await batteryFactory.OpenAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                        if (opened.Value is not { } port)
+                        {
+                            throw MapWriteOpenFailure(opened.Failure);
+                        }
+
+                        await using (port.ConfigureAwait(false))
+                        {
+                            if (opened.Failure is not null)
+                            {
+                                throw MapWriteOpenFailure(opened.Failure);
+                            }
+
+                            cancellationToken.ThrowIfCancellationRequested();
+                            retryPreWriteOpen = false;
+                            await attemptWrite(port).ConfigureAwait(false);
+                            try
+                            {
+                                afterWrite?.Invoke();
+                            }
+                            catch (BladeWriteException exception)
+                            {
+                                // Preserve only the paired post-write failure.
+                                // Other port failures retain the provider's
+                                // conservative indeterminate mapping unless an
+                                // exact pre-submission phase is handled below.
+                                afterWriteFailure = exception;
+                                throw;
+                            }
+                        }
+
+                        return;
                     }
-                    catch (BladeWriteException exception)
+                    catch (BladeWriteException exception) when (
+                        continuingAfterSecondFanManualEntry
+                        && exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
                     {
-                        // Preserve only the paired post-write failure. BladeWriteException
-                        // instances from the port retain the existing indeterminate mapping.
-                        afterWriteFailure = exception;
+                        throw new BladeWriteException(
+                            WriteSubmissionState.Indeterminate,
+                            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                            "Adjustable fan manual entry may have applied, but the fresh target-only continuation stopped before any fan target was submitted. "
+                            + exception.Message,
+                            exception);
+                    }
+                    catch (BladeWriteException exception) when (
+                        exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+                        && (exception.FailurePhase
+                                == BladeWriteFailurePhase.ThermalPreWriteRead
+                            || retryHyperBoostAdapterPreflight
+                                && exception.FailurePhase
+                                    == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead))
+                    {
+                        if (attempt + 1 < attemptCount)
+                        {
+                            retryFailurePhase = exception.FailurePhase;
+                            logger?.LogInformation(
+                                "{PreWritePhase} failed before submission; retrying once on a fresh verified session.",
+                                exception.FailurePhase);
+                            continue;
+                        }
+
+                        exhaustedRetriablePreWrite = exception;
                         throw;
                     }
+                    catch (BladeWriteException exception) when (
+                        exception.SubmissionState == WriteSubmissionState.Indeterminate
+                        && exception.FailurePhase
+                            == BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+                        && continueAfterSecondFanManualEntry is not null
+                        && attempt + 1 < attemptCount)
+                    {
+                        retryFailurePhase = exception.FailurePhase;
+                        manualEntryContinuationFailure = exception;
+                        continuingAfterSecondFanManualEntry = true;
+                        // The fresh port's target-only setter first proves that
+                        // both channel reads agree on manual mode. It cannot
+                        // replay either possibly submitted entry command.
+                        attemptWrite = continueAfterSecondFanManualEntry;
+                        logger?.LogInformation(
+                            "The second adjustable-fan manual-entry submission was indeterminate; opening one fresh verified session to reconfirm both manual channels before continuing with fan targets only.");
+                        continue;
+                    }
+                    catch (BladeWriteException exception) when (
+                        isFreshPreWriteRetry
+                        && retryPreWriteOpen
+                        && cancellationToken.IsCancellationRequested
+                        && exception.SubmissionState
+                            == WriteSubmissionState.KnownNotApplied)
+                    {
+                        canceledRetriablePreWrite = new BladeWriteException(
+                            WriteSubmissionState.KnownNotApplied,
+                            retryFailurePhase,
+                            "The fresh pre-write read retry was canceled before any hardware command was submitted.",
+                            exception);
+                        throw canceledRetriablePreWrite;
+                    }
                 }
+            }
+            catch (CapabilityUnavailableException exception) when (
+                continuingAfterSecondFanManualEntry)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                    "Adjustable fan manual entry may have applied, but the fresh target-only continuation was refused before any fan target was submitted.",
+                    exception);
             }
             catch (CapabilityUnavailableException)
             {
                 throw;
             }
             catch (BladeWriteException exception)
-                when (ReferenceEquals(exception, afterWriteFailure))
+                when (ReferenceEquals(exception, afterWriteFailure)
+                    || ReferenceEquals(
+                        exception,
+                        exhaustedRetriablePreWrite)
+                    || ReferenceEquals(exception, canceledRetriablePreWrite))
             {
+                throw;
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState
+                    == WriteSubmissionState.KnownNotApplied)
+            {
+                // The port owns the exact submission boundary. Preserve its
+                // definitive pre-submission classification instead of making a
+                // failed open, query, or precondition look like an uncertain write.
+                throw;
+            }
+            catch (BladeWriteException)
+            {
+                // The production port owns the exact submission boundary and
+                // emits sanitized failure details. Preserve its indeterminate
+                // result without retrying or replacing the diagnostic.
                 throw;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (continuingAfterSecondFanManualEntry)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                        "Adjustable fan manual entry may have applied, but the fresh target-only continuation was canceled before a fan target submission was confirmed.",
+                        manualEntryContinuationFailure);
+                }
+
+                if (retryPreWriteOpen)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        retryFailurePhase,
+                        "The fresh pre-write read retry was canceled before any hardware command was submitted.");
+                }
+
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
                     "The hardware write was canceled after a verified session opened.");

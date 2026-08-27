@@ -93,11 +93,22 @@
         </Grid.Resources>
 
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="DashboardPage">
+        <InfoBar x:Uid="TrayDashboardWindow_OperationErrorInfoBarText"
+                 x:Name="QuickControlsOperationErrorInfoBar"
+                 IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                 Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                 Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
+                 Severity="Error"
+                 IsClosable="True"
+                 Margin="14,8,14,4"
+                 AutomationProperties.Name="Operation error" />
+
+        <Grid x:Name="DashboardPage" Grid.Row="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
@@ -133,7 +144,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Uid="TrayDashboardWindow_ButtonCyclePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
-                                        IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
+                                        IsEnabled="{Binding CanSelectLaptopPerformance, Mode=OneWay}"
                                         Click="OnPerformanceCycleClick"
                                         AutomationProperties.Name="Cycle performance mode">
                                     <FontIcon Glyph="&#xEC4A;"
@@ -144,7 +155,7 @@
                                         BorderThickness="1,0,0,0">
                                     <Button x:Uid="TrayDashboardWindow_ButtonChoosePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
-                                            IsEnabled="{Binding CanEditPerformance, Mode=OneWay}"
+                                            IsEnabled="{Binding CanSelectLaptopPerformance, Mode=OneWay}"
                                             Click="OnPerformanceDetailsClick"
                                             AutomationProperties.Name="Choose performance mode">
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" />
@@ -154,7 +165,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockPerformance" Text="Performance" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding SelectedPerformanceOption.Label, Mode=OneWay}"
+                            <TextBlock Text="{Binding ActivePerformanceLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -483,7 +494,7 @@
             </Border>
         </Grid>
 
-        <Grid x:Name="DetailPage" Visibility="Collapsed">
+        <Grid x:Name="DetailPage" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -510,9 +521,9 @@
             <Grid Grid.Row="1">
                 <ListView x:Uid="TrayDashboardWindow_PerformanceDetailText" x:Name="PerformanceDetail"
                           Margin="14,2,14,10"
-                          ItemsSource="{Binding AvailableActivePerformanceOptions, Mode=OneWay}"
+                          ItemsSource="{Binding AvailableLaptopPerformanceOptions, Mode=OneWay}"
                           DisplayMemberPath="Label"
-                          SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                          SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
                           SelectionMode="Single"
                           SelectionChanged="OnPerformanceChanged"
                           AutomationProperties.Name="Performance choices" />
@@ -571,7 +582,7 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 Height="48"
                 Padding="20,0"
                 BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"

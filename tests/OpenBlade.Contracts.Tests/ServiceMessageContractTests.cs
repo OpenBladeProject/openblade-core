@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFortyNineAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(49, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -39,6 +39,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetLightingRefreshRateRequest), "setLightingRefreshRate"),
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
             (typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings"),
+            (typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore"),
             (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame"),
@@ -64,6 +65,7 @@ public sealed class ServiceMessageContractTests
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PadlessHyperBoostEligibility",
+            "HyperBoostRestorePending",
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride",
             "BatteryPolicyOverride", "BatteryProtectionOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",

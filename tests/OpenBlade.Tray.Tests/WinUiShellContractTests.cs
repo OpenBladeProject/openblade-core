@@ -194,7 +194,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            6,
+            5,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -1343,6 +1343,23 @@ public sealed class WinUiShellContractTests
             "ViewModel.CheckCurrentStateAsync(CancellationToken.None)",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"Retry saved HyperBoost restore\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanRecoverHyperBoostRestore, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasPendingHyperBoostRestore, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("OnRecoverHyperBoostRestoreClick", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RecoverHyperBoostRestoreAsync(CancellationToken.None)",
+            window,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1394,7 +1411,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -3050,6 +3067,38 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayDashboardShowsOperationFailuresAcrossDashboardAndDetailPages()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "TrayDashboardWindow.xaml"));
+        XElement operationError = NamedElement(
+            document,
+            "InfoBar",
+            "QuickControlsOperationErrorInfoBar");
+
+        Assert.Equal("Error", Attribute(operationError, "Severity"));
+        Assert.Equal("True", Attribute(operationError, "IsClosable"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
+            Attribute(operationError, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
+            Attribute(operationError, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}",
+            Attribute(operationError, "Message"));
+        Assert.Equal(
+            "TrayDashboardWindow_OperationErrorInfoBarText",
+            Attribute(operationError, "Uid"));
+        Assert.Equal("1", Attribute(
+            NamedElement(document, "Grid", "DashboardPage"),
+            "Grid.Row"));
+        Assert.Equal("1", Attribute(
+            NamedElement(document, "Grid", "DetailPage"),
+            "Grid.Row"));
+    }
+
+    [Fact]
     public void TrayDashboardUsesSingleClickAndSettingsOwnedLiveCustomization()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
@@ -3494,7 +3543,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("Padding=\"20,14,20,10\"", dashboardXaml, StringComparison.Ordinal);
         int dashboardPage = dashboardXaml.IndexOf(
-            "<Grid x:Name=\"DashboardPage\">",
+            "<Grid x:Name=\"DashboardPage\"",
             StringComparison.Ordinal);
         int controlScroller = dashboardXaml.IndexOf(
             "<ScrollViewer x:Name=\"ControlScroller\"",
@@ -3594,6 +3643,43 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("AutomationProperties.Name=\"Open OpenBlade\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "ItemsSource=\"{Binding AvailableLaptopPerformanceOptions, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{Binding SelectedLaptopPerformanceOption, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{Binding ActivePerformanceLabel, Mode=OneWay}\"",
+            dashboardXaml,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                dashboardXaml,
+                "IsEnabled=\"{Binding CanSelectLaptopPerformance, Mode=OneWay}\""));
+        Assert.Contains(
+            "ViewModel.SetLaptopPerformanceOptionAsync(",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RestoreLaptopPerformanceSelection();",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RestoreFanModeSelection();",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "PerformanceDetail.SelectedItem =",
+            dashboardWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "FansDetail.SelectedItem =",
+            dashboardWindow,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("SizeChanged=\"OnRootSizeChanged\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("private void OnRootSizeChanged(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DetailPage\"", dashboardXaml, StringComparison.Ordinal);

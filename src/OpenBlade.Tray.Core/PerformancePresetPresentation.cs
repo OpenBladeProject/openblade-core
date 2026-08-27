@@ -9,6 +9,15 @@ public sealed record PerformancePresetOption(
     public override string ToString() => Label;
 }
 
+public sealed record LaptopPerformanceOption(
+    PerformancePreset? Value,
+    string Label)
+{
+    public bool IsHyperBoost => Value is null;
+
+    public override string ToString() => Label;
+}
+
 public static class PerformancePresetPresentation
 {
     private static readonly PerformancePreset[] PluggedInOrder =
@@ -71,5 +80,22 @@ public static class PerformancePresetPresentation
             .Where(admitted.Contains)
             .Select(value => new PerformancePresetOption(value, Label(value)))
             .ToArray();
+    }
+
+    public static IReadOnlyList<LaptopPerformanceOption> CreateLaptopOptions(
+        IReadOnlyList<PerformancePresetOption> presets,
+        bool includeHyperBoost)
+    {
+        ArgumentNullException.ThrowIfNull(presets);
+        IEnumerable<LaptopPerformanceOption> options = presets.Select(
+            option => new LaptopPerformanceOption(option.Value, option.Label));
+        if (includeHyperBoost)
+        {
+            options = options.Append(new LaptopPerformanceOption(
+                Value: null,
+                TrayText.Get("HyperBoost")));
+        }
+
+        return options.ToArray();
     }
 }

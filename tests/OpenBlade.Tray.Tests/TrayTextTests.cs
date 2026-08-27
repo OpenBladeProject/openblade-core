@@ -96,6 +96,7 @@ public sealed class TrayTextTests
         string englishControl;
         string englishSlider;
         string englishFan;
+        string englishHyperBoost;
         using (new CultureScope("en-US"))
         {
             englishCard = DashboardCardPreferenceDefaults.CreateOptions(null)[0].Label;
@@ -106,6 +107,9 @@ public sealed class TrayTextTests
             englishSlider = TrayDashboardPreferenceDefaults.CreateSliderOptions(null)[0].Label;
             englishFan = FanModePresentation.CreateOptions(
                 new HashSet<FanMode> { FanMode.Automatic })[0].Label;
+            englishHyperBoost = PerformancePresetPresentation.CreateLaptopOptions(
+                [new PerformancePresetOption(PerformancePreset.Balanced, "Balanced")],
+                includeHyperBoost: true)[1].Label;
         }
 
         using var culture = new CultureScope("qps-ploc");
@@ -127,6 +131,11 @@ public sealed class TrayTextTests
             englishFan,
             FanModePresentation.CreateOptions(
                 new HashSet<FanMode> { FanMode.Automatic })[0].Label);
+        AssertPseudoAndChanged(
+            englishHyperBoost,
+            PerformancePresetPresentation.CreateLaptopOptions(
+                [new PerformancePresetOption(PerformancePreset.Balanced, "Balanced")],
+                includeHyperBoost: true)[1].Label);
     }
 
     [Fact]

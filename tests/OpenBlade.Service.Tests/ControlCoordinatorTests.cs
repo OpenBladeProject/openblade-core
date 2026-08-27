@@ -1518,11 +1518,71 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
-    public async Task ScopedApply_PostWriteReadbackFailureFailsWithoutRetry()
+    public async Task ScopedApply_PostWriteReadbackFailureConfirmsTargetWithoutRetry()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.ReadStateFailureOnCall = 2;
-        var coordinator = new ControlCoordinator(device);
+        var coordinator = new ControlCoordinator(
+            device,
+            device.ReadStateAsync,
+            resolveIndeterminatePerformanceWrites: true);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                PerformancePreset.Balanced,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Contains(
+            "fresh readback",
+            outcome.Result.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal(
+            ["Capabilities", "State", "SetPerformance", "State", "State"],
+            device.Calls);
+        Assert.Equal(1, device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedApply_PostWriteReadbackFailureConfirmsPriorWithoutRetry()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.AutoConfirmWrites = false;
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(
+            device,
+            device.ReadStateAsync,
+            resolveIndeterminatePerformanceWrites: true);
+
+        ScopedApplyOutcome outcome = await coordinator
+            .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                PerformancePreset.Balanced,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Contains(
+            "prior performance state remained active",
+            outcome.Result.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal(
+            ["Capabilities", "State", "SetPerformance", "State", "State"],
+            device.Calls);
+        Assert.Equal(1, device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedApply_PostWriteAndFreshReadFailuresRemainIndeterminate()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureCalls.UnionWith([2, 3]);
+        var coordinator = new ControlCoordinator(
+            device,
+            device.ReadStateAsync,
+            resolveIndeterminatePerformanceWrites: true);
 
         ConfirmedDeviceState before = device.State;
         ScopedApplyOutcome outcome = await coordinator
@@ -1535,10 +1595,13 @@ public sealed class ControlCoordinatorTests
             "indeterminate",
             outcome.Result.Message,
             StringComparison.OrdinalIgnoreCase);
+        Assert.True(outcome.WriteAttempted);
         Assert.True(outcome.ConfirmationUnavailable);
         Assert.Same(before, outcome.PreWriteState);
         Assert.Null(outcome.Readback);
-        Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
+        Assert.Equal(
+            ["Capabilities", "State", "SetPerformance", "State", "State"],
+            device.Calls);
         Assert.Equal(1, device.PerformanceSetCalls);
     }
 
@@ -2062,6 +2125,8 @@ public sealed class ControlCoordinatorTests
 
         public int? ReadStateFailureOnCall { get; set; }
 
+        public HashSet<int> ReadStateFailureCalls { get; } = [];
+
         public int? ReadLightingStateFailureOnCall { get; set; }
 
         public Exception? PerformanceFailure { get; set; }
@@ -2118,7 +2183,8 @@ public sealed class ControlCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             Calls.Add("State");
             StateReadCalls++;
-            if (ReadStateFailureOnCall == StateReadCalls)
+            if (ReadStateFailureOnCall == StateReadCalls
+                || ReadStateFailureCalls.Contains(StateReadCalls))
             {
                 throw new IOException("readback failed");
             }
