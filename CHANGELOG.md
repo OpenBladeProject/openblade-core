@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bound automatic manual-fan curve maintenance to the exact active-user,
+  device-session, controller, power-destination, and desired-intent epoch that
+  performed the successful OpenBlade fan write. Curve targets now use the
+  shared Strict thermal executor's single recovery lease, reconcile possible
+  submissions read-only, and never inherit ownership from generic manual
+  readback, reconnect, resume, profile edits, or controller disappearance.
 - Routed full power-profile performance and fan changes through the typed
   Strict thermal executor, so aggregate preflight, performance, fan, and
   target-only manual-fan continuation share one freshly admitted recovery

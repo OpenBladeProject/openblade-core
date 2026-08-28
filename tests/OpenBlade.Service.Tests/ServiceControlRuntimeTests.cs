@@ -905,6 +905,409 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task MaintainFanCurve_FirstObservedGenericManualStateDoesNotOwnTargets()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            fanTemperatureSource: temperatures);
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+        };
+        BatteryConfiguration configuration = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        context.Runtime.Initialize(
+            configuration with { Profiles = profiles },
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: false);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Device.FanTargets);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ActiveProfileEditRequiresFreshExplicitFanWrite()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures);
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+        };
+        _ = await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        var manualOverride = new ManualOverride<FanMode>(
+            FanMode.ManualCurve,
+            OverrideLifetime.UntilPowerSourceChange);
+        _ = await context.Runtime.SetFanControlOverrideAsync(
+            manualOverride,
+            settings,
+            CancellationToken.None);
+        _ = await context.Runtime.SetFanControlOverrideAsync(
+            value: null,
+            settings: null,
+            CancellationToken.None);
+        int targetWritesBeforeEdit = context.Device.FanTargets.Count;
+        int temperatureReadsBeforeEdit = temperatures.ReadCount;
+        var changedCurve = new ManualFanCurve(
+            ManualFanCurve.Default.Cpu
+                .Select(point => new FanCurvePoint(
+                    point.TemperatureCelsius,
+                    Math.Min(5400, point.SpeedRpm + 100)))
+                .ToArray(),
+            ManualFanCurve.Default.Gpu,
+            ManualFanCurve.Default.UseHigherTemperatureForBoth);
+        var changedSettings = new FanControlSettings(
+            FanMode.ManualCurve,
+            settings.FixedSpeedRpm,
+            changedCurve);
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { FanControl = changedSettings },
+        };
+
+        _ = await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(targetWritesBeforeEdit, context.Device.FanTargets.Count);
+        Assert.Equal(temperatureReadsBeforeEdit, temperatures.ReadCount);
+        Assert.Equal(changedSettings, context.Runtime.GetStatus().DesiredState.FanControl);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ResumeInvalidatesExactOwnership()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites, context.Device.FanTargets.Count);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ControllerDisappearanceDoesNotRearmOwnership()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites, context.Device.FanTargets.Count);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_DefinitiveDeviceLossDoesNotRearmOnReconnect()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = true;
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int writesAfterTransientMiss = context.Device.FanTargets.Count;
+        int readsAfterTransientMiss = temperatures.ReadCount;
+        Assert.True(writesAfterTransientMiss > 1);
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(writesAfterTransientMiss, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterTransientMiss, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_FreshPowerBoundaryInvalidatesOldDestinationStamp()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int readsAfterBoundary = temperatures.ReadCount;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterBoundary, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_FreshHyperBoostReadbackInvalidatesOwnership()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = true,
+        };
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int readsAfterFreshBlock = temperatures.ReadCount;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+        };
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterFreshBlock, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_HyperBoostAfterTargetSubmissionDoesNotRearmOwnership()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    HyperBoostActive = true,
+                };
+            }
+        };
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int writesAfterPossibleSubmission = context.Device.FanTargets.Count;
+        int readsAfterPossibleSubmission = temperatures.ReadCount;
+        context.Device.AfterSetter = null;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+        };
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites + 1, writesAfterPossibleSubmission);
+        Assert.Equal(writesAfterPossibleSubmission, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterPossibleSubmission, temperatures.ReadCount);
+        Assert.Contains(
+            DeviceSubsystem.Fans,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ExternalHyperBoostIntervalDoesNotResumeOldOwnership()
+    {
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync();
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = true,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int readsAfterActiveObservation = temperatures.ReadCount;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterActiveObservation, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_UserReplacementNeedsCurrentUserWrite()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+        };
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                profiles,
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures,
+            userConfigurationRepository: repository,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                ManualFanCurveCapabilities()));
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var firstUser = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondUser = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        await context.Runtime.ActivateUserAsync(firstUser, CancellationToken.None);
+        int firstUserWrites = context.Device.FanTargets.Count;
+        Assert.True(firstUserWrites > 0);
+
+        context.Provider.Available = false;
+        await context.Runtime.ActivateUserAsync(secondUser, CancellationToken.None);
+        context.Provider.Available = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(firstUserWrites, context.Device.FanTargets.Count);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ProvenPreSubmissionFailureRetriesOnce()
+    {
+        List<TimeSpan> retryDelays = [];
+        (TestContext context, _, _) = await CreateOwnedManualFanCurveContextAsync(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Synthetic pre-write fan-target read failure."));
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites + 2, context.Device.FanTargets.Count);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_ControllerArrivalBlocksFreshSessionRetry()
+    {
+        TestContext? retryContext = null;
+        (TestContext context, _, _) = await CreateOwnedManualFanCurveContextAsync(
+            transitionRetryDelay: (_, _) =>
+            {
+                retryContext!.Monitor.Current = new ControllerPresenceObservation(
+                    ["RazerAppEngine"],
+                    null);
+                return Task.CompletedTask;
+            });
+        retryContext = context;
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Synthetic pre-write fan-target read failure."));
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites + 1, context.Device.FanTargets.Count);
+        Assert.Contains(
+            "RazerAppEngine",
+            context.Runtime.GetStatus().PotentialControllers);
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        Assert.Equal(establishedWrites + 1, context.Device.FanTargets.Count);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_DeniedFreshDeviceAdmissionDoesNotRetryOnLaterTicks()
+    {
+        TestContext? retryContext = null;
+        (TestContext context, FixedFanTemperatureSource temperatures, _) =
+            await CreateOwnedManualFanCurveContextAsync(
+                transitionRetryDelay: (_, _) =>
+                {
+                    retryContext!.Provider.Available = false;
+                    return Task.CompletedTask;
+                });
+        retryContext = context;
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Synthetic pre-write fan-target read failure."));
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        int readsAfterDeniedRetry = temperatures.ReadCount;
+        context.Provider.Available = true;
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(establishedWrites + 1, context.Device.FanTargets.Count);
+        Assert.Equal(readsAfterDeniedRetry, temperatures.ReadCount);
+        Assert.Contains(
+            DeviceSubsystem.Fans,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task MaintainFanCurve_IndeterminateTargetSubmissionDoesNotReplay()
     {
         var temperatures = new FixedFanTemperatureSource(
@@ -938,8 +1341,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
             WriteSubmissionState.Indeterminate,
             "Synthetic indeterminate fan-target submission."));
+        int stateReadsBeforeSubmission = context.Device.StateReadCalls;
 
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        Assert.Equal(stateReadsBeforeSubmission + 2, context.Device.StateReadCalls);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
 
@@ -4625,8 +5030,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(userOverrides.FanControl, recovered.FanControlOverride);
         Assert.Equal(userOverrides.Lighting, recovered.LightingOverride!.Value);
         Assert.Equal(1, repository.LoadCount);
-        Assert.Equal(1, temperatures.ReadCount);
-        Assert.Equal(safetyFloorCount + 1, context.Device.FanTargets.Count);
+        int expectedCurveWrites = initialPowerSource == PowerSource.UsbC ? 1 : 0;
+        Assert.Equal(expectedCurveWrites, temperatures.ReadCount);
+        Assert.Equal(
+            safetyFloorCount + expectedCurveWrites,
+            context.Device.FanTargets.Count);
         Assert.All(
             context.Device.FanTargets,
             target => Assert.Equal(
@@ -17251,6 +17659,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Fans = FanMode.Automatic,
             HyperBoostActive = active,
         };
+    }
+
+    private static DeviceCapabilities ManualFanCurveCapabilities() =>
+        DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.ManualCurve,
+            },
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+
+    private async Task<(
+        TestContext Context,
+        FixedFanTemperatureSource Temperatures,
+        FanControlSettings Settings)> CreateOwnedManualFanCurveContextAsync(
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures,
+            transitionRetryDelay: transitionRetryDelay);
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ControlOperationResult applied = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.ManualCurve,
+                OverrideLifetime.UntilPowerSourceChange),
+            settings,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        return (context, temperatures, settings);
     }
 
     private TestContext CreateRz090581Bios301Context() => CreateContext(

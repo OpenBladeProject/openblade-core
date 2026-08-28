@@ -330,6 +330,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         "The external power adapter could not be classified; control writes are blocked.";
     private const string TransientExternalPowerMessage =
         "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.";
+    private const string ManualFanCurveTargetsChangedRetryBlockReason =
+        "Manual fan-curve targets changed while waiting for the fresh-session retry.";
 
     private static readonly string ServiceVersion = OpenBladeProductVersion.Read(
         typeof(ServiceControlRuntime).Assembly);
@@ -400,6 +402,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? lastOwnedLightingSettings;
     private ExactFanControlOwnership exactFanControlOwnership =
         ExactFanControlOwnership.Unowned;
+    private long fanAuthorityEpoch;
+    private long fanDesiredRevision;
     // Process-local by design. A first observation of mode 7 does not establish
     // ownership; only a successful OpenBlade enable with matching readback does.
     private bool ownsHyperBoost;
@@ -945,6 +949,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
                 current = GetStatus();
             }
+            // Exact manual fan intent belongs to the active-user hardware
+            // session. A new user may carry identical settings, but that does
+            // not transfer proof that this service wrote them for that user.
+            AdvanceFanAuthorityEpoch();
+            AdvanceFanDesiredRevision();
             Volatile.Write(
                 ref userStores,
                 new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -1042,6 +1051,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             bool lightingWasSuppressed = lightingSuppressions.Count > 0;
+            FanControlSettings priorFanIntent = ResolveCurrentFanIntent();
             try
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -1051,6 +1061,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 validator.Validate(profiles);
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
+                if (ResolveCurrentFanIntent() != priorFanIntent)
+                {
+                    AdvanceFanDesiredRevision();
+                }
                 RemoveDisabledLightingSuppressions();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -1392,6 +1406,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     cancellationToken).ConfigureAwait(false);
                 DesiredDeviceState intended = Automation.Resolve(
                     GetStatus().ConfirmedState ?? UnknownConfirmedState);
+                FanControlSettings intendedFanControl = intended.FanControl
+                    ?? FanControlSettings.FromLegacy(intended.Fans.Value);
+                if (intendedFanControl != previous)
+                {
+                    AdvanceFanDesiredRevision();
+                }
                 performanceIntent = intended.Performance.Value;
                 customPerformanceIntent = intended.CustomPerformance;
             },
@@ -1439,19 +1459,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ServiceStatusSnapshot snapshot = GetStatus();
         FanControlSettings settings = snapshot.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(snapshot.DesiredState.Fans.Value);
-        if (settings.Mode != FanMode.ManualCurve
-            || snapshot.ConfirmedState?.HyperBoostActive == true
-            || !snapshot.DeviceVerified
-            || snapshot.WritesBlocked
-            || lowPowerGate.IsActive
-            || unexpectedExitRecoveryDeferredForUserConfiguration
-            || manualFanCurveRecoveryPending
-            || exactFanControlOwnership.Disposition ==
-                ExactFanControlOwnershipDisposition.SubmissionUnresolved
-            || snapshot.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        if (!CanMaintainFanCurve(snapshot, settings))
         {
-            lastCurveFan1Rpm = null;
-            lastCurveFan2Rpm = null;
+            ClearLastFanCurveTargets();
             return;
         }
 
@@ -1471,87 +1481,188 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            try
+            {
+                RefreshControllerPresenceCore(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                ClearLastFanCurveTargets();
+                return;
+            }
+
             ServiceStatusSnapshot current = GetStatus();
-            FanControlSettings currentSettings = current.DesiredState.FanControl
-                ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
-            if (currentSettings != settings
-                || !current.DeviceVerified
-                || current.WritesBlocked
-                || lowPowerGate.IsActive
-                || unexpectedExitRecoveryDeferredForUserConfiguration
-                || manualFanCurveRecoveryPending
-                || exactFanControlOwnership.Disposition ==
-                    ExactFanControlOwnershipDisposition.SubmissionUnresolved
-                || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
+            if (!CanMaintainFanCurve(current, settings)
+                || FanControllerAdmissionUnsafe(current))
+            {
+                ClearLastFanCurveTargets();
+                return;
+            }
+
+            PowerSource confirmedPowerSource;
+            try
+            {
+                confirmedPowerSource = await ResolveCurrentPowerSourceAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                ClearLastFanCurveTargets();
+                return;
+            }
+
+            if (confirmedPowerSource != PowerSource.ExternalUnknown
+                && confirmedPowerSource != current.ActivePowerSource)
+            {
+                // The power handler owns destination-profile application, but a
+                // fresh contradictory classification is already enough to
+                // invalidate this destination's exact fan-intent stamp.
+                AdvanceFanDesiredRevision();
+                powerSourceGeneration++;
+                return;
+            }
+
+            if (confirmedPowerSource == PowerSource.ExternalUnknown
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
+                ClearLastFanCurveTargets();
+                return;
+            }
+
+            var authority = new ManualFanCurveAuthority(
+                settings,
+                current.DesiredState,
+                targets,
+                fanAuthorityEpoch,
+                fanDesiredRevision,
+                powerSourceGeneration,
+                confirmedPowerSource,
+                Volatile.Read(ref activeUserSid));
+            if (ManualFanCurveWriteBlockReason(authority) is not null)
+            {
+                ClearLastFanCurveTargets();
                 return;
             }
 
             try
             {
-                await device.SetFanTargetsAsync(
-                    targets.Fan1Rpm,
-                    targets.Fan2Rpm,
-                    cancellationToken).ConfigureAwait(false);
-                exactFanControlOwnership = ExactFanControlOwnership.Owned(settings);
-                lastCurveFan1Rpm = targets.Fan1Rpm;
-                lastCurveFan2Rpm = targets.Fan2Rpm;
-                if (targets.FailSafe)
+                ThermalTransitionExecution execution = await ThermalTransitionExecutor
+                    .ExecuteAsync(
+                        [DeviceSubsystem.Fans],
+                        device,
+                        (attemptDevice, runner) => new ControlCoordinator(
+                            attemptDevice,
+                            attemptDevice.ReadPerformanceFanStateAsync,
+                            singleAttemptFanWrites: true,
+                            thermalStepRunner: runner,
+                            fanWriteBlockReason: () =>
+                                ManualFanCurveWriteBlockReason(authority)),
+                        (runner, token) => runner.ApplyStepAsync(
+                            DeviceSubsystem.Fans,
+                            ThermalTransitionStepPurpose.ManualCurveTarget,
+                            (coordinator, stepToken) =>
+                                coordinator.ApplyFanTargetsOutcomeAsync(
+                                    targets.Fan1Rpm,
+                                    targets.Fan2Rpm,
+                                    stepToken),
+                            token),
+                        (_, token) => RevalidateManualFanCurveRetryAsync(
+                            authority,
+                            token),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                ScopedApplyOutcome outcome = execution.Outcome;
+                if (outcome.Result.Status == ControlResultStatus.Applied
+                    && outcome.WriteAttempted)
                 {
-                    string message = temperatures.CpuCelsius is null
-                        ? "Manual fan curve is using maximum speed because CPU package temperature is unavailable."
-                        : "Manual fan curve is using maximum speed for thermal safety.";
-                    if (!string.Equals(current.Message, message, StringComparison.Ordinal))
+                    if (ManualFanCurveWriteBlockReason(authority) is not null)
                     {
-                        PublishIfChanged(current with { Message = message });
+                        AdvanceFanAuthorityEpoch();
+                        return;
                     }
+                    OwnExactFanIntent(settings);
+                    lastCurveFan1Rpm = targets.Fan1Rpm;
+                    lastCurveFan2Rpm = targets.Fan2Rpm;
+                    if (targets.FailSafe)
+                    {
+                        string message = temperatures.CpuCelsius is null
+                            ? "Manual fan curve is using maximum speed because CPU package temperature is unavailable."
+                            : "Manual fan curve is using maximum speed for thermal safety.";
+                        if (!string.Equals(current.Message, message, StringComparison.Ordinal))
+                        {
+                            PublishIfChanged(current with { Message = message });
+                        }
+                    }
+                    return;
                 }
-            }
-            catch (CapabilityUnavailableException exception)
-            {
+
+                ClearLastFanCurveTargets();
+                if (outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate)
+                {
+                    exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
+                    driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                    PublishIfChanged(GetStatus() with
+                    {
+                        ExternalChanges = driftTracker.ExternalChanges,
+                        Message =
+                            $"{outcome.Result.Message} Automatic fan-curve maintenance will not replay the target write until an explicit fan action establishes fresh ownership.",
+                    });
+                    return;
+                }
+
+                if (outcome.Result.Status == ControlResultStatus.Blocked
+                    && (outcome.Readback?.HyperBoostActive == true
+                        || outcome.Readback?.Fans is { } observedFans
+                            && !DeviceSubsystemOrder.IsManualFanMode(observedFans)))
+                {
+                    AdvanceFanAuthorityEpoch();
+                    if (outcome.Readback?.Fans is { } contradictedFans
+                        && !DeviceSubsystemOrder.IsManualFanMode(contradictedFans))
+                    {
+                        driftTracker.ConfirmIntentional(
+                            DeviceSubsystem.Fans,
+                            matched: false);
+                    }
+                    PublishIfChanged(GetStatus() with
+                    {
+                        ExternalChanges = driftTracker.ExternalChanges,
+                        Message = outcome.Result.Message,
+                    });
+                    return;
+                }
+
+                if (outcome.Result.Status == ControlResultStatus.Blocked
+                    || string.Equals(
+                        execution.Trace.RetryBlockReason,
+                        ManualFanCurveTargetsChangedRetryBlockReason,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+
                 exactFanControlOwnership = ExactFanControlOwnership.Unowned;
-                lastCurveFan1Rpm = null;
-                lastCurveFan2Rpm = null;
                 driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
-                PublishIfChanged(current with
+                PublishIfChanged(GetStatus() with
                 {
                     ExternalChanges = driftTracker.ExternalChanges,
-                    Message = exception.Message,
+                    Message = outcome.Result.Message,
                 });
             }
-            catch (BladeWriteException exception)
-                when (exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            catch (IntentionalWriteCanceledException exception)
+                when (exception.WriteAttempted.Contains(DeviceSubsystem.Fans))
             {
-                // A GET immediately precedes target writes in the protocol port.
-                // If another controller exited manual mode, preserve that change
-                // and stop the curve loop instead of reclaiming the firmware.
-                exactFanControlOwnership = ExactFanControlOwnership.Unowned;
-                lastCurveFan1Rpm = null;
-                lastCurveFan2Rpm = null;
-                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
-                PublishIfChanged(current with
-                {
-                    ExternalChanges = driftTracker.ExternalChanges,
-                    Message = exception.Message,
-                });
-            }
-            catch (BladeWriteException exception)
-                when (exception.SubmissionState == WriteSubmissionState.Indeterminate)
-            {
-                // The target write may have reached firmware. Revoke exact fan
-                // ownership before the curve loop can run again; a later read
-                // cannot prove which exact targets were submitted.
                 exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
-                lastCurveFan1Rpm = null;
-                lastCurveFan2Rpm = null;
-                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
-                PublishIfChanged(current with
-                {
-                    ExternalChanges = driftTracker.ExternalChanges,
-                    Message =
-                        $"{exception.Message} Automatic fan-curve maintenance will not replay the target write until an explicit fan action establishes fresh ownership.",
-                });
+                ClearLastFanCurveTargets();
+                throw;
             }
         }
         finally
@@ -4748,7 +4859,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
                 fans.Result,
-                fans.WriteAttempted);
+                fans.WriteAttempted,
+                writeSubmissionState: fans.WriteSubmissionState,
+                confirmationUnavailable: fans.ConfirmationUnavailable);
             return new HyperBoostIntentRestorationResult(
                 HyperBoostBaselineStepSucceeded(fans),
                 MergeHyperBoostThermalState(preservedState, fans.Readback),
@@ -4767,7 +4880,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
                 automaticBaseline.Result,
-                automaticBaseline.WriteAttempted);
+                automaticBaseline.WriteAttempted,
+                writeSubmissionState: automaticBaseline.WriteSubmissionState,
+                confirmationUnavailable: automaticBaseline.ConfirmationUnavailable);
             ConfirmedDeviceState? automaticState =
                 MergeHyperBoostThermalState(
                     preservedState,
@@ -4819,7 +4934,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         UpdateOwnedFanControlSettings(
             intent.FanControl,
             automaticFans.Result,
-            automaticFans.WriteAttempted);
+            automaticFans.WriteAttempted,
+            writeSubmissionState: automaticFans.WriteSubmissionState,
+            confirmationUnavailable: automaticFans.ConfirmationUnavailable);
         return new HyperBoostIntentRestorationResult(
             HyperBoostBaselineStepSucceeded(automaticFans),
             MergeHyperBoostThermalState(
@@ -7937,6 +8054,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // Resume begins a new hardware-enumeration session. Restore the bounded
             // MCU inventory budget without turning ordinary healthy observations
             // into an unbounded retry loop.
+            AdvanceFanAuthorityEpoch();
             mcuVersionReadAttempts = 0;
             bool gpuClockOffsetConfirmationInvalidated = false;
             if (deviceProvider is IGpuClockOffsetConfirmationInvalidator invalidator)
@@ -8165,8 +8283,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
                 Settings: { } ownedFanControl,
+                AuthorityEpoch: var ownedAuthorityEpoch,
             }
-            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode))
+            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode)
+            || ownedAuthorityEpoch != fanAuthorityEpoch)
         {
             const string notOwned =
                 "Manual fan control was left unchanged because OpenBlade did not establish ownership of the current state.";
@@ -9151,7 +9271,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ?? FanControlSettings.FromLegacy(desired.Fans.Value),
                 outcome.Result,
                 outcome.WriteAttempted,
-                allowFanOwnershipRearm);
+                allowFanOwnershipRearm,
+                outcome.WriteSubmissionState,
+                outcome.ConfirmationUnavailable);
         }
 
         ControlOperationResult? commitFailure = await CommitScopedIntentAsync(
@@ -9750,6 +9872,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
+        ServiceStatusSnapshot prior = GetStatus();
+        bool controllerPreviouslyUnsafe = FanControllerAdmissionUnsafe(prior);
         ControllerPresenceObservation observation = controllerPresenceMonitor.Observe();
         cancellationToken.ThrowIfCancellationRequested();
         controllerPresenceObserved = true;
@@ -9760,6 +9884,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             .OrderBy(name => name, StringComparer.Ordinal)
             .Take(16)
             .ToArray();
+        bool controllerNowUnsafe = observation.DetectionWarning is not null
+            || potentialControllers.Any(CompetingControllerProcesses.Contains);
+        if (!controllerPreviouslyUnsafe && controllerNowUnsafe)
+        {
+            AdvanceFanAuthorityEpoch();
+        }
         PublishIfChanged(GetStatus() with
         {
             PotentialControllers = potentialControllers,
@@ -10593,7 +10723,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             desired.FanControl
                 ?? FanControlSettings.FromLegacy(desired.Fans.Value),
             ResultFor(outcome.Results, DeviceSubsystem.Fans),
-            outcome.WriteAttempted.Contains(DeviceSubsystem.Fans));
+            outcome.WriteAttempted.Contains(DeviceSubsystem.Fans),
+            confirmationUnavailable: confirmationUnavailable.Contains(
+                DeviceSubsystem.Fans));
 
         ControlResult lightingResult = ResultFor(
             outcome.Results,
@@ -11566,6 +11698,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         BatteryHealthStatus? batteryHealth)
     {
         ServiceStatusSnapshot current = GetStatus();
+        if (observation.Confirmed.HyperBoostActive
+            && current.ConfirmedState?.HyperBoostActive != true
+            && !ownsHyperBoost
+            && exactFanControlOwnership.Disposition ==
+                ExactFanControlOwnershipDisposition.OwnedExactIntent)
+        {
+            // An external HyperBoost interval can transiently force a
+            // composite performance/fan state without changing generic manual
+            // readback. Its end must not revive exact RPM authority from the
+            // pre-HyperBoost epoch. OpenBlade-owned lifecycle transitions keep
+            // their direct journaled restoration path.
+            AdvanceFanAuthorityEpoch();
+        }
         if (!observation.Confirmed.HyperBoostActive)
         {
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
@@ -11778,6 +11923,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool changed = Automation.ChangePowerSource(powerSource);
         if (changed)
         {
+            AdvanceFanDesiredRevision();
             powerSourceGeneration++;
             InvalidatePendingWriteConfirmations(markExternal: true);
             explicitLightingOwnershipActive = false;
@@ -12586,14 +12732,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string message,
         bool deviceVerified = false)
     {
+        ServiceStatusSnapshot current = GetStatus();
         if (!deviceVerified)
         {
             // A confirmed loss of the verified device ends the current hardware
             // session. A later re-verification receives a fresh bounded budget.
             mcuVersionReadAttempts = 0;
+            if (current.DeviceVerified)
+            {
+                AdvanceFanAuthorityEpoch();
+            }
         }
 
-        ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
         PublishIfChanged(current with
         {
@@ -12947,12 +13097,172 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         },
         result.Message);
 
+    private FanControlSettings ResolveCurrentFanIntent()
+    {
+        DesiredDeviceState desired = Automation.Resolve(
+            GetStatus().ConfirmedState ?? UnknownConfirmedState);
+        return desired.FanControl
+            ?? FanControlSettings.FromLegacy(desired.Fans.Value);
+    }
+
+    private bool CanMaintainFanCurve(
+        ServiceStatusSnapshot current,
+        FanControlSettings settings)
+    {
+        FanControlSettings currentSettings = current.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
+        return settings.Mode == FanMode.ManualCurve
+            && currentSettings == settings
+            && current.ConfirmedState?.HyperBoostActive != true
+            && current.ConfirmedState?.Fans is { } confirmedFans
+            && DeviceSubsystemOrder.IsManualFanMode(confirmedFans)
+            && current.DeviceVerified
+            && !current.WritesBlocked
+            && !lowPowerGate.IsActive
+            && !unexpectedExitRecoveryDeferredForUserConfiguration
+            && !manualFanCurveRecoveryPending
+            && controllerPresenceObserved
+            && !current.ExternalChanges.Contains(DeviceSubsystem.Fans)
+            && !IsWritePendingFor(DeviceSubsystem.Performance)
+            && !IsWritePendingFor(DeviceSubsystem.Fans)
+            && exactFanControlOwnership is
+            {
+                Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
+                Settings: { } ownedSettings,
+                AuthorityEpoch: var ownedEpoch,
+                DesiredRevision: var ownedRevision,
+            }
+            && ownedSettings == settings
+            && ownedEpoch == fanAuthorityEpoch
+            && ownedRevision == fanDesiredRevision;
+    }
+
+    private static bool FanControllerAdmissionUnsafe(ServiceStatusSnapshot current) =>
+        current.ControllerDetectionWarning is not null
+        || current.PotentialControllers.Any(CompetingControllerProcesses.Contains);
+
+    private string? ManualFanCurveWriteBlockReason(
+        ManualFanCurveAuthority authority)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!CanMaintainFanCurve(current, authority.Settings))
+        {
+            return "Manual fan-curve authority changed before target submission.";
+        }
+
+        if (FanControllerAdmissionUnsafe(current))
+        {
+            return "Manual fan-curve maintenance yielded to another Razer controller or an incomplete controller check.";
+        }
+
+        if (fanAuthorityEpoch != authority.AuthorityEpoch
+            || fanDesiredRevision != authority.DesiredRevision
+            || powerSourceGeneration != authority.PowerSourceGeneration
+            || current.ActivePowerSource != authority.PowerSource
+            || !string.Equals(
+                Volatile.Read(ref activeUserSid),
+                authority.ActiveUserSid,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Manual fan-curve session authority changed before target submission.";
+        }
+
+        return null;
+    }
+
+    private async Task<ThermalRetryAdmission> RevalidateManualFanCurveRetryAsync(
+        ManualFanCurveAuthority authority,
+        CancellationToken cancellationToken)
+    {
+        ThermalRetryAdmission admission = await RevalidateScopedThermalRetryAsync(
+                authority.PowerSource,
+                authority.Desired,
+                stageDesired: null,
+                stillControlsSession: () => string.Equals(
+                    Volatile.Read(ref activeUserSid),
+                    authority.ActiveUserSid,
+                    StringComparison.OrdinalIgnoreCase),
+                [DeviceSubsystem.Fans],
+                ThermalPreWriteRetryDelay,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!admission.Allowed)
+        {
+            return admission;
+        }
+
+        string? blockReason = ManualFanCurveWriteBlockReason(authority);
+        if (blockReason is not null)
+        {
+            return ThermalRetryAdmission.Block(blockReason);
+        }
+
+        FanTemperatureReadings temperatures = await fanTemperatureSource
+            .ReadAsync(cancellationToken);
+        ServiceStatusSnapshot current = GetStatus();
+        FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
+            authority.Settings.ManualCurve,
+            temperatures,
+            current.Capabilities?.FanSpeedRange?.MaximumRpm
+                ?? FanControlSettings.MaximumSpeedRpm);
+        if (freshTargets != authority.Targets)
+        {
+            return ThermalRetryAdmission.Block(
+                ManualFanCurveTargetsChangedRetryBlockReason);
+        }
+
+        return admission;
+    }
+
+    private void AdvanceFanAuthorityEpoch()
+    {
+        fanAuthorityEpoch++;
+        exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+        ClearLastFanCurveTargets();
+    }
+
+    private void AdvanceFanDesiredRevision()
+    {
+        fanDesiredRevision++;
+        ClearLastFanCurveTargets();
+    }
+
+    private void OwnExactFanIntent(FanControlSettings settings)
+    {
+        exactFanControlOwnership = DeviceSubsystemOrder.IsManualFanMode(settings.Mode)
+            && !FanControllerAdmissionUnsafe(GetStatus())
+                ? ExactFanControlOwnership.Owned(
+                    settings,
+                    fanAuthorityEpoch,
+                    fanDesiredRevision)
+                : ExactFanControlOwnership.Unowned;
+    }
+
+    private void ClearLastFanCurveTargets()
+    {
+        lastCurveFan1Rpm = null;
+        lastCurveFan2Rpm = null;
+    }
+
     private void UpdateOwnedFanControlSettings(
         FanControlSettings requested,
         ControlResult result,
         bool writeAttempted,
-        bool allowFanOwnershipRearm = false)
+        bool allowFanOwnershipRearm = false,
+        WriteSubmissionState? writeSubmissionState = null,
+        bool confirmationUnavailable = false)
     {
+        if (writeSubmissionState == WriteSubmissionState.Indeterminate
+                && (writeAttempted || confirmationUnavailable)
+            || confirmationUnavailable
+                && writeAttempted
+                && result.Status != ControlResultStatus.Applied)
+        {
+            exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
+            ClearLastFanCurveTargets();
+            return;
+        }
+
         if (result.Status == ControlResultStatus.Unchanged
             && requested.Mode == FanMode.Automatic)
         {
@@ -12972,9 +13282,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        exactFanControlOwnership = DeviceSubsystemOrder.IsManualFanMode(requested.Mode)
-            ? ExactFanControlOwnership.Owned(requested)
-            : ExactFanControlOwnership.Unowned;
+        OwnExactFanIntent(requested);
     }
 
     private static bool IsIntentFailure(Exception exception) => exception is
@@ -13002,20 +13310,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private readonly record struct ExactFanControlOwnership(
         ExactFanControlOwnershipDisposition Disposition,
-        FanControlSettings? Settings)
+        FanControlSettings? Settings,
+        long AuthorityEpoch,
+        long DesiredRevision)
     {
         public static ExactFanControlOwnership Unowned { get; } = new(
             ExactFanControlOwnershipDisposition.Unowned,
-            null);
+            null,
+            AuthorityEpoch: -1,
+            DesiredRevision: -1);
 
         public static ExactFanControlOwnership SubmissionUnresolved { get; } = new(
             ExactFanControlOwnershipDisposition.SubmissionUnresolved,
-            null);
+            null,
+            AuthorityEpoch: -1,
+            DesiredRevision: -1);
 
-        public static ExactFanControlOwnership Owned(FanControlSettings settings) => new(
-            ExactFanControlOwnershipDisposition.OwnedExactIntent,
-            settings);
+        public static ExactFanControlOwnership Owned(
+            FanControlSettings settings,
+            long authorityEpoch,
+            long desiredRevision) => new(
+                ExactFanControlOwnershipDisposition.OwnedExactIntent,
+                settings,
+                authorityEpoch,
+                desiredRevision);
     }
+
+    private sealed record ManualFanCurveAuthority(
+        FanControlSettings Settings,
+        DesiredDeviceState Desired,
+        FanTargetSpeeds Targets,
+        long AuthorityEpoch,
+        long DesiredRevision,
+        long PowerSourceGeneration,
+        PowerSource PowerSource,
+        string? ActiveUserSid);
 
     private enum ExactFanControlOwnershipDisposition
     {
@@ -13075,6 +13404,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
             };
+            if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
+                && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
+                && exactFanControlOwnership.Disposition ==
+                    ExactFanControlOwnershipDisposition.OwnedExactIntent)
+            {
+                AdvanceFanAuthorityEpoch();
+            }
             if (Equivalent(previous, candidate))
             {
                 return;
