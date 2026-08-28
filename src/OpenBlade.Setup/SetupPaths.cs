@@ -1,3 +1,5 @@
+using System.Security.Principal;
+
 namespace OpenBlade.Setup;
 
 public sealed record SetupPaths
@@ -71,11 +73,36 @@ public sealed record SetupPaths
         Environment.GetFolderPath(Environment.SpecialFolder.Startup),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
 
-    internal static SetupPaths CreateLocalSystemDefault() => CreateLocalSystem(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
+    internal static SetupPaths CreateForCurrentIdentity()
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        return CreateForExecutionIdentity(
+            identity.IsSystem,
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
+    }
+
+    internal static SetupPaths CreateForExecutionIdentity(
+        bool isLocalSystem,
+        string programFilesRoot,
+        string machineDataRoot,
+        string userDataRoot,
+        string startupRoot,
+        string commonStartupRoot) => isLocalSystem
+            ? CreateLocalSystem(
+                programFilesRoot,
+                machineDataRoot,
+                userDataRoot,
+                commonStartupRoot)
+            : Create(
+                programFilesRoot,
+                machineDataRoot,
+                userDataRoot,
+                startupRoot,
+                commonStartupRoot);
 
     internal static SetupPaths CreateLocalSystem(
         string programFilesRoot,

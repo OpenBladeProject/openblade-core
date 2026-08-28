@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Let the exact cached Stable-plus-LocalDev compatibility pair pass the
+  LocalDev-only bootstrapper gate, resolve Common Startup when Burn runs those
+  predecessors as LocalSystem, and record the reserved LocalDev bundle version
+  for package detection, so consecutive brokered upgrades no longer leave
+  duplicate installer registrations or roll back.
 - Classified exact-device identity rejection before a requested firmware
   command as definitively not applied while preserving uncertain outcomes once
   command submission may have begun.

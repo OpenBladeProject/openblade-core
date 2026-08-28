@@ -15,6 +15,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <DebugType>embedded</DebugType>
     <AcceptEula>wix7</AcceptEula>
+    <DefineConstants Condition="'$(OpenBladeLocalDevDeployment)' == 'true'">$(DefineConstants);OPENBLADE_LOCAL_DEV_DEPLOYMENT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

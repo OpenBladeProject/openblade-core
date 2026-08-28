@@ -70,6 +70,33 @@ public sealed class SetupPathsTests
             paths.UserDataDirectory);
     }
 
+    [Fact]
+    public void StableToLocalDev_LocalSystemPredecessorDoesNotRequireUserStartup() =>
+        AssertLocalSystemUpgradePaths(
+            @"C:\Windows\System32\config\systemprofile\AppData\Local\StableUpgrade");
+
+    [Fact]
+    public void LocalDevToLocalDev_LocalSystemPredecessorDoesNotRequireUserStartup() =>
+        AssertLocalSystemUpgradePaths(
+            @"C:\Windows\System32\config\systemprofile\AppData\Local\LocalDevUpgrade");
+
+    [Fact]
+    public void CreateForExecutionIdentity_OrdinaryUserRetainsUserStartup()
+    {
+        SetupPaths paths = SetupPaths.CreateForExecutionIdentity(
+            false,
+            @"C:\Program Files",
+            @"C:\ProgramData",
+            @"C:\Users\jack\AppData\Local",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
+
+        Assert.Equal(
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup",
+            paths.StartupRoot);
+        Assert.NotEqual(paths.CommonStartupRoot, paths.StartupRoot);
+    }
+
     [Theory]
     [InlineData(@"C:\Program Files\OpenBlade.uninstall.0123456789abcdef0123456789abcdef")]
     [InlineData(@"C:\Program Files\OPENBLADE.UNINSTALL.0123456789ABCDEF0123456789ABCDEF")]
@@ -130,4 +157,20 @@ public sealed class SetupPathsTests
     [InlineData(@"C:\Program Files\Other.installing.0123456789abcdef0123456789abcdef")]
     public void IsExactTransactionSiblingDirectory_RejectsAnythingOutsideExactSiblingPattern(string candidate) =>
         Assert.False(SetupPaths.IsExactTransactionSiblingDirectory(candidate, @"C:\Program Files"));
+
+    private static void AssertLocalSystemUpgradePaths(string userDataRoot)
+    {
+        SetupPaths paths = SetupPaths.CreateForExecutionIdentity(
+            true,
+            @"C:\Program Files",
+            @"C:\ProgramData",
+            userDataRoot,
+            string.Empty,
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
+
+        Assert.Equal(paths.CommonStartupRoot, paths.StartupRoot);
+        Assert.Equal(paths.StartupFile, paths.LegacyTrayStartupFile);
+        Assert.Equal(paths.SessionAgentStartupFile, paths.LegacySessionAgentStartupFile);
+        Assert.Equal(Path.Combine(userDataRoot, "OpenBlade"), paths.UserDataDirectory);
+    }
 }

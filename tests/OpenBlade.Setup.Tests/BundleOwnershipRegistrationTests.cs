@@ -21,6 +21,61 @@ public sealed class BundleOwnershipRegistrationTests
             WindowsBundleOwnershipRegistration.FormatInstalledVersion(version));
     }
 
+    [Fact]
+    public void StableToLocalDev_ProducesBurnDetectableOwnershipVersion()
+    {
+        string installedVersion = WindowsBundleOwnershipRegistration.ResolveInstalledVersion(
+            Version.Parse("65534.416.19310.42763"),
+            "65535.416.19310.42763+b0fb0afa");
+
+        Assert.Equal("65535.416.19310.42763", installedVersion);
+        Assert.True(Version.Parse(installedVersion) > Version.Parse("0.19.18"));
+    }
+
+    [Fact]
+    public void LocalDevToLocalDev_RemainsBurnDetectableAndMonotonic()
+    {
+        string first = WindowsBundleOwnershipRegistration.ResolveInstalledVersion(
+            Version.Parse("65534.416.19310.42763"),
+            "65535.416.19310.42763+b0fb0afa");
+        string second = WindowsBundleOwnershipRegistration.ResolveInstalledVersion(
+            Version.Parse("65534.416.19321.22094"),
+            "65535.416.19321.22094+b0fb0afa");
+
+        Assert.Equal("65535.416.19310.42763", first);
+        Assert.Equal("65535.416.19321.22094", second);
+        Assert.True(Version.Parse(second) > Version.Parse(first));
+    }
+
+    [Theory]
+    [InlineData("65534.416.19310.42763", "65535.416.19310.42764+abcdef12")]
+    [InlineData("0.19.19.0", "65535.416.19310.42763+abcdef12")]
+    [InlineData("65534.416.19310.42763", "65535.bad+abcdef12")]
+    public void ResolveInstalledVersion_RejectsMismatchedLocalDevIdentity(
+        string binaryVersion,
+        string productVersion)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            WindowsBundleOwnershipRegistration.ResolveInstalledVersion(
+                Version.Parse(binaryVersion),
+                productVersion));
+    }
+
+    [Theory]
+    [InlineData("0.19.19.0", "0.19.19", "0.19.19")]
+    [InlineData("0.19.19.35", "0.19.19-nightly.35+abcdef12", "0.19.19.35")]
+    public void ResolveInstalledVersion_PreservesReleaseChannelBehavior(
+        string binaryVersion,
+        string productVersion,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            WindowsBundleOwnershipRegistration.ResolveInstalledVersion(
+                Version.Parse(binaryVersion),
+                productVersion));
+    }
+
     [Theory]
     [InlineData("0.1.0+abcdef12", "0.1.0+abcdef12", true)]
     [InlineData(" 0.1.0+abcdef12 ", "0.1.0+abcdef12", true)]

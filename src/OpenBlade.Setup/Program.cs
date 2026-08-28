@@ -1,13 +1,9 @@
 using OpenBlade.Setup;
 
 #if OPENBLADE_LOCAL_DEV_DEPLOYMENT
-// The fixed broker runs this developer-only Setup build as LocalSystem. Its
-// per-user Startup known folder is unavailable, and privileged Setup must not
-// traverse the enrolled user's writable profile merely to remove legacy links.
-SetupPaths paths = SetupPaths.CreateLocalSystemDefault();
-#else
-SetupPaths paths = SetupPaths.CreateDefault();
+LocalDevRelatedBundleCompatibility.PrepareCachedSetupEnvironment();
 #endif
+SetupPaths paths = SetupPaths.CreateForCurrentIdentity();
 string executablePath = Environment.ProcessPath
     ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
 bool interactiveRequested = SetupCommandParser.IsInteractiveUninstall(args);

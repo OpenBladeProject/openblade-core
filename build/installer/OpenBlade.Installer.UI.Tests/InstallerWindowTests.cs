@@ -880,6 +880,171 @@ public sealed class InstallerWindowTests
                 relatedBundleCount));
     }
 
+    [Fact]
+    public void StableToLocalDevUpgradeRetainsTheSingleRegistrationPath()
+    {
+        DetectedRelatedBundle[] relatedBundles =
+        [
+            new(
+                "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}",
+                RelationType.Upgrade,
+                perMachine: true,
+                "0.19.18",
+                missingFromCache: false),
+        ];
+
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Install,
+                Display.None,
+                RelationType.None,
+                "65535.416.19310.42763",
+                relatedBundles,
+                localDevCompatibilityEnabled: true));
+    }
+
+    [Fact]
+    public void LocalDevToLocalDevUpgradeAllowsOnlyTheObservedCompatibilityPair()
+    {
+        DetectedRelatedBundle[] relatedBundles =
+        [
+            new(
+                "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}",
+                RelationType.Upgrade,
+                perMachine: true,
+                "0.19.18",
+                missingFromCache: false),
+            new(
+                "{9364476F-3106-4A3B-83DD-6F5D55ED22C0}",
+                RelationType.Upgrade,
+                perMachine: true,
+                "65535.416.19310.42763",
+                missingFromCache: false),
+        ];
+
+        Assert.True(
+            OpenBladeBootstrapperApplication.IsAllowedLocalDevCompatibilityTransition(
+                LaunchAction.Install,
+                Display.None,
+                RelationType.None,
+                "65535.416.19383.5543",
+                relatedBundles));
+        Assert.False(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Install,
+                Display.None,
+                RelationType.None,
+                "65535.416.19383.5543",
+                relatedBundles,
+                localDevCompatibilityEnabled: true));
+        Assert.True(
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                LaunchAction.Install,
+                Display.None,
+                RelationType.None,
+                "65535.416.19383.5543",
+                relatedBundles,
+                localDevCompatibilityEnabled: false));
+    }
+
+    [Theory]
+    [InlineData(false, LaunchAction.Install, Display.None, RelationType.None, "65535.416.19383.5543", true)]
+    [InlineData(true, LaunchAction.Repair, Display.None, RelationType.None, "65535.416.19383.5543", true)]
+    [InlineData(true, LaunchAction.Install, Display.Full, RelationType.None, "65535.416.19383.5543", true)]
+    [InlineData(true, LaunchAction.Install, Display.Passive, RelationType.None, "65535.416.19383.5543", true)]
+    [InlineData(true, LaunchAction.Install, Display.None, RelationType.Upgrade, "65535.416.19383.5543", true)]
+    [InlineData(true, LaunchAction.Install, Display.None, RelationType.None, "0.19.19", true)]
+    [InlineData(true, LaunchAction.Install, Display.None, RelationType.None, "0.19.19.7", true)]
+    [InlineData(true, LaunchAction.Install, Display.None, RelationType.None, "65535.416.19383", true)]
+    [InlineData(true, LaunchAction.Uninstall, Display.None, RelationType.None, "65535.416.19383.5543", false)]
+    public void LocalDevCompatibilityTransitionHonorsBuildAndCommandBoundaries(
+        bool localDevCompatibilityEnabled,
+        LaunchAction action,
+        Display display,
+        RelationType commandRelation,
+        string currentVersion,
+        bool expectedBlocked)
+    {
+        DetectedRelatedBundle[] relatedBundles =
+        [
+            new(
+                "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}",
+                RelationType.Upgrade,
+                perMachine: true,
+                "0.19.18",
+                missingFromCache: false),
+            new(
+                "{9364476F-3106-4A3B-83DD-6F5D55ED22C0}",
+                RelationType.Upgrade,
+                perMachine: true,
+                "65535.416.19310.42763",
+                missingFromCache: false),
+        ];
+
+        Assert.Equal(
+            expectedBlocked,
+            OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                action,
+                display,
+                commandRelation,
+                currentVersion,
+                relatedBundles,
+                localDevCompatibilityEnabled));
+    }
+
+    [Fact]
+    public void LocalDevCompatibilityTransitionRejectsEveryOtherMultipleRegistrationShape()
+    {
+        const string stableCode = "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}";
+        const string localDevCode = "{9364476F-3106-4A3B-83DD-6F5D55ED22C0}";
+        const string secondLocalDevCode = "{A1641A82-FE1F-4BEE-9D81-1CC55A5ADCF1}";
+        const string currentVersion = "65535.416.19383.5543";
+
+        static DetectedRelatedBundle Related(
+            string code,
+            string version,
+            bool perMachine = true,
+            bool missingFromCache = false,
+            RelationType relationType = RelationType.Upgrade) =>
+            new(code, relationType, perMachine, version, missingFromCache);
+
+        (string Name, DetectedRelatedBundle[] Bundles)[] rejectedShapes =
+        [
+            ("missing Stable cache", [Related(stableCode, "0.19.18", missingFromCache: true), Related(localDevCode, "65535.416.19310.42763")]),
+            ("missing LocalDev cache", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310.42763", missingFromCache: true)]),
+            ("per-user Stable", [Related(stableCode, "0.19.18", perMachine: false), Related(localDevCode, "65535.416.19310.42763")]),
+            ("per-user LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310.42763", perMachine: false)]),
+            ("non-upgrade relation", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310.42763", relationType: RelationType.Addon)]),
+            ("wrong Stable code", [Related("{F60B037A-3E19-419B-AE9C-E3A25C367439}", "0.19.18"), Related(localDevCode, "65535.416.19310.42763")]),
+            ("wrong Stable version", [Related(stableCode, "0.19.17"), Related(localDevCode, "65535.416.19310.42763")]),
+            ("Stable plus Nightly", [Related(stableCode, "0.19.18"), Related(localDevCode, "0.19.18.7")]),
+            ("two Stable versions", [Related(stableCode, "0.19.18"), Related(secondLocalDevCode, "0.19.17")]),
+            ("two LocalDev versions", [Related(localDevCode, "65535.416.19310.42763"), Related(secondLocalDevCode, "65535.416.19311.1")]),
+            ("equal LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, currentVersion)]),
+            ("newer LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19384.1")]),
+            ("three registrations", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310.42763"), Related(secondLocalDevCode, "65535.416.19311.1")]),
+            ("duplicate Stable detection", [Related(stableCode, "0.19.18"), Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310.42763")]),
+            ("malformed LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.bad.version")]),
+            ("three-part LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.416.19310")]),
+            ("noncanonical LocalDev", [Related(stableCode, "0.19.18"), Related(localDevCode, "65535.0416.19310.42763")]),
+            ("invalid bundle code", [Related(stableCode, "0.19.18"), Related("not-a-guid", "65535.416.19310.42763")]),
+            ("duplicate bundle code", [Related(stableCode, "0.19.18"), Related(stableCode, "65535.416.19310.42763")]),
+        ];
+
+        foreach ((string name, DetectedRelatedBundle[] bundles) in rejectedShapes)
+        {
+            Assert.True(
+                OpenBladeBootstrapperApplication.ShouldBlockMultipleRelatedBundles(
+                    LaunchAction.Install,
+                    Display.None,
+                    RelationType.None,
+                    currentVersion,
+                    bundles,
+                    localDevCompatibilityEnabled: true),
+                name);
+        }
+    }
+
     [Theory]
     [InlineData(LaunchAction.Unknown, Display.Full, LaunchAction.Install)]
     [InlineData(LaunchAction.Unknown, Display.Passive, LaunchAction.Unknown)]

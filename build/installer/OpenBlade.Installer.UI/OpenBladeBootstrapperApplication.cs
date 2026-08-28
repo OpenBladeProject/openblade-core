@@ -7,6 +7,33 @@ using WixToolset.BootstrapperApplicationApi;
 
 namespace OpenBlade.Installer.UI;
 
+internal sealed class DetectedRelatedBundle
+{
+    internal DetectedRelatedBundle(
+        string productCode,
+        RelationType relationType,
+        bool perMachine,
+        string version,
+        bool missingFromCache)
+    {
+        ProductCode = productCode;
+        RelationType = relationType;
+        PerMachine = perMachine;
+        Version = version;
+        MissingFromCache = missingFromCache;
+    }
+
+    internal string ProductCode { get; }
+
+    internal RelationType RelationType { get; }
+
+    internal bool PerMachine { get; }
+
+    internal string Version { get; }
+
+    internal bool MissingFromCache { get; }
+}
+
 internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 {
     private const string ProgressPipeVariable = "OpenBladeSetupProgressPipe";
@@ -17,6 +44,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private const string LaunchWorkingFolderVariable = "LaunchWorkingFolder";
     private const string BundleLogVariable = "WixBundleLog";
     private const string BundleVersionVariable = "WixBundleVersion";
+    private const string LocalDevCompatibilityStableBundleCode =
+        "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}";
+    private const string LocalDevCompatibilityStableBundleVersion = "0.19.18";
     private const string OpenBladeSetupPackage = "OpenBladeSetup";
     private const string OpenBladeVcRuntimePackage = "OpenBladeVcRuntime";
     private const int ProductVersionConflict = unchecked((int)0x80070666);
@@ -48,8 +78,15 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? sameVersionRelatedBundleVersion;
     private readonly HashSet<string> newerRelatedBundleCodes =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> upgradeRelatedBundleVersions =
+    private readonly Dictionary<string, DetectedRelatedBundle> upgradeRelatedBundles =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<DetectedRelatedBundle> upgradeRelatedBundleDetections = [];
+
+#if OPENBLADE_LOCAL_DEV_DEPLOYMENT
+    private const bool LocalDevCompatibilityEnabled = true;
+#else
+    private const bool LocalDevCompatibilityEnabled = false;
+#endif
 
     private IEngine Engine => engine;
 
@@ -89,9 +126,13 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         if (ShouldBlockMultipleRelatedBundles(
                 action,
-                upgradeRelatedBundleVersions.Count))
+                command.Display,
+                command.Relation,
+                bundleVersion,
+                upgradeRelatedBundleDetections,
+                LocalDevCompatibilityEnabled))
         {
-            RejectMultipleRelatedBundles(upgradeRelatedBundleVersions.Count);
+            RejectMultipleRelatedBundles(upgradeRelatedBundleDetections.Count);
             return;
         }
 
@@ -283,7 +324,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         installed = e.RegistrationType == RegistrationType.Full;
         allowNewerVersionOverwrite = false;
         newerRelatedBundleCodes.Clear();
-        upgradeRelatedBundleVersions.Clear();
+        upgradeRelatedBundles.Clear();
+        upgradeRelatedBundleDetections.Clear();
         newerRelatedBundleVersion = null;
         sameVersionRelatedBundleCode = null;
         sameVersionRelatedBundleVersion = null;
@@ -309,7 +351,14 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         {
             // Upgrade relations share OpenBlade's stable upgrade code and are the
             // only related bundles Burn can plan as replacement predecessors.
-            upgradeRelatedBundleVersions[e.ProductCode] = e.Version;
+            var detectedRelatedBundle = new DetectedRelatedBundle(
+                e.ProductCode,
+                e.RelationType,
+                e.PerMachine,
+                e.Version,
+                e.MissingFromCache);
+            upgradeRelatedBundles[e.ProductCode] = detectedRelatedBundle;
+            upgradeRelatedBundleDetections.Add(detectedRelatedBundle);
             if (IsSameVersion(bundleVersion, e.Version))
             {
                 sameVersionRelatedBundleCode = e.ProductCode;
@@ -375,9 +424,13 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             command.Display);
         if (ShouldBlockMultipleRelatedBundles(
                 detectionAction,
-                upgradeRelatedBundleVersions.Count))
+                command.Display,
+                command.Relation,
+                bundleVersion,
+                upgradeRelatedBundleDetections,
+                LocalDevCompatibilityEnabled))
         {
-            RejectMultipleRelatedBundles(upgradeRelatedBundleVersions.Count);
+            RejectMultipleRelatedBundles(upgradeRelatedBundleDetections.Count);
             return;
         }
 
@@ -444,8 +497,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     {
         bool detectedNewerBundle = newerRelatedBundleCodes.Contains(e.BundleCode);
         bool detectedSameVersionBundle =
-            upgradeRelatedBundleVersions.TryGetValue(e.BundleCode, out string? relatedVersion)
-            && IsSameVersion(bundleVersion, relatedVersion);
+            upgradeRelatedBundles.TryGetValue(
+                e.BundleCode,
+                out DetectedRelatedBundle? relatedBundle)
+            && IsSameVersion(bundleVersion, relatedBundle.Version);
+        string? relatedVersion = relatedBundle?.Version;
         RelatedBundlePlanType selected = SelectRelatedBundlePlanType(
             allowNewerVersionOverwrite,
             sameVersionMaintenance,
@@ -538,9 +594,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnExecutePackageBegin(object? sender, ExecutePackageBeginEventArgs e)
     {
         string package = GetPackageName(e.PackageId);
-        bool relatedBundle = upgradeRelatedBundleVersions.TryGetValue(
+        bool relatedBundle = upgradeRelatedBundles.TryGetValue(
             e.PackageId,
-            out string relatedVersion);
+            out DetectedRelatedBundle? detectedRelatedBundle);
+        string? relatedVersion = detectedRelatedBundle?.Version;
         string diagnosticPhase = relatedBundle
             ? $"Removing OpenBlade {relatedVersion}"
             : package;
@@ -710,9 +767,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private string GetPackageName(string packageId)
     {
-        if (upgradeRelatedBundleVersions.TryGetValue(packageId, out string? relatedVersion))
+        if (upgradeRelatedBundles.TryGetValue(
+                packageId,
+                out DetectedRelatedBundle? relatedBundle))
         {
-            return $"OpenBlade {relatedVersion}";
+            return $"OpenBlade {relatedBundle.Version}";
         }
 
         if (applicationData?.Bundle.Packages.TryGetValue(packageId, out IPackageInfo? package) == true)
@@ -729,7 +788,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             newerRelatedBundleVersion is not null,
             sameVersionRelatedBundleCached,
             sameVersionRelatedBundleCode is not null,
-            upgradeRelatedBundleVersions.Count);
+            upgradeRelatedBundleDetections.Count);
 
     private bool IsSameVersionRelatedBundle(string bundleCode) =>
         sameVersionRelatedBundleCode is not null
@@ -1061,6 +1120,120 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         int relatedBundleCount) =>
         relatedBundleCount > 1
         && action is LaunchAction.Install or LaunchAction.Repair;
+
+    internal static bool ShouldBlockMultipleRelatedBundles(
+        LaunchAction action,
+        Display display,
+        RelationType commandRelation,
+        string currentVersion,
+        IReadOnlyCollection<DetectedRelatedBundle> relatedBundles,
+        bool localDevCompatibilityEnabled)
+    {
+        if (!ShouldBlockMultipleRelatedBundles(action, relatedBundles.Count))
+        {
+            return false;
+        }
+
+        return !localDevCompatibilityEnabled
+            || !IsAllowedLocalDevCompatibilityTransition(
+                action,
+                display,
+                commandRelation,
+                currentVersion,
+                relatedBundles);
+    }
+
+    internal static bool IsAllowedLocalDevCompatibilityTransition(
+        LaunchAction action,
+        Display display,
+        RelationType commandRelation,
+        string currentVersion,
+        IReadOnlyCollection<DetectedRelatedBundle> relatedBundles)
+    {
+        if (action != LaunchAction.Install
+            || display != Display.None
+            || commandRelation != RelationType.None
+            || relatedBundles.Count != 2
+            || !TryParseCanonicalLocalDevVersion(currentVersion, out Version? current))
+        {
+            return false;
+        }
+
+        if (!Guid.TryParseExact(
+                LocalDevCompatibilityStableBundleCode,
+                "B",
+                out Guid admittedStableCode))
+        {
+            return false;
+        }
+
+        bool stableFound = false;
+        bool olderLocalDevFound = false;
+        var distinctBundleCodes = new HashSet<Guid>();
+        foreach (DetectedRelatedBundle relatedBundle in relatedBundles)
+        {
+            if (relatedBundle.RelationType != RelationType.Upgrade
+                || !relatedBundle.PerMachine
+                || relatedBundle.MissingFromCache
+                || !Guid.TryParseExact(relatedBundle.ProductCode, "B", out Guid bundleCode)
+                || !distinctBundleCodes.Add(bundleCode))
+            {
+                return false;
+            }
+
+            if (bundleCode == admittedStableCode)
+            {
+                if (stableFound
+                    || !string.Equals(
+                        relatedBundle.Version,
+                        LocalDevCompatibilityStableBundleVersion,
+                        StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                stableFound = true;
+                continue;
+            }
+
+            if (olderLocalDevFound
+                || !TryParseCanonicalLocalDevVersion(
+                    relatedBundle.Version,
+                    out Version? relatedLocalDev)
+                || relatedLocalDev >= current)
+            {
+                return false;
+            }
+
+            olderLocalDevFound = true;
+        }
+
+        // RelationType.Upgrade is emitted only for the bundle's authored OpenBlade
+        // UpgradeCode. The fixed Stable bundle code additionally pins the one known
+        // legacy provider registration that this LocalDev migration may reconcile.
+        return stableFound && olderLocalDevFound;
+    }
+
+    private static bool TryParseCanonicalLocalDevVersion(
+        string value,
+        out Version? parsed)
+    {
+        if (!Version.TryParse(value, out parsed)
+            || parsed.Major != 65535
+            || parsed.Minor < 0
+            || parsed.Minor > 65534
+            || parsed.Build < 0
+            || parsed.Build > 65534
+            || parsed.Revision < 0
+            || parsed.Revision > 65534
+            || !string.Equals(value, parsed.ToString(4), StringComparison.Ordinal))
+        {
+            parsed = null;
+            return false;
+        }
+
+        return true;
+    }
 
     internal static LaunchAction SelectDetectionGateAction(
         LaunchAction action,
