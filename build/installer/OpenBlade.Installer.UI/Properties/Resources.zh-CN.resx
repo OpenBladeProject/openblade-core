@@ -87,6 +87,9 @@
   <data name="Install OpenBlade" xml:space="preserve">
     <value>安装 OpenBlade</value>
   </data>
+  <data name="Installer entry removed" xml:space="preserve">
+    <value>安装程序条目已移除</value>
+  </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
     <value>为这台电脑安装 OpenBlade 服务、Session Agent 和托盘应用。</value>
   </data>
@@ -143,6 +146,18 @@
   </data>
   <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
     <value>无法开始所选操作：{0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not inspect the installed state: {0}" xml:space="preserve">
+    <value>OpenBlade 卸载程序无法检查当前安装状态：{0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present." xml:space="preserve">
+    <value>OpenBlade 卸载程序无法确认卸载已完成。安装程序所有权标记、服务或已安装文件仍然存在。</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
+    <value>OpenBlade 卸载程序无法确认卸载已完成：{0}</value>
+  </data>
+  <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
+    <value>Windows 安装程序未计划移除此安装程序条目。另一个安装程序可能仍依赖它。请先移除任何依赖它的 OpenBlade 安装程序条目，然后重试。</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
     <value>发现 {0} 个与 OpenBlade 相关的安装程序注册项。运行其中一个旧版安装包时，可能会循环启动其他安装包，因此本安装程序已在更改系统前停止。如有“卸载”选项，请逐一卸载这些 OpenBlade 项。如果仍有重复项，请先使用 Windows 安装程序恢复工具，然后再次运行此安装程序。</value>
@@ -284,5 +299,11 @@
   </data>
   <data name="Your saved profiles and settings were kept." xml:space="preserve">
     <value>已保存的配置方案和设置已保留。</value>
+  </data>
+  <data name="This installer entry was removed. Another OpenBlade installer still owns the installation." xml:space="preserve">
+    <value>此安装程序条目已移除。另一个 OpenBlade 安装程序仍拥有此安装。</value>
+  </data>
+  <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
+    <value>此安装程序条目已移除。OpenBlade 已经不存在。</value>
   </data>
 </root>

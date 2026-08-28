@@ -175,6 +175,18 @@ public sealed class InstallerWindowTests
             Assert.Contains("kept", window.SuccessMessage.Text);
             window.ShowSuccess(LaunchAction.Uninstall, purgeProfiles: true);
             Assert.Contains("also removed", window.SuccessMessage.Text);
+            window.ShowSuccess(
+                LaunchAction.Uninstall,
+                purgeProfiles: false,
+                UninstallOutcome.RegistrationOnly);
+            Assert.Equal("Installer entry removed", window.SuccessHeading.Text);
+            Assert.Contains("still owns", window.SuccessMessage.Text);
+            window.ShowSuccess(
+                LaunchAction.Uninstall,
+                purgeProfiles: false,
+                UninstallOutcome.AlreadyAbsent);
+            Assert.Equal("Installer entry removed", window.SuccessHeading.Text);
+            Assert.Contains("already absent", window.SuccessMessage.Text);
 
             window.ShowHelp();
             Assert.Equal("Help", window.HeaderSubtitle.Text);
@@ -842,6 +854,322 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             expected,
             OpenBladeBootstrapperApplication.IsValidBundleOwnerId(value));
+    }
+
+    [Theory]
+    [InlineData("0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", true)]
+    [InlineData("0.19.22+abcdef", false)]
+    [InlineData("0.19.22+abcdef|bundle:{01234567-89ab-cdef-0123-456789abcdef}", false)]
+    [InlineData("0.19.22+abcdef|bundle:not-a-guid", false)]
+    [InlineData("0.19.22|bundle:01234567-89ab-cdef-0123-456789abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", false)]
+    [InlineData(null, false)]
+    public void OwnershipMarkerRequiresOneCanonicalBundleOwnerSuffix(
+        string? installedBuild,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            WindowsUninstallPostconditionProbe.TryReadBundleOwnerId(
+                installedBuild,
+                out _));
+    }
+
+    [Theory]
+    [InlineData("WiX Burn", "0.19.22", "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", true)]
+    [InlineData(null, "0.19.22", "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", false)]
+    [InlineData(" ", "0.19.22", "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", false)]
+    [InlineData("WiX Burn", null, "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", false)]
+    [InlineData("WiX Burn", " ", "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef", false)]
+    public void OwnershipMarkerRequiresEveryAuthoritativeValue(
+        string? owner,
+        string? installedVersion,
+        string installedBuild,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            WindowsUninstallPostconditionProbe.TryReadBundleOwnerId(
+                owner,
+                installedVersion,
+                installedBuild,
+                out _));
+    }
+
+    [Fact]
+    public void OwnershipMarkerRejectsOversizedAuthoritativeValues()
+    {
+        string oversized = new('x', 513);
+        const string installedBuild =
+            "0.19.22+abcdef|bundle:01234567-89ab-cdef-0123-456789abcdef";
+
+        Assert.False(WindowsUninstallPostconditionProbe.TryReadBundleOwnerId(
+            oversized,
+            "0.19.22",
+            installedBuild,
+            out _));
+        Assert.False(WindowsUninstallPostconditionProbe.TryReadBundleOwnerId(
+            "WiX Burn",
+            oversized,
+            installedBuild,
+            out _));
+    }
+
+    [Theory]
+    [InlineData(LaunchAction.Uninstall, true, false, true)]
+    [InlineData(LaunchAction.Uninstall, true, true, false)]
+    [InlineData(LaunchAction.Uninstall, false, false, false)]
+    [InlineData(LaunchAction.Install, true, false, false)]
+    public void UninstallPlanRejectsRegisteredNoPackagePlan(
+        LaunchAction action,
+        bool runningBundleInstalled,
+        bool setupPackagePlanned,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldRejectUninstallPlan(
+                action,
+                runningBundleInstalled,
+                setupPackagePlanned));
+    }
+
+    [Fact]
+    public void UninstallPostconditionRequiresOwnedPayloadAndRegistrationRemoval()
+    {
+        const string owner = "01234567-89ab-cdef-0123-456789abcdef";
+        var before = new UninstallMachineState(
+            BundleOwnershipKind.Current,
+            owner,
+            installDirectoryExists: true,
+            serviceRegistrationExists: true);
+        var absent = new UninstallMachineState(
+            BundleOwnershipKind.Absent,
+            bundleOwnerId: null,
+            installDirectoryExists: false,
+            serviceRegistrationExists: false);
+        var filesRemain = new UninstallMachineState(
+            BundleOwnershipKind.Absent,
+            bundleOwnerId: null,
+            installDirectoryExists: true,
+            serviceRegistrationExists: false);
+        var serviceRemains = new UninstallMachineState(
+            BundleOwnershipKind.Absent,
+            bundleOwnerId: null,
+            installDirectoryExists: false,
+            serviceRegistrationExists: true);
+        var ownershipRemains = new UninstallMachineState(
+            BundleOwnershipKind.Current,
+            owner,
+            installDirectoryExists: false,
+            serviceRegistrationExists: false);
+
+        Assert.Equal(
+            UninstallOutcome.Removed,
+            UninstallPostconditionClassifier.Classify(
+                before,
+                absent,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                before,
+                filesRemain,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                before,
+                serviceRemains,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                before,
+                ownershipRemains,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                before,
+                absent,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.Full));
+    }
+
+    [Fact]
+    public void SupersededBundleReportsRegistrationOnlyForTheSameRemainingOwner()
+    {
+        const string otherOwner = "fedcba98-7654-3210-fedc-ba9876543210";
+        var otherBefore = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: true,
+            serviceRegistrationExists: true);
+        var sameOwnerAfter = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: true,
+            serviceRegistrationExists: true);
+        var changedOwnerAfter = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            "01234567-89ab-cdef-0123-456789abcdef",
+            installDirectoryExists: true,
+            serviceRegistrationExists: true);
+        var markerOnlyAfter = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: false,
+            serviceRegistrationExists: false);
+        var directoryRemovedAfter = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: false,
+            serviceRegistrationExists: true);
+        var serviceRemovedAfter = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: true,
+            serviceRegistrationExists: false);
+
+        Assert.Equal(
+            UninstallOutcome.RegistrationOnly,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                sameOwnerAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                directoryRemovedAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                serviceRemovedAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                markerOnlyAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                sameOwnerAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: false,
+                registrationAfterApply: null));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherBefore,
+                changedOwnerAfter,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+    }
+
+    [Fact]
+    public void AbsentPayloadAndSameVersionMaintenanceHaveDistinctOutcomes()
+    {
+        const string otherOwner = "fedcba98-7654-3210-fedc-ba9876543210";
+        var absent = new UninstallMachineState(
+            BundleOwnershipKind.Absent,
+            bundleOwnerId: null,
+            installDirectoryExists: false,
+            serviceRegistrationExists: false);
+        var otherOwnerState = new UninstallMachineState(
+            BundleOwnershipKind.Other,
+            otherOwner,
+            installDirectoryExists: true,
+            serviceRegistrationExists: true);
+
+        Assert.Equal(
+            UninstallOutcome.AlreadyAbsent,
+            UninstallPostconditionClassifier.Classify(
+                absent,
+                absent,
+                runningBundleInstalled: true,
+                sameVersionMaintenance: false,
+                setupPackagePlanned: true,
+                registrationAfterApply: RegistrationType.None));
+        Assert.Equal(
+            UninstallOutcome.Removed,
+            UninstallPostconditionClassifier.Classify(
+                otherOwnerState,
+                absent,
+                runningBundleInstalled: false,
+                sameVersionMaintenance: true,
+                setupPackagePlanned: true,
+                registrationAfterApply: null));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherOwnerState,
+                otherOwnerState,
+                runningBundleInstalled: false,
+                sameVersionMaintenance: true,
+                setupPackagePlanned: true,
+                registrationAfterApply: null));
+        Assert.Equal(
+            UninstallOutcome.Failed,
+            UninstallPostconditionClassifier.Classify(
+                otherOwnerState,
+                absent,
+                runningBundleInstalled: false,
+                sameVersionMaintenance: true,
+                setupPackagePlanned: false,
+                registrationAfterApply: null));
+    }
+
+    [Fact]
+    public void FailedUninstallPostconditionProducesANonzeroQuietExitCode()
+    {
+        int status = OpenBladeBootstrapperApplication.SelectApplyCompletionStatus(
+            burnStatus: 0,
+            action: LaunchAction.Uninstall,
+            uninstallOutcome: UninstallOutcome.Failed);
+
+        Assert.True(status < 0);
+        Assert.Equal(1610, OpenBladeBootstrapperApplication.NormalizeExitCode(status));
+        Assert.Equal(
+            unchecked((int)0x80004005),
+            OpenBladeBootstrapperApplication.SelectApplyCompletionStatus(
+                burnStatus: unchecked((int)0x80004005),
+                action: LaunchAction.Uninstall,
+                uninstallOutcome: UninstallOutcome.Failed));
     }
 
     [Theory]
