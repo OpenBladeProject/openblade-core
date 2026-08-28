@@ -8094,6 +8094,320 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ScopedPerformance_ProvenPreSubmissionFailureRetriesOnce()
+    {
+        List<TimeSpan> retryDelays = [];
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+        int admissionsBefore = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(2, context.Device.PerformanceSetCalls);
+        Assert.Equal(admissionsBefore + 2, context.Provider.TryGetCount);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().ConfirmedState?.Performance);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_InitialAuthorityLossBlocksBeforePowerTransitionAndMutation()
+    {
+        TestContext context = CreateWritableContext();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        int settersBefore = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(settersBefore, context.Device.TotalSetterCalls);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(
+            PowerSource.PluggedIn,
+            context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_LateAuthorityLossReturnsTypedBlockBeforeSetter()
+    {
+        TestContext context = CreateWritableContext();
+        bool stillControlsSession = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.BeforePerformanceFanStateReadResult = _ =>
+            stillControlsSession = false;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                () => stillControlsSession,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("before the performance command was submitted", result.Message);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            context.Runtime.GetStatus().PerformanceOverride?.Value);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_InitialAuthorityLossBlocksBeforePowerTransition()
+    {
+        TestContext context = CreateWritableContext();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        int settersBefore = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                static () => false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(settersBefore, context.Device.TotalSetterCalls);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(
+            PowerSource.PluggedIn,
+            context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_InitialAuthorityLossBlocksBeforeInspection()
+    {
+        TestContext context = CreateWritableContext();
+
+        ControlOperationResult result = await context.Runtime
+            .ReapplyChangedSettingsAsync(
+                static () => false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("active Windows session changed", result.Message);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_AuthorityLossBlocksPreSubmissionRetry()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        bool stillControlsSession = true;
+        context.Device.BeforeQueuedPerformanceFailure = () =>
+            stillControlsSession = false;
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+        int admissionsBefore = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                () => stillControlsSession,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(admissionsBefore + 1, context.Provider.TryGetCount);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            context.Device.ConfirmedState.Performance);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_RetryDelayCancellationStopsBeforeFreshAdmission()
+    {
+        using var cancellation = new CancellationTokenSource();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (_, token) =>
+            {
+                cancellation.Cancel();
+                return Task.FromCanceled(token);
+            });
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+        int admissionsBefore = context.Provider.TryGetCount;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                cancellation.Token));
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(admissionsBefore + 1, context.Provider.TryGetCount);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_RetryAdmissionFailureReturnsOriginalTypedFailure()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.BeforeQueuedPerformanceFailure = () =>
+            context.Monitor.Failure = new IOException(
+                "Injected retry controller observation failure.");
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+        int admissionsBefore = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("pre-write read failure", result.Message);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(admissionsBefore + 1, context.Provider.TryGetCount);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_RetryDelayFaultReturnsTypedFailureWithoutFreshAdmission()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) =>
+                Task.FromException(new IOException(
+                    "Injected retry settling delay failure.")));
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+        int admissionsBefore = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("settling delay failure", result.Message);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(admissionsBefore + 1, context.Provider.TryGetCount);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_LowPowerEntryBlocksPreSubmissionRetry()
+    {
+        var lowPowerGate = new LowPowerGate();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            lowPowerGate: lowPowerGate,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+        };
+        context.Device.BeforeQueuedPerformanceFailure = () => lowPowerGate.Enter();
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_PowerChangeBlocksRetryWithoutFullTransition()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.BeforeQueuedPerformanceFailure = () =>
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(0, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task ScopedPerformance_ControllerRemainsAdvisoryDuringRetryAdmission()
+    {
+        TestContext context = CreateWritableContext(
+            conflicts: ["RazerAppEngine"],
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first-session pre-write read failure."));
+
+        ControlOperationResult result = await context.Runtime
+            .SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Performance,
+                    OverrideLifetime.Persistent),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(2, context.Device.PerformanceSetCalls);
+        Assert.Contains(
+            "RazerAppEngine",
+            context.Runtime.GetStatus().PotentialControllers);
+    }
+
+    [Fact]
     public async Task ScopedBatteryMismatch_PublishesProtectionOffAndLatchesBatteryDriftWithoutRetry()
     {
         TestContext context = CreateWritableContext();
@@ -17221,7 +17535,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private sealed class CountingBladeDevice :
         IBladeDevice,
-        IGpuClockOffsetManagementDevice
+        IGpuClockOffsetManagementDevice,
+        ISingleAttemptThermalDevice
     {
         public GpuClockOffsetManagementState GpuClockOffsetManagementState
         {
@@ -17759,6 +18074,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 gpuClockOffsets,
                 retainGpuClockOffsetManagement,
                 cancellationToken);
+
+        Task ISingleAttemptThermalDevice.SetPerformanceOnceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
+            CancellationToken cancellationToken) => SetManagedPerformanceAsync(
+            value,
+            customPerformance,
+            gpuClockOffsets,
+            retainGpuClockOffsetManagement,
+            cancellationToken);
 
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,

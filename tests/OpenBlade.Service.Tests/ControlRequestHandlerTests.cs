@@ -252,6 +252,41 @@ public sealed class ControlRequestHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_PerformanceRequestRechecksSessionAfterActivation()
+    {
+        var authority = new MutableSessionAuthority(4);
+        var runtime = new RecordingRuntime
+        {
+            AfterActivation = () => authority.SessionId = 5,
+        };
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            authority);
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new SetPerformanceOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new PerformanceOverride(
+                    PerformancePreset.Silent,
+                    OverrideLifetime.Persistent)),
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(ControlOperationStatus.Blocked, response.Result!.Status);
+        Assert.Contains("active Windows session changed", response.Result.Message);
+        Assert.DoesNotContain("SetPerformanceOverride", runtime.Calls);
+    }
+
+    [Fact]
     public async Task HandleAsync_InvalidActiveUserConfigurationReturnsFailure()
     {
         var runtime = new RecordingRuntime
@@ -381,6 +416,8 @@ public sealed class ControlRequestHandlerTests
 
         public Exception? ActivationFailure { get; init; }
 
+        public Action? AfterActivation { get; init; }
+
         public Task ActivateUserAsync(
             SecurityIdentifier userSid,
             CancellationToken cancellationToken) => ActivationFailure is null
@@ -390,7 +427,16 @@ public sealed class ControlRequestHandlerTests
         public Task ActivateUserAsync(
             SecurityIdentifier userSid,
             Func<bool> stillControlsSession,
-            CancellationToken cancellationToken) => ActivateUserAsync(userSid, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            Task activation = ActivateUserAsync(userSid, cancellationToken);
+            if (activation.IsCompletedSuccessfully)
+            {
+                AfterActivation?.Invoke();
+            }
+
+            return activation;
+        }
 
         public ServiceStatusSnapshot GetStatus()
         {
@@ -574,6 +620,14 @@ public sealed class ControlRequestHandlerTests
             Calls++;
             return sessionId;
         }
+    }
+
+    private sealed class MutableSessionAuthority(int? sessionId)
+        : IInteractiveSessionAuthority
+    {
+        public int? SessionId { get; set; } = sessionId;
+
+        public int? GetControlSessionId() => SessionId;
     }
 
     private sealed class FixedControllerPresenceMonitor(IReadOnlyList<string> controllers)

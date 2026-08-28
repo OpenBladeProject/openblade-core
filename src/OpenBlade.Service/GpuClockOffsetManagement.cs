@@ -32,6 +32,16 @@ internal interface IGpuClockOffsetManagementDevice
     Task<bool> InvalidateGpuClockOffsetConfirmationAsync(CancellationToken cancellationToken);
 }
 
+public interface ISingleAttemptThermalDevice
+{
+    Task SetPerformanceOnceAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        GpuClockOffsetSettings? gpuClockOffsets,
+        bool retainGpuClockOffsetManagement,
+        CancellationToken cancellationToken);
+}
+
 internal interface IGpuClockOffsetConfirmationInvalidator
 {
     Task<bool> InvalidateGpuClockOffsetConfirmationAsync(CancellationToken cancellationToken);

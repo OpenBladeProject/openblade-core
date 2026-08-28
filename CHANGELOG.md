@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Centralized scoped performance transitions under one typed Strict executor,
+  preserving the bounded EC settling delay while allowing only one freshly
+  admitted retry after a proven pre-submission failure. Possible submissions
+  are reconciled read-only, and session, power, low-power, pending thermal, and
+  exact-device authority are rechecked before any retry.
 - Let the exact cached Stable-plus-LocalDev compatibility pair pass the
   LocalDev-only bootstrapper gate, resolve Common Startup when Burn runs those
   predecessors as LocalSystem, and record the reserved LocalDev bundle version

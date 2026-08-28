@@ -319,6 +319,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private sealed class SerializedBladeDevice :
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
+        ISingleAttemptThermalDevice,
         IPadlessHyperBoostLifecycleValidationDevice,
         IDisposable
     {
@@ -1193,6 +1194,33 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             CustomPerformanceSettings? customPerformance,
             GpuClockOffsetSettings? gpuClockOffsets,
             bool retainGpuClockOffsetManagement,
+            CancellationToken cancellationToken) => await SetPerformanceCoreAsync(
+            value,
+            customPerformance,
+            gpuClockOffsets,
+            retainGpuClockOffsetManagement,
+            allowFreshSessionRetry: true,
+            cancellationToken).ConfigureAwait(false);
+
+        Task ISingleAttemptThermalDevice.SetPerformanceOnceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
+            CancellationToken cancellationToken) => SetPerformanceCoreAsync(
+            value,
+            customPerformance,
+            gpuClockOffsets,
+            retainGpuClockOffsetManagement,
+            allowFreshSessionRetry: false,
+            cancellationToken);
+
+        private async Task SetPerformanceCoreAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            GpuClockOffsetSettings? gpuClockOffsets,
+            bool retainGpuClockOffsetManagement,
+            bool allowFreshSessionRetry,
             CancellationToken cancellationToken)
         {
             if (customPerformance?.GpuClockOffsets is { } legacyOffsets)
@@ -1297,7 +1325,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     : port.SetPerformanceAsync(value, cancellationToken),
                 cancellationToken,
                 PreflightGpuClockOffsets,
-                CompleteGpuClockOffsets).ConfigureAwait(false);
+                CompleteGpuClockOffsets,
+                allowFreshSessionRetry: allowFreshSessionRetry).ConfigureAwait(false);
         }
 
         public Task SetHyperBoostAsync(
@@ -2040,7 +2069,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             Action? beforeWrite = null,
             Action? afterWrite = null,
             bool retryHyperBoostAdapterPreflight = false,
-            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null)
+            Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null,
+            bool allowFreshSessionRetry = true)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
@@ -2071,7 +2101,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             try
             {
-                const int attemptCount = 2;
+                int attemptCount = allowFreshSessionRetry ? 2 : 1;
                 for (int attempt = 0; attempt < attemptCount; attempt++)
                 {
                     bool isFreshPreWriteRetry = attempt > 0;

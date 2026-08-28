@@ -112,6 +112,10 @@ public sealed class ControlRequestHandler
             }
         }
 
+        Func<bool> stillControlsSession = () =>
+            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                == SessionControlAccess.Active;
+
         return request switch
         {
             GetStatusRequest or SubscribeStatusRequest => Status(
@@ -129,6 +133,7 @@ public sealed class ControlRequestHandler
                 request.RequestId,
                 await runtime.SetPerformanceConfigurationOverrideAsync(
                     set.Value,
+                    stillControlsSession,
                     cancellationToken)),
             SetHyperBoostRequest set => Result(
                 request.RequestId,
@@ -142,6 +147,7 @@ public sealed class ControlRequestHandler
                 request.RequestId,
                 await runtime.CyclePerformanceShortcutAsync(
                     cycle.Source,
+                    stillControlsSession,
                     cancellationToken)),
             SetPerformanceShortcutPreviewRequest preview => Result(
                 request.RequestId,
@@ -192,7 +198,9 @@ public sealed class ControlRequestHandler
                     cancellationToken)),
             ReapplyChangedSettingsRequest => Result(
                 request.RequestId,
-                await runtime.ReapplyChangedSettingsAsync(cancellationToken)),
+                await runtime.ReapplyChangedSettingsAsync(
+                    stillControlsSession,
+                    cancellationToken)),
             RecoverHyperBoostRestoreRequest => Result(
                 request.RequestId,
                 await runtime.RecoverHyperBoostRestoreAsync(cancellationToken)),

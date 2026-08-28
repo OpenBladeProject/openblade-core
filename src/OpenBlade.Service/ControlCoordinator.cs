@@ -46,8 +46,9 @@ internal sealed class IntentionalWriteCanceledException(
 
 internal sealed class WriteAuthorityLostException : InvalidOperationException
 {
-    public WriteAuthorityLostException()
-        : base("The active Windows session changed before the recovery write.")
+    public WriteAuthorityLostException(
+        string message = "The active Windows session changed before the recovery write.")
+        : base(message)
     {
     }
 }
@@ -59,6 +60,8 @@ public sealed class ControlCoordinator
         scopedStateReader;
     private readonly bool resolveIndeterminatePerformanceWrites;
     private readonly bool resolveIndeterminateAutomaticFanWrites;
+    private readonly bool singleAttemptPerformanceWrites;
+    private readonly Func<string?>? performanceWriteBlockReason;
 
     public ControlCoordinator(IBladeDevice device)
         : this(device, scopedStateReader: null)
@@ -69,7 +72,9 @@ public sealed class ControlCoordinator
         IBladeDevice device,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? scopedStateReader,
         bool resolveIndeterminatePerformanceWrites = false,
-        bool resolveIndeterminateAutomaticFanWrites = false)
+        bool resolveIndeterminateAutomaticFanWrites = false,
+        bool singleAttemptPerformanceWrites = false,
+        Func<string?>? performanceWriteBlockReason = null)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.scopedStateReader = scopedStateReader;
@@ -77,6 +82,8 @@ public sealed class ControlCoordinator
             resolveIndeterminatePerformanceWrites;
         this.resolveIndeterminateAutomaticFanWrites =
             resolveIndeterminateAutomaticFanWrites;
+        this.singleAttemptPerformanceWrites = singleAttemptPerformanceWrites;
+        this.performanceWriteBlockReason = performanceWriteBlockReason;
     }
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
@@ -243,7 +250,10 @@ public sealed class ControlCoordinator
                     : Task.CompletedTask,
             resolveIndeterminateWriteByReadback:
                 resolveIndeterminatePerformanceWrites,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches)
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            writeBlockReason: performanceWriteBlockReason,
+            returnBlockedOnWriteAuthorityLoss:
+                performanceWriteBlockReason is not null)
             .ConfigureAwait(false);
         return requestedDesired is null
             ? outcome
@@ -1315,10 +1325,12 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
         Func<bool>? writeAllowed = null,
+        Func<string?>? writeBlockReason = null,
         Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null,
         bool resolveIndeterminateWriteByReadback = false,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
-            unchangedAfterIndeterminateWrite = null)
+            unchangedAfterIndeterminateWrite = null,
+        bool returnBlockedOnWriteAuthorityLoss = false)
     {
         if (!valid)
         {
@@ -1385,6 +1397,12 @@ public sealed class ControlCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            string? writeRefusal = writeBlockReason?.Invoke();
+            if (writeRefusal is not null)
+            {
+                throw new WriteAuthorityLostException(writeRefusal);
+            }
+
             if (writeAllowed?.Invoke() == false)
             {
                 throw new WriteAuthorityLostException();
@@ -1476,6 +1494,21 @@ public sealed class ControlCoordinator
         {
             throw;
         }
+        catch (WriteAuthorityLostException exception)
+            when (returnBlockedOnWriteAuthorityLoss)
+        {
+            string message = exception.Message;
+            return new ScopedApplyOutcome(
+                new ControlResult(
+                    ControlResultStatus.Blocked,
+                    message),
+                initial,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false,
+                WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
+        }
         catch (WriteAuthorityLostException)
         {
             throw;
@@ -1559,7 +1592,11 @@ public sealed class ControlCoordinator
                     WriteAttempted: true,
                     ReadbackMatched: true,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                    WriteFailurePhase: exception is BladeWriteException matchedFailure
+                        ? matchedFailure.FailurePhase
+                        : null);
             }
 
             if (initial is not null
@@ -1573,7 +1610,11 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                    WriteFailurePhase: exception is BladeWriteException unchangedFailure
+                        ? unchangedFailure.FailurePhase
+                        : null);
             }
 
             return new ScopedApplyOutcome(
@@ -1584,7 +1625,11 @@ public sealed class ControlCoordinator
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 capabilities,
-                DeviceAccessFailed: false);
+                DeviceAccessFailed: false,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                WriteFailurePhase: exception is BladeWriteException contradictedFailure
+                    ? contradictedFailure.FailurePhase
+                    : null);
         }
         catch (OperationCanceledException cancellationException)
             when (cancellationToken.IsCancellationRequested)
@@ -1604,7 +1649,11 @@ public sealed class ControlCoordinator
                 capabilities,
                 DeviceAccessFailed: true,
                 ConfirmationUnavailable: initial is not null,
-                PreWriteState: initial);
+                PreWriteState: initial,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                WriteFailurePhase: exception is BladeWriteException writeFailure
+                    ? writeFailure.FailurePhase
+                    : null);
         }
     }
 
@@ -2033,7 +2082,17 @@ public sealed class ControlCoordinator
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning,
         CancellationToken cancellationToken) =>
-        device is IGpuClockOffsetManagementDevice managedDevice
+        singleAttemptPerformanceWrites
+            ? device is ISingleAttemptThermalDevice singleAttemptDevice
+                ? singleAttemptDevice.SetPerformanceOnceAsync(
+                    performance,
+                    customPerformance,
+                    gpuClockTuning?.EffectiveOffsets,
+                    gpuClockTuning?.Enabled == true,
+                    cancellationToken)
+                : Task.FromException(new CapabilityUnavailableException(
+                    "The verified device does not expose single-attempt thermal writes."))
+            : device is IGpuClockOffsetManagementDevice managedDevice
             ? managedDevice.SetPerformanceAsync(
                 performance,
                 customPerformance,
