@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.19.15-nightly.34] - 2026-08-27
+
 ### Fixed
 
 - Released the quick-controls WinUI surface when it is dismissed instead of
@@ -65,6 +67,77 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Wired the HyperBoost ownership journal into the production Service composition
   so a confirmed activation is durably recorded before lifecycle recovery is
   armed.
+- Prevented coordinated Session Agent cancellation from becoming a fatal
+  named-pipe error that stops function-row and other per-user features.
+- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it could
+  exercise padless HyperBoost while the low-power and unexpected-exit
+  production evidence gates were still closed.
+- Reworked Simplified Chinese and Russian wording to use natural,
+  context-aware terminology throughout the tray, installer, and setup.
+- Prevented localized profile-draft captions from overlapping adjacent
+  columns at narrow window widths.
+- Kept keyboard-lighting effect choices in the same order across supported
+  display languages.
+- Fixed live language changes mixing strings from the previous language into
+  the rebuilt tray when background work retained an older UI culture.
+- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
+  admission, and corrected the platform warning shown while controls are
+  unavailable.
+- Preserved responsive selector bindings after Dashboard edits so switching
+  between AC and battery cannot leave the laptop-performance dropdown blank or
+  prevent it from expanding into horizontal choices when space is available.
+- Kept malformed current-schema profile files on the safe recovery and import
+  error paths, and cleared stray legacy Windows power modes before publishing
+  migrated schema 1 profiles.
+- Removed the redundant **Double-click** hint from the tray context menu while
+  preserving double-click activation of the main window.
+- Removed redundant troubleshooting status dots, clarified the service-start
+  action, and removed its idle leading gap.
+- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
+  response while keeping Windows Offline authoritative for battery power and
+  excluding that response from other Blade models.
+- Retried transient MCU firmware-version read failures during later verified
+  observations, while keeping the query bounded and stopping after a confirmed
+  version is available.
+- Clarified unclassified external power consistently across control access,
+  active profile, tray hover, and troubleshooting instead of presenting a
+  completed bounded classification attempt as still checking.
+- Kept conditional profile Save and **Use profile settings** actions beside
+  Customize when they fit, while moving the complete action group below the
+  title or stacking long localized actions before they can overlap or clip.
+- Kept page customization buttons aligned with their titles while allowing
+  longer localized and profile actions to use a separate row.
+- Fixed the **Random colors** switch track alignment and made compact switch
+  alignment explicit across the main window and quick controls.
+- Expanded the graphical installer's progress details pane to use the available
+  window height instead of remaining limited to a few log lines.
+- Offered **Repair** and **Uninstall** when an interactive installer finds one
+  cached OpenBlade bundle with the same version. Repair overwrites the installed
+  files, records instance-specific ownership, and retires the old registration
+  without letting it remove the repaired payload. Uninstall keeps saved profiles
+  and removes through the cached installed bundle without registering the incoming
+  one, with guidance to use its Windows Installed apps entry when profile removal
+  is also wanted.
+- Advanced the combined service IPC contract to version 46 so peers without
+  the expanded firmware inventory are no longer accepted as wire-compatible.
+- Rejected imported lighting sequences for a different keyboard layout before
+  opening the lighting device or changing its state.
+- Kept the Lab features row aligned with neighboring Settings rows when showing
+  its information button.
+- Validated imported lighting timelines without rebuilding their decoded frame
+  graph during each IPC status check.
+- Labeled imported animations consistently in profile details and summaries
+  instead of showing `Sequence` and `#000000`.
+- Preserved configured Windows power modes when migrating schema 12 profiles
+  to the keyboard-animation profile schema.
+- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
+  without faulting or surrendering the service-owned renderer.
+- Prevented brief firmware lighting-off readings during AC and battery
+  transitions from being mistaken for external changes. OpenBlade now confirms
+  a zero reading at the point where it would release the owned renderer, while
+  preserving a stable external lighting change without overwriting it. If that
+  confirmation is unavailable, only lighting is skipped; the remaining profile
+  controls still apply.
 
 ### Added
 
@@ -158,80 +231,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the long Lab features description with an on-demand list of current features.
 - Advanced the profile/configuration schema from 13 to 14 for the persisted
   lighting refresh-rate preference. Migrated configurations default to 30 Hz.
-
-### Fixed
-
-- Prevented coordinated Session Agent cancellation from becoming a fatal
-  named-pipe error that stops function-row and other per-user features.
-- Fixed the validation-marked FirmwareSmoke lifecycle bootstrap so it could
-  exercise padless HyperBoost while the low-power and unexpected-exit
-  production evidence gates were still closed.
-- Reworked Simplified Chinese and Russian wording to use natural,
-  context-aware terminology throughout the tray, installer, and setup.
-- Prevented localized profile-draft captions from overlapping adjacent
-  columns at narrow window widths.
-- Kept keyboard-lighting effect choices in the same order across supported
-  display languages.
-- Fixed live language changes mixing strings from the previous language into
-  the rebuilt tray when background work retained an older UI culture.
-- Prevented nonzero HID firmware metadata from blocking exact RZ09-0581 device
-  admission, and corrected the platform warning shown while controls are
-  unavailable.
-- Preserved responsive selector bindings after Dashboard edits so switching
-  between AC and battery cannot leave the laptop-performance dropdown blank or
-  prevent it from expanding into horizontal choices when space is available.
-- Kept malformed current-schema profile files on the safe recovery and import
-  error paths, and cleared stray legacy Windows power modes before publishing
-  migrated schema 1 profiles.
-- Removed the redundant **Double-click** hint from the tray context menu while
-  preserving double-click activation of the main window.
-- Removed redundant troubleshooting status dots, clarified the service-start
-  action, and removed its idle leading gap.
-- Added typed decoding for the capture-backed RZ09-0528 `0011` no-adapter
-  response while keeping Windows Offline authoritative for battery power and
-  excluding that response from other Blade models.
-- Retried transient MCU firmware-version read failures during later verified
-  observations, while keeping the query bounded and stopping after a confirmed
-  version is available.
-- Clarified unclassified external power consistently across control access,
-  active profile, tray hover, and troubleshooting instead of presenting a
-  completed bounded classification attempt as still checking.
-- Kept conditional profile Save and **Use profile settings** actions beside
-  Customize when they fit, while moving the complete action group below the
-  title or stacking long localized actions before they can overlap or clip.
-- Kept page customization buttons aligned with their titles while allowing
-  longer localized and profile actions to use a separate row.
-- Fixed the **Random colors** switch track alignment and made compact switch
-  alignment explicit across the main window and quick controls.
-- Expanded the graphical installer's progress details pane to use the available
-  window height instead of remaining limited to a few log lines.
-- Offered **Repair** and **Uninstall** when an interactive installer finds one
-  cached OpenBlade bundle with the same version. Repair overwrites the installed
-  files, records instance-specific ownership, and retires the old registration
-  without letting it remove the repaired payload. Uninstall keeps saved profiles
-  and removes through the cached installed bundle without registering the incoming
-  one, with guidance to use its Windows Installed apps entry when profile removal
-  is also wanted.
-- Advanced the combined service IPC contract to version 46 so peers without
-  the expanded firmware inventory are no longer accepted as wire-compatible.
-- Rejected imported lighting sequences for a different keyboard layout before
-  opening the lighting device or changing its state.
-- Kept the Lab features row aligned with neighboring Settings rows when showing
-  its information button.
-- Validated imported lighting timelines without rebuilding their decoded frame
-  graph during each IPC status check.
-- Labeled imported animations consistently in profile details and summaries
-  instead of showing `Sequence` and `#000000`.
-- Preserved configured Windows power modes when migrating schema 12 profiles
-  to the keyboard-animation profile schema.
-- Kept a completed non-looping RZ09-0528 lighting sequence on its final frame
-  without faulting or surrendering the service-owned renderer.
-- Prevented brief firmware lighting-off readings during AC and battery
-  transitions from being mistaken for external changes. OpenBlade now confirms
-  a zero reading at the point where it would release the owned renderer, while
-  preserving a stable external lighting change without overwriting it. If that
-  confirmation is unavailable, only lighting is skipped; the remaining profile
-  controls still apply.
 
 ## [0.8.4-nightly.20] - 2026-08-15
 
@@ -1528,7 +1527,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...HEAD
+[0.19.15-nightly.34]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...v0.19.15-nightly.34
 [0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
 [0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16
 [0.1.0-nightly.11]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.10...v0.1.0-nightly.11
