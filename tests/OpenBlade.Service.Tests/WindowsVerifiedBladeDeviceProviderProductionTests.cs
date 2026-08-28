@@ -1864,6 +1864,211 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task SingleAttemptFanControlRetainsPreSubmissionFailureWithoutRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        BladeWriteException firstFailure = ThermalPreWriteReadFailure();
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.SetFanControlOnceAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                CancellationToken.None));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SingleAttemptFanControlDoesNotHideSecondManualEntryContinuation()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        BladeWriteException firstFailure = SecondFanManualEntryFailure();
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.SetFanControlOnceAsync(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3700,
+                    ManualFanCurve.Default),
+                CancellationToken.None));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanModeCount);
+        Assert.Equal(0, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SingleAttemptFanTargetsRetainsPreSubmissionFailureWithoutRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.ManualCurve });
+        BladeWriteException firstFailure = ThermalPreWriteReadFailure();
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.SetFanTargetsOnceAsync(
+                3200,
+                3300,
+                CancellationToken.None));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SecondManualEntryContinuationOnceUsesTargetsOnlyInOneSession()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        await singleAttempt.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            3200,
+            3300,
+            CancellationToken.None);
+
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, firstPort.SetFanModeCount);
+        Assert.Equal(1, firstPort.SetFanTargetsCount);
+        Assert.Equal(3200, firstPort.LastFan1TargetRpm);
+        Assert.Equal(3300, firstPort.LastFan2TargetRpm);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
+    public async Task SecondManualEntryContinuationOnceMapsPreTargetFailureWithoutRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Fixed }) with
+        {
+            FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
+        };
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = ThermalPreWriteReadFailure(),
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+                3200,
+                3300,
+                CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            error.FailurePhase);
+        Assert.Contains("before any fan target was submitted", error.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, firstPort.SetFanModeCount);
+        Assert.Equal(1, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanModeCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
     public async Task ThermalPreWriteRetryDelayCancellationStopsBeforeFreshSession()
     {
         using var cancellation = new CancellationTokenSource();

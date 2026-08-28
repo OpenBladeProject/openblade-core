@@ -125,6 +125,16 @@ public interface IServiceControlRuntime
         FanControlSettings? settings,
         CancellationToken token) => SetFanOverrideAsync(value, token);
 
+    Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => stillControlsSession()
+            ? SetFanControlOverrideAsync(value, settings, token)
+            : Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before the fan request started."));
+
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
@@ -1332,6 +1342,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public Task<ControlOperationResult> SetFanControlOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
+        CancellationToken token) => SetFanControlOverrideCoreAsync(
+            value,
+            settings,
+            stillControlsSession: null,
+            token);
+
+    public Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => SetFanControlOverrideCoreAsync(
+            value,
+            settings,
+            stillControlsSession
+                ?? throw new ArgumentNullException(nameof(stillControlsSession)),
+            token);
+
+    private Task<ControlOperationResult> SetFanControlOverrideCoreAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
+        Func<bool>? stillControlsSession,
         CancellationToken token)
     {
         if (GetStatus().ConfirmedState?.HyperBoostActive == true
@@ -1379,7 +1410,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             value is null
                 ? "Fan override was cleared."
                 : "Fan override intent was stored.",
-            allowFanOwnershipRearm: true);
+            allowFanOwnershipRearm: true,
+            stillControlsSession: stillControlsSession,
+            thermalComponentResolver: desired =>
+            {
+                FanControlSettings requested = desired.FanControl
+                    ?? FanControlSettings.FromLegacy(desired.Fans.Value);
+                FanControlSettings prior = previous ?? requested;
+                bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(
+                    requested.Mode);
+                bool priorManual = DeviceSubsystemOrder.IsManualFanMode(prior.Mode);
+                bool performanceMayChange = requestedManual
+                        && (!priorManual || prior.Mode != requested.Mode)
+                    || requested.Mode == FanMode.Automatic && priorManual;
+                return performanceMayChange
+                    ? new[]
+                    {
+                        DeviceSubsystem.Fans,
+                        DeviceSubsystem.Performance,
+                    }
+                    : new[] { DeviceSubsystem.Fans };
+            });
     }
 
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
@@ -8802,7 +8853,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<PowerSource, ServiceStatusSnapshot, string?>? deferHardwareApply = null,
         Action? afterApply = null,
         bool allowFanOwnershipRearm = false,
-        Func<bool>? stillControlsSession = null)
+        Func<bool>? stillControlsSession = null,
+        Func<DesiredDeviceState, IReadOnlyList<DeviceSubsystem>>?
+            thermalComponentResolver = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -8883,7 +8936,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 apply,
                 token,
                 allowFanOwnershipRearm: allowFanOwnershipRearm,
-                stillControlsSession: stillControlsSession);
+                stillControlsSession: stillControlsSession,
+                thermalComponents: thermalComponentResolver?.Invoke(
+                    ResolveHardwareDesired(
+                        GetStatus().ConfirmedState ?? UnknownConfirmedState)));
             if (result.Status == ControlOperationStatus.Applied)
             {
                 afterApply?.Invoke();
@@ -8966,7 +9022,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
         Func<CancellationToken, Task>? commitIntent = null,
         bool allowFanOwnershipRearm = false,
-        Func<bool>? stillControlsSession = null)
+        Func<bool>? stillControlsSession = null,
+        IReadOnlyList<DeviceSubsystem>? thermalComponents = null)
     {
         if (stillControlsSession?.Invoke() == false)
         {
@@ -9043,7 +9100,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             apply,
             token,
             stageDesired,
-            stillControlsSession);
+            stillControlsSession,
+            thermalComponents);
         ScopedApplyOutcome outcome = execution.Outcome;
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
@@ -9150,7 +9208,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
-        Func<bool>? stillControlsSession)
+        Func<bool>? stillControlsSession,
+        IReadOnlyList<DeviceSubsystem>? thermalComponents)
     {
         try
         {
@@ -9179,12 +9238,54 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 .ConfigureAwait(false);
                         },
                         (_, cancellationToken) =>
-                            RevalidateScopedPerformanceRetryAsync(
+                            RevalidateScopedThermalRetryAsync(
                                 powerSource,
                                 desired,
                                 stageDesired,
                                 stillControlsSession,
+                                new[] { DeviceSubsystem.Performance },
                                 cancellationToken),
+                        token).ConfigureAwait(false);
+                return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
+            }
+
+            if (subsystem == DeviceSubsystem.Fans && thermalComponents is not null)
+            {
+                ThermalTransitionExecution thermal = await ThermalTransitionExecutor
+                    .ExecuteAsync(
+                        thermalComponents,
+                        device,
+                        (attemptDevice, runner) => new ControlCoordinator(
+                            attemptDevice,
+                            attemptDevice.ReadPerformanceFanStateAsync,
+                            resolveIndeterminatePerformanceWrites: true,
+                            resolveIndeterminateAutomaticFanWrites: true,
+                            singleAttemptPerformanceWrites: true,
+                            singleAttemptFanWrites: true,
+                            thermalStepRunner: runner,
+                            performanceWriteBlockReason: () =>
+                                ScopedThermalWriteBlockReason(
+                                    desired,
+                                    stageDesired,
+                                    stillControlsSession,
+                                    thermalComponents),
+                            fanWriteBlockReason: () =>
+                                ScopedThermalWriteBlockReason(
+                                    desired,
+                                    stageDesired,
+                                    stillControlsSession,
+                                    thermalComponents)),
+                        (runner, cancellationToken) => apply(
+                            runner.CreateRecipeCoordinator(),
+                            desired,
+                            cancellationToken),
+                        (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
+                            powerSource,
+                            desired,
+                            stageDesired,
+                            stillControlsSession,
+                            thermalComponents,
+                            cancellationToken),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
             }
@@ -9228,11 +9329,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task<ThermalRetryAdmission>
-        RevalidateScopedPerformanceRetryAsync(
+        RevalidateScopedThermalRetryAsync(
         PowerSource expectedPowerSource,
         DesiredDeviceState expectedDesired,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
+        IReadOnlyList<DeviceSubsystem> components,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -9334,10 +9436,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "Thermal write admission closed before the fresh-session retry.");
         }
 
-        if (!ScopedPerformanceIntentMatchesCurrent(expectedDesired, stageDesired))
+        if (!ScopedThermalIntentMatchesCurrent(
+                expectedDesired,
+                stageDesired,
+                components))
         {
             return ThermalRetryAdmission.Block(
-                "The authoritative performance intent changed before the fresh-session retry.");
+                "The authoritative thermal intent changed before the fresh-session retry.");
         }
 
         try
@@ -9395,6 +9500,38 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : "The authoritative performance intent changed before the command was submitted.";
     }
 
+    private string? ScopedThermalWriteBlockReason(
+        DesiredDeviceState expected,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        Func<bool>? stillControlsSession,
+        IReadOnlyList<DeviceSubsystem> components)
+    {
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return "The active Windows session changed before the thermal command was submitted.";
+        }
+        if (lowPowerGate.IsActive)
+        {
+            return "The laptop entered a low-power transition before the thermal command was submitted.";
+        }
+        if (IsWritePendingFor(DeviceSubsystem.Performance)
+            || IsWritePendingFor(DeviceSubsystem.Fans))
+        {
+            return "A thermal write requires read-only reconciliation before another command can be submitted.";
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (hyperBoostJournalSafetyBlock
+            || current is { DeviceVerified: true, WritesBlocked: true })
+        {
+            return "Thermal write authority closed before the command was submitted.";
+        }
+
+        return ScopedThermalIntentMatchesCurrent(expected, stageDesired, components)
+            ? null
+            : "The authoritative thermal intent changed before the command was submitted.";
+    }
+
     private bool ScopedPerformanceIntentMatchesCurrent(
         DesiredDeviceState expected,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired)
@@ -9410,6 +9547,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return latest.Performance == expected.Performance
             && latest.CustomPerformance == expected.CustomPerformance
             && latest.GpuClockTuning == expected.GpuClockTuning;
+    }
+
+    private bool ScopedThermalIntentMatchesCurrent(
+        DesiredDeviceState expected,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        IReadOnlyList<DeviceSubsystem> components)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        DesiredDeviceState latest = ResolveHardwareDesired(
+            current.ConfirmedState ?? UnknownConfirmedState);
+        if (stageDesired is not null)
+        {
+            latest = stageDesired(latest);
+        }
+
+        bool performanceMatches = !components.Contains(DeviceSubsystem.Performance)
+            || latest.Performance == expected.Performance
+                && latest.CustomPerformance == expected.CustomPerformance
+                && latest.GpuClockTuning == expected.GpuClockTuning;
+        bool fansMatch = !components.Contains(DeviceSubsystem.Fans)
+            || latest.Fans == expected.Fans
+                && latest.FanControl == expected.FanControl;
+        return performanceMatches && fansMatch;
     }
 
     private async Task<(ScopedApplyOutcome Outcome, ConfirmedDeviceState? Confirmed)>

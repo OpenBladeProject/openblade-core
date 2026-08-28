@@ -21,11 +21,32 @@ internal enum ThermalSubmissionProgress
 internal enum ThermalTransitionDisposition
 {
     Confirmed = 0,
-    External = 1,
-    ReconciliationUnavailable = 2,
-    Blocked = 3,
-    Failed = 4,
+    Acknowledged = 1,
+    External = 2,
+    ReconciliationUnavailable = 3,
+    Blocked = 4,
+    Failed = 5,
 }
+
+internal enum ThermalTransitionStepPurpose
+{
+    Requested = 0,
+    AutomaticBridge = 1,
+    BalancedBridge = 2,
+    Restoration = 3,
+    ManualTargetContinuation = 4,
+}
+
+internal sealed record ThermalTransitionStepAttempt(
+    ScopedApplyOutcome Outcome,
+    ThermalTransitionStage Stage,
+    ThermalSubmissionProgress SubmissionProgress,
+    ThermalTransitionDisposition Disposition);
+
+internal sealed record ThermalTransitionStepTrace(
+    DeviceSubsystem Component,
+    ThermalTransitionStepPurpose Purpose,
+    IReadOnlyList<ThermalTransitionStepAttempt> Attempts);
 
 internal sealed record ThermalTransitionTrace(
     Guid AttemptId,
@@ -36,7 +57,8 @@ internal sealed record ThermalTransitionTrace(
     ThermalTransitionDisposition Disposition,
     int AttemptCount,
     bool RetryConsumed,
-    string? RetryBlockReason);
+    string? RetryBlockReason,
+    IReadOnlyList<ThermalTransitionStepTrace>? Steps = null);
 
 internal sealed record ThermalTransitionExecution(
     ScopedApplyOutcome Outcome,
@@ -60,47 +82,201 @@ internal sealed record ThermalRetryAdmission(
             : reason);
 }
 
-internal static class ThermalTransitionExecutor
+internal sealed class ThermalTransitionStepRunner
 {
-    private static readonly DeviceSubsystem[] ScopedPerformanceComponents =
-        [DeviceSubsystem.Performance];
+    private readonly Guid attemptId;
+    private readonly IReadOnlyList<DeviceSubsystem> declaredComponents;
+    private readonly HashSet<DeviceSubsystem> declaredComponentSet;
+    private readonly Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+        coordinatorFactory;
+    private readonly Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+        revalidateRecovery;
+    private readonly List<ThermalTransitionStepTrace> steps = [];
+    private IBladeDevice currentDevice;
+    private bool recoveryLeaseConsumed;
+    private string? recoveryBlockReason;
 
-    public static async Task<ThermalTransitionExecution>
-        ExecuteScopedPerformanceAsync(
+    public ThermalTransitionStepRunner(
+        Guid attemptId,
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
         IBladeDevice initialDevice,
-        Func<IBladeDevice, CancellationToken, Task<ScopedApplyOutcome>> applyOnce,
-        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRetry,
-        CancellationToken cancellationToken)
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRecovery)
     {
-        ArgumentNullException.ThrowIfNull(initialDevice);
-        ArgumentNullException.ThrowIfNull(applyOnce);
-        ArgumentNullException.ThrowIfNull(revalidateRetry);
-
-        Guid attemptId = Guid.NewGuid();
-        int attemptCount = 1;
-        bool retryConsumed = false;
-        ScopedApplyOutcome outcome = await applyOnce(initialDevice, cancellationToken)
-            .ConfigureAwait(false);
-        if (!IsEligibleForFreshSessionRetry(outcome))
+        if (declaredComponents is null || declaredComponents.Count == 0)
         {
-            return CreateExecution(
-                attemptId,
-                outcome,
-                attemptCount,
-                retryConsumed,
-                retryBlockReason: null);
+            throw new ArgumentException(
+                "A thermal transition must declare at least one component.",
+                nameof(declaredComponents));
         }
 
-        // The lease is consumed before volatile admission is repeated so a
-        // refusal, cancellation, or fault cannot mint another retry.
-        retryConsumed = true;
-        ThermalRetryAdmission admission;
+        if (declaredComponents.Any(component => component is not (
+                DeviceSubsystem.Performance or DeviceSubsystem.Fans)))
+        {
+            throw new ArgumentException(
+                "A thermal transition may declare only performance and fan components.",
+                nameof(declaredComponents));
+        }
+
+        declaredComponentSet = declaredComponents.ToHashSet();
+        if (declaredComponentSet.Count != declaredComponents.Count)
+        {
+            throw new ArgumentException(
+                "A thermal transition cannot declare a component more than once.",
+                nameof(declaredComponents));
+        }
+
+        this.attemptId = attemptId;
+        this.declaredComponents = [.. declaredComponents];
+        currentDevice = initialDevice ?? throw new ArgumentNullException(nameof(initialDevice));
+        this.coordinatorFactory = coordinatorFactory
+            ?? throw new ArgumentNullException(nameof(coordinatorFactory));
+        this.revalidateRecovery = revalidateRecovery
+            ?? throw new ArgumentNullException(nameof(revalidateRecovery));
+    }
+
+    public IReadOnlyList<DeviceSubsystem> DeclaredComponents => declaredComponents;
+
+    public IReadOnlyList<ThermalTransitionStepTrace> Steps => steps;
+
+    public bool RecoveryLeaseConsumed => recoveryLeaseConsumed;
+
+    public string? RecoveryBlockReason => recoveryBlockReason;
+
+    public int AttemptCount => steps.Sum(step => step.Attempts.Count);
+
+    public ControlCoordinator CreateRecipeCoordinator() =>
+        coordinatorFactory(currentDevice, this);
+
+    public async Task<ScopedApplyOutcome> ApplyStepAsync(
+        DeviceSubsystem component,
+        ThermalTransitionStepPurpose purpose,
+        Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> applyOnce,
+        CancellationToken cancellationToken)
+    {
+        EnsureDeclared(component);
+        ArgumentNullException.ThrowIfNull(applyOnce);
+
+        var attempts = new List<ThermalTransitionStepAttempt>();
+        ScopedApplyOutcome outcome = await ApplyOnceAsync(
+                currentDevice,
+                applyOnce,
+                cancellationToken)
+            .ConfigureAwait(false);
+        attempts.Add(CreateAttempt(outcome));
+
+        if (IsEligibleForFreshSessionRetry(outcome))
+        {
+            if (recoveryLeaseConsumed)
+            {
+                outcome = AppendNoRecoveryMessage(
+                    outcome,
+                    "the transition recovery lease was already consumed");
+                attempts[^1] = CreateAttempt(outcome);
+            }
+            else
+            {
+                ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!admission.Allowed || admission.Device is null)
+                {
+                    outcome = AppendNoRecoveryMessage(
+                        outcome,
+                        admission.BlockReason
+                            ?? "thermal retry admission was not renewed");
+                    attempts[^1] = CreateAttempt(
+                        outcome,
+                        ThermalTransitionDisposition.Blocked);
+                }
+                else
+                {
+                    currentDevice = admission.Device;
+                    outcome = await ApplyOnceAsync(
+                            currentDevice,
+                            applyOnce,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    attempts.Add(CreateAttempt(outcome));
+                }
+            }
+        }
+
+        steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+        return outcome;
+    }
+
+    public async Task<ScopedApplyOutcome> ApplyFreshContinuationAsync(
+        DeviceSubsystem component,
+        ThermalTransitionStepPurpose purpose,
+        ScopedApplyOutcome possibleSubmission,
+        Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> continueOnce,
+        CancellationToken cancellationToken)
+    {
+        EnsureDeclared(component);
+        ArgumentNullException.ThrowIfNull(possibleSubmission);
+        ArgumentNullException.ThrowIfNull(continueOnce);
+        if (possibleSubmission.WriteSubmissionState != WriteSubmissionState.Indeterminate)
+        {
+            throw new InvalidOperationException(
+                "A post-submission continuation requires indeterminate submission certainty.");
+        }
+
+        var attempts = new List<ThermalTransitionStepAttempt>();
+        if (recoveryLeaseConsumed)
+        {
+            ScopedApplyOutcome blocked = AppendNoRecoveryMessage(
+                possibleSubmission,
+                "the transition recovery lease was already consumed");
+            attempts.Add(CreateAttempt(
+                blocked,
+                ThermalTransitionDisposition.ReconciliationUnavailable));
+            steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+            return blocked;
+        }
+
+        ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!admission.Allowed || admission.Device is null)
+        {
+            ScopedApplyOutcome blocked = AppendNoRecoveryMessage(
+                possibleSubmission,
+                admission.BlockReason ?? "thermal continuation admission was not renewed");
+            attempts.Add(CreateAttempt(
+                blocked,
+                ThermalTransitionDisposition.ReconciliationUnavailable));
+            steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+            return blocked;
+        }
+
+        currentDevice = admission.Device;
+        ScopedApplyOutcome outcome = await ApplyOnceAsync(
+                currentDevice,
+                continueOnce,
+                cancellationToken)
+            .ConfigureAwait(false);
+        attempts.Add(CreateAttempt(outcome));
+        steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+        return outcome;
+    }
+
+    private async Task<ThermalRetryAdmission> ConsumeAndRevalidateAsync(
+        CancellationToken cancellationToken)
+    {
+        recoveryLeaseConsumed = true;
         try
         {
-            admission = await revalidateRetry(
+            ThermalRetryAdmission admission = await revalidateRecovery(
                     attemptId,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (!admission.Allowed)
+            {
+                recoveryBlockReason = admission.BlockReason
+                    ?? "Thermal recovery admission was not renewed.";
+            }
+            return admission;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -108,114 +284,196 @@ internal static class ThermalTransitionExecutor
         }
         catch (Exception exception)
         {
-            admission = ThermalRetryAdmission.Block(
-                $"Fresh-session retry admission failed: {exception.Message}");
+            recoveryBlockReason =
+                $"Fresh-session recovery admission failed: {exception.Message}";
+            return ThermalRetryAdmission.Block(recoveryBlockReason);
         }
+    }
 
-        if (!admission.Allowed || admission.Device is null)
+    private Task<ScopedApplyOutcome> ApplyOnceAsync(
+        IBladeDevice device,
+        Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> applyOnce,
+        CancellationToken cancellationToken) => applyOnce(
+            coordinatorFactory(device, this),
+            cancellationToken);
+
+    private void EnsureDeclared(DeviceSubsystem component)
+    {
+        if (!declaredComponentSet.Contains(component))
         {
-            string blockReason = admission.BlockReason
-                ?? "Thermal retry admission was not renewed.";
-            outcome = outcome with
-            {
-                Result = outcome.Result with
-                {
-                    Message = $"{outcome.Result.Message} No retry was submitted: {blockReason}",
-                },
-            };
-            return CreateExecution(
-                attemptId,
-                outcome,
-                attemptCount,
-                retryConsumed,
-                blockReason,
-                blockedDuringRetryPreflight: true);
+            throw new InvalidOperationException(
+                $"Thermal component {component} was not declared before execution.");
         }
+    }
 
-        attemptCount++;
-        outcome = await applyOnce(admission.Device, cancellationToken)
-            .ConfigureAwait(false);
-        return CreateExecution(
-            attemptId,
+    private static ScopedApplyOutcome AppendNoRecoveryMessage(
+        ScopedApplyOutcome outcome,
+        string reason) => outcome with
+        {
+            Result = outcome.Result with
+            {
+                Message = $"{outcome.Result.Message} No retry was submitted: {reason}.",
+            },
+        };
+
+    private static ThermalTransitionStepAttempt CreateAttempt(
+        ScopedApplyOutcome outcome,
+        ThermalTransitionDisposition? disposition = null)
+    {
+        ThermalSubmissionProgress progress = ThermalTransitionExecutor
+            .SubmissionProgress(outcome);
+        return new ThermalTransitionStepAttempt(
             outcome,
-            attemptCount,
-            retryConsumed,
-            retryBlockReason: null);
+            ThermalTransitionExecutor.Stage(outcome, progress),
+            progress,
+            disposition ?? ThermalTransitionExecutor.Disposition(outcome));
     }
 
     private static bool IsEligibleForFreshSessionRetry(ScopedApplyOutcome outcome) =>
         outcome.WriteSubmissionState == WriteSubmissionState.KnownNotApplied
         && outcome.WriteFailurePhase == BladeWriteFailurePhase.ThermalPreWriteRead;
+}
+
+internal static class ThermalTransitionExecutor
+{
+    private static readonly DeviceSubsystem[] ScopedPerformanceComponents =
+        [DeviceSubsystem.Performance];
+
+    public static Task<ThermalTransitionExecution> ExecuteScopedPerformanceAsync(
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, CancellationToken, Task<ScopedApplyOutcome>> applyOnce,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRetry,
+        CancellationToken cancellationToken) => ExecuteAsync(
+            ScopedPerformanceComponents,
+            initialDevice,
+            (device, _) => new ControlCoordinator(device),
+            (runner, token) => runner.ApplyStepAsync(
+                DeviceSubsystem.Performance,
+                ThermalTransitionStepPurpose.Requested,
+                (coordinator, stepToken) => applyOnce(
+                    coordinator.ThermalDevice,
+                    stepToken),
+                token),
+            revalidateRetry,
+            cancellationToken);
+
+    public static Task<ThermalTransitionExecution> ExecuteAsync(
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ThermalTransitionStepRunner, CancellationToken, Task<ScopedApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRecovery,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(initialDevice);
+        ArgumentNullException.ThrowIfNull(coordinatorFactory);
+        ArgumentNullException.ThrowIfNull(executeRecipe);
+        ArgumentNullException.ThrowIfNull(revalidateRecovery);
+        return ExecuteCoreAsync(
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            executeRecipe,
+            revalidateRecovery,
+            cancellationToken);
+    }
+
+    private static async Task<ThermalTransitionExecution> ExecuteCoreAsync(
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ThermalTransitionStepRunner, CancellationToken, Task<ScopedApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRecovery,
+        CancellationToken cancellationToken)
+    {
+        Guid attemptId = Guid.NewGuid();
+        var runner = new ThermalTransitionStepRunner(
+            attemptId,
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            revalidateRecovery);
+        ScopedApplyOutcome outcome = await executeRecipe(runner, cancellationToken)
+            .ConfigureAwait(false);
+        return CreateExecution(attemptId, outcome, runner);
+    }
 
     private static ThermalTransitionExecution CreateExecution(
         Guid attemptId,
         ScopedApplyOutcome outcome,
-        int attemptCount,
-        bool retryConsumed,
-        string? retryBlockReason,
-        bool blockedDuringRetryPreflight = false)
+        ThermalTransitionStepRunner runner)
     {
         ThermalSubmissionProgress submissionProgress = SubmissionProgress(outcome);
         ThermalTransitionStage stage = Stage(outcome, submissionProgress);
-        ThermalTransitionDisposition disposition = blockedDuringRetryPreflight
-            ? ThermalTransitionDisposition.Blocked
-            : Disposition(outcome);
-        if (blockedDuringRetryPreflight)
+        ThermalTransitionDisposition disposition = Disposition(outcome);
+        ThermalTransitionStepAttempt? lastAttempt = runner.Steps
+            .LastOrDefault()?.Attempts.LastOrDefault();
+        if (lastAttempt is not null && lastAttempt.Outcome == outcome)
         {
-            stage = ThermalTransitionStage.Preflight;
+            stage = lastAttempt.Stage;
+            submissionProgress = lastAttempt.SubmissionProgress;
+            disposition = lastAttempt.Disposition;
         }
 
         return new ThermalTransitionExecution(
             outcome,
             new ThermalTransitionTrace(
                 attemptId,
-                ScopedPerformanceComponents,
+                runner.DeclaredComponents,
                 stage,
                 submissionProgress,
                 outcome.WriteSubmissionState,
                 disposition,
-                attemptCount,
-                retryConsumed,
-                retryBlockReason));
+                runner.AttemptCount,
+                runner.RecoveryLeaseConsumed,
+                runner.RecoveryBlockReason,
+                runner.Steps));
     }
 
-    private static ThermalSubmissionProgress SubmissionProgress(
+    internal static ThermalSubmissionProgress SubmissionProgress(
         ScopedApplyOutcome outcome)
     {
         if (outcome.WriteSubmissionState == WriteSubmissionState.KnownNotApplied)
         {
             return ThermalSubmissionProgress.NotSubmitted;
         }
-
         if (outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate)
         {
             return ThermalSubmissionProgress.Submitted;
         }
-
         if (!outcome.WriteAttempted)
         {
             return ThermalSubmissionProgress.NotSubmitted;
         }
-
-        return outcome.Readback is not null || outcome.Result.Status == ControlResultStatus.Applied
+        return outcome.Readback is not null
+            || outcome.Result.Status == ControlResultStatus.Applied
             ? ThermalSubmissionProgress.Acknowledged
             : ThermalSubmissionProgress.Submitted;
     }
 
-    private static ThermalTransitionStage Stage(
+    internal static ThermalTransitionStage Stage(
         ScopedApplyOutcome outcome,
         ThermalSubmissionProgress submissionProgress)
     {
-        if (outcome.WriteSubmissionState == WriteSubmissionState.KnownNotApplied)
+        if (outcome.WriteSubmissionState == WriteSubmissionState.KnownNotApplied
+            || !outcome.WriteAttempted
+                && outcome.Result.Status == ControlResultStatus.Blocked)
         {
             return ThermalTransitionStage.Preflight;
         }
-
-        if (outcome.Readback is not null)
+        if (outcome.ReadbackMatched)
         {
             return ThermalTransitionStage.Confirmation;
         }
-
+        if (outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate
+            && outcome.Readback is not null)
+        {
+            return ThermalTransitionStage.Confirmation;
+        }
         return submissionProgress switch
         {
             ThermalSubmissionProgress.Acknowledged =>
@@ -227,33 +485,40 @@ internal static class ThermalTransitionExecutor
         };
     }
 
-    private static ThermalTransitionDisposition Disposition(
+    internal static ThermalTransitionDisposition Disposition(
         ScopedApplyOutcome outcome)
     {
+        if (outcome.WriteSubmissionState == WriteSubmissionState.KnownNotApplied)
+        {
+            return outcome.Result.Status == ControlResultStatus.Blocked
+                ? ThermalTransitionDisposition.Blocked
+                : ThermalTransitionDisposition.Failed;
+        }
         if (outcome.ReadbackMatched
             && outcome.Result.Status is
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged)
         {
             return ThermalTransitionDisposition.Confirmed;
         }
-
+        if (outcome.Result.Status == ControlResultStatus.Applied
+            && outcome.WriteAttempted)
+        {
+            return ThermalTransitionDisposition.Acknowledged;
+        }
         if (outcome.ConfirmationUnavailable)
         {
             return ThermalTransitionDisposition.ReconciliationUnavailable;
         }
-
         if (outcome.Readback is not null
             && (outcome.WriteAttempted
                 || outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate))
         {
             return ThermalTransitionDisposition.External;
         }
-
         if (outcome.Result.Status == ControlResultStatus.Blocked)
         {
             return ThermalTransitionDisposition.Blocked;
         }
-
         return ThermalTransitionDisposition.Failed;
     }
 }

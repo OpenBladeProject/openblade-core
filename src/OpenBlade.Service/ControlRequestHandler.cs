@@ -161,6 +161,7 @@ public sealed class ControlRequestHandler
                 await runtime.SetFanControlOverrideAsync(
                     set.Value,
                     set.Settings,
+                    stillControlsSession,
                     cancellationToken)),
             SetLightingOverrideRequest set => Result(
                 request.RequestId,

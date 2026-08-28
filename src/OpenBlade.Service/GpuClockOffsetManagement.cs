@@ -40,6 +40,20 @@ public interface ISingleAttemptThermalDevice
         GpuClockOffsetSettings? gpuClockOffsets,
         bool retainGpuClockOffsetManagement,
         CancellationToken cancellationToken);
+
+    Task SetFanControlOnceAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken);
+
+    Task SetFanTargetsOnceAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken);
+
+    Task ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken);
 }
 
 internal interface IGpuClockOffsetConfirmationInvalidator

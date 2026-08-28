@@ -9682,6 +9682,128 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task AcManualFans_RetriesOnlyFailedRequestedStepAfterBalancedBridge()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected requested-fan pre-write failure."));
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            context.Device.PerformanceWrites);
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.Equal([FanMode.Fixed, FanMode.Fixed], context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task AcManualFans_OneBridgeRetryPreventsLaterRequestedRetry()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected Balanced bridge pre-write failure."));
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected requested-fan pre-write failure."));
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Balanced,
+                PerformancePreset.Performance,
+            ],
+            context.Device.PerformanceWrites);
+        Assert.Contains(
+            "recovery lease was already consumed",
+            result.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AcManualFans_TargetContinuationRechecksSessionBeforeWrite()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        bool entrySubmissionFailed = false;
+        bool stillControlsSession = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+            entrySubmissionFailed = true;
+        };
+        context.Device.BeforePerformanceFanStateReadResult = _ =>
+        {
+            if (entrySubmissionFailed)
+            {
+                stillControlsSession = false;
+            }
+        };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            "Injected second-channel manual-entry ambiguity."));
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            () => stillControlsSession,
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Contains(
+            "active Windows session changed",
+            result.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(context.Device.FanTargets);
+    }
+
+    [Fact]
     public async Task AcManualFans_IndeterminateAutomaticWriteUsesFreshReadbackWithoutDrift()
     {
         TestContext context = CreateWritableContext();
@@ -18175,6 +18297,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 : SetFanModeAsync(value.Mode, cancellationToken);
         }
 
+        Task ISingleAttemptThermalDevice.SetFanControlOnceAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) =>
+            SetFanControlAsync(value, cancellationToken);
+
         public Task SetFanTargetsAsync(
             int fan1Rpm,
             int fan2Rpm,
@@ -18205,6 +18332,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AfterSetter?.Invoke(DeviceSubsystem.Fans);
             return Task.CompletedTask;
         }
+
+        Task ISingleAttemptThermalDevice.SetFanTargetsOnceAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken);
+
+        Task ISingleAttemptThermalDevice
+            .ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken);
 
         public async Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken)
         {
