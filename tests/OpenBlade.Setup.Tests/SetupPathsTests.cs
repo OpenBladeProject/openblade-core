@@ -50,6 +50,26 @@ public sealed class SetupPathsTests
             paths.UninstallStartMenuFile);
     }
 
+    [Fact]
+    public void CreateLocalSystem_UsesOnlyCommonStartupForShortcutCleanup()
+    {
+        SetupPaths paths = SetupPaths.CreateLocalSystem(
+            @"C:\Program Files",
+            @"C:\ProgramData",
+            @"C:\Windows\System32\config\systemprofile\AppData\Local",
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup");
+
+        Assert.Equal(paths.CommonStartupRoot, paths.StartupRoot);
+        Assert.Equal(paths.StartupFile, paths.LegacyTrayStartupFile);
+        Assert.Equal(paths.SessionAgentStartupFile, paths.LegacySessionAgentStartupFile);
+        Assert.Equal(
+            @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.cmd",
+            paths.LegacyStartupFile);
+        Assert.Equal(
+            @"C:\Windows\System32\config\systemprofile\AppData\Local\OpenBlade",
+            paths.UserDataDirectory);
+    }
+
     [Theory]
     [InlineData(@"C:\Program Files\OpenBlade.uninstall.0123456789abcdef0123456789abcdef")]
     [InlineData(@"C:\Program Files\OPENBLADE.UNINSTALL.0123456789ABCDEF0123456789ABCDEF")]

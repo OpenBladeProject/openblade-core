@@ -127,7 +127,11 @@ The broker starts Burn with the SCM-provided LocalSystem environment needed by
 Windows installer infrastructure, strips WiX, .NET, compatibility, and
 OpenBlade environment control variables, fixes executable lookup to Windows
 system directories, and redirects temporary files into the protected request
-staging directory.
+staging directory. The developer-only Setup build also resolves shortcut
+cleanup through the machine-wide Common Startup folder because LocalSystem has
+no interactive user's Startup known folder. It does not derive or traverse an
+enrolled user's writable profile while elevated; ordinary release Setup keeps
+its existing per-user legacy-cleanup behavior.
 
 The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or
