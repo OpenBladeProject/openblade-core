@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
 using System.Security.Principal;
 
 namespace OpenBlade.DeploymentClient.Tests;
@@ -248,6 +249,26 @@ public sealed class DeploymentClientCoordinatorTests
             WindowsInstalledPayloadVerifier.GetEffectiveCallerIdentities();
 
         Assert.Contains(user, effective);
+    }
+
+    [Fact]
+    public void InstalledPayloadAcl_ReadExecuteIsNotTreatedAsWriteAccess()
+    {
+        FileSystemRights readOnly = FileSystemRights.ReadAndExecute
+            | FileSystemRights.Synchronize;
+
+        Assert.False(WindowsInstalledPayloadVerifier.HasDangerousWriteAccess(
+            readOnly,
+            denied: 0));
+        Assert.True(WindowsInstalledPayloadVerifier.HasDangerousWriteAccess(
+            FileSystemRights.WriteData,
+            denied: 0));
+        Assert.True(WindowsInstalledPayloadVerifier.HasDangerousWriteAccess(
+            FileSystemRights.Delete,
+            denied: 0));
+        Assert.False(WindowsInstalledPayloadVerifier.HasDangerousWriteAccess(
+            FileSystemRights.WriteData,
+            FileSystemRights.WriteData));
     }
 
     [Theory]

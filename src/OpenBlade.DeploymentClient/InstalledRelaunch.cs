@@ -153,6 +153,15 @@ internal static class InstalledPayloadVerificationPolicy
 
 internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifier
 {
+    private const FileSystemRights DangerousWriteRights = FileSystemRights.WriteData
+        | FileSystemRights.AppendData
+        | FileSystemRights.WriteExtendedAttributes
+        | FileSystemRights.WriteAttributes
+        | FileSystemRights.Delete
+        | FileSystemRights.DeleteSubdirectoriesAndFiles
+        | FileSystemRights.ChangePermissions
+        | FileSystemRights.TakeOwnership;
+
     public InstalledPayloadPaths? GetVerifiedPaths()
     {
         InstalledPayloadPaths? expected = InstalledPayloadPathPolicy.GetExpectedPaths();
@@ -217,12 +226,6 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
             return true;
         }
 
-        const FileSystemRights dangerous = FileSystemRights.Write
-            | FileSystemRights.Modify
-            | FileSystemRights.Delete
-            | FileSystemRights.DeleteSubdirectoriesAndFiles
-            | FileSystemRights.ChangePermissions
-            | FileSystemRights.TakeOwnership;
         FileSystemRights allowed = 0;
         FileSystemRights denied = 0;
         foreach (FileSystemAccessRule rule in security.GetAccessRules(
@@ -246,8 +249,13 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
             }
         }
 
-        return (allowed & dangerous & ~denied) != 0;
+        return HasDangerousWriteAccess(allowed, denied);
     }
+
+    internal static bool HasDangerousWriteAccess(
+        FileSystemRights allowed,
+        FileSystemRights denied)
+        => (allowed & DangerousWriteRights & ~denied) != 0;
 
     internal static HashSet<SecurityIdentifier> GetEffectiveCallerIdentities()
     {
