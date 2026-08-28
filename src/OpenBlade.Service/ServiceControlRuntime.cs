@@ -2100,6 +2100,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (load.Invalid)
             {
+                hyperBoostJournalSafetyBlock = true;
                 return PublishHyperBoostRestoreRecoveryResult(
                     ControlOperationStatus.Blocked,
                     "The saved HyperBoost restore is invalid and was preserved for manual inspection.",
@@ -2423,7 +2424,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedState = confirmed ?? current.ConfirmedState,
             DesiredState = Automation.Resolve(effectiveConfirmed),
             ExternalChanges = driftTracker.ExternalChanges,
-            WritesBlocked = restorePending || HasPendingWriteConfirmations(),
+            WritesBlocked = hyperBoostJournalSafetyBlock
+                || restorePending
+                || HasPendingWriteConfirmations(),
             HyperBoostRestorePending = restorePending,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
