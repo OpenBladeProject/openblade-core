@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Routed full power-profile performance and fan changes through the typed
+  Strict thermal executor, so aggregate preflight, performance, fan, and
+  target-only manual-fan continuation share one freshly admitted recovery
+  lease. A failed step no longer replays an earlier write, and any possible
+  thermal submission stops later profile writes until read-only reconciliation.
 - Routed explicit fan transitions through the typed Strict thermal executor,
   sharing one freshly admitted recovery lease across Automatic and Balanced
   bridges, the requested fan write, target-only second-fan continuation, and

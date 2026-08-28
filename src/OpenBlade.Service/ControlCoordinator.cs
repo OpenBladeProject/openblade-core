@@ -758,7 +758,9 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
             automaticWriteExclusionResolver = null,
         Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
-            stateReader = null)
+            stateReader = null,
+        Func<IBladeDevice, CancellationToken,
+            Task<PowerTransitionDeviceStateReadResult>>? deviceStateReader = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var transition = new FullTransitionApplyState();
@@ -767,7 +769,8 @@ public sealed class ControlCoordinator
         bool lightingReadUnavailable = false;
         try
         {
-            capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            IBladeDevice initialDevice = thermalStepRunner?.CurrentDevice ?? device;
+            capabilities = await initialDevice.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
             desired = DropUnsupportedGpuClockTuning(desired, capabilities);
             if (desired.GpuClockTuning is null)
@@ -780,12 +783,16 @@ public sealed class ControlCoordinator
                 await RelinquishGpuClockOffsetManagementAsync(cancellationToken);
             }
 
-            PowerTransitionDeviceStateReadResult initialRead = stateReader is null
-                ? new(
-                    await device.ReadStateAsync(cancellationToken)
-                        .ConfigureAwait(false),
-                    LightingOffConfirmationUnavailable: false)
-                : await stateReader(cancellationToken).ConfigureAwait(false);
+            PowerTransitionDeviceStateReadResult initialRead =
+                deviceStateReader is not null
+                    ? await deviceStateReader(initialDevice, cancellationToken)
+                        .ConfigureAwait(false)
+                    : stateReader is not null
+                        ? await stateReader(cancellationToken).ConfigureAwait(false)
+                        : new(
+                            await initialDevice.ReadStateAsync(cancellationToken)
+                                .ConfigureAwait(false),
+                            LightingOffConfirmationUnavailable: false);
             initial = initialRead.State;
             lightingReadUnavailable =
                 initialRead.LightingOffConfirmationUnavailable;
@@ -828,6 +835,7 @@ public sealed class ControlCoordinator
         {
             await ApplyPendingSubsystemWritesAsync(
                 desired,
+                capabilities,
                 initial,
                 states,
                 automaticWriteExclusions,
@@ -853,12 +861,17 @@ public sealed class ControlCoordinator
             bool finalLightingReadUnavailable;
             try
             {
-                PowerTransitionDeviceStateReadResult finalRead = stateReader is null
-                    ? new(
-                        await device.ReadStateAsync(cancellationToken)
-                            .ConfigureAwait(false),
-                        LightingOffConfirmationUnavailable: false)
-                    : await stateReader(cancellationToken).ConfigureAwait(false);
+                IBladeDevice finalDevice = thermalStepRunner?.CurrentDevice ?? device;
+                PowerTransitionDeviceStateReadResult finalRead =
+                    deviceStateReader is not null
+                        ? await deviceStateReader(finalDevice, cancellationToken)
+                            .ConfigureAwait(false)
+                        : stateReader is not null
+                            ? await stateReader(cancellationToken).ConfigureAwait(false)
+                            : new(
+                                await finalDevice.ReadStateAsync(cancellationToken)
+                                    .ConfigureAwait(false),
+                                LightingOffConfirmationUnavailable: false);
                 final = finalRead.State;
                 finalLightingReadUnavailable =
                     finalRead.LightingOffConfirmationUnavailable;
@@ -877,6 +890,13 @@ public sealed class ControlCoordinator
                 }
 
                 transition.Matched.Clear();
+                HashSet<DeviceSubsystem> confirmationUnavailable =
+                    transition.Completed
+                        .Where(subsystem =>
+                            !states[subsystem].AcceptSetterCompletionWithoutReadback)
+                        .ToHashSet();
+                confirmationUnavailable.UnionWith(
+                    transition.ConfirmationUnavailable);
 
                 return CreateFullOutcome(
                     transition.Provisional,
@@ -886,10 +906,7 @@ public sealed class ControlCoordinator
                     transition.Contradicted,
                     capabilities,
                     DeviceAccessFailed: true,
-                    confirmationUnavailable: transition.Completed
-                        .Where(subsystem =>
-                            !states[subsystem].AcceptSetterCompletionWithoutReadback)
-                        .ToHashSet(),
+                    confirmationUnavailable: confirmationUnavailable,
                     preWriteState: initial,
                     effectiveDesired: desired);
             }
@@ -919,6 +936,8 @@ public sealed class ControlCoordinator
                             final,
                             desired))
                     .ToHashSet();
+            attemptedWithoutConfirmation.UnionWith(
+                transition.ConfirmationUnavailable);
 
             return CreateFullOutcome(
                 transition.Provisional,
@@ -1005,7 +1024,7 @@ public sealed class ControlCoordinator
                     && IsDefined(desired.Fans.Value)
                     && capabilities.FanModes.Contains(desired.Fans.Value),
                 FanModeMatches(initial.Fans, desired.Fans.Value),
-                token => device.SetFanControlAsync(
+                token => SetFanControlAsync(
                     desired.FanControl
                         ?? FanControlSettings.FromLegacy(desired.Fans.Value),
                     token),
@@ -1070,6 +1089,7 @@ public sealed class ControlCoordinator
 
     private async Task ApplyPendingSubsystemWritesAsync(
         DesiredDeviceState desired,
+        DeviceCapabilities capabilities,
         ConfirmedDeviceState initial,
         IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
         IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions,
@@ -1131,12 +1151,92 @@ public sealed class ControlCoordinator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (IsThermalSubsystem(subsystem) && thermalStepRunner is not null)
+            {
+                ScopedApplyOutcome thermalOutcome = await RunThermalStepAsync(
+                        subsystem,
+                        ThermalTransitionStepPurpose.Requested,
+                        (coordinator, token) => coordinator
+                            .ApplyFullTransitionThermalStepOnceAsync(
+                                subsystem,
+                                desired,
+                                capabilities,
+                                states,
+                                initial,
+                                token),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (subsystem == DeviceSubsystem.Fans
+                    && thermalOutcome.WriteSubmissionState
+                        == WriteSubmissionState.Indeterminate
+                    && thermalOutcome.WriteFailurePhase
+                        == BladeWriteFailurePhase
+                            .AdjustableFanSecondManualEntrySubmission
+                    && ResolveManualFanTarget(
+                            desired.FanControl
+                                ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                            capabilities) is int targetRpm)
+                {
+                    ScopedApplyOutcome continuation = await thermalStepRunner
+                        .ApplyFreshContinuationAsync(
+                            DeviceSubsystem.Fans,
+                            ThermalTransitionStepPurpose.ManualTargetContinuation,
+                            thermalOutcome,
+                            (coordinator, token) => coordinator
+                                .ApplyManualFanTargetContinuationOutcomeAsync(
+                                    targetRpm,
+                                    token),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    thermalOutcome = continuation.Result.Status is
+                            ControlResultStatus.Applied or
+                            ControlResultStatus.Unchanged
+                        ? continuation with
+                        {
+                            Result = continuation.Result with
+                            {
+                                Message =
+                                    "Fans entered manual mode and the target-only continuation completed without replaying either entry command.",
+                            },
+                        }
+                        : thermalOutcome with
+                        {
+                            Result = thermalOutcome.Result with
+                            {
+                                Message =
+                                    $"{thermalOutcome.Result.Message} Target-only continuation result: {continuation.Result.Message}",
+                            },
+                            ConfirmationUnavailable = true,
+                        };
+                }
+                ApplyFullTransitionThermalStepOutcome(
+                    subsystem,
+                    pending,
+                    thermalOutcome,
+                    transition,
+                    ref stopFurtherWrites,
+                    ref stopReason,
+                    ref stopThermalWrites,
+                    ref thermalStopReason);
+                continue;
+            }
+
             transition.Attempted.Add(subsystem);
             try
             {
-                await (pending.StateAwareSetter is null
-                    ? pending.Setter(cancellationToken)
-                    : pending.StateAwareSetter(initial, cancellationToken));
+                PendingSubsystem writePending = pending;
+                if (thermalStepRunner is not null)
+                {
+                    ControlCoordinator currentCoordinator =
+                        thermalStepRunner.CreateRecipeCoordinator();
+                    writePending = currentCoordinator.CreatePendingSubsystems(
+                        desired,
+                        capabilities,
+                        initial)[subsystem];
+                }
+                await (writePending.StateAwareSetter is null
+                    ? writePending.Setter(cancellationToken)
+                    : writePending.StateAwareSetter(initial, cancellationToken));
                 transition.Completed.Add(subsystem);
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
             }
@@ -1167,6 +1267,7 @@ public sealed class ControlCoordinator
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
                 stopFurtherWrites = true;
                 stopReason = transition.Provisional[subsystem].Message;
+                transition.DeviceAccessFailed = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -1184,11 +1285,149 @@ public sealed class ControlCoordinator
                 {
                     stopFurtherWrites = true;
                     stopReason = transition.Provisional[subsystem].Message;
+                    transition.DeviceAccessFailed = true;
                 }
             }
         }
+    }
 
-        transition.DeviceAccessFailed = stopFurtherWrites;
+    private async Task<ScopedApplyOutcome> ApplyFullTransitionThermalStepOnceAsync(
+        DeviceSubsystem subsystem,
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities,
+        IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> originalStates,
+        ConfirmedDeviceState initial,
+        CancellationToken cancellationToken)
+    {
+        PendingSubsystem original = originalStates[subsystem];
+        string? blockReason = subsystem == DeviceSubsystem.Performance
+            ? performanceWriteBlockReason?.Invoke()
+            : fanWriteBlockReason?.Invoke();
+        if (blockReason is not null)
+        {
+            return new ScopedApplyOutcome(
+                new ControlResult(ControlResultStatus.Blocked, blockReason),
+                initial,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: false,
+                WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
+        }
+
+        try
+        {
+            Dictionary<DeviceSubsystem, PendingSubsystem> currentStates =
+                CreatePendingSubsystems(
+                    desired,
+                    capabilities,
+                    initial);
+            PendingSubsystem pending = currentStates[subsystem];
+            await (pending.StateAwareSetter is null
+                ? pending.Setter(cancellationToken)
+                : pending.StateAwareSetter(initial, cancellationToken))
+                .ConfigureAwait(false);
+            return new ScopedApplyOutcome(
+                Applied(original.Name),
+                initial,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: false);
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            return new ScopedApplyOutcome(
+                CapabilityRefused(original.Name, exception),
+                initial,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: false,
+                WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
+        }
+        catch (BladeWriteException exception)
+            when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
+        {
+            return new ScopedApplyOutcome(
+                WriteRejected(original.Name, exception),
+                initial,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: exception.FailurePhase
+                    == BladeWriteFailurePhase.ThermalPreWriteRead,
+                WriteSubmissionState: exception.SubmissionState,
+                WriteFailurePhase: exception.FailurePhase);
+        }
+        catch (BladeWriteException exception)
+            when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
+        {
+            return new ScopedApplyOutcome(
+                Indeterminate(original.Name, exception),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: true,
+                WriteSubmissionState: exception.SubmissionState,
+                WriteFailurePhase: exception.FailurePhase);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new ScopedApplyOutcome(
+                Indeterminate(original.Name, exception),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: IsTerminalDeviceFailure(exception));
+        }
+    }
+
+    private static void ApplyFullTransitionThermalStepOutcome(
+        DeviceSubsystem subsystem,
+        PendingSubsystem pending,
+        ScopedApplyOutcome outcome,
+        FullTransitionApplyState transition,
+        ref bool stopFurtherWrites,
+        ref string? stopReason,
+        ref bool stopThermalWrites,
+        ref string? thermalStopReason)
+    {
+        if (outcome.WriteAttempted)
+        {
+            transition.Attempted.Add(subsystem);
+        }
+        transition.DeviceAccessFailed |= outcome.DeviceAccessFailed;
+        if (outcome.ConfirmationUnavailable)
+        {
+            transition.ConfirmationUnavailable.Add(subsystem);
+        }
+
+        if (outcome.Result.Status is
+            ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+        {
+            transition.Completed.Add(subsystem);
+            transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
+            return;
+        }
+
+        transition.Provisional[subsystem] = outcome.Result;
+        if (outcome.WriteAttempted
+            || outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate)
+        {
+            stopFurtherWrites = true;
+            stopReason = outcome.Result.Message;
+            return;
+        }
+
+        stopThermalWrites = true;
+        thermalStopReason = outcome.Result.Message;
     }
 
     private static void ReconcileFinalReadback(
@@ -1202,6 +1441,12 @@ public sealed class ControlCoordinator
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
             PendingSubsystem pending = states[subsystem];
+            if (transition.ConfirmationUnavailable.Contains(subsystem))
+            {
+                transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
+                transition.Matched.Remove(subsystem);
+                continue;
+            }
             if (finalReadUnavailable.Contains(subsystem))
             {
                 if (transition.Attempted.Contains(subsystem))
@@ -2326,6 +2571,7 @@ public sealed class ControlCoordinator
         public HashSet<DeviceSubsystem> Completed { get; } = [];
         public HashSet<DeviceSubsystem> Matched { get; } = [];
         public HashSet<DeviceSubsystem> Contradicted { get; } = [];
+        public HashSet<DeviceSubsystem> ConfirmationUnavailable { get; } = [];
         public bool DeviceAccessFailed { get; set; }
     }
 

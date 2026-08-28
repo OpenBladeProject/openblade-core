@@ -64,6 +64,11 @@ internal sealed record ThermalTransitionExecution(
     ScopedApplyOutcome Outcome,
     ThermalTransitionTrace Trace);
 
+internal sealed record ThermalFullTransitionExecution(
+    FullTransitionApplyOutcome Outcome,
+    ThermalTransitionTrace Trace,
+    IBladeDevice Device);
+
 internal sealed record ThermalRetryAdmission(
     bool Allowed,
     IBladeDevice? Device,
@@ -146,8 +151,34 @@ internal sealed class ThermalTransitionStepRunner
 
     public int AttemptCount => steps.Sum(step => step.Attempts.Count);
 
+    public IBladeDevice CurrentDevice => currentDevice;
+
     public ControlCoordinator CreateRecipeCoordinator() =>
         coordinatorFactory(currentDevice, this);
+
+    public async Task<bool> TryRecoverPreflightAsync(
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidatePreflight,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(revalidatePreflight);
+        if (steps.Count > 0 || recoveryLeaseConsumed)
+        {
+            return false;
+        }
+
+        ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(
+                revalidatePreflight,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!admission.Allowed || admission.Device is null)
+        {
+            return false;
+        }
+
+        currentDevice = admission.Device;
+        return true;
+    }
 
     public async Task<ScopedApplyOutcome> ApplyStepAsync(
         DeviceSubsystem component,
@@ -178,6 +209,7 @@ internal sealed class ThermalTransitionStepRunner
             else
             {
                 ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(
+                        revalidateRecovery,
                         cancellationToken)
                     .ConfigureAwait(false);
                 if (!admission.Allowed || admission.Device is null)
@@ -236,7 +268,9 @@ internal sealed class ThermalTransitionStepRunner
             return blocked;
         }
 
-        ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(cancellationToken)
+        ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(
+                revalidateRecovery,
+                cancellationToken)
             .ConfigureAwait(false);
         if (!admission.Allowed || admission.Device is null)
         {
@@ -262,12 +296,13 @@ internal sealed class ThermalTransitionStepRunner
     }
 
     private async Task<ThermalRetryAdmission> ConsumeAndRevalidateAsync(
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidate,
         CancellationToken cancellationToken)
     {
         recoveryLeaseConsumed = true;
         try
         {
-            ThermalRetryAdmission admission = await revalidateRecovery(
+            ThermalRetryAdmission admission = await revalidate(
                     attemptId,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -380,6 +415,76 @@ internal static class ThermalTransitionExecutor
             cancellationToken);
     }
 
+    public static Task<ThermalFullTransitionExecution> ExecuteFullTransitionAsync(
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ControlCoordinator, CancellationToken, Task<FullTransitionApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidatePreflight,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidateThermalRecovery,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(initialDevice);
+        ArgumentNullException.ThrowIfNull(coordinatorFactory);
+        ArgumentNullException.ThrowIfNull(executeRecipe);
+        ArgumentNullException.ThrowIfNull(revalidatePreflight);
+        ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
+        return ExecuteFullTransitionCoreAsync(
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            executeRecipe,
+            revalidatePreflight,
+            revalidateThermalRecovery,
+            cancellationToken);
+    }
+
+    private static async Task<ThermalFullTransitionExecution>
+        ExecuteFullTransitionCoreAsync(
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ControlCoordinator, CancellationToken, Task<FullTransitionApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidatePreflight,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidateThermalRecovery,
+        CancellationToken cancellationToken)
+    {
+        Guid attemptId = Guid.NewGuid();
+        var runner = new ThermalTransitionStepRunner(
+            attemptId,
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            revalidateThermalRecovery);
+        int preflightAttempts = 1;
+        FullTransitionApplyOutcome outcome = await executeRecipe(
+                runner.CreateRecipeCoordinator(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (IsEligibleForFullPreflightRetry(outcome)
+            && await runner.TryRecoverPreflightAsync(
+                    revalidatePreflight,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            preflightAttempts++;
+            outcome = await executeRecipe(
+                    runner.CreateRecipeCoordinator(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return CreateFullExecution(attemptId, outcome, runner, preflightAttempts);
+    }
+
     private static async Task<ThermalTransitionExecution> ExecuteCoreAsync(
         IReadOnlyList<DeviceSubsystem> declaredComponents,
         IBladeDevice initialDevice,
@@ -433,6 +538,98 @@ internal static class ThermalTransitionExecutor
                 runner.RecoveryBlockReason,
                 runner.Steps));
     }
+
+    private static ThermalFullTransitionExecution CreateFullExecution(
+        Guid attemptId,
+        FullTransitionApplyOutcome outcome,
+        ThermalTransitionStepRunner runner,
+        int preflightAttempts)
+    {
+        ThermalTransitionStepAttempt? lastAttempt = runner.Steps
+            .LastOrDefault()?.Attempts.LastOrDefault();
+        bool thermalAttempted = outcome.WriteAttempted.Any(
+            component => component is DeviceSubsystem.Performance or DeviceSubsystem.Fans);
+        bool thermalResultsSuccessful = runner.DeclaredComponents.All(component =>
+            component switch
+            {
+                DeviceSubsystem.Performance => outcome.Results.Performance.Status,
+                DeviceSubsystem.Fans => outcome.Results.Fans.Status,
+                _ => ControlResultStatus.Failed,
+            } is ControlResultStatus.Applied or ControlResultStatus.Unchanged);
+        bool thermalConfirmed = thermalAttempted
+            && thermalResultsSuccessful
+            && outcome.WriteAttempted
+                .Where(component => component is
+                    DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+                .All(outcome.ReadbackMatched.Contains);
+        ThermalTransitionStage stage = thermalConfirmed
+            ? ThermalTransitionStage.Confirmation
+            : lastAttempt?.Stage
+                ?? ThermalTransitionStage.Preflight;
+        ThermalSubmissionProgress submissionProgress = thermalConfirmed
+            ? ThermalSubmissionProgress.Acknowledged
+            : lastAttempt?.SubmissionProgress
+                ?? ThermalSubmissionProgress.NotSubmitted;
+        ThermalTransitionDisposition disposition = thermalConfirmed
+            ? ThermalTransitionDisposition.Confirmed
+            : outcome.Readback is null && thermalAttempted
+                ? ThermalTransitionDisposition.ReconciliationUnavailable
+                : lastAttempt?.Disposition
+                    ?? ZeroStepDisposition(outcome, runner.DeclaredComponents);
+
+        int attemptCount = Math.Max(
+            1,
+            runner.AttemptCount) + preflightAttempts - 1;
+
+        var trace = new ThermalTransitionTrace(
+            attemptId,
+            runner.DeclaredComponents,
+            stage,
+            submissionProgress,
+            lastAttempt?.Outcome.WriteSubmissionState,
+            disposition,
+            attemptCount,
+            runner.RecoveryLeaseConsumed,
+            runner.RecoveryBlockReason,
+            runner.Steps);
+        return new ThermalFullTransitionExecution(
+            outcome,
+            trace,
+            runner.CurrentDevice);
+    }
+
+    private static ThermalTransitionDisposition ZeroStepDisposition(
+        FullTransitionApplyOutcome outcome,
+        IReadOnlyList<DeviceSubsystem> declaredComponents)
+    {
+        if (outcome.DeviceAccessFailed)
+        {
+            return ThermalTransitionDisposition.Failed;
+        }
+
+        IEnumerable<ControlResultStatus> statuses = declaredComponents.Select(
+            component => component switch
+            {
+                DeviceSubsystem.Performance => outcome.Results.Performance.Status,
+                DeviceSubsystem.Fans => outcome.Results.Fans.Status,
+                _ => ControlResultStatus.Failed,
+            });
+        if (statuses.Any(status => status == ControlResultStatus.Failed))
+        {
+            return ThermalTransitionDisposition.Failed;
+        }
+        if (statuses.Any(status => status == ControlResultStatus.Blocked))
+        {
+            return ThermalTransitionDisposition.Blocked;
+        }
+        return ThermalTransitionDisposition.Confirmed;
+    }
+
+    private static bool IsEligibleForFullPreflightRetry(
+        FullTransitionApplyOutcome outcome) =>
+        outcome.DeviceAccessFailed
+        && outcome.WriteAttempted.Count == 0
+        && outcome.Readback is null;
 
     internal static ThermalSubmissionProgress SubmissionProgress(
         ScopedApplyOutcome outcome)

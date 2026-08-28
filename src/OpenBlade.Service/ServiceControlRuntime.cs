@@ -9244,6 +9244,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 stageDesired,
                                 stillControlsSession,
                                 new[] { DeviceSubsystem.Performance },
+                                ThermalPreWriteRetryDelay,
                                 cancellationToken),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
@@ -9285,6 +9286,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             stageDesired,
                             stillControlsSession,
                             thermalComponents,
+                            ThermalPreWriteRetryDelay,
                             cancellationToken),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
@@ -9335,6 +9337,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
         IReadOnlyList<DeviceSubsystem> components,
+        TimeSpan recoveryDelay,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -9369,7 +9372,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         // timeout. Preserve the established settling window, but keep its
         // cancellation inside the executor's already-consumed retry lease.
         await transitionRetryDelay(
-                ThermalPreWriteRetryDelay,
+                recoveryDelay,
                 cancellationToken)
             .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -10282,7 +10285,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
-        FullTransitionApplyOutcome outcome =
+        ThermalFullTransitionExecution transitionExecution =
             await ApplyDesiredTransitionWithRetryAsync(
                 device,
                 desired,
@@ -10292,6 +10295,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cachedConfirmed,
                 preserveObservedExternalChanges,
                 token);
+        FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
+        device = transitionExecution.Device;
 
         if (outcome.PreWriteState is { } preWriteState)
         {
@@ -10346,7 +10351,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && ownsHyperBoost
         && powerSource is PowerSource.Battery or PowerSource.UsbC;
 
-    private async Task<FullTransitionApplyOutcome> ApplyDesiredTransitionWithRetryAsync(
+    private async Task<ThermalFullTransitionExecution>
+        ApplyDesiredTransitionWithRetryAsync(
         IBladeDevice device,
         DesiredDeviceState desired,
         DesiredDeviceState? priorDesired,
@@ -10371,9 +10377,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && priorDesired.Lighting.Value.Effect != LightingEffect.Off
             && desired.Lighting.Value.Effect != LightingEffect.Off;
 
-        Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
+        Func<IBladeDevice, CancellationToken,
+            Task<PowerTransitionDeviceStateReadResult>>?
             transitionStateReader = ShouldConfirmTransientLightingOff()
-                ? device.ReadStateForPowerTransitionAsync
+                ? static (attemptDevice, cancellationToken) =>
+                    attemptDevice.ReadStateForPowerTransitionAsync(cancellationToken)
                 : null;
 
         IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
@@ -10414,25 +10422,55 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            FullTransitionApplyOutcome outcome = await new ControlCoordinator(device)
-                .ApplyDesiredStateOutcomeAsync(
-                    desired,
-                    token,
-                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
-                    stateReader: transitionStateReader);
-
-            if (ShouldRetryPowerTransitionAccess(outcome))
-            {
-                await transitionRetryDelay(PowerTransitionAccessRetryDelay, token);
-                outcome = await new ControlCoordinator(device)
-                    .ApplyDesiredStateOutcomeAsync(
+            DeviceSubsystem[] thermalComponents =
+                [DeviceSubsystem.Performance, DeviceSubsystem.Fans];
+            return await ThermalTransitionExecutor.ExecuteFullTransitionAsync(
+                    thermalComponents,
+                    device,
+                    (attemptDevice, runner) => new ControlCoordinator(
+                        attemptDevice,
+                        scopedStateReader: null,
+                        resolveIndeterminatePerformanceWrites: false,
+                        resolveIndeterminateAutomaticFanWrites: false,
+                        singleAttemptPerformanceWrites: true,
+                        singleAttemptFanWrites: true,
+                        thermalStepRunner: runner,
+                        performanceWriteBlockReason: () =>
+                            ScopedThermalWriteBlockReason(
+                                desired,
+                                stageDesired: null,
+                                stillControlsSession: null,
+                                thermalComponents),
+                        fanWriteBlockReason: () =>
+                            ScopedThermalWriteBlockReason(
+                                desired,
+                                stageDesired: null,
+                                stillControlsSession: null,
+                                thermalComponents)),
+                    (coordinator, cancellationToken) => coordinator
+                        .ApplyDesiredStateOutcomeAsync(
+                            desired,
+                            cancellationToken,
+                            automaticWriteExclusionResolver:
+                                ResolveAutomaticWriteExclusions,
+                            deviceStateReader: transitionStateReader),
+                    (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
+                        powerSource,
                         desired,
-                        token,
-                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions,
-                        stateReader: transitionStateReader);
-            }
-
-            return outcome;
+                        stageDesired: null,
+                        stillControlsSession: null,
+                        thermalComponents,
+                        PowerTransitionAccessRetryDelay,
+                        cancellationToken),
+                    (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
+                        powerSource,
+                        desired,
+                        stageDesired: null,
+                        stillControlsSession: null,
+                        thermalComponents,
+                        ThermalPreWriteRetryDelay,
+                        cancellationToken),
+                    token).ConfigureAwait(false);
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)
@@ -10781,12 +10819,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ => readback,
         };
     }
-
-    private static bool ShouldRetryPowerTransitionAccess(
-        FullTransitionApplyOutcome outcome) =>
-        outcome.DeviceAccessFailed
-        && outcome.WriteAttempted.Count == 0
-        && outcome.Readback is null;
 
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
