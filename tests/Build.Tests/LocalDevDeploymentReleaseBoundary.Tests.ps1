@@ -40,6 +40,8 @@ $bundleSource = [IO.File]::ReadAllText((
         Join-Path $repository 'build\installer\Bundle.wxs'))
 $bootstrapperSource = [IO.File]::ReadAllText((Join-Path $repository (
             'build\installer\OpenBlade.Installer.UI\OpenBladeBootstrapperApplication.cs')))
+$installerUiProjectSource = [IO.File]::ReadAllText((Join-Path $repository (
+            'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')))
 $setupProjectSource = [IO.File]::ReadAllText((
         Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj'))
 $setupProgramSource = [IO.File]::ReadAllText((
@@ -121,6 +123,14 @@ Assert-True (
     $publishSource.Contains("if (`$buildIdentity.Channel -eq 'LocalDev')") -and
     $publishSource.Contains('--property:OpenBladeLocalDevDeployment=true')) `
     'Only an explicit local-development publish may compile the enrollment handoff into Setup.'
+Assert-True (
+    $installerUiProjectSource.Contains("'`$(OpenBladeLocalDevDeployment)' == 'true'") -and
+    $installerUiProjectSource.Contains('OPENBLADE_LOCAL_DEV_DEPLOYMENT') -and
+    $bootstrapperSource.Contains('#if OPENBLADE_LOCAL_DEV_DEPLOYMENT') -and
+    $bootstrapperSource.Contains('LocalDevCompatibilityEnabled = true') -and
+    $publishSource.Contains(
+        "`$installerUiPublishArguments += '--property:OpenBladeLocalDevDeployment=true'")) `
+    'Only an explicit local-development publish may enable the installer compatibility transition.'
 Assert-True ($setupProgramSource.Contains('SetupPaths.CreateForCurrentIdentity()')) `
     'Every Setup build must select LocalSystem-safe known folders at runtime for related-bundle removal.'
 Assert-True (
