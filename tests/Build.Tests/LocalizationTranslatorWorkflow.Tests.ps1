@@ -810,6 +810,9 @@ throw 'Target catalog was not write-locked during import.'
     Assert-Equal 'bgra8-4-bit-midpoint-local-majority-v1' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
+    Assert-Equal 'stable-title-foreground-v1' `
+        $manifest.screenshotRenderProfile.windowActivation `
+        'The package manifest must record deterministic title activation styling.'
     $generatedWorkbook = Join-Path $generatedFolder 'OpenBlade-ru-RU.csv'
     Assert-Equal ((Get-FileHash -LiteralPath $generatedWorkbook -Algorithm SHA256).
         Hash.ToLowerInvariant()) $manifest.workbookSha256 `
