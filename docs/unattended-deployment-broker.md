@@ -32,9 +32,10 @@ executable, path, URL, command, argument list, signing key, user SID, or general
 elevated operation.
 
 The broker reports success, rollback, or failure atomically. A normal-integrity
-client owns the post-install relaunch and must verify exactly one Tray and one
-Session Agent at normal integrity. A failed or indeterminate deployment does not
-relaunch a partial installation.
+client owns the post-install relaunch, verifies installed ACLs against its
+enabled token identities, and must verify exactly one Tray and one Session Agent
+at normal integrity. A failed or indeterminate deployment does not relaunch a
+partial installation.
 
 Local-development packages are intentionally not release artifacts. They must
 not be uploaded, attached to a GitHub release, submitted to the Store, or

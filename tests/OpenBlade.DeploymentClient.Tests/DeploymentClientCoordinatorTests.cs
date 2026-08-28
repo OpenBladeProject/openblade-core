@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Principal;
 
 namespace OpenBlade.DeploymentClient.Tests;
 
@@ -235,6 +236,18 @@ public sealed class DeploymentClientCoordinatorTests
             Paths with { TrayExecutable = @"C:\Users\Public\OpenBlade.Tray.exe" },
             Paths,
             secure));
+    }
+
+    [Fact]
+    public void EffectiveCallerIdentities_QueryFilteredTokenWithoutAccessDenied()
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        SecurityIdentifier user = Assert.IsType<SecurityIdentifier>(identity.User);
+
+        HashSet<SecurityIdentifier> effective =
+            WindowsInstalledPayloadVerifier.GetEffectiveCallerIdentities();
+
+        Assert.Contains(user, effective);
     }
 
     [Theory]

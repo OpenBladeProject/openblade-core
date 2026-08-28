@@ -209,24 +209,7 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
                 AccessControlSections.Access | AccessControlSections.Owner),
             _ => throw new InvalidOperationException("Unsupported installed payload path type."),
         };
-        using WindowsIdentity identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
-        WindowsPrincipal principal = new(identity);
-        HashSet<SecurityIdentifier> effectiveIdentities = [];
-        if (identity.User is not null)
-        {
-            effectiveIdentities.Add(identity.User);
-        }
-
-        if (identity.Groups is not null)
-        {
-            foreach (IdentityReference group in identity.Groups)
-            {
-                if (group is SecurityIdentifier sid && principal.IsInRole(sid))
-                {
-                    effectiveIdentities.Add(sid);
-                }
-            }
-        }
+        HashSet<SecurityIdentifier> effectiveIdentities = GetEffectiveCallerIdentities();
 
         if (security.GetOwner(typeof(SecurityIdentifier)) is SecurityIdentifier owner
             && effectiveIdentities.Contains(owner))
@@ -264,6 +247,34 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
         }
 
         return (allowed & dangerous & ~denied) != 0;
+    }
+
+    internal static HashSet<SecurityIdentifier> GetEffectiveCallerIdentities()
+    {
+        // WindowsPrincipal must duplicate a primary token before checking group
+        // membership. Query-only access makes that documented check fail with
+        // AccessDenied instead of reporting the filtered-token group state.
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent(
+            TokenAccessLevels.Query | TokenAccessLevels.Duplicate);
+        WindowsPrincipal principal = new(identity);
+        HashSet<SecurityIdentifier> effectiveIdentities = [];
+        if (identity.User is not null)
+        {
+            effectiveIdentities.Add(identity.User);
+        }
+
+        if (identity.Groups is not null)
+        {
+            foreach (IdentityReference group in identity.Groups)
+            {
+                if (group is SecurityIdentifier sid && principal.IsInRole(sid))
+                {
+                    effectiveIdentities.Add(sid);
+                }
+            }
+        }
+
+        return effectiveIdentities;
     }
 }
 
