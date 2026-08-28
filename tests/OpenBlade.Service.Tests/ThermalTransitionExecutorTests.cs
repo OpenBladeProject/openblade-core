@@ -514,6 +514,212 @@ public sealed class ThermalTransitionExecutorTests
             execution.Trace.Steps![1].Attempts[0].Disposition);
     }
 
+    [Fact]
+    public async Task FullTransitionLaterKnownFailureIsNotReportedConfirmed()
+    {
+        var device = new StubDevice();
+        ThermalTransitionStepRunner? capturedRunner = null;
+        ControlResult applied = new(ControlResultStatus.Applied, "Performance applied.");
+        ControlResult failed = new(ControlResultStatus.Failed, "Fans rejected.");
+        ControlResult unchanged = new(ControlResultStatus.Unchanged, "Unchanged.");
+
+        ThermalFullTransitionExecution execution = await ThermalTransitionExecutor
+            .ExecuteFullTransitionAsync(
+                new[] { DeviceSubsystem.Performance, DeviceSubsystem.Fans },
+                device,
+                (attemptDevice, runner) =>
+                {
+                    capturedRunner = runner;
+                    return new ControlCoordinator(attemptDevice);
+                },
+                async (_, token) =>
+                {
+                    await capturedRunner!.ApplyStepAsync(
+                        DeviceSubsystem.Performance,
+                        ThermalTransitionStepPurpose.Requested,
+                        (_, _) => Task.FromResult(ConfirmedOutcome(writeAttempted: true)),
+                        token);
+                    await capturedRunner.ApplyStepAsync(
+                        DeviceSubsystem.Fans,
+                        ThermalTransitionStepPurpose.Requested,
+                        (_, _) => Task.FromResult(KnownNotAppliedOutcome() with
+                        {
+                            WriteFailurePhase = BladeWriteFailurePhase.Unspecified,
+                        }),
+                        token);
+                    return new FullTransitionApplyOutcome(
+                        new SubsystemApplyResults(applied, failed, unchanged, unchanged),
+                        State(PerformancePreset.Performance),
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance },
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance },
+                        new HashSet<DeviceSubsystem>(),
+                        DeviceCapabilities.Unavailable(),
+                        DeviceAccessFailed: false);
+                },
+                (_, _) => throw new InvalidOperationException(
+                    "Preflight recovery was unexpected."),
+                (_, _) => throw new InvalidOperationException(
+                    "Thermal recovery was unexpected."),
+                CancellationToken.None);
+
+        Assert.Equal(ThermalTransitionDisposition.Failed, execution.Trace.Disposition);
+        Assert.Equal(
+            ThermalTransitionDisposition.Confirmed,
+            execution.Trace.Steps![0].Attempts[0].Disposition);
+        Assert.Equal(
+            ThermalTransitionDisposition.Failed,
+            execution.Trace.Steps[1].Attempts[0].Disposition);
+    }
+
+    [Fact]
+    public async Task FullTransitionZeroStepBlockedResultsAreNotReportedConfirmed()
+    {
+        var device = new StubDevice();
+        ControlResult blocked = new(ControlResultStatus.Blocked, "Externally preserved.");
+        ControlResult unchanged = new(ControlResultStatus.Unchanged, "Unchanged.");
+
+        ThermalFullTransitionExecution execution = await ThermalTransitionExecutor
+            .ExecuteFullTransitionAsync(
+                new[] { DeviceSubsystem.Performance, DeviceSubsystem.Fans },
+                device,
+                (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+                (_, _) => Task.FromResult(new FullTransitionApplyOutcome(
+                    new SubsystemApplyResults(blocked, blocked, unchanged, unchanged),
+                    State(PerformancePreset.Balanced),
+                    new HashSet<DeviceSubsystem>(),
+                    new HashSet<DeviceSubsystem>(),
+                    new HashSet<DeviceSubsystem>(),
+                    DeviceCapabilities.Unavailable(),
+                    DeviceAccessFailed: false)),
+                (_, _) => throw new InvalidOperationException(
+                    "Preflight recovery was unexpected."),
+                (_, _) => throw new InvalidOperationException(
+                    "Thermal recovery was unexpected."),
+                CancellationToken.None);
+
+        Assert.Equal(ThermalTransitionStage.Preflight, execution.Trace.Stage);
+        Assert.Equal(ThermalTransitionDisposition.Blocked, execution.Trace.Disposition);
+        Assert.Equal(1, execution.Trace.AttemptCount);
+    }
+
+    [Fact]
+    public async Task FullTransitionPreflightRecoveryCountsLaterThermalStep()
+    {
+        var initialDevice = new StubDevice();
+        var retryDevice = new StubDevice();
+        ThermalTransitionStepRunner? capturedRunner = null;
+        int recipeAttempts = 0;
+        ControlResult applied = new(ControlResultStatus.Applied, "Performance applied.");
+        ControlResult unchanged = new(ControlResultStatus.Unchanged, "Unchanged.");
+
+        ThermalFullTransitionExecution execution = await ThermalTransitionExecutor
+            .ExecuteFullTransitionAsync(
+                new[] { DeviceSubsystem.Performance },
+                initialDevice,
+                (attemptDevice, runner) =>
+                {
+                    capturedRunner = runner;
+                    return new ControlCoordinator(attemptDevice);
+                },
+                async (_, token) =>
+                {
+                    recipeAttempts++;
+                    if (recipeAttempts == 1)
+                    {
+                        return new FullTransitionApplyOutcome(
+                            new SubsystemApplyResults(
+                                new ControlResult(ControlResultStatus.Failed, "Read failed."),
+                                unchanged,
+                                unchanged,
+                                unchanged),
+                            null,
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            null,
+                            DeviceAccessFailed: true);
+                    }
+
+                    await capturedRunner!.ApplyStepAsync(
+                        DeviceSubsystem.Performance,
+                        ThermalTransitionStepPurpose.Requested,
+                        (_, _) => Task.FromResult(ConfirmedOutcome(writeAttempted: true)),
+                        token);
+                    return new FullTransitionApplyOutcome(
+                        new SubsystemApplyResults(applied, unchanged, unchanged, unchanged),
+                        State(PerformancePreset.Performance),
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance },
+                        new HashSet<DeviceSubsystem> { DeviceSubsystem.Performance },
+                        new HashSet<DeviceSubsystem>(),
+                        DeviceCapabilities.Unavailable(),
+                        DeviceAccessFailed: false);
+                },
+                (_, _) => Task.FromResult(ThermalRetryAdmission.Allow(retryDevice)),
+                (_, _) => throw new InvalidOperationException(
+                    "Thermal recovery was unexpected."),
+                CancellationToken.None);
+
+        Assert.Equal(2, recipeAttempts);
+        Assert.True(execution.Trace.RetryConsumed);
+        Assert.Equal(2, execution.Trace.AttemptCount);
+        Assert.Same(retryDevice, execution.Device);
+        Assert.Equal(ThermalTransitionDisposition.Confirmed, execution.Trace.Disposition);
+    }
+
+    [Fact]
+    public async Task FullTransitionPreflightRecoveryCountsUnchangedSecondRecipe()
+    {
+        var initialDevice = new StubDevice();
+        var retryDevice = new StubDevice();
+        int recipeAttempts = 0;
+        ControlResult unchanged = new(ControlResultStatus.Unchanged, "Unchanged.");
+
+        ThermalFullTransitionExecution execution = await ThermalTransitionExecutor
+            .ExecuteFullTransitionAsync(
+                new[] { DeviceSubsystem.Performance, DeviceSubsystem.Fans },
+                initialDevice,
+                (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+                (_, _) =>
+                {
+                    recipeAttempts++;
+                    return Task.FromResult(recipeAttempts == 1
+                        ? new FullTransitionApplyOutcome(
+                            new SubsystemApplyResults(
+                                new ControlResult(ControlResultStatus.Failed, "Read failed."),
+                                unchanged,
+                                unchanged,
+                                unchanged),
+                            null,
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            null,
+                            DeviceAccessFailed: true)
+                        : new FullTransitionApplyOutcome(
+                            new SubsystemApplyResults(
+                                unchanged,
+                                unchanged,
+                                unchanged,
+                                unchanged),
+                            State(PerformancePreset.Balanced),
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            new HashSet<DeviceSubsystem>(),
+                            DeviceCapabilities.Unavailable(),
+                            DeviceAccessFailed: false));
+                },
+                (_, _) => Task.FromResult(ThermalRetryAdmission.Allow(retryDevice)),
+                (_, _) => throw new InvalidOperationException(
+                    "Thermal recovery was unexpected."),
+                CancellationToken.None);
+
+        Assert.Equal(2, recipeAttempts);
+        Assert.True(execution.Trace.RetryConsumed);
+        Assert.Equal(2, execution.Trace.AttemptCount);
+        Assert.Empty(execution.Trace.Steps!);
+        Assert.Equal(ThermalTransitionDisposition.Confirmed, execution.Trace.Disposition);
+    }
+
     private static ScopedApplyOutcome ConfirmedOutcome(bool writeAttempted) => new(
         new ControlResult(
             writeAttempted ? ControlResultStatus.Applied : ControlResultStatus.Unchanged,

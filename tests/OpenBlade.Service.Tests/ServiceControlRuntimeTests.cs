@@ -3367,6 +3367,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             result => result.Detail?.Contains(
                 "Keyboard lighting control could not be relinquished",
                 StringComparison.Ordinal) == true);
+        Assert.Equal(1, context.Provider.RelinquishCount);
     }
 
     [Fact]
@@ -9191,7 +9192,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
         Assert.Equal(2, context.Device.CapabilitiesReadCalls);
         Assert.Equal(3, context.Device.StateReadCalls);
-        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(2, context.Provider.TryGetCount);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
         Assert.All(SetterCounts(context.Device), count => Assert.InRange(count, 0, 1));
         Assert.Equal(4, context.History.Snapshot().CommandResults.Count);
@@ -9219,10 +9220,326 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(2, context.Device.CapabilitiesReadCalls);
         Assert.Equal(2, context.Device.StateReadCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
-        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(2, context.Provider.TryGetCount);
         Assert.Equal(4, context.History.Snapshot().CommandResults.Count);
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PowerTransition_FanPreWriteRetryDoesNotReplayPerformance()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected fan pre-write read failure."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromSeconds(5)], delays);
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.InRange(context.Device.BatterySetCalls, 0, 1);
+        Assert.InRange(context.Device.LightingSetCalls, 0, 1);
+    }
+
+    [Fact]
+    public async Task PowerTransition_FreshFanRetryCarriesLaterWritesToReadmittedDevice()
+    {
+        var retryDevice = new CountingBladeDevice();
+        TestContext? contextAtDelay = null;
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDevice.Capabilities = contextAtDelay!.Device.Capabilities;
+                retryDevice.ConfirmedState = contextAtDelay.Device.ConfirmedState;
+                contextAtDelay.Provider.Device = retryDevice;
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        contextAtDelay = context;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+                BatteryProtectionEnabled = false,
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected fan pre-write read failure."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, retryDevice.PerformanceSetCalls);
+        Assert.Equal(1, retryDevice.FanSetCalls);
+        Assert.Equal(1, retryDevice.BatterySetCalls);
+        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.Equal(1, retryDevice.StateReadCalls);
+        Assert.Equal(ProtectionOff(), retryDevice.ConfirmedState.Battery);
+    }
+
+    [Fact]
+    public async Task PowerTransition_PerformanceRetryConsumesLeaseBeforeFanFailure()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected performance pre-write read failure."));
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected fan pre-write read failure."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromSeconds(5)], delays);
+        Assert.Equal(2, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.InRange(context.Device.BatterySetCalls, 0, 1);
+        Assert.InRange(context.Device.LightingSetCalls, 0, 1);
+    }
+
+    [Fact]
+    public async Task PowerTransition_PreflightRetryConsumesLeaseBeforeThermalFailure()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected performance pre-write read failure."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(2, context.Provider.TryGetCount);
+    }
+
+    [Fact]
+    public async Task PowerTransition_ManualFanSecondEntryUsesTargetOnlyContinuation()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        context.Device.FanTargetsAvailable = true;
+        var fixedFans = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = fixedFans,
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                "Injected second manual-entry ambiguity."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromSeconds(5)], delays);
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.Equal(2, context.Provider.TryGetCount);
+    }
+
+    [Fact]
+    public async Task PowerTransition_PreflightLeaseBlocksManualFanContinuation()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        context.Device.FanTargetsAvailable = true;
+        var fixedFans = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = fixedFans,
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                "Injected second manual-entry ambiguity."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+        Assert.Empty(context.Device.FanTargets);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Contains(
+            DeviceSubsystem.Fans,
+            context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task PowerTransition_IndeterminatePerformanceStopsLaterWritesWithoutRetry()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            initialPowerSource: PowerSource.Battery);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+                BatteryProtectionEnabled = false,
+            },
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(
+                profiles,
+                CancellationToken.None)).Status);
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate performance submission."));
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Empty(delays);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Equal(2, context.Device.StateReadCalls);
     }
 
     [Fact]
@@ -17518,6 +17835,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
+        public IBladeDevice Device { get; set; } = device;
+
         public bool Available { get; set; } = available;
 
         public bool AvailableWhenUntestedFirmwareAllowed { get; set; }
@@ -17565,7 +17884,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
         {
             TryGetCount++;
-            verifiedDevice = device;
+            verifiedDevice = Device;
             AfterTryGet?.Invoke();
             return Available
                 || (AvailableWhenUntestedFirmwareAllowed && AllowUntestedFirmware);
@@ -17576,8 +17895,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
         {
-            verifiedDevice = device;
-            return device is CountingBladeDevice
+            verifiedDevice = Device;
+            return Device is CountingBladeDevice
             {
                 LightingRendererOwnership:
                     LightingRendererOwnershipState.Reactive or
@@ -17587,8 +17906,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool TryGetOwnedAmbientLightingDevice(out IBladeDevice verifiedDevice)
         {
-            verifiedDevice = device;
-            return device is CountingBladeDevice
+            verifiedDevice = Device;
+            return Device is CountingBladeDevice
             {
                 LightingRendererOwnership:
                     LightingRendererOwnershipState.AmbientAwareness,
@@ -17608,7 +17927,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             LightingRendererOwnershipState observed =
                 LightingRendererOwnershipState.None;
-            if (device is CountingBladeDevice counting)
+            if (Device is CountingBladeDevice counting)
             {
                 observed = counting.LightingRendererOwnership;
                 counting.LightingRendererOwnership =
@@ -17631,7 +17950,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 RelinquishFailure = null;
                 return Task.FromException<LightingRendererOwnershipState>(failure);
             }
-            if (device is not CountingBladeDevice counting)
+            if (Device is not CountingBladeDevice counting)
             {
                 return Task.FromResult(LightingRendererOwnershipState.None);
             }
