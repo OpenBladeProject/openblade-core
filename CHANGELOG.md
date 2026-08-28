@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added an explicitly enrolled, TPM-authorized local-development deployment
+  broker for quiet OpenBlade build installation without repeated UAC prompts.
+
 ### Fixed
 
 - Classified exact-device identity rejection before a requested firmware

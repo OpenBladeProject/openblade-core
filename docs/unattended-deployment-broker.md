@@ -117,8 +117,11 @@ broker service, verifies its SCM and named-pipe identity, waits for the atomic
 terminal result, and relaunches the installed Session Agent and Tray only after
 exact success. Each build receives a durable monotonic version in the reserved
 `65535.x.y.z` range so Burn cannot silently treat a new commit as the already
-installed same-version bundle. The signed manifest binds that version and the
-full commit SHA. This path requests no additional UAC prompt.
+installed same-version bundle. Managed executable assembly and file versions
+use the corresponding `65534.x.y.z` shadow range because .NET reserves `65535`
+and rejects it in assembly metadata. Product identity and the signed manifest
+retain `65535.x.y.z` and bind that version to the full commit SHA. This path
+requests no additional UAC prompt.
 
 The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or

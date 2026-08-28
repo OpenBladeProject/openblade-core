@@ -64,8 +64,10 @@ $localDev = Resolve-OpenBladeBuildIdentity `
     -SourceRevision $sourceRevision
 Assert-True ($localDev.BundleVersion -eq '65535.1.2.3') `
     'Local-development bundles must use the reserved monotonic version.'
-Assert-True ($localDev.AssemblyVersion -eq '65535.1.2.3') `
-    'Local-development assembly identity must match Burn detection.'
+Assert-True ($localDev.AssemblyVersion -eq '65534.1.2.3') `
+    'Local-development assembly versions must use the valid shadow range.'
+Assert-True ($localDev.FileVersion -eq '65534.1.2.3') `
+    'Local-development file versions must use the valid shadow range.'
 Assert-True ($localDev.InformationalVersion -eq "65535.1.2.3+$sourceRevision") `
     'Local-development product identity must bind the exact commit.'
 

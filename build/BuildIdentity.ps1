@@ -79,13 +79,14 @@ function Resolve-OpenBladeBuildIdentity {
             }
         }
 
+        $localDevBinaryVersion = "65534.$($parsedLocalDevVersion.Minor).$($parsedLocalDevVersion.Build).$($parsedLocalDevVersion.Revision)"
         return [pscustomobject]@{
             Channel = 'LocalDev'
             BaseVersion = $normalizedBaseVersion
             Version = $LocalDevVersion
             BundleVersion = $LocalDevVersion
-            AssemblyVersion = $LocalDevVersion
-            FileVersion = $LocalDevVersion
+            AssemblyVersion = $localDevBinaryVersion
+            FileVersion = $localDevBinaryVersion
             InformationalVersion = "$LocalDevVersion+$normalizedSourceRevision"
             BuildRevision = 0
             SourceRevision = $normalizedSourceRevision
