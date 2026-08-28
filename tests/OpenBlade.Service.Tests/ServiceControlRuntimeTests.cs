@@ -16246,6 +16246,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Fact]
+    public async Task RecoverHyperBoostRestore_LateInvalidJournalBlocksWrites()
+    {
+        string journalPath = Path.Combine(
+            directory,
+            "late-invalid-hyperboost-ownership.json");
+        var journal = new HyperBoostOwnershipJournalStore(journalPath);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostOwnershipJournalStore: journal);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        byte[] invalidJournal = "{ late corruption"u8.ToArray();
+        await File.WriteAllBytesAsync(journalPath, invalidJournal);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
+        Assert.Equal(invalidJournal, await File.ReadAllBytesAsync(journalPath));
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
+    }
+
     private static HyperBoostOwnershipJournal CreateRestorePendingJournal(
         FanControlSettings fanControl,
         HyperBoostRecoveryBaseline? recoveryBaseline = null) => new(

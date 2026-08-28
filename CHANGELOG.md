@@ -20,6 +20,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Classified exact-device identity rejection before a requested firmware
   command as definitively not applied while preserving uncertain outcomes once
   command submission may have begun.
+- Blocked control writes when an explicit HyperBoost recovery first encounters
+  a late-invalid ownership journal, while preserving the journal unchanged for
+  manual inspection.
 - Preserved confirmed battery-protection and lighting state across performance
   and fan readback so thermal-only observations no longer appear as external
   battery-protection changes.
