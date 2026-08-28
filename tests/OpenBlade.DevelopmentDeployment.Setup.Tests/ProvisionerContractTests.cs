@@ -63,6 +63,17 @@ public sealed class ProvisionerContractTests
     }
 
     [Fact]
+    public void Uninstall_RetriesBothWindowsServiceExecutableLockForms()
+    {
+        Assert.True(DevelopmentDeploymentProvisioner.IsRetryableDeleteFailure(
+            new IOException("The executable is still mapped.")));
+        Assert.True(DevelopmentDeploymentProvisioner.IsRetryableDeleteFailure(
+            new UnauthorizedAccessException("Windows denied deletion while mapped.")));
+        Assert.False(DevelopmentDeploymentProvisioner.IsRetryableDeleteFailure(
+            new InvalidDataException("A malformed path must not be retried.")));
+    }
+
+    [Fact]
     public void Receipt_BindsInstallationUserPolicyAndDevelopmentKey()
     {
         BrokerEnrollment enrollment = new(

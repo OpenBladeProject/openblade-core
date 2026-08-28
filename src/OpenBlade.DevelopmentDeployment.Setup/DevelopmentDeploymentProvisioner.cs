@@ -429,7 +429,8 @@ internal static class DevelopmentDeploymentProvisioner
         string path,
         CancellationToken cancellationToken)
     {
-        for (int attempt = 0; attempt < 6; attempt++)
+        const int maximumAttempts = 20;
+        for (int attempt = 0; attempt < maximumAttempts; attempt++)
         {
             try
             {
@@ -444,13 +445,18 @@ internal static class DevelopmentDeploymentProvisioner
 
                 return;
             }
-            catch (IOException) when (attempt < 5)
+            catch (Exception exception) when (
+                attempt < maximumAttempts - 1
+                && IsRetryableDeleteFailure(exception))
             {
-                await Task.Delay(100 * (attempt + 1), cancellationToken)
+                await Task.Delay(Math.Min(100 * (attempt + 1), 1000), cancellationToken)
                     .ConfigureAwait(false);
             }
         }
     }
+
+    internal static bool IsRetryableDeleteFailure(Exception exception) =>
+        exception is IOException or UnauthorizedAccessException;
 }
 
 internal static class ActiveConsoleUser

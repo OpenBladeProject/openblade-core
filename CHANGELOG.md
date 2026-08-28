@@ -10,8 +10,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added an explicitly enrolled, TPM-authorized local-development deployment
   broker for quiet OpenBlade build installation without repeated UAC prompts,
   with a protected Burn environment, exact first-install rollback recovery,
-  LocalSystem-safe shortcut resolution, normal-user legacy startup cleanup, and
-  normal-token ACL verification plus bounded client failure diagnostics.
+  bounded broker-shutdown cleanup, LocalSystem-safe shortcut resolution,
+  normal-user legacy startup cleanup, and normal-token ACL verification plus
+  bounded client failure diagnostics.
 
 ### Fixed
 
