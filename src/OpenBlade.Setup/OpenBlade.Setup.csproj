@@ -17,6 +17,7 @@
 
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevEnrollmentUser.cs" />
+    <Compile Remove="LocalDevRelatedBundleCompatibility.cs" />
   </ItemGroup>
 
   <ItemGroup>

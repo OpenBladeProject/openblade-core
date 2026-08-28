@@ -62,7 +62,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
     {
         options ??= new();
-        paths = options.Paths ?? SetupPaths.CreateDefault();
+        paths = options.Paths ?? SetupPaths.CreateForCurrentIdentity();
         payloadDirectory = options.PayloadDirectory ?? Path.Combine(AppContext.BaseDirectory, "payload");
         payloadFileSystem = options.PayloadFileSystem ?? new WindowsSetupPayloadFileSystem();
         serviceControl = options.ServiceControl ?? new ScSetupServiceControl();
