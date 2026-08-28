@@ -87,6 +87,9 @@
   <data name="Install OpenBlade" xml:space="preserve">
     <value>Install OpenBlade</value>
   </data>
+  <data name="Installer entry removed" xml:space="preserve">
+    <value>Installer entry removed</value>
+  </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
     <value>Install the OpenBlade service, Session Agent, and tray application for this PC.</value>
   </data>
@@ -143,6 +146,15 @@
   </data>
   <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
     <value>OpenBlade setup could not prepare the requested action: {0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not inspect the installed state: {0}" xml:space="preserve">
+    <value>OpenBlade uninstall could not inspect the installed state: {0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present." xml:space="preserve">
+    <value>OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present.</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
+    <value>OpenBlade uninstall could not verify complete removal: {0}</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
     <value>OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again.</value>
@@ -284,5 +296,14 @@
   </data>
   <data name="Your saved profiles and settings were kept." xml:space="preserve">
     <value>Your saved profiles and settings were kept.</value>
+  </data>
+  <data name="This installer entry was removed. Another OpenBlade installer still owns the installation." xml:space="preserve">
+    <value>This installer entry was removed. Another OpenBlade installer still owns the installation.</value>
+  </data>
+  <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
+    <value>This installer entry was removed. OpenBlade was already absent.</value>
+  </data>
+  <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
+    <value>Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again.</value>
   </data>
 </root>

@@ -28,6 +28,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   performance restoration. Earlier confirmed steps are never replayed, and
   active-session, power, low-power, pending-write, intent, and exact-device
   authority are rechecked before another thermal command.
+- Verified bundle registration, installer ownership, service registration, and
+  installed files before reporting uninstall success. Superseded installer
+  entries now report registration-only cleanup accurately, while skipped or
+  incomplete removal returns a failure instead of claiming OpenBlade was removed.
 - Centralized scoped performance transitions under one typed Strict executor,
   preserving the bounded EC settling delay while allowing only one freshly
   admitted retry after a proven pre-submission failure. Possible submissions

@@ -51,6 +51,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private const string OpenBladeVcRuntimePackage = "OpenBladeVcRuntime";
     private const int ProductVersionConflict = unchecked((int)0x80070666);
     private const int InstallerConfigurationCorrupt = unchecked((int)0x8007064A);
+    private readonly IUninstallPostconditionProbe uninstallPostconditionProbe =
+        new WindowsUninstallPostconditionProbe();
 
     private IBootstrapperCommand? command;
     private BootstrapperApplicationData? applicationData;
@@ -67,6 +69,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private bool purgeProfilesRequested;
     private bool sameVersionRelatedBundleCached;
     private bool sameVersionMaintenance;
+    private bool uninstallRunningBundleInstalled;
+    private bool uninstallSetupPackagePlanned;
     private int phaseCount = 2;
     private int cacheProgress;
     private int executeProgress;
@@ -76,6 +80,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? newerRelatedBundleVersion;
     private string? sameVersionRelatedBundleCode;
     private string? sameVersionRelatedBundleVersion;
+    private string? uninstallBundleOwnerId;
+    private string? uninstallInstallDirectory;
+    private UninstallMachineState? uninstallBeforeState;
+    private RegistrationType? uninstallRegistrationAfterApply;
     private readonly HashSet<string> newerRelatedBundleCodes =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DetectedRelatedBundle> upgradeRelatedBundles =
@@ -99,6 +107,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         PlanRelatedBundle += OnPlanRelatedBundle;
         PlanRelatedBundleType += OnPlanRelatedBundleType;
         PlanPackageBegin += OnPlanPackageBegin;
+        PlannedPackage += OnPlannedPackage;
         PlanComplete += OnPlanComplete;
         ApplyBegin += OnApplyBegin;
         CacheAcquireProgress += OnCacheAcquireProgress;
@@ -108,6 +117,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         ExecutePackageBegin += OnExecutePackageBegin;
         ExecuteProgress += OnExecuteProgress;
         ExecutePackageComplete += OnExecutePackageComplete;
+        UnregisterBegin += OnUnregisterBegin;
         Progress += OnProgress;
         Error += OnError;
         ApplyDowngrade += OnApplyDowngrade;
@@ -159,10 +169,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        plannedAction = action;
         sameVersionMaintenance = command.Relation == RelationType.None
             && action is LaunchAction.Repair or LaunchAction.Uninstall
             && CanOfferSameVersionMaintenance();
+        if (action == LaunchAction.Uninstall
+            && !PrepareUninstallPostcondition())
+        {
+            return;
+        }
+
+        plannedAction = action;
         allowNewerVersionOverwrite = overwriteNewerVersion
             && newerRelatedBundleVersion is not null
             && command.Display == Display.Full;
@@ -170,6 +186,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         purgeProfilesRequested = purgeProfiles;
         cacheProgress = 0;
         executeProgress = 0;
+        uninstallSetupPackagePlanned = false;
+        uninstallRegistrationAfterApply = null;
         Engine.SetVariableNumeric(PurgeProfilesVariable, purgeProfiles ? 1 : 0);
 
         progressPipe?.Dispose();
@@ -538,6 +556,18 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         e.Cancel = cancellationRequested;
     }
 
+    private void OnPlannedPackage(object? sender, PlannedPackageEventArgs e)
+    {
+        if (plannedAction == LaunchAction.Uninstall
+            && string.Equals(
+                e.PackageId,
+                OpenBladeSetupPackage,
+                StringComparison.Ordinal))
+        {
+            uninstallSetupPackagePlanned = true;
+        }
+    }
+
     private void OnPlanComplete(object? sender, PlanCompleteEventArgs e)
     {
         if (Failed(e.Status))
@@ -547,6 +577,18 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
                 lastError is null
                     ? InstallerStrings.Get("OpenBlade setup could not prepare the requested action.")
                     : InstallerStrings.Format("OpenBlade setup could not prepare the requested action: {0}", lastError));
+            return;
+        }
+
+        if (ShouldRejectUninstallPlan(
+                plannedAction,
+                uninstallRunningBundleInstalled,
+                uninstallSetupPackagePlanned))
+        {
+            string message = InstallerStrings.Get(
+                "Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again.");
+            AddDetail(message);
+            CompleteWithFailure(InstallerConfigurationCorrupt, message);
             return;
         }
 
@@ -625,6 +667,18 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             : $"{GetPackageName(e.PackageId)} completed.");
     }
 
+    private void OnUnregisterBegin(object? sender, UnregisterBeginEventArgs e)
+    {
+        if (plannedAction != LaunchAction.Uninstall)
+        {
+            return;
+        }
+
+        uninstallRegistrationAfterApply = e.RegistrationType;
+        AddDetail(
+            $"Burn selected {e.RegistrationType} as the final installer registration state.");
+    }
+
     private void OnProgress(object? sender, ProgressEventArgs e)
     {
         e.Cancel = cancellationRequested;
@@ -653,9 +707,57 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
         applying = false;
-        result = e.Status;
         progressPipe?.Dispose();
         progressPipe = null;
+
+        int completionStatus = e.Status;
+        string? completionFailure = null;
+        UninstallOutcome uninstallOutcome = UninstallOutcome.Removed;
+        if (!Failed(e.Status) && plannedAction == LaunchAction.Uninstall)
+        {
+            try
+            {
+                UninstallMachineState after = uninstallPostconditionProbe.Capture(
+                    uninstallBundleOwnerId
+                        ?? throw new InvalidOperationException(
+                            "The uninstall bundle owner ID is unavailable."),
+                    uninstallInstallDirectory
+                        ?? throw new InvalidOperationException(
+                            "The uninstall installation directory is unavailable."));
+                uninstallOutcome = UninstallPostconditionClassifier.Classify(
+                    uninstallBeforeState
+                        ?? throw new InvalidOperationException(
+                            "The pre-uninstall machine state is unavailable."),
+                    after,
+                    uninstallRunningBundleInstalled,
+                    sameVersionMaintenance,
+                    uninstallSetupPackagePlanned,
+                    uninstallRegistrationAfterApply);
+                if (uninstallOutcome == UninstallOutcome.Failed)
+                {
+                    completionFailure = InstallerStrings.Get(
+                        "OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present.");
+                }
+            }
+            catch (Exception exception)
+            {
+                uninstallOutcome = UninstallOutcome.Failed;
+                completionFailure = InstallerStrings.Format(
+                    "OpenBlade uninstall could not verify complete removal: {0}",
+                    exception.Message);
+            }
+
+            completionStatus = SelectApplyCompletionStatus(
+                e.Status,
+                plannedAction,
+                uninstallOutcome);
+            if (completionFailure is not null)
+            {
+                AddDetail(completionFailure);
+            }
+        }
+
+        result = completionStatus;
 
         if (command?.Display != Display.Full)
         {
@@ -663,19 +765,49 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (Failed(e.Status))
+        if (Failed(completionStatus))
         {
             Ui(() => window?.ShowFailure(
                 cancellationRequested
                     ? InstallerStrings.Get("Setup was cancelled and the previous state was restored.")
-                    : lastError is null
-                        ? InstallerStrings.Format("Setup failed with 0x{0:X8}.", e.Status)
-                        : InstallerStrings.Format("Setup failed: {0}", lastError),
+                    : completionFailure
+                        ?? (lastError is null
+                            ? InstallerStrings.Format("Setup failed with 0x{0:X8}.", completionStatus)
+                            : InstallerStrings.Format("Setup failed: {0}", lastError)),
                 TryGetVariable(BundleLogVariable)));
         }
         else
         {
-            Ui(() => window?.ShowSuccess(plannedAction, purgeProfilesRequested));
+            Ui(() => window?.ShowSuccess(
+                plannedAction,
+                purgeProfilesRequested,
+                uninstallOutcome));
+        }
+    }
+
+    private bool PrepareUninstallPostcondition()
+    {
+        try
+        {
+            uninstallBundleOwnerId = TryGetVariable(BundleOwnerIdVariable)
+                ?? throw new InvalidOperationException(
+                    "The bundle owner ID is unavailable.");
+            uninstallInstallDirectory = Engine.FormatString(
+                Engine.GetVariableString(LaunchWorkingFolderVariable));
+            uninstallBeforeState = uninstallPostconditionProbe.Capture(
+                uninstallBundleOwnerId,
+                uninstallInstallDirectory);
+            uninstallRunningBundleInstalled = installed;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            string message = InstallerStrings.Format(
+                "OpenBlade uninstall could not inspect the installed state: {0}",
+                exception.Message);
+            AddDetail(message);
+            CompleteWithFailure(InstallerConfigurationCorrupt, message);
+            return false;
         }
     }
 
@@ -1104,6 +1236,14 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             or LaunchAction.Repair
             or LaunchAction.Uninstall;
 
+    internal static bool ShouldRejectUninstallPlan(
+        LaunchAction action,
+        bool runningBundleInstalled,
+        bool setupPackagePlanned) =>
+        action == LaunchAction.Uninstall
+        && runningBundleInstalled
+        && !setupPackagePlanned;
+
     internal static string SelectSameVersionConflictGuidance(
         bool canOfferMaintenance,
         bool relatedBundleCached) =>
@@ -1294,7 +1434,17 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     internal static int SelectApplyDowngradeStatus(bool allowOverwrite, int status) =>
         allowOverwrite && status == ProductVersionConflict ? 0 : status;
 
-    private static int NormalizeExitCode(int status) =>
+    internal static int SelectApplyCompletionStatus(
+        int burnStatus,
+        LaunchAction action,
+        UninstallOutcome uninstallOutcome) =>
+        !Failed(burnStatus)
+        && action == LaunchAction.Uninstall
+        && uninstallOutcome == UninstallOutcome.Failed
+            ? InstallerConfigurationCorrupt
+            : burnStatus;
+
+    internal static int NormalizeExitCode(int status) =>
         (status & unchecked((int)0xFFFF0000)) == unchecked((int)0x80070000)
             ? status & 0xFFFF
             : status;

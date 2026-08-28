@@ -87,6 +87,9 @@
   <data name="Install OpenBlade" xml:space="preserve">
     <value>[!! Ínstáll OpenBlade ~~~ !!]</value>
   </data>
+  <data name="Installer entry removed" xml:space="preserve">
+    <value>[!! Ínstállér éntrý rémóvéd ~~~~~~~~ !!]</value>
+  </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
     <value>[!! Ínstáll thé OpenBlade sérvícé, Session Agent, ánd tráý ápplícátíón fór thís PC. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -143,6 +146,15 @@
   </data>
   <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
     <value>[!! OpenBlade sétúp cóúld nót prépáré thé réqúéstéd áctíón: {0} ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade uninstall could not inspect the installed state: {0}" xml:space="preserve">
+    <value>[!! OpenBlade únínstáll cóúld nót ínspéct thé ínstálléd státé: {0} ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present." xml:space="preserve">
+    <value>[!! OpenBlade únínstáll cóúld nót vérífý cómplété rémóvál. Thé ínstállér ównérshíp márkér, sérvícé, ór ínstálléd fílés áré stíll présént. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
+    <value>[!! OpenBlade únínstáll cóúld nót vérífý cómplété rémóvál: {0} ~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
     <value>[!! OpenBlade sétúp fóúnd {0} rélátéd ínstállér régístrátíóns. Sétúp stóppéd béfóré mákíng chángés bécáúsé éxécútíng óné légácý búndlé cán récúrsívélý láúnch thé óthérs. Úsé Únínstáll ón éách régístéréd OpenBlade éntrý whén áváíláblé. Íf dúplícátés rémáín, úsé Windows ínstállér récóvérý béfóré rúnníng thís ínstállér ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
@@ -284,5 +296,14 @@
   </data>
   <data name="Your saved profiles and settings were kept." xml:space="preserve">
     <value>[!! Ýóúr sávéd prófílés ánd séttíngs wéré képt. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="This installer entry was removed. Another OpenBlade installer still owns the installation." xml:space="preserve">
+    <value>[!! Thís ínstállér éntrý wás rémóvéd. Ánóthér OpenBlade ínstállér stíll ówns thé ínstállátíón. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
+    <value>[!! Thís ínstállér éntrý wás rémóvéd. OpenBlade wás álréádý ábsént. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
+    <value>[!! Windows Ínstállér díd nót plán thís ínstállér éntrý fór rémóvál. Ánóthér ínstállér máý stíll dépénd ón ít. Rémóvé áný dépéndént OpenBlade ínstállér éntrý fírst, thén trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>
