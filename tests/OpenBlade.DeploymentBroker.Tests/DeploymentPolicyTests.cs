@@ -51,15 +51,29 @@ public sealed class DeploymentPolicyTests : IDisposable
         Assert.Equal(installer, plan.FileName);
         Assert.Equal(root, plan.WorkingDirectory);
         Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
-        Assert.Equal(
-            new[]
-            {
-                "SystemRoot",
-                "TEMP",
-                "TMP",
-                "WINDIR",
-            },
-            plan.Environment.Keys.Order(StringComparer.Ordinal));
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        Assert.Equal(windows, plan.Environment["SystemRoot"]);
+        Assert.Equal(windows, plan.Environment["WINDIR"]);
+        Assert.Equal(Path.Combine(windows, "System32", "cmd.exe"), plan.Environment["ComSpec"]);
+        Assert.Equal($"{Path.Combine(windows, "System32")};{windows}", plan.Environment["PATH"]);
+        Assert.Equal(root, plan.Environment["TEMP"]);
+        Assert.Equal(root, plan.Environment["TMP"]);
+        Assert.DoesNotContain(
+            plan.Environment.Keys,
+            BrokerInstallerProcessPlan.IsBlockedEnvironmentVariable);
+    }
+
+    [Theory]
+    [InlineData("OPENBLADE_PSEUDO_LOCALIZATION")]
+    [InlineData("WixDebugBootstrapperApplication")]
+    [InlineData("DOTNET_STARTUP_HOOKS")]
+    [InlineData("COREHOST_TRACE")]
+    [InlineData("COMPlus_ReadyToRun")]
+    [InlineData("COR_ENABLE_PROFILING")]
+    [InlineData("__COMPAT_LAYER")]
+    public void ProcessPlan_BlocksEnvironmentControlVariables(string name)
+    {
+        Assert.True(BrokerInstallerProcessPlan.IsBlockedEnvironmentVariable(name));
     }
 
     [Theory]

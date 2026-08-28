@@ -54,6 +54,7 @@ public sealed class DeploymentClientCoordinatorTests
         string code)
     {
         RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        List<string> diagnostics = [];
         DeploymentBrokerResponse response = BrokerProtocolTests.Success() with
         {
             Status = (DeploymentBrokerResponseStatus)status,
@@ -63,10 +64,14 @@ public sealed class DeploymentClientCoordinatorTests
             response,
             elevated: false,
             Paths,
-            processes);
+            processes,
+            diagnostics.Add);
 
         Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Empty(processes.Plans);
+        Assert.Equal(
+            [$"broker-response:{(DeploymentBrokerResponseStatus)status}:{code}"],
+            diagnostics);
     }
 
     [Fact]
@@ -282,14 +287,16 @@ public sealed class DeploymentClientCoordinatorTests
         DeploymentBrokerResponse response,
         bool elevated,
         InstalledPayloadPaths? paths,
-        RecordingProcessLauncher processes) => new(
+        RecordingProcessLauncher processes,
+        Action<string>? diagnostic = null) => new(
             new FixedBrokerChannel(response),
             new FixedIntegritySource(elevated),
             new FixedSessionSource(active: true),
             new FixedInstalledPayloadVerifier(paths),
             new SequenceProcessInventory(),
             processes,
-            new FixedRequestIdSource());
+            new FixedRequestIdSource(),
+            diagnostic);
 
     private sealed class FixedBrokerChannel(DeploymentBrokerResponse response) : IBrokerChannel
     {

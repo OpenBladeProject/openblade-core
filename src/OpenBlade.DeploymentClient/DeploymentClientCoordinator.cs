@@ -25,7 +25,8 @@ internal sealed class DeploymentClientCoordinator(
     IInstalledPayloadVerifier installedPayload,
     IInstalledProcessInventory inventory,
     IDeploymentProcessLauncher processes,
-    IRequestIdSource requestIds)
+    IRequestIdSource requestIds,
+    Action<string>? diagnostic = null)
 {
     private static readonly TimeSpan SessionAgentSurvivalWindow = TimeSpan.FromSeconds(1);
 
@@ -35,7 +36,7 @@ internal sealed class DeploymentClientCoordinator(
         {
             if (integrity.IsElevated() || !session.IsActiveLocalConsoleSession())
             {
-                return false;
+                return Fail("client-context-rejected");
             }
 
             Guid requestId = requestIds.Create();
@@ -47,22 +48,25 @@ internal sealed class DeploymentClientCoordinator(
             DeploymentBrokerResponse response = await broker.ApplyFixedInboxAsync(
                 requestId,
                 cancellationToken).ConfigureAwait(false);
-            if (!DeploymentBrokerProtocol.IsExactSuccess(response, requestId)
-                || integrity.IsElevated()
-                || !session.IsActiveLocalConsoleSession())
+            if (!DeploymentBrokerProtocol.IsExactSuccess(response, requestId))
             {
-                return false;
+                return Fail($"broker-response:{response.Status}:{response.Code}");
+            }
+
+            if (integrity.IsElevated() || !session.IsActiveLocalConsoleSession())
+            {
+                return Fail("client-context-changed");
             }
 
             InstalledPayloadPaths? paths = installedPayload.GetVerifiedPaths();
             if (paths is null)
             {
-                return false;
+                return Fail("installed-payload-unverified");
             }
 
             if (!inventory.Inspect(paths).IsEmpty)
             {
-                return false;
+                return Fail("installed-processes-already-running");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -73,25 +77,32 @@ internal sealed class DeploymentClientCoordinator(
                     .ConfigureAwait(false)
                 || !inventory.Inspect(paths).HasOnlySessionAgent)
             {
-                return false;
+                return Fail("session-agent-relaunch-failed");
             }
 
             using ILaunchedDeploymentProcess? tray = processes.Launch(
                 InstalledProcessLaunchPlan.Tray(paths));
-            return tray is not null
+            bool launched = tray is not null
                 && await tray.RemainsAliveAsync(SessionAgentSurvivalWindow)
                     .ConfigureAwait(false)
                 && inventory.Inspect(paths).HasExactFinalState;
+            return launched || Fail("tray-relaunch-failed");
         }
         catch (OperationCanceledException)
         {
-            return false;
+            return Fail("client-operation-canceled");
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException
             or TimeoutException or Win32Exception or InvalidOperationException)
         {
-            return false;
+            return Fail($"client-exception:{exception.GetType().Name}");
         }
+    }
+
+    private bool Fail(string code)
+    {
+        diagnostic?.Invoke(code);
+        return false;
     }
 }

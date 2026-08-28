@@ -35,11 +35,16 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 OpenBladeReleaseManifestCodec.InstallerFileName),
             plan.FileName);
         Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
-        Assert.Equal(
-            new[] { "SystemRoot", "TEMP", "TMP", "WINDIR" },
-            plan.Environment.Keys.Order(StringComparer.Ordinal));
-        Assert.DoesNotContain(plan.Environment.Keys, key =>
-            key.Contains("PATH", StringComparison.OrdinalIgnoreCase));
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        Assert.Equal(windows, plan.Environment["SystemRoot"]);
+        Assert.Equal(windows, plan.Environment["WINDIR"]);
+        Assert.Equal(Path.Combine(windows, "System32", "cmd.exe"), plan.Environment["ComSpec"]);
+        Assert.Equal($"{Path.Combine(windows, "System32")};{windows}", plan.Environment["PATH"]);
+        Assert.Equal(plan.WorkingDirectory, plan.Environment["TEMP"]);
+        Assert.Equal(plan.WorkingDirectory, plan.Environment["TMP"]);
+        Assert.DoesNotContain(
+            plan.Environment.Keys,
+            BrokerInstallerProcessPlan.IsBlockedEnvironmentVariable);
         Assert.Single(Directory.GetFiles(fixture.Paths.ReportDirectory, "*.json"));
         Assert.False(File.Exists(fixture.Paths.InFlightPath));
         Assert.False(Directory.Exists(Path.Combine(

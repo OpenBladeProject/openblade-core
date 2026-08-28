@@ -133,6 +133,16 @@ public sealed class BrokerAcceptedSequenceStore(BrokerPaths paths) : IBrokerAcce
 
 public static class BrokerInstallerProcessPlan
 {
+    private static readonly string[] BlockedEnvironmentPrefixes =
+    [
+        "COMPLUS_",
+        "COREHOST_",
+        "COR_",
+        "DOTNET_",
+        "OPENBLADE_",
+        "WIX",
+    ];
+
     private static readonly string[] FixedArguments =
     [
         "/install",
@@ -165,19 +175,33 @@ public static class BrokerInstallerProcessPlan
             startInfo.ArgumentList.Add(argument);
         }
 
-        startInfo.Environment.Clear();
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         if (string.IsNullOrWhiteSpace(windows))
         {
             throw new InvalidOperationException("The Windows directory is unavailable.");
         }
 
-        startInfo.Environment.Add("SystemRoot", windows);
-        startInfo.Environment.Add("WINDIR", windows);
-        startInfo.Environment.Add("TEMP", staging);
-        startInfo.Environment.Add("TMP", staging);
+        foreach (string name in startInfo.Environment.Keys
+            .Where(IsBlockedEnvironmentVariable)
+            .ToArray())
+        {
+            startInfo.Environment.Remove(name);
+        }
+
+        string system = Path.Combine(windows, "System32");
+        startInfo.Environment["SystemRoot"] = windows;
+        startInfo.Environment["WINDIR"] = windows;
+        startInfo.Environment["ComSpec"] = Path.Combine(system, "cmd.exe");
+        startInfo.Environment["PATH"] = $"{system};{windows}";
+        startInfo.Environment["TEMP"] = staging;
+        startInfo.Environment["TMP"] = staging;
         return startInfo;
     }
+
+    internal static bool IsBlockedEnvironmentVariable(string name) =>
+        string.Equals(name, "__COMPAT_LAYER", StringComparison.OrdinalIgnoreCase)
+        || BlockedEnvironmentPrefixes.Any(prefix =>
+            name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 }
 
 public enum BrokerDeploymentDisposition

@@ -8,7 +8,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Added an explicitly enrolled, TPM-authorized local-development deployment
-  broker for quiet OpenBlade build installation without repeated UAC prompts.
+  broker for quiet OpenBlade build installation without repeated UAC prompts,
+  with a protected Burn environment and bounded client failure diagnostics.
 
 ### Fixed
 

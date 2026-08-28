@@ -14,5 +14,6 @@ DeploymentClientCoordinator coordinator = new(
     new WindowsInstalledPayloadVerifier(),
     new WindowsInstalledProcessInventory(),
     new WindowsDeploymentProcessLauncher(),
-    new CryptographicRequestIdSource());
+    new CryptographicRequestIdSource(),
+    Console.Error.WriteLine);
 return await coordinator.ApplyFixedInboxAsync(CancellationToken.None) ? 0 : 1;

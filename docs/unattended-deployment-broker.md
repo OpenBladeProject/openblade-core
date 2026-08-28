@@ -123,6 +123,12 @@ and rejects it in assembly metadata. Product identity and the signed manifest
 retain `65535.x.y.z` and bind that version to the full commit SHA. This path
 requests no additional UAC prompt.
 
+The broker starts Burn with the SCM-provided LocalSystem environment needed by
+Windows installer infrastructure, strips WiX, .NET, compatibility, and
+OpenBlade environment control variables, fixes executable lookup to Windows
+system directories, and redirects temporary files into the protected request
+staging directory.
+
 The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or
 Nightly installation is therefore an attended maintenance action; this tool is
