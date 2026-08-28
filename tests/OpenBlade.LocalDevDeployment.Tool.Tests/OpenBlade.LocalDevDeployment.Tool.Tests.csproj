@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>OpenBlade.LocalDevDeployment.Tool.Tests</AssemblyName>
+    <RootNamespace>OpenBlade.LocalDevDeploymentTool.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\build\tools\OpenBlade.LocalDevDeployment.Tool\OpenBlade.LocalDevDeployment.Tool.csproj" />
+  </ItemGroup>
+</Project>

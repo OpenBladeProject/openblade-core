@@ -40,6 +40,36 @@
   ],
   "testInputRules": [
     {
+      "patterns": ["build/tools/OpenBlade.LocalDevDeployment.Tool/*"],
+      "testProjects": ["tests/OpenBlade.LocalDevDeployment.Tool.Tests/OpenBlade.LocalDevDeployment.Tool.Tests.csproj"],
+      "reason": "The developer-only staging tool must preserve TPM and fixed-inbox contracts."
+    },
+    {
+      "patterns": ["src/OpenBlade.Deployment/*"],
+      "testProjects": ["tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj", "tests/OpenBlade.DeploymentBroker.Tests/OpenBlade.DeploymentBroker.Tests.csproj", "tests/OpenBlade.LocalDevDeployment.Tool.Tests/OpenBlade.LocalDevDeployment.Tool.Tests.csproj"],
+      "reason": "The signed local-development manifest is shared by staging and the elevated broker."
+    },
+    {
+      "patterns": ["src/OpenBlade.DeploymentBroker/*"],
+      "testProjects": ["tests/OpenBlade.DeploymentBroker.Tests/OpenBlade.DeploymentBroker.Tests.csproj", "tests/OpenBlade.DevelopmentDeployment.Setup.Tests/OpenBlade.DevelopmentDeployment.Setup.Tests.csproj"],
+      "reason": "The fixed elevated broker and attended provisioner share enrollment contracts."
+    },
+    {
+      "patterns": ["src/OpenBlade.DeploymentClient/*"],
+      "testProjects": ["tests/OpenBlade.DeploymentClient.Tests/OpenBlade.DeploymentClient.Tests.csproj"],
+      "reason": "The normal-integrity client must preserve its narrow service and relaunch contracts."
+    },
+    {
+      "patterns": ["src/OpenBlade.DevelopmentDeployment.Setup/*"],
+      "testProjects": ["tests/OpenBlade.DevelopmentDeployment.Setup.Tests/OpenBlade.DevelopmentDeployment.Setup.Tests.csproj"],
+      "reason": "The attended developer provisioner must preserve enrollment and ACL contracts."
+    },
+    {
+      "patterns": ["src/OpenBlade.Setup/LocalDevEnrollmentUser.cs", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/Program.cs", "src/OpenBlade.Setup/WindowsSetupPlatform.cs"],
+      "testProjects": ["tests/OpenBlade.Setup.Tests/OpenBlade.Setup.Tests.csproj", "tests/OpenBlade.DevelopmentDeployment.Setup.Tests/OpenBlade.DevelopmentDeployment.Setup.Tests.csproj"],
+      "reason": "The release-excluded Setup build must bind user-scoped work to the protected enrollment."
+    },
+    {
       "patterns": ["src/*.cs"],
       "testProjects": ["tests/OpenBlade.Architecture.Tests/OpenBlade.Architecture.Tests.csproj"],
       "reason": "Production C# changes must satisfy repository-wide architecture contracts."
@@ -197,6 +227,14 @@
     {
       "test": "tests/Build.Tests/StoreSubmissionValidation.Tests.ps1",
       "patterns": ["build/StoreSubmissionValidation.ps1", "build/store/OpenBlade.StoreSubmission.json"]
+    },
+    {
+      "test": "tests/Build.Tests/LocalDevBuildVersion.Tests.ps1",
+      "patterns": ["build/development-deployment/LocalDevBuildVersion.ps1", "build/development-deployment/Invoke-LocalDevDeployment.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/LocalDevDeploymentReleaseBoundary.Tests.ps1",
+      "patterns": ["build/Publish.ps1", "build/StoreSubmissionValidation.ps1", "build/installer/*", "build/development-deployment/*", "build/tools/OpenBlade.LocalDevDeployment.Tool/*", "src/OpenBlade.Deployment/*", "src/OpenBlade.DeploymentBroker/*", "src/OpenBlade.DeploymentClient/*", "src/OpenBlade.DevelopmentDeployment.Setup/*", "src/OpenBlade.Setup/LocalDevEnrollmentUser.cs", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/Program.cs"]
     },
     {
       "test": "tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1",

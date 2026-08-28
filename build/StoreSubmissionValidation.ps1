@@ -37,6 +37,29 @@ function Get-OpenBladeStoreSubmissionContract {
     return $contract
 }
 
+function Assert-NoOpenBladeLocalDevelopmentArtifacts {
+    param(
+        [Parameter(Mandatory)][string]$Bundle,
+        [Parameter(Mandatory)][string]$Installer
+    )
+
+    $files = @((Get-Item -LiteralPath $Installer))
+    $files += @(Get-ChildItem -LiteralPath $Bundle -Recurse -File -Force)
+    foreach ($file in $files) {
+        if ($file.Name -like 'OpenBlade.DeploymentBroker.*' -or
+            $file.Name -like 'OpenBlade.DeploymentClient.*' -or
+            $file.Name -like 'OpenBlade.DevelopmentDeployment.Setup.*' -or
+            $file.Name -like 'OpenBlade.LocalDevDeployment.Tool.*' -or
+            $file.Name -eq 'OpenBlade.Deployment.dll' -or
+            $file.Name -in @(
+                'OpenBlade.LocalDevDeployment.json',
+                'OpenBlade-Local-Dev-Deployment.json',
+                'OpenBlade-Local-Dev-Deployment.sig')) {
+            throw "Store submission contains local-development deployment artifact '$($file.FullName)'."
+        }
+    }
+}
+
 function Assert-OpenBladePrivacyPolicyResponse {
     param(
         [Parameter(Mandatory)][int]$StatusCode,
@@ -106,6 +129,7 @@ function Write-OpenBladeStoreReadinessReport {
     if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
         throw "The OpenBlade installer is missing: $Installer"
     }
+    Assert-NoOpenBladeLocalDevelopmentArtifacts -Bundle $Bundle -Installer $Installer
 
     $bundlePath = (Resolve-Path -LiteralPath $Bundle).Path.TrimEnd(
         [IO.Path]::DirectorySeparatorChar)

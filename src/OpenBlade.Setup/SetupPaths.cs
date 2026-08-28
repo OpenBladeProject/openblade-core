@@ -71,6 +71,23 @@ public sealed record SetupPaths
         Environment.GetFolderPath(Environment.SpecialFolder.Startup),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
 
+    internal static SetupPaths CreateLocalSystemDefault() => CreateLocalSystem(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup));
+
+    internal static SetupPaths CreateLocalSystem(
+        string programFilesRoot,
+        string machineDataRoot,
+        string localSystemDataRoot,
+        string commonStartupRoot) => Create(
+            programFilesRoot,
+            machineDataRoot,
+            localSystemDataRoot,
+            commonStartupRoot,
+            commonStartupRoot);
+
     public static bool IsExactOpenBladeDirectory(string candidate, string knownFolderRoot)
     {
         if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(knownFolderRoot))

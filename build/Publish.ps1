@@ -8,10 +8,11 @@ param(
     [string]$MakeAppx,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
     [switch]$VerifyPrivacyPolicy,
-    [ValidateSet('Stable', 'Nightly')]
+    [ValidateSet('Stable', 'Nightly', 'LocalDev')]
     [string]$BuildChannel = 'Stable',
     [ValidateRange(0, 65535)]
     [int]$BuildRevision = 0,
+    [string]$LocalDevVersion,
     [string]$SourceRevision,
     [string]$WorkflowRunId
 )
@@ -102,6 +103,7 @@ $buildIdentity = Resolve-OpenBladeBuildIdentity `
     -BaseVersion $openBladeVersionNode.InnerText `
     -Channel $BuildChannel `
     -BuildRevision $BuildRevision `
+    -LocalDevVersion $LocalDevVersion `
     -SourceRevision $SourceRevision
 
 function Invoke-OpenBladeSigning {
@@ -127,7 +129,7 @@ $publishArguments = @(
     '--property:PublishTrimmed=false',
     '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
 )
-if ($buildIdentity.Channel -eq 'Nightly') {
+if ($buildIdentity.Channel -ne 'Stable') {
     $publishArguments += @(
         "--property:Version=$($buildIdentity.Version)",
         "--property:AssemblyVersion=$($buildIdentity.AssemblyVersion)",
@@ -149,6 +151,9 @@ $setupPublishArguments = @(
     '--property:IncludeNativeLibrariesForSelfExtract=true',
     '--property:EnableCompressionInSingleFile=true'
 )
+if ($buildIdentity.Channel -eq 'LocalDev') {
+    $setupPublishArguments += '--property:OpenBladeLocalDevDeployment=true'
+}
 $signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningThumbprint)
 $resolvedSignTool = $null
 if ($signingEnabled) {
@@ -187,6 +192,24 @@ try {
         $stagingDeveloperTools $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments)
+    $forbiddenDevelopmentPayload = Get-ChildItem `
+        -LiteralPath $stagingBundle `
+        -Recurse `
+        -File `
+        -Force | Where-Object {
+            $_.Name -like 'OpenBlade.DeploymentBroker.*' -or
+            $_.Name -like 'OpenBlade.DeploymentClient.*' -or
+            $_.Name -like 'OpenBlade.DevelopmentDeployment.Setup.*' -or
+            $_.Name -like 'OpenBlade.LocalDevDeployment.Tool.*' -or
+            $_.Name -eq 'OpenBlade.Deployment.dll' -or
+            $_.Name -in @(
+                'OpenBlade.LocalDevDeployment.json',
+                'OpenBlade-Local-Dev-Deployment.json',
+                'OpenBlade-Local-Dev-Deployment.sig')
+        } | Select-Object -First 1
+    if ($null -ne $forbiddenDevelopmentPayload) {
+        throw "Release publishing contains local-development deployment artifact '$($forbiddenDevelopmentPayload.FullName)'."
+    }
     $installerUiProject = Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj')
     $installerUiTestProject = Join-Path $repository (

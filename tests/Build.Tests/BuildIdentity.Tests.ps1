@@ -57,6 +57,20 @@ Assert-True ($nightly.AssemblyVersion -eq '0.1.0.42') `
 Assert-True ($nightly.InformationalVersion -eq '0.1.0-nightly.42+01234567') `
     'Nightly informational versions must identify the channel, run, and commit.'
 
+$localDev = Resolve-OpenBladeBuildIdentity `
+    -BaseVersion '0.1.0' `
+    -Channel LocalDev `
+    -LocalDevVersion '65535.1.2.3' `
+    -SourceRevision $sourceRevision
+Assert-True ($localDev.BundleVersion -eq '65535.1.2.3') `
+    'Local-development bundles must use the reserved monotonic version.'
+Assert-True ($localDev.AssemblyVersion -eq '65534.1.2.3') `
+    'Local-development assembly versions must use the valid shadow range.'
+Assert-True ($localDev.FileVersion -eq '65534.1.2.3') `
+    'Local-development file versions must use the valid shadow range.'
+Assert-True ($localDev.InformationalVersion -eq "65535.1.2.3+$sourceRevision") `
+    'Local-development product identity must bind the exact commit.'
+
 Assert-Throws `
     { Resolve-OpenBladeBuildIdentity -BaseVersion '0.1.0' -BuildRevision 1 } `
     'Stable builds must use build revision 0.'
@@ -72,6 +86,24 @@ Assert-Throws `
             -SourceRevision 'abcdef12'
     } `
     'Nightly builds require the full 40-character Git source revision.'
+Assert-Throws `
+    {
+        Resolve-OpenBladeBuildIdentity `
+            -BaseVersion '0.1.0' `
+            -Channel LocalDev `
+            -LocalDevVersion '0.1.0.1' `
+            -SourceRevision $sourceRevision
+    } `
+    'Local-development builds require a canonical reserved 65535.x.y.z version.'
+Assert-Throws `
+    {
+        Resolve-OpenBladeBuildIdentity `
+            -BaseVersion '0.1.0' `
+            -Channel LocalDev `
+            -LocalDevVersion '65535.1.65535.0' `
+            -SourceRevision $sourceRevision
+    } `
+    'Local-development version components after 65535 must be between 0 and 65534.'
 Assert-Throws `
     { Resolve-OpenBladeBuildIdentity -BaseVersion '0.1.0.1' } `
     'OpenBlade base version must contain exactly three numeric components: 0.1.0.1'

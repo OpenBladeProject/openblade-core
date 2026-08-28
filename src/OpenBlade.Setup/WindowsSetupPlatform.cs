@@ -33,7 +33,8 @@ public sealed record WindowsSetupPlatformOptions(
     IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
     string? SetupExecutablePath = null,
     ISetupProgressReporter? ProgressReporter = null,
-    string? BundleOwnerId = null);
+    string? BundleOwnerId = null,
+    string? CurrentUserSid = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -56,6 +57,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
     private readonly ISetupProgressReporter progressReporter;
     private readonly string setupExecutablePath;
+    private readonly string currentUserSid;
 
     public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
     {
@@ -82,10 +84,39 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
+        currentUserSid = ResolveCurrentUserSid(options.CurrentUserSid);
     }
 
-    public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
-        ?? throw new InvalidOperationException("The installing user's SID is unavailable.");
+    public string CurrentUserSid => currentUserSid;
+
+    internal static string ResolveCurrentUserSid(string? enrolledUserSid)
+    {
+        if (enrolledUserSid is null)
+        {
+            return WindowsIdentity.GetCurrent().User?.Value
+                ?? throw new InvalidOperationException("The installing user's SID is unavailable.");
+        }
+
+        try
+        {
+            SecurityIdentifier identity = new(enrolledUserSid);
+            if (!identity.IsAccountSid()
+                || identity.AccountDomainSid is null
+                || !string.Equals(identity.Value, enrolledUserSid, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "The local-development enrollment must contain a canonical account SID.");
+            }
+
+            return identity.Value;
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException(
+                "The local-development enrollment contains an invalid account SID.",
+                exception);
+        }
+    }
 
     public async Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(
         CancellationToken cancellationToken)

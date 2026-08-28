@@ -1,6 +1,13 @@
 using OpenBlade.Setup;
 
+#if OPENBLADE_LOCAL_DEV_DEPLOYMENT
+// The fixed broker runs this developer-only Setup build as LocalSystem. Its
+// per-user Startup known folder is unavailable, and privileged Setup must not
+// traverse the enrolled user's writable profile merely to remove legacy links.
+SetupPaths paths = SetupPaths.CreateLocalSystemDefault();
+#else
 SetupPaths paths = SetupPaths.CreateDefault();
+#endif
 string executablePath = Environment.ProcessPath
     ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
 bool interactiveRequested = SetupCommandParser.IsInteractiveUninstall(args);
@@ -39,13 +46,19 @@ try
     _ = SetupCommandParser.TryParseInvocation(
         effectiveArguments,
         out SetupInvocation invocation);
+#if OPENBLADE_LOCAL_DEV_DEPLOYMENT
+    string enrolledUserSid = LocalDevEnrollmentUser.ReadEnrolledAccountSid();
+#else
+    string? enrolledUserSid = null;
+#endif
     using ISetupProgressReporter progress = SetupProgressReporter.Create(
         invocation.ProgressPipeName);
     int exitCode = await new SetupCommandRunner(
         new WindowsSetupPlatform(new WindowsSetupPlatformOptions(
             Paths: paths,
             ProgressReporter: progress,
-            BundleOwnerId: invocation.BundleOwnerId)),
+            BundleOwnerId: invocation.BundleOwnerId,
+            CurrentUserSid: enrolledUserSid)),
         progress)
         .RunAsync(effectiveArguments, CancellationToken.None);
     if ((interactiveRequested || interactiveRelay) && exitCode == 0)

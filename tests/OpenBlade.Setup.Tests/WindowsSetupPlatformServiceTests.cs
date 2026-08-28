@@ -579,12 +579,14 @@ public sealed class WindowsSetupPlatformServiceTests
     [Fact]
     public async Task DynamicLightingIdentityOperations_UseInstallDirectoryAndInstallingUser()
     {
+        const string enrolledUserSid = "S-1-5-21-1-2-3-1001";
         RecordingDynamicLightingIdentityRegistration identity = new()
         {
             Registered = true,
         };
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
-            dynamicLightingIdentityRegistration: identity);
+            dynamicLightingIdentityRegistration: identity,
+            currentUserSid: enrolledUserSid);
 
         SetupInstallLifecycleState state =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
@@ -602,8 +604,18 @@ public sealed class WindowsSetupPlatformServiceTests
             Path.Combine("Program Files", "OpenBlade"),
             query.InstallDirectory,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(platform.CurrentUserSid, query.UserSid);
+        Assert.Equal(enrolledUserSid, platform.CurrentUserSid);
+        Assert.Equal(enrolledUserSid, query.UserSid);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-sid")]
+    [InlineData("S-1-1-0")]
+    [InlineData("s-1-5-21-1-2-3-1001")]
+    public void EnrolledUserOverride_RejectsNoncanonicalAccountSid(string sid) =>
+        Assert.Throws<InvalidDataException>(
+            () => WindowsSetupPlatformTestFactory.Create(currentUserSid: sid));
 
     [Theory]
     [InlineData("")]
