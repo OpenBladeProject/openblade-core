@@ -178,20 +178,41 @@ internal partial class InstallerWindow : Window
         DetailsText.ScrollToEnd();
     }
 
-    public void ShowSuccess(LaunchAction action, bool purgeProfiles)
+    public void ShowSuccess(
+        LaunchAction action,
+        bool purgeProfiles,
+        UninstallOutcome uninstallOutcome = UninstallOutcome.Removed)
     {
         ShowOnly(SuccessPanel);
         HeaderSubtitle.Text = InstallerStrings.Get("Complete");
         bool canLaunch = action is LaunchAction.Install or LaunchAction.Repair;
         LaunchButton.Visibility = canLaunch ? Visibility.Visible : Visibility.Collapsed;
-        SuccessHeading.Text = action == LaunchAction.Uninstall
-            ? InstallerStrings.Get("OpenBlade was removed")
-            : InstallerStrings.Get("OpenBlade is ready");
-        SuccessMessage.Text = action == LaunchAction.Uninstall
-            ? purgeProfiles
-                ? InstallerStrings.Get("Saved profiles and settings were also removed.")
-                : InstallerStrings.Get("Your saved profiles and settings were kept.")
-            : InstallerStrings.Get("Setup completed successfully.");
+        if (action == LaunchAction.Uninstall)
+        {
+            SuccessHeading.Text = uninstallOutcome == UninstallOutcome.Removed
+                ? InstallerStrings.Get("OpenBlade was removed")
+                : InstallerStrings.Get("Installer entry removed");
+            SuccessMessage.Text = uninstallOutcome switch
+            {
+                UninstallOutcome.Removed when purgeProfiles =>
+                    InstallerStrings.Get("Saved profiles and settings were also removed."),
+                UninstallOutcome.Removed =>
+                    InstallerStrings.Get("Your saved profiles and settings were kept."),
+                UninstallOutcome.RegistrationOnly =>
+                    InstallerStrings.Get(
+                        "This installer entry was removed. Another OpenBlade installer still owns the installation."),
+                UninstallOutcome.AlreadyAbsent =>
+                    InstallerStrings.Get(
+                        "This installer entry was removed. OpenBlade was already absent."),
+                _ => throw new InvalidOperationException(),
+            };
+        }
+        else
+        {
+            SuccessHeading.Text = InstallerStrings.Get("OpenBlade is ready");
+            SuccessMessage.Text = InstallerStrings.Get("Setup completed successfully.");
+        }
+
         QueueFocus(canLaunch ? LaunchButton : SuccessCloseButton);
     }
 

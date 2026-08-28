@@ -87,6 +87,9 @@
   <data name="Install OpenBlade" xml:space="preserve">
     <value>Установить OpenBlade</value>
   </data>
+  <data name="Installer entry removed" xml:space="preserve">
+    <value>Запись установщика удалена</value>
+  </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
     <value>Установить на этот компьютер службу OpenBlade, агент сеанса и приложение для области уведомлений.</value>
   </data>
@@ -143,6 +146,18 @@
   </data>
   <data name="OpenBlade setup could not prepare the requested action: {0}" xml:space="preserve">
     <value>Программе установки OpenBlade не удалось подготовить запрошенное действие: {0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not inspect the installed state: {0}" xml:space="preserve">
+    <value>Программе удаления OpenBlade не удалось проверить состояние установки: {0}</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present." xml:space="preserve">
+    <value>Программе удаления OpenBlade не удалось подтвердить полное удаление. Маркер владельца установки, служба или установленные файлы всё ещё присутствуют.</value>
+  </data>
+  <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
+    <value>Программе удаления OpenBlade не удалось подтвердить полное удаление: {0}</value>
+  </data>
+  <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
+    <value>Установщик Windows не запланировал удаление этой записи. Возможно, от неё всё ещё зависит другой установщик. Удалите все зависимые записи установщика OpenBlade и повторите попытку.</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
     <value>Программа установки OpenBlade обнаружила {0} связанных записей установщика. Операция остановлена до внесения изменений: запуск одного устаревшего пакета может по цепочке запустить остальные. По возможности выберите «Удалить» для каждой зарегистрированной записи OpenBlade. Если дубликаты останутся, воспользуйтесь средством восстановления установщика Windows перед повторным запуском.</value>
@@ -284,5 +299,11 @@
   </data>
   <data name="Your saved profiles and settings were kept." xml:space="preserve">
     <value>Сохранённые профили и параметры оставлены на компьютере.</value>
+  </data>
+  <data name="This installer entry was removed. Another OpenBlade installer still owns the installation." xml:space="preserve">
+    <value>Эта запись установщика удалена. Установка по-прежнему принадлежит другому установщику OpenBlade.</value>
+  </data>
+  <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
+    <value>Эта запись установщика удалена. OpenBlade уже отсутствовал.</value>
   </data>
 </root>
