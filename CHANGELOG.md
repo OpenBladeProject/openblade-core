@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Classified exact-device identity rejection before a requested firmware
+  command as definitively not applied while preserving uncertain outcomes once
+  command submission may have begun.
 - Preserved confirmed battery-protection and lighting state across performance
   and fan readback so thermal-only observations no longer appear as external
   battery-protection changes.

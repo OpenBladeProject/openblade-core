@@ -1755,6 +1755,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
         Assert.Equal("sanitized port diagnostic", error.Message);
         Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.SetLimitCount);
     }
 
     [Fact]
@@ -2398,7 +2399,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task IdentityLossPoisonsNoFutureOperationAndFreshOpenRechecksBeforeWriting()
+    public async Task IdentityBlockedFreshOpenIsKnownNotAppliedBeforeRequestedCommandRuns()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var freshPort = new FakeProductionPort(
@@ -2411,9 +2412,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         BladeWriteException first = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, first.SubmissionState);
+        Assert.Equal("The hardware write was blocked before submission.", first.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, freshPort.SetLimitCount);
+
         await device.SetChargeLimitAsync(BatteryPolicy.Create(80), default);
 
-        Assert.Equal(WriteSubmissionState.Indeterminate, first.SubmissionState);
         Assert.Equal(2, factory.OpenCount);
         Assert.Equal(1, freshPort.SetLimitCount);
     }

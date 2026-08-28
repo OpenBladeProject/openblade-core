@@ -3171,8 +3171,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             HidSessionFailureKind? failure)
         {
             WriteSubmissionState submissionState = failure is
-                HidSessionFailureKind.IdentityBlocked
-                or HidSessionFailureKind.Timeout
+                HidSessionFailureKind.Timeout
                 or HidSessionFailureKind.Poisoned
                 or HidSessionFailureKind.Disposed
                 ? WriteSubmissionState.Indeterminate
