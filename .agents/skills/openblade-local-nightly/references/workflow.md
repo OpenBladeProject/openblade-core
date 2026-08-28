@@ -11,7 +11,7 @@ This procedure reproduces the release-significant parts of the hosted Nightly wo
 5. Inspect an existing exact-SHA Nightly run or dispatch `.github/workflows/nightly.yml` on `main` to reserve the workflow run number. Do not dispatch on a different ref.
 6. Read the run back with `gh`. Require the `Nightly` workflow, `main` head branch, exact source SHA, positive run number from 1 through 65535, run ID, run attempt, URL, and an infrastructure-unavailable state. Record the billing, capacity, platform, or other GitHub annotation and the number of executed jobs and steps.
 7. Stop if any source-controlled job or step failed. Stop if the hosted workflow is still running or can execute normally. Do not manufacture a build revision when GitHub cannot reserve one.
-8. Compute the canonical tag from the generated metadata: `v<baseVersion>-nightly.<BuildRevision>`, with `-attempt.<runAttempt>` only when the attempt is not 1. Reject an existing tag or non-draft release. Resume an existing draft only after proving that its target, title, notes, and every uploaded asset belong to these exact inputs.
+8. Read `OpenBladeVersion` from `Directory.Build.props` at the selected source commit and compute the provisional canonical tag: `v<OpenBladeVersion>-nightly.<BuildRevision>`, with `-attempt.<runAttempt>` only when the attempt is not 1. Reject an existing tag or non-draft release. Resume an existing draft only after proving that its target, title, notes, and every uploaded asset belong to these exact inputs.
 
 The reserved identity passed to the build is:
 
@@ -64,7 +64,7 @@ Require the publisher to exit successfully and independently inspect:
 - `artifacts\win-x64\OpenBlade-Nightly.json`;
 - the payload and validation reports referenced by the metadata.
 
-Verify that metadata channel, base version, `BuildRevision`, `SourceRevision`, workflow-run identifier, informational version, source URL, installer size, SHA-256, and Authenticode state match the reserved inputs and local files. Require `localPreflightPassed` when present and record every build, test, installer UI, payload, or contract result emitted by the unchanged publisher.
+Verify that metadata channel, base version, `BuildRevision`, `SourceRevision`, workflow-run identifier, informational version, source URL, installer size, SHA-256, and Authenticode state match the reserved inputs and local files. Require the generated metadata base version and build revision to reproduce the exact provisional tag selected before the build. Require `localPreflightPassed` when present and record every build, test, installer UI, payload, or contract result emitted by the unchanged publisher.
 
 Do not report hosted checks as passing. An unsigned local artifact may be published only when that release state is already allowed and is disclosed in the release notes and final report. Do not pass signing material or invent provenance attestations.
 

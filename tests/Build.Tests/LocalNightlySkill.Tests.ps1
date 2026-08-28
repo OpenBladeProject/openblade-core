@@ -60,6 +60,12 @@ Assert-ContainsAll `
 
 $workflow = Read-RequiredFile (
     Join-Path $skillDirectory 'references\workflow.md')
+$publishPath = Join-Path $repository 'build\Publish.ps1'
+$publish = Read-RequiredFile $publishPath
+$publishPayloadValidation = Read-RequiredFile (
+    Join-Path $repository 'build\PublishPayloadValidation.ps1')
+$nightlyChangelog = Read-RequiredFile (
+    Join-Path $repository 'build\NightlyChangelog.ps1')
 Assert-ContainsAll `
     -Content $workflow `
     -RequiredValues @(
@@ -72,6 +78,8 @@ Assert-ContainsAll `
         'OSSBlade/openblade-core',
         'Before dispatch, list Nightly runs',
         'Do not manufacture a build revision',
+        'OpenBladeVersion',
+        'provisional canonical tag',
         'Create a fresh detached exact-commit worktree under `C:\tmp`',
         '-BuildChannel Nightly',
         '-BuildRevision <BuildRevision>',
@@ -91,6 +99,48 @@ Assert-ContainsAll `
         'GitHub artifact attestations were unavailable',
         'Leave the exact build worktree') `
     -Source 'references/workflow.md'
+
+$tokens = $null
+$parseErrors = $null
+$publishAst = [Management.Automation.Language.Parser]::ParseFile(
+    $publishPath,
+    [ref]$tokens,
+    [ref]$parseErrors)
+if ($parseErrors.Count -ne 0) {
+    throw (
+        'build/Publish.ps1 does not parse: ' +
+        (($parseErrors | ForEach-Object Message) -join '; '))
+}
+$publishParameters = @(
+    $publishAst.ParamBlock.Parameters |
+        ForEach-Object { $_.Name.VariablePath.UserPath })
+foreach ($parameter in @(
+        'Configuration',
+        'BuildChannel',
+        'BuildRevision',
+        'SourceRevision',
+        'WorkflowRunId')) {
+    if ($publishParameters -notcontains $parameter) {
+        throw "build/Publish.ps1 is missing documented parameter '$parameter'."
+    }
+}
+Assert-ContainsAll `
+    -Content $publish `
+    -RequiredValues @(
+        'PublishPayloadValidation.ps1',
+        'win-x64\OpenBlade-Nightly.json',
+        'win-x64\OpenBlade-Setup.exe.sha256') `
+    -Source 'build/Publish.ps1'
+if ([string]::IsNullOrWhiteSpace($publishPayloadValidation)) {
+    throw 'build/PublishPayloadValidation.ps1 must not be empty.'
+}
+if (-not [Regex]::IsMatch(
+        $nightlyChangelog,
+        '(?m)^function Write-OpenBladeNightlyChangelogSnapshot \{\r?$')) {
+    throw (
+        'build/NightlyChangelog.ps1 is missing the documented ' +
+        'Write-OpenBladeNightlyChangelogSnapshot entry point.')
+}
 
 $headings = @(
     '## 1. Establish an unavailable hosted run',
