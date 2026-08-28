@@ -10187,15 +10187,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState? cached,
         ConfirmedDeviceState readback)
     {
-        if (cached is null || subsystem != DeviceSubsystem.Lighting)
+        if (cached is null)
         {
             return readback;
         }
 
-        return cached with
+        return subsystem switch
         {
-            Lighting = readback.Lighting,
-            LogoLighting = readback.LogoLighting,
+            DeviceSubsystem.Performance or DeviceSubsystem.Fans =>
+                cached with
+                {
+                    Performance = readback.Performance,
+                    Fans = readback.Fans,
+                    Battery = readback.Battery ?? cached.Battery,
+                    Lighting = readback.Lighting ?? cached.Lighting,
+                    HyperBoostActive = readback.HyperBoostActive,
+                    CustomPerformance = readback.CustomPerformance,
+                    GpuClockOffsets = readback.GpuClockOffsets,
+                    LogoLighting = readback.LogoLighting ?? cached.LogoLighting,
+                },
+            DeviceSubsystem.Lighting => cached with
+            {
+                Lighting = readback.Lighting,
+                LogoLighting = readback.LogoLighting,
+            },
+            _ => readback,
         };
     }
 

@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserved confirmed battery-protection and lighting state across performance
+  and fan readback so thermal-only observations no longer appear as external
+  battery-protection changes.
+
 ## [0.19.15-nightly.34] - 2026-08-27
 
 ### Fixed
