@@ -7,7 +7,15 @@ namespace OpenBlade.DeploymentBroker;
 public sealed record BrokerInstalledState(
     string Version,
     string ProductVersion,
-    string PayloadSha256);
+    string PayloadSha256)
+{
+    internal static BrokerInstalledState NotInstalled { get; } = new(
+        "0.0.0",
+        "not-installed",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+    internal bool IsNotInstalled => Equals(NotInstalled);
+}
 
 public sealed record BrokerPostInstallVerification(
     bool ExactTargetInstalled,
@@ -108,6 +116,14 @@ public sealed class WindowsBrokerInstalledStateVerifier(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         "OpenBlade");
 
+    internal WindowsBrokerInstalledStateVerifier(
+        IBrokerServiceHealthProbe serviceHealthProbe,
+        string installDirectory)
+        : this(serviceHealthProbe)
+    {
+        this.installDirectory = Path.GetFullPath(installDirectory);
+    }
+
     public Task<BrokerInstalledState> ReadBeforeInstallAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -147,12 +163,14 @@ public sealed class WindowsBrokerInstalledStateVerifier(
             .ConfigureAwait(false);
         return new BrokerPostInstallVerification(
             ExactTargetInstalled: after is not null
+                && !after.IsNotInstalled
                 && MatchesSignedBuildIdentity(
                     after.ProductVersion,
                     expectedVersion,
                     expectedSourceRevision),
             ServiceHealthy: serviceHealthy,
-            ExactPreviousStateRestored: after is not null
+            ExactPreviousStateRestored: !before.IsNotInstalled
+                && after is not null
                 && string.Equals(after.Version, before.Version, StringComparison.Ordinal)
                 && string.Equals(
                     after.PayloadSha256,
@@ -163,7 +181,16 @@ public sealed class WindowsBrokerInstalledStateVerifier(
 
     private BrokerInstalledState ReadInstalledState()
     {
-        ProtectedBrokerStorage.RejectReparsePoint(installDirectory);
+        try
+        {
+            ProtectedBrokerStorage.RejectReparsePoint(installDirectory);
+        }
+        catch (Exception exception) when (exception is
+            FileNotFoundException or DirectoryNotFoundException)
+        {
+            return BrokerInstalledState.NotInstalled;
+        }
+
         using IncrementalHash payloadHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         string? productVersion = null;
         foreach (string relativePath in ProtectedPayloadRelativePaths)
