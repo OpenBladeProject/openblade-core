@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Win32;
 using OpenBlade.Contracts;
 
@@ -34,12 +35,18 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
     internal const string ProductRegistryPath = @"SOFTWARE\OSSBlade\OpenBlade";
     internal const string PublisherRegistryPath = @"SOFTWARE\OSSBlade";
     private readonly string currentBuildIdentity;
+    private readonly string currentInstalledVersion;
 
     internal WindowsBundleOwnershipRegistration(string? bundleOwnerId = null)
     {
+        Assembly assembly = typeof(WindowsBundleOwnershipRegistration).Assembly;
+        string productVersion = OpenBladeProductVersion.Read(assembly);
         currentBuildIdentity = FormatOwnedBuildIdentity(
-            OpenBladeProductVersion.Read(typeof(WindowsBundleOwnershipRegistration).Assembly),
+            productVersion,
             bundleOwnerId);
+        currentInstalledVersion = ResolveInstalledVersion(
+            assembly.GetName().Version,
+            productVersion);
     }
 
     public BundleOwnershipIdentity? Capture()
@@ -73,8 +80,7 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
     public void Install() =>
         Write(new BundleOwnershipIdentity(
             "WiX Burn",
-            FormatInstalledVersion(
-                typeof(WindowsBundleOwnershipRegistration).Assembly.GetName().Version),
+            currentInstalledVersion,
             currentBuildIdentity));
 
     public void Restore(BundleOwnershipIdentity ownership)
@@ -130,6 +136,43 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
         return version.Revision > 0
             ? $"{baseVersion}.{version.Revision}"
             : baseVersion;
+    }
+
+    internal static string ResolveInstalledVersion(
+        Version? binaryVersion,
+        string productVersion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(productVersion);
+
+        string normalizedProductVersion = productVersion.Trim();
+        int metadataSeparator = normalizedProductVersion.IndexOf('+');
+        if (metadataSeparator >= 0)
+        {
+            normalizedProductVersion = normalizedProductVersion[..metadataSeparator];
+        }
+
+        // LocalDev reserves major 65535 for Burn while CLR binary metadata uses
+        // 65534. Burn package detection must retain the exact bundle identity.
+        if (!normalizedProductVersion.StartsWith("65535.", StringComparison.Ordinal))
+        {
+            return FormatInstalledVersion(binaryVersion);
+        }
+
+        if (!Version.TryParse(normalizedProductVersion, out Version? localDevVersion)
+            || localDevVersion.Major != 65535
+            || localDevVersion.Build < 0
+            || localDevVersion.Revision < 0
+            || binaryVersion is null
+            || binaryVersion.Major != 65534
+            || binaryVersion.Minor != localDevVersion.Minor
+            || binaryVersion.Build != localDevVersion.Build
+            || binaryVersion.Revision != localDevVersion.Revision)
+        {
+            throw new InvalidDataException(
+                "The local-development bundle and binary versions do not match.");
+        }
+
+        return localDevVersion.ToString(4);
     }
 
     internal static bool IsOwnedByBuild(string? installedBuild, string currentBuild) =>

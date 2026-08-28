@@ -151,8 +151,10 @@ $setupPublishArguments = @(
     '--property:IncludeNativeLibrariesForSelfExtract=true',
     '--property:EnableCompressionInSingleFile=true'
 )
+$installerUiPublishArguments = @()
 if ($buildIdentity.Channel -eq 'LocalDev') {
     $setupPublishArguments += '--property:OpenBladeLocalDevDeployment=true'
+    $installerUiPublishArguments += '--property:OpenBladeLocalDevDeployment=true'
 }
 $signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningThumbprint)
 $resolvedSignTool = $null
@@ -231,6 +233,7 @@ try {
         --property:DebugType=None `
         --property:DebugSymbols=false `
         --property:OpenBladeIncludePseudoLocalization=false `
+        @installerUiPublishArguments `
         --output $stagingInstallerUi
     if ($LASTEXITCODE -ne 0) {
         throw "OpenBlade installer UI publish failed with exit code $LASTEXITCODE"

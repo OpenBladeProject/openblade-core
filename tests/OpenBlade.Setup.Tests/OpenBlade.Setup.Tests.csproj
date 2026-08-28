@@ -16,4 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Setup\OpenBlade.Setup.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
+    <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />
+  </ItemGroup>
 </Project>
