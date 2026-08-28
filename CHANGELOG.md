@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Routed explicit fan transitions through the typed Strict thermal executor,
+  sharing one freshly admitted recovery lease across Automatic and Balanced
+  bridges, the requested fan write, target-only second-fan continuation, and
+  performance restoration. Earlier confirmed steps are never replayed, and
+  active-session, power, low-power, pending-write, intent, and exact-device
+  authority are rechecked before another thermal command.
 - Centralized scoped performance transitions under one typed Strict executor,
   preserving the bounded EC settling delay while allowing only one freshly
   admitted retry after a proven pre-submission failure. Possible submissions

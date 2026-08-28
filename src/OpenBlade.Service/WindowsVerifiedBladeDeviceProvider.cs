@@ -1651,12 +1651,31 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         public Task SetFanControlAsync(
             FanControlSettings value,
+            CancellationToken cancellationToken) => SetFanControlCoreAsync(
+                value,
+                allowFreshSessionRetry: true,
+                allowSecondManualEntryContinuation: true,
+                cancellationToken);
+
+        Task ISingleAttemptThermalDevice.SetFanControlOnceAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) => SetFanControlCoreAsync(
+                value,
+                allowFreshSessionRetry: false,
+                allowSecondManualEntryContinuation: false,
+                cancellationToken);
+
+        private Task SetFanControlCoreAsync(
+            FanControlSettings value,
+            bool allowFreshSessionRetry,
+            bool allowSecondManualEntryContinuation,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(value);
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
             Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null;
-            if (DeviceSubsystemOrder.IsManualFanMode(value.Mode)
+            if (allowSecondManualEntryContinuation
+                && DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 && capabilities.FanSpeedRange is { } fanSpeedRange)
             {
                 int targetRpm = value.Mode == FanMode.Fixed
@@ -1675,22 +1694,67 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     port => port.SetFanControlAsync(value, cancellationToken),
                     cancellationToken,
                     continueAfterSecondFanManualEntry:
-                        continueAfterSecondFanManualEntry)
+                        continueAfterSecondFanManualEntry,
+                    allowFreshSessionRetry: allowFreshSessionRetry)
                 : RejectProductionWrite("The requested fan control is not admitted.");
         }
 
         public Task SetFanTargetsAsync(
             int fan1Rpm,
             int fan2Rpm,
-            CancellationToken cancellationToken) =>
-            batteryFactory.Capabilities.FanModes.Contains(FanMode.ManualCurve)
+            CancellationToken cancellationToken) => SetFanTargetsCoreAsync(
+                fan1Rpm,
+                fan2Rpm,
+                allowFreshSessionRetry: true,
+                isSecondFanManualEntryContinuation: false,
+                cancellationToken);
+
+        Task ISingleAttemptThermalDevice.SetFanTargetsOnceAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) => SetFanTargetsCoreAsync(
+                fan1Rpm,
+                fan2Rpm,
+                allowFreshSessionRetry: false,
+                isSecondFanManualEntryContinuation: false,
+                cancellationToken);
+
+        Task ISingleAttemptThermalDevice.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) => SetFanTargetsCoreAsync(
+                fan1Rpm,
+                fan2Rpm,
+                allowFreshSessionRetry: false,
+                isSecondFanManualEntryContinuation: true,
+                cancellationToken);
+
+        private Task SetFanTargetsCoreAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            bool allowFreshSessionRetry,
+            bool isSecondFanManualEntryContinuation,
+            CancellationToken cancellationToken)
+        {
+            DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            bool targetsAdmitted = isSecondFanManualEntryContinuation
+                ? capabilities.FanModes.Any(
+                    mode => DeviceSubsystemOrder.IsManualFanMode(mode))
+                    && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
+                    && capabilities.FanSpeedRange.Supports(fan2Rpm)
+                : capabilities.FanModes.Contains(FanMode.ManualCurve);
+            return targetsAdmitted
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanTargetsAsync(
                         fan1Rpm,
                         fan2Rpm,
                         cancellationToken),
-                    cancellationToken)
+                    cancellationToken,
+                    allowFreshSessionRetry: allowFreshSessionRetry,
+                    isSecondFanManualEntryContinuation:
+                        isSecondFanManualEntryContinuation)
                 : RejectProductionWrite("Manual fan targets are not admitted.");
+        }
 
         public Task SetChargeLimitAsync(
             BatteryPolicy value,
@@ -2070,7 +2134,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             Action? afterWrite = null,
             bool retryHyperBoostAdapterPreflight = false,
             Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null,
-            bool allowFreshSessionRetry = true)
+            bool allowFreshSessionRetry = true,
+            bool isSecondFanManualEntryContinuation = false)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
@@ -2079,7 +2144,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             BladeWriteException? manualEntryContinuationFailure = null;
             BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
             bool retryPreWriteOpen = false;
-            bool continuingAfterSecondFanManualEntry = false;
+            bool continuingAfterSecondFanManualEntry =
+                isSecondFanManualEntryContinuation;
             Func<IProductionBatteryPort, Task> attemptWrite = write;
             try
             {
@@ -2087,12 +2153,29 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (OperationCanceledException)
             {
+                if (isSecondFanManualEntryContinuation)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                        "Adjustable fan manual entry may have applied, but the fresh target-only continuation was canceled before a verified session opened.");
+                }
+
                 throw new BladeWriteException(
                     WriteSubmissionState.KnownNotApplied,
                     "The hardware write was canceled before a verified session opened.");
             }
             catch (ObjectDisposedException exception)
             {
+                if (isSecondFanManualEntryContinuation)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+                        "Adjustable fan manual entry may have applied, but the fresh target-only continuation was blocked because the device provider is closing.",
+                        exception);
+                }
+
                 throw new BladeWriteException(
                     WriteSubmissionState.KnownNotApplied,
                     "The hardware write was blocked because the device provider is closing.",

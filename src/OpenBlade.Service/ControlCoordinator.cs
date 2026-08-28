@@ -61,7 +61,10 @@ public sealed class ControlCoordinator
     private readonly bool resolveIndeterminatePerformanceWrites;
     private readonly bool resolveIndeterminateAutomaticFanWrites;
     private readonly bool singleAttemptPerformanceWrites;
+    private readonly bool singleAttemptFanWrites;
+    private readonly ThermalTransitionStepRunner? thermalStepRunner;
     private readonly Func<string?>? performanceWriteBlockReason;
+    private readonly Func<string?>? fanWriteBlockReason;
 
     public ControlCoordinator(IBladeDevice device)
         : this(device, scopedStateReader: null)
@@ -74,7 +77,10 @@ public sealed class ControlCoordinator
         bool resolveIndeterminatePerformanceWrites = false,
         bool resolveIndeterminateAutomaticFanWrites = false,
         bool singleAttemptPerformanceWrites = false,
-        Func<string?>? performanceWriteBlockReason = null)
+        bool singleAttemptFanWrites = false,
+        ThermalTransitionStepRunner? thermalStepRunner = null,
+        Func<string?>? performanceWriteBlockReason = null,
+        Func<string?>? fanWriteBlockReason = null)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.scopedStateReader = scopedStateReader;
@@ -83,8 +89,13 @@ public sealed class ControlCoordinator
         this.resolveIndeterminateAutomaticFanWrites =
             resolveIndeterminateAutomaticFanWrites;
         this.singleAttemptPerformanceWrites = singleAttemptPerformanceWrites;
+        this.singleAttemptFanWrites = singleAttemptFanWrites;
+        this.thermalStepRunner = thermalStepRunner;
         this.performanceWriteBlockReason = performanceWriteBlockReason;
+        this.fanWriteBlockReason = fanWriteBlockReason;
     }
+
+    internal IBladeDevice ThermalDevice => device;
 
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
         DesiredDeviceState desired,
@@ -299,7 +310,7 @@ public sealed class ControlCoordinator
                 && (value.Mode != FanMode.Fixed
                     || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true),
             state => FanModeMatches(state.Fans, value.Mode),
-            token => device.SetFanControlAsync(value, token),
+            token => SetFanControlAsync(value, token),
             cancellationToken,
             combinedBlockReason,
             writeAllowed: writeAllowed,
@@ -316,8 +327,34 @@ public sealed class ControlCoordinator
             resolveIndeterminateWriteByReadback:
                 resolveIndeterminateAutomaticFanWrites
                     && value.Mode == FanMode.Automatic,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches);
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            writeBlockReason: fanWriteBlockReason,
+            returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
     }
+
+    internal Task<ScopedApplyOutcome> ApplyManualFanTargetContinuationOutcomeAsync(
+        int targetRpm,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Fans,
+            "Fans",
+            valid: targetRpm > 0,
+            capabilities => capabilities.FanSpeedRange?.Supports(targetRpm) == true,
+            matches: _ => false,
+            token => ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+                targetRpm,
+                targetRpm,
+                token),
+            cancellationToken,
+            initialStateBlockReason: state =>
+                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                    ? null
+                    : "The target-only continuation requires both fan channels to remain in manual mode.",
+            acceptSetterCompletionWithoutReadback: true,
+            setterCompletionEvidence: state =>
+                DeviceSubsystemOrder.IsManualFanMode(state.Fans),
+            forceWrite: true,
+            writeBlockReason: fanWriteBlockReason,
+            returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
         FanControlSettings previous,
@@ -382,8 +419,12 @@ public sealed class ControlCoordinator
         ScopedApplyOutcome? automaticBridge = null;
         if (requiresAutomaticBridge)
         {
-            automaticBridge = await ApplyFanControlOutcomeAsync(
-                FanControlSettings.FromLegacy(FanMode.Automatic),
+            automaticBridge = await RunThermalStepAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.AutomaticBridge,
+                (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                    FanControlSettings.FromLegacy(FanMode.Automatic),
+                    token),
                 cancellationToken).ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, automaticBridge);
             if (automaticBridge.Result.Status is not (
@@ -402,11 +443,15 @@ public sealed class ControlCoordinator
         ScopedApplyOutcome? balancedBridge = null;
         if (requiresAutomaticBridge)
         {
-            balancedBridge =
-                await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
-                    PerformancePreset.Balanced,
-                    customPerformance: null,
-                    cancellationToken).ConfigureAwait(false);
+            balancedBridge = await RunThermalStepAsync(
+                DeviceSubsystem.Performance,
+                ThermalTransitionStepPurpose.BalancedBridge,
+                (coordinator, token) =>
+                    coordinator.ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                        PerformancePreset.Balanced,
+                        customPerformance: null,
+                        token),
+                cancellationToken).ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, balancedBridge);
             RecordConfirmedCoupledWrite(
                 confirmedCoupledWrites,
@@ -429,9 +474,54 @@ public sealed class ControlCoordinator
             }
         }
 
-        ScopedApplyOutcome fans = await ApplyFanControlOutcomeAsync(
-            requested,
+        ScopedApplyOutcome fans = await RunThermalStepAsync(
+            DeviceSubsystem.Fans,
+            ThermalTransitionStepPurpose.Requested,
+            (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                requested,
+                token),
             cancellationToken).ConfigureAwait(false);
+        if (thermalStepRunner is not null
+            && fans.WriteSubmissionState == WriteSubmissionState.Indeterminate
+            && fans.WriteFailurePhase
+                == BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+            && ResolveManualFanTarget(requested, fans.Capabilities) is int targetRpm)
+        {
+            ScopedApplyOutcome continuation = await thermalStepRunner
+                .ApplyFreshContinuationAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.ManualTargetContinuation,
+                    fans,
+                    (coordinator, token) => coordinator
+                        .ApplyManualFanTargetContinuationOutcomeAsync(
+                            targetRpm,
+                            token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (continuation.Result.Status is
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+            {
+                fans = continuation with
+                {
+                    Result = continuation.Result with
+                    {
+                        Message =
+                            "Fans entered manual mode and the target-only continuation completed without replaying either entry command.",
+                    },
+                };
+            }
+            else
+            {
+                return fans with
+                {
+                    Result = fans.Result with
+                    {
+                        Message = $"{fans.Result.Message} Target-only continuation result: {continuation.Result.Message}",
+                    },
+                    ConfirmationUnavailable = true,
+                };
+            }
+        }
         RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, fans);
         if (fans.Result.Status is not (
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged))
@@ -441,10 +531,14 @@ public sealed class ControlCoordinator
                 && !fans.WriteAttempted
                 && performanceIntent != PerformancePreset.Balanced)
             {
-                ScopedApplyOutcome restored =
-                    await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
-                    performanceIntent,
-                    customPerformanceIntent,
+                ScopedApplyOutcome restored = await RunThermalStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.Restoration,
+                    (coordinator, token) => coordinator
+                        .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                            performanceIntent,
+                            customPerformanceIntent,
+                            token),
                     cancellationToken).ConfigureAwait(false);
                 RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, restored);
                 RecordConfirmedCoupledWrite(
@@ -486,10 +580,14 @@ public sealed class ControlCoordinator
             return fans;
         }
 
-        ScopedApplyOutcome performance =
-            await ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
-            performanceIntent,
-            customPerformanceIntent,
+        ScopedApplyOutcome performance = await RunThermalStepAsync(
+            DeviceSubsystem.Performance,
+            ThermalTransitionStepPurpose.Restoration,
+            (coordinator, token) => coordinator
+                .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                    performanceIntent,
+                    customPerformanceIntent,
+                    token),
             cancellationToken).ConfigureAwait(false);
         RecordWriteAttempt(writeAttempted, DeviceSubsystem.Performance, performance);
         RecordConfirmedCoupledWrite(
@@ -550,6 +648,28 @@ public sealed class ControlCoordinator
             confirmedCoupledWrites.Add(subsystem);
         }
     }
+
+    private Task<ScopedApplyOutcome> RunThermalStepAsync(
+        DeviceSubsystem component,
+        ThermalTransitionStepPurpose purpose,
+        Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> operation,
+        CancellationToken cancellationToken) => thermalStepRunner is null
+            ? operation(this, cancellationToken)
+            : thermalStepRunner.ApplyStepAsync(
+                component,
+                purpose,
+                operation,
+                cancellationToken);
+
+    private static int? ResolveManualFanTarget(
+        FanControlSettings requested,
+        DeviceCapabilities? capabilities) => requested.Mode switch
+        {
+            FanMode.Fixed => requested.FixedSpeedRpm,
+            FanMode.Maximum or FanMode.ManualCurve =>
+                capabilities?.FanSpeedRange?.MaximumRpm,
+            _ => null,
+        };
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
@@ -2104,6 +2224,27 @@ public sealed class ControlCoordinator
                 customPerformance,
                 gpuClockTuning?.EffectiveOffsets,
                 cancellationToken);
+
+    private Task SetFanControlAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken) => singleAttemptFanWrites
+            ? device is ISingleAttemptThermalDevice singleAttemptDevice
+                ? singleAttemptDevice.SetFanControlOnceAsync(value, cancellationToken)
+                : Task.FromException(new CapabilityUnavailableException(
+                    "The verified device does not expose single-attempt thermal writes."))
+            : device.SetFanControlAsync(value, cancellationToken);
+
+    private Task ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken) =>
+        device is ISingleAttemptThermalDevice singleAttemptDevice
+            ? singleAttemptDevice.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+                fan1Rpm,
+                fan2Rpm,
+                cancellationToken)
+            : Task.FromException(new CapabilityUnavailableException(
+                "The verified device does not expose target-only fan continuation."));
 
     private Task SetGpuClockOffsetsAsync(
         GpuClockOffsetSettings value,

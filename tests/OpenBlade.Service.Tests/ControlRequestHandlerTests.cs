@@ -287,6 +287,41 @@ public sealed class ControlRequestHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_FanRequestRechecksSessionAfterActivation()
+    {
+        var authority = new MutableSessionAuthority(4);
+        var runtime = new RecordingRuntime
+        {
+            AfterActivation = () => authority.SessionId = 5,
+        };
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            authority);
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+
+        ServiceResponse response = await handler.HandleAsync(
+            new SetFanOverrideRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new ManualOverride<FanMode>(
+                    FanMode.Maximum,
+                    OverrideLifetime.Persistent)),
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(ControlOperationStatus.Blocked, response.Result!.Status);
+        Assert.Contains("active Windows session changed", response.Result.Message);
+        Assert.DoesNotContain("SetFanOverride", runtime.Calls);
+    }
+
+    [Fact]
     public async Task HandleAsync_InvalidActiveUserConfigurationReturnsFailure()
     {
         var runtime = new RecordingRuntime

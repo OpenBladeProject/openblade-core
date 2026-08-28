@@ -207,6 +207,313 @@ public sealed class ThermalTransitionExecutorTests
         Assert.Equal(ThermalTransitionDisposition.External, execution.Trace.Disposition);
     }
 
+    [Fact]
+    public async Task LaterStepRetryDoesNotReplayConfirmedBridge()
+    {
+        var initialDevice = new StubDevice();
+        var retryDevice = new StubDevice();
+        int bridgeAttempts = 0;
+        int requestedAttempts = 0;
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans, DeviceSubsystem.Performance },
+            initialDevice,
+            (device, _) => new ControlCoordinator(device),
+            async (runner, token) =>
+            {
+                await runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.AutomaticBridge,
+                    (_, _) =>
+                    {
+                        bridgeAttempts++;
+                        return Task.FromResult(ConfirmedOutcome(writeAttempted: true));
+                    },
+                    token);
+                return await runner.ApplyStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.BalancedBridge,
+                    (_, _) =>
+                    {
+                        requestedAttempts++;
+                        return Task.FromResult(requestedAttempts == 1
+                            ? KnownNotAppliedOutcome()
+                            : ConfirmedOutcome(writeAttempted: true));
+                    },
+                    token);
+            },
+            (_, _) => Task.FromResult(ThermalRetryAdmission.Allow(retryDevice)),
+            CancellationToken.None);
+
+        Assert.Equal(1, bridgeAttempts);
+        Assert.Equal(2, requestedAttempts);
+        Assert.Equal(3, execution.Trace.AttemptCount);
+        Assert.Equal(2, execution.Trace.Steps!.Count);
+        Assert.Single(execution.Trace.Steps[0].Attempts);
+        Assert.Equal(2, execution.Trace.Steps[1].Attempts.Count);
+    }
+
+    [Fact]
+    public async Task RecoveryLeaseConsumedByFirstStepPreventsLaterRetry()
+    {
+        var device = new StubDevice();
+        int firstAttempts = 0;
+        int secondAttempts = 0;
+        int admissions = 0;
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans, DeviceSubsystem.Performance },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            async (runner, token) =>
+            {
+                await runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.AutomaticBridge,
+                    (_, _) => Task.FromResult(++firstAttempts == 1
+                        ? KnownNotAppliedOutcome()
+                        : ConfirmedOutcome(writeAttempted: true)),
+                    token);
+                return await runner.ApplyStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.BalancedBridge,
+                    (_, _) =>
+                    {
+                        secondAttempts++;
+                        return Task.FromResult(KnownNotAppliedOutcome());
+                    },
+                    token);
+            },
+            (_, _) =>
+            {
+                admissions++;
+                return Task.FromResult(ThermalRetryAdmission.Allow(device));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, firstAttempts);
+        Assert.Equal(1, secondAttempts);
+        Assert.Equal(1, admissions);
+        Assert.True(execution.Trace.RetryConsumed);
+        Assert.Contains("recovery lease was already consumed", execution.Outcome.Result.Message);
+    }
+
+    [Fact]
+    public async Task UndeclaredComponentIsRejectedBeforeOperationRuns()
+    {
+        var device = new StubDevice();
+        int attempts = 0;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ThermalTransitionExecutor.ExecuteAsync(
+                new[] { DeviceSubsystem.Performance },
+                device,
+                (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+                (runner, token) => runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.Requested,
+                    (_, _) =>
+                    {
+                        attempts++;
+                        return Task.FromResult(ConfirmedOutcome(writeAttempted: true));
+                    },
+                    token),
+                (_, _) => Task.FromResult(ThermalRetryAdmission.Allow(device)),
+                CancellationToken.None));
+
+        Assert.Equal(0, attempts);
+    }
+
+    [Fact]
+    public async Task SuccessfulManualSetterWithoutExactReadbackIsAcknowledged()
+    {
+        var device = new StubDevice();
+        ScopedApplyOutcome acknowledged = ConfirmedOutcome(writeAttempted: true) with
+        {
+            ReadbackMatched = false,
+        };
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            (runner, token) => runner.ApplyStepAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.Requested,
+                (_, _) => Task.FromResult(acknowledged),
+                token),
+            (_, _) => throw new InvalidOperationException("Retry was unexpected."),
+            CancellationToken.None);
+
+        Assert.Equal(ThermalTransitionStage.Acknowledgement, execution.Trace.Stage);
+        Assert.Equal(
+            ThermalTransitionDisposition.Acknowledged,
+            execution.Trace.Disposition);
+    }
+
+    [Fact]
+    public async Task BlockedInitialReadRemainsPreflightDespiteReadback()
+    {
+        var device = new StubDevice();
+        ScopedApplyOutcome blocked = ConfirmedOutcome(writeAttempted: false) with
+        {
+            Result = new ControlResult(ControlResultStatus.Blocked, "Blocked before write."),
+            ReadbackMatched = false,
+        };
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            (runner, token) => runner.ApplyStepAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.Requested,
+                (_, _) => Task.FromResult(blocked),
+                token),
+            (_, _) => throw new InvalidOperationException("Retry was unexpected."),
+            CancellationToken.None);
+
+        Assert.Equal(ThermalTransitionStage.Preflight, execution.Trace.Stage);
+        Assert.Equal(ThermalTransitionDisposition.Blocked, execution.Trace.Disposition);
+    }
+
+    [Fact]
+    public async Task PossibleSubmissionContinuationConsumesSharedRecoveryLease()
+    {
+        var device = new StubDevice();
+        int continuationCalls = 0;
+        int admissions = 0;
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            async (runner, token) =>
+            {
+                ScopedApplyOutcome possibleSubmission = await runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.Requested,
+                    (_, _) => Task.FromResult(IndeterminateOutcome() with
+                    {
+                        WriteFailurePhase = BladeWriteFailurePhase
+                            .AdjustableFanSecondManualEntrySubmission,
+                    }),
+                    token);
+                return await runner.ApplyFreshContinuationAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.ManualTargetContinuation,
+                    possibleSubmission,
+                    (_, _) =>
+                    {
+                        continuationCalls++;
+                        return Task.FromResult(ConfirmedOutcome(writeAttempted: true));
+                    },
+                    token);
+            },
+            (_, _) =>
+            {
+                admissions++;
+                return Task.FromResult(ThermalRetryAdmission.Allow(device));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(1, admissions);
+        Assert.Equal(1, continuationCalls);
+        Assert.True(execution.Trace.RetryConsumed);
+        Assert.Equal(
+            ThermalTransitionStepPurpose.ManualTargetContinuation,
+            execution.Trace.Steps![1].Purpose);
+    }
+
+    [Fact]
+    public async Task PriorRetryPreventsPostSubmissionContinuationWrite()
+    {
+        var device = new StubDevice();
+        int firstStepAttempts = 0;
+        int continuationCalls = 0;
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans, DeviceSubsystem.Performance },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            async (runner, token) =>
+            {
+                await runner.ApplyStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.BalancedBridge,
+                    (_, _) => Task.FromResult(++firstStepAttempts == 1
+                        ? KnownNotAppliedOutcome()
+                        : ConfirmedOutcome(writeAttempted: true)),
+                    token);
+                ScopedApplyOutcome possibleSubmission = await runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.Requested,
+                    (_, _) => Task.FromResult(IndeterminateOutcome() with
+                    {
+                        WriteFailurePhase = BladeWriteFailurePhase
+                            .AdjustableFanSecondManualEntrySubmission,
+                    }),
+                    token);
+                return await runner.ApplyFreshContinuationAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.ManualTargetContinuation,
+                    possibleSubmission,
+                    (_, _) =>
+                    {
+                        continuationCalls++;
+                        return Task.FromResult(ConfirmedOutcome(writeAttempted: true));
+                    },
+                    token);
+            },
+            (_, _) => Task.FromResult(ThermalRetryAdmission.Allow(device)),
+            CancellationToken.None);
+
+        Assert.Equal(2, firstStepAttempts);
+        Assert.Equal(0, continuationCalls);
+        Assert.Equal(
+            ThermalTransitionDisposition.ReconciliationUnavailable,
+            execution.Trace.Disposition);
+    }
+
+    [Fact]
+    public async Task SuccessfulRestorationDoesNotHideRequestedStepFailure()
+    {
+        var device = new StubDevice();
+
+        ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteAsync(
+            new[] { DeviceSubsystem.Fans, DeviceSubsystem.Performance },
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            async (runner, token) =>
+            {
+                ScopedApplyOutcome requested = await runner.ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.Requested,
+                    (_, _) => Task.FromResult(KnownNotAppliedOutcome() with
+                    {
+                        WriteFailurePhase = BladeWriteFailurePhase.Unspecified,
+                    }),
+                    token);
+                ScopedApplyOutcome restored = await runner.ApplyStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.Restoration,
+                    (_, _) => Task.FromResult(ConfirmedOutcome(writeAttempted: true)),
+                    token);
+                return requested with
+                {
+                    Readback = restored.Readback,
+                    WriteAttempted = restored.WriteAttempted,
+                };
+            },
+            (_, _) => throw new InvalidOperationException("Retry was unexpected."),
+            CancellationToken.None);
+
+        Assert.Equal(ThermalTransitionDisposition.Failed, execution.Trace.Disposition);
+        Assert.Equal(
+            ThermalTransitionDisposition.Confirmed,
+            execution.Trace.Steps![1].Attempts[0].Disposition);
+    }
+
     private static ScopedApplyOutcome ConfirmedOutcome(bool writeAttempted) => new(
         new ControlResult(
             writeAttempted ? ControlResultStatus.Applied : ControlResultStatus.Unchanged,
