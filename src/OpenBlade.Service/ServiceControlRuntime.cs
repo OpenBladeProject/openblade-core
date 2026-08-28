@@ -82,12 +82,30 @@ public interface IServiceControlRuntime
                     : new ManualOverride<PerformancePreset>(value.Value, value.Lifetime),
                 token);
 
+    Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => stillControlsSession()
+            ? SetPerformanceConfigurationOverrideAsync(value, token)
+            : Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before the performance request started."));
+
     Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
         CancellationToken token) => Task.FromResult(
             new ControlOperationResult(
                 ControlOperationStatus.Blocked,
                 "Performance shortcuts are unavailable."));
+
+    Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => stillControlsSession()
+            ? CyclePerformanceShortcutAsync(source, token)
+            : Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before the performance shortcut started."));
 
     Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
         Guid sessionId,
@@ -159,6 +177,14 @@ public interface IServiceControlRuntime
             new ControlOperationResult(
                 ControlOperationStatus.Blocked,
                 "Changed settings cannot be reapplied."));
+
+    Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        Func<bool> stillControlsSession,
+        CancellationToken token) => stillControlsSession()
+            ? ReapplyChangedSettingsAsync(token)
+            : Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before settings could be reapplied."));
 
     Task<ControlOperationResult> RecoverHyperBoostRestoreAsync(
         CancellationToken token) => Task.FromResult(
@@ -284,6 +310,10 @@ internal enum PadlessHyperBoostLifecycleRunClaim
     AlreadyUsed,
 }
 
+internal sealed record ScopedIntentApplyExecution(
+    ScopedApplyOutcome Outcome,
+    ThermalTransitionTrace? ThermalTrace = null);
+
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
@@ -295,6 +325,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         typeof(ServiceControlRuntime).Assembly);
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
         TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan ThermalPreWriteRetryDelay =
+        TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HyperBoostManualFanReadbackRetryDelay =
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
@@ -1085,6 +1117,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
+        CancellationToken token) => SetPerformanceConfigurationOverrideAsync(
+            value,
+            static () => true,
+            token);
+
+    public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
+        Func<bool> stillControlsSession,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Performance,
             cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
@@ -1096,10 +1136,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             value is null
                 ? "Performance override was cleared."
                 : "Performance override intent was stored.",
-            deferHardwareApply: DeferredPerformanceIntentMessage);
+            deferHardwareApply: DeferredPerformanceIntentMessage,
+            stillControlsSession: stillControlsSession);
 
     public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
+        CancellationToken token) => await CyclePerformanceShortcutAsync(
+            source,
+            static () => true,
+            token).ConfigureAwait(false);
+
+    public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        Func<bool> stillControlsSession,
         CancellationToken token)
     {
         EnsureInitialized();
@@ -1111,6 +1160,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before the performance shortcut started.");
+            }
+
             if (IsWritePendingFor(DeviceSubsystem.Performance))
             {
                 return PendingWriteBlockedResult(DeviceSubsystem.Performance);
@@ -1120,6 +1175,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 .ConfigureAwait(false);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed during performance shortcut admission.");
+            }
+
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -1132,6 +1193,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+            }
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before the performance shortcut intent was stored.");
             }
 
             ServiceStatusSnapshot current = GetStatus();
@@ -1183,6 +1249,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 current);
             if (deferredMessage is not null)
             {
+                if (!stillControlsSession())
+                {
+                    return SessionAuthorityChanged(
+                        "The active Windows session changed before the performance shortcut intent was stored.");
+                }
+
                 try
                 {
                     await SetPerformanceOverrideCoreAsync(stagedOverride, token)
@@ -1229,7 +1301,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     },
                     cancellationToken => SetPerformanceOverrideCoreAsync(
                         stagedOverride,
-                        cancellationToken)).ConfigureAwait(false);
+                        cancellationToken),
+                    stillControlsSession: stillControlsSession).ConfigureAwait(false);
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
@@ -1968,12 +2041,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     public async Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken token) => await ReapplyChangedSettingsAsync(
+            static () => true,
+            token).ConfigureAwait(false);
+
+    public async Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        Func<bool> stillControlsSession,
         CancellationToken token)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before settings could be reapplied.");
+            }
+
             if (HasPendingWriteConfirmations())
             {
                 const string pendingMessage =
@@ -1998,6 +2083,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 .ConfigureAwait(false);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed during changed-settings admission.");
+            }
+
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 const string blockedMessage =
@@ -2016,6 +2107,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (ChangePowerSourceCore(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+            }
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before settings could be reapplied.");
             }
 
             HashSet<DeviceSubsystem> targetSet =
@@ -2048,6 +2144,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 targets.Length);
             foreach (DeviceSubsystem subsystem in targets)
             {
+                if (!stillControlsSession())
+                {
+                    results[subsystem] = SessionAuthorityChanged(
+                        "The active Windows session changed before settings could be reapplied.");
+                    break;
+                }
+
                 if (manualFanPerformanceBlocked
                     && DeviceSubsystemOrder.IsThermal(subsystem))
                 {
@@ -2066,7 +2169,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 results[subsystem] = await ReapplyChangedSubsystemAsync(
                     subsystem,
                     powerSource,
-                    token).ConfigureAwait(false);
+                    token,
+                    stillControlsSession).ConfigureAwait(false);
                 if (GetStatus().WritesBlocked)
                 {
                     break;
@@ -2470,7 +2574,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private Task<ControlOperationResult> ReapplyChangedSubsystemAsync(
         DeviceSubsystem subsystem,
         PowerSource powerSource,
-        CancellationToken token) => subsystem switch
+        CancellationToken token,
+        Func<bool>? stillControlsSession = null) => subsystem switch
         {
             DeviceSubsystem.Performance => ApplyScopedIntentAsync(
                 subsystem,
@@ -2479,7 +2584,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     coordinator.ApplyPerformanceOutcomeAsync(
                         desired,
                         cancellationToken),
-                token),
+                token,
+                stillControlsSession: stillControlsSession),
             DeviceSubsystem.Fans => ApplyScopedIntentAsync(
                 subsystem,
                 powerSource,
@@ -8695,12 +8801,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string committedMessage,
         Func<PowerSource, ServiceStatusSnapshot, string?>? deferHardwareApply = null,
         Action? afterApply = null,
-        bool allowFanOwnershipRearm = false)
+        bool allowFanOwnershipRearm = false,
+        Func<bool>? stillControlsSession = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
         try
         {
+            if (stillControlsSession?.Invoke() == false)
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before the control request started.");
+            }
+
             if (IsWritePendingFor(subsystem))
             {
                 return PendingWriteBlockedResult(subsystem);
@@ -8709,6 +8822,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
+            if (stillControlsSession?.Invoke() == false)
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed during control admission.");
+            }
+
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -8722,6 +8841,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 await ApplyFullTransitionAsync(powerSource, token);
             }
+            if (stillControlsSession?.Invoke() == false)
+            {
+                return SessionAuthorityChanged(
+                    "The active Windows session changed before the control intent was stored.");
+            }
+
             try
             {
                 await mutation(token);
@@ -8757,7 +8882,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 apply,
                 token,
-                allowFanOwnershipRearm: allowFanOwnershipRearm);
+                allowFanOwnershipRearm: allowFanOwnershipRearm,
+                stillControlsSession: stillControlsSession);
             if (result.Status == ControlOperationStatus.Applied)
             {
                 afterApply?.Invoke();
@@ -8839,8 +8965,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
         Func<CancellationToken, Task>? commitIntent = null,
-        bool allowFanOwnershipRearm = false)
+        bool allowFanOwnershipRearm = false,
+        Func<bool>? stillControlsSession = null)
     {
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return PublishScopedUnavailable(
+                subsystem,
+                powerSource,
+                "The active Windows session changed before the control write started.",
+                preserveCurrentAvailability: true);
+        }
+
         if (IsWritePendingFor(subsystem))
         {
             return PendingWriteBlockedResult(subsystem);
@@ -8897,7 +9033,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveCurrentAvailability: true);
         }
 
-        ScopedApplyOutcome outcome = await ApplyScopedIntentOutcomeAsync(
+        ScopedIntentApplyExecution execution = await ApplyScopedIntentOutcomeAsync(
             subsystem,
             powerSource,
             current,
@@ -8905,7 +9041,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             device,
             desired,
             apply,
-            token);
+            token,
+            stageDesired,
+            stillControlsSession);
+        ScopedApplyOutcome outcome = execution.Outcome;
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
                 subsystem,
@@ -8971,7 +9110,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return commitFailure;
         }
 
-        if (outcome.ConfirmationUnavailable
+        bool reconciliationUnavailable = execution.ThermalTrace?.Disposition
+                == ThermalTransitionDisposition.ReconciliationUnavailable
+            || execution.ThermalTrace is null && outcome.ConfirmationUnavailable;
+        if (reconciliationUnavailable
             && outcome.PreWriteState is { } preWriteState)
         {
             SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
@@ -8998,7 +9140,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             outcome);
     }
 
-    private async Task<ScopedApplyOutcome> ApplyScopedIntentOutcomeAsync(
+    private async Task<ScopedIntentApplyExecution> ApplyScopedIntentOutcomeAsync(
         DeviceSubsystem subsystem,
         PowerSource powerSource,
         ServiceStatusSnapshot current,
@@ -9006,19 +9148,57 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IBladeDevice device,
         DesiredDeviceState desired,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
-        CancellationToken token)
+        CancellationToken token,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        Func<bool>? stillControlsSession)
     {
         try
         {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                ThermalTransitionExecution thermal = await ThermalTransitionExecutor
+                    .ExecuteScopedPerformanceAsync(
+                        device,
+                        async (attemptDevice, cancellationToken) =>
+                        {
+                            var coordinator = new ControlCoordinator(
+                                attemptDevice,
+                                attemptDevice.ReadPerformanceFanStateAsync,
+                                resolveIndeterminatePerformanceWrites: true,
+                                resolveIndeterminateAutomaticFanWrites: true,
+                                singleAttemptPerformanceWrites: true,
+                                performanceWriteBlockReason: () =>
+                                    ScopedPerformanceWriteBlockReason(
+                                        desired,
+                                        stageDesired,
+                                        stillControlsSession));
+                            return await apply(
+                                    coordinator,
+                                    desired,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        },
+                        (_, cancellationToken) =>
+                            RevalidateScopedPerformanceRetryAsync(
+                                powerSource,
+                                desired,
+                                stageDesired,
+                                stillControlsSession,
+                                cancellationToken),
+                        token).ConfigureAwait(false);
+                return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
+            }
+
             ControlCoordinator coordinator = subsystem is
-                DeviceSubsystem.Performance or DeviceSubsystem.Fans
+                DeviceSubsystem.Fans
                     ? new ControlCoordinator(
                         device,
                         device.ReadPerformanceFanStateAsync,
                         resolveIndeterminatePerformanceWrites: true,
                         resolveIndeterminateAutomaticFanWrites: true)
                     : new ControlCoordinator(device);
-            return await apply(coordinator, desired, token);
+            return new ScopedIntentApplyExecution(
+                await apply(coordinator, desired, token));
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)
@@ -9045,6 +9225,191 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
+    }
+
+    private async Task<ThermalRetryAdmission>
+        RevalidateScopedPerformanceRetryAsync(
+        PowerSource expectedPowerSource,
+        DesiredDeviceState expectedDesired,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        Func<bool>? stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return ThermalRetryAdmission.Block(
+                "The active Windows session changed before the fresh-session retry.");
+        }
+
+        if (lowPowerGate.IsActive)
+        {
+            return ThermalRetryAdmission.Block(
+                "The laptop entered a low-power transition before the fresh-session retry.");
+        }
+
+        if (IsWritePendingFor(DeviceSubsystem.Performance)
+            || IsWritePendingFor(DeviceSubsystem.Fans))
+        {
+            return ThermalRetryAdmission.Block(
+                "A thermal write requires read-only reconciliation before another submission.");
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (hyperBoostJournalSafetyBlock
+            || current is { DeviceVerified: true, WritesBlocked: true })
+        {
+            return ThermalRetryAdmission.Block(
+                "Thermal writes became blocked before the fresh-session retry.");
+        }
+
+        // A failed thermal exchange can leave the EC busy for the protocol
+        // timeout. Preserve the established settling window, but keep its
+        // cancellation inside the executor's already-consumed retry lease.
+        await transitionRetryDelay(
+                ThermalPreWriteRetryDelay,
+                cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return ThermalRetryAdmission.Block(
+                "The active Windows session changed while waiting for the fresh-session retry.");
+        }
+
+        current = GetStatus();
+        if (lowPowerGate.IsActive
+            || hyperBoostJournalSafetyBlock
+            || current is { DeviceVerified: true, WritesBlocked: true }
+            || IsWritePendingFor(DeviceSubsystem.Performance)
+            || IsWritePendingFor(DeviceSubsystem.Fans))
+        {
+            return ThermalRetryAdmission.Block(
+                "Thermal write admission closed while waiting for the fresh-session retry.");
+        }
+
+        PowerSource confirmedPowerSource;
+        try
+        {
+            confirmedPowerSource = await ResolveCurrentPowerSourceAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            // Controller presence is advisory for an explicit Strict write.
+            // Refresh only the read-only observation here; retry admission
+            // must not trigger unrelated lighting handback.
+            RefreshControllerPresenceCore(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalRetryAdmission.Block(
+                $"Read-only retry admission failed: {exception.Message}");
+        }
+
+        if (confirmedPowerSource != expectedPowerSource
+            || confirmedPowerSource == PowerSource.ExternalUnknown)
+        {
+            return ThermalRetryAdmission.Block(
+                "The confirmed power destination changed before the fresh-session retry.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return ThermalRetryAdmission.Block(
+                "The active Windows session changed during retry admission.");
+        }
+
+        current = GetStatus();
+        if (lowPowerGate.IsActive
+            || hyperBoostJournalSafetyBlock
+            || current is { DeviceVerified: true, WritesBlocked: true }
+            || IsWritePendingFor(DeviceSubsystem.Performance)
+            || IsWritePendingFor(DeviceSubsystem.Fans))
+        {
+            return ThermalRetryAdmission.Block(
+                "Thermal write admission closed before the fresh-session retry.");
+        }
+
+        if (!ScopedPerformanceIntentMatchesCurrent(expectedDesired, stageDesired))
+        {
+            return ThermalRetryAdmission.Block(
+                "The authoritative performance intent changed before the fresh-session retry.");
+        }
+
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice retryDevice))
+            {
+                return ThermalRetryAdmission.Block(
+                    "The exact laptop identity could not be re-admitted for the fresh-session retry.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return ThermalRetryAdmission.Allow(retryDevice);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalRetryAdmission.Block(
+                $"Exact-device retry admission failed: {exception.Message}");
+        }
+    }
+
+    private string? ScopedPerformanceWriteBlockReason(
+        DesiredDeviceState expected,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        Func<bool>? stillControlsSession)
+    {
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return "The active Windows session changed before the performance command was submitted.";
+        }
+
+        if (lowPowerGate.IsActive)
+        {
+            return "The laptop entered a low-power transition before the performance command was submitted.";
+        }
+
+        if (IsWritePendingFor(DeviceSubsystem.Performance)
+            || IsWritePendingFor(DeviceSubsystem.Fans))
+        {
+            return "A thermal write requires read-only reconciliation before the performance command can be submitted.";
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (hyperBoostJournalSafetyBlock
+            || current is { DeviceVerified: true, WritesBlocked: true })
+        {
+            return "Thermal write authority closed before the performance command was submitted.";
+        }
+
+        return ScopedPerformanceIntentMatchesCurrent(expected, stageDesired)
+            ? null
+            : "The authoritative performance intent changed before the command was submitted.";
+    }
+
+    private bool ScopedPerformanceIntentMatchesCurrent(
+        DesiredDeviceState expected,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        DesiredDeviceState latest = ResolveHardwareDesired(
+            current.ConfirmedState ?? UnknownConfirmedState);
+        if (stageDesired is not null)
+        {
+            latest = stageDesired(latest);
+        }
+
+        return latest.Performance == expected.Performance
+            && latest.CustomPerformance == expected.CustomPerformance
+            && latest.GpuClockTuning == expected.GpuClockTuning;
     }
 
     private async Task<(ScopedApplyOutcome Outcome, ConfirmedDeviceState? Confirmed)>
@@ -11615,6 +11980,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         history.RecordSummary(ControlOperationStatus.Blocked, message);
         PublishIfChanged(GetStatus() with { Message = message });
         return new ControlOperationResult(ControlOperationStatus.Blocked, message);
+    }
+
+    private ControlOperationResult SessionAuthorityChanged(string message)
+    {
+        var blocked = new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            message);
+        history.RecordSummary(blocked.Status, blocked.Message);
+        PublishIfChanged(GetStatus() with { Message = blocked.Message });
+        return blocked;
     }
 
     private void InvalidatePendingWriteConfirmations(bool markExternal)

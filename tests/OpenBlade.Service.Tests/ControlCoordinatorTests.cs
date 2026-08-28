@@ -415,6 +415,31 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedPerformance_SingleAttemptModeFailsClosedWithoutDeviceSeam()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(
+            device,
+            device.ReadStateAsync,
+            singleAttemptPerformanceWrites: true);
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Performance = new ResolvedSetting<PerformancePreset>(
+                PerformancePreset.Performance,
+                SettingValueSource.PowerProfile),
+        };
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Contains("single-attempt thermal writes", outcome.Result.Message);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Equal(0, device.PerformanceSetCalls);
+    }
+
+    [Fact]
     public async Task ScopedCustomPerformance_AppliesAndConfirmsBothComponentLevels()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -1539,6 +1564,7 @@ public sealed class ControlCoordinatorTests
             StringComparison.OrdinalIgnoreCase);
         Assert.True(outcome.ReadbackMatched);
         Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
         Assert.Equal(
             ["Capabilities", "State", "SetPerformance", "State", "State"],
             device.Calls);
@@ -1568,6 +1594,7 @@ public sealed class ControlCoordinatorTests
             StringComparison.OrdinalIgnoreCase);
         Assert.False(outcome.WriteAttempted);
         Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
         Assert.Equal(
             ["Capabilities", "State", "SetPerformance", "State", "State"],
             device.Calls);
@@ -1599,6 +1626,7 @@ public sealed class ControlCoordinatorTests
         Assert.True(outcome.ConfirmationUnavailable);
         Assert.Same(before, outcome.PreWriteState);
         Assert.Null(outcome.Readback);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
         Assert.Equal(
             ["Capabilities", "State", "SetPerformance", "State", "State"],
             device.Calls);

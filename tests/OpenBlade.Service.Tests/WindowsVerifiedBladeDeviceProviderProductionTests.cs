@@ -1825,6 +1825,45 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task SingleAttemptPerformanceRetainsPreSubmissionFailureWithoutRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        BladeWriteException firstFailure = ThermalPreWriteReadFailure();
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.SetPerformanceOnceAsync(
+                PerformancePreset.Balanced,
+                customPerformance: null,
+                gpuClockOffsets: null,
+                retainGpuClockOffsetManagement: true,
+                CancellationToken.None));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(BladeWriteFailurePhase.ThermalPreWriteRead, error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetPerformanceCount);
+        Assert.Equal(0, secondPort.SetPerformanceCount);
+    }
+
+    [Fact]
     public async Task ThermalPreWriteRetryDelayCancellationStopsBeforeFreshSession()
     {
         using var cancellation = new CancellationTokenSource();
