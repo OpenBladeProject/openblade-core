@@ -88,9 +88,16 @@ public sealed class WindowsBrokerInstallerProcessRunner : IBrokerInstallerProces
     }
 }
 
+public enum BrokerServiceObservation
+{
+    Absent,
+    Healthy,
+    Indeterminate,
+}
+
 public interface IBrokerServiceHealthProbe
 {
-    Task<bool> IsHealthyAsync(CancellationToken cancellationToken);
+    Task<BrokerServiceObservation> ObserveAsync(CancellationToken cancellationToken);
 }
 
 public sealed class WindowsBrokerInstalledStateVerifier(
@@ -115,13 +122,19 @@ public sealed class WindowsBrokerInstalledStateVerifier(
     private readonly string installDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         "OpenBlade");
+    private readonly TimeSpan healthObservationTimeout = HealthObservationTimeout;
+    private readonly TimeSpan healthObservationInterval = HealthObservationInterval;
 
     internal WindowsBrokerInstalledStateVerifier(
         IBrokerServiceHealthProbe serviceHealthProbe,
-        string installDirectory)
+        string installDirectory,
+        TimeSpan? healthObservationTimeout = null,
+        TimeSpan? healthObservationInterval = null)
         : this(serviceHealthProbe)
     {
         this.installDirectory = Path.GetFullPath(installDirectory);
+        this.healthObservationTimeout = healthObservationTimeout ?? HealthObservationTimeout;
+        this.healthObservationInterval = healthObservationInterval ?? HealthObservationInterval;
     }
 
     public Task<BrokerInstalledState> ReadBeforeInstallAsync(CancellationToken cancellationToken)
@@ -159,8 +172,11 @@ public sealed class WindowsBrokerInstalledStateVerifier(
             // Absence or unreadable identity is neither target success nor proven rollback.
         }
 
-        bool serviceHealthy = await IsServiceHealthyAsync(cancellationToken)
+        BrokerServiceObservation serviceObservation = await ObserveServiceAsync(
+            stopOnConfirmedAbsence: after?.IsNotInstalled == true,
+            cancellationToken)
             .ConfigureAwait(false);
+        bool serviceHealthy = serviceObservation == BrokerServiceObservation.Healthy;
         return new BrokerPostInstallVerification(
             ExactTargetInstalled: after is not null
                 && !after.IsNotInstalled
@@ -169,14 +185,17 @@ public sealed class WindowsBrokerInstalledStateVerifier(
                     expectedVersion,
                     expectedSourceRevision),
             ServiceHealthy: serviceHealthy,
-            ExactPreviousStateRestored: !before.IsNotInstalled
-                && after is not null
-                && string.Equals(after.Version, before.Version, StringComparison.Ordinal)
-                && string.Equals(
-                    after.PayloadSha256,
-                    before.PayloadSha256,
-                    StringComparison.Ordinal)
-                && serviceHealthy);
+            ExactPreviousStateRestored: after is not null
+                && (before.IsNotInstalled
+                    ? after.IsNotInstalled
+                        && serviceObservation == BrokerServiceObservation.Absent
+                    : !after.IsNotInstalled
+                        && string.Equals(after.Version, before.Version, StringComparison.Ordinal)
+                        && string.Equals(
+                            after.PayloadSha256,
+                            before.PayloadSha256,
+                            StringComparison.Ordinal)
+                        && serviceHealthy));
     }
 
     private BrokerInstalledState ReadInstalledState()
@@ -284,24 +303,30 @@ public sealed class WindowsBrokerInstalledStateVerifier(
             && string.Equals(parts[1], expectedSourceRevision, StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<bool> IsServiceHealthyAsync(CancellationToken cancellationToken)
+    private async Task<BrokerServiceObservation> ObserveServiceAsync(
+        bool stopOnConfirmedAbsence,
+        CancellationToken cancellationToken)
     {
-        DateTimeOffset deadline = DateTimeOffset.UtcNow + HealthObservationTimeout;
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + healthObservationTimeout;
+        BrokerServiceObservation lastObservation = BrokerServiceObservation.Indeterminate;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await serviceHealthProbe.IsHealthyAsync(cancellationToken)
-                .ConfigureAwait(false))
+            lastObservation = await serviceHealthProbe.ObserveAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (lastObservation == BrokerServiceObservation.Healthy
+                || (stopOnConfirmedAbsence
+                    && lastObservation == BrokerServiceObservation.Absent))
             {
-                return true;
+                return lastObservation;
             }
 
             if (DateTimeOffset.UtcNow >= deadline)
             {
-                return false;
+                return lastObservation;
             }
 
-            await Task.Delay(HealthObservationInterval, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(healthObservationInterval, cancellationToken).ConfigureAwait(false);
         }
     }
 }

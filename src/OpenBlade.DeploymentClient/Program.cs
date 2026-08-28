@@ -11,6 +11,7 @@ DeploymentClientCoordinator coordinator = new(
         new WindowsProtectedBrokerIdentityVerifier()),
     new WindowsClientIntegritySource(),
     new WindowsClientSessionSource(),
+    new WindowsLegacyStartupCleanup(),
     new WindowsInstalledPayloadVerifier(),
     new WindowsInstalledProcessInventory(),
     new WindowsDeploymentProcessLauncher(),

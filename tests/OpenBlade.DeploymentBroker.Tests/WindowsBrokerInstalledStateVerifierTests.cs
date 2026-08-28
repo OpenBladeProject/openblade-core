@@ -13,7 +13,7 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
     public async Task ReadBeforeInstall_RepresentsAbsentInstallWithoutWeakeningPathChecks()
     {
         WindowsBrokerInstalledStateVerifier verifier = new(
-            new FixedHealthProbe(false),
+            new FixedHealthProbe(BrokerServiceObservation.Indeterminate),
             Path.Combine(root, "OpenBlade"));
 
         BrokerInstalledState state = await verifier.ReadBeforeInstallAsync(
@@ -29,7 +29,7 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
         string installDirectory = Path.Combine(root, "OpenBlade");
         Directory.CreateDirectory(installDirectory);
         WindowsBrokerInstalledStateVerifier verifier = new(
-            new FixedHealthProbe(false),
+            new FixedHealthProbe(BrokerServiceObservation.Indeterminate),
             installDirectory);
 
         await Assert.ThrowsAsync<FileNotFoundException>(() =>
@@ -37,10 +37,10 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task VerifyCurrentState_DoesNotClaimAbsentBaselineWasRestored()
+    public async Task VerifyCurrentState_ClaimsAbsentBaselineOnlyWithPositiveServiceAbsence()
     {
         WindowsBrokerInstalledStateVerifier verifier = new(
-            new FixedHealthProbe(true),
+            new FixedHealthProbe(BrokerServiceObservation.Absent),
             Path.Combine(root, "OpenBlade"));
 
         BrokerPostInstallVerification verification = await verifier.VerifyCurrentStateAsync(
@@ -50,7 +50,31 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
             CancellationToken.None);
 
         Assert.False(verification.ExactTargetInstalled);
-        Assert.True(verification.ServiceHealthy);
+        Assert.False(verification.ServiceHealthy);
+        Assert.True(verification.ExactPreviousStateRestored);
+    }
+
+    [Theory]
+    [InlineData(BrokerServiceObservation.Healthy, true)]
+    [InlineData(BrokerServiceObservation.Indeterminate, false)]
+    public async Task VerifyCurrentState_DoesNotTreatExistingOrUnobservableServiceAsAbsent(
+        BrokerServiceObservation observation,
+        bool expectedHealthy)
+    {
+        WindowsBrokerInstalledStateVerifier verifier = new(
+            new FixedHealthProbe(observation),
+            Path.Combine(root, "OpenBlade"),
+            healthObservationTimeout: TimeSpan.Zero,
+            healthObservationInterval: TimeSpan.Zero);
+
+        BrokerPostInstallVerification verification = await verifier.VerifyCurrentStateAsync(
+            BrokerInstalledState.NotInstalled,
+            "65535.1.2.3",
+            new string('a', 40),
+            CancellationToken.None);
+
+        Assert.False(verification.ExactTargetInstalled);
+        Assert.Equal(expectedHealthy, verification.ServiceHealthy);
         Assert.False(verification.ExactPreviousStateRestored);
     }
 
@@ -62,9 +86,10 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
         }
     }
 
-    private sealed class FixedHealthProbe(bool healthy) : IBrokerServiceHealthProbe
+    private sealed class FixedHealthProbe(BrokerServiceObservation observation)
+        : IBrokerServiceHealthProbe
     {
-        public Task<bool> IsHealthyAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(healthy);
+        public Task<BrokerServiceObservation> ObserveAsync(
+            CancellationToken cancellationToken) => Task.FromResult(observation);
     }
 }

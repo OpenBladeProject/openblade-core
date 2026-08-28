@@ -31,11 +31,14 @@ even though Setup itself runs as LocalSystem. It never accepts an arbitrary
 executable, path, URL, command, argument list, signing key, user SID, or general
 elevated operation.
 
-The broker reports success, rollback, or failure atomically. A normal-integrity
-client owns the post-install relaunch, verifies installed ACLs against its
-enabled token identities, and must verify exactly one Tray and one Session Agent
-at normal integrity. A failed or indeterminate deployment does not relaunch a
-partial installation.
+The broker reports success, rollback, or failure atomically. Restoring a clean
+first-install baseline counts as rollback only when the installation tree is
+absent and Windows Service Control Manager positively reports that the service
+does not exist; an inaccessible, stopped, or untrusted service remains
+indeterminate. A normal-integrity client owns the post-install relaunch,
+verifies installed ACLs against its enabled token identities, and must verify
+exactly one Tray and one Session Agent at normal integrity. A failed or
+indeterminate deployment does not relaunch a partial installation.
 
 Local-development packages are intentionally not release artifacts. They must
 not be uploaded, attached to a GitHub release, submitted to the Store, or
@@ -132,7 +135,11 @@ staging directory. The developer-only Setup build also resolves shortcut
 cleanup through the machine-wide Common Startup folder because LocalSystem has
 no interactive user's Startup known folder. It does not derive or traverse an
 enrolled user's writable profile while elevated; ordinary release Setup keeps
-its existing per-user legacy-cleanup behavior.
+its existing per-user legacy-cleanup behavior. After exact broker success and a
+second normal-integrity active-console check, the client removes only the fixed
+legacy `OpenBlade.lnk`, `OpenBlade.SessionAgent.lnk`, and `OpenBlade.cmd` entries
+from its own Startup known folder before relaunch. Cleanup failure prevents the
+client from reporting success or launching either process.
 
 The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or

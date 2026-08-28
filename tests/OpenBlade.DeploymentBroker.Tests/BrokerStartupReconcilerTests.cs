@@ -49,6 +49,28 @@ public sealed class BrokerStartupReconcilerTests : IDisposable
         Assert.False(Directory.Exists(fixture.StagingDirectory));
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task Reconciliation_FirstInstallRollbackRequiresVerifiedAbsentState(
+        bool previousRestored,
+        bool expectedResolved)
+    {
+        ReconciliationFixture fixture = await CreateFixtureAsync(
+            BrokerRecordedInstallerProcessStatus.NotRunning,
+            new BrokerPostInstallVerification(false, false, previousRestored),
+            installerExitCode: 1603,
+            firstInstallBaseline: true);
+
+        bool resolved = await fixture.Reconciler.TryReconcileAsync(
+            fixture.Enrollment,
+            CancellationToken.None);
+
+        Assert.Equal(expectedResolved, resolved);
+        Assert.Equal(!expectedResolved, File.Exists(fixture.Paths.InFlightPath));
+        Assert.Equal(!expectedResolved, Directory.Exists(fixture.StagingDirectory));
+    }
+
     [Fact]
     public async Task Reconciliation_GoneProcessWithoutDurableExitResultRemainsAmbiguous()
     {
@@ -131,7 +153,8 @@ public sealed class BrokerStartupReconcilerTests : IDisposable
     private async Task<ReconciliationFixture> CreateFixtureAsync(
         BrokerRecordedInstallerProcessStatus processStatus,
         BrokerPostInstallVerification verification,
-        int? installerExitCode = 0)
+        int? installerExitCode = 0,
+        bool firstInstallBaseline = false)
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);
         BrokerInFlightStore store = new(paths);
@@ -140,10 +163,12 @@ public sealed class BrokerStartupReconcilerTests : IDisposable
         await store.CreateOnceAsync(requestId, now);
         store.BindPreviousState(
             requestId,
-            new BrokerInstalledState(
-                "1.0.0",
-                "1.0.0+" + new string('a', 40),
-                new string('b', 64)),
+            firstInstallBaseline
+                ? BrokerInstalledState.NotInstalled
+                : new BrokerInstalledState(
+                    "1.0.0",
+                    "1.0.0+" + new string('a', 40),
+                    new string('b', 64)),
             now.AddSeconds(1));
         store.BindRelease(
             requestId,

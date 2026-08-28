@@ -16,12 +16,17 @@ public sealed class DeploymentClientCoordinatorTests
     [Fact]
     public async Task ExactSuccess_NormalIntegrityAndVerifiedPaths_LaunchInRequiredOrder()
     {
-        RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        List<string> events = [];
+        RecordingLegacyStartupCleanup cleanup = new(() => events.Add("cleanup"));
+        RecordingProcessLauncher processes = new(
+            sessionRemainsAlive: true,
+            onLaunch: _ => events.Add("launch"));
         DeploymentClientCoordinator coordinator = CreateCoordinator(
             BrokerProtocolTests.Success(),
             elevated: false,
             Paths,
-            processes);
+            processes,
+            legacyStartup: cleanup);
 
         bool result = await coordinator.ApplyFixedInboxAsync(CancellationToken.None);
 
@@ -44,6 +49,8 @@ public sealed class DeploymentClientCoordinatorTests
             });
         Assert.Equal(1, processes.SessionAliveChecks);
         Assert.Equal(1, processes.TrayAliveChecks);
+        Assert.Equal(1, cleanup.Calls);
+        Assert.Equal(["cleanup", "launch", "launch"], events);
     }
 
     [Theory]
@@ -56,6 +63,7 @@ public sealed class DeploymentClientCoordinatorTests
         string code)
     {
         RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        RecordingLegacyStartupCleanup cleanup = new();
         List<string> diagnostics = [];
         DeploymentBrokerResponse response = BrokerProtocolTests.Success() with
         {
@@ -67,13 +75,15 @@ public sealed class DeploymentClientCoordinatorTests
             elevated: false,
             Paths,
             processes,
-            diagnostics.Add);
+            diagnostics.Add,
+            cleanup);
 
         Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Empty(processes.Plans);
         Assert.Equal(
             [$"broker-response:{(DeploymentBrokerResponseStatus)status}:{code}"],
             diagnostics);
+        Assert.Equal(0, cleanup.Calls);
     }
 
     [Fact]
@@ -82,10 +92,12 @@ public sealed class DeploymentClientCoordinatorTests
         RecordingProcessLauncher elevatedProcesses = new(sessionRemainsAlive: true);
         FixedBrokerChannel elevatedBroker = new(BrokerProtocolTests.Success());
         FixedIntegritySource elevatedIntegrity = new(elevated: true);
+        RecordingLegacyStartupCleanup elevatedCleanup = new();
         DeploymentClientCoordinator elevated = new(
             elevatedBroker,
             elevatedIntegrity,
             new FixedSessionSource(active: true),
+            elevatedCleanup,
             new FixedInstalledPayloadVerifier(Paths),
             new SequenceProcessInventory(),
             elevatedProcesses,
@@ -93,6 +105,7 @@ public sealed class DeploymentClientCoordinatorTests
         Assert.False(await elevated.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Equal(0, elevatedBroker.Calls);
         Assert.Equal(1, elevatedIntegrity.Calls);
+        Assert.Equal(0, elevatedCleanup.Calls);
         Assert.Empty(elevatedProcesses.Plans);
 
         RecordingProcessLauncher missingProcesses = new(sessionRemainsAlive: true);
@@ -140,10 +153,12 @@ public sealed class DeploymentClientCoordinatorTests
     {
         RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
         SequenceIntegritySource integrity = new(false, true);
+        RecordingLegacyStartupCleanup cleanup = new();
         DeploymentClientCoordinator coordinator = new(
             new FixedBrokerChannel(BrokerProtocolTests.Success()),
             integrity,
             new FixedSessionSource(active: true),
+            cleanup,
             new FixedInstalledPayloadVerifier(Paths),
             new SequenceProcessInventory(),
             processes,
@@ -151,6 +166,7 @@ public sealed class DeploymentClientCoordinatorTests
 
         Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Equal(2, integrity.Calls);
+        Assert.Equal(0, cleanup.Calls);
         Assert.Empty(processes.Plans);
     }
 
@@ -159,10 +175,12 @@ public sealed class DeploymentClientCoordinatorTests
     {
         RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
         SequenceSessionSource session = new(true, false);
+        RecordingLegacyStartupCleanup cleanup = new();
         DeploymentClientCoordinator coordinator = new(
             new FixedBrokerChannel(BrokerProtocolTests.Success()),
             new FixedIntegritySource(elevated: false),
             session,
+            cleanup,
             new FixedInstalledPayloadVerifier(Paths),
             new SequenceProcessInventory(),
             processes,
@@ -170,6 +188,50 @@ public sealed class DeploymentClientCoordinatorTests
 
         Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Equal(2, session.Calls);
+        Assert.Equal(0, cleanup.Calls);
+        Assert.Empty(processes.Plans);
+    }
+
+    [Fact]
+    public async Task InitialInactiveConsoleSession_DoesNotCallBrokerOrCleanup()
+    {
+        FixedBrokerChannel broker = new(BrokerProtocolTests.Success());
+        RecordingLegacyStartupCleanup cleanup = new();
+        RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        DeploymentClientCoordinator coordinator = new(
+            broker,
+            new FixedIntegritySource(elevated: false),
+            new FixedSessionSource(active: false),
+            cleanup,
+            new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(),
+            processes,
+            new FixedRequestIdSource());
+
+        Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
+        Assert.Equal(0, broker.Calls);
+        Assert.Equal(0, cleanup.Calls);
+        Assert.Empty(processes.Plans);
+    }
+
+    [Fact]
+    public async Task LegacyStartupCleanupFailure_EmitsStableDiagnosticAndLaunchesNothing()
+    {
+        RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        List<string> diagnostics = [];
+        DeploymentClientCoordinator coordinator = new(
+            new FixedBrokerChannel(BrokerProtocolTests.Success()),
+            new FixedIntegritySource(elevated: false),
+            new FixedSessionSource(active: true),
+            new FailingLegacyStartupCleanup(),
+            new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(),
+            processes,
+            new FixedRequestIdSource(),
+            diagnostics.Add);
+
+        Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
+        Assert.Equal(["legacy-startup-cleanup-failed"], diagnostics);
         Assert.Empty(processes.Plans);
     }
 
@@ -286,6 +348,7 @@ public sealed class DeploymentClientCoordinatorTests
             new FixedBrokerChannel(BrokerProtocolTests.Success()),
             new FixedIntegritySource(elevated: false),
             new FixedSessionSource(active: true),
+            new RecordingLegacyStartupCleanup(),
             new FixedInstalledPayloadVerifier(Paths),
             new SequenceProcessInventory(
                 new InstalledProcessInventory(unambiguous, sessionAgents, trays)),
@@ -304,6 +367,7 @@ public sealed class DeploymentClientCoordinatorTests
             new FixedBrokerChannel(BrokerProtocolTests.Success()),
             new FixedIntegritySource(elevated: false),
             new FixedSessionSource(active: true),
+            new RecordingLegacyStartupCleanup(),
             new FixedInstalledPayloadVerifier(Paths),
             new SequenceProcessInventory(
                 new InstalledProcessInventory(true, 0, 0),
@@ -322,10 +386,12 @@ public sealed class DeploymentClientCoordinatorTests
         bool elevated,
         InstalledPayloadPaths? paths,
         RecordingProcessLauncher processes,
-        Action<string>? diagnostic = null) => new(
+        Action<string>? diagnostic = null,
+        ILegacyStartupCleanup? legacyStartup = null) => new(
             new FixedBrokerChannel(response),
             new FixedIntegritySource(elevated),
             new FixedSessionSource(active: true),
+            legacyStartup ?? new RecordingLegacyStartupCleanup(),
             new FixedInstalledPayloadVerifier(paths),
             new SequenceProcessInventory(),
             processes,
@@ -432,7 +498,27 @@ public sealed class DeploymentClientCoordinatorTests
         }
     }
 
-    private sealed class RecordingProcessLauncher(bool sessionRemainsAlive)
+    private sealed class RecordingLegacyStartupCleanup(Action? onCleanup = null)
+        : ILegacyStartupCleanup
+    {
+        internal int Calls { get; private set; }
+
+        public void RemoveCurrentUserEntries()
+        {
+            Calls++;
+            onCleanup?.Invoke();
+        }
+    }
+
+    private sealed class FailingLegacyStartupCleanup : ILegacyStartupCleanup
+    {
+        public void RemoveCurrentUserEntries() =>
+            throw new IOException("Synthetic cleanup failure.");
+    }
+
+    private sealed class RecordingProcessLauncher(
+        bool sessionRemainsAlive,
+        Action<InstalledProcessLaunchPlan>? onLaunch = null)
         : IDeploymentProcessLauncher
     {
         internal List<InstalledProcessLaunchPlan> Plans { get; } = [];
@@ -443,6 +529,7 @@ public sealed class DeploymentClientCoordinatorTests
 
         public ILaunchedDeploymentProcess Launch(InstalledProcessLaunchPlan plan)
         {
+            onLaunch?.Invoke(plan);
             Plans.Add(plan);
             bool isSession = string.Equals(
                 plan.FileName,

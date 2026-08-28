@@ -22,6 +22,7 @@ internal sealed class DeploymentClientCoordinator(
     IBrokerChannel broker,
     IClientIntegritySource integrity,
     IClientSessionSource session,
+    ILegacyStartupCleanup legacyStartup,
     IInstalledPayloadVerifier installedPayload,
     IInstalledProcessInventory inventory,
     IDeploymentProcessLauncher processes,
@@ -67,6 +68,16 @@ internal sealed class DeploymentClientCoordinator(
             if (!inventory.Inspect(paths).IsEmpty)
             {
                 return Fail("installed-processes-already-running");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                legacyStartup.RemoveCurrentUserEntries();
+            }
+            catch (Exception)
+            {
+                return Fail("legacy-startup-cleanup-failed");
             }
 
             cancellationToken.ThrowIfCancellationRequested();

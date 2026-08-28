@@ -244,6 +244,33 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(true, BrokerResponseStatus.RolledBack)]
+    [InlineData(false, BrokerResponseStatus.Indeterminate)]
+    public async Task HandleAsync_FirstInstallRollbackRequiresVerifiedAbsentState(
+        bool previousRestored,
+        BrokerResponseStatus expectedStatus)
+    {
+        using HandlerFixture fixture = CreateFixture(
+            new BrokerInstallerExecutionResult(true, 1603, false),
+            new BrokerPostInstallVerification(
+                ExactTargetInstalled: false,
+                ServiceHealthy: false,
+                ExactPreviousStateRestored: previousRestored),
+            before: BrokerInstalledState.NotInstalled);
+
+        BrokerResponse response = await fixture.Handler.HandleAsync(
+            fixture.Request,
+            fixture.Enrollment,
+            CancellationToken.None);
+
+        Assert.Equal(expectedStatus, response.Status);
+        Assert.Equal(1, fixture.Runner.CallCount);
+        Assert.Equal(
+            expectedStatus == BrokerResponseStatus.Indeterminate,
+            File.Exists(fixture.Paths.InFlightPath));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -260,7 +287,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         string installedVersion = "1.0.0",
         bool returnUnauthorizedInstallerPath = false,
         bool corruptDetachedSignature = false,
-        Action<BrokerInFlightDeployment>? afterInFlightReplacement = null)
+        Action<BrokerInFlightDeployment>? afterInFlightReplacement = null,
+        BrokerInstalledState? before = null)
     {
         ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         byte[] spki = key.ExportSubjectPublicKeyInfo();
@@ -294,10 +322,10 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 string.Empty));
         FakeRunner runner = new(execution);
         FakeInstalledStateVerifier state = new(
-            new BrokerInstalledState(
-                installedVersion,
-                installedVersion + "+" + new string('d', 40),
-                new string('e', 64)),
+            before ?? new BrokerInstalledState(
+                    installedVersion,
+                    installedVersion + "+" + new string('d', 40),
+                    new string('e', 64)),
             postInstall);
         DateTimeOffset now = new(2026, 8, 27, 0, 0, 0, TimeSpan.Zero);
         ApplyFixedInboxBrokerRequestHandler handler = new(

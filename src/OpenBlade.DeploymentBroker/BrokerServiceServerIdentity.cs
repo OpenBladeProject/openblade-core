@@ -62,21 +62,28 @@ internal sealed class WindowsBrokerServiceHealthProbe : IBrokerServiceHealthProb
         "OpenBlade",
         "OpenBlade.Service.exe");
 
-    public Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
+    public Task<BrokerServiceObservation> ObserveAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
             BrokerServiceConfigurationEvidence evidence = WindowsBrokerServiceConfigurationReader.Read();
+            if (!evidence.Exists)
+            {
+                return Task.FromResult(BrokerServiceObservation.Absent);
+            }
+
             return Task.FromResult(BrokerServiceConfigurationPolicy.IsTrusted(
-                evidence,
-                ExpectedExecutablePath));
+                    evidence,
+                    ExpectedExecutablePath)
+                ? BrokerServiceObservation.Healthy
+                : BrokerServiceObservation.Indeterminate);
         }
         catch (Exception exception) when (exception is
             Win32Exception or IOException or UnauthorizedAccessException
             or InvalidDataException or InvalidOperationException)
         {
-            return Task.FromResult(false);
+            return Task.FromResult(BrokerServiceObservation.Indeterminate);
         }
     }
 }
@@ -89,6 +96,7 @@ internal static class WindowsBrokerServiceConfigurationReader
     private const int ScStatusProcessInfo = 0;
     private const uint ServiceRunning = 4;
     private const int ErrorInsufficientBuffer = 122;
+    private const int ErrorServiceDoesNotExist = 1060;
 
     internal static BrokerServiceConfigurationEvidence Read()
     {
@@ -107,6 +115,23 @@ internal static class WindowsBrokerServiceConfigurationReader
             ServiceQueryConfig | ServiceQueryStatus);
         if (service.IsInvalid)
         {
+            if (Marshal.GetLastWin32Error() == ErrorServiceDoesNotExist)
+            {
+                return new BrokerServiceConfigurationEvidence(
+                    Exists: false,
+                    IsRunning: false,
+                    ServiceType: 0,
+                    StartType: 0,
+                    BinaryPath: string.Empty,
+                    StartName: string.Empty,
+                    ProgramFilesDirectoryExists: false,
+                    InstallDirectoryExists: false,
+                    ExecutableExists: false,
+                    ProgramFilesDirectoryIsReparsePoint: false,
+                    InstallDirectoryIsReparsePoint: false,
+                    ExecutableIsReparsePoint: false);
+            }
+
             throw NativeFailure("The OpenBlade service registration is unavailable.");
         }
 
