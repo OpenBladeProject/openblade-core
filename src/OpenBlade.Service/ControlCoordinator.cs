@@ -340,19 +340,53 @@ public sealed class ControlCoordinator
             valid: targetRpm > 0,
             capabilities => capabilities.FanSpeedRange?.Supports(targetRpm) == true,
             matches: _ => false,
-            token => ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            token => ContinueFanTargetsAfterManualEntryOnceAsync(
                 targetRpm,
                 targetRpm,
                 token),
             cancellationToken,
             initialStateBlockReason: state =>
-                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-                    ? null
-                    : "The target-only continuation requires both fan channels to remain in manual mode.",
+                state.HyperBoostActive == true
+                    ? "The target-only continuation is blocked while fresh readback reports HyperBoost active."
+                    : DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                        ? null
+                        : "The target-only continuation requires both fan channels to remain in manual mode.",
             acceptSetterCompletionWithoutReadback: true,
             setterCompletionEvidence: state =>
-                DeviceSubsystemOrder.IsManualFanMode(state.Fans),
+                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                && state.HyperBoostActive != true,
             forceWrite: true,
+            writeBlockReason: fanWriteBlockReason,
+            returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
+
+    // Generic manual readback cannot identify exact target RPMs after a
+    // possible submission, so this path never authorizes an exact replay.
+    internal Task<ScopedApplyOutcome> ApplyFanTargetsOutcomeAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Fans,
+            "Fans",
+            valid: fan1Rpm > 0 && fan2Rpm > 0,
+            capabilities => capabilities.FanModes.Contains(FanMode.ManualCurve)
+                && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
+                && capabilities.FanSpeedRange.Supports(fan2Rpm),
+            matches: _ => false,
+            token => SetFanTargetsOnceAsync(fan1Rpm, fan2Rpm, token),
+            cancellationToken,
+            initialStateBlockReason: state =>
+                state.HyperBoostActive == true
+                    ? "Manual fan-curve maintenance is blocked while fresh readback reports HyperBoost active."
+                    : DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                        ? null
+                        : "Manual fan-curve maintenance requires the confirmed fan state to remain manual.",
+            acceptSetterCompletionWithoutReadback: true,
+            setterCompletionEvidence: state =>
+                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                && state.HyperBoostActive != true,
+            forceWrite: true,
+            resolveIndeterminateWriteByReadback: false,
+            reconcileUnconfirmableIndeterminateWrite: true,
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
 
@@ -483,8 +517,7 @@ public sealed class ControlCoordinator
             cancellationToken).ConfigureAwait(false);
         if (thermalStepRunner is not null
             && fans.WriteSubmissionState == WriteSubmissionState.Indeterminate
-            && fans.WriteFailurePhase
-                == BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+            && IsAdjustableFanManualEntrySubmission(fans.WriteFailurePhase)
             && ResolveManualFanTarget(requested, fans.Capabilities) is int targetRpm)
         {
             ScopedApplyOutcome continuation = await thermalStepRunner
@@ -670,6 +703,11 @@ public sealed class ControlCoordinator
                 capabilities?.FanSpeedRange?.MaximumRpm,
             _ => null,
         };
+
+    private static bool IsAdjustableFanManualEntrySubmission(
+        BladeWriteFailurePhase? phase) => phase is
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission or
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission;
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
@@ -1169,9 +1207,8 @@ public sealed class ControlCoordinator
                 if (subsystem == DeviceSubsystem.Fans
                     && thermalOutcome.WriteSubmissionState
                         == WriteSubmissionState.Indeterminate
-                    && thermalOutcome.WriteFailurePhase
-                        == BladeWriteFailurePhase
-                            .AdjustableFanSecondManualEntrySubmission
+                    && IsAdjustableFanManualEntrySubmission(
+                        thermalOutcome.WriteFailurePhase)
                     && ResolveManualFanTarget(
                             desired.FanControl
                                 ?? FanControlSettings.FromLegacy(desired.Fans.Value),
@@ -1695,7 +1732,8 @@ public sealed class ControlCoordinator
         bool resolveIndeterminateWriteByReadback = false,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite = null,
-        bool returnBlockedOnWriteAuthorityLoss = false)
+        bool returnBlockedOnWriteAuthorityLoss = false,
+        bool reconcileUnconfirmableIndeterminateWrite = false)
     {
         if (!valid)
         {
@@ -1833,6 +1871,21 @@ public sealed class ControlCoordinator
         catch (BladeWriteException exception)
             when (writeAttempted
                 && exception.SubmissionState is WriteSubmissionState.Indeterminate
+                && reconcileUnconfirmableIndeterminateWrite)
+        {
+            return await ReconcileUnconfirmableIndeterminateWriteAsync(
+                    subsystem,
+                    name,
+                    exception,
+                    readState,
+                    initial,
+                    capabilities,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (BladeWriteException exception)
+            when (writeAttempted
+                && exception.SubmissionState is WriteSubmissionState.Indeterminate
                 && resolveIndeterminateWriteByReadback)
         {
             return await ResolveIndeterminateWriteByReadbackAsync(
@@ -1925,6 +1978,60 @@ public sealed class ControlCoordinator
                 WriteFailurePhase: exception is BladeWriteException phasedFailure
                     ? phasedFailure.FailurePhase
                     : null);
+        }
+    }
+
+    private static async Task<ScopedApplyOutcome>
+        ReconcileUnconfirmableIndeterminateWriteAsync(
+        DeviceSubsystem subsystem,
+        string name,
+        BladeWriteException exception,
+        Func<CancellationToken, Task<ConfirmedDeviceState>> readState,
+        ConfirmedDeviceState? initial,
+        DeviceCapabilities? capabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final = await readState(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ScopedApplyOutcome(
+                new ControlResult(
+                    ControlResultStatus.Failed,
+                    $"{Indeterminate(name, exception).Message} Fresh readback cannot confirm exact fan targets."),
+                final,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false,
+                ConfirmationUnavailable: true,
+                PreWriteState: initial,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                WriteFailurePhase: exception.FailurePhase);
+        }
+        catch (OperationCanceledException cancellationException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem> { subsystem },
+                cancellationToken,
+                cancellationException);
+        }
+        catch
+        {
+            return new ScopedApplyOutcome(
+                Indeterminate(name, exception),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: true,
+                ConfirmationUnavailable: true,
+                PreWriteState: initial,
+                WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                WriteFailurePhase: exception.FailurePhase);
         }
     }
 
@@ -2479,17 +2586,29 @@ public sealed class ControlCoordinator
                     "The verified device does not expose single-attempt thermal writes."))
             : device.SetFanControlAsync(value, cancellationToken);
 
-    private Task ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+    private Task ContinueFanTargetsAfterManualEntryOnceAsync(
         int fan1Rpm,
         int fan2Rpm,
         CancellationToken cancellationToken) =>
         device is ISingleAttemptThermalDevice singleAttemptDevice
-            ? singleAttemptDevice.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            ? singleAttemptDevice.ContinueFanTargetsAfterManualEntryOnceAsync(
                 fan1Rpm,
                 fan2Rpm,
                 cancellationToken)
             : Task.FromException(new CapabilityUnavailableException(
                 "The verified device does not expose target-only fan continuation."));
+
+    private Task SetFanTargetsOnceAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken) =>
+        device is ISingleAttemptThermalDevice singleAttemptDevice
+            ? singleAttemptDevice.SetFanTargetsOnceAsync(
+                fan1Rpm,
+                fan2Rpm,
+                cancellationToken)
+            : Task.FromException(new CapabilityUnavailableException(
+                "The verified device does not expose single-attempt fan-target writes."));
 
     private Task SetGpuClockOffsetsAsync(
         GpuClockOffsetSettings value,

@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bound automatic manual-fan curve maintenance to the exact active-user,
+  device-session, controller, power-destination, and desired-intent epoch that
+  performed the successful OpenBlade fan write. Curve targets now use the
+  shared Strict thermal executor's single recovery lease, reconcile possible
+  submissions read-only, and never inherit ownership from generic manual
+  readback, reconnect, resume, profile edits, or controller disappearance.
 - Routed full power-profile performance and fan changes through the typed
   Strict thermal executor, so aggregate preflight, performance, fan, and
   target-only manual-fan continuation share one freshly admitted recovery
@@ -24,10 +30,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
   thermal submission stops later profile writes until read-only reconciliation.
 - Routed explicit fan transitions through the typed Strict thermal executor,
   sharing one freshly admitted recovery lease across Automatic and Balanced
-  bridges, the requested fan write, target-only second-fan continuation, and
+  bridges, the requested fan write, target-only manual-entry continuation, and
   performance restoration. Earlier confirmed steps are never replayed, and
   active-session, power, low-power, pending-write, intent, and exact-device
-  authority are rechecked before another thermal command.
+  authority are rechecked before another thermal command. First- or
+  second-channel manual-entry ambiguity can continue only after fresh paired
+  readback confirms both channels are already manual, without replaying either
+  entry command.
 - Verified bundle registration, installer ownership, service registration, and
   installed files before reporting uninstall success. Superseded installer
   entries now report registration-only cleanup accurately, while skipped or

@@ -769,7 +769,7 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public async Task AdjustableFanFirstManualEntryFailureIsNotContinuable()
+    public async Task AdjustableFanFirstManualEntryFailureHasTypedContinuationPhase()
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x00]),
@@ -787,7 +787,9 @@ public sealed class ProductionBatteryPortTests
                 default));
 
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
-        Assert.Equal(BladeWriteFailurePhase.Unspecified, error.FailurePhase);
+        Assert.Equal(
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            error.FailurePhase);
         Assert.Contains("manual entry channel 1 of 2", error.Message);
         Assert.Equal(3, session.Commands.Count);
     }

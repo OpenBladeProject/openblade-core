@@ -35,6 +35,7 @@ internal enum ThermalTransitionStepPurpose
     BalancedBridge = 2,
     Restoration = 3,
     ManualTargetContinuation = 4,
+    ManualCurveTarget = 5,
 }
 
 internal sealed record ThermalTransitionStepAttempt(

@@ -10,6 +10,7 @@ internal enum BladeWriteFailurePhase
 {
     Unspecified,
     ThermalPreWriteRead,
+    AdjustableFanFirstManualEntrySubmission,
     AdjustableFanSecondManualEntrySubmission,
     HyperBoostAdapterEligibilityRead,
     ThermalFinalConfirmationRead,
