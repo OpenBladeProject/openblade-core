@@ -2011,7 +2011,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
 
-        await singleAttempt.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+        await singleAttempt.ContinueFanTargetsAfterManualEntryOnceAsync(
             3200,
             3300,
             CancellationToken.None);
@@ -2051,7 +2051,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         var singleAttempt = Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
-            () => singleAttempt.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            () => singleAttempt.ContinueFanTargetsAfterManualEntryOnceAsync(
                 3200,
                 3300,
                 CancellationToken.None));

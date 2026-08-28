@@ -340,18 +340,21 @@ public sealed class ControlCoordinator
             valid: targetRpm > 0,
             capabilities => capabilities.FanSpeedRange?.Supports(targetRpm) == true,
             matches: _ => false,
-            token => ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            token => ContinueFanTargetsAfterManualEntryOnceAsync(
                 targetRpm,
                 targetRpm,
                 token),
             cancellationToken,
             initialStateBlockReason: state =>
-                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-                    ? null
-                    : "The target-only continuation requires both fan channels to remain in manual mode.",
+                state.HyperBoostActive == true
+                    ? "The target-only continuation is blocked while fresh readback reports HyperBoost active."
+                    : DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                        ? null
+                        : "The target-only continuation requires both fan channels to remain in manual mode.",
             acceptSetterCompletionWithoutReadback: true,
             setterCompletionEvidence: state =>
-                DeviceSubsystemOrder.IsManualFanMode(state.Fans),
+                DeviceSubsystemOrder.IsManualFanMode(state.Fans)
+                && state.HyperBoostActive != true,
             forceWrite: true,
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
@@ -514,8 +517,7 @@ public sealed class ControlCoordinator
             cancellationToken).ConfigureAwait(false);
         if (thermalStepRunner is not null
             && fans.WriteSubmissionState == WriteSubmissionState.Indeterminate
-            && fans.WriteFailurePhase
-                == BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+            && IsAdjustableFanManualEntrySubmission(fans.WriteFailurePhase)
             && ResolveManualFanTarget(requested, fans.Capabilities) is int targetRpm)
         {
             ScopedApplyOutcome continuation = await thermalStepRunner
@@ -701,6 +703,11 @@ public sealed class ControlCoordinator
                 capabilities?.FanSpeedRange?.MaximumRpm,
             _ => null,
         };
+
+    private static bool IsAdjustableFanManualEntrySubmission(
+        BladeWriteFailurePhase? phase) => phase is
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission or
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission;
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
@@ -1200,9 +1207,8 @@ public sealed class ControlCoordinator
                 if (subsystem == DeviceSubsystem.Fans
                     && thermalOutcome.WriteSubmissionState
                         == WriteSubmissionState.Indeterminate
-                    && thermalOutcome.WriteFailurePhase
-                        == BladeWriteFailurePhase
-                            .AdjustableFanSecondManualEntrySubmission
+                    && IsAdjustableFanManualEntrySubmission(
+                        thermalOutcome.WriteFailurePhase)
                     && ResolveManualFanTarget(
                             desired.FanControl
                                 ?? FanControlSettings.FromLegacy(desired.Fans.Value),
@@ -2580,12 +2586,12 @@ public sealed class ControlCoordinator
                     "The verified device does not expose single-attempt thermal writes."))
             : device.SetFanControlAsync(value, cancellationToken);
 
-    private Task ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+    private Task ContinueFanTargetsAfterManualEntryOnceAsync(
         int fan1Rpm,
         int fan2Rpm,
         CancellationToken cancellationToken) =>
         device is ISingleAttemptThermalDevice singleAttemptDevice
-            ? singleAttemptDevice.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            ? singleAttemptDevice.ContinueFanTargetsAfterManualEntryOnceAsync(
                 fan1Rpm,
                 fan2Rpm,
                 cancellationToken)

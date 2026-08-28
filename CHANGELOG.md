@@ -30,10 +30,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
   thermal submission stops later profile writes until read-only reconciliation.
 - Routed explicit fan transitions through the typed Strict thermal executor,
   sharing one freshly admitted recovery lease across Automatic and Balanced
-  bridges, the requested fan write, target-only second-fan continuation, and
+  bridges, the requested fan write, target-only manual-entry continuation, and
   performance restoration. Earlier confirmed steps are never replayed, and
   active-session, power, low-power, pending-write, intent, and exact-device
-  authority are rechecked before another thermal command.
+  authority are rechecked before another thermal command. First- or
+  second-channel manual-entry ambiguity can continue only after fresh paired
+  readback confirms both channels are already manual, without replaying either
+  entry command.
 - Verified bundle registration, installer ownership, service registration, and
   installed files before reporting uninstall success. Superseded installer
   entries now report registration-only cleanup accurately, while skipped or

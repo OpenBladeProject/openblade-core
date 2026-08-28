@@ -1706,7 +1706,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 fan1Rpm,
                 fan2Rpm,
                 allowFreshSessionRetry: true,
-                isSecondFanManualEntryContinuation: false,
+                isManualEntryContinuation: false,
                 cancellationToken);
 
         Task ISingleAttemptThermalDevice.SetFanTargetsOnceAsync(
@@ -1716,28 +1716,28 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 fan1Rpm,
                 fan2Rpm,
                 allowFreshSessionRetry: false,
-                isSecondFanManualEntryContinuation: false,
+                isManualEntryContinuation: false,
                 cancellationToken);
 
-        Task ISingleAttemptThermalDevice.ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+        Task ISingleAttemptThermalDevice.ContinueFanTargetsAfterManualEntryOnceAsync(
             int fan1Rpm,
             int fan2Rpm,
             CancellationToken cancellationToken) => SetFanTargetsCoreAsync(
                 fan1Rpm,
                 fan2Rpm,
                 allowFreshSessionRetry: false,
-                isSecondFanManualEntryContinuation: true,
+                isManualEntryContinuation: true,
                 cancellationToken);
 
         private Task SetFanTargetsCoreAsync(
             int fan1Rpm,
             int fan2Rpm,
             bool allowFreshSessionRetry,
-            bool isSecondFanManualEntryContinuation,
+            bool isManualEntryContinuation,
             CancellationToken cancellationToken)
         {
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
-            bool targetsAdmitted = isSecondFanManualEntryContinuation
+            bool targetsAdmitted = isManualEntryContinuation
                 ? capabilities.FanModes.Any(
                     mode => DeviceSubsystemOrder.IsManualFanMode(mode))
                     && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
@@ -1751,8 +1751,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken),
                     cancellationToken,
                     allowFreshSessionRetry: allowFreshSessionRetry,
-                    isSecondFanManualEntryContinuation:
-                        isSecondFanManualEntryContinuation)
+                    isManualEntryContinuation: isManualEntryContinuation)
                 : RejectProductionWrite("Manual fan targets are not admitted.");
         }
 
@@ -2135,7 +2134,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             bool retryHyperBoostAdapterPreflight = false,
             Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null,
             bool allowFreshSessionRetry = true,
-            bool isSecondFanManualEntryContinuation = false)
+            bool isManualEntryContinuation = false)
         {
             ArgumentNullException.ThrowIfNull(write);
             BladeWriteException? afterWriteFailure = null;
@@ -2144,8 +2143,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             BladeWriteException? manualEntryContinuationFailure = null;
             BladeWriteFailurePhase retryFailurePhase = BladeWriteFailurePhase.Unspecified;
             bool retryPreWriteOpen = false;
-            bool continuingAfterSecondFanManualEntry =
-                isSecondFanManualEntryContinuation;
+            bool continuingAfterManualEntry = isManualEntryContinuation;
             Func<IProductionBatteryPort, Task> attemptWrite = write;
             try
             {
@@ -2153,7 +2151,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (OperationCanceledException)
             {
-                if (isSecondFanManualEntryContinuation)
+                if (isManualEntryContinuation)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,
@@ -2167,7 +2165,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (ObjectDisposedException exception)
             {
-                if (isSecondFanManualEntryContinuation)
+                if (isManualEntryContinuation)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,
@@ -2237,7 +2235,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         return;
                     }
                     catch (BladeWriteException exception) when (
-                        continuingAfterSecondFanManualEntry
+                        continuingAfterManualEntry
                         && exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
                     {
                         throw new BladeWriteException(
@@ -2276,7 +2274,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     {
                         retryFailurePhase = exception.FailurePhase;
                         manualEntryContinuationFailure = exception;
-                        continuingAfterSecondFanManualEntry = true;
+                        continuingAfterManualEntry = true;
                         // The fresh port's target-only setter first proves that
                         // both channel reads agree on manual mode. It cannot
                         // replay either possibly submitted entry command.
@@ -2302,7 +2300,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
             }
             catch (CapabilityUnavailableException exception) when (
-                continuingAfterSecondFanManualEntry)
+                continuingAfterManualEntry)
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
@@ -2341,7 +2339,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (continuingAfterSecondFanManualEntry)
+                if (continuingAfterManualEntry)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,

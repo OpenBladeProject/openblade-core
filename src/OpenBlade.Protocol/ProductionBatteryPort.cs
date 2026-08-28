@@ -1017,8 +1017,12 @@ internal sealed class ProductionBatteryPort :
                             : index + 1;
                     string failure = result.Failure?.ToString()
                         ?? "UnexpectedAcknowledgement";
-                    BladeWriteFailurePhase failurePhase = manualEntryCommand && index == 1
-                        ? BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission
+                    BladeWriteFailurePhase failurePhase = manualEntryCommand
+                        ? index == 0
+                            ? BladeWriteFailurePhase
+                                .AdjustableFanFirstManualEntrySubmission
+                            : BladeWriteFailurePhase
+                                .AdjustableFanSecondManualEntrySubmission
                         : BladeWriteFailurePhase.Unspecified;
                     throw new BladeWriteException(
                         WriteSubmissionState.Indeterminate,

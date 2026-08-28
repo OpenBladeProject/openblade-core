@@ -10439,6 +10439,133 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task AcManualFans_FirstEntryUsesTargetOnlyContinuation()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanTargetsAvailable = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            "Injected first-channel manual-entry ambiguity."));
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Fans,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task AcManualFans_FirstEntryContinuationBlocksFreshHyperBoost()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        bool entrySubmissionFailed = false;
+        context.Device.BeforeQueuedFanFailure = () =>
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+            entrySubmissionFailed = true;
+        };
+        context.Device.BeforePerformanceFanStateReadResult = _ =>
+        {
+            if (entrySubmissionFailed)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    HyperBoostActive = true,
+                };
+            }
+        };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            "Injected first-channel manual-entry ambiguity."));
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Empty(context.Device.FanTargets);
+    }
+
+    [Fact]
+    public async Task AcManualFans_FirstEntryContinuationRejectsLateHyperBoost()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            "Injected first-channel manual-entry ambiguity."));
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    HyperBoostActive = true,
+                };
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Single(context.Device.FanTargets);
+        int fanWrites = context.Device.FanSetCalls;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+        };
+
+        await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+    }
+
+    [Fact]
     public async Task AcManualFans_OneBridgeRetryPreventsLaterRequestedRetry()
     {
         TestContext context = CreateWritableContext(
@@ -19107,7 +19234,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken);
 
         Task ISingleAttemptThermalDevice
-            .ContinueFanTargetsAfterSecondManualEntryOnceAsync(
+            .ContinueFanTargetsAfterManualEntryOnceAsync(
             int fan1Rpm,
             int fan2Rpm,
             CancellationToken cancellationToken) =>
