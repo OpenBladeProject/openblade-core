@@ -5,6 +5,7 @@ if (args.Length != 0)
     return 1;
 }
 
+WindowsInstalledProcessInventory inventory = new();
 DeploymentClientCoordinator coordinator = new(
     new BrokerPipeChannel(
         new WindowsBrokerPipeConnector(),
@@ -13,7 +14,10 @@ DeploymentClientCoordinator coordinator = new(
     new WindowsClientSessionSource(),
     new WindowsLegacyStartupCleanup(),
     new WindowsInstalledPayloadVerifier(),
-    new WindowsInstalledProcessInventory(),
+    inventory,
+    new WindowsInstalledProcessShutdown(
+        new WindowsInstalledShutdownEventSource(),
+        inventory),
     new WindowsDeploymentProcessLauncher(),
     new CryptographicRequestIdSource(),
     Console.Error.WriteLine);

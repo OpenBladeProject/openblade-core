@@ -11,8 +11,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   broker for quiet OpenBlade build installation without repeated UAC prompts,
   with a protected Burn environment, exact first-install rollback recovery,
   bounded broker-shutdown cleanup, LocalSystem-safe shortcut resolution,
-  normal-user legacy startup cleanup, and normal-token ACL verification plus
-  bounded client failure diagnostics.
+  normal-session process shutdown and rollback relaunch, normal-user legacy
+  startup cleanup, and normal-token ACL verification plus bounded client
+  failure diagnostics.
 
 ### Fixed
 

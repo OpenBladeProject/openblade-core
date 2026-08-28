@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.DeploymentClient;
 
@@ -119,6 +120,8 @@ internal static class InstalledPayloadPathPolicy
 
 internal interface IInstalledPayloadVerifier
 {
+    InstalledPayloadPaths? GetExpectedPaths();
+
     InstalledPayloadPaths? GetVerifiedPaths();
 }
 
@@ -161,6 +164,9 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
         | FileSystemRights.DeleteSubdirectoriesAndFiles
         | FileSystemRights.ChangePermissions
         | FileSystemRights.TakeOwnership;
+
+    public InstalledPayloadPaths? GetExpectedPaths() =>
+        InstalledPayloadPathPolicy.GetExpectedPaths();
 
     public InstalledPayloadPaths? GetVerifiedPaths()
     {
@@ -321,6 +327,26 @@ internal sealed record InstalledProcessInventory(
     internal bool HasExactFinalState => IsUnambiguous
         && SessionAgentCount == 1
         && TrayCount == 1;
+
+    internal bool TryGetRestorableShape(out InstalledProcessShape shape)
+    {
+        shape = (SessionAgentCount, TrayCount) switch
+        {
+            (0, 0) => InstalledProcessShape.None,
+            (1, 0) => InstalledProcessShape.SessionAgentOnly,
+            (1, 1) => InstalledProcessShape.SessionAgentAndTray,
+            _ => default,
+        };
+        return IsUnambiguous
+            && (SessionAgentCount, TrayCount) is (0, 0) or (1, 0) or (1, 1);
+    }
+}
+
+internal enum InstalledProcessShape
+{
+    None,
+    SessionAgentOnly,
+    SessionAgentAndTray,
 }
 
 internal interface IInstalledProcessInventory
@@ -364,15 +390,18 @@ internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInvent
                         continue;
                     }
 
-                    if (!string.Equals(
-                            Path.GetFullPath(actualPath),
-                            Path.GetFullPath(expectedPath),
-                            StringComparison.OrdinalIgnoreCase))
+                    if (!ShouldInspectIntegrity(
+                            expectedPath,
+                            actualPath,
+                            currentSession,
+                            process.SessionId,
+                            out bool pathOrSessionAmbiguous))
                     {
+                        ambiguous |= pathOrSessionAmbiguous;
                         continue;
                     }
 
-                    if (process.SessionId != currentSession || IsElevated(process))
+                    if (IsElevated(process))
                     {
                         ambiguous = true;
                         continue;
@@ -389,6 +418,21 @@ internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInvent
         }
 
         return new ProcessCount(count, ambiguous);
+    }
+
+    internal static bool ShouldInspectIntegrity(
+        string expectedPath,
+        string actualPath,
+        int currentSession,
+        int processSession,
+        out bool ambiguous)
+    {
+        bool isExactPath = string.Equals(
+            Path.GetFullPath(actualPath),
+            Path.GetFullPath(expectedPath),
+            StringComparison.OrdinalIgnoreCase);
+        ambiguous = isExactPath && processSession != currentSession;
+        return isExactPath && !ambiguous;
     }
 
     private static bool IsElevated(Process process)
@@ -442,6 +486,143 @@ internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInvent
         ref TokenElevation tokenInformation,
         int tokenInformationLength,
         out int returnLength);
+}
+
+internal sealed record InstalledShutdownEndpoints(string? SessionAgent, string? Tray)
+{
+    internal IReadOnlyList<string> InSignalOrder => (SessionAgent, Tray) switch
+    {
+        (not null, not null) => [Tray, SessionAgent],
+        (not null, null) => [SessionAgent],
+        _ => [],
+    };
+}
+
+internal static class InstalledShutdownEndpointPolicy
+{
+    internal static InstalledShutdownEndpoints? Create(
+        InstalledPayloadPaths paths,
+        InstalledProcessShape shape)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        InstalledPayloadPaths? expected = InstalledPayloadPathPolicy.GetExpectedPaths();
+        if (expected is null || !InstalledPayloadPathPolicy.IsExact(paths, expected))
+        {
+            return null;
+        }
+
+        return shape switch
+        {
+            InstalledProcessShape.None => new(null, null),
+            InstalledProcessShape.SessionAgentOnly => new(
+                SessionAgentShutdownEndpoint.ForExecutablePath(
+                    expected.SessionAgentExecutable),
+                null),
+            InstalledProcessShape.SessionAgentAndTray => new(
+                SessionAgentShutdownEndpoint.ForExecutablePath(
+                    expected.SessionAgentExecutable),
+                TrayShutdownEndpoint.ForExecutablePath(expected.TrayExecutable)),
+            _ => null,
+        };
+    }
+}
+
+internal interface IInstalledShutdownEvent : IDisposable
+{
+    bool Signal();
+}
+
+internal interface IInstalledShutdownEventSource
+{
+    IInstalledShutdownEvent? TryOpen(string eventName);
+}
+
+internal sealed class WindowsInstalledShutdownEventSource : IInstalledShutdownEventSource
+{
+    public IInstalledShutdownEvent? TryOpen(string eventName) =>
+        EventWaitHandle.TryOpenExisting(eventName, out EventWaitHandle? handle)
+            ? new WindowsInstalledShutdownEvent(handle)
+            : null;
+
+    private sealed class WindowsInstalledShutdownEvent(EventWaitHandle handle)
+        : IInstalledShutdownEvent
+    {
+        public bool Signal() => handle.Set();
+
+        public void Dispose() => handle.Dispose();
+    }
+}
+
+internal interface IInstalledProcessShutdown
+{
+    Task<bool> ShutdownAsync(
+        InstalledPayloadPaths paths,
+        InstalledProcessShape shape,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class WindowsInstalledProcessShutdown(
+    IInstalledShutdownEventSource events,
+    IInstalledProcessInventory inventory) : IInstalledProcessShutdown
+{
+    private static readonly TimeSpan ExitTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan InventoryPollInterval = TimeSpan.FromMilliseconds(100);
+
+    public async Task<bool> ShutdownAsync(
+        InstalledPayloadPaths paths,
+        InstalledProcessShape shape,
+        CancellationToken cancellationToken)
+    {
+        InstalledShutdownEndpoints? endpoints = InstalledShutdownEndpointPolicy.Create(
+            paths,
+            shape);
+        if (endpoints is null || shape == InstalledProcessShape.None)
+        {
+            return false;
+        }
+
+        List<IInstalledShutdownEvent> opened = [];
+        try
+        {
+            foreach (string endpoint in endpoints.InSignalOrder)
+            {
+                IInstalledShutdownEvent? shutdownEvent = events.TryOpen(endpoint);
+                if (shutdownEvent is null)
+                {
+                    return false;
+                }
+
+                opened.Add(shutdownEvent);
+            }
+
+            foreach (IInstalledShutdownEvent shutdownEvent in opened)
+            {
+                if (!shutdownEvent.Signal())
+                {
+                    return false;
+                }
+            }
+
+            long started = Stopwatch.GetTimestamp();
+            while (Stopwatch.GetElapsedTime(started) < ExitTimeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (inventory.Inspect(paths).IsEmpty)
+                {
+                    return true;
+                }
+
+                await Task.Delay(InventoryPollInterval, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return inventory.Inspect(paths).IsEmpty;
+        }
+        finally
+        {
+            opened.ForEach(handle => handle.Dispose());
+        }
+    }
 }
 
 internal static class InstalledProcessLaunchPolicy

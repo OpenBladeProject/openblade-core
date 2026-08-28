@@ -13,6 +13,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.DeploymentClient\OpenBlade.DeploymentClient.csproj" />
   </ItemGroup>
 </Project>

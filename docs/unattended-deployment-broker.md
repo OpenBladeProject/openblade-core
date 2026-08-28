@@ -36,9 +36,13 @@ first-install baseline counts as rollback only when the installation tree is
 absent and Windows Service Control Manager positively reports that the service
 does not exist; an inaccessible, stopped, or untrusted service remains
 indeterminate. A normal-integrity client owns the post-install relaunch,
-verifies installed ACLs against its enabled token identities, and must verify
-exactly one Tray and one Session Agent at normal integrity. A failed or
-indeterminate deployment does not relaunch a partial installation.
+verifies installed ACLs against its enabled token identities, and coordinates
+the existing Tray and Session Agent through their fixed session-local shutdown
+endpoints before asking the broker to install. It never kills a process or
+signals a caller-selected endpoint. Exact success must end with one Tray and
+one Session Agent at normal integrity. Only an exact broker-attested rollback
+may restore the prior process shape; a rejected, failed, mismatched, or
+indeterminate deployment does not relaunch a potentially partial installation.
 
 Local-development packages are intentionally not release artifacts. They must
 not be uploaded, attached to a GitHub release, submitted to the Store, or
@@ -118,8 +122,14 @@ release-excluding OpenBlade publish, stages exactly
 `OpenBlade-Local-Dev-Deployment.sig`, and `OpenBlade-Setup.exe`, then invokes
 the immutable normal-integrity client. The client demand-starts only the fixed
 broker service, verifies its SCM and named-pipe identity, waits for the atomic
-terminal result, and relaunches the installed Session Agent and Tray only after
-exact success. Each build receives a durable monotonic version in the reserved
+terminal result, launches the target Session Agent and Tray only after exact
+success, and restores the prior process shape only after exact rollback. Before
+the request, that same normal-session client verifies the
+fixed installed paths and process identities, opens both required shutdown
+events before signaling either, and waits boundedly for an empty exact process
+inventory. An exact OpenBlade process in another signed-in session blocks the
+request because the enrolled client cannot safely signal that session's local
+event. Each build receives a durable monotonic version in the reserved
 `65535.x.y.z` range so Burn cannot silently treat a new commit as the already
 installed same-version bundle. Managed executable assembly and file versions
 use the corresponding `65534.x.y.z` shadow range because .NET reserves `65535`
