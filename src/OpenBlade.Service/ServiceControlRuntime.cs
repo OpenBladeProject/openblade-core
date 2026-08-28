@@ -341,6 +341,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HyperBoostManualFanReadbackRetryDelay =
         TimeSpan.FromMilliseconds(750);
+    private static readonly DeviceSubsystem[] HyperBoostThermalComponents =
+        [DeviceSubsystem.Performance, DeviceSubsystem.Fans];
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
         TimeSpan.FromSeconds(15);
@@ -413,6 +415,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private PerformancePreset pendingIndeterminateHyperBoostEntryBaseMode =
         PerformancePreset.Balanced;
     private HyperBoostRestoreIntent? pendingIndeterminateHyperBoostExitIntent;
+    private ThermalTransitionRecoveryState?
+        pendingIndeterminateHyperBoostRecoveryState;
     private bool pendingOwnedHyperBoostPowerBoundaryExit;
     private bool ownedHyperBoostPowerBoundaryExitSubmitted;
     private bool ownedHyperBoostRequiresCoolingPad;
@@ -3591,6 +3595,493 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : PadlessHyperBoostLifecycleRunClaim.AlreadyUsed;
     }
 
+    private ThermalTransitionStepRunner CreateHyperBoostTransitionRunner(
+        IBladeDevice device,
+        bool enabled,
+        PerformancePreset baseMode,
+        HyperBoostRestoreIntent expectedIntent,
+        HyperBoostOwnershipJournal? expectedJournal,
+        long expectedOwnershipGeneration,
+        long expectedPowerGeneration,
+        PowerSource expectedPowerSource,
+        bool ownedLifecycleRestore,
+        bool allowOwnedJournalCleanup,
+        bool validationOnly,
+        bool allowIntentRebase = false,
+        ThermalTransitionRecoveryState? recoveryState = null)
+    {
+        Guid attemptId = recoveryState?.AttemptId ?? Guid.NewGuid();
+        return new ThermalTransitionStepRunner(
+            attemptId,
+            HyperBoostThermalComponents,
+            device,
+            (attemptDevice, runner) => new ControlCoordinator(
+                attemptDevice,
+                attemptDevice.ReadPerformanceFanStateAsync,
+                resolveIndeterminatePerformanceWrites: true,
+                resolveIndeterminateAutomaticFanWrites: false,
+                singleAttemptPerformanceWrites: true,
+                singleAttemptFanWrites: true,
+                thermalStepRunner: runner,
+                performanceWriteBlockReason: () =>
+                    HyperBoostTransitionWriteBlockReason(
+                        expectedIntent,
+                        expectedOwnershipGeneration,
+                        expectedPowerGeneration,
+                        ownedLifecycleRestore,
+                        allowOwnedJournalCleanup,
+                        allowIntentRebase),
+                fanWriteBlockReason: () =>
+                    HyperBoostTransitionWriteBlockReason(
+                        expectedIntent,
+                        expectedOwnershipGeneration,
+                        expectedPowerGeneration,
+                        ownedLifecycleRestore,
+                        allowOwnedJournalCleanup,
+                        allowIntentRebase)),
+            (_, cancellationToken) => RevalidateHyperBoostTransitionRetryAsync(
+                enabled,
+                baseMode,
+                expectedIntent,
+                expectedJournal,
+                expectedOwnershipGeneration,
+                expectedPowerGeneration,
+                expectedPowerSource,
+                ownedLifecycleRestore,
+                allowOwnedJournalCleanup,
+                allowIntentRebase,
+                validationOnly,
+                cancellationToken),
+            recoveryState: recoveryState,
+            revalidateSubmission: (purpose, _, cancellationToken) =>
+                RevalidateHyperBoostTransitionSubmissionAsync(
+                    purpose,
+                    enabled,
+                    baseMode,
+                    expectedIntent,
+                    expectedJournal,
+                    expectedOwnershipGeneration,
+                    expectedPowerGeneration,
+                    expectedPowerSource,
+                    ownedLifecycleRestore,
+                    allowOwnedJournalCleanup,
+                    allowIntentRebase,
+                    validationOnly,
+                    cancellationToken));
+    }
+
+    private string? HyperBoostTransitionWriteBlockReason(
+        HyperBoostRestoreIntent expectedIntent,
+        long expectedOwnershipGeneration,
+        long expectedPowerGeneration,
+        bool ownedLifecycleRestore,
+        bool allowOwnedJournalCleanup,
+        bool allowIntentRebase)
+    {
+        if (hyperBoostOwnershipGeneration != expectedOwnershipGeneration)
+        {
+            return "HyperBoost ownership changed before the thermal command was submitted.";
+        }
+        if (powerSourceGeneration != expectedPowerGeneration)
+        {
+            return "The confirmed power destination changed before the thermal command was submitted.";
+        }
+        if (lowPowerGate.IsActive && !ownedLifecycleRestore)
+        {
+            return "The laptop entered a low-power transition before the thermal command was submitted.";
+        }
+        if (HasPendingWriteConfirmations())
+        {
+            return "A prior thermal write requires read-only reconciliation before another submission.";
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.ControllerDetectionWarning is not null
+            || current.PotentialControllers.Count > 0
+            || current.WritesBlocked
+                && !ownedLifecycleRestore
+                && !allowOwnedJournalCleanup)
+        {
+            return "HyperBoost thermal write admission closed before submission.";
+        }
+        if (!ownedLifecycleRestore
+            && !allowIntentRebase
+            && CreateHyperBoostRestoreIntent(current.DesiredState) != expectedIntent)
+        {
+            return "The authoritative thermal intent changed before submission.";
+        }
+        return null;
+    }
+
+    private async Task<ThermalRetryAdmission>
+        RevalidateHyperBoostTransitionSubmissionAsync(
+        ThermalTransitionStepPurpose purpose,
+        bool enabled,
+        PerformancePreset baseMode,
+        HyperBoostRestoreIntent expectedIntent,
+        HyperBoostOwnershipJournal? expectedJournal,
+        long expectedOwnershipGeneration,
+        long expectedPowerGeneration,
+        PowerSource expectedPowerSource,
+        bool ownedLifecycleRestore,
+        bool allowOwnedJournalCleanup,
+        bool allowIntentRebase,
+        bool validationOnly,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedJournal is not null)
+        {
+            HyperBoostOwnershipJournalLoadResult load;
+            try
+            {
+                load = await hyperBoostOwnershipJournalStore
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return ThermalRetryAdmission.Block(
+                    $"The durable HyperBoost transition journal could not be inspected before submission: {exception.Message}");
+            }
+            if (load.Invalid || load.Journal != expectedJournal)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return ThermalRetryAdmission.Block(
+                    "The durable HyperBoost transition journal changed before submission.");
+            }
+        }
+
+        if (HyperBoostTransitionWriteBlockReason(
+                expectedIntent,
+                expectedOwnershipGeneration,
+                expectedPowerGeneration,
+                ownedLifecycleRestore,
+                allowOwnedJournalCleanup,
+                allowIntentRebase) is { } initialBlock)
+        {
+            return ThermalRetryAdmission.Block(initialBlock);
+        }
+
+        try
+        {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(cancellationToken);
+            if (powerSource != expectedPowerSource
+                || powerSource == PowerSource.ExternalUnknown)
+            {
+                return ThermalRetryAdmission.Block(
+                    "The confirmed power destination changed before HyperBoost transition submission.");
+            }
+
+            if (HyperBoostTransitionWriteBlockReason(
+                    expectedIntent,
+                    expectedOwnershipGeneration,
+                    expectedPowerGeneration,
+                    ownedLifecycleRestore,
+                    allowOwnedJournalCleanup,
+                    allowIntentRebase) is { } refreshedBlock)
+            {
+                return ThermalRetryAdmission.Block(refreshedBlock);
+            }
+
+            bool hyperBoostCommand = purpose == ThermalTransitionStepPurpose.HyperBoost;
+            if (hyperBoostCommand
+                && enabled
+                && hyperBoostPadDiscoverySource.Observe()
+                    != CoolingPadConnectionState.Absent)
+            {
+                return ThermalRetryAdmission.Block(
+                    "Fresh cooling-pad absence could not be confirmed before HyperBoost submission.");
+            }
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice admittedDevice)
+                || admittedDevice is not ISingleAttemptThermalDevice
+                || hyperBoostCommand
+                    && validationOnly
+                    && admittedDevice is not
+                        IPadlessHyperBoostLifecycleValidationDevice)
+            {
+                return ThermalRetryAdmission.Block(
+                    "The exact laptop identity and single-attempt thermal path could not be re-admitted before submission.");
+            }
+
+            DeviceCapabilities capabilities = await admittedDevice
+                .ReadCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!IsSupportedHyperBoostRestoreIntent(capabilities, expectedIntent))
+            {
+                return ThermalRetryAdmission.Block(
+                    "The saved HyperBoost thermal intent is no longer admitted for this exact device.");
+            }
+
+            if (hyperBoostCommand)
+            {
+                DeviceFeatureAccess? baseAccess = capabilities.HyperBoostBaseModes
+                        ?.AccessFor(baseMode)
+                    ?? (baseMode == PerformancePreset.Balanced
+                        ? capabilities.HyperBoostAccess
+                        : null);
+                if (capabilities.HyperBoostAccess
+                        != DeviceFeatureAccess.ReadWrite
+                    || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
+                    || enabled
+                        && (validationOnly
+                            ? capabilities.HyperBoostWithoutCoolingPadAccess
+                                is not (DeviceFeatureAccess.ReadWrite
+                                    or DeviceFeatureAccess.ObservedOnly)
+                            : capabilities.HyperBoostWithoutCoolingPadAccess
+                                != DeviceFeatureAccess.ReadWrite))
+                {
+                    return ThermalRetryAdmission.Block(
+                        "HyperBoost command admission changed before submission.");
+                }
+            }
+
+            if (expectedJournal is not null
+                && !await IsExpectedHyperBoostJournalCurrentAsync(
+                        expectedJournal,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return ThermalRetryAdmission.Block(
+                    "The durable HyperBoost transition journal changed before final submission.");
+            }
+
+            if (HyperBoostTransitionWriteBlockReason(
+                    expectedIntent,
+                    expectedOwnershipGeneration,
+                    expectedPowerGeneration,
+                    ownedLifecycleRestore,
+                    allowOwnedJournalCleanup,
+                    allowIntentRebase) is { } finalBlock)
+            {
+                return ThermalRetryAdmission.Block(finalBlock);
+            }
+
+            return ThermalRetryAdmission.Allow(admittedDevice);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalRetryAdmission.Block(
+                $"Read-only HyperBoost submission admission failed: {exception.Message}");
+        }
+    }
+
+    private async Task<ThermalRetryAdmission>
+        RevalidateHyperBoostTransitionRetryAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        HyperBoostRestoreIntent expectedIntent,
+        HyperBoostOwnershipJournal? expectedJournal,
+        long expectedOwnershipGeneration,
+        long expectedPowerGeneration,
+        PowerSource expectedPowerSource,
+        bool ownedLifecycleRestore,
+        bool allowOwnedJournalCleanup,
+        bool allowIntentRebase,
+        bool validationOnly,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedJournal is not null)
+        {
+            HyperBoostOwnershipJournalLoadResult load;
+            try
+            {
+                load = await hyperBoostOwnershipJournalStore
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return ThermalRetryAdmission.Block(
+                    $"The durable HyperBoost transition journal could not be inspected before the retry: {exception.Message}");
+            }
+            if (load.Invalid || load.Journal != expectedJournal)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return ThermalRetryAdmission.Block(
+                    "The durable HyperBoost transition journal changed before the retry.");
+            }
+        }
+
+        if (HyperBoostTransitionWriteBlockReason(
+                expectedIntent,
+                expectedOwnershipGeneration,
+                expectedPowerGeneration,
+                ownedLifecycleRestore,
+                allowOwnedJournalCleanup,
+                allowIntentRebase) is { } initialBlock)
+        {
+            return ThermalRetryAdmission.Block(initialBlock);
+        }
+
+        await transitionRetryDelay(
+                ThermalPreWriteRetryDelay,
+                cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(cancellationToken);
+            if (powerSource != expectedPowerSource
+                || powerSource == PowerSource.ExternalUnknown)
+            {
+                return ThermalRetryAdmission.Block(
+                    "The confirmed power destination changed before the HyperBoost retry.");
+            }
+
+            if (HyperBoostTransitionWriteBlockReason(
+                    expectedIntent,
+                    expectedOwnershipGeneration,
+                    expectedPowerGeneration,
+                    ownedLifecycleRestore,
+                    allowOwnedJournalCleanup,
+                    allowIntentRebase) is { } refreshedBlock)
+            {
+                return ThermalRetryAdmission.Block(refreshedBlock);
+            }
+
+            if (enabled
+                && hyperBoostPadDiscoverySource.Observe()
+                    != CoolingPadConnectionState.Absent)
+            {
+                return ThermalRetryAdmission.Block(
+                    "Fresh cooling-pad absence could not be confirmed before the HyperBoost retry.");
+            }
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice retryDevice))
+            {
+                return ThermalRetryAdmission.Block(
+                    "The exact laptop identity could not be re-admitted for the HyperBoost retry.");
+            }
+            if (retryDevice is not ISingleAttemptThermalDevice
+                || validationOnly
+                    && retryDevice is not IPadlessHyperBoostLifecycleValidationDevice)
+            {
+                return ThermalRetryAdmission.Block(
+                    "The verified device does not expose single-attempt HyperBoost writes.");
+            }
+
+            DeviceCapabilities capabilities = await retryDevice
+                .ReadCapabilitiesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            DeviceFeatureAccess? baseAccess = capabilities.HyperBoostBaseModes
+                    ?.AccessFor(baseMode)
+                ?? (baseMode == PerformancePreset.Balanced
+                    ? capabilities.HyperBoostAccess
+                    : null);
+            if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
+                || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
+                || !IsSupportedHyperBoostRestoreIntent(
+                    capabilities,
+                    expectedIntent)
+                || enabled
+                    && (validationOnly
+                        ? capabilities.HyperBoostWithoutCoolingPadAccess
+                            is not (DeviceFeatureAccess.ReadWrite
+                                or DeviceFeatureAccess.ObservedOnly)
+                        : capabilities.HyperBoostWithoutCoolingPadAccess
+                            != DeviceFeatureAccess.ReadWrite))
+            {
+                return ThermalRetryAdmission.Block(
+                    "HyperBoost capability admission changed before the retry.");
+            }
+
+            if (expectedJournal is not null
+                && !await IsExpectedHyperBoostJournalCurrentAsync(
+                        expectedJournal,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return ThermalRetryAdmission.Block(
+                    "The durable HyperBoost transition journal changed before final retry submission.");
+            }
+
+            if (HyperBoostTransitionWriteBlockReason(
+                    expectedIntent,
+                    expectedOwnershipGeneration,
+                    expectedPowerGeneration,
+                    ownedLifecycleRestore,
+                    allowOwnedJournalCleanup,
+                    allowIntentRebase) is { } finalBlock)
+            {
+                return ThermalRetryAdmission.Block(finalBlock);
+            }
+
+            return ThermalRetryAdmission.Allow(retryDevice);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalRetryAdmission.Block(
+                $"Read-only HyperBoost retry admission failed: {exception.Message}");
+        }
+    }
+
+    private static bool IsHyperBoostCommandRetryEligible(
+        BladeWriteException exception) =>
+        exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+        && exception.FailurePhase is
+            BladeWriteFailurePhase.ThermalPreWriteRead or
+            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead;
+
+    private async Task ApplyHyperBoostCommandOnceAsync(
+        IBladeDevice device,
+        bool enabled,
+        PerformancePreset baseMode,
+        ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
+        CancellationToken cancellationToken)
+    {
+        if (enabled && hyperBoostPadDiscoverySource.Observe()
+            != CoolingPadConnectionState.Absent)
+        {
+            throw new CapabilityUnavailableException(
+                "Fresh cooling-pad absence could not be confirmed immediately before HyperBoost submission.");
+        }
+
+        if (lifecycleValidation is not null)
+        {
+            if (device is not IPadlessHyperBoostLifecycleValidationDevice validationDevice)
+            {
+                throw new CapabilityUnavailableException(
+                    "The exact validation-only device path is unavailable.");
+            }
+            await validationDevice.EnablePadlessHyperBoostLifecycleValidationOnceAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (device is not ISingleAttemptThermalDevice singleAttemptDevice)
+        {
+            throw new CapabilityUnavailableException(
+                "The verified device does not expose single-attempt HyperBoost writes.");
+        }
+        await singleAttemptDevice.SetHyperBoostOnceAsync(
+                enabled,
+                baseMode,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<ControlOperationResult> SetHyperBoostCoreAsync(
         bool enabled,
         long? expectedOwnershipGeneration,
@@ -3615,6 +4106,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool baselineTransitionCompleted = false;
         bool hyperBoostWriteAttempted = false;
         bool finalHyperBoostReadbackCompleted = false;
+        bool ownedLifecycleRestore = false;
+        ThermalTransitionStepRunner? transitionRunner = null;
+        HyperBoostOwnershipJournal? preparedTransitionJournal = null;
         if (!operationGateAlreadyHeld)
         {
             await operationGate.WaitAsync(token).ConfigureAwait(false);
@@ -3646,7 +4140,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Blocked,
                     $"HyperBoost {transition} is blocked until competing-controller detection succeeds and no Razer controller is active.");
             }
-            bool ownedLifecycleRestore = !enabled
+            ownedLifecycleRestore = !enabled
                 && expectedOwnershipGeneration is not null
                 && ownsHyperBoost
                 && current.ConfirmedState?.HyperBoostActive == true
@@ -3803,40 +4297,65 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             writeBaseline = current;
             ownedDisableAttempt = !enabled && ownsHyperBoost;
+            long transitionOwnershipGeneration = hyperBoostOwnershipGeneration;
+            long transitionPowerGeneration = powerSourceGeneration;
+            PowerSource transitionPowerSource = enabled
+                ? current.ActivePowerSource
+                : exitPowerSourceOverride is { } transitionExitSource
+                    && expectedExitPowerSourceGeneration == powerSourceGeneration
+                        ? transitionExitSource
+                        : current.ActivePowerSource;
             if (enabled || ownedDisableAttempt)
             {
+                preparedTransitionJournal = new HyperBoostOwnershipJournal(
+                    enabled
+                        ? HyperBoostOwnershipJournalState.EnablePending
+                        : HyperBoostOwnershipJournalState.RestorePending,
+                    requestedBaseMode,
+                    journalRequiresCoolingPad,
+                    timeProvider.GetUtcNow())
+                {
+                    RestoreIntent = transitionIntent
+                        ?? ownedHyperBoostRestoreIntent
+                        ?? HyperBoostRestoreIntent.BalancedAutomatic,
+                };
                 await hyperBoostOwnershipJournalStore.WriteAsync(
-                        new HyperBoostOwnershipJournal(
-                            enabled
-                                ? HyperBoostOwnershipJournalState.EnablePending
-                                : HyperBoostOwnershipJournalState.RestorePending,
-                            requestedBaseMode,
-                            journalRequiresCoolingPad,
-                            timeProvider.GetUtcNow())
-                        {
-                            RestoreIntent = transitionIntent
-                                ?? ownedHyperBoostRestoreIntent
-                                ?? HyperBoostRestoreIntent.BalancedAutomatic,
-                        },
+                        preparedTransitionJournal,
                         token)
                     .ConfigureAwait(false);
                 ownershipJournalPrepared = true;
                 hyperBoostRestorePending = !enabled;
                 lastReportedRetainedHyperBoostRestoreJournal = null;
             }
+            transitionRunner = CreateHyperBoostTransitionRunner(
+                device,
+                enabled,
+                requestedBaseMode,
+                transitionIntent
+                    ?? ownedHyperBoostRestoreIntent
+                    ?? HyperBoostRestoreIntent.BalancedAutomatic,
+                preparedTransitionJournal,
+                transitionOwnershipGeneration,
+                transitionPowerGeneration,
+                transitionPowerSource,
+                ownedLifecycleRestore,
+                allowOwnedJournalCleanup: preparedTransitionJournal is not null,
+                validationOnly: lifecycleValidation is not null);
             if (enabled)
             {
-                var coordinator = new ControlCoordinator(
-                    device,
-                    device.ReadPerformanceFanStateAsync,
-                    resolveIndeterminatePerformanceWrites: true);
-                ScopedApplyOutcome automaticFans = await coordinator
-                    .ApplyFanControlOutcomeAsync(
+                ScopedApplyOutcome automaticFans = await transitionRunner
+                    .ApplyStepAsync(
+                        DeviceSubsystem.Fans,
+                        ThermalTransitionStepPurpose.AutomaticBridge,
+                        (stepCoordinator, cancellationToken) => stepCoordinator
+                            .ApplyFanControlOutcomeAsync(
                         FanControlSettings.FromLegacy(FanMode.Automatic),
+                                cancellationToken),
                         token)
                     .ConfigureAwait(false);
+                transitionDevice = transitionRunner.CurrentDevice;
                 automaticFans = await ResolveIndeterminateHyperBoostFanBaselineAsync(
-                        device,
+                        transitionRunner.CurrentDevice,
                         confirmed.Fans,
                         automaticFans,
                         token)
@@ -3848,20 +4367,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             automaticFans,
                             requestedBaseMode,
                             journalRequiresCoolingPad,
-                            device,
+                            transitionRunner.CurrentDevice,
                             transitionIntent!,
-                            baselineChanged: false)
+                            baselineChanged: false,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 baselineTransitionChanged = automaticFans.Result.Status
                     == ControlResultStatus.Applied;
 
-                ScopedApplyOutcome balancedPerformance = await coordinator
-                    .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
-                        PerformancePreset.Balanced,
-                        customPerformance: null,
+                ScopedApplyOutcome balancedPerformance = await transitionRunner
+                    .ApplyStepAsync(
+                        DeviceSubsystem.Performance,
+                        ThermalTransitionStepPurpose.BalancedBridge,
+                        (stepCoordinator, cancellationToken) => stepCoordinator
+                            .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
+                                PerformancePreset.Balanced,
+                                customPerformance: null,
+                                cancellationToken),
                         token)
                     .ConfigureAwait(false);
+                transitionDevice = transitionRunner.CurrentDevice;
                 if (!HyperBoostBaselineStepSucceeded(balancedPerformance))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -3869,41 +4395,56 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             balancedPerformance,
                             requestedBaseMode,
                             journalRequiresCoolingPad,
-                            device,
+                            transitionRunner.CurrentDevice,
                             transitionIntent!,
-                            baselineTransitionChanged)
+                            baselineTransitionChanged,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 baselineTransitionChanged |= balancedPerformance.Result.Status
                     == ControlResultStatus.Applied;
 
                 baselineTransitionCompleted = true;
-                if (lifecycleValidation is not null)
-                {
-                    hyperBoostWriteAttempted = true;
-                    await ((IPadlessHyperBoostLifecycleValidationDevice)device)
-                        .EnablePadlessHyperBoostLifecycleValidationAsync(token)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    hyperBoostWriteAttempted = true;
-                    await device.SetHyperBoostAsync(
-                            enabled: true,
-                            PerformancePreset.Balanced,
-                            token)
-                        .ConfigureAwait(false);
-                }
             }
-            else
-            {
-                hyperBoostWriteAttempted = true;
-                await device.SetHyperBoostAsync(enabled, requestedBaseMode, token)
-                    .ConfigureAwait(false);
-            }
+            await transitionRunner.ApplyCommandStepAsync(
+                    HyperBoostThermalComponents,
+                    ThermalTransitionStepPurpose.HyperBoost,
+                    async (attemptDevice, cancellationToken) =>
+                    {
+                        try
+                        {
+                            await ApplyHyperBoostCommandOnceAsync(
+                                    attemptDevice,
+                                    enabled,
+                                    requestedBaseMode,
+                                    lifecycleValidation,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                            hyperBoostWriteAttempted = true;
+                        }
+                        catch (BladeWriteException exception) when (
+                            exception.SubmissionState
+                                == WriteSubmissionState.KnownNotApplied)
+                        {
+                            throw;
+                        }
+                        catch (CapabilityUnavailableException)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            hyperBoostWriteAttempted = true;
+                            throw;
+                        }
+                    },
+                    IsHyperBoostCommandRetryEligible,
+                    token)
+                .ConfigureAwait(false);
+            transitionDevice = transitionRunner.CurrentDevice;
             setterCompleted = true;
             ConfirmedDeviceState readback = await ReadHyperBoostThermalStateAsync(
-                    device,
+                    transitionRunner.CurrentDevice,
                     current.ConfirmedState,
                     token)
                 .ConfigureAwait(false);
@@ -3925,10 +4466,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         || !enabled && restoreUserIntent))
                 {
                     failedTransitionRestore = await RestoreHyperBoostIntentAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             transitionIntent,
                             readback,
-                            CancellationToken.None)
+                            CancellationToken.None,
+                            transitionRunner: transitionRunner)
                         .ConfigureAwait(false);
                     if (failedTransitionRestore.Succeeded)
                     {
@@ -3938,7 +4480,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     {
                         FailedHyperBoostRestoreObservation failureObservation =
                             await CaptureFailedHyperBoostRestoreObservationAsync(
-                                    device,
+                                    transitionRunner.CurrentDevice,
                                     transitionIntent,
                                     failedTransitionRestore,
                                     readback)
@@ -3953,7 +4495,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (ownershipJournalPrepared)
                 {
                     journalRecovered = failedTransitionRestore is { Succeeded: false }
-                        ? await TryWriteHyperBoostOwnershipJournalAsync(
+                        ? !hyperBoostJournalSafetyBlock
+                            && await TryWriteHyperBoostOwnershipJournalAsync(
                                 HyperBoostOwnershipJournalState.RestorePending,
                                 requestedBaseMode,
                                 journalRequiresCoolingPad,
@@ -4049,18 +4592,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 HyperBoostIntentRestorationResult restoration =
                     await RestoreHyperBoostIntentAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             transitionIntent,
                             readback,
                             token,
-                            confirmIndeterminateManualRestore: true)
+                            confirmIndeterminateManualRestore: true,
+                            transitionRunner: transitionRunner)
                         .ConfigureAwait(false);
                 readback = restoration.Readback ?? readback;
                 if (!restoration.Succeeded)
                 {
                     FailedHyperBoostRestoreObservation failureObservation =
                         await CaptureFailedHyperBoostRestoreObservationAsync(
-                                device,
+                                transitionRunner.CurrentDevice,
                                 transitionIntent,
                                 restoration,
                                 readback)
@@ -4074,21 +4618,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             ? HyperBoostRestoreRetryDisposition
                                 .DeferredPreSubmission
                             : HyperBoostRestoreRetryDisposition.None;
-                    await TryWriteHyperBoostOwnershipJournalAsync(
-                            HyperBoostOwnershipJournalState.RestorePending,
-                            requestedBaseMode,
-                            journalRequiresCoolingPad,
-                            "The failed HyperBoost exit restore could not preserve its fresh recovery baseline.",
-                            transitionIntent,
-                            failureObservation.RecoveryBaseline,
-                            retryDisposition,
-                            retryDisposition
-                                == HyperBoostRestoreRetryDisposition
-                                    .DeferredPreSubmission
-                                    ? HyperBoostRestoreRetryTarget
-                                        .CurrentPowerDestination
-                                    : HyperBoostRestoreRetryTarget.None)
-                        .ConfigureAwait(false);
+                    if (!hyperBoostJournalSafetyBlock)
+                    {
+                        await TryWriteHyperBoostOwnershipJournalAsync(
+                                HyperBoostOwnershipJournalState.RestorePending,
+                                requestedBaseMode,
+                                journalRequiresCoolingPad,
+                                "The failed HyperBoost exit restore could not preserve its fresh recovery baseline.",
+                                transitionIntent,
+                                failureObservation.RecoveryBaseline,
+                                retryDisposition,
+                                retryDisposition
+                                    == HyperBoostRestoreRetryDisposition
+                                        .DeferredPreSubmission
+                                        ? HyperBoostRestoreRetryTarget
+                                            .CurrentPowerDestination
+                                        : HyperBoostRestoreRetryTarget.None)
+                            .ConfigureAwait(false);
+                    }
                     hyperBoostJournalSafetyBlock = true;
                     hyperBoostRestorePending = true;
                     hyperBoostOwnershipGeneration++;
@@ -4130,12 +4677,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (!journalFinalized)
                 {
                     return await RestoreAfterHyperBoostJournalFailureAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             current,
                             readback,
                             requestedBaseMode,
                             requiresCoolingPad: false,
-                            transitionIntent!)
+                            transitionIntent!,
+                            preparedTransitionJournal!,
+                            transitionRunner)
                     .ConfigureAwait(false);
                 }
             }
@@ -4160,6 +4709,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedHyperBoostRestoreIntent = enabled ? transitionIntent : null;
             pendingIndeterminateHyperBoostEntryIntent = null;
             pendingIndeterminateHyperBoostExitIntent = null;
+            pendingIndeterminateHyperBoostRecoveryState = null;
             ownedHyperBoostRequiresCoolingPad = false;
             pendingOwnedHyperBoostPowerBoundaryExit = false;
             ownedHyperBoostPowerBoundaryExitSubmitted = false;
@@ -4210,6 +4760,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (setterCompleted
                 || exception is IntentionalWriteCanceledException)
             {
+                if (transitionRunner is not null)
+                {
+                    pendingIndeterminateHyperBoostRecoveryState =
+                        transitionRunner.CaptureRecoveryState();
+                }
                 if (ownedDisableAttempt)
                 {
                     pendingIndeterminateHyperBoostExitIntent = transitionIntent
@@ -4234,7 +4789,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode,
-                            journalRequiresCoolingPad)
+                            journalRequiresCoolingPad,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 else
@@ -4262,7 +4818,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode,
-                            journalRequiresCoolingPad)
+                            journalRequiresCoolingPad,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 else
@@ -4296,6 +4853,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             HyperBoostIntentRestorationResult? failedEntryRestoration = null;
             if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
+                if (transitionRunner is not null)
+                {
+                    pendingIndeterminateHyperBoostRecoveryState =
+                        transitionRunner.CaptureRecoveryState();
+                }
                 if (ownedDisableAttempt)
                 {
                     pendingIndeterminateHyperBoostExitIntent = transitionIntent
@@ -4316,6 +4878,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (hyperBoostWriteAttempted
                     && !setterCompleted
                     && transitionDevice is not null
+                    && transitionRunner is not null
                     && writeBaseline?.ConfirmedState is not null)
                 {
                     if (token.IsCancellationRequested)
@@ -4330,7 +4893,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         await TryResolveIndeterminateHyperBoostWriteAsync(
                                 enabled,
                                 transitionDevice,
-                                writeBaseline)
+                                writeBaseline,
+                                transitionRunner,
+                                preparedTransitionJournal,
+                                ownedLifecycleRestore)
                             .ConfigureAwait(false);
                     if (resolved is not null)
                     {
@@ -4350,7 +4916,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode,
-                            journalRequiresCoolingPad)
+                            journalRequiresCoolingPad,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 else
@@ -4391,6 +4958,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (setterCompleted)
             {
+                if (transitionRunner is not null)
+                {
+                    pendingIndeterminateHyperBoostRecoveryState =
+                        transitionRunner.CaptureRecoveryState();
+                }
                 if (ownedDisableAttempt)
                 {
                     pendingIndeterminateHyperBoostExitIntent = transitionIntent
@@ -4403,13 +4975,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "HyperBoost was submitted, but final readback failed. Thermal writes remain blocked until a fresh observation resolves it.");
                 if (!finalHyperBoostReadbackCompleted
                     && transitionDevice is not null
+                    && transitionRunner is not null
                     && writeBaseline?.ConfirmedState is not null)
                 {
                     ControlOperationResult? resolved =
                         await TryResolveIndeterminateHyperBoostWriteAsync(
                                 enabled,
                                 transitionDevice,
-                                writeBaseline)
+                                writeBaseline,
+                                transitionRunner,
+                                preparedTransitionJournal,
+                                ownedLifecycleRestore)
                             .ConfigureAwait(false);
                     if (resolved is not null)
                     {
@@ -4421,6 +4997,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 if (enabled && baselineTransitionCompleted)
                 {
+                    if (transitionRunner is not null)
+                    {
+                        pendingIndeterminateHyperBoostRecoveryState =
+                            transitionRunner.CaptureRecoveryState();
+                    }
                     LatchPendingHyperBoost(writeBaseline, enabled, pendingBaseMode);
                     PublishPendingHyperBoostStatus(
                         "The HyperBoost entry baseline was established, but the final submission state is unknown. Thermal writes remain blocked until a fresh observation resolves it.");
@@ -4434,7 +5015,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionDevice,
                             transitionIntent,
                             pendingBaseMode,
-                            journalRequiresCoolingPad)
+                            journalRequiresCoolingPad,
+                            transitionRunner)
                         .ConfigureAwait(false);
                 }
                 else
@@ -4763,12 +5345,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool requiresCoolingPad,
             IBladeDevice device,
             HyperBoostRestoreIntent intent,
-            bool baselineChanged)
+            bool baselineChanged,
+            ThermalTransitionStepRunner transitionRunner)
     {
         ControlOperationStatus status;
         string message;
         if (outcome.WriteAttempted)
         {
+            pendingIndeterminateHyperBoostRecoveryState =
+                transitionRunner.CaptureRecoveryState();
             LatchPendingHyperBoost(
                 baseline,
                 enabled: true,
@@ -4787,7 +5372,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         device,
                         intent,
                         baseMode,
-                        requiresCoolingPad)
+                        requiresCoolingPad,
+                        transitionRunner)
                     .ConfigureAwait(false);
                 if (!restoration.Succeeded)
                 {
@@ -4827,12 +5413,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             HyperBoostRestoreIntent intent,
             ConfirmedDeviceState? preservedState,
             CancellationToken cancellationToken,
-            bool confirmIndeterminateManualRestore = false)
+            bool confirmIndeterminateManualRestore = false,
+            ThermalTransitionStepRunner? transitionRunner = null)
     {
-        var coordinator = new ControlCoordinator(
-            device,
-            device.ReadPerformanceFanStateAsync,
-            resolveIndeterminatePerformanceWrites: true);
+        ControlCoordinator coordinator = transitionRunner is null
+            ? new ControlCoordinator(
+                device,
+                device.ReadPerformanceFanStateAsync,
+                resolveIndeterminatePerformanceWrites: true)
+            : transitionRunner.CreateRecipeCoordinator();
+        Task<ScopedApplyOutcome> ApplyStepAsync(
+            DeviceSubsystem component,
+            ThermalTransitionStepPurpose purpose,
+            Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> apply) =>
+            transitionRunner is null
+                ? apply(coordinator, cancellationToken)
+                : transitionRunner.ApplyStepAsync(
+                    component,
+                    purpose,
+                    apply,
+                    cancellationToken);
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
             ScopedApplyOutcome fans = await coordinator
@@ -4849,7 +5449,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // began from the confirmed Automatic HyperBoost baseline.
                 // Restart recovery cannot distinguish exact manual targets.
                 fans = await ResolveIndeterminateHyperBoostManualFanRestorationAsync(
-                        device,
+                        transitionRunner?.CurrentDevice ?? device,
                         FanControlSettings.FromLegacy(FanMode.Automatic),
                         intent.FanControl,
                         fans,
@@ -4872,10 +5472,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (preservedState?.Fans is { } preservedFans
             && DeviceSubsystemOrder.IsManualFanMode(preservedFans))
         {
-            ScopedApplyOutcome automaticBaseline = await coordinator
-                .ApplyFanControlOutcomeAsync(
-                    FanControlSettings.FromLegacy(FanMode.Automatic),
-                    cancellationToken)
+            ScopedApplyOutcome automaticBaseline = await ApplyStepAsync(
+                    DeviceSubsystem.Fans,
+                    ThermalTransitionStepPurpose.AutomaticBridge,
+                    (stepCoordinator, stepToken) => stepCoordinator
+                        .ApplyFanControlOutcomeAsync(
+                            FanControlSettings.FromLegacy(FanMode.Automatic),
+                            stepToken))
                 .ConfigureAwait(false);
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
@@ -4896,12 +5499,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     IsDeferredHyperBoostRestoreRetryEligible(automaticBaseline));
             }
 
-            ScopedApplyOutcome restoredPerformance = await coordinator
-                .ApplyPerformanceOutcomeAsync(
-                    intent.Performance,
-                    intent.CustomPerformance,
-                    intent.GpuClockTuning,
-                    cancellationToken)
+            ScopedApplyOutcome restoredPerformance = await ApplyStepAsync(
+                    DeviceSubsystem.Performance,
+                    ThermalTransitionStepPurpose.Restoration,
+                    (stepCoordinator, stepToken) => stepCoordinator
+                        .ApplyPerformanceOutcomeAsync(
+                            intent.Performance,
+                            intent.CustomPerformance,
+                            intent.GpuClockTuning,
+                            stepToken))
                 .ConfigureAwait(false);
             return new HyperBoostIntentRestorationResult(
                 HyperBoostBaselineStepSucceeded(restoredPerformance),
@@ -4912,12 +5518,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IsDeferredHyperBoostRestoreRetryEligible(restoredPerformance));
         }
 
-        ScopedApplyOutcome performance = await coordinator
-            .ApplyPerformanceOutcomeAsync(
-                intent.Performance,
-                intent.CustomPerformance,
-                intent.GpuClockTuning,
-                cancellationToken)
+        ScopedApplyOutcome performance = await ApplyStepAsync(
+                DeviceSubsystem.Performance,
+                ThermalTransitionStepPurpose.Restoration,
+                (stepCoordinator, stepToken) => stepCoordinator
+                    .ApplyPerformanceOutcomeAsync(
+                        intent.Performance,
+                        intent.CustomPerformance,
+                        intent.GpuClockTuning,
+                        stepToken))
             .ConfigureAwait(false);
         if (!HyperBoostBaselineStepSucceeded(performance))
         {
@@ -4928,8 +5537,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IsDeferredHyperBoostRestoreRetryEligible(performance));
         }
 
-        ScopedApplyOutcome automaticFans = await coordinator
-            .ApplyFanControlOutcomeAsync(intent.FanControl, cancellationToken)
+        ScopedApplyOutcome automaticFans = await ApplyStepAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.Restoration,
+                (stepCoordinator, stepToken) => stepCoordinator
+                    .ApplyFanControlOutcomeAsync(intent.FanControl, stepToken))
             .ConfigureAwait(false);
         UpdateOwnedFanControlSettings(
             intent.FanControl,
@@ -5007,8 +5619,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         TryResolveIndeterminateHyperBoostWriteAsync(
         bool enabled,
         IBladeDevice device,
-        ServiceStatusSnapshot baseline)
+        ServiceStatusSnapshot baseline,
+        ThermalTransitionStepRunner transitionRunner,
+        HyperBoostOwnershipJournal? expectedJournal,
+        bool ownedLifecycleRestore)
     {
+        device = transitionRunner.CurrentDevice;
         PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
                 CancellationToken.None)
             .ConfigureAwait(false);
@@ -5039,24 +5655,47 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         ObserveAutomaticState(readback);
         ReconcilePendingWriteConfirmations(readback, powerSource, device);
+        if (readback.HyperBoostActive == false)
+        {
+            ThermalTransitionStepRunner? rebasedRunner =
+                await CreateImmediateHyperBoostReconciliationRunnerAsync(
+                        enabled,
+                        device,
+                        powerSource,
+                        readback,
+                        transitionRunner,
+                        expectedJournal,
+                        ownedLifecycleRestore,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            if (rebasedRunner is null)
+            {
+                return null;
+            }
+            transitionRunner = rebasedRunner;
+            device = transitionRunner.CurrentDevice;
+        }
         IndeterminateHyperBoostReconciliation reconciliation = enabled
             ? await ReconcileIndeterminateHyperBoostEntryAsync(
                     readback,
                     powerSource,
                     device,
-                    CancellationToken.None)
+                    CancellationToken.None,
+                    transitionRunner)
                 .ConfigureAwait(false)
             : await ReconcileIndeterminateHyperBoostExitAsync(
                     readback,
                     powerSource,
                     device,
-                    CancellationToken.None)
+                    CancellationToken.None,
+                    transitionRunner)
                 .ConfigureAwait(false);
         if (reconciliation.Resolution == IndeterminateHyperBoostResolution.None
             || reconciliation.Message is null)
         {
             return null;
         }
+        pendingIndeterminateHyperBoostRecoveryState = null;
 
         PublishIfChanged(GetStatus() with
         {
@@ -5081,6 +5720,164 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? reconciliation.RestoredPerformance
                     : null,
         };
+    }
+
+    private async Task<ThermalTransitionStepRunner?>
+        CreateImmediateHyperBoostReconciliationRunnerAsync(
+        bool enabled,
+        IBladeDevice device,
+        PowerSource powerSource,
+        ConfirmedDeviceState confirmed,
+        ThermalTransitionStepRunner previousRunner,
+        HyperBoostOwnershipJournal? expectedJournal,
+        bool ownedLifecycleRestore,
+        CancellationToken cancellationToken)
+    {
+        HyperBoostRestoreIntent? savedIntent = enabled
+            ? pendingIndeterminateHyperBoostEntryIntent
+            : pendingIndeterminateHyperBoostExitIntent;
+        if (savedIntent is null)
+        {
+            return null;
+        }
+
+        HyperBoostOwnershipJournalLoadResult load;
+        try
+        {
+            load = await hyperBoostOwnershipJournalStore
+                .LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
+        HyperBoostOwnershipJournalState expectedState = enabled
+            ? HyperBoostOwnershipJournalState.EnablePending
+            : HyperBoostOwnershipJournalState.RestorePending;
+        if (load.Invalid
+            || expectedJournal is null
+            || load.Journal != expectedJournal
+            || expectedJournal.State != expectedState
+            || expectedJournal.RestoreIntent != savedIntent)
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
+        ThermalTransitionRecoveryState previousRecoveryState =
+            previousRunner.CaptureRecoveryState();
+        ThermalTransitionRecoveryState recoveryState =
+            previousRecoveryState with
+            {
+                Consumed = true,
+                BlockReason = previousRecoveryState.BlockReason
+                    ?? "A possible HyperBoost submission was resolved by immediate readback; compensation remains single-attempt.",
+            };
+        HyperBoostRestoreIntent destinationIntent =
+            ResolveIndeterminateHyperBoostRestoreIntent(
+                powerSource,
+                savedIntent,
+                confirmed);
+        return CreateHyperBoostTransitionRunner(
+            device,
+            enabled,
+            baseMode: enabled
+                ? pendingIndeterminateHyperBoostEntryBaseMode
+                : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced,
+            expectedIntent: destinationIntent,
+            expectedJournal: expectedJournal,
+            expectedOwnershipGeneration: hyperBoostOwnershipGeneration,
+            expectedPowerGeneration: powerSourceGeneration,
+            expectedPowerSource: powerSource,
+            ownedLifecycleRestore: ownedLifecycleRestore,
+            allowOwnedJournalCleanup: true,
+            validationOnly: false,
+            allowIntentRebase: true,
+            recoveryState: recoveryState);
+    }
+
+    private HyperBoostRestoreIntent ResolveIndeterminateHyperBoostRestoreIntent(
+        PowerSource powerSource,
+        HyperBoostRestoreIntent savedIntent,
+        ConfirmedDeviceState confirmed) => powerSource switch
+        {
+            PowerSource.PluggedIn => savedIntent,
+            PowerSource.Battery or PowerSource.UsbC =>
+                CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed)),
+            _ => HyperBoostRestoreIntent.BalancedAutomatic,
+        };
+
+    private async Task<ThermalTransitionStepRunner?>
+        CreateDelayedHyperBoostReconciliationRunnerAsync(
+        IBladeDevice device,
+        PowerSource powerSource,
+        CancellationToken cancellationToken)
+    {
+        HyperBoostRestoreIntent? expectedIntent =
+            pendingIndeterminateHyperBoostEntryIntent
+            ?? pendingIndeterminateHyperBoostExitIntent;
+        if (expectedIntent is null)
+        {
+            return null;
+        }
+
+        HyperBoostOwnershipJournalLoadResult load;
+        try
+        {
+            load = await hyperBoostOwnershipJournalStore
+                .LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
+        HyperBoostOwnershipJournalState expectedState =
+            pendingIndeterminateHyperBoostEntryIntent is not null
+                ? HyperBoostOwnershipJournalState.EnablePending
+                : HyperBoostOwnershipJournalState.RestorePending;
+        if (load.Invalid
+            || load.Journal is not { } expectedJournal
+            || expectedJournal.State != expectedState
+            || expectedJournal.RestoreIntent != expectedIntent)
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
+        ThermalTransitionRecoveryState recoveryState =
+            pendingIndeterminateHyperBoostRecoveryState
+            ?? new ThermalTransitionRecoveryState(
+                Guid.NewGuid(),
+                Consumed: true,
+                "A delayed HyperBoost reconciliation cannot create a new transition retry lease.");
+        recoveryState = recoveryState with
+        {
+            Consumed = true,
+            BlockReason = recoveryState.BlockReason
+                ?? "A possible HyperBoost submission was resolved by delayed readback; compensation remains single-attempt.",
+        };
+
+        return CreateHyperBoostTransitionRunner(
+            device,
+            enabled: pendingIndeterminateHyperBoostEntryIntent is not null,
+            baseMode: pendingIndeterminateHyperBoostEntryIntent is not null
+                ? pendingIndeterminateHyperBoostEntryBaseMode
+                : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced,
+            expectedIntent: expectedIntent,
+            expectedJournal: expectedJournal,
+            expectedOwnershipGeneration: hyperBoostOwnershipGeneration,
+            expectedPowerGeneration: powerSourceGeneration,
+            expectedPowerSource: powerSource,
+            ownedLifecycleRestore: true,
+            allowOwnedJournalCleanup: true,
+            validationOnly: false,
+            recoveryState: recoveryState);
     }
 
     private static ConfirmedDeviceState? MergeHyperBoostThermalState(
@@ -5115,7 +5912,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed,
             PowerSource powerSource,
             IBladeDevice device,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ThermalTransitionStepRunner? transitionRunner = null)
     {
         if (pendingIndeterminateHyperBoostExitIntent is not { } savedIntent)
         {
@@ -5175,14 +5973,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IndeterminateHyperBoostResolution.Unsafe);
         }
 
-        DesiredDeviceState currentDesired = Automation.Resolve(confirmed);
-        HyperBoostRestoreIntent restoreIntent = powerSource switch
-        {
-            PowerSource.PluggedIn => savedIntent,
-            PowerSource.Battery or PowerSource.UsbC =>
-                CreateHyperBoostRestoreIntent(currentDesired),
-            _ => HyperBoostRestoreIntent.BalancedAutomatic,
-        };
+        HyperBoostRestoreIntent restoreIntent =
+            ResolveIndeterminateHyperBoostRestoreIntent(
+                powerSource,
+                savedIntent,
+                confirmed);
         PerformancePreset recoveryBaseMode = ownedHyperBoostBaseMode
             ?? PerformancePreset.Balanced;
         bool recoveryRequiresCoolingPad = ownedHyperBoostRequiresCoolingPad;
@@ -5191,8 +5986,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     device,
                     restoreIntent,
                     confirmed,
-                    cancellationToken)
+                    cancellationToken,
+                    transitionRunner: transitionRunner)
                 .ConfigureAwait(false);
+        device = transitionRunner?.CurrentDevice ?? device;
         pendingIndeterminateHyperBoostExitIntent = null;
         ConfirmedDeviceState restored = restoration.Readback
             ?? confirmed;
@@ -5212,22 +6009,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && failureObservation.RecoveryBaseline is not null
                     ? HyperBoostRestoreRetryDisposition.DeferredPreSubmission
                     : HyperBoostRestoreRetryDisposition.None;
-            await TryWriteHyperBoostOwnershipJournalAsync(
-                    HyperBoostOwnershipJournalState.RestorePending,
-                    recoveryBaseMode,
-                    recoveryRequiresCoolingPad,
-                    "The indeterminate HyperBoost exit restore could not preserve its fresh recovery baseline.",
-                    restoreIntent,
-                    failureObservation.RecoveryBaseline,
-                    retryDisposition,
-                    retryDisposition
-                        == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
-                            ? powerSource == PowerSource.PluggedIn
-                                ? HyperBoostRestoreRetryTarget.ExactJournalIntent
-                                : HyperBoostRestoreRetryTarget
-                                    .CurrentPowerDestination
-                            : HyperBoostRestoreRetryTarget.None)
-                .ConfigureAwait(false);
+            if (!hyperBoostJournalSafetyBlock)
+            {
+                await TryWriteHyperBoostOwnershipJournalAsync(
+                        HyperBoostOwnershipJournalState.RestorePending,
+                        recoveryBaseMode,
+                        recoveryRequiresCoolingPad,
+                        "The indeterminate HyperBoost exit restore could not preserve its fresh recovery baseline.",
+                        restoreIntent,
+                        failureObservation.RecoveryBaseline,
+                        retryDisposition,
+                        retryDisposition
+                            == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
+                                ? powerSource == PowerSource.PluggedIn
+                                    ? HyperBoostRestoreRetryTarget.ExactJournalIntent
+                                    : HyperBoostRestoreRetryTarget
+                                        .CurrentPowerDestination
+                                : HyperBoostRestoreRetryTarget.None)
+                    .ConfigureAwait(false);
+            }
             hyperBoostJournalSafetyBlock = true;
             string failedMessage =
                 $"Fresh readback confirmed that HyperBoost is off after an indeterminate disable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked."
@@ -5274,7 +6074,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed,
             PowerSource powerSource,
             IBladeDevice device,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ThermalTransitionStepRunner? transitionRunner = null)
     {
         if (pendingIndeterminateHyperBoostEntryIntent is not { } savedIntent)
         {
@@ -5344,21 +6145,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 IndeterminateHyperBoostResolution.Unsafe);
         }
 
-        DesiredDeviceState currentDesired = Automation.Resolve(confirmed);
-        HyperBoostRestoreIntent restoreIntent = powerSource switch
-        {
-            PowerSource.PluggedIn => savedIntent,
-            PowerSource.Battery or PowerSource.UsbC =>
-                CreateHyperBoostRestoreIntent(currentDesired),
-            _ => HyperBoostRestoreIntent.BalancedAutomatic,
-        };
+        HyperBoostRestoreIntent restoreIntent =
+            ResolveIndeterminateHyperBoostRestoreIntent(
+                powerSource,
+                savedIntent,
+                confirmed);
         HyperBoostIntentRestorationResult restoration =
             await RestoreHyperBoostIntentAsync(
                     device,
                     restoreIntent,
                     confirmed,
-                    cancellationToken)
+                    cancellationToken,
+                    transitionRunner: transitionRunner)
                 .ConfigureAwait(false);
+        device = transitionRunner?.CurrentDevice ?? device;
         pendingIndeterminateHyperBoostEntryIntent = null;
         ConfirmedDeviceState restored = restoration.Readback
             ?? confirmed;
@@ -5373,7 +6173,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         restored)
                     .ConfigureAwait(false);
             restored = failureObservation.State;
-            bool restoreMarkerWritten = powerSource == PowerSource.PluggedIn
+            bool restoreMarkerWritten = !hyperBoostJournalSafetyBlock
+                && powerSource == PowerSource.PluggedIn
                 && await TryWriteHyperBoostOwnershipJournalAsync(
                             HyperBoostOwnershipJournalState.RestorePending,
                             baseMode,
@@ -5436,15 +6237,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IBladeDevice device,
         HyperBoostRestoreIntent intent,
         PerformancePreset baseMode,
-        bool requiresCoolingPad)
+        bool requiresCoolingPad,
+        ThermalTransitionStepRunner? transitionRunner = null)
     {
+        device = transitionRunner?.CurrentDevice ?? device;
         HyperBoostIntentRestorationResult restoration =
             await RestoreHyperBoostIntentAsync(
                     device,
                     intent,
                     GetStatus().ConfirmedState,
-                    CancellationToken.None)
+                    CancellationToken.None,
+                    transitionRunner: transitionRunner)
                 .ConfigureAwait(false);
+        device = transitionRunner?.CurrentDevice ?? device;
         if (restoration.Succeeded)
         {
             bool journalRecovered = await RestorePreparedHyperBoostJournalAsync(
@@ -5479,14 +6284,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     restoration,
                     restoration.Readback ?? GetStatus().ConfirmedState!)
                 .ConfigureAwait(false);
-        bool recoveryRecorded = await TryWriteHyperBoostOwnershipJournalAsync(
-                HyperBoostOwnershipJournalState.RestorePending,
-                baseMode,
-                requiresCoolingPad,
-                "The failed HyperBoost entry baseline restore could not preserve its fresh recovery baseline.",
-                intent,
-                failureObservation.RecoveryBaseline)
-            .ConfigureAwait(false);
+        bool recoveryRecorded = !hyperBoostJournalSafetyBlock
+            && await TryWriteHyperBoostOwnershipJournalAsync(
+                    HyperBoostOwnershipJournalState.RestorePending,
+                    baseMode,
+                    requiresCoolingPad,
+                    "The failed HyperBoost entry baseline restore could not preserve its fresh recovery baseline.",
+                    intent,
+                    failureObservation.RecoveryBaseline)
+                .ConfigureAwait(false);
         hyperBoostJournalSafetyBlock = true;
         hyperBoostRestorePending = recoveryRecorded;
         string message =
@@ -5508,16 +6314,55 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         };
     }
 
-    private Task<bool> RestorePreparedHyperBoostJournalAsync(
+    private async Task<bool> RestorePreparedHyperBoostJournalAsync(
         bool enabled,
-        PerformancePreset baseMode) => enabled
-        ? TryClearHyperBoostOwnershipJournalAsync(
-            "A non-submitted HyperBoost enable left a pending ownership journal that could not be cleared.")
-        : TryWriteHyperBoostOwnershipJournalAsync(
-            HyperBoostOwnershipJournalState.OwnedConfirmed,
-            baseMode,
-            ownedHyperBoostRequiresCoolingPad,
-            "A non-submitted HyperBoost restore left a pending ownership journal that could not be returned to owned state.");
+        PerformancePreset baseMode)
+    {
+        if (hyperBoostJournalSafetyBlock)
+        {
+            return false;
+        }
+
+        return enabled
+            ? await TryClearHyperBoostOwnershipJournalAsync(
+                    "A non-submitted HyperBoost enable left a pending ownership journal that could not be cleared.")
+                .ConfigureAwait(false)
+            : await TryWriteHyperBoostOwnershipJournalAsync(
+                    HyperBoostOwnershipJournalState.OwnedConfirmed,
+                    baseMode,
+                    ownedHyperBoostRequiresCoolingPad,
+                    "A non-submitted HyperBoost restore left a pending ownership journal that could not be returned to owned state.")
+                .ConfigureAwait(false);
+    }
+
+    private async Task<bool> IsExpectedHyperBoostJournalCurrentAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            HyperBoostOwnershipJournalLoadResult load =
+                await hyperBoostOwnershipJournalStore
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (!load.Invalid && load.Journal == expectedJournal)
+            {
+                return true;
+            }
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // The caller retains the existing journal and blocks further writes.
+        }
+
+        hyperBoostJournalSafetyBlock = true;
+        return false;
+    }
 
     private async Task<bool> TryWriteHyperBoostOwnershipJournalAsync(
         HyperBoostOwnershipJournalState state,
@@ -5572,17 +6417,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState activeReadback,
             PerformancePreset baseMode,
             bool requiresCoolingPad,
-            HyperBoostRestoreIntent restoreIntent)
+            HyperBoostRestoreIntent restoreIntent,
+            HyperBoostOwnershipJournal expectedJournal,
+            ThermalTransitionStepRunner transitionRunner)
     {
+        device = transitionRunner.CurrentDevice;
         const string failurePrefix =
             "HyperBoost was activated, but durable ownership could not be recorded.";
         try
         {
-            await device.SetHyperBoostAsync(
-                    enabled: false,
-                    baseMode,
+            await transitionRunner.ApplyCommandStepAsync(
+                    HyperBoostThermalComponents,
+                    ThermalTransitionStepPurpose.HyperBoost,
+                    (attemptDevice, cancellationToken) =>
+                        ApplyHyperBoostCommandOnceAsync(
+                            attemptDevice,
+                            enabled: false,
+                            baseMode,
+                            lifecycleValidation: null,
+                            cancellationToken),
+                    IsHyperBoostCommandRetryEligible,
                     CancellationToken.None)
                 .ConfigureAwait(false);
+            device = transitionRunner.CurrentDevice;
             ConfirmedDeviceState restored = await ReadHyperBoostThermalStateAsync(
                     device,
                     baseline.ConfirmedState,
@@ -5601,8 +6458,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             device,
                             restoreIntent,
                             restored,
-                            CancellationToken.None)
+                            CancellationToken.None,
+                            transitionRunner: transitionRunner)
                         .ConfigureAwait(false);
+                device = transitionRunner.CurrentDevice;
                 restored = intentRestoration.Readback ?? restored;
                 if (!intentRestoration.Succeeded)
                 {
@@ -5614,8 +6473,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 restored)
                             .ConfigureAwait(false);
                     restored = failureObservation.State;
-                    bool recoveryRecorded =
-                        await TryWriteHyperBoostOwnershipJournalAsync(
+                    bool journalStillExact =
+                        await IsExpectedHyperBoostJournalCurrentAsync(
+                                expectedJournal,
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    bool recoveryRecorded = journalStillExact
+                        && await TryWriteHyperBoostOwnershipJournalAsync(
                                 HyperBoostOwnershipJournalState.RestorePending,
                                 baseMode,
                                 requiresCoolingPad,
@@ -5682,6 +6546,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 $"{failurePrefix} The one-shot restoration did not complete: {exception.Message}");
         }
 
+        pendingIndeterminateHyperBoostRecoveryState =
+            transitionRunner.CaptureRecoveryState();
         LatchPendingHyperBoost(baseline, enabled: false, baseMode);
         const string uncertainMessage =
             "HyperBoost ownership could not be recorded and the one-shot restoration was not confirmed. OpenBlade will not retry; thermal writes remain blocked until a fresh observation and manual recovery resolve the state.";
@@ -11190,12 +12056,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string? pendingHyperBoostMessage = null;
             if (powerSourceConfirmed)
             {
+                ThermalTransitionStepRunner? reconciliationRunner =
+                    await CreateDelayedHyperBoostReconciliationRunnerAsync(
+                        device,
+                        powerSource,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 IndeterminateHyperBoostReconciliation entry =
                     await ReconcileIndeterminateHyperBoostEntryAsync(
                             observation.Confirmed,
                             powerSource,
                             device,
-                            cancellationToken)
+                            cancellationToken,
+                            reconciliationRunner)
                         .ConfigureAwait(false);
                 observation = observation with { Confirmed = entry.Confirmed };
                 IndeterminateHyperBoostReconciliation exit =
@@ -11203,9 +12076,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             observation.Confirmed,
                             powerSource,
                             device,
-                            cancellationToken)
+                            cancellationToken,
+                            reconciliationRunner)
                         .ConfigureAwait(false);
                 observation = observation with { Confirmed = exit.Confirmed };
+                if (entry.Resolution != IndeterminateHyperBoostResolution.None
+                    || exit.Resolution != IndeterminateHyperBoostResolution.None)
+                {
+                    pendingIndeterminateHyperBoostRecoveryState = null;
+                }
                 suppressInactiveHyperBoostJournalRetirement =
                     entry.SuppressInactiveJournalRetirement
                     || exit.SuppressInactiveJournalRetirement;

@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Unified HyperBoost entry, exit, compensation, and attached lifecycle
+  restoration under one typed Strict thermal transition. Automatic and
+  Balanced bridges, the composite HyperBoost command, and prior-intent restore
+  now share at most one freshly re-admitted pre-submission retry; possible
+  submissions are reconciled read-only and never replayed.
 - Bound automatic manual-fan curve maintenance to the exact active-user,
   device-session, controller, power-destination, and desired-intent epoch that
   performed the successful OpenBlade fan write. Curve targets now use the

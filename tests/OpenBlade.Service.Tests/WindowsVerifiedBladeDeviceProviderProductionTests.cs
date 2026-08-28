@@ -2413,6 +2413,49 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task HyperBoostOnceAdapterPreflightFailureDoesNotOpenFreshSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        BladeWriteException firstFailure = HyperBoostAdapterPreflightFailure();
+        var firstPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var unusedPort = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            firstPort,
+            unusedPort);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        ISingleAttemptThermalDevice singleAttempt =
+            Assert.IsAssignableFrom<ISingleAttemptThermalDevice>(device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => singleAttempt.SetHyperBoostOnceAsync(
+                enabled: true,
+                PerformancePreset.Balanced,
+                default));
+
+        Assert.Same(firstFailure, error);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(
+            BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+            error.FailurePhase);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetHyperBoostCount);
+        Assert.Equal(0, unusedPort.SetHyperBoostCount);
+        Assert.Equal(1, firstPort.DisposeCount);
+        Assert.Equal(0, unusedPort.DisposeCount);
+    }
+
+    [Fact]
     public async Task HyperBoostRepeatedAdapterPreflightFailureStopsAfterFreshSession()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });

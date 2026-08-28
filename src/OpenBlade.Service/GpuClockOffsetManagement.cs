@@ -41,6 +41,11 @@ public interface ISingleAttemptThermalDevice
         bool retainGpuClockOffsetManagement,
         CancellationToken cancellationToken);
 
+    Task SetHyperBoostOnceAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        CancellationToken cancellationToken);
+
     Task SetFanControlOnceAsync(
         FanControlSettings value,
         CancellationToken cancellationToken);

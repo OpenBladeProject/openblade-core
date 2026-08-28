@@ -36,6 +36,7 @@ internal enum ThermalTransitionStepPurpose
     Restoration = 3,
     ManualTargetContinuation = 4,
     ManualCurveTarget = 5,
+    HyperBoost = 6,
 }
 
 internal sealed record ThermalTransitionStepAttempt(
@@ -45,9 +46,14 @@ internal sealed record ThermalTransitionStepAttempt(
     ThermalTransitionDisposition Disposition);
 
 internal sealed record ThermalTransitionStepTrace(
-    DeviceSubsystem Component,
+    IReadOnlyList<DeviceSubsystem> Components,
     ThermalTransitionStepPurpose Purpose,
     IReadOnlyList<ThermalTransitionStepAttempt> Attempts);
+
+internal sealed record ThermalTransitionRecoveryState(
+    Guid AttemptId,
+    bool Consumed,
+    string? BlockReason);
 
 internal sealed record ThermalTransitionTrace(
     Guid AttemptId,
@@ -97,6 +103,11 @@ internal sealed class ThermalTransitionStepRunner
         coordinatorFactory;
     private readonly Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
         revalidateRecovery;
+    private readonly Func<
+        ThermalTransitionStepPurpose,
+        IReadOnlyList<DeviceSubsystem>,
+        CancellationToken,
+        Task<ThermalRetryAdmission>>? revalidateSubmission;
     private readonly List<ThermalTransitionStepTrace> steps = [];
     private IBladeDevice currentDevice;
     private bool recoveryLeaseConsumed;
@@ -108,7 +119,13 @@ internal sealed class ThermalTransitionStepRunner
         IBladeDevice initialDevice,
         Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
             coordinatorFactory,
-        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRecovery)
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>> revalidateRecovery,
+        ThermalTransitionRecoveryState? recoveryState = null,
+        Func<
+            ThermalTransitionStepPurpose,
+            IReadOnlyList<DeviceSubsystem>,
+            CancellationToken,
+            Task<ThermalRetryAdmission>>? revalidateSubmission = null)
     {
         if (declaredComponents is null || declaredComponents.Count == 0)
         {
@@ -133,6 +150,13 @@ internal sealed class ThermalTransitionStepRunner
                 nameof(declaredComponents));
         }
 
+        if (recoveryState is not null && recoveryState.AttemptId != attemptId)
+        {
+            throw new ArgumentException(
+                "The thermal recovery state belongs to a different transition attempt.",
+                nameof(recoveryState));
+        }
+
         this.attemptId = attemptId;
         this.declaredComponents = [.. declaredComponents];
         currentDevice = initialDevice ?? throw new ArgumentNullException(nameof(initialDevice));
@@ -140,6 +164,9 @@ internal sealed class ThermalTransitionStepRunner
             ?? throw new ArgumentNullException(nameof(coordinatorFactory));
         this.revalidateRecovery = revalidateRecovery
             ?? throw new ArgumentNullException(nameof(revalidateRecovery));
+        this.revalidateSubmission = revalidateSubmission;
+        recoveryLeaseConsumed = recoveryState?.Consumed == true;
+        recoveryBlockReason = recoveryState?.BlockReason;
     }
 
     public IReadOnlyList<DeviceSubsystem> DeclaredComponents => declaredComponents;
@@ -153,6 +180,11 @@ internal sealed class ThermalTransitionStepRunner
     public int AttemptCount => steps.Sum(step => step.Attempts.Count);
 
     public IBladeDevice CurrentDevice => currentDevice;
+
+    public ThermalTransitionRecoveryState CaptureRecoveryState() => new(
+        attemptId,
+        recoveryLeaseConsumed,
+        recoveryBlockReason);
 
     public ControlCoordinator CreateRecipeCoordinator() =>
         coordinatorFactory(currentDevice, this);
@@ -191,6 +223,23 @@ internal sealed class ThermalTransitionStepRunner
         ArgumentNullException.ThrowIfNull(applyOnce);
 
         var attempts = new List<ThermalTransitionStepAttempt>();
+        ThermalRetryAdmission submissionAdmission =
+            await RevalidateSubmissionAsync(
+                    purpose,
+                    [component],
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!submissionAdmission.Allowed || submissionAdmission.Device is null)
+        {
+            ScopedApplyOutcome blocked = SubmissionBlockedOutcome(
+                submissionAdmission.BlockReason);
+            attempts.Add(CreateAttempt(
+                blocked,
+                ThermalTransitionDisposition.Blocked));
+            steps.Add(new ThermalTransitionStepTrace([component], purpose, attempts));
+            return blocked;
+        }
+        currentDevice = submissionAdmission.Device;
         ScopedApplyOutcome outcome = await ApplyOnceAsync(
                 currentDevice,
                 applyOnce,
@@ -236,8 +285,103 @@ internal sealed class ThermalTransitionStepRunner
             }
         }
 
-        steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+        steps.Add(new ThermalTransitionStepTrace([component], purpose, attempts));
         return outcome;
+    }
+
+    public async Task ApplyCommandStepAsync(
+        IReadOnlyList<DeviceSubsystem> components,
+        ThermalTransitionStepPurpose purpose,
+        Func<IBladeDevice, CancellationToken, Task> applyOnce,
+        Func<BladeWriteException, bool> isFreshSessionRetryEligible,
+        CancellationToken cancellationToken)
+    {
+        EnsureDeclared(components);
+        ArgumentNullException.ThrowIfNull(applyOnce);
+        ArgumentNullException.ThrowIfNull(isFreshSessionRetryEligible);
+
+        var attempts = new List<ThermalTransitionStepAttempt>();
+        ThermalRetryAdmission submissionAdmission =
+            await RevalidateSubmissionAsync(
+                    purpose,
+                    components,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!submissionAdmission.Allowed || submissionAdmission.Device is null)
+        {
+            ScopedApplyOutcome blocked = SubmissionBlockedOutcome(
+                submissionAdmission.BlockReason);
+            attempts.Add(CreateAttempt(
+                blocked,
+                ThermalTransitionDisposition.Blocked));
+            steps.Add(new ThermalTransitionStepTrace(
+                [.. components],
+                purpose,
+                attempts));
+            throw new CapabilityUnavailableException(blocked.Result.Message);
+        }
+        currentDevice = submissionAdmission.Device;
+        BladeWriteException? failure = await ApplyCommandOnceAsync(
+                currentDevice,
+                applyOnce,
+                attempts,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (failure is null)
+        {
+            steps.Add(new ThermalTransitionStepTrace(
+                [.. components],
+                purpose,
+                attempts));
+            return;
+        }
+
+        if (isFreshSessionRetryEligible(failure))
+        {
+            if (recoveryLeaseConsumed)
+            {
+                failure = AppendNoRecoveryMessage(
+                    failure,
+                    "the transition recovery lease was already consumed");
+                attempts[^1] = CreateCommandAttempt(failure);
+            }
+            else
+            {
+                ThermalRetryAdmission admission = await ConsumeAndRevalidateAsync(
+                        revalidateRecovery,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!admission.Allowed || admission.Device is null)
+                {
+                    failure = AppendNoRecoveryMessage(
+                        failure,
+                        admission.BlockReason
+                            ?? "thermal command retry admission was not renewed");
+                    attempts[^1] = CreateCommandAttempt(
+                        failure,
+                        ThermalTransitionDisposition.Blocked);
+                }
+                else
+                {
+                    currentDevice = admission.Device;
+                    failure = await ApplyCommandOnceAsync(
+                            currentDevice,
+                            applyOnce,
+                            attempts,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+
+        steps.Add(new ThermalTransitionStepTrace(
+            [.. components],
+            purpose,
+            attempts));
+        if (failure is not null)
+        {
+            throw failure;
+        }
     }
 
     public async Task<ScopedApplyOutcome> ApplyFreshContinuationAsync(
@@ -265,7 +409,7 @@ internal sealed class ThermalTransitionStepRunner
             attempts.Add(CreateAttempt(
                 blocked,
                 ThermalTransitionDisposition.ReconciliationUnavailable));
-            steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+            steps.Add(new ThermalTransitionStepTrace([component], purpose, attempts));
             return blocked;
         }
 
@@ -281,7 +425,7 @@ internal sealed class ThermalTransitionStepRunner
             attempts.Add(CreateAttempt(
                 blocked,
                 ThermalTransitionDisposition.ReconciliationUnavailable));
-            steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+            steps.Add(new ThermalTransitionStepTrace([component], purpose, attempts));
             return blocked;
         }
 
@@ -292,8 +436,27 @@ internal sealed class ThermalTransitionStepRunner
                 cancellationToken)
             .ConfigureAwait(false);
         attempts.Add(CreateAttempt(outcome));
-        steps.Add(new ThermalTransitionStepTrace(component, purpose, attempts));
+        steps.Add(new ThermalTransitionStepTrace([component], purpose, attempts));
         return outcome;
+    }
+
+    private static async Task<BladeWriteException?> ApplyCommandOnceAsync(
+        IBladeDevice device,
+        Func<IBladeDevice, CancellationToken, Task> applyOnce,
+        List<ThermalTransitionStepAttempt> attempts,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await applyOnce(device, cancellationToken).ConfigureAwait(false);
+            attempts.Add(CreateCommandAttempt(failure: null));
+            return null;
+        }
+        catch (BladeWriteException exception)
+        {
+            attempts.Add(CreateCommandAttempt(exception));
+            return exception;
+        }
     }
 
     private async Task<ThermalRetryAdmission> ConsumeAndRevalidateAsync(
@@ -326,6 +489,35 @@ internal sealed class ThermalTransitionStepRunner
         }
     }
 
+    private async Task<ThermalRetryAdmission> RevalidateSubmissionAsync(
+        ThermalTransitionStepPurpose purpose,
+        IReadOnlyList<DeviceSubsystem> components,
+        CancellationToken cancellationToken)
+    {
+        if (revalidateSubmission is null)
+        {
+            return ThermalRetryAdmission.Allow(currentDevice);
+        }
+
+        try
+        {
+            return await revalidateSubmission(
+                    purpose,
+                    components,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalRetryAdmission.Block(
+                $"Thermal pre-submission admission failed: {exception.Message}");
+        }
+    }
+
     private Task<ScopedApplyOutcome> ApplyOnceAsync(
         IBladeDevice device,
         Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> applyOnce,
@@ -342,6 +534,26 @@ internal sealed class ThermalTransitionStepRunner
         }
     }
 
+    private void EnsureDeclared(IReadOnlyList<DeviceSubsystem> components)
+    {
+        if (components is null || components.Count == 0)
+        {
+            throw new ArgumentException(
+                "A thermal command step must affect at least one component.",
+                nameof(components));
+        }
+        if (components.Count != components.Distinct().Count())
+        {
+            throw new ArgumentException(
+                "A thermal command step cannot repeat an affected component.",
+                nameof(components));
+        }
+        foreach (DeviceSubsystem component in components)
+        {
+            EnsureDeclared(component);
+        }
+    }
+
     private static ScopedApplyOutcome AppendNoRecoveryMessage(
         ScopedApplyOutcome outcome,
         string reason) => outcome with
@@ -351,6 +563,66 @@ internal sealed class ThermalTransitionStepRunner
                 Message = $"{outcome.Result.Message} No retry was submitted: {reason}.",
             },
         };
+
+    private static ScopedApplyOutcome SubmissionBlockedOutcome(string? reason) => new(
+        new ControlResult(
+            ControlResultStatus.Blocked,
+            reason ?? "Thermal pre-submission admission was not renewed."),
+        Readback: null,
+        WriteAttempted: false,
+        ReadbackMatched: false,
+        Capabilities: null,
+        DeviceAccessFailed: false,
+        ConfirmationUnavailable: false,
+        WriteSubmissionState: WriteSubmissionState.KnownNotApplied);
+
+    private static BladeWriteException AppendNoRecoveryMessage(
+        BladeWriteException exception,
+        string reason) => new(
+            exception.SubmissionState,
+            exception.FailurePhase,
+            $"{exception.Message} No retry was submitted: {reason}.",
+            exception);
+
+    private static ThermalTransitionStepAttempt CreateCommandAttempt(
+        BladeWriteException? failure,
+        ThermalTransitionDisposition? disposition = null)
+    {
+        ScopedApplyOutcome outcome = failure is null
+            ? new ScopedApplyOutcome(
+                new ControlResult(
+                    ControlResultStatus.Applied,
+                    "Thermal command was acknowledged."),
+                Readback: null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed: false)
+            : new ScopedApplyOutcome(
+                new ControlResult(
+                    failure.SubmissionState == WriteSubmissionState.KnownNotApplied
+                        ? ControlResultStatus.Blocked
+                        : ControlResultStatus.Failed,
+                    failure.Message),
+                Readback: null,
+                WriteAttempted:
+                    failure.SubmissionState == WriteSubmissionState.Indeterminate,
+                ReadbackMatched: false,
+                Capabilities: null,
+                DeviceAccessFailed:
+                    failure.SubmissionState == WriteSubmissionState.KnownNotApplied,
+                ConfirmationUnavailable:
+                    failure.SubmissionState == WriteSubmissionState.Indeterminate,
+                WriteSubmissionState: failure.SubmissionState,
+                WriteFailurePhase: failure.FailurePhase);
+        ThermalSubmissionProgress progress = ThermalTransitionExecutor
+            .SubmissionProgress(outcome);
+        return new ThermalTransitionStepAttempt(
+            outcome,
+            ThermalTransitionExecutor.Stage(outcome, progress),
+            progress,
+            disposition ?? ThermalTransitionExecutor.Disposition(outcome));
+    }
 
     private static ThermalTransitionStepAttempt CreateAttempt(
         ScopedApplyOutcome outcome,

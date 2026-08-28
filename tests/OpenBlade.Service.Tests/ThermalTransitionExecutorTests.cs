@@ -720,6 +720,167 @@ public sealed class ThermalTransitionExecutorTests
         Assert.Equal(ThermalTransitionDisposition.Confirmed, execution.Trace.Disposition);
     }
 
+    [Fact]
+    public async Task CompositeHyperBoostCommandRetriesOnlyTypedAdapterPreflight()
+    {
+        var initialDevice = new StubDevice();
+        var retryDevice = new StubDevice();
+        int commandAttempts = 0;
+        int admissions = 0;
+        var runner = new ThermalTransitionStepRunner(
+            Guid.NewGuid(),
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            initialDevice,
+            (device, _) => new ControlCoordinator(device),
+            (_, _) =>
+            {
+                admissions++;
+                return Task.FromResult(ThermalRetryAdmission.Allow(retryDevice));
+            });
+
+        await runner.ApplyCommandStepAsync(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            ThermalTransitionStepPurpose.HyperBoost,
+            (_, _) => ++commandAttempts == 1
+                ? Task.FromException(new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                    "Injected adapter preflight failure."))
+                : Task.CompletedTask,
+            failure => failure.SubmissionState
+                    == WriteSubmissionState.KnownNotApplied
+                && failure.FailurePhase
+                    == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+            CancellationToken.None);
+
+        Assert.Equal(2, commandAttempts);
+        Assert.Equal(1, admissions);
+        Assert.True(runner.RecoveryLeaseConsumed);
+        Assert.Same(retryDevice, runner.CurrentDevice);
+        ThermalTransitionStepTrace step = Assert.Single(runner.Steps);
+        Assert.Equal(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            step.Components);
+        Assert.Equal(2, step.Attempts.Count);
+    }
+
+    [Fact]
+    public async Task BridgeRetryPreventsSecondLeaseForHyperBoostCommand()
+    {
+        var device = new StubDevice();
+        int bridgeAttempts = 0;
+        int commandAttempts = 0;
+        int admissions = 0;
+        var runner = new ThermalTransitionStepRunner(
+            Guid.NewGuid(),
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            (_, _) =>
+            {
+                admissions++;
+                return Task.FromResult(ThermalRetryAdmission.Allow(device));
+            });
+        await runner.ApplyStepAsync(
+            DeviceSubsystem.Fans,
+            ThermalTransitionStepPurpose.AutomaticBridge,
+            (_, _) => Task.FromResult(++bridgeAttempts == 1
+                ? KnownNotAppliedOutcome()
+                : ConfirmedOutcome(writeAttempted: true)),
+            CancellationToken.None);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => runner.ApplyCommandStepAsync(
+                [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+                ThermalTransitionStepPurpose.HyperBoost,
+                (_, _) =>
+                {
+                    commandAttempts++;
+                    return Task.FromException(new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                        "Injected adapter preflight failure."));
+                },
+                failure => failure.SubmissionState
+                        == WriteSubmissionState.KnownNotApplied
+                    && failure.FailurePhase
+                        == BladeWriteFailurePhase.HyperBoostAdapterEligibilityRead,
+                CancellationToken.None));
+
+        Assert.Equal(2, bridgeAttempts);
+        Assert.Equal(1, commandAttempts);
+        Assert.Equal(1, admissions);
+        Assert.Contains("recovery lease was already consumed", error.Message);
+    }
+
+    [Fact]
+    public async Task CommandSubmissionAdmissionBlocksBeforeApply()
+    {
+        var device = new StubDevice();
+        int commandAttempts = 0;
+        var runner = new ThermalTransitionStepRunner(
+            Guid.NewGuid(),
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            device,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            (_, _) => throw new InvalidOperationException(
+                "Recovery admission was unexpected."),
+            revalidateSubmission: (_, _, _) => Task.FromResult(
+                ThermalRetryAdmission.Block("Injected late low-power gate.")));
+
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
+                () => runner.ApplyCommandStepAsync(
+                    [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+                    ThermalTransitionStepPurpose.HyperBoost,
+                    (_, _) =>
+                    {
+                        commandAttempts++;
+                        return Task.CompletedTask;
+                    },
+                    _ => true,
+                    CancellationToken.None));
+
+        Assert.Equal(0, commandAttempts);
+        Assert.False(runner.RecoveryLeaseConsumed);
+        Assert.Contains("late low-power", error.Message);
+        Assert.Equal(
+            ThermalTransitionDisposition.Blocked,
+            Assert.Single(Assert.Single(runner.Steps).Attempts).Disposition);
+    }
+
+    [Fact]
+    public async Task SubmissionAdmissionUsesFreshDeviceWithoutConsumingRetry()
+    {
+        var initialDevice = new StubDevice();
+        var admittedDevice = new StubDevice();
+        IBladeDevice? commandDevice = null;
+        var runner = new ThermalTransitionStepRunner(
+            Guid.NewGuid(),
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            initialDevice,
+            (attemptDevice, _) => new ControlCoordinator(attemptDevice),
+            (_, _) => throw new InvalidOperationException(
+                "Recovery admission was unexpected."),
+            revalidateSubmission: (_, _, _) => Task.FromResult(
+                ThermalRetryAdmission.Allow(admittedDevice)));
+
+        await runner.ApplyCommandStepAsync(
+            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            ThermalTransitionStepPurpose.HyperBoost,
+            (device, _) =>
+            {
+                commandDevice = device;
+                return Task.CompletedTask;
+            },
+            _ => true,
+            CancellationToken.None);
+
+        Assert.Same(admittedDevice, commandDevice);
+        Assert.Same(admittedDevice, runner.CurrentDevice);
+        Assert.False(runner.RecoveryLeaseConsumed);
+    }
+
     private static ScopedApplyOutcome ConfirmedOutcome(bool writeAttempted) => new(
         new ControlResult(
             writeAttempted ? ControlResultStatus.Applied : ControlResultStatus.Unchanged,
