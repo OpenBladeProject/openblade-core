@@ -1332,6 +1332,25 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         public Task SetHyperBoostAsync(
             bool enabled,
             PerformancePreset baseMode,
+            CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+                enabled,
+                baseMode,
+                allowFreshSessionRetry: true,
+                cancellationToken);
+
+        Task ISingleAttemptThermalDevice.SetHyperBoostOnceAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+                enabled,
+                baseMode,
+                allowFreshSessionRetry: false,
+                cancellationToken);
+
+        private Task SetHyperBoostCoreAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            bool allowFreshSessionRetry,
             CancellationToken cancellationToken) =>
             ExecuteProductionWriteAsync(
                 port => port.SetHyperBoostAsync(
@@ -1339,9 +1358,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     baseMode,
                     cancellationToken),
                 cancellationToken,
-                retryHyperBoostAdapterPreflight: true);
+                retryHyperBoostAdapterPreflight: true,
+                allowFreshSessionRetry: allowFreshSessionRetry);
 
         public Task EnablePadlessHyperBoostLifecycleValidationAsync(
+            CancellationToken cancellationToken) =>
+            EnablePadlessHyperBoostLifecycleValidationCoreAsync(
+                allowFreshSessionRetry: true,
+                cancellationToken);
+
+        Task IPadlessHyperBoostLifecycleValidationDevice
+            .EnablePadlessHyperBoostLifecycleValidationOnceAsync(
+                CancellationToken cancellationToken) =>
+            EnablePadlessHyperBoostLifecycleValidationCoreAsync(
+                allowFreshSessionRetry: false,
+                cancellationToken);
+
+        private Task EnablePadlessHyperBoostLifecycleValidationCoreAsync(
+            bool allowFreshSessionRetry,
             CancellationToken cancellationToken)
         {
             if (!PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled)
@@ -1357,7 +1391,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     : Task.FromException(new CapabilityUnavailableException(
                         "The exact validation-only pad-less HyperBoost port is unavailable.")),
                 cancellationToken,
-                retryHyperBoostAdapterPreflight: true);
+                retryHyperBoostAdapterPreflight: true,
+                allowFreshSessionRetry: allowFreshSessionRetry);
         }
 
         public async Task SetGpuClockOffsetsAsync(
