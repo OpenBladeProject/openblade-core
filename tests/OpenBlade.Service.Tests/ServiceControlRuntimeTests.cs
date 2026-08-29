@@ -1338,6 +1338,70 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task MaintainFanCurve_QueuedUserSwitchBlocksFreshSessionRetry()
+    {
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [firstSid.Value] = profiles,
+                [secondSid.Value] = profiles,
+            },
+            directory);
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        using var queuedCancellation = new CancellationTokenSource();
+        Task? queuedSessionSwitch = null;
+        TestContext? contextAtDelay = null;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                queuedSessionSwitch = contextAtDelay!.Runtime.ActivateUserAsync(
+                    secondSid,
+                    queuedCancellation.Token);
+                return Task.CompletedTask;
+            },
+            fanTemperatureSource: temperatures,
+            userConfigurationRepository: repository,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                ManualFanCurveCapabilities()));
+        contextAtDelay = context;
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(
+                    FanMode.ManualCurve,
+                    OverrideLifetime.UntilPowerSourceChange),
+                settings,
+                CancellationToken.None)).Status);
+        int establishedWrites = context.Device.FanTargets.Count;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Synthetic pre-write fan-target failure before a queued user switch."));
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+        queuedCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Assert.IsAssignableFrom<Task>(queuedSessionSwitch));
+
+        Assert.Equal(establishedWrites + 1, context.Device.FanTargets.Count);
+    }
+
+    [Fact]
     public async Task MaintainFanCurve_DeniedFreshDeviceAdmissionDoesNotRetryOnLaterTicks()
     {
         TestContext? retryContext = null;
@@ -4900,6 +4964,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PowerSource.PluggedIn,
             context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_QueuedUserSwitchBlocksThermalFloorRetry()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        using var queuedCancellation = new CancellationTokenSource();
+        Task? queuedSessionSwitch = null;
+        TestContext? contextAtDelay = null;
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                queuedSessionSwitch = contextAtDelay!.Runtime.ActivateUserAsync(
+                    userSid,
+                    queuedCancellation.Token);
+                return Task.CompletedTask;
+            });
+        contextAtDelay = context;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor failure before a queued user switch."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        queuedCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Assert.IsAssignableFrom<Task>(queuedSessionSwitch));
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
     }
 
     [Fact]
@@ -14928,6 +15028,593 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitRetriesOnFreshVerifiedDevice()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var retryDevice = new CountingBladeDevice();
+        TestContext? contextAtDelay = null;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDevice.Capabilities = contextAtDelay!.Device.Capabilities;
+                retryDevice.ConfirmedState = contextAtDelay.Device.ConfirmedState;
+                retryDevice.UseScopedPerformanceFanRead = true;
+                retryDevice.AdapterPowerState = contextAtDelay.Device.AdapterPowerState;
+                contextAtDelay.Provider.Device = retryDevice;
+                return Task.CompletedTask;
+            },
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtDelay = context;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected original-device pre-submission failure."));
+        int originalPerformanceCalls = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            originalPerformanceCalls + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(1, retryDevice.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            retryDevice.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, retryDevice.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FreshRetrySessionLossStopsWiderTransition()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var retryDevice = new CountingBladeDevice();
+        TestContext? contextAtDelay = null;
+        int postDelayAdmissions = 0;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDevice.Capabilities = contextAtDelay!.Device.Capabilities;
+                retryDevice.ConfirmedState = contextAtDelay.Device.ConfirmedState;
+                retryDevice.UseScopedPerformanceFanRead = true;
+                retryDevice.AdapterPowerState = contextAtDelay.Device.AdapterPowerState;
+                contextAtDelay.Provider.AfterTryGet = () =>
+                {
+                    postDelayAdmissions++;
+                    if (postDelayAdmissions == 3)
+                    {
+                        contextAtDelay.Provider.Available = false;
+                    }
+                };
+                contextAtDelay.Provider.Device = retryDevice;
+                return Task.CompletedTask;
+            },
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtDelay = context;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected original-device pre-submission failure."));
+        int originalSettersBeforeBoundary = context.Device.TotalSetterCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            originalSettersBeforeBoundary + 1,
+            context.Device.TotalSetterCalls);
+        Assert.Equal(1, retryDevice.PerformanceSetCalls);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Contains(
+            "verified device session changed after HyperBoost restoration",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitSharesOneRetryAcrossThermals()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        int retryDelayCalls = 0;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDelayCalls++;
+                return Task.CompletedTask;
+            },
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected automatic-bridge pre-submission failure."));
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected performance failure after the shared lease was consumed."));
+        int fanCallsBeforeBoundary = context.Device.FanSetCalls;
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(fanCallsBeforeBoundary + 2, context.Device.FanSetCalls);
+        Assert.Equal(
+            performanceCallsBeforeBoundary + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(1, retryDelayCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitPowerAbaBlocksFreshRetry()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var queuedPowerChanges = new List<Task>();
+        using var queuedCancellation = new CancellationTokenSource();
+        TestContext? contextAtDelay = null;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                contextAtDelay!.Telemetry.Current = CreateTelemetry(
+                    PowerSource.PluggedIn);
+                queuedPowerChanges.Add(
+                    contextAtDelay.Runtime.HandlePowerSourceChangedAsync(
+                        queuedCancellation.Token));
+                contextAtDelay.Telemetry.Current = CreateTelemetry(
+                    PowerSource.Battery);
+                queuedPowerChanges.Add(
+                    contextAtDelay.Runtime.HandlePowerSourceChangedAsync(
+                        queuedCancellation.Token));
+                return Task.CompletedTask;
+            },
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtDelay = context;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected pre-submission failure before queued power ABA."));
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        queuedCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Task.WhenAll(queuedPowerChanges));
+
+        Assert.Equal(
+            performanceCallsBeforeBoundary + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitSessionSwitchBlocksFreshRetry()
+    {
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [firstSid.Value] = profiles,
+                [secondSid.Value] = profiles,
+            },
+            directory);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        using var queuedCancellation = new CancellationTokenSource();
+        Task? queuedSessionSwitch = null;
+        TestContext? contextAtDelay = null;
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                queuedSessionSwitch = contextAtDelay!.Runtime.ActivateUserAsync(
+                    secondSid,
+                    queuedCancellation.Token);
+                return Task.CompletedTask;
+            },
+            userConfigurationRepository: repository,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtDelay = context;
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        context.Provider.Available = true;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected pre-submission failure before a queued session switch."));
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        queuedCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Assert.IsAssignableFrom<Task>(queuedSessionSwitch));
+
+        Assert.Equal(
+            performanceCallsBeforeBoundary + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitQueuedSessionBeforeRunnerBlocksWrites()
+    {
+        var firstSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1002");
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [firstSid.Value] = profiles,
+                [secondSid.Value] = profiles,
+            },
+            directory);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        using var queuedCancellation = new CancellationTokenSource();
+        Task? queuedSessionSwitch = null;
+        TestContext? contextAtClaim = null;
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            userConfigurationRepository: repository,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtClaim = context;
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        context.Provider.Available = true;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        journal.BeforeConditionalReplace = () =>
+        {
+            if (queuedSessionSwitch is null)
+            {
+                queuedSessionSwitch = contextAtClaim!.Runtime.ActivateUserAsync(
+                    secondSid,
+                    queuedCancellation.Token);
+            }
+        };
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+        int fanCallsBeforeBoundary = context.Device.FanSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        queuedCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Assert.IsAssignableFrom<Task>(queuedSessionSwitch));
+
+        Assert.Equal(
+            performanceCallsBeforeBoundary,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(fanCallsBeforeBoundary, context.Device.FanSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            journal.Journal?.State);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitJournalChangeBlocksLaterComponent()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        HyperBoostOwnershipJournal? changedJournal = null;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans
+                && changedJournal is null)
+            {
+                HyperBoostOwnershipJournal current =
+                    Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+                changedJournal = current with
+                {
+                    UpdatedAtUtc = current.UpdatedAtUtc.AddMinutes(1),
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+        int fanCallsBeforeBoundary = context.Device.FanSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            performanceCallsBeforeBoundary,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(fanCallsBeforeBoundary + 1, context.Device.FanSetCalls);
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitJournalClaimRaceBlocksAllWrites()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalReplace = () =>
+        {
+            if (changedJournal is null)
+            {
+                HyperBoostOwnershipJournal current =
+                    Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+                changedJournal = current with
+                {
+                    UpdatedAtUtc = current.UpdatedAtUtc.AddMinutes(1),
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+        int settersBeforeBoundary = context.Device.TotalSetterCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(settersBeforeBoundary, context.Device.TotalSetterCalls);
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_FirmwarePreExitRetirementRacePreservesNewerJournal()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalClear = () =>
+        {
+            if (changedJournal is null)
+            {
+                HyperBoostOwnershipJournal current =
+                    Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+                Assert.Equal(
+                    HyperBoostOwnershipJournalState.Relinquished,
+                    current.State);
+                changedJournal = current with
+                {
+                    UpdatedAtUtc = current.UpdatedAtUtc.AddMinutes(1),
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            PerformancePreset.BatterySaver,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_UnspecifiedPreSubmissionFailureDoesNotRetry()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        int retryDelayCalls = 0;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDelayCalls++;
+                return Task.CompletedTask;
+            },
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Injected failure without proven pre-submission phase."));
+        int performanceCallsBeforeBoundary = context.Device.PerformanceSetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(
+            performanceCallsBeforeBoundary + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(0, retryDelayCalls);
+        Assert.Equal(
+            HyperBoostRestoreRetryDisposition.None,
+            journal.Journal?.RestoreRetryDisposition);
+        int settersAfterFailure = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersAfterFailure, context.Device.TotalSetterCalls);
+        Assert.NotNull(journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_PreSubmissionBatteryRestoreDefersOneRetry()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -15114,8 +15801,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task PadlessHyperBoost_DeferredBatteryRestoreIsConsumedBeforeFailure()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
+        int retryDelayCalls = 0;
         TestContext context = CreateContext(
             providerAvailable: true,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDelayCalls++;
+                return Task.CompletedTask;
+            },
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
                 CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
@@ -15157,11 +15850,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
         int performanceCallsAfterBoundary = context.Device.PerformanceSetCalls;
+        int retryDelayCallsAfterBoundary = retryDelayCalls;
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Equal(
             performanceCallsAfterBoundary + 1,
             context.Device.PerformanceSetCalls);
+        Assert.Equal(retryDelayCallsAfterBoundary, retryDelayCalls);
         HyperBoostOwnershipJournal consumed =
             Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
         Assert.Equal(
@@ -15234,6 +15929,126 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostRestoreRetryTarget.CurrentPowerDestination,
             journal.Journal?.RestoreRetryTarget);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_DeferredRestoreQueuedPowerBeforeRunnerBlocksWrites()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        HyperBoostOwnershipJournal deferredJournal = new(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow)
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.BatterySaver,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+            RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                HyperBoostActive: false),
+            RestoreRetryDisposition =
+                HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
+            RestoreRetryTarget =
+                HyperBoostRestoreRetryTarget.CurrentPowerDestination,
+        };
+        var queuedPowerChanges = new List<Task>();
+        TestContext? contextAtClaim = null;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        contextAtClaim = context;
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.Journal = deferredJournal;
+        journal.BeforeConditionalReplace = () =>
+        {
+            if (queuedPowerChanges.Count == 0)
+            {
+                contextAtClaim.Telemetry.Current = CreateTelemetry(
+                    PowerSource.PluggedIn);
+                queuedPowerChanges.Add(
+                    contextAtClaim.Runtime.HandlePowerSourceChangedAsync(
+                        CancellationToken.None));
+                contextAtClaim.Telemetry.Current = CreateTelemetry(
+                    PowerSource.Battery);
+                queuedPowerChanges.Add(
+                    contextAtClaim.Runtime.HandlePowerSourceChangedAsync(
+                        CancellationToken.None));
+            }
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await Task.WhenAll(queuedPowerChanges);
+
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(
+            HyperBoostRestoreRetryDisposition.None,
+            journal.Journal?.RestoreRetryDisposition);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_DeferredRestoreClaimRacePreservesNewerJournal()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        HyperBoostOwnershipJournal original = new(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow)
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.BatterySaver,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+            RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                HyperBoostActive: false),
+            RestoreRetryDisposition =
+                HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
+            RestoreRetryTarget =
+                HyperBoostRestoreRetryTarget.CurrentPowerDestination,
+        };
+        journal.Journal = original;
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalReplace = () =>
+        {
+            if (changedJournal is null)
+            {
+                changedJournal = original with
+                {
+                    UpdatedAtUtc = original.UpdatedAtUtc.AddMinutes(1),
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+        int settersBeforeObservation = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
