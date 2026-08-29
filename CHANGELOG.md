@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept Strict fan-transition retry ownership inside the shared thermal executor.
+  Transient aggregate performance/fan reads that fail before submission now use
+  the existing single freshly admitted retry without replaying confirmed bridge
+  steps, while semantic mismatches still fail closed. FirmwareSmoke no longer
+  starts a second whole transition from a failure-message heuristic and instead
+  restores the original state immediately.
 - Scoped explicit HyperBoost restore recovery to the shared Strict thermal
   executor's single freshly admitted retry lease. The final durable restore
   journal, power destination, controller state, and exact device are rechecked

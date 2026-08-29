@@ -10439,6 +10439,161 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task AcManualFans_RetriesCoordinatorReadFailureAtRequestedStep()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeEntry + 4;
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            context.Device.PerformanceWrites);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task AcManualFans_RetriesCoordinatorReadFailureAtBalancedBridge()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeEntry + 2;
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            context.Device.PerformanceWrites);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task AcManualFans_RepeatedCoordinatorReadFailureRestoresWithoutFanWrite()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureCalls.UnionWith(
+            [readsBeforeEntry + 4, readsBeforeEntry + 5]);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(
+            [PerformancePreset.Balanced, PerformancePreset.Silent],
+            context.Device.PerformanceWrites);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
+    public async Task AcManualFans_SemanticCoordinatorReadFailureDoesNotRetry()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.PerformanceWrites.Clear();
+        int readsBeforeEntry = context.Device.PerformanceFanStateReadCalls;
+        context.Device.PerformanceFanStateReadFailureOnCall = readsBeforeEntry + 4;
+        context.Device.PerformanceFanStateReadFailureOnCallException =
+            new RazerProtocolException(
+                "Injected semantic thermal mismatch.",
+                HidProtocolValidationFailure.PayloadValidator);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Empty(retryDelays);
+        Assert.Equal(
+            [PerformancePreset.Balanced, PerformancePreset.Silent],
+            context.Device.PerformanceWrites);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
     public async Task AcManualFans_FirstEntryUsesTargetOnlyContinuation()
     {
         TestContext context = CreateWritableContext(
