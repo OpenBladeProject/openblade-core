@@ -2433,6 +2433,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     confirmed: null,
                     restorePending: false);
             }
+            HyperBoostOwnershipJournal transitionJournal = journal;
+            string? transitionJournalSha256 = load.Sha256;
 
             hyperBoostRestorePending = true;
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
@@ -2506,16 +2508,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 recoveryBaseline = CreateExactHyperBoostRecoveryBaseline(fresh);
                 if (recoveryBaseline is not null)
                 {
-                    bool baselineRecorded =
-                        await TryWriteHyperBoostOwnershipJournalAsync(
-                                HyperBoostOwnershipJournalState.RestorePending,
-                                journal.BaseMode,
-                                journal.RequiresCoolingPad,
-                                "The legacy HyperBoost restore could not preserve its fresh recovery baseline.",
-                                restoreIntent,
-                                recoveryBaseline)
+                    var replacementJournal = new HyperBoostOwnershipJournal(
+                        HyperBoostOwnershipJournalState.RestorePending,
+                        journal.BaseMode,
+                        journal.RequiresCoolingPad,
+                        timeProvider.GetUtcNow())
+                    {
+                        RestoreIntent = restoreIntent,
+                        RecoveryBaseline = recoveryBaseline,
+                    };
+                    HyperBoostOwnershipJournalMutationResult replacement =
+                        await TryReplaceHyperBoostOwnershipJournalAsync(
+                                transitionJournal,
+                                transitionJournalSha256,
+                                replacementJournal,
+                                "The legacy HyperBoost restore could not preserve its fresh recovery baseline.")
                             .ConfigureAwait(false);
-                    if (!baselineRecorded)
+                    if (!replacement.Applied)
                     {
                         return PublishHyperBoostRestoreRecoveryResult(
                             ControlOperationStatus.Failed,
@@ -2523,6 +2532,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             fresh,
                             restorePending: true);
                     }
+                    transitionJournal = replacementJournal;
+                    transitionJournalSha256 = replacement.Sha256;
 
                     matchesRecordedRecoveryBaseline =
                         ConfirmedStateMatchesHyperBoostRecoveryBaseline(
@@ -2574,16 +2585,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     fresh.HyperBoostActive,
                     fresh.CustomPerformance,
                     fresh.GpuClockOffsets?.Current);
-                if (!retryBaseline.IsWellFormed
-                    || !await TryWriteHyperBoostOwnershipJournalAsync(
-                            HyperBoostOwnershipJournalState.RestorePending,
-                            journal.BaseMode,
-                            journal.RequiresCoolingPad,
-                            "The user-authorized HyperBoost restore could not durably replace its obsolete low-power destination before submission.",
-                            currentDestinationIntent,
-                            retryBaseline,
-                            HyperBoostRestoreRetryDisposition.None)
-                        .ConfigureAwait(false))
+                if (!retryBaseline.IsWellFormed)
                 {
                     hyperBoostJournalSafetyBlock = true;
                     return PublishHyperBoostRestoreRecoveryResult(
@@ -2592,25 +2594,103 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         fresh,
                         restorePending: true);
                 }
+                var replacementJournal = new HyperBoostOwnershipJournal(
+                    HyperBoostOwnershipJournalState.RestorePending,
+                    journal.BaseMode,
+                    journal.RequiresCoolingPad,
+                    timeProvider.GetUtcNow())
+                {
+                    RestoreIntent = currentDestinationIntent,
+                    RecoveryBaseline = retryBaseline,
+                };
+                HyperBoostOwnershipJournalMutationResult replacement =
+                    await TryReplaceHyperBoostOwnershipJournalAsync(
+                        transitionJournal,
+                        transitionJournalSha256,
+                        replacementJournal,
+                        "The user-authorized HyperBoost restore could not durably replace its obsolete low-power destination before submission.")
+                    .ConfigureAwait(false);
+                if (!replacement.Applied)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return PublishHyperBoostRestoreRecoveryResult(
+                        ControlOperationStatus.Failed,
+                        "The saved restore was not retried because its current full-power destination could not be recorded durably.",
+                        fresh,
+                        restorePending: true);
+                }
+                transitionJournal = replacementJournal;
+                transitionJournalSha256 = replacement.Sha256;
                 hyperBoostJournalSafetyBlock = true;
                 restoreIntent = currentDestinationIntent;
             }
+
+            HyperBoostOwnershipJournalLoadResult transitionLoad;
+            try
+            {
+                transitionLoad = await hyperBoostOwnershipJournalStore
+                    .LoadAsync(token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return PublishHyperBoostRestoreRecoveryResult(
+                    ControlOperationStatus.Failed,
+                    $"The saved HyperBoost restore was not retried because its final durable journal could not be inspected: {exception.Message}",
+                    fresh,
+                    restorePending: true);
+            }
+
+            if (transitionLoad.Invalid
+                || transitionLoad.Journal != transitionJournal
+                || transitionLoad.Sha256 != transitionJournalSha256)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                return PublishHyperBoostRestoreRecoveryResult(
+                    ControlOperationStatus.Blocked,
+                    "The saved HyperBoost restore was not retried because its durable journal changed before transition admission.",
+                    fresh,
+                    restorePending: true);
+            }
+
+            long transitionOwnershipGeneration = hyperBoostOwnershipGeneration;
+            long transitionPowerGeneration = powerSourceGeneration;
+            ThermalTransitionStepRunner transitionRunner =
+                CreateHyperBoostTransitionRunner(
+                    device,
+                    enabled: false,
+                    transitionJournal.BaseMode,
+                    restoreIntent,
+                    transitionJournal,
+                    transitionOwnershipGeneration,
+                    transitionPowerGeneration,
+                    powerSource,
+                    ownedLifecycleRestore: false,
+                    allowOwnedJournalCleanup: true,
+                    validationOnly: false,
+                    allowIntentRebase: true);
 
             HyperBoostIntentRestorationResult restoration;
             try
             {
                 restoration = await RestoreHyperBoostIntentAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             restoreIntent,
                             fresh,
-                            token)
+                            token,
+                            transitionRunner: transitionRunner)
                         .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 FailedHyperBoostRestoreObservation cancellationObservation =
                     await CaptureFailedHyperBoostRestoreObservationAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             restoreIntent,
                             new HyperBoostIntentRestorationResult(
                                 false,
@@ -2618,16 +2698,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 "The user-authorized restore was canceled."),
                             fresh)
                         .ConfigureAwait(false);
-                bool recoveryBaselineUpdated =
-                    cancellationObservation.RecoveryBaseline is { } canceledBaseline
-                    && await TryWriteHyperBoostOwnershipJournalAsync(
-                            HyperBoostOwnershipJournalState.RestorePending,
-                            journal.BaseMode,
-                            journal.RequiresCoolingPad,
-                            "The canceled user-authorized HyperBoost restore could not preserve its fresh recovery baseline.",
-                            restoreIntent,
-                            canceledBaseline)
+                bool recoveryBaselineUpdated = false;
+                if (cancellationObservation.RecoveryBaseline is { } canceledBaseline)
+                {
+                    var replacementJournal = new HyperBoostOwnershipJournal(
+                        HyperBoostOwnershipJournalState.RestorePending,
+                        transitionJournal.BaseMode,
+                        transitionJournal.RequiresCoolingPad,
+                        timeProvider.GetUtcNow())
+                    {
+                        RestoreIntent = restoreIntent,
+                        RecoveryBaseline = canceledBaseline,
+                    };
+                    HyperBoostOwnershipJournalMutationResult replacement =
+                        await TryReplaceHyperBoostOwnershipJournalAsync(
+                            transitionJournal,
+                            transitionJournalSha256,
+                            replacementJournal,
+                            "The canceled user-authorized HyperBoost restore could not preserve its fresh recovery baseline.")
                         .ConfigureAwait(false);
+                    recoveryBaselineUpdated = replacement.Applied;
+                }
                 hyperBoostJournalSafetyBlock = true;
                 PublishHyperBoostRestoreRecoveryResult(
                     ControlOperationStatus.Failed,
@@ -2644,22 +2735,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 FailedHyperBoostRestoreObservation failureObservation =
                     await CaptureFailedHyperBoostRestoreObservationAsync(
-                            device,
+                            transitionRunner.CurrentDevice,
                             restoreIntent,
                             restoration,
                             restored)
                         .ConfigureAwait(false);
                 restored = failureObservation.State;
-                bool recoveryBaselineUpdated =
-                    failureObservation.RecoveryBaseline is { } failedBaseline
-                    && await TryWriteHyperBoostOwnershipJournalAsync(
-                            HyperBoostOwnershipJournalState.RestorePending,
-                            journal.BaseMode,
-                            journal.RequiresCoolingPad,
-                            "The failed user-authorized HyperBoost restore could not preserve its fresh recovery baseline.",
-                            restoreIntent,
-                            failedBaseline)
+                bool recoveryBaselineUpdated = false;
+                if (failureObservation.RecoveryBaseline is { } failedBaseline)
+                {
+                    var replacementJournal = new HyperBoostOwnershipJournal(
+                        HyperBoostOwnershipJournalState.RestorePending,
+                        transitionJournal.BaseMode,
+                        transitionJournal.RequiresCoolingPad,
+                        timeProvider.GetUtcNow())
+                    {
+                        RestoreIntent = restoreIntent,
+                        RecoveryBaseline = failedBaseline,
+                    };
+                    HyperBoostOwnershipJournalMutationResult replacement =
+                        await TryReplaceHyperBoostOwnershipJournalAsync(
+                            transitionJournal,
+                            transitionJournalSha256,
+                            replacementJournal,
+                            "The failed user-authorized HyperBoost restore could not preserve its fresh recovery baseline.")
                         .ConfigureAwait(false);
+                    recoveryBaselineUpdated = replacement.Applied;
+                }
                 hyperBoostJournalSafetyBlock = true;
                 return PublishHyperBoostRestoreRecoveryResult(
                     ControlOperationStatus.Failed,
@@ -2674,16 +2776,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.Observe(restored);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
-            RestoreRecoveredHyperBoostIntentInAutomation(restoreIntent);
             bool retired = await RetireHyperBoostOwnershipJournalAsync(
-                    journal.BaseMode,
-                    journal.RequiresCoolingPad,
+                    transitionJournal.BaseMode,
+                    transitionJournal.RequiresCoolingPad,
                     restoreIntent,
-                    "The user-authorized HyperBoost restore completed, but its ownership journal could not be retired.")
+                    "The user-authorized HyperBoost restore completed, but its ownership journal could not be retired.",
+                    transitionJournal,
+                    transitionJournalSha256)
                 .ConfigureAwait(false);
             hyperBoostRestorePending = !retired;
             if (retired)
             {
+                RestoreRecoveredHyperBoostIntentInAutomation(restoreIntent);
                 lastReportedRetainedHyperBoostRestoreJournal = null;
             }
 
@@ -3740,6 +3844,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .LoadAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception exception)
             {
                 hyperBoostJournalSafetyBlock = true;
@@ -3900,6 +4009,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 load = await hyperBoostOwnershipJournalStore
                     .LoadAsync(cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception exception)
             {
@@ -6376,26 +6490,37 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HyperBoostRestoreRetryTarget restoreRetryTarget =
             HyperBoostRestoreRetryTarget.None)
     {
+        var journal = new HyperBoostOwnershipJournal(
+            state,
+            baseMode,
+            requiresCoolingPad,
+            timeProvider.GetUtcNow())
+        {
+            RestoreIntent = restoreIntent
+                ?? ownedHyperBoostRestoreIntent
+                ?? HyperBoostRestoreIntent.BalancedAutomatic,
+            RecoveryBaseline = recoveryBaseline,
+            RestoreRetryDisposition = restoreRetryDisposition,
+            RestoreRetryTarget = restoreRetryTarget,
+        };
+        return await TryWriteHyperBoostOwnershipJournalAsync(
+                journal,
+                failureMessage)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryWriteHyperBoostOwnershipJournalAsync(
+        HyperBoostOwnershipJournal journal,
+        string failureMessage)
+    {
         try
         {
             await hyperBoostOwnershipJournalStore.WriteAsync(
-                new HyperBoostOwnershipJournal(
-                    state,
-                    baseMode,
-                    requiresCoolingPad,
-                    timeProvider.GetUtcNow())
-                {
-                    RestoreIntent = restoreIntent
-                        ?? ownedHyperBoostRestoreIntent
-                        ?? HyperBoostRestoreIntent.BalancedAutomatic,
-                    RecoveryBaseline = recoveryBaseline,
-                    RestoreRetryDisposition = restoreRetryDisposition,
-                    RestoreRetryTarget = restoreRetryTarget,
-                },
+                journal,
                 CancellationToken.None)
             .ConfigureAwait(false);
             hyperBoostJournalSafetyBlock = false;
-            hyperBoostRestorePending = state
+            hyperBoostRestorePending = journal.State
                 == HyperBoostOwnershipJournalState.RestorePending;
             lastReportedRetainedHyperBoostRestoreJournal = null;
             return true;
@@ -6407,6 +6532,48 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ControlOperationStatus.Failed,
                 $"{failureMessage} {exception.Message}");
             return false;
+        }
+    }
+
+    private async Task<HyperBoostOwnershipJournalMutationResult>
+        TryReplaceHyperBoostOwnershipJournalAsync(
+            HyperBoostOwnershipJournal expectedJournal,
+            string? expectedSha256,
+            HyperBoostOwnershipJournal replacementJournal,
+            string failureMessage)
+    {
+        try
+        {
+            HyperBoostOwnershipJournalMutationResult result =
+                await hyperBoostOwnershipJournalStore.TryReplaceAsync(
+                        expectedJournal,
+                        expectedSha256,
+                        replacementJournal,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            if (!result.Applied)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    $"{failureMessage} The durable journal changed before replacement.");
+                return result;
+            }
+
+            hyperBoostJournalSafetyBlock = replacementJournal.State
+                == HyperBoostOwnershipJournalState.RestorePending;
+            hyperBoostRestorePending = replacementJournal.State
+                == HyperBoostOwnershipJournalState.RestorePending;
+            lastReportedRetainedHyperBoostRestoreJournal = null;
+            return result;
+        }
+        catch (Exception exception)
+        {
+            hyperBoostJournalSafetyBlock = true;
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} {exception.Message}");
+            return new HyperBoostOwnershipJournalMutationResult(false);
         }
     }
 
@@ -6589,22 +6756,48 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PerformancePreset baseMode,
         bool requiresCoolingPad,
         HyperBoostRestoreIntent restoreIntent,
-        string failureMessage)
+        string failureMessage,
+        HyperBoostOwnershipJournal? expectedJournal = null,
+        string? expectedSha256 = null)
     {
         bool relinquished = false;
+        var relinquishedJournal = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.Relinquished,
+            baseMode,
+            requiresCoolingPad,
+            timeProvider.GetUtcNow())
+        {
+            RestoreIntent = restoreIntent,
+        };
+        string? relinquishedSha256 = null;
         try
         {
-            await hyperBoostOwnershipJournalStore.WriteAsync(
-                    new HyperBoostOwnershipJournal(
-                        HyperBoostOwnershipJournalState.Relinquished,
-                        baseMode,
-                        requiresCoolingPad,
-                        timeProvider.GetUtcNow())
-                    {
-                        RestoreIntent = restoreIntent,
-                    },
-                    CancellationToken.None)
-                .ConfigureAwait(false);
+            if (expectedJournal is null)
+            {
+                await hyperBoostOwnershipJournalStore.WriteAsync(
+                        relinquishedJournal,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                HyperBoostOwnershipJournalMutationResult replacement =
+                    await hyperBoostOwnershipJournalStore.TryReplaceAsync(
+                            expectedJournal,
+                            expectedSha256,
+                            relinquishedJournal,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                if (!replacement.Applied)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    history.RecordSummary(
+                        ControlOperationStatus.Failed,
+                        $"{failureMessage} The ownership journal changed before retirement.");
+                    return false;
+                }
+                relinquishedSha256 = replacement.Sha256;
+            }
             relinquished = true;
             hyperBoostRestorePending = false;
             lastReportedRetainedHyperBoostRestoreJournal = null;
@@ -6618,8 +6811,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            await hyperBoostOwnershipJournalStore.ClearAsync(CancellationToken.None)
-                .ConfigureAwait(false);
+            bool cleared;
+            if (expectedJournal is null)
+            {
+                await hyperBoostOwnershipJournalStore.ClearAsync(
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                cleared = true;
+            }
+            else
+            {
+                cleared = await hyperBoostOwnershipJournalStore.TryClearAsync(
+                        relinquishedJournal,
+                        relinquishedSha256,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            if (!cleared)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    $"{failureMessage} The relinquished journal changed before removal.");
+                return false;
+            }
             hyperBoostJournalSafetyBlock = false;
             hyperBoostRestorePending = false;
             lastReportedRetainedHyperBoostRestoreJournal = null;
