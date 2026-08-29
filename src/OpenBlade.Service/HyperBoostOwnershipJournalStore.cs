@@ -126,6 +126,10 @@ internal readonly record struct HyperBoostOwnershipJournalLoadResult(
     bool AllowsExplicitRecoveryBaselineCapture = false,
     string? Sha256 = null);
 
+internal readonly record struct HyperBoostOwnershipJournalMutationResult(
+    bool Applied,
+    string? Sha256 = null);
+
 public interface IServiceOwnershipJournalCleaner
 {
     Task ClearAsync(CancellationToken cancellationToken);
@@ -154,6 +158,17 @@ internal interface IHyperBoostOwnershipJournalStore
     Task WriteAsync(
         HyperBoostOwnershipJournal journal,
         CancellationToken cancellationToken);
+
+    Task<HyperBoostOwnershipJournalMutationResult> TryReplaceAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        HyperBoostOwnershipJournal replacementJournal,
+        CancellationToken cancellationToken);
+
+    Task<bool> TryClearAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class UnavailableHyperBoostOwnershipJournalStore
@@ -178,6 +193,25 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
+    }
+
+    public Task<HyperBoostOwnershipJournalMutationResult> TryReplaceAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        HyperBoostOwnershipJournal replacementJournal,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new HyperBoostOwnershipJournalMutationResult(false));
+    }
+
+    public Task<bool> TryClearAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(false);
     }
 
     public Task ClearAsync(CancellationToken cancellationToken)
@@ -333,23 +367,98 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte[] json = JsonSerializer.SerializeToUtf8Bytes(
-                new HyperBoostOwnershipJournalDocument(
-                    CurrentSchemaVersion,
-                    journal.State,
-                    journal.BaseMode,
-                    journal.UpdatedAtUtc,
-                    journal.RequiresCoolingPad,
-                    journal.RestoreIntent.Performance,
-                    journal.RestoreIntent.CustomPerformance,
-                    journal.RestoreIntent.GpuClockTuning,
-                    journal.RestoreIntent.FanControl,
-                    journal.RecoveryBaseline,
-                    journal.RestoreRetryDisposition,
-                    journal.RestoreRetryTarget),
-                SerializerOptions);
+            byte[] json = Serialize(journal);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<HyperBoostOwnershipJournalMutationResult> TryReplaceAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        HyperBoostOwnershipJournal replacementJournal,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(expectedJournal);
+        ArgumentNullException.ThrowIfNull(replacementJournal);
+        if (!expectedJournal.IsWellFormed)
+        {
+            throw new ArgumentException(
+                "The expected HyperBoost ownership journal is invalid.",
+                nameof(expectedJournal));
+        }
+        if (!replacementJournal.IsWellFormed)
+        {
+            throw new ArgumentException(
+                "The replacement HyperBoost ownership journal is invalid.",
+                nameof(replacementJournal));
+        }
+
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (expectedSha256 is null || !File.Exists(path))
+            {
+                return new HyperBoostOwnershipJournalMutationResult(false);
+            }
+
+            byte[] current = await File.ReadAllBytesAsync(path, cancellationToken)
+                .ConfigureAwait(false);
+            string currentSha256 = Convert.ToHexString(SHA256.HashData(current));
+            if (!StringComparer.Ordinal.Equals(currentSha256, expectedSha256))
+            {
+                return new HyperBoostOwnershipJournalMutationResult(false);
+            }
+
+            byte[] replacement = Serialize(replacementJournal);
+            await AtomicFile.WriteAsync(path, replacement, cancellationToken)
+                .ConfigureAwait(false);
+            return new HyperBoostOwnershipJournalMutationResult(
+                Applied: true,
+                Convert.ToHexString(SHA256.HashData(replacement)));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<bool> TryClearAsync(
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(expectedJournal);
+        if (!expectedJournal.IsWellFormed)
+        {
+            throw new ArgumentException(
+                "The expected HyperBoost ownership journal is invalid.",
+                nameof(expectedJournal));
+        }
+
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (expectedSha256 is null || !File.Exists(path))
+            {
+                return false;
+            }
+
+            byte[] current = await File.ReadAllBytesAsync(path, cancellationToken)
+                .ConfigureAwait(false);
+            string currentSha256 = Convert.ToHexString(SHA256.HashData(current));
+            if (!StringComparer.Ordinal.Equals(currentSha256, expectedSha256))
+            {
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Delete(path);
+            return true;
         }
         finally
         {
@@ -370,4 +479,21 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
             gate.Release();
         }
     }
+
+    private static byte[] Serialize(HyperBoostOwnershipJournal journal) =>
+        JsonSerializer.SerializeToUtf8Bytes(
+            new HyperBoostOwnershipJournalDocument(
+                CurrentSchemaVersion,
+                journal.State,
+                journal.BaseMode,
+                journal.UpdatedAtUtc,
+                journal.RequiresCoolingPad,
+                journal.RestoreIntent.Performance,
+                journal.RestoreIntent.CustomPerformance,
+                journal.RestoreIntent.GpuClockTuning,
+                journal.RestoreIntent.FanControl,
+                journal.RecoveryBaseline,
+                journal.RestoreRetryDisposition,
+                journal.RestoreRetryTarget),
+            SerializerOptions);
 }

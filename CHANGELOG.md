@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Scoped explicit HyperBoost restore recovery to the shared Strict thermal
+  executor's single freshly admitted retry lease. The final durable restore
+  journal, power destination, controller state, and exact device are rechecked
+  before each command; possible submissions are never replayed, and a journal
+  changed during or after restoration is preserved instead of overwritten or
+  retired.
 - Unified HyperBoost entry, exit, compensation, and attached lifecycle
   restoration under one typed Strict thermal transition. Automatic and
   Balanced bridges, the composite HyperBoost command, and prior-intent restore

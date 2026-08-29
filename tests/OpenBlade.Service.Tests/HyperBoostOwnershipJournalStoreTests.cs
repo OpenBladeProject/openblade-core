@@ -440,6 +440,97 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ConditionalReplaceAndClear_RequireExactCurrentHash()
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var original = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+        };
+        var replacement = original with
+        {
+            UpdatedAtUtc = original.UpdatedAtUtc.AddMinutes(1),
+            RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                HyperBoostActive: false),
+        };
+        await store.WriteAsync(original, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        HyperBoostOwnershipJournalMutationResult replaced =
+            await store.TryReplaceAsync(
+                original,
+                loaded.Sha256,
+                replacement,
+                CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult afterReplace =
+            await store.LoadAsync(CancellationToken.None);
+        bool cleared = await store.TryClearAsync(
+            replacement,
+            replaced.Sha256,
+            CancellationToken.None);
+
+        Assert.True(replaced.Applied);
+        Assert.Matches("^[0-9A-F]{64}$", replaced.Sha256);
+        Assert.Equal(replacement, afterReplace.Journal);
+        Assert.Equal(replaced.Sha256, afterReplace.Sha256);
+        Assert.True(cleared);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task ConditionalMutation_StaleHashPreservesNewerJournal()
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var original = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+        };
+        var newer = original with
+        {
+            UpdatedAtUtc = original.UpdatedAtUtc.AddMinutes(1),
+        };
+        var attemptedReplacement = original with
+        {
+            UpdatedAtUtc = original.UpdatedAtUtc.AddMinutes(2),
+        };
+        await store.WriteAsync(original, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult stale =
+            await store.LoadAsync(CancellationToken.None);
+        await store.WriteAsync(newer, CancellationToken.None);
+
+        HyperBoostOwnershipJournalMutationResult replaced =
+            await store.TryReplaceAsync(
+                original,
+                stale.Sha256,
+                attemptedReplacement,
+                CancellationToken.None);
+        bool cleared = await store.TryClearAsync(
+            original,
+            stale.Sha256,
+            CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult preserved =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(replaced.Applied);
+        Assert.False(cleared);
+        Assert.Equal(newer, preserved.Journal);
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
     public async Task Clear_RemovesJournalAndReturnsEmptyState()
     {
         string path = Path.Combine(directory, "hyperboost-ownership.json");
