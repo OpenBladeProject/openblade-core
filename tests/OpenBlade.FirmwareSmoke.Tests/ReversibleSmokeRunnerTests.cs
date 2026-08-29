@@ -213,21 +213,24 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_RetriesOneProvenPreWriteReadFailure()
+    public async Task RunAsync_DoesNotReplayFailedFanTransition()
     {
-        await using var client = new FakeFirmwareSmokeClient
+        await using var client = new FakeFirmwareSmokeClient(
+            PerformancePreset.Silent)
         {
-            FailFirstPerformancePreWrite = true,
+            FailFixedFanPreWrite = true,
         };
 
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
 
-        Assert.Equal(8, checks.Count);
-        Assert.All(
+        Assert.Equal(3, checks.Count);
+        FirmwareSmokeCheck failure = Assert.Single(
             checks,
-            check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
-        Assert.Equal(4, client.PerformanceMutationCalls);
+            check => check.Id == "write.fans");
+        Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
+        Assert.DoesNotContain("Retry=", failure.Actual, StringComparison.Ordinal);
+        Assert.Equal(2, client.FanMutationCalls);
         client.AssertOriginalState();
     }
 
@@ -349,7 +352,7 @@ public sealed class ReversibleSmokeRunnerTests
 
         public bool FailFirstPerformanceApply { get; init; }
 
-        public bool FailFirstPerformancePreWrite { get; init; }
+        public bool FailFixedFanPreWrite { get; init; }
 
         public bool IndeterminatePerformanceRestore { get; init; }
 
@@ -362,6 +365,8 @@ public sealed class ReversibleSmokeRunnerTests
         public int PerformanceMutationCalls { get; private set; }
 
         public int HyperBoostMutationCalls { get; private set; }
+
+        public int FanMutationCalls { get; private set; }
 
         public List<PerformancePreset> HyperBoostEnableBases { get; } = [];
 
@@ -387,13 +392,6 @@ public sealed class ReversibleSmokeRunnerTests
             if (FailFirstPerformanceApply && PerformanceMutationCalls == 1)
             {
                 return Failed();
-            }
-
-            if (FailFirstPerformancePreWrite && PerformanceMutationCalls == 1)
-            {
-                return Task.FromResult(new ControlOperationResult(
-                    ControlOperationStatus.Failed,
-                    "Performance could not be read before writing: Battery state query failed."));
             }
 
             PerformancePreset selected = value?.Value ?? originalPerformance;
@@ -462,7 +460,17 @@ public sealed class ReversibleSmokeRunnerTests
             FanControlSettings? settings,
             CancellationToken cancellationToken)
         {
+            FanMutationCalls++;
             FanMode selected = value?.Value ?? profiles.PluggedIn.Fans;
+            if (FailFixedFanPreWrite && selected == FanMode.Fixed)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "Fan override intent was stored. Hardware result: " +
+                    "Fans could not be read before writing: " +
+                    "Performance and fan state query failed."));
+            }
+
             status = status with
             {
                 ConfirmedState = status.ConfirmedState! with { Fans = selected },

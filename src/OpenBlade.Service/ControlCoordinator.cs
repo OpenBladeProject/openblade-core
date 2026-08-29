@@ -1748,6 +1748,8 @@ public sealed class ControlCoordinator
 
         bool writeAttempted = false;
         bool setterCompleted = false;
+        bool initialStateReadStarted = false;
+        bool initialStateReadCompleted = false;
         DeviceCapabilities? capabilities = null;
         ConfirmedDeviceState? initial = null;
         Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
@@ -1774,7 +1776,9 @@ public sealed class ControlCoordinator
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
+            initialStateReadStarted = true;
             initial = await readState(cancellationToken);
+            initialStateReadCompleted = true;
             cancellationToken.ThrowIfCancellationRequested();
             if (!forceWrite && matches(initial))
             {
@@ -1933,6 +1937,11 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            bool retryableThermalInitialReadFailure =
+                !writeAttempted
+                && initialStateReadStarted
+                && !initialStateReadCompleted
+                && IsRetryableThermalInitialReadFailure(subsystem, exception);
             if (setterCompleted && acceptSetterCompletionWithoutReadback)
             {
                 return new ScopedApplyOutcome(
@@ -1972,12 +1981,16 @@ public sealed class ControlCoordinator
                     || IsTerminalDeviceFailure(exception),
                 ConfirmationUnavailable: setterCompleted,
                 PreWriteState: setterCompleted ? initial : null,
-                WriteSubmissionState: exception is BladeWriteException writeFailure
-                    ? writeFailure.SubmissionState
-                    : null,
-                WriteFailurePhase: exception is BladeWriteException phasedFailure
-                    ? phasedFailure.FailurePhase
-                    : null);
+                WriteSubmissionState: retryableThermalInitialReadFailure
+                    ? WriteSubmissionState.KnownNotApplied
+                    : exception is BladeWriteException writeFailure
+                        ? writeFailure.SubmissionState
+                        : null,
+                WriteFailurePhase: retryableThermalInitialReadFailure
+                    ? BladeWriteFailurePhase.ThermalPreWriteRead
+                    : exception is BladeWriteException phasedFailure
+                        ? phasedFailure.FailurePhase
+                        : null);
         }
     }
 
@@ -2404,6 +2417,19 @@ public sealed class ControlCoordinator
             or UnauthorizedAccessException
             or RazerProtocolException
             or TimeoutException;
+
+    private static bool IsRetryableThermalInitialReadFailure(
+        DeviceSubsystem subsystem,
+        Exception exception) =>
+        (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+        && (exception is IOException or TimeoutException
+            || exception is RazerProtocolException
+            {
+                ValidationFailure:
+                    HidProtocolValidationFailure.TransactionMismatch
+                    or HidProtocolValidationFailure.CommandClassMismatch
+                    or HidProtocolValidationFailure.CommandIdMismatch,
+            });
 
     private static bool IsDefined<TEnum>(TEnum value)
         where TEnum : struct, Enum => Enum.IsDefined(value);

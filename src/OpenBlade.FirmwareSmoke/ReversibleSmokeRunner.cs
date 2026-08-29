@@ -443,20 +443,6 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         {
             ControlOperationResult result = await applyAsync().ConfigureAwait(false);
             application = $"{result.Status}: {result.Message}";
-            if (!IsAccepted(result)
-                && IsSafePreWriteRetry(result)
-                && await IsCurrentlyAsync(
-                    restoredPredicate,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(750),
-                    cancellationToken).ConfigureAwait(false);
-                ControlOperationResult retry = await applyAsync().ConfigureAwait(false);
-                application += $" Retry={retry.Status}: {retry.Message}";
-                result = retry;
-            }
-
             applicationPassed = IsAccepted(result)
                 && await WaitForAsync(appliedPredicate, cancellationToken).ConfigureAwait(false);
             if (!applicationPassed)
@@ -530,21 +516,6 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         return false;
     }
 
-    private async Task<bool> IsCurrentlyAsync(
-        Func<ServiceStatusSnapshot, bool> predicate,
-        CancellationToken cancellationToken)
-    {
-        ServiceStatusSnapshot status = await client.ObserveStateAsync(
-            LiveReadingSensors.None,
-            cancellationToken).ConfigureAwait(false);
-        return status.DeviceVerified
-            && !status.WritesBlocked
-            && status.PotentialControllers.Count == 0
-            && status.ExternalChanges.Count == 0
-            && status.UnconfirmedWrites.Count == 0
-            && predicate(status);
-    }
-
     private async Task<ControlOperationResult> RestorePerformanceAsync(
         ServiceStatusSnapshot original,
         PerformancePreset originalValue,
@@ -593,15 +564,6 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
     private static bool IsAccepted(ControlOperationResult result) =>
         result.Status is ControlOperationStatus.Applied
             or ControlOperationStatus.Stored;
-
-    private static bool IsSafePreWriteRetry(ControlOperationResult result) =>
-        result.Status == ControlOperationStatus.Failed
-        && result.Message.Contains(
-            "could not be read before writing",
-            StringComparison.OrdinalIgnoreCase)
-        && !result.Message.Contains(
-            "indeterminate",
-            StringComparison.OrdinalIgnoreCase);
 
     private static FirmwareSmokeCheck Skipped(
         string id,
