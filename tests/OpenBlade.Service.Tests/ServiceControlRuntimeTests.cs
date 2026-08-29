@@ -945,6 +945,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Empty(context.Device.FanTargets);
         Assert.Equal(0, temperatures.ReadCount);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .ManualTopologyOnly,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_AcknowledgedManualWriteWithoutReadbackDoesNotOwnTargets()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures);
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.PerformanceFanStateReadFailureOnCall =
+                    context.Device.PerformanceFanStateReadCalls + 1;
+            }
+        };
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+
+        ControlOperationResult acknowledged =
+            await context.Runtime.SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(
+                    FanMode.ManualCurve,
+                    OverrideLifetime.UntilPowerSourceChange),
+                settings,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, acknowledged.Status);
+        Assert.Contains(
+            "does not report the resulting state",
+            acknowledged.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .SubmissionUnresolved,
+            context.Runtime.FanControlOwnershipDisposition);
+        context.Device.AfterSetter = null;
+        context.Device.PerformanceFanStateReadFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int targetWritesAfterObservation = context.Device.FanTargets.Count;
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .ManualTopologyOnly,
+            context.Runtime.FanControlOwnershipDisposition);
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(targetWritesAfterObservation, context.Device.FanTargets.Count);
+        Assert.Equal(0, temperatures.ReadCount);
     }
 
     [Fact]
@@ -1355,6 +1416,94 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(context.Device.FanWrites);
         _ = await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
         Assert.Empty(context.Device.FanWrites);
+    }
+
+    [Fact]
+    public void FanOwnership_ConfirmedAutomaticAppliedClearsUnresolvedState()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        SetFanOwnershipUnresolved(context.Runtime);
+        typeof(ServiceControlRuntime)
+            .GetMethod(
+                "UpdateOwnedFanControlSettings",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(
+                context.Runtime,
+                [
+                    FanControlSettings.FromLegacy(FanMode.Automatic),
+                    new ControlResult(
+                        ControlResultStatus.Applied,
+                        "Fans setting applied and confirmed by readback."),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                ]);
+
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task FanOwnership_FullTransitionConfirmedAutomaticClearsUnresolvedState()
+    {
+        DeviceCapabilities capabilities = ManualFanCurveCapabilities();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+            UsbC = profiles.UsbC with
+            {
+                Fans = FanMode.Automatic,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Automatic),
+            },
+        };
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.True(
+            DeviceSubsystemOrder.IsManualFanMode(
+                context.Device.ConfirmedState.Fans));
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+        SetFanOwnershipUnresolved(context.Runtime);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Contains(FanMode.Automatic, context.Device.FanWrites);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            context.Runtime.FanControlOwnershipDisposition);
     }
 
     [Fact]
@@ -10625,6 +10774,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.DoesNotContain(
             DeviceSubsystem.Fans,
             context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task ManualFanCurve_FirstEntryContinuationOwnsAndMaintainsTargets()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.Capabilities = ManualFanCurveCapabilities();
+        context.Device.FanTargetsAvailable = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            "Injected first-channel manual-entry ambiguity."));
+        var settings = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+
+        ControlOperationResult result = await context.Runtime
+            .SetFanControlOverrideAsync(
+                new ManualOverride<FanMode>(
+                    FanMode.ManualCurve,
+                    OverrideLifetime.UntilPowerSourceChange),
+                settings,
+                CancellationToken.None);
+        int targetWritesAfterContinuation = context.Device.FanTargets.Count;
+
+        Assert.True(
+            result.Status == ControlOperationStatus.Applied,
+            result.Message);
+        Assert.Equal(1, targetWritesAfterContinuation);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            targetWritesAfterContinuation + 1,
+            context.Device.FanTargets.Count);
+        Assert.Equal(1, temperatures.ReadCount);
     }
 
     [Fact]
@@ -10710,6 +10920,63 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
         Assert.Single(context.Device.FanTargets);
         int fanWrites = context.Device.FanSetCalls;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+        };
+
+        await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task AcManualFans_ContinuationReadFailureDoesNotUseStaleTopology()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.BeforeQueuedFanFailure = () =>
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            };
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanFirstManualEntrySubmission,
+            "Injected first-channel manual-entry ambiguity."));
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    HyperBoostActive = true,
+                };
+                context.Device.PerformanceFanStateReadFailureOnCall =
+                    context.Device.PerformanceFanStateReadCalls + 1;
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .SubmissionUnresolved,
+            context.Runtime.FanControlOwnershipDisposition);
+        int fanWrites = context.Device.FanSetCalls;
+        context.Device.AfterSetter = null;
+        context.Device.PerformanceFanStateReadFailureOnCall = null;
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             HyperBoostActive = false,
@@ -16409,8 +16676,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         var retryDelays = new List<TimeSpan>();
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
         TestContext context = CreateContext(
             providerAvailable: true,
+            fanTemperatureSource: temperatures,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
                 CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal,
@@ -16508,6 +16778,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 : HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
         Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .SubmissionUnresolved,
+            context.Runtime.FanControlOwnershipDisposition);
+        int targetWritesAfterRestore = context.Device.FanTargets.Count;
+
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(targetWritesAfterRestore, context.Device.FanTargets.Count);
+        Assert.Equal(0, temperatures.ReadCount);
     }
 
     [Fact]
@@ -19024,6 +19304,23 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             },
             FanSpeedRange = new FanSpeedRange(2000, 5400, 100),
         };
+
+    private static void SetFanOwnershipUnresolved(ServiceControlRuntime runtime)
+    {
+        System.Reflection.FieldInfo ownershipField = typeof(ServiceControlRuntime)
+            .GetField(
+                "exactFanControlOwnership",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!;
+        object unresolved = Assert.IsAssignableFrom<object>(
+            ownershipField.FieldType
+                .GetProperty(
+                    "SubmissionUnresolved",
+                    System.Reflection.BindingFlags.Static
+                        | System.Reflection.BindingFlags.Public)!
+                .GetValue(null));
+        ownershipField.SetValue(runtime, unresolved);
+    }
 
     private async Task<(
         TestContext Context,

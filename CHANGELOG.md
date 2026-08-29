@@ -17,6 +17,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Required confirmed generic-manual readback before a successful OpenBlade fan
+  write can establish exact Fixed, Maximum, or manual-curve ownership. Fan
+  commands acknowledged without readback now remain unresolved, generic manual
+  observations are tracked as topology-only, and confirmed Automatic results
+  retire stale ownership without authorizing background fan-target writes.
+  Freshly confirmed target-only manual-entry continuations retain their
+  current-epoch ownership so manual curves can leave the safe entry target.
 - Kept Strict fan-transition retry ownership inside the shared thermal executor.
   Transient aggregate performance/fan reads that fail before submission now use
   the existing single freshly admitted retry without replaying confirmed bridge
