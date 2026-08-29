@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bound unexpected-exit fan recovery to the typed Strict thermal executor and
+  a current authority epoch. Safety-floor, handback, and deferred fan-intent
+  writes now receive at most one freshly admitted pre-submission retry,
+  unresolved manual completion cannot establish ownership, and resume,
+  controller arrival, device loss, external drift, or user changes cannot
+  revive stale handback authority.
 - Required confirmed generic-manual readback before a successful OpenBlade fan
   write can establish exact Fixed, Maximum, or manual-curve ownership. Fan
   commands acknowledged without readback now remain unresolved, generic manual
