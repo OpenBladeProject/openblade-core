@@ -5574,6 +5574,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 intent.FanControl,
                 fans.Result,
                 fans.WriteAttempted,
+                fans.ReadbackMatched,
                 writeSubmissionState: fans.WriteSubmissionState,
                 confirmationUnavailable: fans.ConfirmationUnavailable);
             return new HyperBoostIntentRestorationResult(
@@ -5598,6 +5599,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 intent.FanControl,
                 automaticBaseline.Result,
                 automaticBaseline.WriteAttempted,
+                automaticBaseline.ReadbackMatched,
                 writeSubmissionState: automaticBaseline.WriteSubmissionState,
                 confirmationUnavailable: automaticBaseline.ConfirmationUnavailable);
             ConfirmedDeviceState? automaticState =
@@ -5661,6 +5663,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             intent.FanControl,
             automaticFans.Result,
             automaticFans.WriteAttempted,
+            automaticFans.ReadbackMatched,
             writeSubmissionState: automaticFans.WriteSubmissionState,
             confirmationUnavailable: automaticFans.ConfirmationUnavailable);
         return new HyperBoostIntentRestorationResult(
@@ -10352,6 +10355,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ?? FanControlSettings.FromLegacy(desired.Fans.Value),
                 outcome.Result,
                 outcome.WriteAttempted,
+                outcome.ReadbackMatched,
                 allowFanOwnershipRearm,
                 outcome.WriteSubmissionState,
                 outcome.ConfirmationUnavailable);
@@ -11805,6 +11809,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ?? FanControlSettings.FromLegacy(desired.Fans.Value),
             ResultFor(outcome.Results, DeviceSubsystem.Fans),
             outcome.WriteAttempted.Contains(DeviceSubsystem.Fans),
+            outcome.ReadbackMatched.Contains(DeviceSubsystem.Fans),
             confirmationUnavailable: confirmationUnavailable.Contains(
                 DeviceSubsystem.Fans));
 
@@ -12816,6 +12821,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedHyperBoostRestoreIntent = null;
             ownedHyperBoostRequiresCoolingPad = false;
         }
+        ClassifyObservedFanTopology(observation.Confirmed.Fans);
 
         PublishIfChanged(current with
         {
@@ -14332,6 +14338,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : ExactFanControlOwnership.Unowned;
     }
 
+    private void ClassifyObservedFanTopology(FanMode? observed)
+    {
+        if (observed == FanMode.Automatic)
+        {
+            exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+            ClearLastFanCurveTargets();
+            return;
+        }
+
+        if (observed is { } fans
+            && DeviceSubsystemOrder.IsManualFanMode(fans)
+            && exactFanControlOwnership.Disposition !=
+                ExactFanControlOwnershipDisposition.OwnedExactIntent)
+        {
+            exactFanControlOwnership = ExactFanControlOwnership.ManualTopologyOnly;
+            ClearLastFanCurveTargets();
+        }
+    }
+
     private void ClearLastFanCurveTargets()
     {
         lastCurveFan1Rpm = null;
@@ -14342,10 +14367,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings requested,
         ControlResult result,
         bool writeAttempted,
+        bool readbackMatched,
         bool allowFanOwnershipRearm = false,
         WriteSubmissionState? writeSubmissionState = null,
         bool confirmationUnavailable = false)
     {
+        bool confirmedAutomatic = requested.Mode == FanMode.Automatic
+            && (result.Status == ControlResultStatus.Unchanged
+                || result.Status == ControlResultStatus.Applied
+                    && readbackMatched);
+        if (confirmedAutomatic)
+        {
+            exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+            ClearLastFanCurveTargets();
+            return;
+        }
+
         if (writeSubmissionState == WriteSubmissionState.Indeterminate
                 && (writeAttempted || confirmationUnavailable)
             || confirmationUnavailable
@@ -14357,15 +14394,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        if (result.Status == ControlResultStatus.Unchanged
-            && requested.Mode == FanMode.Automatic)
+        if (result.Status == ControlResultStatus.Unchanged)
         {
-            exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+            if (readbackMatched)
+            {
+                ClassifyObservedFanTopology(requested.Mode);
+            }
             return;
         }
 
         if (result.Status != ControlResultStatus.Applied || !writeAttempted)
         {
+            return;
+        }
+
+        if (!readbackMatched)
+        {
+            exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
+            ClearLastFanCurveTargets();
             return;
         }
 
@@ -14420,6 +14466,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             AuthorityEpoch: -1,
             DesiredRevision: -1);
 
+        public static ExactFanControlOwnership ManualTopologyOnly { get; } = new(
+            ExactFanControlOwnershipDisposition.ManualTopologyOnly,
+            null,
+            AuthorityEpoch: -1,
+            DesiredRevision: -1);
+
         public static ExactFanControlOwnership Owned(
             FanControlSettings settings,
             long authorityEpoch,
@@ -14440,9 +14492,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PowerSource PowerSource,
         string? ActiveUserSid);
 
-    private enum ExactFanControlOwnershipDisposition
+    internal ExactFanControlOwnershipDisposition FanControlOwnershipDisposition =>
+        exactFanControlOwnership.Disposition;
+
+    internal enum ExactFanControlOwnershipDisposition
     {
         Unowned,
+        ManualTopologyOnly,
         OwnedExactIntent,
         SubmissionUnresolved,
     }

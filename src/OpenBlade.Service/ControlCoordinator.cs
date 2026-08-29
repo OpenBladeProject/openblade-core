@@ -355,6 +355,9 @@ public sealed class ControlCoordinator
             setterCompletionEvidence: state =>
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 && state.HyperBoostActive != true,
+            // ApplyScopedAsync evaluates this only after its post-write read
+            // completes. A read failure keeps the continuation unconfirmed.
+            setterCompletionEvidenceConfirmsReadback: true,
             forceWrite: true,
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
@@ -1723,6 +1726,7 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
         bool acceptSetterCompletionWithoutReadback = false,
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
+        bool setterCompletionEvidenceConfirmsReadback = false,
         bool forceWrite = false,
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
@@ -1834,14 +1838,16 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
+            bool setterCompletionConfirmed = acceptSetterCompletionWithoutReadback
+                && (setterCompletionEvidence?.Invoke(final) ?? true);
             return new ScopedApplyOutcome(
-                acceptSetterCompletionWithoutReadback
-                    && (setterCompletionEvidence?.Invoke(final) ?? true)
+                setterCompletionConfirmed
                     ? AppliedWithoutReadback(name)
                     : Indeterminate(name, null),
                 final,
                 WriteAttempted: true,
-                ReadbackMatched: false,
+                ReadbackMatched: setterCompletionConfirmed
+                    && setterCompletionEvidenceConfirmsReadback,
                 capabilities,
                 DeviceAccessFailed: false);
         }
