@@ -426,6 +426,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly HashSet<Guid> padlessHyperBoostLifecycleValidationRuns = [];
     private long hyperBoostOwnershipGeneration;
     private long powerSourceGeneration;
+    // Advances before power work waits on operationGate so an already-running
+    // thermal transition can observe queued AC/battery/USB-C boundary work.
+    private long powerAdmissionEpoch;
     private LightingSettings? pendingLightingRestore;
     private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
@@ -451,7 +454,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool unexpectedExitRecoveryPending;
     private bool manualFanCurveRecoveryPending;
     private bool unexpectedExitRecoveryDeferredForUserConfiguration;
-    private DeferredManualFanSafetyState deferredManualFanSafetyState;
+    private DeferredManualFanSafetyOwnership deferredManualFanSafetyOwnership =
+        DeferredManualFanSafetyOwnership.Lost;
     private bool recoveryUserConfigurationLoaded;
     private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
@@ -762,10 +766,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // classify retained user-owned hardware as external drift.
             unexpectedExitRecoveryDeferredForUserConfiguration =
                 recoveringUnexpectedExit && userConfigurationRepository is not null;
-            deferredManualFanSafetyState =
+            deferredManualFanSafetyOwnership =
                 unexpectedExitRecoveryDeferredForUserConfiguration
-                    ? DeferredManualFanSafetyState.PendingUnowned
-                    : DeferredManualFanSafetyState.Lost;
+                    ? DeferredManualFanSafetyOwnership.Pending(
+                        FanMode.ManualCurve,
+                        reestablishAfterUserChange: false)
+                    : DeferredManualFanSafetyOwnership.Lost;
             recoveryUserConfigurationLoaded = false;
             suppressInitialUserProfileApplyAfterUnexpectedExit = recoveringUnexpectedExit;
             suppressInitialKnownPowerSourceApplyAfterUnexpectedExit =
@@ -956,7 +962,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // Exact manual fan intent belongs to the active-user hardware
             // session. A new user may carry identical settings, but that does
             // not transfer proof that this service wrote them for that user.
-            AdvanceFanAuthorityEpoch();
+            AdvanceFanAuthorityEpoch(
+                preserveDeferredRecoveryBaseline:
+                    unexpectedExitRecoveryDeferredForUserConfiguration);
             AdvanceFanDesiredRevision();
             Volatile.Write(
                 ref userStores,
@@ -7873,22 +7881,53 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
+        current = GetStatus();
+        if (FanControllerAdmissionUnsafe(current))
+        {
+            return;
+        }
+
+        PowerSource confirmedPowerSource =
+            await ResolveCurrentPowerSourceAsync(cancellationToken).ConfigureAwait(false);
+        if (confirmedPowerSource != current.ActivePowerSource
+            || confirmedPowerSource == PowerSource.ExternalUnknown)
+        {
+            if (confirmedPowerSource != PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(confirmedPowerSource);
+            }
+            return;
+        }
+
+        DeferredManualFanRecoveryAuthority recoveryAuthority =
+            CaptureFanRecoveryAuthority(confirmedPowerSource);
+
         // Consume the bounded attempt immediately before admission. A plain
         // pre-submission cancellation re-arms it; an indeterminate submitted
         // write remains consumed and is never retried automatically.
         manualFanCurveRecoveryPending = false;
+        ScopedApplyOutcome? appliedOutcome = null;
+        ThermalTransitionTrace? transitionTrace = null;
         ControlOperationResult result;
         try
         {
             result = await ApplyScopedIntentAsync(
                 DeviceSubsystem.Fans,
-                current.ActivePowerSource,
+                confirmedPowerSource,
                 (coordinator, _, token) =>
-                    coordinator.ApplyFanControlOutcomeAsync(
+                    coordinator.ApplyRecoveryFanControlOutcomeAsync(
                         settings,
-                        token,
-                        stillControlsSession),
-                cancellationToken).ConfigureAwait(false);
+                        token),
+                cancellationToken,
+                stillControlsSession: stillControlsSession,
+                thermalComponents: [DeviceSubsystem.Fans],
+                additionalThermalWriteBlockReason: () =>
+                    FanRecoveryAuthorityBlockReason(recoveryAuthority),
+                observeScopedOutcome: (outcome, _, trace) =>
+                {
+                    appliedOutcome = outcome;
+                    transitionTrace = trace;
+                }).ConfigureAwait(false);
         }
         catch (WriteAuthorityLostException)
         {
@@ -7906,6 +7945,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             manualFanCurveRecoveryPending = true;
             throw;
         }
+        if (IsUnspentPreSubmission(appliedOutcome, transitionTrace))
+        {
+            manualFanCurveRecoveryPending = true;
+            return;
+        }
+
         if (result.Status == ControlOperationStatus.Applied)
         {
             const string message =
@@ -7930,7 +7975,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool allowOwnedAutomaticBaseline = false,
         Func<bool>? stillControlsSession = null)
     {
-        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Lost)
+        if (deferredManualFanSafetyOwnership.State ==
+            DeferredManualFanSafetyState.Lost)
         {
             return;
         }
@@ -7964,12 +8010,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         bool pendingBaseline =
-            deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
-            && DeviceSubsystemOrder.IsManualFanMode(
-                current.ConfirmedState?.Fans ?? FanMode.Automatic);
+            deferredManualFanSafetyOwnership.State ==
+                DeferredManualFanSafetyState.PendingUnowned
+            && deferredManualFanSafetyOwnership.MatchesPendingBaseline(
+                current.ConfirmedState?.Fans);
         bool ownedAutomaticBaseline =
             allowOwnedAutomaticBaseline
-            && deferredManualFanSafetyState ==
+            && deferredManualFanSafetyOwnership.State ==
                 DeferredManualFanSafetyState.AutomaticOwned
             && current.ConfirmedState?.Fans == FanMode.Automatic;
         if (!manualFanCurveRecoveryPending
@@ -7979,7 +8026,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || current.WritesBlocked
             || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
         {
-            if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned
+            if (deferredManualFanSafetyOwnership.State ==
+                    DeferredManualFanSafetyState.PendingUnowned
                 && current.ConfirmedState?.Fans is not null
                 && !pendingBaseline)
             {
@@ -8022,14 +8070,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         var safetyFloor = FanControlSettings.FromLegacy(FanMode.ManualCurve);
-        DeferredManualFanSafetyState priorState = deferredManualFanSafetyState;
+        DeferredManualFanSafetyOwnership priorOwnership =
+            deferredManualFanSafetyOwnership;
         ExactFanControlOwnership priorFanOwnership = exactFanControlOwnership;
+        var recoveryAuthority = CaptureDeferredManualFanRecoveryAuthority(
+            priorOwnership,
+            powerSource);
         // Revoke any stale ownership before submission. ApplyScopedIntentAsync
         // records the staged ManualCurve settings again only after an Applied
         // floor write, so shutdown cleanup cannot act on an uncertain attempt.
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.TransitionPending(
+                recoveryAuthority.AttemptId);
         manualFanCurveRecoveryPending = false;
         exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+        ScopedApplyOutcome? appliedOutcome = null;
+        ThermalTransitionTrace? transitionTrace = null;
         ControlOperationResult result;
         try
         {
@@ -8037,18 +8093,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeviceSubsystem.Fans,
                 powerSource,
                 (coordinator, _, token) =>
-                    coordinator.ApplyFanControlOutcomeAsync(
+                    coordinator.ApplyRecoveryFanControlOutcomeAsync(
                         safetyFloor,
                         token,
-                        stillControlsSession,
                         state => DeferredManualFanSafetyStateBlockReason(
-                            priorState,
+                            priorOwnership,
                             state)),
                 cancellationToken,
                 desired => desired with
                 {
                     Fans = desired.Fans with { Value = FanMode.ManualCurve },
                     FanControl = safetyFloor,
+                },
+                thermalComponents: [DeviceSubsystem.Fans],
+                additionalThermalWriteBlockReason: () =>
+                    DeferredManualFanRecoveryWriteBlockReason(
+                        recoveryAuthority),
+                observeScopedOutcome: (outcome, _, trace) =>
+                {
+                    appliedOutcome = outcome;
+                    transitionTrace = trace;
                 }).ConfigureAwait(false);
         }
         catch (IntentionalWriteCanceledException)
@@ -8058,7 +8122,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (WriteAuthorityLostException)
         {
-            deferredManualFanSafetyState = priorState;
+            deferredManualFanSafetyOwnership = priorOwnership;
             manualFanCurveRecoveryPending = true;
             exactFanControlOwnership = priorFanOwnership;
             throw;
@@ -8066,18 +8130,40 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            deferredManualFanSafetyState = priorState;
+            deferredManualFanSafetyOwnership = priorOwnership;
             manualFanCurveRecoveryPending = true;
             exactFanControlOwnership = priorFanOwnership;
             throw;
         }
 
-        if (result.Status != ControlOperationStatus.Applied)
+        if (IsUnspentPreSubmission(appliedOutcome, transitionTrace))
         {
+            deferredManualFanSafetyOwnership = priorOwnership;
+            manualFanCurveRecoveryPending = true;
+            exactFanControlOwnership = priorFanOwnership;
             return;
         }
 
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return;
+        }
+
+        if (!IsExactFanIntentOwned(safetyFloor))
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return;
+        }
+
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.Owned(
+                DeferredManualFanSafetyState.FloorOwned,
+                safetyFloor,
+                fanAuthorityEpoch,
+                fanDesiredRevision);
         const string message =
             "Unexpected-exit recovery established a maximum fan-speed safety floor while user-owned recovery remains deferred.";
         history.RecordSummary(ControlOperationStatus.Applied, message);
@@ -8089,7 +8175,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
-        if (deferredManualFanSafetyState != DeferredManualFanSafetyState.FloorOwned
+        if (deferredManualFanSafetyOwnership.State !=
+                DeferredManualFanSafetyState.FloorOwned
             || stillControlsSession?.Invoke() == false)
         {
             return;
@@ -8123,9 +8210,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
+        DeferredManualFanSafetyOwnership priorOwnership =
+            deferredManualFanSafetyOwnership;
         ExactFanControlOwnership priorFanOwnership = exactFanControlOwnership;
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        var recoveryAuthority = CaptureDeferredManualFanRecoveryAuthority(
+            priorOwnership,
+            powerSource);
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.TransitionPending(
+                recoveryAuthority.AttemptId);
         exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+        ScopedApplyOutcome? appliedOutcome = null;
+        ThermalTransitionTrace? transitionTrace = null;
         ControlOperationResult result;
         try
         {
@@ -8133,18 +8229,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeviceSubsystem.Fans,
                 powerSource,
                 (coordinator, _, token) =>
-                    coordinator.ApplyFanControlOutcomeAsync(
+                    coordinator.ApplyRecoveryFanControlOutcomeAsync(
                         automatic,
                         token,
-                        stillControlsSession,
                         state => DeferredManualFanSafetyStateBlockReason(
-                            DeferredManualFanSafetyState.FloorOwned,
+                            priorOwnership,
                             state)),
                 cancellationToken,
                 desired => desired with
                 {
                     Fans = desired.Fans with { Value = FanMode.Automatic },
                     FanControl = automatic,
+                },
+                thermalComponents: [DeviceSubsystem.Fans],
+                additionalThermalWriteBlockReason: () =>
+                    DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority),
+                observeScopedOutcome: (outcome, _, trace) =>
+                {
+                    appliedOutcome = outcome;
+                    transitionTrace = trace;
                 }).ConfigureAwait(false);
         }
         catch (IntentionalWriteCanceledException)
@@ -8154,24 +8257,51 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (WriteAuthorityLostException)
         {
-            deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+            deferredManualFanSafetyOwnership = priorOwnership;
             exactFanControlOwnership = priorFanOwnership;
             throw;
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            deferredManualFanSafetyState = DeferredManualFanSafetyState.FloorOwned;
+            deferredManualFanSafetyOwnership = priorOwnership;
             exactFanControlOwnership = priorFanOwnership;
             throw;
         }
 
-        if (result.Status != ControlOperationStatus.Applied)
+        if (IsUnspentPreSubmission(appliedOutcome, transitionTrace))
         {
+            deferredManualFanSafetyOwnership = priorOwnership;
+            exactFanControlOwnership = priorFanOwnership;
             return;
         }
 
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.AutomaticOwned;
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return;
+        }
+
+        if (appliedOutcome is not
+            {
+                WriteAttempted: true,
+                ReadbackMatched: true,
+            }
+            || exactFanControlOwnership.Disposition !=
+                ExactFanControlOwnershipDisposition.Unowned)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return;
+        }
+
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.Owned(
+                DeferredManualFanSafetyState.AutomaticOwned,
+                automatic,
+                fanAuthorityEpoch,
+                fanDesiredRevision);
         manualFanCurveRecoveryPending = true;
         const string message =
             "The deferred crash-recovery fan safety floor was handed back to firmware Automatic mode.";
@@ -8183,14 +8313,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ServiceStatusSnapshot current)
     {
         FanMode? confirmedFans = current.ConfirmedState?.Fans;
-        bool matches = deferredManualFanSafetyState switch
+        bool matches = deferredManualFanSafetyOwnership.State switch
         {
             DeferredManualFanSafetyState.FloorOwned =>
                 confirmedFans is { } value
-                && DeviceSubsystemOrder.IsManualFanMode(value),
+                && DeviceSubsystemOrder.IsManualFanMode(value)
+                && deferredManualFanSafetyOwnership.AuthorityEpoch ==
+                    fanAuthorityEpoch
+                && IsDeferredExactFanIntentOwned(
+                    deferredManualFanSafetyOwnership),
             DeferredManualFanSafetyState.AutomaticOwned =>
-                confirmedFans == FanMode.Automatic,
-            _ => true,
+                confirmedFans == FanMode.Automatic
+                && deferredManualFanSafetyOwnership.AuthorityEpoch ==
+                    fanAuthorityEpoch,
+            DeferredManualFanSafetyState.PendingUnowned =>
+                deferredManualFanSafetyOwnership.MatchesPendingBaseline(
+                    confirmedFans),
+            DeferredManualFanSafetyState.Lost => true,
+            _ => false,
         };
         if (!matches)
         {
@@ -8201,13 +8341,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private static string? DeferredManualFanSafetyStateBlockReason(
-        DeferredManualFanSafetyState expected,
+        DeferredManualFanSafetyOwnership expected,
         ConfirmedDeviceState state)
     {
-        bool matches = expected switch
+        bool matches = expected.State switch
         {
-            DeferredManualFanSafetyState.PendingUnowned or
-                DeferredManualFanSafetyState.FloorOwned =>
+            DeferredManualFanSafetyState.PendingUnowned =>
+                expected.MatchesPendingBaseline(state.Fans),
+            DeferredManualFanSafetyState.FloorOwned =>
                 DeviceSubsystemOrder.IsManualFanMode(
                     state.Fans ?? FanMode.Automatic),
             DeferredManualFanSafetyState.AutomaticOwned =>
@@ -8221,7 +8362,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void LoseDeferredManualFanSafetyOwnershipCore()
     {
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        deferredManualFanSafetyOwnership = DeferredManualFanSafetyOwnership.Lost;
         manualFanCurveRecoveryPending = false;
         exactFanControlOwnership = ExactFanControlOwnership.Unowned;
     }
@@ -8245,17 +8386,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState)
                     .Fans
                     .Value);
-        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.PendingUnowned)
+        if (deferredManualFanSafetyOwnership.State ==
+            DeferredManualFanSafetyState.PendingUnowned)
         {
-            return true;
+            if (!deferredManualFanSafetyOwnership
+                .ReestablishAfterUserChange)
+            {
+                return true;
+            }
+
+            await MaintainDeferredManualFanSafetyFloorCoreAsync(
+                cancellationToken,
+                allowOwnedAutomaticBaseline: true,
+                stillControlsSession).ConfigureAwait(false);
+            current = GetStatus();
+            if (deferredManualFanSafetyOwnership.State !=
+                DeferredManualFanSafetyState.FloorOwned)
+            {
+                return false;
+            }
         }
 
-        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.Lost)
+        if (deferredManualFanSafetyOwnership.State ==
+            DeferredManualFanSafetyState.Lost)
         {
             return false;
         }
 
-        if (deferredManualFanSafetyState == DeferredManualFanSafetyState.FloorOwned)
+        if (deferredManualFanSafetyOwnership.State ==
+            DeferredManualFanSafetyState.FloorOwned)
         {
             if (desired.Mode == FanMode.Automatic)
             {
@@ -8263,7 +8422,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     powerSource,
                     cancellationToken,
                     stillControlsSession).ConfigureAwait(false);
-                return deferredManualFanSafetyState ==
+                return deferredManualFanSafetyOwnership.State ==
                     DeferredManualFanSafetyState.AutomaticOwned;
             }
 
@@ -8292,7 +8451,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cancellationToken,
                 allowOwnedAutomaticBaseline: true,
                 stillControlsSession).ConfigureAwait(false);
-            return deferredManualFanSafetyState ==
+            return deferredManualFanSafetyOwnership.State ==
                 DeferredManualFanSafetyState.FloorOwned;
         }
 
@@ -8326,12 +8485,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
-        DeferredManualFanSafetyState priorState = deferredManualFanSafetyState;
+        DeferredManualFanSafetyOwnership priorOwnership =
+            deferredManualFanSafetyOwnership;
         ExactFanControlOwnership priorFanOwnership = exactFanControlOwnership;
         bool priorRecoveryPending = manualFanCurveRecoveryPending;
-        deferredManualFanSafetyState = DeferredManualFanSafetyState.Lost;
+        var recoveryAuthority = CaptureDeferredManualFanRecoveryAuthority(
+            priorOwnership,
+            powerSource);
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.TransitionPending(
+                recoveryAuthority.AttemptId);
         manualFanCurveRecoveryPending = false;
         exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+        ScopedApplyOutcome? appliedOutcome = null;
+        ThermalTransitionTrace? transitionTrace = null;
         ControlOperationResult result;
         try
         {
@@ -8339,18 +8506,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeviceSubsystem.Fans,
                 powerSource,
                 (coordinator, _, token) =>
-                    coordinator.ApplyFanControlOutcomeAsync(
+                    coordinator.ApplyRecoveryFanControlOutcomeAsync(
                         settings,
                         token,
-                        stillControlsSession,
                         state => DeferredManualFanSafetyStateBlockReason(
-                            priorState,
+                            priorOwnership,
                             state)),
                 cancellationToken,
                 desired => desired with
                 {
                     Fans = desired.Fans with { Value = settings.Mode },
                     FanControl = settings,
+                },
+                stillControlsSession: stillControlsSession,
+                thermalComponents: [DeviceSubsystem.Fans],
+                additionalThermalWriteBlockReason: () =>
+                    DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority),
+                observeScopedOutcome: (outcome, _, trace) =>
+                {
+                    appliedOutcome = outcome;
+                    transitionTrace = trace;
                 }).ConfigureAwait(false);
         }
         catch (IntentionalWriteCanceledException)
@@ -8360,7 +8535,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (WriteAuthorityLostException)
         {
-            deferredManualFanSafetyState = priorState;
+            deferredManualFanSafetyOwnership = priorOwnership;
             manualFanCurveRecoveryPending = priorRecoveryPending;
             exactFanControlOwnership = priorFanOwnership;
             throw;
@@ -8368,20 +8543,51 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            deferredManualFanSafetyState = priorState;
+            deferredManualFanSafetyOwnership = priorOwnership;
             manualFanCurveRecoveryPending = priorRecoveryPending;
             exactFanControlOwnership = priorFanOwnership;
             throw;
         }
 
-        if (result.Status != ControlOperationStatus.Applied)
+        if (IsUnspentPreSubmission(appliedOutcome, transitionTrace))
         {
+            deferredManualFanSafetyOwnership = priorOwnership;
+            manualFanCurveRecoveryPending = priorRecoveryPending;
+            exactFanControlOwnership = priorFanOwnership;
             return false;
         }
 
-        deferredManualFanSafetyState = settings.Mode == FanMode.Automatic
-            ? DeferredManualFanSafetyState.AutomaticOwned
-            : DeferredManualFanSafetyState.FloorOwned;
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return false;
+        }
+
+        bool confirmedAutomatic = appliedOutcome is
+        {
+            WriteAttempted: true,
+            ReadbackMatched: true,
+        } && exactFanControlOwnership.Disposition ==
+            ExactFanControlOwnershipDisposition.Unowned;
+        bool confirmedOwnership = settings.Mode == FanMode.Automatic
+            ? confirmedAutomatic
+            : IsExactFanIntentOwned(settings);
+        if (!confirmedOwnership)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            return false;
+        }
+
+        deferredManualFanSafetyOwnership =
+            DeferredManualFanSafetyOwnership.Owned(
+                settings.Mode == FanMode.Automatic
+                    ? DeferredManualFanSafetyState.AutomaticOwned
+                    : DeferredManualFanSafetyState.FloorOwned,
+                settings,
+                fanAuthorityEpoch,
+                fanDesiredRevision);
         return true;
     }
 
@@ -8611,6 +8817,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        Interlocked.Increment(ref powerAdmissionEpoch);
         await operationGate.WaitAsync(cancellationToken);
         try
         {
@@ -8682,6 +8889,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        Interlocked.Increment(ref powerAdmissionEpoch);
         await operationGate.WaitAsync(cancellationToken);
         try
         {
@@ -10227,7 +10435,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<CancellationToken, Task>? commitIntent = null,
         bool allowFanOwnershipRearm = false,
         Func<bool>? stillControlsSession = null,
-        IReadOnlyList<DeviceSubsystem>? thermalComponents = null)
+        IReadOnlyList<DeviceSubsystem>? thermalComponents = null,
+        Func<string?>? additionalThermalWriteBlockReason = null,
+        Action<
+            ScopedApplyOutcome,
+            ConfirmedDeviceState?,
+            ThermalTransitionTrace?>? observeScopedOutcome = null)
     {
         if (stillControlsSession?.Invoke() == false)
         {
@@ -10305,7 +10518,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token,
             stageDesired,
             stillControlsSession,
-            thermalComponents);
+            thermalComponents,
+            additionalThermalWriteBlockReason);
         ScopedApplyOutcome outcome = execution.Outcome;
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
@@ -10360,6 +10574,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 outcome.WriteSubmissionState,
                 outcome.ConfirmationUnavailable);
         }
+
+        observeScopedOutcome?.Invoke(
+            outcome,
+            confirmed,
+            execution.ThermalTrace);
 
         ControlOperationResult? commitFailure = await CommitScopedIntentAsync(
             subsystem,
@@ -10416,7 +10635,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
-        IReadOnlyList<DeviceSubsystem>? thermalComponents)
+        IReadOnlyList<DeviceSubsystem>? thermalComponents,
+        Func<string?>? additionalThermalWriteBlockReason)
     {
         try
         {
@@ -10476,13 +10696,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     desired,
                                     stageDesired,
                                     stillControlsSession,
-                                    thermalComponents),
+                                    thermalComponents,
+                                    additionalThermalWriteBlockReason),
                             fanWriteBlockReason: () =>
                                 ScopedThermalWriteBlockReason(
                                     desired,
                                     stageDesired,
                                     stillControlsSession,
-                                    thermalComponents)),
+                                    thermalComponents,
+                                    additionalThermalWriteBlockReason)),
                         (runner, cancellationToken) => apply(
                             runner.CreateRecipeCoordinator(),
                             desired,
@@ -10494,7 +10716,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             stillControlsSession,
                             thermalComponents,
                             ThermalPreWriteRetryDelay,
-                            cancellationToken),
+                            cancellationToken,
+                            additionalThermalWriteBlockReason),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
             }
@@ -10545,7 +10768,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<bool>? stillControlsSession,
         IReadOnlyList<DeviceSubsystem> components,
         TimeSpan recoveryDelay,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string?>? additionalThermalWriteBlockReason = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (stillControlsSession?.Invoke() == false)
@@ -10655,6 +10879,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "The authoritative thermal intent changed before the fresh-session retry.");
         }
 
+        string? additionalBlock = additionalThermalWriteBlockReason?.Invoke();
+        if (additionalBlock is not null)
+        {
+            return ThermalRetryAdmission.Block(additionalBlock);
+        }
+
         try
         {
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice retryDevice))
@@ -10714,7 +10944,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState expected,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
-        IReadOnlyList<DeviceSubsystem> components)
+        IReadOnlyList<DeviceSubsystem> components,
+        Func<string?>? additionalThermalWriteBlockReason = null)
     {
         if (stillControlsSession?.Invoke() == false)
         {
@@ -10737,9 +10968,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return "Thermal write authority closed before the command was submitted.";
         }
 
-        return ScopedThermalIntentMatchesCurrent(expected, stageDesired, components)
-            ? null
-            : "The authoritative thermal intent changed before the command was submitted.";
+        if (!ScopedThermalIntentMatchesCurrent(expected, stageDesired, components))
+        {
+            return "The authoritative thermal intent changed before the command was submitted.";
+        }
+
+        return additionalThermalWriteBlockReason?.Invoke();
     }
 
     private bool ScopedPerformanceIntentMatchesCurrent(
@@ -14314,8 +14548,39 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return admission;
     }
 
-    private void AdvanceFanAuthorityEpoch()
+    private void AdvanceFanAuthorityEpoch(
+        bool preserveDeferredRecoveryBaseline = false)
     {
+        if (preserveDeferredRecoveryBaseline
+            && unexpectedExitRecoveryDeferredForUserConfiguration)
+        {
+            deferredManualFanSafetyOwnership =
+                deferredManualFanSafetyOwnership.State switch
+                {
+                    DeferredManualFanSafetyState.FloorOwned =>
+                        DeferredManualFanSafetyOwnership.Pending(
+                            FanMode.ManualCurve,
+                            reestablishAfterUserChange: true),
+                    DeferredManualFanSafetyState.AutomaticOwned =>
+                        DeferredManualFanSafetyOwnership.Pending(
+                            FanMode.Automatic,
+                            reestablishAfterUserChange: true),
+                    DeferredManualFanSafetyState.PendingUnowned =>
+                        deferredManualFanSafetyOwnership,
+                    _ => DeferredManualFanSafetyOwnership.Lost,
+                };
+            manualFanCurveRecoveryPending =
+                deferredManualFanSafetyOwnership.State ==
+                    DeferredManualFanSafetyState.PendingUnowned;
+        }
+        else if (deferredManualFanSafetyOwnership.State !=
+            DeferredManualFanSafetyState.Lost)
+        {
+            deferredManualFanSafetyOwnership =
+                DeferredManualFanSafetyOwnership.Lost;
+            manualFanCurveRecoveryPending = false;
+        }
+
         fanAuthorityEpoch++;
         exactFanControlOwnership = ExactFanControlOwnership.Unowned;
         ClearLastFanCurveTargets();
@@ -14326,6 +14591,111 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         fanDesiredRevision++;
         ClearLastFanCurveTargets();
     }
+
+    private DeferredManualFanRecoveryAuthority
+        CaptureDeferredManualFanRecoveryAuthority(
+        DeferredManualFanSafetyOwnership expected,
+        PowerSource powerSource)
+    {
+        if (expected.State is not (
+            DeferredManualFanSafetyState.PendingUnowned or
+            DeferredManualFanSafetyState.FloorOwned or
+            DeferredManualFanSafetyState.AutomaticOwned))
+        {
+            throw new InvalidOperationException(
+                "Deferred fan recovery cannot claim an inactive ownership state.");
+        }
+
+        return CaptureFanRecoveryAuthority(powerSource);
+    }
+
+    private DeferredManualFanRecoveryAuthority CaptureFanRecoveryAuthority(
+        PowerSource powerSource) => new(
+            Guid.NewGuid(),
+            powerSource,
+            powerSourceGeneration,
+            Interlocked.Read(ref powerAdmissionEpoch),
+            fanAuthorityEpoch,
+            fanDesiredRevision,
+            Volatile.Read(ref activeUserSid));
+
+    private string? DeferredManualFanRecoveryWriteBlockReason(
+        DeferredManualFanRecoveryAuthority authority)
+    {
+        if (deferredManualFanSafetyOwnership is not
+            {
+                State: DeferredManualFanSafetyState.TransitionPending,
+                AttemptId: var attemptId,
+            }
+            || attemptId != authority.AttemptId)
+        {
+            return "Deferred fan-recovery ownership changed before submission.";
+        }
+
+        return FanRecoveryAuthorityBlockReason(authority);
+    }
+
+    private string? FanRecoveryAuthorityBlockReason(
+        DeferredManualFanRecoveryAuthority authority)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!controllerPresenceObserved || FanControllerAdmissionUnsafe(current))
+        {
+            return "Unexpected-exit fan recovery yielded to another Razer controller or an incomplete controller check.";
+        }
+
+        if (fanAuthorityEpoch != authority.FanAuthorityEpoch
+            || fanDesiredRevision != authority.FanDesiredRevision
+            || powerSourceGeneration != authority.PowerSourceGeneration
+            || Interlocked.Read(ref powerAdmissionEpoch) !=
+                authority.PowerAdmissionEpoch
+            || current.ActivePowerSource != authority.PowerSource
+            || !string.Equals(
+                Volatile.Read(ref activeUserSid),
+                authority.ActiveUserSid,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Unexpected-exit fan-recovery authority changed before submission.";
+        }
+
+        return null;
+    }
+
+    private bool IsExactFanIntentOwned(FanControlSettings settings) =>
+        exactFanControlOwnership is
+        {
+            Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
+            Settings: { } ownedSettings,
+            AuthorityEpoch: var authorityEpoch,
+            DesiredRevision: var desiredRevision,
+        }
+        && ownedSettings == settings
+        && authorityEpoch == fanAuthorityEpoch
+        && desiredRevision == fanDesiredRevision;
+
+    private bool IsDeferredExactFanIntentOwned(
+        DeferredManualFanSafetyOwnership ownership) =>
+        ownership.Intent is { } expected
+        && exactFanControlOwnership is
+        {
+            Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
+            Settings: { } actual,
+            AuthorityEpoch: var authorityEpoch,
+            DesiredRevision: var desiredRevision,
+        }
+        && actual == expected
+        && authorityEpoch == ownership.AuthorityEpoch
+        && desiredRevision == ownership.DesiredRevision;
+
+    private static bool IsUnspentPreSubmission(
+        ScopedApplyOutcome? outcome,
+        ThermalTransitionTrace? trace) => outcome is
+        {
+            Result.Status: ControlResultStatus.Blocked,
+            WriteAttempted: false,
+            WriteSubmissionState: WriteSubmissionState.KnownNotApplied,
+        }
+        && trace is { RetryConsumed: false };
 
     private void OwnExactFanIntent(FanControlSettings settings)
     {
@@ -14515,8 +14885,91 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PendingUnowned,
         FloorOwned,
         AutomaticOwned,
+        TransitionPending,
         Lost,
     }
+
+    private readonly record struct DeferredManualFanSafetyOwnership(
+        DeferredManualFanSafetyState State,
+        FanMode? PendingBaseline,
+        FanControlSettings? Intent,
+        long AuthorityEpoch,
+        long DesiredRevision,
+        Guid? AttemptId,
+        bool ReestablishAfterUserChange)
+    {
+        public static DeferredManualFanSafetyOwnership Lost { get; } = new(
+            DeferredManualFanSafetyState.Lost,
+            PendingBaseline: null,
+            Intent: null,
+            AuthorityEpoch: -1,
+            DesiredRevision: -1,
+            AttemptId: null,
+            ReestablishAfterUserChange: false);
+
+        public static DeferredManualFanSafetyOwnership Pending(
+            FanMode baseline,
+            bool reestablishAfterUserChange) => new(
+                DeferredManualFanSafetyState.PendingUnowned,
+                baseline,
+                Intent: null,
+                AuthorityEpoch: -1,
+                DesiredRevision: -1,
+                AttemptId: null,
+                reestablishAfterUserChange);
+
+        public static DeferredManualFanSafetyOwnership Owned(
+            DeferredManualFanSafetyState state,
+            FanControlSettings intent,
+            long authorityEpoch,
+            long desiredRevision)
+        {
+            if (state is not (
+                DeferredManualFanSafetyState.FloorOwned or
+                DeferredManualFanSafetyState.AutomaticOwned))
+            {
+                throw new ArgumentOutOfRangeException(nameof(state));
+            }
+
+            return new DeferredManualFanSafetyOwnership(
+                state,
+                PendingBaseline: null,
+                intent,
+                authorityEpoch,
+                desiredRevision,
+                AttemptId: null,
+                ReestablishAfterUserChange: false);
+        }
+
+        public static DeferredManualFanSafetyOwnership TransitionPending(
+            Guid attemptId) => new(
+                DeferredManualFanSafetyState.TransitionPending,
+                PendingBaseline: null,
+                Intent: null,
+                AuthorityEpoch: -1,
+                DesiredRevision: -1,
+                attemptId,
+                ReestablishAfterUserChange: false);
+
+        public bool MatchesPendingBaseline(FanMode? observed) =>
+            PendingBaseline switch
+            {
+                FanMode.Automatic => observed == FanMode.Automatic,
+                { } baseline when DeviceSubsystemOrder.IsManualFanMode(baseline) =>
+                    observed is { } value
+                    && DeviceSubsystemOrder.IsManualFanMode(value),
+                _ => false,
+            };
+    }
+
+    private sealed record DeferredManualFanRecoveryAuthority(
+        Guid AttemptId,
+        PowerSource PowerSource,
+        long PowerSourceGeneration,
+        long PowerAdmissionEpoch,
+        long FanAuthorityEpoch,
+        long FanDesiredRevision,
+        string? ActiveUserSid);
 
     private void EnsureInitialized()
     {

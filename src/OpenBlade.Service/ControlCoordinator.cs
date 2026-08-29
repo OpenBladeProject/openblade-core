@@ -332,6 +332,70 @@ public sealed class ControlCoordinator
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
     }
 
+    internal Task<ScopedApplyOutcome> ApplyRecoveryFanControlOutcomeAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null) =>
+        ApplyRequestedFanControlStepOutcomeAsync(
+            value,
+            cancellationToken,
+            initialStateBlockReason);
+
+    private async Task<ScopedApplyOutcome> ApplyRequestedFanControlStepOutcomeAsync(
+        FanControlSettings requested,
+        CancellationToken cancellationToken,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
+    {
+        ScopedApplyOutcome fans = await RunThermalStepAsync(
+            DeviceSubsystem.Fans,
+            ThermalTransitionStepPurpose.Requested,
+            (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                requested,
+                token,
+                initialStateBlockReason: initialStateBlockReason),
+            cancellationToken).ConfigureAwait(false);
+        if (thermalStepRunner is null
+            || fans.WriteSubmissionState != WriteSubmissionState.Indeterminate
+            || !IsAdjustableFanManualEntrySubmission(fans.WriteFailurePhase)
+            || ResolveManualFanTarget(requested, fans.Capabilities) is not int targetRpm)
+        {
+            return fans;
+        }
+
+        ScopedApplyOutcome continuation = await thermalStepRunner
+            .ApplyFreshContinuationAsync(
+                DeviceSubsystem.Fans,
+                ThermalTransitionStepPurpose.ManualTargetContinuation,
+                fans,
+                (coordinator, token) => coordinator
+                    .ApplyManualFanTargetContinuationOutcomeAsync(
+                        targetRpm,
+                        token),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (continuation.Result.Status is
+            ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+        {
+            return continuation with
+            {
+                Result = continuation.Result with
+                {
+                    Message =
+                        "Fans entered manual mode and the target-only continuation completed without replaying either entry command.",
+                },
+            };
+        }
+
+        return fans with
+        {
+            Result = fans.Result with
+            {
+                Message = $"{fans.Result.Message} Target-only continuation result: {continuation.Result.Message}",
+            },
+            ConfirmationUnavailable = true,
+        };
+    }
+
     internal Task<ScopedApplyOutcome> ApplyManualFanTargetContinuationOutcomeAsync(
         int targetRpm,
         CancellationToken cancellationToken) => ApplyScopedAsync(
@@ -511,53 +575,9 @@ public sealed class ControlCoordinator
             }
         }
 
-        ScopedApplyOutcome fans = await RunThermalStepAsync(
-            DeviceSubsystem.Fans,
-            ThermalTransitionStepPurpose.Requested,
-            (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
-                requested,
-                token),
+        ScopedApplyOutcome fans = await ApplyRequestedFanControlStepOutcomeAsync(
+            requested,
             cancellationToken).ConfigureAwait(false);
-        if (thermalStepRunner is not null
-            && fans.WriteSubmissionState == WriteSubmissionState.Indeterminate
-            && IsAdjustableFanManualEntrySubmission(fans.WriteFailurePhase)
-            && ResolveManualFanTarget(requested, fans.Capabilities) is int targetRpm)
-        {
-            ScopedApplyOutcome continuation = await thermalStepRunner
-                .ApplyFreshContinuationAsync(
-                    DeviceSubsystem.Fans,
-                    ThermalTransitionStepPurpose.ManualTargetContinuation,
-                    fans,
-                    (coordinator, token) => coordinator
-                        .ApplyManualFanTargetContinuationOutcomeAsync(
-                            targetRpm,
-                            token),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (continuation.Result.Status is
-                ControlResultStatus.Applied or ControlResultStatus.Unchanged)
-            {
-                fans = continuation with
-                {
-                    Result = continuation.Result with
-                    {
-                        Message =
-                            "Fans entered manual mode and the target-only continuation completed without replaying either entry command.",
-                    },
-                };
-            }
-            else
-            {
-                return fans with
-                {
-                    Result = fans.Result with
-                    {
-                        Message = $"{fans.Result.Message} Target-only continuation result: {continuation.Result.Message}",
-                    },
-                    ConfirmationUnavailable = true,
-                };
-            }
-        }
         RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, fans);
         if (fans.Result.Status is not (
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged))

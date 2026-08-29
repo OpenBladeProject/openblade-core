@@ -4480,6 +4480,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             providerAvailable: true,
             initialize: false,
             fanTemperatureSource: temperatures,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask,
             profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(
                 recoveryCapabilities));
         LightingSettings lighting = LightingSettingsFactory.Static(
@@ -4550,11 +4551,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected crash-recovery pre-write failure."));
+
         await context.Runtime.PrepareManualFanCurveRecoveryAsync(
             CancellationToken.None);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         Assert.Equal(
             5000,
-            Assert.Single(context.Device.FanTargets).Fan1Rpm);
+            context.Device.FanTargets[^1].Fan1Rpm);
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
         Assert.Contains(
             "temperature is unavailable",
@@ -4671,6 +4678,495 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, shutdown.Status);
         Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_ThermalFloorUsesOneFreshAdmittedRetry()
+    {
+        var retryDelays = new List<TimeSpan>();
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_RepeatedThermalFloorFailureConsumesRecovery()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected first safety-floor pre-write failure."));
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected retry safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_ControllerArrivalBlocksThermalFloorRetry()
+    {
+        TestContext? contextAtDelay = null;
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                contextAtDelay!.Monitor.Current =
+                    new ControllerPresenceObservation(
+                        ["RazerAppEngine"],
+                        DetectionWarning: null);
+                return Task.CompletedTask;
+            });
+        contextAtDelay = context;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(["RazerAppEngine"], context.Runtime.GetStatus().PotentialControllers);
+
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            DetectionWarning: null);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_ControllerWarningBlocksThermalFloor()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [],
+            "Injected controller detection warning.");
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Contains(
+            "Injected controller detection warning",
+            context.Runtime.GetStatus().ControllerDetectionWarning,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_DeviceReadmissionFailureConsumesThermalFloorRetry()
+    {
+        TestContext? contextAtDelay = null;
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                contextAtDelay!.Provider.Available = false;
+                return Task.CompletedTask;
+            });
+        contextAtDelay = context;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+        context.Provider.Available = true;
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_LowPowerArrivalBlocksThermalFloorRetry()
+    {
+        var lowPowerGate = new LowPowerGate();
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                lowPowerGate.Enter();
+                return Task.CompletedTask;
+            },
+            lowPowerGate: lowPowerGate);
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        lowPowerGate.Exit();
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_PowerAbaBlocksThermalFloorRetry()
+    {
+        var queuedPowerChanges = new List<Task>();
+        TestContext? contextAtDelay = null;
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                contextAtDelay!.Telemetry.Current = CreateTelemetry(
+                    PowerSource.Battery);
+                queuedPowerChanges.Add(
+                    contextAtDelay.Runtime.HandlePowerSourceChangedAsync(
+                        CancellationToken.None));
+                contextAtDelay.Telemetry.Current = CreateTelemetry(
+                    PowerSource.PluggedIn);
+                queuedPowerChanges.Add(
+                    contextAtDelay.Runtime.HandlePowerSourceChangedAsync(
+                        CancellationToken.None));
+                return Task.CompletedTask;
+            });
+        contextAtDelay = context;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await Task.WhenAll(queuedPowerChanges);
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(
+            PowerSource.PluggedIn,
+            context.Runtime.GetStatus().ActivePowerSource);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_NonRetryablePreSubmissionFailureConsumesRecovery()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "Injected provider-open failure before submission."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_PartialManualEntryContinuesTargetsWithoutReplay()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.AdjustableFanSecondManualEntrySubmission,
+            "Injected second manual-entry ambiguity."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.FanSetCalls);
+        Assert.Equal(2, context.Device.FanTargets.Count);
+        Assert.All(
+            context.Device.FanTargets,
+            target => Assert.Equal(
+                new FanTargetSpeeds(5400, 5400, FailSafe: true),
+                target));
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_ThermalFloorRetryUsesReadmittedDevice()
+    {
+        var retryDevice = new CountingBladeDevice();
+        TestContext? contextAtDelay = null;
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                retryDevice.Capabilities = contextAtDelay!.Device.Capabilities;
+                retryDevice.ConfirmedState = contextAtDelay.Device.ConfirmedState;
+                retryDevice.FanTargetsAvailable = true;
+                contextAtDelay.Provider.Device = retryDevice;
+                return Task.CompletedTask;
+            });
+        contextAtDelay = context;
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor pre-write failure."));
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(1, retryDevice.FanSetCalls);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Theory]
+    [InlineData(FanMode.Automatic)]
+    [InlineData(FanMode.Fixed)]
+    public async Task UnexpectedRestart_DeferredIntentUsesOneFreshAdmittedRetry(
+        FanMode fanMode)
+    {
+        FanControlSettings fanControl = fanMode == FanMode.Fixed
+            ? new FanControlSettings(
+                FanMode.Fixed,
+                3200,
+                ManualFanCurve.Default)
+            : FanControlSettings.FromLegacy(FanMode.Automatic);
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            new PersistentOverrideState(
+                Performance: null,
+                Fans: fanMode,
+                Lighting: null,
+                FanControl: fanControl),
+            directory);
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected deferred fan-intent pre-write failure."));
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+
+        Assert.Equal([fanMode, fanMode], context.Device.FanWrites);
+        if (fanMode == FanMode.Fixed)
+        {
+            Assert.Equal(
+                ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                    .OwnedExactIntent,
+                context.Runtime.FanControlOwnershipDisposition);
+        }
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_SessionLossBlocksDeferredIntentRetry()
+    {
+        bool controlsSession = true;
+        var fixedFans = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            new PersistentOverrideState(
+                Performance: null,
+                Fans: FanMode.Fixed,
+                Lighting: null,
+                FanControl: fixedFans),
+            directory);
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            transitionRetryDelay: (_, _) =>
+            {
+                controlsSession = false;
+                return Task.CompletedTask;
+            });
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected deferred fan-intent pre-write failure."));
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            () => controlsSession,
+            CancellationToken.None);
+
+        controlsSession = true;
+        await context.Runtime.ActivateUserAsync(
+            userSid,
+            () => controlsSession,
+            CancellationToken.None);
+
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_IndeterminateDeferredFixedIntentIsNotRetried()
+    {
+        var fixedFans = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+        var repository = new FixedUserConfigurationRepository(
+            new BatteryConfiguration(
+                ProfileDefaults.CreateSafeDefaults(),
+                new BatteryAutomationPreferences(ProtectionEnabled: true),
+                Recovered: false),
+            new PersistentOverrideState(
+                Performance: null,
+                Fans: FanMode.Fixed,
+                Lighting: null,
+                FanControl: fixedFans),
+            directory);
+        TestContext context = await CreateDeferredRecoveryContextAsync(repository);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected ambiguous deferred Fixed submission."));
+        var userSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        _ = await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .SubmissionUnresolved,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_UnconfirmedFloorCannotAuthorizeUsbCHandback()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(
+            repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.PerformanceFanStateReadFailureOnCall =
+            context.Device.PerformanceFanStateReadCalls + 2;
+
+        await context.Runtime.PrepareManualFanCurveRecoveryAsync(
+            CancellationToken.None);
+
+        Assert.Equal(
+            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                .SubmissionUnresolved,
+            context.Runtime.FanControlOwnershipDisposition);
+        Assert.Single(context.Device.FanTargets);
+
+        context.Device.PerformanceFanStateReadFailureOnCall = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        _ = await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Single(context.Device.FanTargets);
+        Assert.Empty(context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task UnexpectedRestart_ResumeInvalidatesFloorHandbackAuthority()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        TestContext context = await CreateDeferredRecoveryContextAsync(repository);
+        Assert.Single(context.Device.FanTargets);
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Single(context.Device.FanTargets);
+        Assert.Empty(context.Device.FanWrites);
     }
 
     [Fact]
@@ -4980,7 +5476,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
 
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(fanControl, context.Runtime.GetStatus().FanControlOverride);
         if (fanMode == FanMode.Automatic)
@@ -5131,12 +5627,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         if (initialPowerSource == PowerSource.UsbC)
         {
             Assert.Single(context.Device.FanTargets);
-            Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+            Assert.Empty(context.Device.FanWrites);
             Assert.Equal(0, context.Device.LightingSetCalls);
             Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
             context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
             await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
-            Assert.Single(context.Device.FanTargets);
+            Assert.Equal(2, context.Device.FanTargets.Count);
             Assert.Equal(0, context.Device.LightingSetCalls);
             Assert.Equal(
                 PowerSource.PluggedIn,
@@ -5147,7 +5643,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
             await context.Runtime.RefreshPowerSourceClassificationAsync(
                 CancellationToken.None);
-            Assert.Single(context.Device.FanTargets);
+            Assert.Equal(2, context.Device.FanTargets.Count);
             Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
             Assert.Equal(0, context.Device.LightingSetCalls);
             Assert.Equal(
@@ -5159,7 +5655,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
             await context.Runtime.RefreshPowerSourceClassificationAsync(
                 CancellationToken.None);
-            Assert.Single(context.Device.FanTargets);
+            Assert.Equal(2, context.Device.FanTargets.Count);
             Assert.Equal(0, context.Device.LightingSetCalls);
             Assert.Equal(
                 PowerSource.PluggedIn,
@@ -5167,7 +5663,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
         }
 
-        int safetyFloorCount = initialPowerSource == PowerSource.UsbC ? 2 : 1;
+        int safetyFloorCount = initialPowerSource == PowerSource.UsbC ? 3 : 2;
         Assert.Equal(safetyFloorCount, context.Device.FanTargets.Count);
         Assert.All(
             context.Device.FanTargets,
@@ -5179,7 +5675,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(userOverrides.FanControl, recovered.FanControlOverride);
         Assert.Equal(userOverrides.Lighting, recovered.LightingOverride!.Value);
         Assert.Equal(1, repository.LoadCount);
-        int expectedCurveWrites = initialPowerSource == PowerSource.UsbC ? 1 : 0;
+        const int expectedCurveWrites = 1;
         Assert.Equal(expectedCurveWrites, temperatures.ReadCount);
         Assert.Equal(
             safetyFloorCount + expectedCurveWrites,
@@ -5252,7 +5748,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             () => controlsSession,
             CancellationToken.None);
 
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Equal(2, repository.LoadCount);
     }
@@ -5308,7 +5804,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "S-1-5-21-1-2-3-1001");
         await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
 
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         Assert.Equal(1, context.Device.LightingSetCalls);
     }
 
@@ -5344,15 +5840,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 static () => true,
                 cancellation.Token));
 
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         Assert.Equal(0, context.Device.LightingSetCalls);
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
 
         context.Device.BeforeReadLightingState = null;
         await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
 
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(3, context.Device.FanTargets.Count);
         Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
@@ -5403,7 +5899,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
 
         ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
-        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(2, context.Device.FanTargets.Count);
         if (alwaysOverride)
         {
             Assert.Equal(1, context.Device.LightingSetCalls);
@@ -12631,7 +13127,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private async Task<TestContext> CreateDeferredRecoveryContextAsync(
         IUserConfigurationRepository repository,
         bool prepareFanRecovery = true,
-        PowerSource initialPowerSource = PowerSource.PluggedIn)
+        PowerSource initialPowerSource = PowerSource.PluggedIn,
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        LowPowerGate? lowPowerGate = null)
     {
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -12655,7 +13153,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             initialize: false,
             profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities),
             userConfigurationRepository: repository,
-            initialPowerSource: initialPowerSource);
+            initialPowerSource: initialPowerSource,
+            transitionRetryDelay: transitionRetryDelay,
+            lowPowerGate: lowPowerGate);
         BatteryConfiguration machineConfiguration = await context.Store.LoadAsync(
             CancellationToken.None);
         context.Device.Capabilities = capabilities;
