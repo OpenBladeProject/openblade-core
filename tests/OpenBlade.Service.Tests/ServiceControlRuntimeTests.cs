@@ -1914,6 +1914,55 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PeriodicMaintenance_QueuedBeforeLowPowerDoesNotReacquireDriverOrLighting()
+    {
+        var enteredBatterySetter = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBatterySetter = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lowPowerGate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(
+            lowPowerGate: lowPowerGate);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 75, 80 },
+        };
+        context.Device.ChargeLimitSetterBoundary = async () =>
+        {
+            enteredBatterySetter.SetResult();
+            await releaseBatterySetter.Task;
+        };
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.None;
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        int driverModeEnsureCalls = context.Device.DriverModeEnsureCalls;
+        int lightingWrites = context.Device.LightingSetCalls;
+
+        Task<ControlOperationResult> batteryUpdate = context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+        await enteredBatterySetter.Task;
+        Task periodicRefresh = context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        Assert.True(periodicRefresh.IsCompletedSuccessfully);
+        Task driverModeMaintenance = context.Runtime.MaintainDriverModeAsync(
+            CancellationToken.None);
+        Task lightingRestore = context.Runtime.RestoreLightingRendererAsync(
+            CancellationToken.None);
+        Assert.True(lowPowerGate.Enter());
+        releaseBatterySetter.SetResult();
+
+        await batteryUpdate;
+        await Task.WhenAll(driverModeMaintenance, lightingRestore);
+
+        Assert.Equal(driverModeEnsureCalls, context.Device.DriverModeEnsureCalls);
+        Assert.Equal(lightingWrites, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task PrepareForLowPower_RecordsDistinctReleaseFailureWithoutThrowing()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -16681,6 +16730,78 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             context.Runtime.GetStatus().Profiles.UsbC.Fans,
             context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PadlessHyperBoost_LifecycleExitCoalescesQueuedPeriodicPowerRefresh(
+        bool lowPowerEnteredDuringExit)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        var lowPowerGate = new LowPowerGate();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            lowPowerGate: lowPowerGate,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceOverrideAsync(
+                new ManualOverride<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    OverrideLifetime.UntilPowerSourceChange),
+                CancellationToken.None)).Status);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int hyperBoostWritesBeforeExit = context.Device.HyperBoostSetCalls;
+        int performanceWritesBeforeExit = context.Device.PerformanceSetCalls;
+        int fanWritesBeforeExit = context.Device.FanSetCalls;
+
+        Task? periodicRefresh = null;
+        context.Device.AfterReadState = () =>
+        {
+            if (context.Device.HyperBoostSetCalls >= 2
+                && !context.Device.ConfirmedState.HyperBoostActive
+                && periodicRefresh is null)
+            {
+                if (lowPowerEnteredDuringExit)
+                {
+                    lowPowerGate.Enter();
+                }
+                periodicRefresh = context.Runtime.RefreshPowerSourceClassificationAsync(
+                    CancellationToken.None);
+            }
+        };
+
+        ControlOperationResult result =
+            await context.Runtime.PrepareOwnedHyperBoostForDisplayOffAsync(
+                CancellationToken.None);
+        Assert.NotNull(periodicRefresh);
+        await periodicRefresh;
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(
+            hyperBoostWritesBeforeExit + 1,
+            context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            performanceWritesBeforeExit + 1,
+            context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWritesBeforeExit, context.Device.FanSetCalls);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
         Assert.Null(journal.Journal);
     }
 

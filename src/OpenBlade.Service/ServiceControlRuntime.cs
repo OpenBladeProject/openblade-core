@@ -9033,18 +9033,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
-        Interlocked.Increment(ref powerAdmissionEpoch);
-        Interlocked.Increment(ref pendingPowerAdmissions);
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
+        // Periodic classification is repeatable maintenance. It must not queue
+        // behind an admitted control transition and then invalidate that
+        // transition before the classifier can observe anything. Explicit
+        // Windows power events retain their queued admission semantics through
+        // HandlePowerSourceChangedAsync, and resume performs a fresh refresh.
+        if (!await operationGate.WaitAsync(0, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
-            await operationGate.WaitAsync(cancellationToken);
-        }
-        finally
-        {
-            Interlocked.Decrement(ref pendingPowerAdmissions);
-        }
-        try
-        {
+            if (lowPowerGate.IsActive)
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref powerAdmissionEpoch);
             await RefreshControllerPresenceAndRelinquishLightingAsync(
                 cancellationToken).ConfigureAwait(false);
             PowerSource classified =
@@ -9126,9 +9138,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public async Task MaintainDriverModeAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (lowPowerGate.IsActive)
+            {
+                return;
+            }
+
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 driverModePortRecoveryAttempted = false;
@@ -10015,9 +10037,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return;
+        }
+
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (lowPowerGate.IsActive)
+            {
+                return;
+            }
+
             _ = await RestoreLightingRendererCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
