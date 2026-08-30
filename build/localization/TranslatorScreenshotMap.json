@@ -143,8 +143,8 @@
     {
       "surface": "installer",
       "match": "source",
-      "pattern": "(?i)(?:newer|overwrite|already installed|already registered)",
-      "context": "Newer-version or overwrite confirmation.",
+      "pattern": "(?i)(?:newer|older installer|already installed|already registered)",
+      "context": "Older-installer block when a newer OpenBlade version is installed.",
       "screenshots": ["installer/installer-newer-version.png"]
     },
     {

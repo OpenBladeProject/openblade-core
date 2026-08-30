@@ -34,11 +34,6 @@ $script:AccessKeyGroups = @(
     },
     [pscustomobject]@{
         Surface = 'installer'
-        Context = 'newer-version actions'
-        Keys = @('_Overwrite', '_Cancel')
-    },
-    [pscustomobject]@{
-        Surface = 'installer'
         Context = 'collapsed progress actions'
         Keys = @('Show _details', '_Cancel')
     },

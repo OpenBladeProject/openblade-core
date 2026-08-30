@@ -343,8 +343,25 @@ Assert-True ($bootstrapperSource.Contains('CreateHiddenApplyOwner()')) `
 Assert-True (-not $bootstrapperSource.Contains(
         'IntPtr parent = window?.WindowHandle ?? IntPtr.Zero')) `
     'Burn apply must not fall back to a null owner when no WPF window exists.'
-Assert-True ($bootstrapperSource.Contains('ShowNewerVersionConfirmation')) `
-    'Interactive setup must ask before replacing a newer OpenBlade version.'
+Assert-True ($bootstrapperSource.Contains('ShowNewerVersionBlocked')) `
+    'Interactive setup must present a terminal block for an older installer.'
+Assert-True (-not $bootstrapperSource.Contains('allowNewerVersionOverwrite')) `
+    'The managed bootstrapper must not retain a newer-version overwrite state.'
+$startActionStart = $bootstrapperSource.IndexOf('public void StartAction', [StringComparison]::Ordinal)
+$startActionEnd = $bootstrapperSource.IndexOf('public void RequestCancel', $startActionStart, [StringComparison]::Ordinal)
+Assert-True (($startActionStart -ge 0) -and ($startActionEnd -gt $startActionStart)) `
+    'The managed bootstrapper StartAction boundary must remain inspectable.'
+$startActionSource = $bootstrapperSource.Substring(
+    $startActionStart,
+    $startActionEnd - $startActionStart)
+Assert-True ($startActionSource.Contains('RejectNewerVersionReplacement()')) `
+    'StartAction must retain the newer-version rejection branch.'
+Assert-True ($startActionSource.Contains('Engine.Plan(')) `
+    'StartAction must retain the Burn planning boundary.'
+Assert-True (
+    $startActionSource.IndexOf('RejectNewerVersionReplacement()', [StringComparison]::Ordinal) `
+    -lt $startActionSource.IndexOf('Engine.Plan(', [StringComparison]::Ordinal)) `
+    'A newer-version conflict must stop StartAction before Burn planning.'
 Assert-True ($bootstrapperSource.Contains('ShowSameVersionMaintenance')) `
     'Interactive setup must offer maintenance for one cached equal-version bundle.'
 Assert-True ($bootstrapperSource.Contains('EnsureBundleOwnerId()')) `
@@ -356,11 +373,11 @@ Assert-True ($bootstrapperSource.Contains('PlanRelatedBundle += OnPlanRelatedBun
 Assert-True ($bootstrapperSource.Contains('SelectRelatedBundleRequestState')) `
     'Equal-version uninstall must request the cached installed bundle absent.'
 Assert-True ($bootstrapperSource.Contains('PlanRelatedBundleType += OnPlanRelatedBundleType')) `
-    'A confirmed overwrite must convert Burn downgrade planning into replacement planning.'
+    'Equal-version recursion protection must retain related-bundle plan control.'
 Assert-True ($bootstrapperSource.Contains('RequestState.ForcePresent')) `
-    'A confirmed overwrite must execute the selected OpenBlade setup package.'
-Assert-True ($bootstrapperSource.Contains('ApplyDowngrade += OnApplyDowngrade')) `
-    'A confirmed overwrite must clear Burn''s Apply-stage downgrade veto.'
+    'Same-version repair must continue to execute the selected OpenBlade setup package.'
+Assert-True (-not $bootstrapperSource.Contains('ApplyDowngrade += OnApplyDowngrade')) `
+    'The managed bootstrapper must retain Burn''s Apply-stage downgrade veto.'
 Assert-True ([regex]::IsMatch(
         $bootstrapperSource,
         'Engine\.FormatString\(\s*Engine\.GetVariableString\(LaunchTargetVariable\)\)')) `

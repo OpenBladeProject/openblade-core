@@ -17,6 +17,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Blocked older OpenBlade installers from replacing a newer installed version.
+  Interactive setup now leaves the installation and saved settings unchanged
+  and directs the user to the installed or a newer installer; quiet and
+  related-bundle runs retain the same fail-closed version conflict.
 - Preserved incomplete, invalid, hash-mismatched, mixed-schema, and future
   profile aggregates and manual overrides in a non-mutating quarantine instead
   of replacing them with safe defaults. Quarantined thermal settings remain
