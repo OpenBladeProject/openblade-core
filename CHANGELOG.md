@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Routed firmware-pre-exited and deferred automatic HyperBoost destination
+  restoration through the shared Strict thermal executor. Durable journal
+  claims and retirement are now conditional, queued power or active-user
+  changes invalidate in-flight authority, only proven pre-submission failures
+  receive a fresh verified-session retry, and the wider power transition never
+  resumes through a superseded device session.
 - Bound unexpected-exit fan recovery to the typed Strict thermal executor and
   a current authority epoch. Safety-floor, handback, and deferred fan-intent
   writes now receive at most one freshly admitted pre-submission retry,
@@ -46,7 +52,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   restoration under one typed Strict thermal transition. Automatic and
   Balanced bridges, the composite HyperBoost command, and prior-intent restore
   now share at most one freshly re-admitted pre-submission retry; possible
-  submissions are reconciled read-only and never replayed.
+  submissions are reconciled read-only and never replayed. Repeatable periodic
+  power classification now coalesces instead of queuing behind an admitted
+  thermal transition, while explicit Windows power events retain authority;
+  queued Driver-mode and lighting maintenance rechecks low-power admission
+  before reacquiring hardware.
 - Bound automatic manual-fan curve maintenance to the exact active-user,
   device-session, controller, power-destination, and desired-intent epoch that
   performed the successful OpenBlade fan write. Curve targets now use the
