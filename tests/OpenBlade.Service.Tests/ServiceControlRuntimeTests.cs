@@ -58,6 +58,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             status.Message.Split(
                 "OpenBlade preserved an unsupported or invalid configuration.",
                 StringSplitOptions.None).Length - 1);
+        Assert.NotEmpty(context.Hub.Published);
+        Assert.All(
+            context.Hub.Published,
+            published => Assert.StartsWith(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                published.Message,
+                StringComparison.Ordinal));
     }
 
     [Fact]
@@ -175,6 +182,56 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writesBeforeExit + 1, context.Device.HyperBoostSetCalls);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedOverrideStore_ReturnsBlockedWithoutEscapingMutation()
+    {
+        string overridePath = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(overridePath, "{invalid-json");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedAggregate_ReturnsBlockedAndPublishesAdvisory()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        string profilePath = Path.Combine(directory, "profiles.json");
+        string tampered = (await File.ReadAllTextAsync(profilePath))
+            .Replace(
+                "\"chargeLimitPercent\": 80",
+                "\"chargeLimitPercent\": 75",
+                StringComparison.Ordinal);
+        await File.WriteAllTextAsync(profilePath, tampered);
+
+        ControlOperationResult result = await context.Runtime
+            .SetExternalLightingOverridePolicyAsync(
+                enabled: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.NotEmpty(context.Hub.Published);
+        Assert.StartsWith(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Hub.Published[^1].Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -662,6 +719,58 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(initialProfiles, context.Runtime.GetStatus().Profiles);
         Assert.Equal(1, repository.Loads[staleSid.Value]);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_DoesNotPublishLoadedProfilesAfterLateSessionLoss()
+    {
+        ProfileSet initialProfiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet nextProfiles = initialProfiles with
+        {
+            PluggedIn = initialProfiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        };
+        var nextSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [nextSid.Value] = nextProfiles,
+            },
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            initialProfiles.PluggedIn.Performance,
+            initialProfiles.PluggedIn.Fans,
+            ConfirmedBattery(80),
+            initialProfiles.PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        bool controlsSession = true;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                controlsSession = false;
+            }
+        };
+
+        await context.Runtime.ActivateUserAsync(
+            nextSid,
+            () => controlsSession,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.DoesNotContain(
+            context.Hub.Published,
+            published => published.Message.Contains(
+                "active Windows user's profile is loaded",
+                StringComparison.Ordinal));
+        Assert.Equal(1, repository.Loads[nextSid.Value]);
     }
 
     [Fact]

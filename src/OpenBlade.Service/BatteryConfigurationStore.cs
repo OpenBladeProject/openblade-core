@@ -19,7 +19,7 @@ internal enum BatteryConfigurationCommitBoundary
 
 public sealed class BatteryConfigurationStore
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> AggregateGates =
+    private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> AggregateGates =
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ProfileStore profileStore;
@@ -79,7 +79,11 @@ public sealed class BatteryConfigurationStore
             fullProfilePath,
             this.preferencesPath,
             this.markerPath);
-        gate = AggregateGates.GetOrAdd(aggregateKey, static _ => new SemaphoreSlim(1, 1));
+        gate = AggregateGates.GetOrAdd(
+            aggregateKey,
+            static _ => new Lazy<SemaphoreSlim>(
+                static () => new SemaphoreSlim(1, 1),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         this.postCommitBoundary = postCommitBoundary;
         this.transactionBoundary = transactionBoundary;
     }
@@ -132,6 +136,11 @@ public sealed class BatteryConfigurationStore
         {
             ThrowIfPreservationRequired();
             AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
+            if (snapshot.IsEmpty)
+            {
+                throw new InvalidDataException(
+                    "The battery configuration aggregate is absent; profile-only save was rejected because preferences cannot be reconstructed safely.");
+            }
             CommittedSnapshot committed = ReadCommittedSnapshotForSave(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,

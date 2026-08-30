@@ -173,6 +173,10 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
         bool sourceHasOverrides = !legacyOverrides.WasEmpty;
         if (!sourceHasConfiguration && !sourceHasOverrides)
         {
+            await AtomicFile.WriteAsync(
+                migrationMarker,
+                "migrated"u8.ToArray(),
+                cancellationToken).ConfigureAwait(false);
             return;
         }
 

@@ -43,7 +43,7 @@ public sealed class ProfileStore
         RespectRequiredConstructorParameters = true,
     };
 
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates =
+    private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> PathGates =
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string path;
@@ -58,7 +58,11 @@ public sealed class ProfileStore
                 ? throw new ArgumentException("A profile path is required.", nameof(path))
                 : path);
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
-        gate = PathGates.GetOrAdd(this.path, static _ => new SemaphoreSlim(1, 1));
+        gate = PathGates.GetOrAdd(
+            this.path,
+            static _ => new Lazy<SemaphoreSlim>(
+                static () => new SemaphoreSlim(1, 1),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
     internal string Path => path;

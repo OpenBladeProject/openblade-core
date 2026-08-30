@@ -47,7 +47,7 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates =
+    private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> PathGates =
         new(StringComparer.OrdinalIgnoreCase);
     // Sequence is an additive LightingSettings subtype, not an override-envelope change.
     // Keeping schema 6 lets older builds retain documents that use known lighting kinds.
@@ -82,7 +82,11 @@ public sealed class PersistentOverrideStore
             ? throw new ArgumentException("An override path is required.", nameof(path))
             : path);
         this.beforeWrite = beforeWrite;
-        gate = PathGates.GetOrAdd(this.path, static _ => new SemaphoreSlim(1, 1));
+        gate = PathGates.GetOrAdd(
+            this.path,
+            static _ => new Lazy<SemaphoreSlim>(
+                static () => new SemaphoreSlim(1, 1),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
     public async Task<PersistentOverrideLoadResult> LoadAsync(

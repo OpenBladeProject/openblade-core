@@ -543,6 +543,23 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Null(loaded.Preferences.ProtectionEnabled);
     }
 
+    [Fact]
+    public async Task SaveProfilesAsync_EmptyAggregateRejectsWithoutReconstructingPreferences()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveProfilesAsync(
+                ProfileDefaults.CreateSafeDefaults(),
+                CancellationToken.None));
+
+        Assert.All(paths.All, path => Assert.False(File.Exists(path)));
+        Assert.Empty(Directory.Exists(directory)
+            ? Directory.GetFiles(directory)
+            : []);
+    }
+
     [Theory]
     [MemberData(nameof(AllCommitBoundaries))]
     public async Task SaveProfilesAsync_FaultAtAnyBoundaryRestoresExactPriorAggregate(

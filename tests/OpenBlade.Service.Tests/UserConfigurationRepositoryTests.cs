@@ -199,6 +199,25 @@ public sealed class UserConfigurationRepositoryTests : IDisposable
             ".legacy-migration-complete")));
     }
 
+    [Fact]
+    public async Task LoadAsync_EmptyLegacySourceClosesMigrationWindow()
+    {
+        Directory.CreateDirectory(directory);
+        var ownerSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, "authorized-user.sid"),
+            ownerSid.Value);
+
+        _ = await new UserConfigurationRepository(directory, validator)
+            .LoadAsync(ownerSid, CancellationToken.None);
+
+        Assert.True(File.Exists(Path.Combine(
+            directory,
+            "users",
+            ownerSid.Value,
+            ".legacy-migration-complete")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

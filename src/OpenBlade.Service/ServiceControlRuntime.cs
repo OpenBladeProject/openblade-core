@@ -805,6 +805,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = Volatile.Read(ref status)
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
+        return ApplyConfigurationQuarantineAdvisory(current);
+    }
+
+    private ServiceStatusSnapshot ApplyConfigurationQuarantineAdvisory(
+        ServiceStatusSnapshot current)
+    {
         string baseMessage = StripConfigurationQuarantineAdvisory(current.Message);
         string message = ConfigurationIsAdmitted
             ? baseMessage
@@ -1042,6 +1048,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             preserveObservedExternalChanges: false,
                             stillControlsSession: stillControlsSession)
                         .ConfigureAwait(false);
+                }
+
+                if (!stillControlsSession())
+                {
+                    return;
                 }
 
                 current = GetStatus();
@@ -2085,6 +2096,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 new ManualOverride<LightingSettings>(next, lifetime),
                 token).ConfigureAwait(false);
         }
+        catch (ConfigurationQuarantinedException)
+        {
+            return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
+        }
         catch (Exception exception) when (IsIntentFailure(exception))
         {
             var failed = new ControlResult(
@@ -2235,7 +2250,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         restoreException);
                 }
 
+                if (saveException is ConfigurationQuarantinedException)
+                {
+                    return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
+                }
+
                 throw;
+            }
+            catch (ConfigurationQuarantinedException)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
             }
 
             preferences = staged;
@@ -3009,8 +3033,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AlwaysOverrideExternalLightingChanges = enabled,
             };
-            await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
-                .ConfigureAwait(false);
+            try
+            {
+                await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        staged,
+                        token)
+                    .ConfigureAwait(false);
+            }
+            catch (ConfigurationQuarantinedException)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
+            }
             preferences = staged;
             ServiceStatusSnapshot current = GetStatus();
             PublishIfChanged(current with
@@ -3103,8 +3137,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     LightingRefreshRate = refreshRate,
                 };
-                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await ConfigurationStore.SaveConfigurationAsync(
+                            Automation.Profiles,
+                            staged,
+                            token)
+                        .ConfigureAwait(false);
+                }
+                catch (ConfigurationQuarantinedException)
+                {
+                    return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
+                }
                 preferences = staged;
             }
 
@@ -3211,11 +3255,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 AllowUntestedFirmware = enabled,
             };
-            await ConfigurationStore.SaveConfigurationAsync(
-                    Automation.Profiles,
-                    staged,
-                    token)
-                .ConfigureAwait(false);
+            try
+            {
+                await ConfigurationStore.SaveConfigurationAsync(
+                        Automation.Profiles,
+                        staged,
+                        token)
+                    .ConfigureAwait(false);
+            }
+            catch (ConfigurationQuarantinedException)
+            {
+                return ConfigurationQuarantineBlocked();
+            }
 
             Exception? cleanupFailure = null;
             if (!enabled
@@ -11546,6 +11597,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 writesBlocked: outcome.DeviceAccessFailed);
             throw;
         }
+        catch (ConfigurationQuarantinedException)
+        {
+            return ConfigurationQuarantineBlocked(subsystem);
+        }
         catch (Exception exception) when (IsIntentFailure(exception))
         {
             driftTracker.ConfirmIntentional(subsystem, matched: false);
@@ -14986,6 +15041,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private ControlOperationResult RecordRejectedIntent(Exception exception)
     {
+        if (exception is ConfigurationQuarantinedException)
+        {
+            return ConfigurationQuarantineBlocked();
+        }
+
         var rejected = new ControlOperationResult(
             ControlOperationStatus.Failed,
             $"The requested intent was rejected: {exception.Message}");
@@ -15005,14 +15065,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : message;
 
     private ControlOperationResult ConfigurationQuarantineBlocked(
-        DeviceSubsystem subsystem)
+        DeviceSubsystem? subsystem = null)
     {
+        Volatile.Write(
+            ref activeConfigurationDisposition,
+            (int)ConfigurationLoadDisposition.Quarantined);
         var blocked = new ControlOperationResult(
             ControlOperationStatus.Blocked,
             ConfigurationQuarantineBlockedMessage);
-        history.RecordSubsystemResult(
-            subsystem,
-            new ControlResult(ControlResultStatus.Blocked, blocked.Message));
+        if (subsystem is { } blockedSubsystem)
+        {
+            history.RecordSubsystemResult(
+                blockedSubsystem,
+                new ControlResult(ControlResultStatus.Blocked, blocked.Message));
+        }
+        else
+        {
+            history.RecordSummary(blocked.Status, blocked.Message);
+        }
         PublishIfChanged(GetStatus() with { Message = blocked.Message });
         return blocked;
     }
@@ -15407,7 +15477,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private static bool IsIntentFailure(Exception exception) => exception is
-        ArgumentException or InvalidDataException or IOException or UnauthorizedAccessException;
+        ArgumentException or InvalidDataException or IOException or UnauthorizedAccessException
+            or ConfigurationQuarantinedException;
 
     private ProfileAutomationState Automation => automation
         ?? throw new InvalidOperationException("The service runtime is not initialized.");
@@ -15620,6 +15691,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
             };
+            candidate = ApplyConfigurationQuarantineAdvisory(candidate);
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && exactFanControlOwnership.Disposition ==
@@ -15945,6 +16017,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            _ = ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
         }
         catch (Exception exception)
         {
