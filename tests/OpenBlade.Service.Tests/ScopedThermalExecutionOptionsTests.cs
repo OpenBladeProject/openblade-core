@@ -37,6 +37,9 @@ public sealed class ScopedThermalExecutionOptionsTests
         Assert.Equal(
             "Injected submission-time block.",
             options.AdditionalWriteBlockReason?.Invoke());
+        Assert.Equal(
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
+            options.AuthorityPurpose);
     }
 
     [Fact]
@@ -58,5 +61,21 @@ public sealed class ScopedThermalExecutionOptionsTests
             [DeviceSubsystem.Fans, DeviceSubsystem.Fans]));
         Assert.Throws<ArgumentException>(() => new ScopedThermalExecutionOptions(
             [DeviceSubsystem.Fans, DeviceSubsystem.Battery]));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ScopedThermalExecutionOptions(
+                [DeviceSubsystem.Fans],
+                authorityPurpose: (ScopedThermalAuthorityPurpose)int.MaxValue));
+    }
+
+    [Fact]
+    public void Constructor_PreservesExplicitPriorAuthorityCleanupPurpose()
+    {
+        var options = new ScopedThermalExecutionOptions(
+            [DeviceSubsystem.Fans],
+            authorityPurpose: ScopedThermalAuthorityPurpose.PriorAuthorityCleanup);
+
+        Assert.Equal(
+            ScopedThermalAuthorityPurpose.PriorAuthorityCleanup,
+            options.AuthorityPurpose);
     }
 }

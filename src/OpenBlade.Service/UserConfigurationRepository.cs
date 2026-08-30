@@ -6,7 +6,23 @@ public sealed record UserConfigurationContext(
     BatteryConfigurationStore Store,
     PersistentOverrideStore OverrideStore,
     BatteryConfiguration Configuration,
-    PersistentOverrideState Overrides);
+    PersistentOverrideState Overrides,
+    ConfigurationLoadDisposition OverrideDisposition =
+        ConfigurationLoadDisposition.Admitted,
+    ConfigurationQuarantineReason OverrideQuarantineReason =
+        ConfigurationQuarantineReason.None)
+{
+    public ConfigurationLoadDisposition Disposition =>
+        Configuration.Disposition == ConfigurationLoadDisposition.Admitted
+        && OverrideDisposition == ConfigurationLoadDisposition.Admitted
+            ? ConfigurationLoadDisposition.Admitted
+            : ConfigurationLoadDisposition.Quarantined;
+
+    public ConfigurationQuarantineReason QuarantineReason =>
+        Configuration.Disposition == ConfigurationLoadDisposition.Quarantined
+            ? Configuration.QuarantineReason
+            : OverrideQuarantineReason;
+}
 
 public interface IUserConfigurationRepository
 {
@@ -72,7 +88,9 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
                 store,
                 overrides,
                 configuration,
-                loadedOverrides.Overrides);
+                loadedOverrides.Overrides,
+                loadedOverrides.Disposition,
+                loadedOverrides.QuarantineReason);
         }
         finally
         {
@@ -126,22 +144,56 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
             Path.Combine(machineDataDirectory, "battery-preferences.json"),
             Path.Combine(machineDataDirectory, "battery-configuration.commit.json"),
             validator);
-        BatteryConfiguration legacy = await source
-            .LoadAsync(cancellationToken)
+        BatteryConfigurationInspection legacy = await source
+            .InspectAsync(cancellationToken)
             .ConfigureAwait(false);
-        await destination.SaveConfigurationAsync(
-            legacy.Profiles,
-            legacy.Preferences,
-            cancellationToken).ConfigureAwait(false);
 
         var sourceOverrides = new PersistentOverrideStore(
             Path.Combine(machineDataDirectory, "manual-overrides.json"));
-        PersistentOverrideLoadResult legacyOverrides = await sourceOverrides
-            .LoadAsync(cancellationToken)
+        PersistentOverrideInspection legacyOverrides = await sourceOverrides
+            .InspectAsync(cancellationToken)
             .ConfigureAwait(false);
-        await destinationOverrides.SaveAsync(
-            legacyOverrides.Overrides,
-            cancellationToken).ConfigureAwait(false);
+        BatteryConfigurationInspection destinationConfiguration = await destination
+            .InspectAsync(cancellationToken)
+            .ConfigureAwait(false);
+        PersistentOverrideInspection destinationOverride = await destinationOverrides
+            .InspectAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!legacy.Configuration.IsAuthoritative
+            || legacyOverrides.Result.Disposition ==
+                ConfigurationLoadDisposition.Quarantined
+            || !destinationConfiguration.Configuration.IsAuthoritative
+            || destinationOverride.Result.Disposition ==
+                ConfigurationLoadDisposition.Quarantined)
+        {
+            return;
+        }
+
+        bool sourceHasConfiguration = !legacy.WasEmpty;
+        bool sourceHasOverrides = !legacyOverrides.WasEmpty;
+        if (!sourceHasConfiguration && !sourceHasOverrides)
+        {
+            await AtomicFile.WriteAsync(
+                migrationMarker,
+                "migrated"u8.ToArray(),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (destinationConfiguration.WasEmpty && sourceHasConfiguration)
+        {
+            await destination.SaveConfigurationAsync(
+                legacy.Configuration.Profiles,
+                legacy.Configuration.Preferences,
+                cancellationToken).ConfigureAwait(false);
+        }
+        if (destinationOverride.WasEmpty && sourceHasOverrides)
+        {
+            await destinationOverrides.SaveAsync(
+                legacyOverrides.Result.Overrides,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         await AtomicFile.WriteAsync(
             migrationMarker,
             "migrated"u8.ToArray(),

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
@@ -17,7 +18,9 @@ public sealed record PersistentOverrideState(
 
 public sealed record PersistentOverrideLoadResult(
     PersistentOverrideState Overrides,
-    bool Recovered);
+    bool Recovered,
+    ConfigurationLoadDisposition Disposition = ConfigurationLoadDisposition.Admitted,
+    ConfigurationQuarantineReason QuarantineReason = ConfigurationQuarantineReason.None);
 
 internal sealed record PersistentOverrideDocument(
     int SchemaVersion,
@@ -44,6 +47,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
+    private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> PathGates =
+        new(StringComparer.OrdinalIgnoreCase);
     // Sequence is an additive LightingSettings subtype, not an override-envelope change.
     // Keeping schema 6 lets older builds retain documents that use known lighting kinds.
     private const int CurrentSchemaVersion = 6;
@@ -61,7 +66,8 @@ public sealed class PersistentOverrideStore
 
     private readonly string path;
     private readonly Func<CancellationToken, Task>? beforeWrite;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim gate;
+    private bool preservationRequired;
 
     public PersistentOverrideStore(string path)
         : this(path, beforeWrite: null)
@@ -72,10 +78,15 @@ public sealed class PersistentOverrideStore
         string path,
         Func<CancellationToken, Task>? beforeWrite)
     {
-        this.path = string.IsNullOrWhiteSpace(path)
+        this.path = Path.GetFullPath(string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("An override path is required.", nameof(path))
-            : path;
+            : path);
         this.beforeWrite = beforeWrite;
+        gate = PathGates.GetOrAdd(
+            this.path,
+            static _ => new Lazy<SemaphoreSlim>(
+                static () => new SemaphoreSlim(1, 1),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
     public async Task<PersistentOverrideLoadResult> LoadAsync(
@@ -84,31 +95,29 @@ public sealed class PersistentOverrideStore
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (!File.Exists(path))
-            {
-                return new PersistentOverrideLoadResult(
-                    PersistentOverrideState.Empty,
-                    Recovered: false);
-            }
+            PersistentOverrideInspection inspection = await LoadCoreAsync(
+                persistMigration: true,
+                cancellationToken);
+            preservationRequired = inspection.Result.Disposition ==
+                ConfigurationLoadDisposition.Quarantined;
+            return inspection.Result;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
-            try
-            {
-                byte[] json = await File.ReadAllBytesAsync(path, cancellationToken);
-                PersistentOverrideState overrides = Deserialize(json, out bool migrated);
-                if (migrated)
-                {
-                    await WriteCoreAsync(overrides, cancellationToken);
-                }
-                return new PersistentOverrideLoadResult(overrides, Recovered: false);
-            }
-            catch (Exception exception)
-                when (BatteryConfigurationStore.IsRecoverable(exception))
-            {
-                await WriteCoreAsync(PersistentOverrideState.Empty, cancellationToken);
-                return new PersistentOverrideLoadResult(
-                    PersistentOverrideState.Empty,
-                    Recovered: true);
-            }
+    internal async Task<PersistentOverrideInspection> InspectAsync(
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await LoadCoreAsync(
+                    persistMigration: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -126,11 +135,114 @@ public sealed class PersistentOverrideStore
         await gate.WaitAsync(cancellationToken);
         try
         {
+            if (preservationRequired)
+            {
+                throw new ConfigurationQuarantinedException(
+                    "The override document is preserved in quarantine and cannot be changed until a validated reload.",
+                    ConfigurationQuarantineReason.InvalidDocument);
+            }
+
+            byte[]? existing = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                try
+                {
+                    _ = Deserialize(existing, out _);
+                }
+                catch (Exception exception)
+                    when (BatteryConfigurationStore.IsRecoverable(exception))
+                {
+                    throw new ConfigurationQuarantinedException(
+                        "The existing override document is preserved in quarantine.",
+                        ContainsFutureSchema(existing)
+                            ? ConfigurationQuarantineReason.FutureSchema
+                            : ConfigurationQuarantineReason.InvalidDocument);
+                }
+            }
+
             await WriteCoreAsync(overrides, cancellationToken);
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private async Task<PersistentOverrideInspection> LoadCoreAsync(
+        bool persistMigration,
+        CancellationToken cancellationToken)
+    {
+        byte[]? json = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
+        if (json is null)
+        {
+            return new PersistentOverrideInspection(
+                new PersistentOverrideLoadResult(
+                    PersistentOverrideState.Empty,
+                    Recovered: false),
+                WasEmpty: true);
+        }
+
+        try
+        {
+            PersistentOverrideState overrides = Deserialize(json, out bool migrated);
+            if (migrated && persistMigration)
+            {
+                await WriteCoreAsync(overrides, cancellationToken).ConfigureAwait(false);
+            }
+            return new PersistentOverrideInspection(
+                new PersistentOverrideLoadResult(overrides, Recovered: false),
+                WasEmpty: false);
+        }
+        catch (Exception exception)
+            when (BatteryConfigurationStore.IsRecoverable(exception))
+        {
+            return new PersistentOverrideInspection(
+                new PersistentOverrideLoadResult(
+                    PersistentOverrideState.Empty,
+                    Recovered: true,
+                    ConfigurationLoadDisposition.Quarantined,
+                    ContainsFutureSchema(json)
+                        ? ConfigurationQuarantineReason.FutureSchema
+                        : ConfigurationQuarantineReason.InvalidDocument),
+                WasEmpty: false);
+        }
+    }
+
+    private async Task<byte[]?> ReadIfPresentAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static bool ContainsFutureSchema(ReadOnlySpan<byte> json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json.ToArray());
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return document.RootElement.EnumerateObject().Any(property =>
+                property.NameEquals("schemaVersion")
+                && property.Value.ValueKind == JsonValueKind.Number
+                && property.Value.TryGetInt32(out int schemaVersion)
+                && schemaVersion > CurrentSchemaVersion);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
@@ -298,3 +410,7 @@ public sealed class PersistentOverrideStore
         await AtomicFile.WriteAsync(path, json, cancellationToken);
     }
 }
+
+internal sealed record PersistentOverrideInspection(
+    PersistentOverrideLoadResult Result,
+    bool WasEmpty);

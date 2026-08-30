@@ -15,6 +15,314 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task QuarantinedConfiguration_OrdinaryThermalTransitionsStayReadOnly()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        ProfileSet profiles = loaded.Profiles with
+        {
+            PluggedIn = loaded.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+        };
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Profiles = profiles,
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PowerSource.PluggedIn);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(
+            1,
+            status.Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+        Assert.NotEmpty(context.Hub.Published);
+        Assert.All(
+            context.Hub.Published,
+            published => Assert.StartsWith(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                published.Message,
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_BlocksFanMutationAndCurveMaintenance()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            fanTemperatureSource: temperatures);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.FutureSchema,
+            },
+            PowerSource.PluggedIn);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.ManualCurve,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(
+                FanMode.ManualCurve,
+                3700,
+                ManualFanCurve.Default),
+            CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_BlocksHyperBoostEntryBeforeJournalOrWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.HashMismatch,
+            },
+            PowerSource.PluggedIn);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_AllowsOnlyOwnedHyperBoostLifecycleRestore()
+    {
+        BatteryConfigurationStore configurationStore = new(
+            Path.Combine(directory, "quarantined-user", "profiles.json"),
+            Path.Combine(directory, "quarantined-user", "battery-preferences.json"),
+            Path.Combine(directory, "quarantined-user", "battery-configuration.commit.json"));
+        BatteryConfiguration loaded = await configurationStore.LoadAsync(
+            CancellationToken.None);
+        var repository = new FixedUserConfigurationRepository(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PersistentOverrideState.Empty,
+            directory);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        await context.Runtime.ActivateUserAsync(
+            new System.Security.Principal.SecurityIdentifier(
+                "S-1-5-21-1-2-3-1001"),
+            CancellationToken.None);
+        int writesBeforeExit = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult ordinaryDisable = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+        ControlOperationResult lifecycleRestore = await context.Runtime
+            .PrepareOwnedHyperBoostForDisplayOffAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, ordinaryDisable.Status);
+        Assert.Equal(ControlOperationStatus.Applied, lifecycleRestore.Status);
+        Assert.Equal(writesBeforeExit + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedOverrideStore_ReturnsBlockedWithoutEscapingMutation()
+    {
+        string overridePath = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(overridePath, "{invalid-json");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedAggregate_ReturnsBlockedAndPublishesAdvisory()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        string profilePath = Path.Combine(directory, "profiles.json");
+        string tampered = (await File.ReadAllTextAsync(profilePath))
+            .Replace(
+                "\"chargeLimitPercent\": 80",
+                "\"chargeLimitPercent\": 75",
+                StringComparison.Ordinal);
+        await File.WriteAllTextAsync(profilePath, tampered);
+
+        ControlOperationResult result = await context.Runtime
+            .SetExternalLightingOverridePolicyAsync(
+                enabled: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.NotEmpty(context.Hub.Published);
+        Assert.StartsWith(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Hub.Published[^1].Message,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            context.Hub.Published[^1].Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedOverrideStore_BrightnessFromOffReturnsBlocked()
+    {
+        string overridePath = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(overridePath, "{invalid-json");
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writesBefore = context.Device.LightingSetCalls;
+
+        ControlOperationResult result = await context.Runtime.StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            OverrideLifetime.Persistent,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writesBefore, context.Device.LightingSetCalls);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            context.Runtime.GetStatus().Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public async Task AdmittedUserConfiguration_ClearsQuarantineAdvisory()
+    {
+        BatteryConfiguration admitted = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            Recovered: false);
+        var repository = new FixedUserConfigurationRepository(
+            admitted,
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            initialize: false,
+            userConfigurationRepository: repository);
+        context.Runtime.Initialize(
+            admitted with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty);
+        Assert.Contains(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+
+        await context.Runtime.ActivateUserAsync(
+            new System.Security.Principal.SecurityIdentifier(
+                "S-1-5-21-1-2-3-1001"),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            "read-only",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task DisplayBrightnessHid_HeldUsageIsSubmittedOnceThenReleased()
     {
         var controller = new RecordingDisplayBrightnessHidController();
@@ -499,6 +807,58 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(initialProfiles, context.Runtime.GetStatus().Profiles);
         Assert.Equal(1, repository.Loads[staleSid.Value]);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_DoesNotPublishLoadedProfilesAfterLateSessionLoss()
+    {
+        ProfileSet initialProfiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet nextProfiles = initialProfiles with
+        {
+            PluggedIn = initialProfiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+        };
+        var nextSid = new System.Security.Principal.SecurityIdentifier(
+            "S-1-5-21-1-2-3-1001");
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [nextSid.Value] = nextProfiles,
+            },
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            initialProfiles.PluggedIn.Performance,
+            initialProfiles.PluggedIn.Fans,
+            ConfirmedBattery(80),
+            initialProfiles.PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        bool controlsSession = true;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                controlsSession = false;
+            }
+        };
+
+        await context.Runtime.ActivateUserAsync(
+            nextSid,
+            () => controlsSession,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.DoesNotContain(
+            context.Hub.Published,
+            published => published.Message.Contains(
+                "active Windows user's profile is loaded",
+                StringComparison.Ordinal));
+        Assert.Equal(1, repository.Loads[nextSid.Value]);
     }
 
     [Fact]
@@ -21007,6 +21367,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
         string markerPath = Path.Combine(directory, "battery-configuration.commit.json");
+        if (transactionBoundary is not null
+            && !File.Exists(profilePath)
+            && !File.Exists(preferencesPath)
+            && !File.Exists(markerPath))
+        {
+            _ = new BatteryConfigurationStore(
+                    profilePath,
+                    preferencesPath,
+                    markerPath,
+                    validator: profileValidator)
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
         var store = new BatteryConfigurationStore(
             profilePath,
             preferencesPath,

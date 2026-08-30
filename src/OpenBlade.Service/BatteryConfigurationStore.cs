@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Contracts;
@@ -18,6 +19,9 @@ internal enum BatteryConfigurationCommitBoundary
 
 public sealed class BatteryConfigurationStore
 {
+    private static readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> AggregateGates =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly ProfileStore profileStore;
     private readonly string preferencesPath;
     private readonly string markerPath;
@@ -25,7 +29,8 @@ public sealed class BatteryConfigurationStore
     private readonly Func<CancellationToken, Task>? postCommitBoundary;
     private readonly Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
         transactionBoundary;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim gate;
+    private bool preservationRequired;
 
     public BatteryConfigurationStore(
         string profilePath,
@@ -62,10 +67,23 @@ public sealed class BatteryConfigurationStore
             transactionBoundary)
     {
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
-        profileStore = new ProfileStore(profilePath, this.validator);
-        this.preferencesPath = preferencesPath
-            ?? throw new ArgumentNullException(nameof(preferencesPath));
-        this.markerPath = markerPath ?? throw new ArgumentNullException(nameof(markerPath));
+        string fullProfilePath = Path.GetFullPath(
+            profilePath ?? throw new ArgumentNullException(nameof(profilePath)));
+        this.preferencesPath = Path.GetFullPath(
+            preferencesPath ?? throw new ArgumentNullException(nameof(preferencesPath)));
+        this.markerPath = Path.GetFullPath(
+            markerPath ?? throw new ArgumentNullException(nameof(markerPath)));
+        profileStore = new ProfileStore(fullProfilePath, this.validator);
+        string aggregateKey = string.Join(
+            "|",
+            fullProfilePath,
+            this.preferencesPath,
+            this.markerPath);
+        gate = AggregateGates.GetOrAdd(
+            aggregateKey,
+            static _ => new Lazy<SemaphoreSlim>(
+                static () => new SemaphoreSlim(1, 1),
+                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         this.postCommitBoundary = postCommitBoundary;
         this.transactionBoundary = transactionBoundary;
     }
@@ -75,44 +93,28 @@ public sealed class BatteryConfigurationStore
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (File.Exists(profileStore.Path)
-                && File.Exists(preferencesPath)
-                && File.Exists(markerPath))
-            {
-                try
-                {
-                    CommittedSnapshot committed =
-                        await ReadCommittedSnapshotAsync(cancellationToken);
-                    return committed.ConfigurationMigrated
-                        ? await CommitAndVerifyAsync(
-                            committed.Configuration,
-                            cancellationToken)
-                        : committed.Configuration;
-                }
-                catch (Exception exception) when (IsRecoverable(exception))
-                {
-                    // A committed aggregate must be accepted as a whole or not at all.
-                }
-            }
+            BatteryConfigurationInspection inspection = await LoadCoreAsync(
+                materializeAdmittedState: true,
+                cancellationToken);
+            preservationRequired = !inspection.Configuration.IsAuthoritative;
+            return inspection.Configuration;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
-            bool anyConfigurationFile = File.Exists(profileStore.Path)
-                || File.Exists(preferencesPath)
-                || File.Exists(markerPath);
-            BatteryConfiguration configuration;
-            if (File.Exists(profileStore.Path)
-                && await TryReadLegacyAsync(cancellationToken) is { } migrated)
-            {
-                configuration = new BatteryConfiguration(
-                    migrated,
-                    new BatteryAutomationPreferences(),
-                    Recovered: false);
-            }
-            else
-            {
-                configuration = SafeConfiguration(recovered: anyConfigurationFile);
-            }
-
-            return await CommitAndVerifyAsync(configuration, cancellationToken);
+    internal async Task<BatteryConfigurationInspection> InspectAsync(
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await LoadCoreAsync(
+                    materializeAdmittedState: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -132,13 +134,20 @@ public sealed class BatteryConfigurationStore
         await gate.WaitAsync(cancellationToken);
         try
         {
-            CommittedSnapshot committed =
-                await ReadCommittedSnapshotAsync(cancellationToken);
+            ThrowIfPreservationRequired();
+            AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
+            if (snapshot.IsEmpty)
+            {
+                throw new InvalidDataException(
+                    "The battery configuration aggregate is absent; profile-only save was rejected because preferences cannot be reconstructed safely.");
+            }
+            CommittedSnapshot committed = ReadCommittedSnapshotForSave(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,
                 committed.Configuration.Preferences,
                 cancellationToken,
-                committed.ConfigurationMigrated ? null : committed.PreferenceJson);
+                committed.ConfigurationMigrated ? null : committed.PreferenceJson,
+                snapshot);
         }
         finally
         {
@@ -160,10 +169,17 @@ public sealed class BatteryConfigurationStore
         await gate.WaitAsync(cancellationToken);
         try
         {
+            ThrowIfPreservationRequired();
+            AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
+            if (!snapshot.IsEmpty)
+            {
+                _ = ReadCommittedSnapshotForSave(snapshot);
+            }
             await SaveConfigurationTransactionAsync(
                 profiles,
                 preferences,
-                cancellationToken);
+                cancellationToken,
+                priorSnapshot: snapshot);
         }
         finally
         {
@@ -171,32 +187,144 @@ public sealed class BatteryConfigurationStore
         }
     }
 
-    private async Task<CommittedSnapshot> ReadCommittedSnapshotAsync(
+    private async Task<BatteryConfigurationInspection> LoadCoreAsync(
+        bool materializeAdmittedState,
         CancellationToken cancellationToken)
     {
-        byte[] profileJson = await File.ReadAllBytesAsync(profileStore.Path, cancellationToken);
-        byte[] preferenceJson = await File.ReadAllBytesAsync(preferencesPath, cancellationToken);
-        byte[] markerJson = await File.ReadAllBytesAsync(markerPath, cancellationToken);
+        AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
+        if (ContainsFutureSchema(snapshot))
+        {
+            return Quarantined(
+                ConfigurationQuarantineReason.FutureSchema,
+                recovered: true,
+                snapshot.IsEmpty);
+        }
+
+        if (snapshot.IsEmpty)
+        {
+            BatteryConfiguration configuration = SafeConfiguration(recovered: false);
+            if (materializeAdmittedState)
+            {
+                await SaveConfigurationTransactionAsync(
+                    configuration.Profiles,
+                    configuration.Preferences,
+                    cancellationToken,
+                    priorSnapshot: snapshot);
+                await InvokePostCommitBoundaryAsync(cancellationToken);
+                try
+                {
+                    configuration = ReadCommittedSnapshot(
+                        await CaptureAggregateAsync(cancellationToken)).Configuration;
+                }
+                catch (ConfigurationAggregateException exception)
+                {
+                    return Quarantined(exception.Reason, recovered: true, wasEmpty: false);
+                }
+                catch (Exception exception) when (IsRecoverable(exception))
+                {
+                    return Quarantined(
+                        ConfigurationQuarantineReason.InvalidDocument,
+                        recovered: true,
+                        wasEmpty: false);
+                }
+            }
+            return new BatteryConfigurationInspection(configuration, WasEmpty: true);
+        }
+
+        if (snapshot.IsLegacyCandidate)
+        {
+            try
+            {
+                ProfileSet migrated = ReadLegacy(snapshot.Profile.Contents);
+                var configuration = new BatteryConfiguration(
+                    migrated,
+                    new BatteryAutomationPreferences(),
+                    Recovered: false);
+                if (materializeAdmittedState)
+                {
+                    await SaveConfigurationTransactionAsync(
+                        configuration.Profiles,
+                        configuration.Preferences,
+                        cancellationToken,
+                        priorSnapshot: snapshot);
+                    await InvokePostCommitBoundaryAsync(cancellationToken);
+                    configuration = ReadCommittedSnapshot(
+                        await CaptureAggregateAsync(cancellationToken)).Configuration;
+                }
+                return new BatteryConfigurationInspection(configuration, WasEmpty: false);
+            }
+            catch (ConfigurationAggregateException exception)
+            {
+                return Quarantined(exception.Reason, recovered: true, wasEmpty: false);
+            }
+            catch (Exception exception) when (IsRecoverable(exception))
+            {
+                return Quarantined(
+                    HasSchemaVersion(snapshot.Profile.Contents)
+                        ? ConfigurationQuarantineReason.IncompleteAggregate
+                        : ConfigurationQuarantineReason.InvalidDocument,
+                    recovered: true,
+                    wasEmpty: false);
+            }
+        }
+
+        if (!snapshot.IsComplete)
+        {
+            return Quarantined(
+                ConfigurationQuarantineReason.IncompleteAggregate,
+                recovered: true,
+                wasEmpty: false);
+        }
+
+        try
+        {
+            CommittedSnapshot committed = ReadCommittedSnapshot(snapshot);
+            if (committed.ConfigurationMigrated && materializeAdmittedState)
+            {
+                await SaveConfigurationTransactionAsync(
+                    committed.Configuration.Profiles,
+                    committed.Configuration.Preferences,
+                    cancellationToken,
+                    priorSnapshot: snapshot);
+                await InvokePostCommitBoundaryAsync(cancellationToken);
+                AggregateSnapshot migrated = await CaptureAggregateAsync(cancellationToken);
+                committed = ReadCommittedSnapshot(migrated);
+            }
+            return new BatteryConfigurationInspection(
+                committed.Configuration,
+                WasEmpty: false);
+        }
+        catch (ConfigurationAggregateException exception)
+        {
+            return Quarantined(exception.Reason, recovered: true, wasEmpty: false);
+        }
+        catch (Exception exception) when (IsRecoverable(exception))
+        {
+            return Quarantined(
+                ConfigurationQuarantineReason.InvalidDocument,
+                recovered: true,
+                wasEmpty: false);
+        }
+    }
+
+    private CommittedSnapshot ReadCommittedSnapshot(AggregateSnapshot snapshot)
+    {
+        if (!snapshot.IsComplete)
+        {
+            throw new ConfigurationAggregateException(
+                "The battery configuration aggregate is incomplete.",
+                ConfigurationQuarantineReason.IncompleteAggregate);
+        }
+
+        byte[] profileJson = snapshot.Profile.Contents;
+        byte[] preferenceJson = snapshot.Preferences.Contents;
+        byte[] markerJson = snapshot.Marker.Contents;
 
         RejectDuplicateMembers(markerJson);
         BatteryConfigurationCommit? marker = JsonSerializer.Deserialize<BatteryConfigurationCommit>(
             markerJson,
             ProfileStore.SerializerOptions);
-        if (marker is null || marker.SchemaVersion is not (
-                ProfileStore.LegacySchemaVersion
-                or ProfileStore.LatestSupportedSchemaVersion
-                or ProfileStore.EarliestSupportedSchemaVersion
-                or ProfileStore.EarlierSupportedSchemaVersion
-                or ProfileStore.OldestSupportedSchemaVersion
-                or ProfileStore.OlderSchemaVersion
-                or ProfileStore.PreviousSchemaVersion
-                or ProfileStore.FormerSchemaVersion
-                or ProfileStore.AncientSupportedSchemaVersion
-                or ProfileStore.PrehistoricSupportedSchemaVersion
-                or ProfileStore.ArchaicSupportedSchemaVersion
-                or ProfileStore.AntiqueSupportedSchemaVersion
-                or ProfileStore.ObsoleteSupportedSchemaVersion
-                or ProfileStore.CurrentSchemaVersion))
+        if (marker is null || !ProfileStore.IsSupportedSchemaVersion(marker.SchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
         }
@@ -204,7 +332,9 @@ public sealed class BatteryConfigurationStore
         if (!FixedHashEquals(marker.ProfileSha256, Hash(profileJson))
             || !FixedHashEquals(marker.PreferencesSha256, Hash(preferenceJson)))
         {
-            throw new InvalidDataException("The battery configuration hashes do not match.");
+            throw new ConfigurationAggregateException(
+                "The battery configuration hashes do not match.",
+                ConfigurationQuarantineReason.HashMismatch);
         }
 
         BatteryAutomationPreferences preferences = ReadPreferences(
@@ -218,8 +348,9 @@ public sealed class BatteryConfigurationStore
             legacyProtectionEnabled);
         if (profileSchemaVersion != marker.SchemaVersion)
         {
-            throw new InvalidDataException(
-                "The profile and battery configuration marker schemas do not match.");
+            throw new ConfigurationAggregateException(
+                "The profile and battery configuration marker schemas do not match.",
+                ConfigurationQuarantineReason.MixedSchema);
         }
 
         bool preferencesMigrated = preferences.ProtectionEnabled.HasValue;
@@ -232,18 +363,8 @@ public sealed class BatteryConfigurationStore
             profileMigrated || preferencesMigrated);
     }
 
-    private async Task<ProfileSet?> TryReadLegacyAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            byte[] json = await File.ReadAllBytesAsync(profileStore.Path, cancellationToken);
-            return ReadLegacy(json);
-        }
-        catch (Exception exception) when (IsRecoverable(exception))
-        {
-            return null;
-        }
-    }
+    private Task InvokePostCommitBoundaryAsync(CancellationToken cancellationToken) =>
+        postCommitBoundary?.Invoke(cancellationToken) ?? Task.CompletedTask;
 
     private ProfileSet ReadLegacy(ReadOnlySpan<byte> json)
     {
@@ -327,29 +448,12 @@ public sealed class BatteryConfigurationStore
         return document.Preferences;
     }
 
-    private async Task CommitAsync(
-        ProfileSet profiles,
-        BatteryAutomationPreferences preferences,
-        CancellationToken cancellationToken)
-    {
-        preferences = preferences with { ProtectionEnabled = null };
-        validator.Validate(profiles);
-        validator.ValidatePreferences(preferences);
-        byte[] profileJson = SerializeProfiles(profiles);
-        byte[] preferenceJson = JsonSerializer.SerializeToUtf8Bytes(
-            new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, preferences),
-            ProfileStore.SerializerOptions);
-
-        await AtomicFile.WriteAsync(profileStore.Path, profileJson, cancellationToken);
-        await AtomicFile.WriteAsync(preferencesPath, preferenceJson, cancellationToken);
-        await WriteMarkerAsync(profileJson, preferenceJson, cancellationToken);
-    }
-
     private async Task SaveConfigurationTransactionAsync(
         ProfileSet profiles,
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken,
-        byte[]? committedPreferenceJson = null)
+        byte[]? committedPreferenceJson = null,
+        AggregateSnapshot? priorSnapshot = null)
     {
         preferences = preferences with { ProtectionEnabled = null };
         byte[] profileJson = SerializeProfiles(profiles);
@@ -358,13 +462,11 @@ public sealed class BatteryConfigurationStore
                 new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, preferences),
                 ProfileStore.SerializerOptions);
         byte[] markerJson = SerializeMarker(profileJson, preferenceJson);
-        TargetSnapshot profilePrior = await CaptureAsync(
-            profileStore.Path,
-            cancellationToken);
-        TargetSnapshot preferencePrior = await CaptureAsync(
-            preferencesPath,
-            cancellationToken);
-        TargetSnapshot markerPrior = await CaptureAsync(markerPath, cancellationToken);
+        AggregateSnapshot prior = priorSnapshot
+            ?? await CaptureAggregateAsync(cancellationToken);
+        TargetSnapshot profilePrior = prior.Profile;
+        TargetSnapshot preferencePrior = prior.Preferences;
+        TargetSnapshot markerPrior = prior.Marker;
         string transactionId = Guid.NewGuid().ToString("N");
         TransactionTarget profile = CreateTransactionTarget(
             profilePrior,
@@ -480,7 +582,8 @@ public sealed class BatteryConfigurationStore
         byte[] preferenceJson,
         byte[] markerJson)
     {
-        CommittedSnapshot verified = await ReadCommittedSnapshotAsync(CancellationToken.None);
+        CommittedSnapshot verified = ReadCommittedSnapshot(
+            await CaptureAggregateAsync(CancellationToken.None));
         if (verified.Configuration.Profiles != profiles
             || verified.Configuration.Preferences != preferences
             || !verified.ProfileJson.AsSpan().SequenceEqual(profileJson)
@@ -523,7 +626,7 @@ public sealed class BatteryConfigurationStore
 
         foreach (TransactionTarget target in targets)
         {
-            TargetSnapshot restored = await CaptureAsync(
+            TargetSnapshot restored = await CaptureTargetAsync(
                 target.Prior.Path,
                 CancellationToken.None);
             if (restored.Exists != target.Prior.Exists
@@ -536,7 +639,8 @@ public sealed class BatteryConfigurationStore
 
         if (targets.All(target => target.Prior.Exists))
         {
-            _ = await ReadCommittedSnapshotAsync(CancellationToken.None);
+            _ = ReadCommittedSnapshot(
+                await CaptureAggregateAsync(CancellationToken.None));
         }
     }
 
@@ -556,19 +660,25 @@ public sealed class BatteryConfigurationStore
             $"{prior.Path}.transaction-{transactionId}.backup",
             $"{prior.Path}.transaction-{transactionId}.restore");
 
-    private static async Task<TargetSnapshot> CaptureAsync(
+    private static async Task<TargetSnapshot> CaptureTargetAsync(
         string path,
         CancellationToken cancellationToken)
     {
-        if (!File.Exists(path))
+        try
+        {
+            return new TargetSnapshot(
+                path,
+                Exists: true,
+                await File.ReadAllBytesAsync(path, cancellationToken));
+        }
+        catch (FileNotFoundException)
         {
             return new TargetSnapshot(path, Exists: false, []);
         }
-
-        return new TargetSnapshot(
-            path,
-            Exists: true,
-            await File.ReadAllBytesAsync(path, cancellationToken));
+        catch (DirectoryNotFoundException)
+        {
+            return new TargetSnapshot(path, Exists: false, []);
+        }
     }
 
     private static async Task WriteDurableFileAsync(
@@ -610,50 +720,6 @@ public sealed class BatteryConfigurationStore
         }
     }
 
-    private async Task<BatteryConfiguration> CommitAndVerifyAsync(
-        BatteryConfiguration intended,
-        CancellationToken cancellationToken)
-    {
-        await CommitAsync(intended.Profiles, intended.Preferences, cancellationToken);
-        if (postCommitBoundary is not null)
-        {
-            await postCommitBoundary(cancellationToken);
-        }
-
-        try
-        {
-            CommittedSnapshot verified =
-                await ReadCommittedSnapshotAsync(cancellationToken);
-            return verified.Configuration with { Recovered = intended.Recovered };
-        }
-        catch (Exception exception)
-            when (IsRecoverable(exception) && !intended.Recovered)
-        {
-            BatteryConfiguration recovered = SafeConfiguration(recovered: true);
-            await CommitAsync(
-                recovered.Profiles,
-                recovered.Preferences,
-                cancellationToken);
-            if (postCommitBoundary is not null)
-            {
-                await postCommitBoundary(cancellationToken);
-            }
-
-            CommittedSnapshot verified =
-                await ReadCommittedSnapshotAsync(cancellationToken);
-            return verified.Configuration with { Recovered = true };
-        }
-    }
-
-    private async Task WriteMarkerAsync(
-        byte[] profileJson,
-        byte[] preferenceJson,
-        CancellationToken cancellationToken)
-    {
-        byte[] markerJson = SerializeMarker(profileJson, preferenceJson);
-        await AtomicFile.WriteAsync(markerPath, markerJson, cancellationToken);
-    }
-
     private static byte[] SerializeMarker(byte[] profileJson, byte[] preferenceJson) =>
         JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(
@@ -671,6 +737,108 @@ public sealed class BatteryConfigurationStore
         ProfileDefaults.CreateSafeDefaults(),
         new BatteryAutomationPreferences(),
         recovered);
+
+    private static BatteryConfigurationInspection Quarantined(
+        ConfigurationQuarantineReason reason,
+        bool recovered,
+        bool wasEmpty) => new(
+            SafeConfiguration(recovered) with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = reason,
+            },
+            wasEmpty);
+
+    private void ThrowIfPreservationRequired()
+    {
+        if (preservationRequired)
+        {
+            throw new ConfigurationQuarantinedException(
+                "Configuration is preserved in quarantine and cannot be changed until a validated reload.",
+                ConfigurationQuarantineReason.InvalidDocument);
+        }
+    }
+
+    private CommittedSnapshot ReadCommittedSnapshotForSave(
+        AggregateSnapshot snapshot)
+    {
+        if (ContainsFutureSchema(snapshot))
+        {
+            throw new ConfigurationQuarantinedException(
+                "The existing configuration uses a newer schema and was preserved in quarantine.",
+                ConfigurationQuarantineReason.FutureSchema);
+        }
+
+        try
+        {
+            return ReadCommittedSnapshot(snapshot);
+        }
+        catch (ConfigurationAggregateException exception)
+        {
+            throw new ConfigurationQuarantinedException(
+                "The existing configuration is preserved in quarantine.",
+                exception.Reason);
+        }
+        catch (Exception exception) when (IsRecoverable(exception))
+        {
+            throw new ConfigurationQuarantinedException(
+                "The existing configuration is invalid and was preserved in quarantine.",
+                ConfigurationQuarantineReason.InvalidDocument);
+        }
+    }
+
+    private async Task<AggregateSnapshot> CaptureAggregateAsync(
+        CancellationToken cancellationToken) => new(
+            await CaptureTargetAsync(profileStore.Path, cancellationToken),
+            await CaptureTargetAsync(preferencesPath, cancellationToken),
+            await CaptureTargetAsync(markerPath, cancellationToken));
+
+    private static bool ContainsFutureSchema(AggregateSnapshot snapshot) =>
+        snapshot.Targets.Any(target =>
+            target.Exists && ContainsFutureSchema(target.Contents));
+
+    private static bool ContainsFutureSchema(ReadOnlySpan<byte> json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json.ToArray());
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                if (property.NameEquals("schemaVersion")
+                    && property.Value.ValueKind == JsonValueKind.Number
+                    && property.Value.TryGetInt32(out int schemaVersion)
+                    && schemaVersion > ProfileStore.CurrentSchemaVersion)
+                {
+                    return true;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Another readable sibling can still prove that the aggregate is future data.
+        }
+
+        return false;
+    }
+
+    private static bool HasSchemaVersion(ReadOnlySpan<byte> json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json.ToArray());
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("schemaVersion", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static byte ReadByte(JsonElement element, string name) =>
         element.TryGetProperty(name, out _)
@@ -787,6 +955,22 @@ public sealed class BatteryConfigurationStore
 
     private sealed record TargetSnapshot(string Path, bool Exists, byte[] Contents);
 
+    private sealed record AggregateSnapshot(
+        TargetSnapshot Profile,
+        TargetSnapshot Preferences,
+        TargetSnapshot Marker)
+    {
+        internal IReadOnlyList<TargetSnapshot> Targets =>
+            [Profile, Preferences, Marker];
+
+        internal bool IsEmpty => Targets.All(target => !target.Exists);
+
+        internal bool IsComplete => Targets.All(target => target.Exists);
+
+        internal bool IsLegacyCandidate =>
+            Profile.Exists && !Preferences.Exists && !Marker.Exists;
+    }
+
     private sealed record TransactionTarget(
         TargetSnapshot Prior,
         byte[] Intended,
@@ -800,4 +984,16 @@ public sealed class BatteryConfigurationStore
         byte[] PreferenceJson,
         byte[] MarkerJson,
         bool ConfigurationMigrated);
+
+    private sealed class ConfigurationAggregateException(
+        string message,
+        ConfigurationQuarantineReason reason)
+        : Exception(message)
+    {
+        internal ConfigurationQuarantineReason Reason { get; } = reason;
+    }
 }
+
+internal sealed record BatteryConfigurationInspection(
+    BatteryConfiguration Configuration,
+    bool WasEmpty);
