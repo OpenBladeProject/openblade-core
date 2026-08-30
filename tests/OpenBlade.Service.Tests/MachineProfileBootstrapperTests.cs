@@ -23,7 +23,7 @@ public sealed class MachineProfileBootstrapperTests : IDisposable
     }
 
     [Fact]
-    public async Task InitializeAsync_ReplacesCorruptProfileWithSafeDefaults()
+    public async Task InitializeAsync_PreservesCorruptProfileInQuarantine()
     {
         Directory.CreateDirectory(directory);
         Paths paths = CreatePaths();
@@ -33,7 +33,10 @@ public sealed class MachineProfileBootstrapperTests : IDisposable
         BatteryConfiguration result = await bootstrapper.InitializeAsync(CancellationToken.None);
 
         Assert.True(result.Recovered);
-        Assert.False((await CreateStore(paths).LoadAsync(CancellationToken.None)).Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, result.Disposition);
+        Assert.Equal("{bad json", await File.ReadAllTextAsync(paths.Profiles));
+        Assert.False(File.Exists(paths.Preferences));
+        Assert.False(File.Exists(paths.Marker));
     }
 
     private Paths CreatePaths() => new(

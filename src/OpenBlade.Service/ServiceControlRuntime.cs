@@ -330,6 +330,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         "The external power adapter could not be classified; control writes are blocked.";
     private const string TransientExternalPowerMessage =
         "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.";
+    private const string ConfigurationQuarantineAdvisory =
+        "OpenBlade preserved an unsupported or invalid configuration. Thermal settings are read-only until the service restarts with a valid configuration.";
+    private const string ConfigurationQuarantineBlockedMessage =
+        "Thermal settings are read-only because OpenBlade preserved an unsupported or invalid configuration.";
     private const string ManualFanCurveTargetsChangedRetryBlockReason =
         "Manual fan-curve targets changed while waiting for the fresh-session retry.";
 
@@ -465,6 +469,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool suppressInitialUserProfileApplyAfterUnexpectedExit;
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
+    private int activeConfigurationDisposition =
+        (int)ConfigurationLoadDisposition.Quarantined;
     private ResumeStateBaseline? pendingResumeStateBaseline;
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
@@ -756,6 +762,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 persistentOverrides);
             automation = initializedAutomation;
+            Volatile.Write(
+                ref activeConfigurationDisposition,
+                (int)configuration.Disposition);
             preferences = configuration.Preferences;
             deviceProvider.SetAllowUntestedFirmware(
                 configuration.Preferences.AllowUntestedFirmware);
@@ -792,8 +801,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
-        ?? throw new InvalidOperationException("The service runtime is not initialized.");
+    public ServiceStatusSnapshot GetStatus()
+    {
+        ServiceStatusSnapshot current = Volatile.Read(ref status)
+            ?? throw new InvalidOperationException("The service runtime is not initialized.");
+        string baseMessage = StripConfigurationQuarantineAdvisory(current.Message);
+        string message = ConfigurationIsAdmitted
+            ? baseMessage
+            : string.IsNullOrWhiteSpace(baseMessage)
+                ? ConfigurationQuarantineAdvisory
+                : $"{ConfigurationQuarantineAdvisory} {baseMessage}";
+        return string.Equals(message, current.Message, StringComparison.Ordinal)
+            ? current
+            : current with { Message = message };
+    }
 
     public Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() =>
         Volatile.Read(ref rz090581CapabilityDiagnostics);
@@ -981,6 +1002,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Volatile.Write(
                     ref userStores,
                     new UserConfigurationStores(context.Store, context.OverrideStore));
+                Volatile.Write(
+                    ref activeConfigurationDisposition,
+                    (int)context.Disposition);
                 automation = new ProfileAutomationState(
                     profiles,
                     context.Configuration.Preferences,
@@ -1015,7 +1039,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await ApplyFullTransitionAsync(
                             powerSource,
                             cancellationToken,
-                            preserveObservedExternalChanges: false)
+                            preserveObservedExternalChanges: false,
+                            stillControlsSession: stillControlsSession)
                         .ConfigureAwait(false);
                 }
 
@@ -1082,6 +1107,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
+            if (!ConfigurationIsAdmitted)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Performance);
+            }
+
             bool lightingWasSuppressed = lightingSuppressions.Count > 0;
             FanControlSettings priorFanIntent = ResolveCurrentFanIntent();
             try
@@ -1488,6 +1518,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        if (!ConfigurationIsAdmitted)
+        {
+            ClearLastFanCurveTargets();
+            return;
+        }
+
         ServiceStatusSnapshot snapshot = GetStatus();
         FanControlSettings settings = snapshot.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(snapshot.DesiredState.Fans.Value);
@@ -2584,6 +2620,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     current.Capabilities,
                     restoreIntent))
             {
+                if (!ConfigurationIsAdmitted)
+                {
+                    return PublishHyperBoostRestoreRecoveryResult(
+                        ControlOperationStatus.Blocked,
+                        "The saved HyperBoost restore was preserved because quarantined configuration cannot replace its exact journaled intent.",
+                        fresh,
+                        restorePending: true);
+                }
+
                 if (restoreIntent.Performance is not
                     (PerformancePreset.BatterySaver
                         or PerformancePreset.BatteryBalanced))
@@ -2702,6 +2747,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ownedLifecycleRestore: false,
                     allowOwnedJournalCleanup: true,
                     validationOnly: false,
+                    authorityPurpose:
+                        ScopedThermalAuthorityPurpose.PriorAuthorityCleanup,
                     allowIntentRebase: true);
 
             HyperBoostIntentRestorationResult restoration;
@@ -3743,6 +3790,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool ownedLifecycleRestore,
         bool allowOwnedJournalCleanup,
         bool validationOnly,
+        ScopedThermalAuthorityPurpose authorityPurpose =
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
         bool allowIntentRebase = false,
         ThermalTransitionRecoveryState? recoveryState = null)
     {
@@ -3778,7 +3827,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 expectedPowerGeneration,
                 ownedLifecycleRestore,
                 allowOwnedJournalCleanup,
-                allowIntentRebase);
+                allowIntentRebase,
+                authorityPurpose);
         }
 
         return new ThermalTransitionStepRunner(
@@ -3834,8 +3884,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long expectedPowerGeneration,
         bool ownedLifecycleRestore,
         bool allowOwnedJournalCleanup,
-        bool allowIntentRebase)
+        bool allowIntentRebase,
+        ScopedThermalAuthorityPurpose authorityPurpose)
     {
+        if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } configurationBlock)
+        {
+            return configurationBlock;
+        }
+
         if (hyperBoostOwnershipGeneration != expectedOwnershipGeneration)
         {
             return "HyperBoost ownership changed before the thermal command was submitted.";
@@ -4279,6 +4335,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && ownsHyperBoost
                 && current.ConfirmedState?.HyperBoostActive == true
                 && !HasPendingWriteConfirmations();
+            if (!ConfigurationIsAdmitted && !ownedLifecycleRestore)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Performance);
+            }
+
             if (!current.DeviceVerified
                 || current.WritesBlocked && !ownedLifecycleRestore
                 || current.Capabilities?.HyperBoostAccess
@@ -4362,6 +4423,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             transitionIntent = enabled
                 ? CreateHyperBoostRestoreIntent(current.DesiredState)
+                : !ConfigurationIsAdmitted
+                    ? ownedHyperBoostRestoreIntent
+                        ?? HyperBoostRestoreIntent.BalancedAutomatic
                 : ResolveHyperBoostExitIntent(
                     current,
                     ownedHyperBoostRestoreIntent,
@@ -4474,7 +4538,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 transitionPowerSource,
                 ownedLifecycleRestore,
                 allowOwnedJournalCleanup: preparedTransitionJournal is not null,
-                validationOnly: lifecycleValidation is not null);
+                validationOnly: lifecycleValidation is not null,
+                authorityPurpose: ownedLifecycleRestore
+                    ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent);
             if (enabled)
             {
                 ScopedApplyOutcome automaticFans = await transitionRunner
@@ -5915,6 +5982,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 savedIntent,
                 confirmed);
+        if (!ConfigurationIsAdmitted
+            && (enabled
+                || !ownedLifecycleRestore
+                || destinationIntent != savedIntent))
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
         return CreateHyperBoostTransitionRunner(
             device,
             enabled,
@@ -5929,6 +6005,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedLifecycleRestore: ownedLifecycleRestore,
             allowOwnedJournalCleanup: true,
             validationOnly: false,
+            authorityPurpose: !ConfigurationIsAdmitted
+                ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
             allowIntentRebase: true,
             recoveryState: recoveryState);
     }
@@ -5936,13 +6015,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private HyperBoostRestoreIntent ResolveIndeterminateHyperBoostRestoreIntent(
         PowerSource powerSource,
         HyperBoostRestoreIntent savedIntent,
-        ConfirmedDeviceState confirmed) => powerSource switch
-        {
-            PowerSource.PluggedIn => savedIntent,
-            PowerSource.Battery or PowerSource.UsbC =>
-                CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed)),
-            _ => HyperBoostRestoreIntent.BalancedAutomatic,
-        };
+        ConfirmedDeviceState confirmed) => !ConfigurationIsAdmitted
+            ? savedIntent
+            : powerSource switch
+            {
+                PowerSource.PluggedIn => savedIntent,
+                PowerSource.Battery or PowerSource.UsbC =>
+                    CreateHyperBoostRestoreIntent(Automation.Resolve(confirmed)),
+                _ => HyperBoostRestoreIntent.BalancedAutomatic,
+            };
 
     private async Task<ThermalTransitionStepRunner?>
         CreateDelayedHyperBoostReconciliationRunnerAsync(
@@ -5997,10 +6078,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ?? "A possible HyperBoost submission was resolved by delayed readback; compensation remains single-attempt.",
         };
 
+        bool delayedEntry = pendingIndeterminateHyperBoostEntryIntent is not null;
+        if (!ConfigurationIsAdmitted && delayedEntry)
+        {
+            hyperBoostJournalSafetyBlock = true;
+            return null;
+        }
+
         return CreateHyperBoostTransitionRunner(
             device,
-            enabled: pendingIndeterminateHyperBoostEntryIntent is not null,
-            baseMode: pendingIndeterminateHyperBoostEntryIntent is not null
+            enabled: delayedEntry,
+            baseMode: delayedEntry
                 ? pendingIndeterminateHyperBoostEntryBaseMode
                 : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced,
             expectedIntent: expectedIntent,
@@ -6011,6 +6099,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ownedLifecycleRestore: true,
             allowOwnedJournalCleanup: true,
             validationOnly: false,
+            authorityPurpose: !ConfigurationIsAdmitted
+                ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
             recoveryState: recoveryState);
     }
 
@@ -7047,7 +7138,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (hyperBoostJournalSafetyBlock
             && journal.State == HyperBoostOwnershipJournalState.EnablePending)
         {
-            if (confirmed is not null
+            if (ConfigurationIsAdmitted
+                && confirmed is not null
                 && Automation.PowerSource == PowerSource.PluggedIn)
             {
                 HyperBoostRestoreIntent destinationIntent =
@@ -7148,6 +7240,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 destinationIntent = journal.RestoreIntent;
                 break;
             case HyperBoostRestoreRetryTarget.CurrentPowerDestination:
+                if (!ConfigurationIsAdmitted)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return new InactiveHyperBoostJournalRetirement(false);
+                }
                 destinationIntent =
                     CreateHyperBoostRestoreIntent(authoritativeDestination);
                 break;
@@ -7266,6 +7363,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ownedLifecycleRestore: false,
                 allowOwnedJournalCleanup: true,
                 validationOnly: false,
+                authorityPurpose:
+                    journal.RestoreRetryTarget ==
+                        HyperBoostRestoreRetryTarget.ExactJournalIntent
+                        ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                        : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
                 allowIntentRebase: journal.RestoreRetryTarget
                     == HyperBoostRestoreRetryTarget.ExactJournalIntent,
                 recoveryState: recoveryState);
@@ -8121,6 +8223,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
+        if (!ConfigurationIsAdmitted)
+        {
+            if (deferredManualFanSafetyOwnership.State !=
+                DeferredManualFanSafetyState.FloorOwned)
+            {
+                return;
+            }
+
+            PowerSource cleanupPowerSource = await ResolveCurrentPowerSourceAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (cleanupPowerSource != PowerSource.ExternalUnknown
+                && stillControlsSession?.Invoke() != false)
+            {
+                await HandBackDeferredManualFanSafetyFloorCoreAsync(
+                        cleanupPowerSource,
+                        cancellationToken,
+                        stillControlsSession)
+                    .ConfigureAwait(false);
+            }
+            return;
+        }
+
         PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken)
             .ConfigureAwait(false);
         if (powerSource == PowerSource.ExternalUnknown
@@ -8385,7 +8510,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 thermalExecutionOptions: new ScopedThermalExecutionOptions(
                     [DeviceSubsystem.Fans],
                     additionalWriteBlockReason: () =>
-                        DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority)),
+                        DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority),
+                    authorityPurpose:
+                        ScopedThermalAuthorityPurpose.PriorAuthorityCleanup),
                 observeScopedOutcome: (outcome, _, trace) =>
                 {
                     appliedOutcome = outcome;
@@ -8519,6 +8646,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || !stillControlsSession())
         {
             return false;
+        }
+
+        if (!ConfigurationIsAdmitted)
+        {
+            if (deferredManualFanSafetyOwnership.State ==
+                DeferredManualFanSafetyState.FloorOwned)
+            {
+                await HandBackDeferredManualFanSafetyFloorCoreAsync(
+                        powerSource,
+                        cancellationToken,
+                        stillControlsSession)
+                    .ConfigureAwait(false);
+            }
+
+            return deferredManualFanSafetyOwnership.State ==
+                DeferredManualFanSafetyState.AutomaticOwned;
         }
 
         FanControlSettings desired = Automation.Resolve(
@@ -9765,7 +9908,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 [DeviceSubsystem.Fans],
                 ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup,
                 () => RefreshAndGetShutdownFanHandbackBlockReason(
-                    cancellationToken))).ConfigureAwait(false);
+                    cancellationToken),
+                ScopedThermalAuthorityPurpose.PriorAuthorityCleanup)).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
@@ -10492,6 +10636,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
+            if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans
+                && !ConfigurationIsAdmitted)
+            {
+                return ConfigurationQuarantineBlocked(subsystem);
+            }
+
             if (stillControlsSession?.Invoke() == false)
             {
                 return SessionAuthorityChanged(
@@ -10670,6 +10820,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 [DeviceSubsystem.Performance]);
         }
         thermalExecutionOptions?.ValidateFor(subsystem);
+        ScopedThermalAuthorityPurpose authorityPurpose =
+            thermalExecutionOptions?.AuthorityPurpose
+            ?? ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent;
+        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans
+            && ConfigurationThermalWriteBlockReason(authorityPurpose) is not null)
+        {
+            return ConfigurationQuarantineBlocked(subsystem);
+        }
 
         if (stillControlsSession?.Invoke() == false)
         {
@@ -10884,11 +11042,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 resolveIndeterminateAutomaticFanWrites: true,
                                 singleAttemptPerformanceWrites: true,
                                 performanceWriteBlockReason: () =>
-                                    ScopedPerformanceWriteBlockReason(
-                                        desired,
-                                        stageDesired,
-                                        stillControlsSession,
-                                        options.AdditionalWriteBlockReason));
+                                     ScopedPerformanceWriteBlockReason(
+                                         desired,
+                                         stageDesired,
+                                         stillControlsSession,
+                                         options.AdditionalWriteBlockReason,
+                                         options.AuthorityPurpose));
                             return await apply(
                                     coordinator,
                                     desired,
@@ -10924,19 +11083,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             singleAttemptFanWrites: true,
                             thermalStepRunner: runner,
                             performanceWriteBlockReason: () =>
-                                ScopedThermalWriteBlockReason(
+                                     ScopedThermalWriteBlockReason(
                                     desired,
                                     stageDesired,
-                                    stillControlsSession,
-                                    options.Components,
-                                    options.AdditionalWriteBlockReason),
+                                         stillControlsSession,
+                                         options.Components,
+                                         options.AdditionalWriteBlockReason,
+                                         options.AuthorityPurpose),
                             fanWriteBlockReason: () =>
-                                ScopedThermalWriteBlockReason(
+                                     ScopedThermalWriteBlockReason(
                                     desired,
                                     stageDesired,
-                                    stillControlsSession,
-                                    options.Components,
-                                    options.AdditionalWriteBlockReason)),
+                                         stillControlsSession,
+                                         options.Components,
+                                         options.AdditionalWriteBlockReason,
+                                         options.AuthorityPurpose)),
                         (runner, cancellationToken) => apply(
                             runner.CreateRecipeCoordinator(),
                             desired,
@@ -11011,7 +11172,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 options.Components,
                 recoveryDelay,
                 cancellationToken,
-                options.AdditionalWriteBlockReason)
+                options.AdditionalWriteBlockReason,
+                options.AuthorityPurpose)
             : Task.FromResult(ThermalRetryAdmission.Block(
                 "Fresh-session retry is unavailable during bounded shutdown cleanup."));
 
@@ -11024,9 +11186,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IReadOnlyList<DeviceSubsystem> components,
         TimeSpan recoveryDelay,
         CancellationToken cancellationToken,
-        Func<string?>? additionalThermalWriteBlockReason = null)
+        Func<string?>? additionalThermalWriteBlockReason = null,
+        ScopedThermalAuthorityPurpose authorityPurpose =
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } quarantineBlock)
+        {
+            return ThermalRetryAdmission.Block(quarantineBlock);
+        }
         if (stillControlsSession?.Invoke() == false)
         {
             return ThermalRetryAdmission.Block(
@@ -11166,8 +11334,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState expected,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
-        Func<string?>? additionalWriteBlockReason)
+        Func<string?>? additionalWriteBlockReason,
+        ScopedThermalAuthorityPurpose authorityPurpose)
     {
+        if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } quarantineBlock)
+        {
+            return quarantineBlock;
+        }
         if (stillControlsSession?.Invoke() == false)
         {
             return "The active Windows session changed before the performance command was submitted.";
@@ -11201,8 +11374,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
         IReadOnlyList<DeviceSubsystem> components,
-        Func<string?>? additionalThermalWriteBlockReason = null)
+        Func<string?>? additionalThermalWriteBlockReason = null,
+        ScopedThermalAuthorityPurpose authorityPurpose =
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
     {
+        if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } quarantineBlock)
+        {
+            return quarantineBlock;
+        }
         if (stillControlsSession?.Invoke() == false)
         {
             return "The active Windows session changed before the thermal command was submitted.";
@@ -11756,8 +11935,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PowerSource powerSource,
             CancellationToken cancellationToken)
     {
-        HyperBoostRestoreIntent restoreIntent =
-            CreateHyperBoostRestoreIntent(destinationIntent);
+        HyperBoostRestoreIntent restoreIntent = !ConfigurationIsAdmitted
+            ? ownedHyperBoostRestoreIntent
+                ?? HyperBoostRestoreIntent.BalancedAutomatic
+            : CreateHyperBoostRestoreIntent(destinationIntent);
         PerformancePreset baseMode = ownedHyperBoostBaseMode
             ?? PerformancePreset.Balanced;
         bool requiresCoolingPad = ownedHyperBoostRequiresCoolingPad;
@@ -11880,6 +12061,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ownedLifecycleRestore: false,
                 allowOwnedJournalCleanup: true,
                 validationOnly: false,
+                authorityPurpose: !ConfigurationIsAdmitted
+                    ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
                 allowIntentRebase: false);
         HyperBoostIntentRestorationResult restoration;
         try
@@ -12004,7 +12188,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PowerSource powerSource,
         CancellationToken token,
         bool preserveLiveReadings = false,
-        bool preserveObservedExternalChanges = true)
+        bool preserveObservedExternalChanges = true,
+        Func<bool>? stillControlsSession = null)
     {
         ServiceStatusSnapshot current = GetStatus();
         if (hyperBoostJournalSafetyBlock && !ownsHyperBoost)
@@ -12106,6 +12291,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         current = GetStatus();
         cachedConfirmed = current.ConfirmedState;
+        if (stillControlsSession?.Invoke() == false)
+        {
+            return;
+        }
 
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
@@ -12118,7 +12307,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 current,
                 cachedConfirmed,
                 preserveObservedExternalChanges,
-                token);
+                token,
+                stillControlsSession);
         FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
         device = transitionExecution.Device;
 
@@ -12184,7 +12374,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ServiceStatusSnapshot current,
         ConfirmedDeviceState? cachedConfirmed,
         bool preserveObservedExternalChanges,
-        CancellationToken token)
+        CancellationToken token,
+        Func<bool>? stillControlsSession = null)
     {
         bool ShouldConfirmTransientLightingOff() =>
             preserveObservedExternalChanges
@@ -12232,6 +12423,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 exclusions.Add(DeviceSubsystem.Performance);
                 exclusions.Add(DeviceSubsystem.Fans);
             }
+            if (!ConfigurationIsAdmitted)
+            {
+                exclusions.Add(DeviceSubsystem.Performance);
+                exclusions.Add(DeviceSubsystem.Fans);
+            }
             if (!preferences.AlwaysOverrideExternalLightingChanges
                 && ControllerMayOwnLighting(current))
             {
@@ -12261,16 +12457,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         thermalStepRunner: runner,
                         performanceWriteBlockReason: () =>
                             ScopedThermalWriteBlockReason(
-                                desired,
-                                stageDesired: null,
-                                stillControlsSession: null,
-                                thermalComponents),
+                                 desired,
+                                 stageDesired: null,
+                                 stillControlsSession,
+                                 thermalComponents),
                         fanWriteBlockReason: () =>
                             ScopedThermalWriteBlockReason(
-                                desired,
-                                stageDesired: null,
-                                stillControlsSession: null,
-                                thermalComponents)),
+                                 desired,
+                                 stageDesired: null,
+                                 stillControlsSession,
+                                 thermalComponents)),
                     (coordinator, cancellationToken) => coordinator
                         .ApplyDesiredStateOutcomeAsync(
                             desired,
@@ -12280,17 +12476,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             deviceStateReader: transitionStateReader),
                     (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
                         powerSource,
-                        desired,
-                        stageDesired: null,
-                        stillControlsSession: null,
+                         desired,
+                         stageDesired: null,
+                         stillControlsSession,
                         thermalComponents,
                         PowerTransitionAccessRetryDelay,
                         cancellationToken),
                     (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
                         powerSource,
-                        desired,
-                        stageDesired: null,
-                        stillControlsSession: null,
+                         desired,
+                         stageDesired: null,
+                         stillControlsSession,
                         thermalComponents,
                         ThermalPreWriteRetryDelay,
                         cancellationToken),
@@ -14796,6 +14992,37 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         history.RecordSummary(rejected.Status, rejected.Message);
         return rejected;
     }
+
+    private bool ConfigurationIsAdmitted =>
+        (ConfigurationLoadDisposition)Volatile.Read(ref activeConfigurationDisposition)
+            == ConfigurationLoadDisposition.Admitted;
+
+    private static string StripConfigurationQuarantineAdvisory(string message) =>
+        message.StartsWith(
+            ConfigurationQuarantineAdvisory,
+            StringComparison.Ordinal)
+            ? message[ConfigurationQuarantineAdvisory.Length..].TrimStart()
+            : message;
+
+    private ControlOperationResult ConfigurationQuarantineBlocked(
+        DeviceSubsystem subsystem)
+    {
+        var blocked = new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            ConfigurationQuarantineBlockedMessage);
+        history.RecordSubsystemResult(
+            subsystem,
+            new ControlResult(ControlResultStatus.Blocked, blocked.Message));
+        PublishIfChanged(GetStatus() with { Message = blocked.Message });
+        return blocked;
+    }
+
+    private string? ConfigurationThermalWriteBlockReason(
+        ScopedThermalAuthorityPurpose authorityPurpose) =>
+        ConfigurationIsAdmitted
+        || authorityPurpose == ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+            ? null
+            : ConfigurationQuarantineBlockedMessage;
 
     private static ControlOperationResult ToOperationResult(ControlResult result) => new(
         result.Status switch

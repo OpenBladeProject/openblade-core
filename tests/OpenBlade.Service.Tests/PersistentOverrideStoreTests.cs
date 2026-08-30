@@ -255,20 +255,60 @@ public sealed class PersistentOverrideStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Load_CorruptDocumentRecoversOnceToEmptyState()
+    public async Task Load_CorruptDocumentRemainsBytePreservedInQuarantine()
     {
         string path = Path.Combine(directory, "manual-overrides.json");
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(path, "{invalid-json");
+        byte[] original = await File.ReadAllBytesAsync(path);
         var store = new PersistentOverrideStore(path);
 
         PersistentOverrideLoadResult recovered = await store.LoadAsync(CancellationToken.None);
         PersistentOverrideLoadResult verified = await store.LoadAsync(CancellationToken.None);
 
         Assert.True(recovered.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, recovered.Disposition);
         Assert.Equal(PersistentOverrideState.Empty, recovered.Overrides);
-        Assert.False(verified.Recovered);
+        Assert.True(verified.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, verified.Disposition);
         Assert.Equal(PersistentOverrideState.Empty, verified.Overrides);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
+    public async Task Load_FutureSchemaRemainsBytePreservedAndRejectsEverySave()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        var overrides = new PersistentOverrideState(
+            PerformancePreset.Silent,
+            null,
+            null);
+        PersistentOverrideStore store = new(path);
+        await store.SaveAsync(overrides, CancellationToken.None);
+        string future = (await File.ReadAllTextAsync(path))
+            .Replace(
+                "\"schemaVersion\": 6",
+                "\"schemaVersion\": 7, \"schemaVersion\": 6",
+                StringComparison.Ordinal);
+        await File.WriteAllTextAsync(path, future);
+        byte[] preserved = await File.ReadAllBytesAsync(path);
+        DateTime writeTime = File.GetLastWriteTimeUtc(path);
+
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(
+            CancellationToken.None);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.SaveAsync(overrides, CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            new PersistentOverrideStore(path).SaveAsync(
+                overrides,
+                CancellationToken.None));
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.FutureSchema, loaded.QuarantineReason);
+        Assert.Equal(preserved, await File.ReadAllBytesAsync(path));
+        Assert.Equal(writeTime, File.GetLastWriteTimeUtc(path));
+        Assert.Equal([path], Directory.GetFiles(directory));
     }
 
     [Fact]

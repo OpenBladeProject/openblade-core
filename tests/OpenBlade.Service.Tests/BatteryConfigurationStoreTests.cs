@@ -267,23 +267,28 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
     [Theory]
     [MemberData(nameof(InvalidLegacyDocuments))]
-    public async Task LoadAsync_InvalidLegacyProfileRecoversSafeEnabledDefaults(string json)
+    public async Task LoadAsync_InvalidLegacyProfilePreservesBytesInQuarantine(string json)
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(paths.Profiles, json);
+        byte[] original = await File.ReadAllBytesAsync(paths.Profiles);
 
         BatteryConfiguration configuration = await CreateStore(paths).LoadAsync(CancellationToken.None);
 
         Assert.True(configuration.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, configuration.Disposition);
+        Assert.NotEqual(ConfigurationQuarantineReason.None, configuration.QuarantineReason);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), configuration.Profiles);
         AssertBatteryProtection(configuration.Profiles, expected: true);
         Assert.Null(configuration.Preferences.ProtectionEnabled);
-        Assert.All(paths.All, path => Assert.True(File.Exists(path)));
+        Assert.Equal(original, await File.ReadAllBytesAsync(paths.Profiles));
+        Assert.False(File.Exists(paths.Preferences));
+        Assert.False(File.Exists(paths.Marker));
     }
 
     [Fact]
-    public async Task LoadAsync_InterruptedSingleFileMigrationNeverCombinesDocuments()
+    public async Task LoadAsync_PartialModernAggregateIsQuarantinedWithoutMutation()
     {
         Paths paths = CreatePaths();
         Directory.CreateDirectory(directory);
@@ -294,16 +299,22 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             }),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         await File.WriteAllTextAsync(paths.Profiles, currentProfile);
+        byte[] original = await File.ReadAllBytesAsync(paths.Profiles);
 
         BatteryConfiguration configuration = await CreateStore(paths).LoadAsync(CancellationToken.None);
 
         Assert.True(configuration.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, configuration.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.IncompleteAggregate, configuration.QuarantineReason);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
         AssertBatteryProtection(configuration.Profiles, expected: true);
+        Assert.Equal(original, await File.ReadAllBytesAsync(paths.Profiles));
+        Assert.False(File.Exists(paths.Preferences));
+        Assert.False(File.Exists(paths.Marker));
     }
 
     [Fact]
-    public async Task LoadAsync_HashMismatchRecoversWholeAggregate()
+    public async Task LoadAsync_HashMismatchPreservesWholeAggregateInQuarantine()
     {
         Paths paths = CreatePaths();
         BatteryConfigurationStore store = CreateStore(paths);
@@ -311,17 +322,145 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         string tampered = (await File.ReadAllTextAsync(paths.Profiles))
             .Replace("\"chargeLimitPercent\": 80", "\"chargeLimitPercent\": 50", StringComparison.Ordinal);
         await File.WriteAllTextAsync(paths.Profiles, tampered);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
 
         BatteryConfiguration configuration = await store.LoadAsync(CancellationToken.None);
 
         Assert.True(configuration.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, configuration.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.HashMismatch, configuration.QuarantineReason);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
         AssertBatteryProtection(configuration.Profiles, expected: true);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
+    }
+
+    [Fact]
+    public async Task LoadAsync_FutureSiblingTakesPrecedenceAndEverySavePreservesAggregate()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration admitted = await store.LoadAsync(CancellationToken.None);
+        await File.WriteAllTextAsync(paths.Profiles, "{invalid-json");
+        await File.WriteAllTextAsync(
+            paths.Preferences,
+            $$"""
+            {
+              "schemaVersion": {{ProfileStore.CurrentSchemaVersion + 1}},
+              "preferences": { "futureSetting": true }
+            }
+            """);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
+        DateTime[] writeTimes = paths.All
+            .Select(File.GetLastWriteTimeUtc)
+            .ToArray();
+
+        BatteryConfiguration quarantined = await store.LoadAsync(
+            CancellationToken.None);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.SaveConfigurationAsync(
+                admitted.Profiles,
+                admitted.Preferences,
+                CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).SaveConfigurationAsync(
+                admitted.Profiles,
+                admitted.Preferences,
+                CancellationToken.None));
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, quarantined.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.FutureSchema, quarantined.QuarantineReason);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
+        Assert.Equal(writeTimes, paths.All.Select(File.GetLastWriteTimeUtc));
+        Assert.Equal(
+            paths.All.Order(StringComparer.OrdinalIgnoreCase),
+            Directory.GetFiles(directory).Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Schema14AggregateMigratesAsOneAdmittedTransaction()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(14, ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(14, new BatteryAutomationPreferences()),
+            options);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(14, Hash(profiles), Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        foreach (string path in paths.All)
+        {
+            using JsonDocument document = JsonDocument.Parse(
+                await File.ReadAllBytesAsync(path));
+            Assert.Equal(
+                ProfileStore.CurrentSchemaVersion,
+                document.RootElement.GetProperty("schemaVersion").GetInt32());
+        }
+    }
+
+    [Fact]
+    public async Task AggregateGate_SerializesIndependentStoreInstancesForSamePaths()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfiguration baseline = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+        var enteredCommit = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCommit = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = new BatteryConfigurationStore(
+            paths.Profiles,
+            paths.Preferences,
+            paths.Marker,
+            validator: null,
+            postCommitBoundary: null,
+            async (boundary, _) =>
+            {
+                if (boundary == BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    enteredCommit.TrySetResult();
+                    await releaseCommit.Task;
+                }
+            });
+        BatteryConfigurationStore reader = CreateStore(paths);
+        ProfileSet intended = baseline.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(70),
+        };
+
+        Task write = writer.SaveConfigurationAsync(
+            intended,
+            baseline.Preferences,
+            CancellationToken.None);
+        await enteredCommit.Task;
+        Task<BatteryConfiguration> read = reader.LoadAsync(CancellationToken.None);
+        Assert.False(read.IsCompleted);
+
+        releaseCommit.SetResult();
+        await write;
+        BatteryConfiguration loaded = await read;
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Equal(70, loaded.Profiles.BatteryPolicy.ChargeLimitPercent);
     }
 
     [Theory]
     [MemberData(nameof(InvalidPreferenceDocuments))]
-    public async Task LoadAsync_InvalidPreferenceShapeRecoversWholeAggregate(
+    public async Task LoadAsync_InvalidPreferenceShapePreservesWholeAggregate(
         int schemaVersion,
         string preferenceJson)
     {
@@ -344,13 +483,17 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         await File.WriteAllBytesAsync(paths.Profiles, profiles);
         await File.WriteAllBytesAsync(paths.Preferences, preferences);
         await File.WriteAllBytesAsync(paths.Marker, marker);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
 
         BatteryConfiguration configuration =
             await CreateStore(paths).LoadAsync(CancellationToken.None);
 
         Assert.True(configuration.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, configuration.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.InvalidDocument, configuration.QuarantineReason);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), configuration.Profiles);
         Assert.Null(configuration.Preferences.ProtectionEnabled);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
     }
 
     [Fact]
@@ -669,10 +812,12 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.True(replaced);
         Assert.True(configuration.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, configuration.Disposition);
         AssertBatteryProtection(configuration.Profiles, expected: true);
         Assert.Null(configuration.Preferences.ProtectionEnabled);
         BatteryConfiguration verified = await store.LoadAsync(CancellationToken.None);
-        Assert.False(verified.Recovered);
+        Assert.True(verified.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, verified.Disposition);
         Assert.Equal(configuration.Profiles, verified.Profiles);
         Assert.Equal(configuration.Preferences, verified.Preferences);
     }

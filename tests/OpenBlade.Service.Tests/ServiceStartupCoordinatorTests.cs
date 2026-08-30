@@ -120,6 +120,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
 
         Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal(
+            ConfigurationLoadDisposition.Quarantined,
+            runtime.Configuration?.Disposition);
     }
 
     [Fact]
@@ -180,10 +183,12 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public PowerSource? InitialPowerSource { get; private set; }
         public PersistentOverrideState? PersistentOverrides { get; private set; }
         public bool RecoveringUnexpectedExit { get; private set; }
+        public BatteryConfiguration? Configuration { get; private set; }
 
         public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)
         {
             Calls.Add("Initialize");
+            Configuration = configuration;
             ProfileFileExistedDuringInitialize = File.Exists(profilePath);
             InitialPowerSource = powerSource;
             Initialized?.Invoke();

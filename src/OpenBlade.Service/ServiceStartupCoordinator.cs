@@ -14,18 +14,23 @@ public sealed class ServiceStartupCoordinator(
     {
         BatteryConfiguration configuration =
             await profileBootstrapper.InitializeAsync(cancellationToken);
-        if (configuration.Recovered)
+        if (configuration.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
             logger.LogWarning(
-                "Invalid battery configuration was replaced with safe defaults.");
+                "Invalid or unsupported battery configuration was preserved in quarantine; ordinary thermal writes are disabled.");
         }
 
         PersistentOverrideLoadResult persistentOverrides =
             await overrideStore.LoadAsync(cancellationToken);
-        if (persistentOverrides.Recovered)
+        if (persistentOverrides.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
             logger.LogWarning(
-                "Invalid persistent overrides were cleared to safe defaults.");
+                "Invalid or unsupported persistent overrides were preserved in quarantine; ordinary thermal writes are disabled.");
+            configuration = configuration with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = persistentOverrides.QuarantineReason,
+            };
         }
 
         cancellationToken.ThrowIfCancellationRequested();

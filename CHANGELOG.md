@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserved incomplete, invalid, hash-mismatched, mixed-schema, and future
+  profile aggregates and manual overrides in a non-mutating quarantine instead
+  of replacing them with safe defaults. Quarantined thermal settings remain
+  read-only while the service continues read-only observation and unrelated
+  controls; only exact journaled HyperBoost restoration and current-epoch fan
+  handback retain their existing cleanup authority.
 - Fixed the exact-device read-only performance and fan query factory so an
   empty write-command catalog bounds HyperBoost and base-mode capabilities to
   read-only access instead of failing before the HID session opens.

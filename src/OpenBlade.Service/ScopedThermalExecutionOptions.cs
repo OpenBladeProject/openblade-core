@@ -8,6 +8,12 @@ internal enum ScopedThermalFreshSessionRetryPolicy
     BlockDuringBoundedCleanup,
 }
 
+internal enum ScopedThermalAuthorityPurpose
+{
+    OrdinaryConfigurationIntent,
+    PriorAuthorityCleanup,
+}
+
 internal sealed class ScopedThermalExecutionOptions
 {
     private readonly IReadOnlyList<DeviceSubsystem> components;
@@ -16,7 +22,9 @@ internal sealed class ScopedThermalExecutionOptions
         IReadOnlyList<DeviceSubsystem> components,
         ScopedThermalFreshSessionRetryPolicy freshSessionRetryPolicy =
             ScopedThermalFreshSessionRetryPolicy.Allow,
-        Func<string?>? additionalWriteBlockReason = null)
+        Func<string?>? additionalWriteBlockReason = null,
+        ScopedThermalAuthorityPurpose authorityPurpose =
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
     {
         ArgumentNullException.ThrowIfNull(components);
         if (components.Count == 0
@@ -32,10 +40,15 @@ internal sealed class ScopedThermalExecutionOptions
         {
             throw new ArgumentOutOfRangeException(nameof(freshSessionRetryPolicy));
         }
+        if (!Enum.IsDefined(authorityPurpose))
+        {
+            throw new ArgumentOutOfRangeException(nameof(authorityPurpose));
+        }
 
         this.components = Array.AsReadOnly([.. components]);
         FreshSessionRetryPolicy = freshSessionRetryPolicy;
         AdditionalWriteBlockReason = additionalWriteBlockReason;
+        AuthorityPurpose = authorityPurpose;
     }
 
     internal IReadOnlyList<DeviceSubsystem> Components => components;
@@ -43,6 +56,8 @@ internal sealed class ScopedThermalExecutionOptions
     internal ScopedThermalFreshSessionRetryPolicy FreshSessionRetryPolicy { get; }
 
     internal Func<string?>? AdditionalWriteBlockReason { get; }
+
+    internal ScopedThermalAuthorityPurpose AuthorityPurpose { get; }
 
     internal void ValidateFor(DeviceSubsystem subsystem)
     {

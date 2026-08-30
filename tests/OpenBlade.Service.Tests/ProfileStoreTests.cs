@@ -272,7 +272,7 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Load_CurrentSchemaNullProfilesRecoversSafeDefaults()
+    public async Task Load_CurrentSchemaNullProfilesPreservesQuarantinedDocument()
     {
         Directory.CreateDirectory(storeDirectory);
         string path = Path.Combine(storeDirectory, "profiles.json");
@@ -281,17 +281,21 @@ public sealed class ProfileStoreTests : IDisposable
             $$"""
             {"schemaVersion": {{ProfileStore.CurrentSchemaVersion}}, "profiles": null}
             """);
+        byte[] original = await File.ReadAllBytesAsync(path);
 
         ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
             CancellationToken.None);
 
         Assert.True(result.RecoveredFromInvalidFile);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, result.Disposition);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), result.Profiles);
 
         ProfileLoadResult reloaded = await new ProfileStore(path).LoadAsync(
             CancellationToken.None);
-        Assert.False(reloaded.RecoveredFromInvalidFile);
+        Assert.True(reloaded.RecoveredFromInvalidFile);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, reloaded.Disposition);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), reloaded.Profiles);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
     }
 
     [Fact]
@@ -450,7 +454,7 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Load_SemanticallyInvalidJsonAtomicallyRecoversSafeDefaults()
+    public async Task Load_SemanticallyInvalidJsonPreservesQuarantinedBytes()
     {
         Directory.CreateDirectory(storeDirectory);
         string path = Path.Combine(storeDirectory, "profiles.json");
@@ -470,16 +474,50 @@ public sealed class ProfileStoreTests : IDisposable
             }
             """;
         await File.WriteAllTextAsync(path, json, CancellationToken.None);
+        byte[] original = await File.ReadAllBytesAsync(path);
         ProfileStore store = new(path);
 
         ProfileLoadResult first = await store.LoadAsync(CancellationToken.None);
         ProfileLoadResult second = await store.LoadAsync(CancellationToken.None);
 
         Assert.True(first.RecoveredFromInvalidFile);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, first.Disposition);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), first.Profiles);
-        Assert.False(second.RecoveredFromInvalidFile);
+        Assert.True(second.RecoveredFromInvalidFile);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, second.Disposition);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), second.Profiles);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
         Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
+    public async Task Load_FutureSchemaRemainsBytePreservedAndRejectsEverySave()
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileStore store = new(path);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        await store.SaveAsync(profiles, CancellationToken.None);
+        string future = (await File.ReadAllTextAsync(path))
+            .Replace(
+                $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+                $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion + 1}, \"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+                StringComparison.Ordinal);
+        await File.WriteAllTextAsync(path, future);
+        byte[] preserved = await File.ReadAllBytesAsync(path);
+        DateTime writeTime = File.GetLastWriteTimeUtc(path);
+
+        ProfileLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.SaveAsync(profiles, CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            new ProfileStore(path).SaveAsync(profiles, CancellationToken.None));
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.FutureSchema, loaded.QuarantineReason);
+        Assert.Equal(preserved, await File.ReadAllBytesAsync(path));
+        Assert.Equal(writeTime, File.GetLastWriteTimeUtc(path));
+        Assert.Equal([path], Directory.GetFiles(storeDirectory));
     }
 
     [Fact]

@@ -87,6 +87,118 @@ public sealed class UserConfigurationRepositoryTests : IDisposable
         Assert.Null(anotherUser.Overrides.Performance);
     }
 
+    [Fact]
+    public async Task LoadAsync_QuarantinedLegacySourceIsPreservedWithoutMigrationMarker()
+    {
+        Directory.CreateDirectory(directory);
+        var ownerSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        string profilePath = Path.Combine(directory, "profiles.json");
+        await File.WriteAllTextAsync(profilePath, "{invalid-json");
+        byte[] preserved = await File.ReadAllBytesAsync(profilePath);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, "authorized-user.sid"),
+            ownerSid.Value);
+
+        UserConfigurationContext loaded = await new UserConfigurationRepository(
+                directory,
+                validator)
+            .LoadAsync(ownerSid, CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Equal(preserved, await File.ReadAllBytesAsync(profilePath));
+        Assert.False(File.Exists(Path.Combine(
+            directory,
+            "users",
+            ownerSid.Value,
+            ".legacy-migration-complete")));
+    }
+
+    [Fact]
+    public async Task LoadAsync_QuarantinedDestinationIsPreservedWithoutMigrationMarker()
+    {
+        Directory.CreateDirectory(directory);
+        var ownerSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var source = new BatteryConfigurationStore(
+            Path.Combine(directory, "profiles.json"),
+            Path.Combine(directory, "battery-preferences.json"),
+            Path.Combine(directory, "battery-configuration.commit.json"),
+            validator);
+        await source.LoadAsync(CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, "authorized-user.sid"),
+            ownerSid.Value);
+        string userDirectory = Path.Combine(directory, "users", ownerSid.Value);
+        Directory.CreateDirectory(userDirectory);
+        string destinationProfile = Path.Combine(userDirectory, "profiles.json");
+        await File.WriteAllTextAsync(destinationProfile, "{invalid-json");
+        byte[] preserved = await File.ReadAllBytesAsync(destinationProfile);
+
+        UserConfigurationContext loaded = await new UserConfigurationRepository(
+                directory,
+                validator)
+            .LoadAsync(ownerSid, CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(preserved, await File.ReadAllBytesAsync(destinationProfile));
+        Assert.False(File.Exists(Path.Combine(
+            userDirectory,
+            ".legacy-migration-complete")));
+    }
+
+    [Fact]
+    public async Task LoadAsync_PartialDestinationMigrationPreservesExistingConfiguration()
+    {
+        Directory.CreateDirectory(directory);
+        var ownerSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var source = new BatteryConfigurationStore(
+            Path.Combine(directory, "profiles.json"),
+            Path.Combine(directory, "battery-preferences.json"),
+            Path.Combine(directory, "battery-configuration.commit.json"),
+            validator);
+        BatteryConfiguration sourceConfiguration = await source.LoadAsync(
+            CancellationToken.None);
+        await new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json"))
+            .SaveAsync(
+                PersistentOverrideState.Empty with
+                {
+                    Performance = PerformancePreset.Silent,
+                },
+                CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, "authorized-user.sid"),
+            ownerSid.Value);
+        string userDirectory = Path.Combine(directory, "users", ownerSid.Value);
+        var destination = new BatteryConfigurationStore(
+            Path.Combine(userDirectory, "profiles.json"),
+            Path.Combine(userDirectory, "battery-preferences.json"),
+            Path.Combine(userDirectory, "battery-configuration.commit.json"),
+            validator);
+        ProfileSet destinationProfiles = sourceConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(65),
+        };
+        await destination.SaveConfigurationAsync(
+            destinationProfiles,
+            sourceConfiguration.Preferences,
+            CancellationToken.None);
+        var repository = new UserConfigurationRepository(directory, validator);
+
+        UserConfigurationContext first = await repository.LoadAsync(
+            ownerSid,
+            CancellationToken.None);
+        UserConfigurationContext second = await repository.LoadAsync(
+            ownerSid,
+            CancellationToken.None);
+
+        Assert.Equal(65, first.Configuration.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(65, second.Configuration.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(PerformancePreset.Silent, first.Overrides.Performance);
+        Assert.Equal(first.Overrides, second.Overrides);
+        Assert.True(File.Exists(Path.Combine(
+            userDirectory,
+            ".legacy-migration-complete")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

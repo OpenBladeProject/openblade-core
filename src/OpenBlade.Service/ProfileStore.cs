@@ -1,12 +1,17 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
-public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromInvalidFile);
+public sealed record ProfileLoadResult(
+    ProfileSet Profiles,
+    bool RecoveredFromInvalidFile,
+    ConfigurationLoadDisposition Disposition = ConfigurationLoadDisposition.Admitted,
+    ConfigurationQuarantineReason QuarantineReason = ConfigurationQuarantineReason.None);
 
-public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
+public sealed class ProfileStore
 {
     internal const int CurrentSchemaVersion = 15;
     internal const int LegacyWindowsPowerModeSchemaVersion = 14;
@@ -27,6 +32,9 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     internal const int WindowsPowerModeProfileSchemaVersion = 12;
     internal const int PerformanceWindowsPowerModeProfileSchemaVersion = 15;
 
+    internal static bool IsSupportedSchemaVersion(int schemaVersion) =>
+        schemaVersion is >= LegacySchemaVersion and <= CurrentSchemaVersion;
+
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -35,8 +43,23 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         RespectRequiredConstructorParameters = true,
     };
 
-    private readonly ProfileSetValidator validator =
-        validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PathGates =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly string path;
+    private readonly ProfileSetValidator validator;
+    private readonly SemaphoreSlim gate;
+    private bool preservationRequired;
+
+    public ProfileStore(string path, ProfileSetValidator? validator = null)
+    {
+        this.path = System.IO.Path.GetFullPath(
+            string.IsNullOrWhiteSpace(path)
+                ? throw new ArgumentException("A profile path is required.", nameof(path))
+                : path);
+        this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        gate = PathGates.GetOrAdd(this.path, static _ => new SemaphoreSlim(1, 1));
+    }
 
     internal string Path => path;
 
@@ -48,32 +71,79 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             batteryProtectionDefault: null);
         profiles = ClearLegacyWindowsPowerModes(profiles);
         validator.Validate(profiles);
-        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
-            new ProfileDocument(CurrentSchemaVersion, profiles),
-            SerializerOptions);
-        await AtomicFile.WriteAsync(path, json, cancellationToken);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (preservationRequired)
+            {
+                throw new ConfigurationQuarantinedException(
+                    "The profile is preserved in quarantine and cannot be changed until a validated reload.",
+                    ConfigurationQuarantineReason.InvalidDocument);
+            }
+
+            byte[]? existing = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                try
+                {
+                    _ = ReadDocument(existing);
+                }
+                catch (Exception exception)
+                    when (BatteryConfigurationStore.IsRecoverable(exception))
+                {
+                    throw new ConfigurationQuarantinedException(
+                        "The existing profile is preserved in quarantine.",
+                        ContainsFutureSchema(existing)
+                            ? ConfigurationQuarantineReason.FutureSchema
+                            : ConfigurationQuarantineReason.InvalidDocument);
+                }
+            }
+
+            await WriteCoreAsync(profiles, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task<ProfileLoadResult> LoadAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(path))
-        {
-            return new ProfileLoadResult(ProfileDefaults.CreateSafeDefaults(), false);
-        }
-
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            byte[] json = await File.ReadAllBytesAsync(path, cancellationToken);
-            ProfileSet profiles = ReadDocument(json, out bool migrated);
-            if (migrated)
+            byte[]? json = await ReadIfPresentAsync(cancellationToken).ConfigureAwait(false);
+            if (json is null)
             {
-                await SaveAsync(profiles, cancellationToken);
+                preservationRequired = false;
+                return new ProfileLoadResult(ProfileDefaults.CreateSafeDefaults(), false);
             }
-            return new ProfileLoadResult(profiles, false);
+
+            try
+            {
+                ProfileSet profiles = ReadDocument(json, out bool migrated);
+                if (migrated)
+                {
+                    await WriteCoreAsync(profiles, cancellationToken).ConfigureAwait(false);
+                }
+                preservationRequired = false;
+                return new ProfileLoadResult(profiles, false);
+            }
+            catch (Exception exception) when (BatteryConfigurationStore.IsRecoverable(exception))
+            {
+                preservationRequired = true;
+                return new ProfileLoadResult(
+                    ProfileDefaults.CreateSafeDefaults(),
+                    RecoveredFromInvalidFile: true,
+                    ConfigurationLoadDisposition.Quarantined,
+                    ContainsFutureSchema(json)
+                        ? ConfigurationQuarantineReason.FutureSchema
+                        : ConfigurationQuarantineReason.InvalidDocument);
+            }
         }
-        catch (Exception exception) when (BatteryConfigurationStore.IsRecoverable(exception))
+        finally
         {
-            return await RecoverSafeDefaultsAsync(cancellationToken);
+            gate.Release();
         }
     }
 
@@ -119,20 +189,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         }
 
         ProfileSet profiles;
-        if (schemaVersion is CurrentSchemaVersion
-            or LegacyWindowsPowerModeSchemaVersion
-            or LatestSupportedSchemaVersion
-            or PreviousSchemaVersion
-            or FormerSchemaVersion
-            or OlderSchemaVersion
-            or OldestSupportedSchemaVersion
-            or EarlierSupportedSchemaVersion
-            or EarliestSupportedSchemaVersion
-            or AncientSupportedSchemaVersion
-            or PrehistoricSupportedSchemaVersion
-            or ArchaicSupportedSchemaVersion
-            or AntiqueSupportedSchemaVersion
-            or ObsoleteSupportedSchemaVersion)
+        if (schemaVersion is >= ObsoleteSupportedSchemaVersion and <= CurrentSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -353,12 +410,52 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         UsbC = profiles.UsbC with { WindowsPowerMode = null },
     };
 
-    private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(
+    private async Task WriteCoreAsync(
+        ProfileSet profiles,
         CancellationToken cancellationToken)
     {
-        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
-        await SaveAsync(defaults, cancellationToken);
-        return new ProfileLoadResult(defaults, true);
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(CurrentSchemaVersion, profiles),
+            SerializerOptions);
+        await AtomicFile.WriteAsync(path, json, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<byte[]?> ReadIfPresentAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static bool ContainsFutureSchema(ReadOnlySpan<byte> json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json.ToArray());
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return document.RootElement.EnumerateObject().Any(property =>
+                property.NameEquals("schemaVersion")
+                && property.Value.ValueKind == JsonValueKind.Number
+                && property.Value.TryGetInt32(out int schemaVersion)
+                && schemaVersion > CurrentSchemaVersion);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }
 

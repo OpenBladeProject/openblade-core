@@ -19,7 +19,12 @@ public sealed record BatteryAutomationPreferences(
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,
     BatteryAutomationPreferences Preferences,
-    bool Recovered);
+    bool Recovered,
+    ConfigurationLoadDisposition Disposition = ConfigurationLoadDisposition.Admitted,
+    ConfigurationQuarantineReason QuarantineReason = ConfigurationQuarantineReason.None)
+{
+    public bool IsAuthoritative => Disposition == ConfigurationLoadDisposition.Admitted;
+}
 
 internal sealed record ProfileDocument(int SchemaVersion, ProfileSet Profiles);
 

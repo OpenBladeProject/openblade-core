@@ -15,6 +15,169 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task QuarantinedConfiguration_OrdinaryThermalTransitionsStayReadOnly()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        ProfileSet profiles = loaded.Profiles with
+        {
+            PluggedIn = loaded.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+        };
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Profiles = profiles,
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PowerSource.PluggedIn);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(
+            1,
+            status.Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_BlocksFanMutationAndCurveMaintenance()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            fanTemperatureSource: temperatures);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.FutureSchema,
+            },
+            PowerSource.PluggedIn);
+
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.ManualCurve,
+                OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(
+                FanMode.ManualCurve,
+                3700,
+                ManualFanCurve.Default),
+            CancellationToken.None);
+        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_BlocksHyperBoostEntryBeforeJournalOrWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        context.Runtime.Initialize(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.HashMismatch,
+            },
+            PowerSource.PluggedIn);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task QuarantinedConfiguration_AllowsOnlyOwnedHyperBoostLifecycleRestore()
+    {
+        BatteryConfigurationStore configurationStore = new(
+            Path.Combine(directory, "quarantined-user", "profiles.json"),
+            Path.Combine(directory, "quarantined-user", "battery-preferences.json"),
+            Path.Combine(directory, "quarantined-user", "battery-configuration.commit.json"));
+        BatteryConfiguration loaded = await configurationStore.LoadAsync(
+            CancellationToken.None);
+        var repository = new FixedUserConfigurationRepository(
+            loaded with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PersistentOverrideState.Empty,
+            directory);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            userConfigurationRepository: repository,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        await context.Runtime.ActivateUserAsync(
+            new System.Security.Principal.SecurityIdentifier(
+                "S-1-5-21-1-2-3-1001"),
+            CancellationToken.None);
+        int writesBeforeExit = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult ordinaryDisable = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+        ControlOperationResult lifecycleRestore = await context.Runtime
+            .PrepareOwnedHyperBoostForDisplayOffAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, ordinaryDisable.Status);
+        Assert.Equal(ControlOperationStatus.Applied, lifecycleRestore.Status);
+        Assert.Equal(writesBeforeExit + 1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
     public async Task DisplayBrightnessHid_HeldUsageIsSubmittedOnceThenReleased()
     {
         var controller = new RecordingDisplayBrightnessHidController();
@@ -21007,6 +21170,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
         string markerPath = Path.Combine(directory, "battery-configuration.commit.json");
+        if (transactionBoundary is not null
+            && !File.Exists(profilePath)
+            && !File.Exists(preferencesPath)
+            && !File.Exists(markerPath))
+        {
+            _ = new BatteryConfigurationStore(
+                    profilePath,
+                    preferencesPath,
+                    markerPath,
+                    validator: profileValidator)
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
         var store = new BatteryConfigurationStore(
             profilePath,
             preferencesPath,
