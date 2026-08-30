@@ -2895,7 +2895,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken),
                 token,
                 stillControlsSession: stillControlsSession,
-                thermalComponents: [DeviceSubsystem.Fans]),
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Fans])),
             DeviceSubsystem.Battery => ApplyScopedIntentAsync(
                 subsystem,
                 powerSource,
@@ -8058,9 +8059,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token),
                 cancellationToken,
                 stillControlsSession: stillControlsSession,
-                thermalComponents: [DeviceSubsystem.Fans],
-                additionalThermalWriteBlockReason: () =>
-                    FanRecoveryAuthorityBlockReason(recoveryAuthority),
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Fans],
+                    additionalWriteBlockReason: () =>
+                        FanRecoveryAuthorityBlockReason(recoveryAuthority)),
                 observeScopedOutcome: (outcome, _, trace) =>
                 {
                     appliedOutcome = outcome;
@@ -8243,10 +8245,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     Fans = desired.Fans with { Value = FanMode.ManualCurve },
                     FanControl = safetyFloor,
                 },
-                thermalComponents: [DeviceSubsystem.Fans],
-                additionalThermalWriteBlockReason: () =>
-                    DeferredManualFanRecoveryWriteBlockReason(
-                        recoveryAuthority),
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Fans],
+                    additionalWriteBlockReason: () =>
+                        DeferredManualFanRecoveryWriteBlockReason(
+                            recoveryAuthority)),
                 observeScopedOutcome: (outcome, _, trace) =>
                 {
                     appliedOutcome = outcome;
@@ -8379,9 +8382,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     Fans = desired.Fans with { Value = FanMode.Automatic },
                     FanControl = automatic,
                 },
-                thermalComponents: [DeviceSubsystem.Fans],
-                additionalThermalWriteBlockReason: () =>
-                    DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority),
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Fans],
+                    additionalWriteBlockReason: () =>
+                        DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority)),
                 observeScopedOutcome: (outcome, _, trace) =>
                 {
                     appliedOutcome = outcome;
@@ -8657,9 +8661,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     FanControl = settings,
                 },
                 stillControlsSession: stillControlsSession,
-                thermalComponents: [DeviceSubsystem.Fans],
-                additionalThermalWriteBlockReason: () =>
-                    DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority),
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Fans],
+                    additionalWriteBlockReason: () =>
+                        DeferredManualFanRecoveryWriteBlockReason(recoveryAuthority)),
                 observeScopedOutcome: (outcome, _, trace) =>
                 {
                     appliedOutcome = outcome;
@@ -9756,10 +9761,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Fans = state.Fans with { Value = FanMode.Automatic },
                 FanControl = automatic,
             },
-            thermalComponents: [DeviceSubsystem.Fans],
-            additionalThermalWriteBlockReason: () =>
-                RefreshAndGetShutdownFanHandbackBlockReason(cancellationToken),
-            allowFreshSessionRetry: false).ConfigureAwait(false);
+            thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                [DeviceSubsystem.Fans],
+                ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup,
+                () => RefreshAndGetShutdownFanHandbackBlockReason(
+                    cancellationToken))).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
@@ -10562,9 +10568,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 token,
                 allowFanOwnershipRearm: allowFanOwnershipRearm,
                 stillControlsSession: stillControlsSession,
-                thermalComponents: thermalComponentResolver?.Invoke(
-                    ResolveHardwareDesired(
-                        GetStatus().ConfirmedState ?? UnknownConfirmedState)));
+                thermalExecutionOptions: thermalComponentResolver is null
+                    ? null
+                    : new ScopedThermalExecutionOptions(
+                        thermalComponentResolver.Invoke(
+                            ResolveHardwareDesired(
+                                GetStatus().ConfirmedState
+                                    ?? UnknownConfirmedState))));
             if (result.Status == ControlOperationStatus.Applied)
             {
                 afterApply?.Invoke();
@@ -10648,14 +10658,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<CancellationToken, Task>? commitIntent = null,
         bool allowFanOwnershipRearm = false,
         Func<bool>? stillControlsSession = null,
-        IReadOnlyList<DeviceSubsystem>? thermalComponents = null,
-        Func<string?>? additionalThermalWriteBlockReason = null,
+        ScopedThermalExecutionOptions? thermalExecutionOptions = null,
         Action<
             ScopedApplyOutcome,
             ConfirmedDeviceState?,
-            ThermalTransitionTrace?>? observeScopedOutcome = null,
-        bool allowFreshSessionRetry = true)
+            ThermalTransitionTrace?>? observeScopedOutcome = null)
     {
+        if (subsystem == DeviceSubsystem.Performance)
+        {
+            thermalExecutionOptions ??= new ScopedThermalExecutionOptions(
+                [DeviceSubsystem.Performance]);
+        }
+        thermalExecutionOptions?.ValidateFor(subsystem);
+
         if (stillControlsSession?.Invoke() == false)
         {
             return PublishScopedUnavailable(
@@ -10732,9 +10747,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token,
             stageDesired,
             stillControlsSession,
-            thermalComponents,
-            additionalThermalWriteBlockReason,
-            allowFreshSessionRetry);
+            thermalExecutionOptions);
         ScopedApplyOutcome outcome = execution.Outcome;
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
@@ -10850,14 +10863,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
-        IReadOnlyList<DeviceSubsystem>? thermalComponents,
-        Func<string?>? additionalThermalWriteBlockReason,
-        bool allowFreshSessionRetry)
+        ScopedThermalExecutionOptions? thermalExecutionOptions)
     {
         try
         {
             if (subsystem == DeviceSubsystem.Performance)
             {
+                ScopedThermalExecutionOptions options = thermalExecutionOptions
+                    ?? throw new InvalidOperationException(
+                        "Scoped performance execution options are unavailable.");
                 ThermalTransitionExecution thermal = await ThermalTransitionExecutor
                     .ExecuteScopedPerformanceAsync(
                         device,
@@ -10873,7 +10887,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     ScopedPerformanceWriteBlockReason(
                                         desired,
                                         stageDesired,
-                                        stillControlsSession));
+                                        stillControlsSession,
+                                        options.AdditionalWriteBlockReason));
                             return await apply(
                                     coordinator,
                                     desired,
@@ -10881,23 +10896,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 .ConfigureAwait(false);
                         },
                         (_, cancellationToken) =>
-                            RevalidateScopedThermalRetryAsync(
+                            RevalidateScopedThermalRetryWithPolicyAsync(
                                 powerSource,
                                 desired,
                                 stageDesired,
                                 stillControlsSession,
-                                new[] { DeviceSubsystem.Performance },
+                                options,
                                 ThermalPreWriteRetryDelay,
                                 cancellationToken),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
             }
 
-            if (subsystem == DeviceSubsystem.Fans && thermalComponents is not null)
+            if (subsystem == DeviceSubsystem.Fans && thermalExecutionOptions is not null)
             {
+                ScopedThermalExecutionOptions options = thermalExecutionOptions;
                 ThermalTransitionExecution thermal = await ThermalTransitionExecutor
                     .ExecuteAsync(
-                        thermalComponents,
+                        options.Components,
                         device,
                         (attemptDevice, runner) => new ControlCoordinator(
                             attemptDevice,
@@ -10912,31 +10928,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     desired,
                                     stageDesired,
                                     stillControlsSession,
-                                    thermalComponents,
-                                    additionalThermalWriteBlockReason),
+                                    options.Components,
+                                    options.AdditionalWriteBlockReason),
                             fanWriteBlockReason: () =>
                                 ScopedThermalWriteBlockReason(
                                     desired,
                                     stageDesired,
                                     stillControlsSession,
-                                    thermalComponents,
-                                    additionalThermalWriteBlockReason)),
+                                    options.Components,
+                                    options.AdditionalWriteBlockReason)),
                         (runner, cancellationToken) => apply(
                             runner.CreateRecipeCoordinator(),
                             desired,
                             cancellationToken),
-                        (_, cancellationToken) => allowFreshSessionRetry
-                            ? RevalidateScopedThermalRetryAsync(
+                        (_, cancellationToken) =>
+                            RevalidateScopedThermalRetryWithPolicyAsync(
                                 powerSource,
                                 desired,
                                 stageDesired,
                                 stillControlsSession,
-                                thermalComponents,
+                                options,
                                 ThermalPreWriteRetryDelay,
-                                cancellationToken,
-                                additionalThermalWriteBlockReason)
-                            : Task.FromResult(ThermalRetryAdmission.Block(
-                                "Fresh-session retry is unavailable during bounded shutdown cleanup.")),
+                                cancellationToken),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
             }
@@ -10978,6 +10991,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             throw;
         }
     }
+
+    private Task<ThermalRetryAdmission>
+        RevalidateScopedThermalRetryWithPolicyAsync(
+        PowerSource expectedPowerSource,
+        DesiredDeviceState expectedDesired,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
+        Func<bool>? stillControlsSession,
+        ScopedThermalExecutionOptions options,
+        TimeSpan recoveryDelay,
+        CancellationToken cancellationToken) =>
+        options.FreshSessionRetryPolicy ==
+            ScopedThermalFreshSessionRetryPolicy.Allow
+            ? RevalidateScopedThermalRetryAsync(
+                expectedPowerSource,
+                expectedDesired,
+                stageDesired,
+                stillControlsSession,
+                options.Components,
+                recoveryDelay,
+                cancellationToken,
+                options.AdditionalWriteBlockReason)
+            : Task.FromResult(ThermalRetryAdmission.Block(
+                "Fresh-session retry is unavailable during bounded shutdown cleanup."));
 
     private async Task<ThermalRetryAdmission>
         RevalidateScopedThermalRetryAsync(
@@ -11129,7 +11165,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private string? ScopedPerformanceWriteBlockReason(
         DesiredDeviceState expected,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
-        Func<bool>? stillControlsSession)
+        Func<bool>? stillControlsSession,
+        Func<string?>? additionalWriteBlockReason)
     {
         if (stillControlsSession?.Invoke() == false)
         {
@@ -11155,7 +11192,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         return ScopedPerformanceIntentMatchesCurrent(expected, stageDesired)
-            ? null
+            ? additionalWriteBlockReason?.Invoke()
             : "The authoritative performance intent changed before the command was submitted.";
     }
 
