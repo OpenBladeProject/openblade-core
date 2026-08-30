@@ -1729,6 +1729,98 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForShutdown_PreSubmissionFanFailureDoesNotSpendCleanupOnRetry()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected shutdown handback pre-write failure."));
+        int fanWrites = context.Device.FanSetCalls;
+        int admissions = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(admissions + 2, context.Provider.TryGetCount);
+        Assert.Empty(retryDelays);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Contains("No retry was submitted", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_ControllerArrivalBeforeFanSubmissionBlocksHandback()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        int fanWrites = context.Device.FanSetCalls;
+        int observations = context.Monitor.ObserveCount;
+        context.Monitor.AfterObserve = () =>
+        {
+            if (context.Monitor.ObserveCount == observations + 2)
+            {
+                context.Monitor.Current = new ControllerPresenceObservation(
+                    ["RazerAppEngine"],
+                    null);
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.True(
+            result.Message.Contains("Razer Synapse is active", StringComparison.Ordinal),
+            result.Message);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_IndeterminateFanHandbackReconcilesWithoutReplay()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) =>
+                throw new InvalidOperationException("Retry delay was unexpected."));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected indeterminate shutdown handback."));
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
     public async Task PrepareForShutdown_FanCancellationOccursAfterDriverModeRelease()
     {
         TestContext context = CreateWritableContext();
@@ -7397,6 +7489,98 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.Equal(calls, context.Device.TotalCalls);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_FanPreSubmissionFailureUsesOneExecutorRetry()
+    {
+        var retryDelays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                retryDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected changed-settings fan pre-write failure."));
+        int fanWrites = context.Device.FanSetCalls;
+        int admissions = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .ReapplyChangedSettingsAsync(static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(fanWrites + 2, context.Device.FanSetCalls);
+        Assert.Equal(admissions + 2, context.Provider.TryGetCount);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_FanAuthorityLossBlocksFreshSessionRetry()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) =>
+                throw new InvalidOperationException("Retry delay was unexpected."));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        bool stillControlsSession = true;
+        context.Device.BeforeQueuedFanFailure = () => stillControlsSession = false;
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected changed-settings fan pre-write failure."));
+        int fanWrites = context.Device.FanSetCalls;
+        int admissions = context.Provider.TryGetCount;
+
+        ControlOperationResult result = await context.Runtime
+            .ReapplyChangedSettingsAsync(
+                () => stillControlsSession,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(admissions + 1, context.Provider.TryGetCount);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
+        Assert.Contains("active Windows session changed", result.Message);
+    }
+
+    [Fact]
+    public async Task ReapplyChangedSettings_IndeterminateFanWriteReconcilesWithoutReplay()
+    {
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: static (_, _) =>
+                throw new InvalidOperationException("Retry delay was unexpected."));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.FanFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "Injected indeterminate changed-settings fan write."));
+        int fanWrites = context.Device.FanSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .ReapplyChangedSettingsAsync(static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(fanWrites + 1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Maximum, context.Device.ConfirmedState.Fans);
     }
 
     [Fact]
@@ -21279,6 +21463,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int ObserveCount { get; private set; }
 
+        public Action? AfterObserve { get; set; }
+
         public ControllerPresenceObservation Observe()
         {
             ObserveCount++;
@@ -21286,7 +21472,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 throw Failure;
             }
-            return Current;
+            ControllerPresenceObservation observation = Current;
+            AfterObserve?.Invoke();
+            return observation;
         }
     }
 
