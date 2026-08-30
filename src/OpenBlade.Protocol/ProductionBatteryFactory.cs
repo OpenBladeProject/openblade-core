@@ -391,18 +391,15 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         GpuOverclockCapabilities? gpuOverclockCapabilities = admitGpuOverclock
             ? GetRz090581GpuOverclockCapabilities(exactIdentity)
             : null;
-        bool hyperBoostCommandsAdmitted =
-            ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoostCatalog);
-        bool padlessHyperBoostWritesAdmitted = hyperBoostCommandsAdmitted
-            && HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted;
         (
             DeviceFeatureAccess? hyperBoostAccess,
             DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess,
-            HyperBoostBaseModeCapabilities? hyperBoostBaseModes) =
-            GetRz090581HyperBoostCapabilities(
+            HyperBoostBaseModeCapabilities? hyperBoostBaseModes,
+            DeviceCommandCatalog admittedHyperBoostCatalog) =
+            GetRz090581HyperBoostFactoryComposition(
                 exactIdentity,
-                hyperBoostCommandsAdmitted,
-                padlessHyperBoostWritesAdmitted);
+                hyperBoostCatalog,
+                HyperBoostWithoutCoolingPadEvidenceGates.Current.WriteAdmitted);
         if (allowPadlessHyperBoostLifecycleValidation
             && !HyperBoostWithoutCoolingPadEvidenceGates.Current
                 .LifecycleValidationReady)
@@ -414,10 +411,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             hyperBoostAccess == DeviceFeatureAccess.ReadWrite
                 ? new WindowsHyperBoostEligibilitySource(native)
                 : null;
-        DeviceCommandCatalog admittedHyperBoostCatalog =
-            hyperBoostAccess == DeviceFeatureAccess.ReadWrite
-                ? hyperBoostCatalog
-                : DeviceCommandCatalog.Empty;
         IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
         return new ProductionBatteryFactory(
@@ -536,6 +529,36 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             DeviceFeatureAccess maximum) => candidate > maximum
                 ? maximum
                 : candidate;
+    }
+
+    internal static (
+        DeviceFeatureAccess? Access,
+        DeviceFeatureAccess? WithoutCoolingPadAccess,
+        HyperBoostBaseModeCapabilities? BaseModes,
+        DeviceCommandCatalog AdmittedCatalog)
+        GetRz090581HyperBoostFactoryComposition(
+            HostIdentityReadResult exactIdentity,
+            DeviceCommandCatalog hyperBoostCatalog,
+            bool padlessWritesAdmitted)
+    {
+        ArgumentNullException.ThrowIfNull(hyperBoostCatalog);
+        bool reversibleWritesAdmitted =
+            ProductionBatteryPort.HasHyperBoostCommandSet(hyperBoostCatalog);
+        (
+            DeviceFeatureAccess? access,
+            DeviceFeatureAccess? withoutCoolingPadAccess,
+            HyperBoostBaseModeCapabilities? baseModes) =
+            GetRz090581HyperBoostCapabilities(
+                exactIdentity,
+                reversibleWritesAdmitted,
+                reversibleWritesAdmitted && padlessWritesAdmitted);
+        return (
+            access,
+            withoutCoolingPadAccess,
+            baseModes,
+            access == DeviceFeatureAccess.ReadWrite
+                ? hyperBoostCatalog
+                : DeviceCommandCatalog.Empty);
     }
 
     internal static DeviceFeatureAccess? GetRz090581HyperBoostWithoutCoolingPadAccess(
