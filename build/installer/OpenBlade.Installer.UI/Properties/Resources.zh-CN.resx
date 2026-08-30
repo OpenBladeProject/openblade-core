@@ -27,9 +27,6 @@
   <data name="_Open log" xml:space="preserve">
     <value>打开日志(_O)</value>
   </data>
-  <data name="_Overwrite" xml:space="preserve">
-    <value>覆盖(_O)</value>
-  </data>
   <data name="_Repair" xml:space="preserve">
     <value>修复(_R)</value>
   </data>
@@ -120,14 +117,11 @@
   <data name="OpenBlade" xml:space="preserve">
     <value>OpenBlade</value>
   </data>
-  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
-    <value>已安装 OpenBlade {0}。请打开此安装程序，并在界面中确认覆盖。</value>
+  <data name="OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer." xml:space="preserve">
+    <value>已安装 OpenBlade {0}。此安装程序包含较旧的版本 {1}。安装程序未进行任何更改。请使用版本 {0} 或更高版本的安装程序。</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>已安装 OpenBlade {0}</value>
-  </data>
-  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
-    <value>当前已安装 OpenBlade {0}，而此安装程序包含版本 {1}。是否要覆盖已安装的较新版本？</value>
   </data>
   <data name="OpenBlade is installed" xml:space="preserve">
     <value>OpenBlade 已安装</value>
@@ -225,8 +219,8 @@
   <data name="Repairing OpenBlade" xml:space="preserve">
     <value>正在修复 OpenBlade</value>
   </data>
-  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
-    <value>要替换较新版本的 OpenBlade 吗？</value>
+  <data name="Use the installed OpenBlade version" xml:space="preserve">
+    <value>请使用已安装版本的 OpenBlade 安装程序</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
     <value>处理现有的 OpenBlade 安装程序</value>

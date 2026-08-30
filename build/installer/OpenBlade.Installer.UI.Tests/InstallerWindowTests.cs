@@ -124,22 +124,16 @@ public sealed class InstallerWindowTests
             Assert.Equal(Visibility.Collapsed, window.PurgeProfilesCheckBox.Visibility);
             Assert.False(window.PurgeProfilesCheckBox.IsChecked);
 
-            window.ShowNewerVersionConfirmation(
-                "2.0.0",
-                "1.2.3",
-                returnToInstalledState: true);
-            Assert.Equal("_Overwrite", window.InstallButton.Content);
+            window.ShowNewerVersionBlocked("2.0.0", "1.2.3");
+            Assert.Equal("Use the installed OpenBlade version", window.ReadyHeading.Text);
+            Assert.Equal(Visibility.Collapsed, window.InstallButton.Visibility);
             Assert.Contains("2.0.0", window.ReadyMessage.Text);
             Assert.Contains("1.2.3", window.ReadyMessage.Text);
+            Assert.Contains("made no changes", window.ReadyMessage.Text);
             Assert.Equal(Visibility.Collapsed, window.RepairButton.Visibility);
             Assert.Equal(Visibility.Collapsed, window.UninstallButton.Visibility);
-
-            window.ReadyCancelButton.RaiseEvent(
-                new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-            Assert.Equal("Maintenance", window.HeaderSubtitle.Text);
-            Assert.Equal("_Install", window.InstallButton.Content);
-            Assert.Equal(Visibility.Visible, window.RepairButton.Visibility);
-            Assert.Equal(Visibility.Visible, window.UninstallButton.Visibility);
+            Assert.Equal(Visibility.Collapsed, window.PurgeProfilesCheckBox.Visibility);
+            Assert.Equal("_Close", window.ReadyCancelButton.Content);
 
             window.ShowProgress(LaunchAction.Install);
             window.SetProgress(42, "Copying OpenBlade.Tray.exe");
@@ -248,8 +242,8 @@ public sealed class InstallerWindowTests
             case "newer-version":
                 Capture(
                     "installer-newer-version",
-                    window => window.ShowNewerVersionConfirmation("0.11.0", "0.10.0", true),
-                    window => [window.InstallButton, window.ReadyCancelButton]);
+                    window => window.ShowNewerVersionBlocked("0.11.0", "0.10.0"),
+                    window => [window.ReadyCancelButton]);
                 break;
             case "progress":
                 Capture(
@@ -747,18 +741,13 @@ public sealed class InstallerWindowTests
     }
 
     [Theory]
-    [InlineData(true, false, false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Upgrade)]
-    [InlineData(false, false, false, true, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
-    [InlineData(true, false, false, false, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
-    [InlineData(true, false, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
-    [InlineData(false, false, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
-    [InlineData(false, true, false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.Upgrade)]
-    [InlineData(false, true, true, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(false, false, false, RelatedBundlePlanType.Downgrade, RelatedBundlePlanType.Downgrade)]
+    [InlineData(false, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
+    [InlineData(true, false, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.Upgrade)]
+    [InlineData(true, true, true, RelatedBundlePlanType.Upgrade, RelatedBundlePlanType.None)]
     public void RelatedBundlePlanProtectsVersionBoundaries(
-        bool allowOverwrite,
         bool allowSameVersionMaintenance,
         bool relatedBundleInvocation,
-        bool detectedNewerBundle,
         bool detectedSameVersionBundle,
         RelatedBundlePlanType recommendedType,
         RelatedBundlePlanType expected)
@@ -766,10 +755,8 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             expected,
             OpenBladeBootstrapperApplication.SelectRelatedBundlePlanType(
-                allowOverwrite,
                 allowSameVersionMaintenance,
                 relatedBundleInvocation,
-                detectedNewerBundle,
                 detectedSameVersionBundle,
                 recommendedType));
     }
@@ -1389,6 +1376,34 @@ public sealed class InstallerWindowTests
     }
 
     [Theory]
+    [InlineData(false, LaunchAction.Install, false)]
+    [InlineData(true, LaunchAction.Install, true)]
+    [InlineData(true, LaunchAction.Repair, true)]
+    [InlineData(true, LaunchAction.Uninstall, false)]
+    [InlineData(true, LaunchAction.Layout, false)]
+    [InlineData(true, LaunchAction.Unknown, false)]
+    public void NewerVersionGateBlocksOnlyMutatingReplacementActions(
+        bool newerVersionDetected,
+        LaunchAction action,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OpenBladeBootstrapperApplication.ShouldRejectNewerVersionAction(
+                newerVersionDetected,
+                action));
+    }
+
+    [Fact]
+    public void ProductVersionConflictRemainsAProcessFailure()
+    {
+        const int productVersionConflict = unchecked((int)0x80070666);
+        Assert.Equal(
+            1638,
+            OpenBladeBootstrapperApplication.NormalizeExitCode(productVersionConflict));
+    }
+
+    [Theory]
     [InlineData(LaunchAction.Unknown, true)]
     [InlineData(LaunchAction.Install, true)]
     [InlineData(LaunchAction.Repair, true)]
@@ -1417,12 +1432,11 @@ public sealed class InstallerWindowTests
     }
 
     [Fact]
-    public void OverwriteAndSameVersionMaintenanceSelectTheSetupPackageState()
+    public void SameVersionMaintenanceAloneOverridesTheSetupPackageState()
     {
         Assert.Equal(
-            RequestState.ForcePresent,
+            RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: true,
                 sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeSetup",
@@ -1430,15 +1444,6 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: false,
-                sameVersionMaintenance: false,
-                LaunchAction.Install,
-                "OpenBladeSetup",
-                RequestState.Present));
-        Assert.Equal(
-            RequestState.Present,
-            OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: true,
                 sameVersionMaintenance: false,
                 LaunchAction.Repair,
                 "OpenBladeSetup",
@@ -1446,7 +1451,6 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             RequestState.Present,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: true,
                 sameVersionMaintenance: false,
                 LaunchAction.Install,
                 "OpenBladeVcRuntime",
@@ -1454,7 +1458,6 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             RequestState.ForcePresent,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: false,
                 sameVersionMaintenance: true,
                 LaunchAction.Repair,
                 "OpenBladeSetup",
@@ -1462,7 +1465,6 @@ public sealed class InstallerWindowTests
         Assert.Equal(
             RequestState.Absent,
             OpenBladeBootstrapperApplication.SelectPackageRequestState(
-                allowOverwrite: false,
                 sameVersionMaintenance: true,
                 LaunchAction.Uninstall,
                 "OpenBladeSetup",
@@ -1502,28 +1504,6 @@ public sealed class InstallerWindowTests
             OpenBladeBootstrapperApplication.SelectEngineAction(
                 action,
                 sameVersionMaintenance));
-    }
-
-    [Fact]
-    public void ConfirmedOverwriteOnlySuppressesTheProductVersionConflict()
-    {
-        const int productVersionError = unchecked((int)0x80070666);
-        Assert.Equal(
-            0,
-            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
-                allowOverwrite: true,
-                productVersionError));
-        Assert.Equal(
-            productVersionError,
-            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
-                allowOverwrite: false,
-                productVersionError));
-        const int unexpectedFailure = unchecked((int)0x80004005);
-        Assert.Equal(
-            unexpectedFailure,
-            OpenBladeBootstrapperApplication.SelectApplyDowngradeStatus(
-                allowOverwrite: true,
-                unexpectedFailure));
     }
 
     [Theory]

@@ -142,9 +142,9 @@ text scaling:
 - dialogs, InfoBars, picker labels, tooltips, and screen-reader names.
 
 Review every graphical installer state: checking, fresh install, maintenance,
-same-version maintenance, newer-version replacement, registration conflict,
-progress with details hidden and shown, cancellation confirmation, install and
-uninstall success, failure, and help.
+same-version maintenance, older-installer block for a newer installed version,
+registration conflict, progress with details hidden and shown, cancellation
+confirmation, install and uninstall success, failure, and help.
 
 For each surface, check wrapping, clipping, control overlap, focus visibility,
 tab order, keyboard access, and spoken names. Record the exact commit, locale,

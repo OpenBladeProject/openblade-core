@@ -27,9 +27,6 @@
   <data name="_Open log" xml:space="preserve">
     <value>_Open log</value>
   </data>
-  <data name="_Overwrite" xml:space="preserve">
-    <value>_Overwrite</value>
-  </data>
   <data name="_Repair" xml:space="preserve">
     <value>_Repair</value>
   </data>
@@ -120,14 +117,11 @@
   <data name="OpenBlade" xml:space="preserve">
     <value>OpenBlade</value>
   </data>
-  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
-    <value>OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it.</value>
+  <data name="OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer." xml:space="preserve">
+    <value>OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer.</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>OpenBlade {0} is installed</value>
-  </data>
-  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
-    <value>OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?</value>
   </data>
   <data name="OpenBlade is installed" xml:space="preserve">
     <value>OpenBlade is installed</value>
@@ -222,8 +216,8 @@
   <data name="Repairing OpenBlade" xml:space="preserve">
     <value>Repairing OpenBlade</value>
   </data>
-  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
-    <value>Replace the newer OpenBlade version?</value>
+  <data name="Use the installed OpenBlade version" xml:space="preserve">
+    <value>Use the installed OpenBlade version</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
     <value>Resolve existing OpenBlade installers</value>

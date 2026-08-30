@@ -27,9 +27,6 @@
   <data name="_Open log" xml:space="preserve">
     <value>[!! _Opén lóg ~~~ !!]</value>
   </data>
-  <data name="_Overwrite" xml:space="preserve">
-    <value>[!! _Ovérwríté ~~~ !!]</value>
-  </data>
   <data name="_Repair" xml:space="preserve">
     <value>[!! _Répáír ~~ !!]</value>
   </data>
@@ -120,14 +117,11 @@
   <data name="OpenBlade" xml:space="preserve">
     <value>[!! OpenBlade ~~ !!]</value>
   </data>
-  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
-    <value>[!! OpenBlade {0} ís álréádý ínstálléd. Rún thís ínstállér íntéráctívélý tó cónfírm óvérwrítíng ít. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer." xml:space="preserve">
+    <value>[!! OpenBlade {0} ís ínstálléd. Thís ínstállér cóntáíns óldér vérsíón {1}. Sétúp mádé nó chángés. Úsé vérsíón {0} ór á néwér ínstállér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>[!! OpenBlade {0} ís ínstálléd ~~~~ !!]</value>
-  </data>
-  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
-    <value>[!! OpenBlade {0} ís ínstálléd. Thís ínstállér cóntáíns vérsíón {1}. Dó ýóú wánt tó óvérwríté thé néwér vérsíón? ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="OpenBlade is installed" xml:space="preserve">
     <value>[!! OpenBlade ís ínstálléd ~~~~ !!]</value>
@@ -222,8 +216,8 @@
   <data name="Repairing OpenBlade" xml:space="preserve">
     <value>[!! Répáíríng OpenBlade ~~~~ !!]</value>
   </data>
-  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
-    <value>[!! Réplácé thé néwér OpenBlade vérsíón? ~~~~~~~~ !!]</value>
+  <data name="Use the installed OpenBlade version" xml:space="preserve">
+    <value>[!! Úsé thé ínstálléd OpenBlade vérsíón ~~~~~~~~ !!]</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
     <value>[!! Résólvé éxístíng OpenBlade ínstállérs ~~~~~~~~~ !!]</value>

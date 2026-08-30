@@ -16,8 +16,6 @@ internal partial class InstallerWindow : Window
     private readonly OpenBladeBootstrapperApplication bootstrapper;
     private readonly bool allowInteraction;
     private readonly Queue<string> detailLines = new();
-    private bool overwriteNewerVersion;
-    private bool readyInstalled;
     private IInputElement? focusBeforeCancel;
     private string? logPath;
 
@@ -42,8 +40,6 @@ internal partial class InstallerWindow : Window
     public void ShowReady(bool installed)
     {
         ShowOnly(ReadyPanel);
-        overwriteNewerVersion = false;
-        readyInstalled = installed;
         HeaderSubtitle.Text = InstallerStrings.Get(installed ? "Maintenance" : "Setup");
         ReadyHeading.Text = InstallerStrings.Get(installed ? "OpenBlade is installed" : "Install OpenBlade");
         ReadyMessage.Text = installed
@@ -54,14 +50,13 @@ internal partial class InstallerWindow : Window
         RepairButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         UninstallButton.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         PurgeProfilesCheckBox.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
+        ReadyCancelButton.Content = InstallerStrings.Get("_Cancel");
         QueueFocus(installed ? RepairButton : InstallButton);
     }
 
     public void ShowSameVersionMaintenance(string installedVersion)
     {
         ShowOnly(ReadyPanel);
-        overwriteNewerVersion = false;
-        readyInstalled = true;
         HeaderSubtitle.Text = InstallerStrings.Get("Maintenance");
         ReadyHeading.Text = InstallerStrings.Format("OpenBlade {0} is installed", installedVersion);
         ReadyMessage.Text = InstallerStrings.Get(
@@ -72,36 +67,33 @@ internal partial class InstallerWindow : Window
         UninstallButton.Visibility = Visibility.Visible;
         PurgeProfilesCheckBox.IsChecked = false;
         PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
+        ReadyCancelButton.Content = InstallerStrings.Get("_Cancel");
         QueueFocus(RepairButton);
     }
 
-    public void ShowNewerVersionConfirmation(
+    public void ShowNewerVersionBlocked(
         string installedVersion,
-        string installerVersion,
-        bool returnToInstalledState)
+        string installerVersion)
     {
         ShowOnly(ReadyPanel);
-        overwriteNewerVersion = true;
-        readyInstalled = returnToInstalledState;
         HeaderSubtitle.Text = InstallerStrings.Get("Newer version installed");
-        ReadyHeading.Text = InstallerStrings.Get("Replace the newer OpenBlade version?");
+        ReadyHeading.Text = InstallerStrings.Get("Use the installed OpenBlade version");
         ReadyMessage.Text = InstallerStrings.Format(
-            "OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?",
+            "OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer.",
             installedVersion,
             installerVersion);
-        InstallButton.Content = InstallerStrings.Get("_Overwrite");
-        InstallButton.Visibility = Visibility.Visible;
+        InstallButton.Content = InstallerStrings.Get("_Install");
+        InstallButton.Visibility = Visibility.Collapsed;
         RepairButton.Visibility = Visibility.Collapsed;
         UninstallButton.Visibility = Visibility.Collapsed;
         PurgeProfilesCheckBox.Visibility = Visibility.Collapsed;
-        QueueFocus(InstallButton);
+        ReadyCancelButton.Content = InstallerStrings.Get("_Close");
+        QueueFocus(ReadyCancelButton);
     }
 
     public void ShowRegistrationConflict(string message, bool canUninstall)
     {
         ShowOnly(ReadyPanel);
-        overwriteNewerVersion = false;
-        readyInstalled = canUninstall;
         HeaderSubtitle.Text = InstallerStrings.Get("Installer cleanup required");
         ReadyHeading.Text = InstallerStrings.Get("Resolve existing OpenBlade installers");
         ReadyMessage.Text = message;
@@ -114,6 +106,7 @@ internal partial class InstallerWindow : Window
         PurgeProfilesCheckBox.Visibility = canUninstall
             ? Visibility.Visible
             : Visibility.Collapsed;
+        ReadyCancelButton.Content = InstallerStrings.Get("_Cancel");
         QueueFocus(canUninstall ? UninstallButton : ReadyCancelButton);
     }
 
@@ -263,10 +256,7 @@ internal partial class InstallerWindow : Window
     }
 
     private void InstallButton_Click(object sender, RoutedEventArgs e) =>
-        bootstrapper.StartAction(
-            LaunchAction.Install,
-            purgeProfiles: false,
-            overwriteNewerVersion);
+        bootstrapper.StartAction(LaunchAction.Install, purgeProfiles: false);
 
     private void RepairButton_Click(object sender, RoutedEventArgs e) =>
         bootstrapper.StartAction(LaunchAction.Repair, purgeProfiles: false);
@@ -298,17 +288,7 @@ internal partial class InstallerWindow : Window
         bootstrapper.RequestCancel();
     }
 
-    private void ReadyCancelButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (overwriteNewerVersion)
-        {
-            ShowReady(readyInstalled);
-        }
-        else
-        {
-            Close();
-        }
-    }
+    private void ReadyCancelButton_Click(object sender, RoutedEventArgs e) => Close();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 

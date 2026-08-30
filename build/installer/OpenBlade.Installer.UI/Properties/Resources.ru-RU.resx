@@ -27,9 +27,6 @@
   <data name="_Open log" xml:space="preserve">
     <value>_Открыть журнал</value>
   </data>
-  <data name="_Overwrite" xml:space="preserve">
-    <value>_Перезаписать</value>
-  </data>
   <data name="_Repair" xml:space="preserve">
     <value>_Восстановить</value>
   </data>
@@ -120,14 +117,11 @@
   <data name="OpenBlade" xml:space="preserve">
     <value>OpenBlade</value>
   </data>
-  <data name="OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it." xml:space="preserve">
-    <value>OpenBlade {0} уже установлен. Запустите этот установщик в интерактивном режиме, чтобы подтвердить замену.</value>
+  <data name="OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer." xml:space="preserve">
+    <value>OpenBlade {0} уже установлен. Этот установщик содержит более раннюю версию {1}. Программа установки не внесла изменений. Используйте установщик версии {0} или более новой.</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>OpenBlade {0} установлен</value>
-  </data>
-  <data name="OpenBlade {0} is installed. This installer contains version {1}. Do you want to overwrite the newer version?" xml:space="preserve">
-    <value>OpenBlade {0} установлен. Этот установщик содержит версию {1}. Перезаписать более новую версию?</value>
   </data>
   <data name="OpenBlade is installed" xml:space="preserve">
     <value>OpenBlade установлен</value>
@@ -225,8 +219,8 @@
   <data name="Repairing OpenBlade" xml:space="preserve">
     <value>Восстановление OpenBlade</value>
   </data>
-  <data name="Replace the newer OpenBlade version?" xml:space="preserve">
-    <value>Заменить более новую версию OpenBlade?</value>
+  <data name="Use the installed OpenBlade version" xml:space="preserve">
+    <value>Используйте установщик установленной версии OpenBlade</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
     <value>Устранение конфликтов установщиков OpenBlade</value>

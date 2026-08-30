@@ -65,7 +65,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private bool installed;
     private bool applying;
     private bool cancellationRequested;
-    private bool allowNewerVersionOverwrite;
     private bool purgeProfilesRequested;
     private bool sameVersionRelatedBundleCached;
     private bool sameVersionMaintenance;
@@ -84,8 +83,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private string? uninstallInstallDirectory;
     private UninstallMachineState? uninstallBeforeState;
     private RegistrationType? uninstallRegistrationAfterApply;
-    private readonly HashSet<string> newerRelatedBundleCodes =
-        new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DetectedRelatedBundle> upgradeRelatedBundles =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly List<DetectedRelatedBundle> upgradeRelatedBundleDetections = [];
@@ -120,14 +117,12 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         UnregisterBegin += OnUnregisterBegin;
         Progress += OnProgress;
         Error += OnError;
-        ApplyDowngrade += OnApplyDowngrade;
         ApplyComplete += OnApplyComplete;
     }
 
     public void StartAction(
         LaunchAction action,
-        bool purgeProfiles,
-        bool overwriteNewerVersion = false)
+        bool purgeProfiles)
     {
         if (applying || command is null)
         {
@@ -156,11 +151,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (newerRelatedBundleVersion is not null
-            && action is LaunchAction.Install or LaunchAction.Repair
-            && (!overwriteNewerVersion || command.Display != Display.Full))
+        if (ShouldRejectNewerVersionAction(
+                newerRelatedBundleVersion is not null,
+                action))
         {
-            RequireNewerVersionOverwriteConfirmation();
+            RejectNewerVersionReplacement();
             return;
         }
 
@@ -179,9 +174,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
 
         plannedAction = action;
-        allowNewerVersionOverwrite = overwriteNewerVersion
-            && newerRelatedBundleVersion is not null
-            && command.Display == Display.Full;
         cancellationRequested = false;
         purgeProfilesRequested = purgeProfiles;
         cacheProgress = 0;
@@ -340,8 +332,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnDetectBegin(object? sender, DetectBeginEventArgs e)
     {
         installed = e.RegistrationType == RegistrationType.Full;
-        allowNewerVersionOverwrite = false;
-        newerRelatedBundleCodes.Clear();
         upgradeRelatedBundles.Clear();
         upgradeRelatedBundleDetections.Clear();
         newerRelatedBundleVersion = null;
@@ -385,7 +375,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             }
             if (IsNewerVersion(bundleVersion, e.Version))
             {
-                newerRelatedBundleCodes.Add(e.ProductCode);
                 if (newerRelatedBundleVersion is null
                     || IsNewerVersion(newerRelatedBundleVersion, e.Version))
                 {
@@ -472,10 +461,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             return;
         }
 
-        if (newerRelatedBundleVersion is not null
-            && detectionAction is LaunchAction.Install or LaunchAction.Repair)
+        if (ShouldRejectNewerVersionAction(
+                newerRelatedBundleVersion is not null,
+                detectionAction))
         {
-            RequireNewerVersionOverwriteConfirmation();
+            RejectNewerVersionReplacement();
             return;
         }
 
@@ -513,7 +503,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnPlanRelatedBundleType(object? sender, PlanRelatedBundleTypeEventArgs e)
     {
-        bool detectedNewerBundle = newerRelatedBundleCodes.Contains(e.BundleCode);
         bool detectedSameVersionBundle =
             upgradeRelatedBundles.TryGetValue(
                 e.BundleCode,
@@ -521,18 +510,15 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             && IsSameVersion(bundleVersion, relatedBundle.Version);
         string? relatedVersion = relatedBundle?.Version;
         RelatedBundlePlanType selected = SelectRelatedBundlePlanType(
-            allowNewerVersionOverwrite,
             sameVersionMaintenance,
             command?.Relation != RelationType.None,
-            detectedNewerBundle,
             detectedSameVersionBundle,
             e.RecommendedType);
         if (selected != e.Type)
         {
             e.Type = selected;
-            AddDetail(selected == RelatedBundlePlanType.None
-                ? $"Skipping an earlier OpenBlade {relatedVersion} registration to avoid an equal-version replacement cycle."
-                : $"Replacing newer OpenBlade {relatedVersion} after user confirmation.");
+            AddDetail(
+                $"Skipping an earlier OpenBlade {relatedVersion} registration to avoid an equal-version replacement cycle.");
         }
 
         e.Cancel = cancellationRequested;
@@ -541,7 +527,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private void OnPlanPackageBegin(object? sender, PlanPackageBeginEventArgs e)
     {
         RequestState selected = SelectPackageRequestState(
-            allowNewerVersionOverwrite,
             sameVersionMaintenance,
             plannedAction,
             e.PackageId,
@@ -694,16 +679,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
     }
 
-    private void OnApplyDowngrade(object? sender, ApplyDowngradeEventArgs e)
-    {
-        int selected = SelectApplyDowngradeStatus(allowNewerVersionOverwrite, e.Status);
-        if (selected != e.Status)
-        {
-            e.Status = selected;
-            AddDetail("Continuing with the confirmed OpenBlade version replacement.");
-        }
-    }
-
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
         applying = false;
@@ -824,26 +799,25 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
     }
 
-    private void RequireNewerVersionOverwriteConfirmation()
+    private void RejectNewerVersionReplacement()
     {
         string installedVersion = newerRelatedBundleVersion
             ?? throw new InvalidOperationException("The newer OpenBlade version is unavailable.");
-        AddDetail(
-            $"OpenBlade {installedVersion} is already installed; this installer contains {bundleVersion}.");
+        string message = InstallerStrings.Format(
+            "OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer.",
+            installedVersion,
+            bundleVersion);
+        AddDetail(message);
+        result = ProductVersionConflict;
         if (command?.Display == Display.Full)
         {
-            Ui(() => window?.ShowNewerVersionConfirmation(
+            Ui(() => window?.ShowNewerVersionBlocked(
                 installedVersion,
-                bundleVersion,
-                installed));
+                bundleVersion));
         }
         else
         {
-            CompleteWithFailure(
-                ProductVersionConflict,
-                InstallerStrings.Format(
-                    "OpenBlade {0} is already installed. Run this installer interactively to confirm overwriting it.",
-                    installedVersion));
+            dispatcher?.BeginInvokeShutdown(DispatcherPriority.Normal);
         }
     }
 
@@ -1166,20 +1140,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     }
 
     internal static RelatedBundlePlanType SelectRelatedBundlePlanType(
-        bool allowOverwrite,
         bool allowSameVersionMaintenance,
         bool relatedBundleInvocation,
-        bool detectedNewerBundle,
         bool detectedSameVersionBundle,
         RelatedBundlePlanType recommendedType)
     {
-        if (allowOverwrite
-            && detectedNewerBundle
-            && recommendedType == RelatedBundlePlanType.Downgrade)
-        {
-            return RelatedBundlePlanType.Upgrade;
-        }
-
         if (detectedSameVersionBundle
             && (!allowSameVersionMaintenance || relatedBundleInvocation)
             && recommendedType == RelatedBundlePlanType.Upgrade)
@@ -1382,11 +1347,16 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             ? LaunchAction.Install
             : action;
 
+    internal static bool ShouldRejectNewerVersionAction(
+        bool newerVersionDetected,
+        LaunchAction action) =>
+        newerVersionDetected
+        && action is LaunchAction.Install or LaunchAction.Repair;
+
     internal static int SelectRelatedBundleConflictStatus(bool multipleRegistrations) =>
         multipleRegistrations ? InstallerConfigurationCorrupt : ProductVersionConflict;
 
     internal static RequestState SelectPackageRequestState(
-        bool allowOverwrite,
         bool sameVersionMaintenance,
         LaunchAction action,
         string packageId,
@@ -1408,9 +1378,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             };
         }
 
-        return allowOverwrite && action == LaunchAction.Install
-            ? RequestState.ForcePresent
-            : recommendedState;
+        return recommendedState;
     }
 
     internal static RequestState SelectRelatedBundleRequestState(
@@ -1430,9 +1398,6 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         sameVersionMaintenance && action == LaunchAction.Repair
             ? LaunchAction.Install
             : action;
-
-    internal static int SelectApplyDowngradeStatus(bool allowOverwrite, int status) =>
-        allowOverwrite && status == ProductVersionConflict ? 0 : status;
 
     internal static int SelectApplyCompletionStatus(
         int burnStatus,
