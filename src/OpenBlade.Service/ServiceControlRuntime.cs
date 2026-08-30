@@ -333,7 +333,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private const string ConfigurationQuarantineAdvisory =
         "OpenBlade preserved an unsupported or invalid configuration. Thermal settings are read-only until the service restarts with a valid configuration.";
     private const string ConfigurationQuarantineBlockedMessage =
-        "Thermal settings are read-only because OpenBlade preserved an unsupported or invalid configuration.";
+        ConfigurationQuarantineAdvisory;
     private const string ManualFanCurveTargetsChangedRetryBlockReason =
         "Manual fan-curve targets changed while waiting for the fresh-session retry.";
 
@@ -1983,7 +1983,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LogoMode = lighting.LogoMode ?? baseline.LogoMode,
         };
         var restored = new ManualOverride<LightingSettings>(visible, lifetime);
-        await SetLightingOverrideCoreAsync(restored, token).ConfigureAwait(false);
+        try
+        {
+            await SetLightingOverrideCoreAsync(restored, token).ConfigureAwait(false);
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
+        }
         ControlOperationResult result = await ApplyScopedIntentAsync(
             DeviceSubsystem.Lighting,
             powerSource,

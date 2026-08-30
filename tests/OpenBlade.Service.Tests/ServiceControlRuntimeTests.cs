@@ -232,6 +232,94 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "OpenBlade preserved an unsupported or invalid configuration.",
             context.Hub.Published[^1].Message,
             StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            context.Hub.Published[^1].Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public async Task NewlyQuarantinedOverrideStore_BrightnessFromOffReturnsBlocked()
+    {
+        string overridePath = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(overridePath, "{invalid-json");
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writesBefore = context.Device.LightingSetCalls;
+
+        ControlOperationResult result = await context.Runtime.StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            OverrideLifetime.Persistent,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writesBefore, context.Device.LightingSetCalls);
+        Assert.Contains("read-only", result.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            context.Runtime.GetStatus().Message.Split(
+                "OpenBlade preserved an unsupported or invalid configuration.",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public async Task AdmittedUserConfiguration_ClearsQuarantineAdvisory()
+    {
+        BatteryConfiguration admitted = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            Recovered: false);
+        var repository = new FixedUserConfigurationRepository(
+            admitted,
+            PersistentOverrideState.Empty,
+            directory);
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            initialize: false,
+            userConfigurationRepository: repository);
+        context.Runtime.Initialize(
+            admitted with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = ConfigurationQuarantineReason.InvalidDocument,
+            },
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty);
+        Assert.Contains(
+            "OpenBlade preserved an unsupported or invalid configuration.",
+            context.Runtime.GetStatus().Message,
+            StringComparison.Ordinal);
+
+        await context.Runtime.ActivateUserAsync(
+            new System.Security.Principal.SecurityIdentifier(
+                "S-1-5-21-1-2-3-1001"),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            "read-only",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
