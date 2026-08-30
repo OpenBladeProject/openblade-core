@@ -107,6 +107,45 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581ReadOnlyHyperBoostComposition_NarrowsEveryWriteCapability()
+    {
+        (
+            DeviceFeatureAccess? access,
+            DeviceFeatureAccess? withoutCoolingPadAccess,
+            HyperBoostBaseModeCapabilities? baseModes) =
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(
+                ExactRz090581Identity("4.00"),
+                reversibleWritesAdmitted: false,
+                padlessWritesAdmitted: true);
+
+        Assert.Equal(DeviceFeatureAccess.ReadOnly, access);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, withoutCoolingPadAccess);
+        Assert.Equal(
+            new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ObservedOnly),
+            baseModes);
+    }
+
+    [Fact]
+    public void Rz090581WritableHyperBoostComposition_PreservesReviewedAdmission()
+    {
+        (
+            DeviceFeatureAccess? access,
+            DeviceFeatureAccess? withoutCoolingPadAccess,
+            HyperBoostBaseModeCapabilities? baseModes) =
+            ProductionBatteryFactory.GetRz090581HyperBoostCapabilities(
+                ExactRz090581Identity("4.00"),
+                reversibleWritesAdmitted: true,
+                padlessWritesAdmitted: true);
+
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, access);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, withoutCoolingPadAccess);
+        Assert.Equal(HyperBoostBaseModeAdmissionSource.ReadCapabilities(), baseModes);
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
         AdapterPowerState[] modelScopedExpected =

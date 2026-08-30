@@ -17,6 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the exact-device read-only performance and fan query factory so an
+  empty write-command catalog bounds HyperBoost and base-mode capabilities to
+  read-only access instead of failing before the HID session opens.
 - Routed explicit Strict fan reapply and shutdown handback through the shared
   thermal executor. Reapply receives at most one freshly admitted retry only
   after a proven pre-submission failure; bounded shutdown cleanup never waits
