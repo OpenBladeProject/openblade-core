@@ -146,6 +146,60 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581ReadOnlyFactoryConstruction_AcceptsEmptyCommandCatalogs()
+    {
+        HostIdentityReadResult identity = ExactRz090581Identity("4.00");
+        (
+            DeviceFeatureAccess? access,
+            DeviceFeatureAccess? withoutCoolingPadAccess,
+            HyperBoostBaseModeCapabilities? baseModes,
+            DeviceCommandCatalog admittedCatalog) =
+            ProductionBatteryFactory.GetRz090581HyperBoostFactoryComposition(
+                identity,
+                DeviceCommandCatalog.Empty,
+                padlessWritesAdmitted: true);
+
+        ProductionBatteryFactory factory = Factory(
+            new RecordingActorFactory(),
+            hyperBoostAccess: access,
+            hyperBoostWithoutCoolingPadAccess: withoutCoolingPadAccess,
+            hyperBoostBaseModes: baseModes,
+            hyperBoostCatalog: admittedCatalog);
+
+        Assert.Equal(DeviceFeatureAccess.ReadOnly, factory.Capabilities.HyperBoostAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
+        Assert.Equal(
+            new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadOnly,
+                DeviceFeatureAccess.ObservedOnly),
+            factory.Capabilities.HyperBoostBaseModes);
+    }
+
+    [Fact]
+    public void Rz090581WritableFactoryComposition_PreservesAdmittedCommandCatalog()
+    {
+        DeviceCommandCatalog catalog = HyperBoostCatalog();
+
+        (
+            DeviceFeatureAccess? access,
+            DeviceFeatureAccess? withoutCoolingPadAccess,
+            HyperBoostBaseModeCapabilities? baseModes,
+            DeviceCommandCatalog admittedCatalog) =
+            ProductionBatteryFactory.GetRz090581HyperBoostFactoryComposition(
+                ExactRz090581Identity("4.00"),
+                catalog,
+                padlessWritesAdmitted: true);
+
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, access);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, withoutCoolingPadAccess);
+        Assert.Equal(HyperBoostBaseModeAdmissionSource.ReadCapabilities(), baseModes);
+        Assert.Same(catalog, admittedCatalog);
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_ScopesOptionalClassesToExactEvidence()
     {
         AdapterPowerState[] modelScopedExpected =
@@ -463,7 +517,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) =>
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceCommandCatalog? hyperBoostCatalog = null) =>
         Factory(
             _ => actors,
             createContext,
@@ -471,7 +529,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities,
-            observedPowerSourceBehaviors);
+            observedPowerSourceBehaviors,
+            hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes,
+            hyperBoostCatalog);
 
     private static ProductionBatteryFactory Factory(
         Func<TimeSpan, IValidationActorFactory> createActors,
@@ -480,7 +542,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null) => new(
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        DeviceFeatureAccess? hyperBoostAccess = null,
+        DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
+        HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
+        DeviceCommandCatalog? hyperBoostCatalog = null) => new(
             catalog ?? DeviceCommandCatalog.Empty,
             ProductionBatteryReadEvidence.Production,
             createContext ?? (static () => new ValidationRunContext()),
@@ -492,7 +558,11 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             cpuPowerLimitCapabilities: cpuPowerLimitCapabilities,
             cpuVoltageOptimizerCapabilities: cpuVoltageOptimizerCapabilities,
             gpuOverclockCapabilities: gpuOverclockCapabilities,
-            observedPowerSourceBehaviors: observedPowerSourceBehaviors);
+            observedPowerSourceBehaviors: observedPowerSourceBehaviors,
+            hyperBoostAccess: hyperBoostAccess,
+            hyperBoostWithoutCoolingPadAccess: hyperBoostWithoutCoolingPadAccess,
+            hyperBoostBaseModes: hyperBoostBaseModes,
+            hyperBoostCatalog: hyperBoostCatalog);
 
     private static DeviceCommandCatalog Limit80Catalog() => DeviceCommandCatalog.Create(
         CapturedFixtureFile.TargetDevice,
@@ -507,6 +577,35 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             true,
             true,
             true)]);
+
+    private static DeviceCommandCatalog HyperBoostCatalog()
+    {
+        var target = new DeviceIdentity(
+            TargetBladeDevice.Model,
+            TargetBladeDevice.VendorId,
+            TargetBladeDevice.ProductId,
+            "4.00");
+        string[] actions =
+        [
+            ProductionBatteryPort.HyperBoostEnableFirstAction,
+            ProductionBatteryPort.HyperBoostEnableSecondAction,
+            ProductionBatteryPort.HyperBoostRestoreFirstAction,
+            ProductionBatteryPort.HyperBoostRestoreSecondAction,
+        ];
+        return DeviceCommandCatalog.Create(
+            target,
+            actions.Select((action, index) => new CapturedCommandFixture(
+                target,
+                action,
+                0x07,
+                0x12,
+                [(byte)index],
+                true,
+                true,
+                true,
+                true,
+                true)));
+    }
 
     private static Func<RazerCommandSpec, CancellationToken, Task<HidSessionResult<ReadOnlyMemory<byte>>>>
         Immediate(HidSessionResult<ReadOnlyMemory<byte>> result) =>
