@@ -17,6 +17,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Routed explicit Strict fan reapply and shutdown handback through the shared
+  thermal executor. Reapply receives at most one freshly admitted retry only
+  after a proven pre-submission failure; bounded shutdown cleanup never waits
+  for that retry, rechecks ownership and competing controllers immediately
+  before submission, and reconciles possible submissions read-only without
+  replaying the fan command.
 - Routed firmware-pre-exited and deferred automatic HyperBoost destination
   restoration through the shared Strict thermal executor. Durable journal
   claims and retirement are now conditional, queued power or active-user

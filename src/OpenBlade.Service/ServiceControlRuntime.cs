@@ -2889,11 +2889,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 subsystem,
                 powerSource,
                 (coordinator, desired, cancellationToken) =>
-                    coordinator.ApplyFanControlOutcomeAsync(
+                    coordinator.ApplyRecoveryFanControlOutcomeAsync(
                         desired.FanControl
                             ?? FanControlSettings.FromLegacy(desired.Fans.Value),
                         cancellationToken),
-                token),
+                token,
+                stillControlsSession: stillControlsSession,
+                thermalComponents: [DeviceSubsystem.Fans]),
             DeviceSubsystem.Battery => ApplyScopedIntentAsync(
                 subsystem,
                 powerSource,
@@ -9723,41 +9725,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
         CancellationToken cancellationToken)
     {
-        ServiceStatusSnapshot current = GetStatus();
-        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        if (ShutdownFanHandbackBlockReason(requireControllerClear: false) is { } initialBlock)
         {
-            const string externallyChanged =
-                "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
-            history.RecordSummary(ControlOperationStatus.Stored, externallyChanged);
-            return new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                externallyChanged);
-        }
-
-        FanMode? confirmedFanMode = current.ConfirmedState?.Fans;
-        if (confirmedFanMode is null
-            || !DeviceSubsystemOrder.IsManualFanMode(confirmedFanMode.Value))
-        {
-            return new ControlOperationResult(
-                ControlOperationStatus.Stored,
-                confirmedFanMode == FanMode.Automatic
-                    ? "Fan control already uses firmware-managed Automatic mode."
-                    : "Fan control was left unchanged because an OpenBlade-owned manual state was not confirmed.");
-        }
-
-        if (exactFanControlOwnership is not
-            {
-                Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
-                Settings: { } ownedFanControl,
-                AuthorityEpoch: var ownedAuthorityEpoch,
-            }
-            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode)
-            || ownedAuthorityEpoch != fanAuthorityEpoch)
-        {
-            const string notOwned =
-                "Manual fan control was left unchanged because OpenBlade did not establish ownership of the current state.";
-            history.RecordSummary(ControlOperationStatus.Stored, notOwned);
-            return new ControlOperationResult(ControlOperationStatus.Stored, notOwned);
+            history.RecordSummary(ControlOperationStatus.Stored, initialBlock);
+            return new ControlOperationResult(ControlOperationStatus.Stored, initialBlock);
         }
 
         history.RecordSummary(
@@ -9765,28 +9736,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             "Attempting to restore firmware-managed Automatic fan control before shutdown.");
         await RefreshControllerPresenceAndRelinquishLightingAsync(
             cancellationToken).ConfigureAwait(false);
-        current = GetStatus();
-        if (current.ControllerDetectionWarning is not null)
+        if (ShutdownFanHandbackBlockReason(requireControllerClear: true) is { } refreshedBlock)
         {
-            const string unverified =
-                "Manual fan control was left unchanged because other Razer software could not be checked.";
-            history.RecordSummary(ControlOperationStatus.Stored, unverified);
-            return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
+            history.RecordSummary(ControlOperationStatus.Stored, refreshedBlock);
+            return new ControlOperationResult(ControlOperationStatus.Stored, refreshedBlock);
         }
 
-        if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
-        {
-            const string retained =
-                "Manual fan control was left unchanged because Razer Synapse is active.";
-            history.RecordSummary(ControlOperationStatus.Stored, retained);
-            return new ControlOperationResult(ControlOperationStatus.Stored, retained);
-        }
-
+        ServiceStatusSnapshot current = GetStatus();
         FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
         ControlOperationResult result = await ApplyScopedIntentAsync(
             DeviceSubsystem.Fans,
             current.ActivePowerSource,
-            (coordinator, _, token) => coordinator.ApplyFanControlOutcomeAsync(
+            (coordinator, _, token) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
                 automatic,
                 token),
             cancellationToken,
@@ -9794,7 +9755,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Fans = state.Fans with { Value = FanMode.Automatic },
                 FanControl = automatic,
-            }).ConfigureAwait(false);
+            },
+            thermalComponents: [DeviceSubsystem.Fans],
+            additionalThermalWriteBlockReason: () =>
+                RefreshAndGetShutdownFanHandbackBlockReason(cancellationToken),
+            allowFreshSessionRetry: false).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
@@ -9809,6 +9774,70 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             Message = $"Fan control could not be handed back to firmware. {result.Message}",
         };
+    }
+
+    private string? RefreshAndGetShutdownFanHandbackBlockReason(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            RefreshControllerPresenceCore(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return "Manual fan control was left unchanged because other Razer software could not be checked.";
+        }
+
+        return ShutdownFanHandbackBlockReason(requireControllerClear: true);
+    }
+
+    private string? ShutdownFanHandbackBlockReason(bool requireControllerClear)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            return "Fan control was left unchanged because OpenBlade no longer owns the confirmed fan state.";
+        }
+
+        FanMode? confirmedFanMode = current.ConfirmedState?.Fans;
+        if (confirmedFanMode is null
+            || !DeviceSubsystemOrder.IsManualFanMode(confirmedFanMode.Value))
+        {
+            return confirmedFanMode == FanMode.Automatic
+                ? "Fan control already uses firmware-managed Automatic mode."
+                : "Fan control was left unchanged because an OpenBlade-owned manual state was not confirmed.";
+        }
+
+        if (requireControllerClear)
+        {
+            if (current.ControllerDetectionWarning is not null)
+            {
+                return "Manual fan control was left unchanged because other Razer software could not be checked.";
+            }
+
+            if (current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+            {
+                return "Manual fan control was left unchanged because Razer Synapse is active.";
+            }
+        }
+
+        if (exactFanControlOwnership is not
+            {
+                Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
+                Settings: { } ownedFanControl,
+                AuthorityEpoch: var ownedAuthorityEpoch,
+            }
+            || !DeviceSubsystemOrder.IsManualFanMode(ownedFanControl.Mode)
+            || ownedAuthorityEpoch != fanAuthorityEpoch)
+        {
+            return "Manual fan control was left unchanged because OpenBlade did not establish ownership of the current state.";
+        }
+
+        return null;
     }
 
 
@@ -10624,7 +10653,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Action<
             ScopedApplyOutcome,
             ConfirmedDeviceState?,
-            ThermalTransitionTrace?>? observeScopedOutcome = null)
+            ThermalTransitionTrace?>? observeScopedOutcome = null,
+        bool allowFreshSessionRetry = true)
     {
         if (stillControlsSession?.Invoke() == false)
         {
@@ -10703,7 +10733,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             stageDesired,
             stillControlsSession,
             thermalComponents,
-            additionalThermalWriteBlockReason);
+            additionalThermalWriteBlockReason,
+            allowFreshSessionRetry);
         ScopedApplyOutcome outcome = execution.Outcome;
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
@@ -10820,7 +10851,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired,
         Func<bool>? stillControlsSession,
         IReadOnlyList<DeviceSubsystem>? thermalComponents,
-        Func<string?>? additionalThermalWriteBlockReason)
+        Func<string?>? additionalThermalWriteBlockReason,
+        bool allowFreshSessionRetry)
     {
         try
         {
@@ -10893,15 +10925,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             runner.CreateRecipeCoordinator(),
                             desired,
                             cancellationToken),
-                        (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
-                            powerSource,
-                            desired,
-                            stageDesired,
-                            stillControlsSession,
-                            thermalComponents,
-                            ThermalPreWriteRetryDelay,
-                            cancellationToken,
-                            additionalThermalWriteBlockReason),
+                        (_, cancellationToken) => allowFreshSessionRetry
+                            ? RevalidateScopedThermalRetryAsync(
+                                powerSource,
+                                desired,
+                                stageDesired,
+                                stillControlsSession,
+                                thermalComponents,
+                                ThermalPreWriteRetryDelay,
+                                cancellationToken,
+                                additionalThermalWriteBlockReason)
+                            : Task.FromResult(ThermalRetryAdmission.Block(
+                                "Fresh-session retry is unavailable during bounded shutdown cleanup.")),
                         token).ConfigureAwait(false);
                 return new ScopedIntentApplyExecution(thermal.Outcome, thermal.Trace);
             }
