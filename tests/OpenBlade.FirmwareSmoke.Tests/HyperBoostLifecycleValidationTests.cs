@@ -431,6 +431,67 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task ArmAsync_FailedResultWithConfirmedOwnershipCreatesMarkerWithoutReplay()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient { FailResultAfterConfirmedEnable = true };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_016, 123_471),
+            () => OwnedJournal());
+        string markerPath = Path.Combine(directory, "failed-confirmed-owned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.HyperBoostConfirmed);
+        Assert.True(result.DurableOwnershipConfirmed);
+        Assert.True(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.True(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.True(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_FailedResultWithoutConfirmedOwnershipRestoresOnce()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient { FailResultAfterConfirmedEnable = true };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_017, 123_472),
+            () => HyperBoostLifecycleJournalObservation.Missing);
+        string markerPath = Path.Combine(directory, "failed-confirmed-unowned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.HyperBoostConfirmed);
+        Assert.False(result.DurableOwnershipConfirmed);
+        Assert.False(result.MarkerCreated);
+        Assert.True(result.CleanupAttempted);
+        Assert.True(result.FinalRestorationConfirmed);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(1, client.DisableCalls);
+        Assert.False(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
     public async Task ArmAsync_InactiveFailedEntryRequiresExactRestoreConfirmation()
     {
         Directory.CreateDirectory(directory);
@@ -1204,6 +1265,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         internal bool ThrowAfterEnable { get; init; }
 
+        internal bool FailResultAfterConfirmedEnable { get; init; }
+
         internal bool FailEnableAfterTransitionBaseline { get; init; }
 
         internal void RestoreWithoutClientWrite() => Status = Status with
@@ -1269,6 +1332,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                             : null,
                 },
             };
+            if (enabled && FailResultAfterConfirmedEnable)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The enable outcome was indeterminate."));
+            }
             if (enabled && ThrowAfterEnable)
             {
                 throw new IOException("The apply result was indeterminate.");

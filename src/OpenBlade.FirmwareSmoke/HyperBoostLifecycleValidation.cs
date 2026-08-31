@@ -322,7 +322,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
         try
         {
             applyAttempted = true;
-            ControlOperationResult applied = useValidationRequest
+            // A possibly submitted transition can return Failed before later
+            // read-only reconciliation confirms service ownership. Never replay
+            // the enable here; the exact state and journal gates below decide.
+            _ = useValidationRequest
                 ? await client.ValidatePadlessHyperBoostLifecycleAsync(
                         scenario == HyperBoostLifecycleScenario.LowPower
                             ? PadlessHyperBoostLifecycleScenario.LowPower
@@ -337,16 +340,15 @@ internal sealed class HyperBoostLifecycleValidationRunner
                         enabled: true,
                         cancellationToken)
                     .ConfigureAwait(false);
-            hyperBoostConfirmed = IsAccepted(applied)
-                && await WaitForStateAsync(
-                        candidate => candidate.ConfirmedState is
-                        {
-                            HyperBoostActive: true,
-                            Performance: null,
-                            Fans: FanMode.Automatic,
-                        },
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            hyperBoostConfirmed = await WaitForStateAsync(
+                    candidate => candidate.ConfirmedState is
+                    {
+                        HyperBoostActive: true,
+                        Performance: null,
+                        Fans: FanMode.Automatic,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!hyperBoostConfirmed)
             {
                 ServiceStatusSnapshot inspected = await client.ObserveStateAsync(
