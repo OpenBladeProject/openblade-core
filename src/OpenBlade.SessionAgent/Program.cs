@@ -105,23 +105,20 @@ internal static class Program
             return 0;
         }
         await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
+        var applicationRestartRegistration =
+            new WindowsApplicationRestartRegistration();
+        _ = applicationRestartRegistration.TryRegister();
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
         {
+            var shutdownRequest = new SessionAgentShutdownRequest(
+                lifetime,
+                () => _ = applicationRestartRegistration.TryUnregister());
             RegisteredWaitHandle shutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
                 shutdownEvent,
-                static (state, _) =>
-                {
-                    try
-                    {
-                        ((CancellationTokenSource)state!).Cancel();
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                    }
-                },
-                lifetime,
+                static (state, _) => ((SessionAgentShutdownRequest)state!).Signal(),
+                shutdownRequest,
                 Timeout.Infinite,
                 executeOnlyOnce: true);
             try
@@ -341,6 +338,7 @@ internal static class Program
                 }
                 if (relaunchForIdentity)
                 {
+                    _ = applicationRestartRegistration.TryUnregister();
                     await acquiredOwner.DisposeAsync();
                     return RelaunchAfterIdentityRegistration();
                 }
@@ -451,5 +449,43 @@ internal static class Program
             false,
             EventResetMode.ManualReset,
             SessionAgentShutdownEndpoint.ForExecutablePath(executablePath));
+    }
+}
+
+internal sealed class SessionAgentShutdownRequest
+{
+    private readonly CancellationTokenSource lifetime;
+    private readonly Action unregisterApplicationRestart;
+
+    internal SessionAgentShutdownRequest(
+        CancellationTokenSource lifetime,
+        Action unregisterApplicationRestart)
+    {
+        this.lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+        this.unregisterApplicationRestart = unregisterApplicationRestart
+            ?? throw new ArgumentNullException(nameof(unregisterApplicationRestart));
+    }
+
+    internal void Signal()
+    {
+        try
+        {
+            unregisterApplicationRestart();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade Session Agent restart unregistration failed during intentional shutdown: {0} (0x{1:X8}).",
+                exception.GetType().Name,
+                exception.HResult);
+        }
+
+        try
+        {
+            lifetime.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 }

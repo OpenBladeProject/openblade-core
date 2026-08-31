@@ -17,6 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Registered the Tray and Session Agent for Windows Application Restart so
+  Windows can relaunch them after supported crash and update shutdowns, while
+  preserving intentional user exits and single-instance ownership.
 - Blocked older OpenBlade installers from replacing a newer installed version.
   Interactive setup now leaves the installation and saved settings unchanged
   and directs the user to the installed or a newer installer; quiet and

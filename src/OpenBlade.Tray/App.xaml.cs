@@ -54,6 +54,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private CrashReportWriter? crashReportWriter;
     private IDisposable? traceLogRegistration;
+    private WindowsApplicationRestartRegistration? applicationRestartRegistration;
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
@@ -194,13 +195,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         int sessionId = currentProcess.SessionId;
         TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid, sessionId);
         if (!TrayInstanceCoordinator.TryStart(
-            instanceEndpoint,
-            () => Enqueue(ShowMainWindow),
-            out instanceCoordinator))
+                instanceEndpoint,
+                () => Enqueue(ShowMainWindow),
+                out instanceCoordinator))
         {
             Exit();
             return;
         }
+
+        applicationRestartRegistration = new WindowsApplicationRestartRegistration();
+        _ = applicationRestartRegistration.TryRegister();
 
         sessionAgentEventEndpoint =
             SessionAgentEventEndpoint.Create(
@@ -212,6 +216,11 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         exitLifecycle = new TrayExitLifecycle(
             new TrayExitSteps(
+                UnregisterApplicationRestart: () =>
+                {
+                    _ = applicationRestartRegistration?.TryUnregister();
+                    applicationRestartRegistration = null;
+                },
                 UnregisterShutdown: () =>
                 {
                     shutdownRegistration?.Unregister(null);
