@@ -14770,9 +14770,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 CancellationToken.None)).Status);
         int hyperBoostWritesBeforeExit = context.Device.HyperBoostSetCalls;
         HyperBoostOwnershipJournal? changedJournal = null;
+        int replacementCalls = 0;
         journal.BeforeConditionalReplace = () =>
         {
-            if (changedJournal is null)
+            replacementCalls++;
+            if (replacementCalls == 2 && changedJournal is null)
             {
                 HyperBoostOwnershipJournal current =
                     Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
@@ -16214,6 +16216,60 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_RetirementClearRacePublishesNewerRestorePendingJournal()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalClear = () =>
+        {
+            if (changedJournal is null)
+            {
+                HyperBoostOwnershipJournal current =
+                    Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+                Assert.Equal(
+                    HyperBoostOwnershipJournalState.Relinquished,
+                    current.State);
+                changedJournal = new HyperBoostOwnershipJournal(
+                    HyperBoostOwnershipJournalState.RestorePending,
+                    current.BaseMode,
+                    current.RequiresCoolingPad,
+                    current.UpdatedAtUtc.AddMinutes(1))
+                {
+                    RestoreIntent = current.RestoreIntent,
+                    TransitionId = current.TransitionId,
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_UnspecifiedPreSubmissionFailureDoesNotRetry()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -17581,6 +17637,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_HashOnlyJournalDriftBlocksBeforeSubmission()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.BeforeLoadResult = _ =>
+        {
+            if (journal.Journal?.State
+                == HyperBoostOwnershipJournalState.EnablePending)
+            {
+                journal.JournalSha256Override = new string('A', 64);
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            journal.Journal?.State);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_PreSubmissionDisableRollbackRacePreservesNewerJournal()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -17601,9 +17689,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new CapabilityUnavailableException(
                 "Injected pre-submission disable refusal."));
         HyperBoostOwnershipJournal? changedJournal = null;
+        int replacementCalls = 0;
         journal.BeforeConditionalReplace = () =>
         {
-            if (changedJournal is null)
+            replacementCalls++;
+            if (replacementCalls == 2 && changedJournal is null)
             {
                 HyperBoostOwnershipJournal current =
                     Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
@@ -17623,6 +17713,49 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             hyperBoostCallsBeforeExit + 1,
             context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_OwnedDisablePreparationRaceBlocksBeforeSubmission()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        int hyperBoostCallsBeforeExit = context.Device.HyperBoostSetCalls;
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalReplace = () =>
+        {
+            if (changedJournal is null)
+            {
+                HyperBoostOwnershipJournal current =
+                    Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+                changedJournal = current with
+                {
+                    UpdatedAtUtc = current.UpdatedAtUtc.AddMinutes(1),
+                };
+                journal.Journal = changedJournal;
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(hyperBoostCallsBeforeExit, context.Device.HyperBoostSetCalls);
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Same(changedJournal, journal.Journal);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
@@ -19775,9 +19908,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.SuppressHyperBoostMutation = true;
         int hyperBoostWritesBeforeExit = context.Device.HyperBoostSetCalls;
         HyperBoostOwnershipJournal? changedJournal = null;
+        int replacementCalls = 0;
         journal.BeforeConditionalReplace = () =>
         {
-            if (changedJournal is null)
+            replacementCalls++;
+            if (replacementCalls == 2 && changedJournal is null)
             {
                 HyperBoostOwnershipJournal current =
                     Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
@@ -22111,12 +22246,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Action? BeforeConditionalClear { get; set; }
 
+        public string? JournalSha256Override { get; set; }
+
         public List<HyperBoostOwnershipJournal> Writes { get; } = [];
 
         private string? JournalSha256 => Journal is null
             ? null
-            : Convert.ToHexString(SHA256.HashData(
-                JsonSerializer.SerializeToUtf8Bytes(Journal)));
+            : JournalSha256Override
+                ?? Convert.ToHexString(SHA256.HashData(
+                    JsonSerializer.SerializeToUtf8Bytes(Journal)));
 
         public Task<HyperBoostOwnershipJournalLoadResult> LoadAsync(
             CancellationToken cancellationToken)
