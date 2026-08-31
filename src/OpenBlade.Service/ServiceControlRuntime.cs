@@ -4814,7 +4814,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 ownedHyperBoostRequiresCoolingPad,
                                 transitionIntent!,
                                 "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.",
-                                expectedJournal: preparedTransitionJournal)
+                                transitionId: preparedTransitionJournal?.TransitionId)
                             .ConfigureAwait(false);
                 }
                 bool restoreFailed = failedTransitionRestore is { Succeeded: false };
@@ -6974,8 +6974,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         requiresCoolingPad,
                         restoreIntent,
                         "HyperBoost was restored after its ownership journal could not be finalized.",
-                        expectedJournal,
-                        expectedSha256: null)
+                        transitionId: expectedJournal.TransitionId)
                     .ConfigureAwait(false);
                 hyperBoostOwnershipGeneration++;
                 ownsHyperBoost = false;
@@ -7091,7 +7090,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HyperBoostRestoreIntent restoreIntent,
         string failureMessage,
         HyperBoostOwnershipJournal? expectedJournal = null,
-        string? expectedSha256 = null)
+        string? expectedSha256 = null,
+        Guid? transitionId = null)
     {
         bool relinquished = false;
         var relinquishedJournal = new HyperBoostOwnershipJournal(
@@ -7102,6 +7102,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             RestoreIntent = restoreIntent,
             TransitionId = expectedJournal?.TransitionId
+                ?? transitionId
                 ?? ownedHyperBoostTransitionId,
         };
         string? relinquishedSha256 = null;

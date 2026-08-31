@@ -17703,9 +17703,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformancePreset.Silent,
                 OverrideLifetime.UntilPowerSourceChange),
             CancellationToken.None);
+        Guid transitionId = Guid.Parse("1eb51c86-248b-4cd8-ac37-b44c7b87650d");
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
@@ -17720,6 +17724,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(fanControl, context.Device.FanControlWrites[^1]);
         Assert.Null(journal.Journal);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        HyperBoostOwnershipJournal relinquished = Assert.Single(
+            journal.Writes,
+            write => write.State == HyperBoostOwnershipJournalState.Relinquished);
+        Assert.Equal(transitionId, relinquished.TransitionId);
     }
 
     [Fact]
@@ -19367,18 +19375,23 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ConfigurePadlessHyperBoost(context);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.SuppressHyperBoostMutation = true;
+        Guid transitionId = Guid.Parse("c024f128-8f35-4cfa-a804-c470b73c4be9");
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Null(journal.Journal);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Contains(
+        HyperBoostOwnershipJournal relinquished = Assert.Single(
             journal.Writes,
             write => write.State == HyperBoostOwnershipJournalState.Relinquished);
+        Assert.Equal(transitionId, relinquished.TransitionId);
     }
 
     [Fact]
@@ -21729,6 +21742,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public List<HyperBoostOwnershipJournal> Writes { get; } = [];
 
+        private string? JournalSha256 => Journal is null
+            ? null
+            : Convert.ToHexString(SHA256.HashData(
+                JsonSerializer.SerializeToUtf8Bytes(Journal)));
+
         public Task<HyperBoostOwnershipJournalLoadResult> LoadAsync(
             CancellationToken cancellationToken)
         {
@@ -21743,7 +21761,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     Journal,
                     Invalid: false,
                     AllowsExplicitRecoveryBaselineCapture:
-                        AllowsExplicitRecoveryBaselineCapture));
+                        AllowsExplicitRecoveryBaselineCapture,
+                    Sha256: JournalSha256));
         }
 
         public Task WriteAsync(
@@ -21778,7 +21797,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             BeforeConditionalReplace?.Invoke();
-            if (Journal != expectedJournal)
+            if (Journal != expectedJournal
+                || expectedSha256 is null
+                || !StringComparer.Ordinal.Equals(
+                    expectedSha256,
+                    JournalSha256))
             {
                 return Task.FromResult(
                     new HyperBoostOwnershipJournalMutationResult(false));
@@ -21795,7 +21818,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Journal = replacementJournal;
             Writes.Add(replacementJournal);
             return Task.FromResult(
-                new HyperBoostOwnershipJournalMutationResult(true));
+                new HyperBoostOwnershipJournalMutationResult(
+                    true,
+                    JournalSha256));
         }
 
         public Task<bool> TryClearAsync(
@@ -21805,7 +21830,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             BeforeConditionalClear?.Invoke();
-            if (Journal != expectedJournal)
+            if (Journal != expectedJournal
+                || expectedSha256 is null
+                || !StringComparer.Ordinal.Equals(
+                    expectedSha256,
+                    JournalSha256))
             {
                 return Task.FromResult(false);
             }

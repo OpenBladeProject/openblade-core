@@ -96,7 +96,11 @@ public static class DiagnosticBundleExporter
         await WriteJsonEntryAsync(archive, "device.json", bundle.Device, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "capabilities.json", bundle.Capabilities, bundle.SensitiveTokens, cancellationToken);
         await WriteJsonEntryAsync(archive, "configuration.json", bundle.Configuration, bundle.SensitiveTokens, cancellationToken);
-        await WriteJsonEntryAsync(archive, "command-results.json", bundle.CommandResults, bundle.SensitiveTokens, cancellationToken);
+        await WriteCommandResultsEntryAsync(
+            archive,
+            bundle.CommandResults,
+            bundle.SensitiveTokens,
+            cancellationToken);
         if (bundle.HyperBoostOwnership is { } ownership)
         {
             // This narrow typed record contains no user or device identifiers.
@@ -125,6 +129,37 @@ public static class DiagnosticBundleExporter
             writeIndented: true,
             cancellationToken);
         return WriteTextEntryAsync(archive, name, json, cancellationToken);
+    }
+
+    private static Task WriteCommandResultsEntryAsync(
+        ZipArchive archive,
+        IReadOnlyList<DiagnosticCommandResult> results,
+        IReadOnlyCollection<string> sensitiveTokens,
+        CancellationToken cancellationToken)
+    {
+        (string[] tokens, string replacement) =
+            CreateRedactionPlan(sensitiveTokens);
+        DiagnosticCommandResult[] redacted = results
+            .Select(result => result with
+            {
+                Subsystem = RedactString(result.Subsystem, tokens, replacement),
+                Action = RedactString(result.Action, tokens, replacement),
+                Status = RedactString(result.Status, tokens, replacement),
+                Detail = result.Detail is null
+                    ? null
+                    : RedactString(result.Detail, tokens, replacement),
+            })
+            .ToArray();
+
+        // Timestamp and transition ID are typed, non-identifying evidence.
+        // Redacting their serialized strings or fixed property names would make
+        // the lifecycle record unreadable or break causal verification.
+        return WriteJsonEntryAsync(
+            archive,
+            "command-results.json",
+            redacted,
+            sensitiveTokens: [],
+            cancellationToken);
     }
 
     private static async Task WriteLogEntryAsync(
@@ -171,16 +206,8 @@ public static class DiagnosticBundleExporter
     {
         byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
         using JsonDocument document = JsonDocument.Parse(serialized);
-        string[] tokens = sensitiveTokens
-            .Where(token => !string.IsNullOrWhiteSpace(token))
-            .OrderByDescending(token => token.Length)
-            .ToArray();
-        const string standardReplacement = "[REDACTED]";
-        string replacement = tokens.Any(token => standardReplacement.Contains(
-            token,
-            StringComparison.OrdinalIgnoreCase))
-            ? string.Empty
-            : standardReplacement;
+        (string[] tokens, string replacement) =
+            CreateRedactionPlan(sensitiveTokens);
 
         using var destination = new MemoryStream();
         using (var writer = new Utf8JsonWriter(
@@ -196,6 +223,22 @@ public static class DiagnosticBundleExporter
         }
 
         return Encoding.UTF8.GetString(destination.ToArray());
+    }
+
+    private static (string[] Tokens, string Replacement) CreateRedactionPlan(
+        IReadOnlyCollection<string> sensitiveTokens)
+    {
+        string[] tokens = sensitiveTokens
+            .Where(token => !string.IsNullOrWhiteSpace(token))
+            .OrderByDescending(token => token.Length)
+            .ToArray();
+        const string standardReplacement = "[REDACTED]";
+        string replacement = tokens.Any(token => standardReplacement.Contains(
+            token,
+            StringComparison.OrdinalIgnoreCase))
+            ? string.Empty
+            : standardReplacement;
+        return (tokens, replacement);
     }
 
     private static void WriteRedactedElement(
