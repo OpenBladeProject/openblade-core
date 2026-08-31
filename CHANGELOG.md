@@ -23,6 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bound every HyperBoost lifecycle submission and ownership-journal mutation to
+  the exact durable journal identity. Concurrent journal changes now block
+  before another hardware write, preserve newer recovery state, and keep
+  lifecycle validation available for safe crash and resume testing.
 - Blocked older OpenBlade installers from replacing a newer installed version.
   Interactive setup now leaves the installation and saved settings unchanged
   and directs the user to the installed or a newer installer; quiet and

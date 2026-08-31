@@ -112,6 +112,20 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        Guid requestId,
+        CancellationToken token) => SendMutationAsync(
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                requestId == Guid.Empty
+                    ? throw new ArgumentException(
+                        "A HyperBoost request ID is required.",
+                        nameof(requestId))
+                    : requestId,
+                enabled),
+            token);
+
     public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
         PadlessHyperBoostLifecycleScenario scenario,
         Guid validationRunId,

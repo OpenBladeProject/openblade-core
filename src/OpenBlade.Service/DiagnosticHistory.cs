@@ -90,7 +90,10 @@ public sealed class DiagnosticHistory : ILoggerProvider
         RecordSubsystem(subsystem.ToString(), result);
     }
 
-    public void RecordSummary(ControlOperationStatus status, string summary)
+    public void RecordSummary(
+        ControlOperationStatus status,
+        string summary,
+        Guid? transitionId = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
         AddCommandResult(new DiagnosticCommandResult(
@@ -98,7 +101,10 @@ public sealed class DiagnosticHistory : ILoggerProvider
             "Service",
             "Reconcile",
             status.ToString(),
-            Clamp(summary)));
+            Clamp(summary))
+        {
+            TransitionId = transitionId,
+        });
     }
 
     public void RecordResumeValidation(
