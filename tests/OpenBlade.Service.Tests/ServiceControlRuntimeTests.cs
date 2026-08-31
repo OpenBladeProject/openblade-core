@@ -13766,6 +13766,54 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ThermalConvergence_ReapplyBlocksWhenLedgerBecomesQuarantined()
+    {
+        const string name = "reapply-quarantined-ledger";
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(name);
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using (var cancellation = new CancellationTokenSource())
+        {
+            Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+                cancellation.Token);
+            await WaitForAsync(
+                () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                    == ThermalConvergenceState.Matched);
+            cancellation.Cancel();
+            try
+            {
+                await consumer.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        string ledgerPath = Path.Combine(
+            directory,
+            name,
+            "users",
+            thermal.UserSid.Value,
+            "thermal-convergence.json");
+        byte[] corruptLedger = [0x7B, 0x62, 0x61, 0x64];
+        await File.WriteAllBytesAsync(ledgerPath, corruptLedger);
+        int writesBefore = thermal.Context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ReapplyChangedSettingsAsync(
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writesBefore, thermal.Context.Device.TotalSetterCalls);
+        Assert.Equal(corruptLedger, await File.ReadAllBytesAsync(ledgerPath));
+    }
+
+    [Fact]
     public async Task ThermalConvergence_MaintainReservesBeforeOneWriteAndTombstonesRepeatDrift()
     {
         ThermalConvergenceTestContext thermal =
@@ -14270,6 +14318,102 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             ThermalTransitionDisposition.External,
             persisted.State.TerminalDisposition);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_SameProcessOwnedManualReservationReconcilesConfirmed()
+    {
+        var manual = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "manual-same-process-reconciliation",
+                configuration => configuration with
+                {
+                    Profiles = configuration.Profiles with
+                    {
+                        PluggedIn = configuration.Profiles.PluggedIn with
+                        {
+                            Fans = FanMode.ManualCurve,
+                            FanControl = manual,
+                        },
+                    },
+                },
+                confirmedStateFactory: configuration => new ConfirmedDeviceState(
+                    configuration.Profiles.PluggedIn.Performance,
+                    FanMode.ManualCurve,
+                    ConfirmedBattery(80),
+                    configuration.Profiles.PluggedIn.Lighting));
+        typeof(ServiceControlRuntime)
+            .GetMethod(
+                "OwnExactFanIntent",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(thermal.Context.Runtime, [manual]);
+        var ledgerField = typeof(ServiceControlRuntime).GetField(
+            "thermalConvergenceLedger",
+            System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)!;
+        ThermalConvergenceLedgerState current = Assert.IsType<ThermalConvergenceLedgerState>(
+            ledgerField.GetValue(thermal.Context.Runtime));
+        DesiredDeviceState desired = thermal.Context.Runtime.GetStatus().DesiredState;
+        var reserved = current with
+        {
+            SettledDestination = PowerSource.PluggedIn,
+            Contradiction = ThermalConvergenceContradiction.FanTopology,
+            InFlight = new ThermalConvergenceInFlight(
+                Guid.NewGuid(),
+                [ThermalComponent.Fans],
+                new ConfirmedDeviceState(
+                    desired.Performance.Value,
+                    FanMode.Automatic,
+                    Battery: null,
+                    Lighting: null),
+                desired,
+                ReconciliationRequired: true),
+            Tombstones = [],
+            TerminalDisposition = null,
+            TerminalAffectedComponents = [],
+            Budgets =
+            [
+                new ThermalConvergenceBudget(
+                    PowerSource.PluggedIn,
+                    ThermalComponent.Fans,
+                    current.FanDesiredRevision!,
+                    current.PolicyRevision!,
+                    1,
+                    1),
+            ],
+        };
+        ThermalConvergenceLoadResult stored = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        ThermalConvergenceMutationResult saved = await thermal.Store.TrySaveAsync(
+            stored.Sha256,
+            reserved,
+            CancellationToken.None);
+        Assert.True(saved.Applied);
+        ledgerField.SetValue(thermal.Context.Runtime, reserved);
+        typeof(ServiceControlRuntime)
+            .GetField(
+                "thermalConvergenceLedgerSha256",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(thermal.Context.Runtime, saved.Sha256);
+
+        int writesBefore = thermal.Context.Device.TotalSetterCalls;
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(writesBefore, thermal.Context.Device.TotalSetterCalls);
+        ThermalConvergenceLoadResult reconciled = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Equal(
+            ThermalTransitionDisposition.Confirmed,
+            Assert.Single(reconciled.State.Tombstones).TerminalDisposition);
+        Assert.Equal(
+            ThermalTransitionDisposition.Confirmed,
+            reconciled.State.TerminalDisposition);
     }
 
     private async Task<ThermalConvergenceTestContext>

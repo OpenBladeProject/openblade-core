@@ -44,6 +44,26 @@ public sealed class ThermalConvergenceArbiterTests
     }
 
     [Fact]
+    public void EnsureAdmissionPreservesOpenGenerationAndPendingCandidate()
+    {
+        using var arbiter = new ThermalConvergenceArbiter();
+        long generation = arbiter.EnsureAdmissionOpen();
+        Assert.Equal(
+            ThermalConvergenceNominationResult.Accepted,
+            arbiter.TryNominate(Candidate(generation)));
+
+        long preserved = arbiter.EnsureAdmissionOpen();
+
+        Assert.Equal(generation, preserved);
+        Assert.Equal(
+            ThermalConvergenceNominationResult.Merged,
+            arbiter.TryNominate(Candidate(preserved)));
+        long closed = arbiter.CloseAdmission();
+        long reopened = arbiter.EnsureAdmissionOpen();
+        Assert.NotEqual(closed, reopened);
+    }
+
+    [Fact]
     public async Task PendingSlotKeepsOnlyNewestDistinctCandidate()
     {
         using var arbiter = new ThermalConvergenceArbiter();

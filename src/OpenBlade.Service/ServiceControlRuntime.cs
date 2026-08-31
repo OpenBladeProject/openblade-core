@@ -15860,7 +15860,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             SettledDestination = powerSource,
             Contradiction = assessment.Contradiction,
         };
-        long generation = thermalConvergenceArbiter.OpenAdmission();
+        long generation = thermalConvergenceArbiter.EnsureAdmissionOpen();
         var candidate = new ThermalConvergenceCandidate(
             Volatile.Read(ref activeUserSid)!,
             generation,
@@ -15898,7 +15898,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ThermalConvergenceAssessment assessment =
             ThermalConvergenceClassifier.Classify(
                 reservation.DesiredTarget,
-                confirmed);
+                confirmed,
+                exactManualIntentOwned:
+                    reservation.DesiredTarget.FanControl is { } fanIntent
+                    && IsExactFanIntentOwned(fanIntent));
         ThermalTransitionDisposition disposition = assessment.Kind ==
             ThermalConvergenceObservationKind.Matched
                 ? ThermalTransitionDisposition.Confirmed
@@ -16493,7 +16496,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             throw;
         }
         catch (Exception exception) when (exception is
-            IOException or InvalidDataException or UnauthorizedAccessException)
+            IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or ConfigurationQuarantinedException)
         {
             thermalConvergenceLedgerAuthoritative = false;
             thermalConvergenceArbiter.CloseAdmission();

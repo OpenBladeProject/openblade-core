@@ -117,6 +117,21 @@ internal sealed class ThermalConvergenceArbiter : IDisposable
         }
     }
 
+    public long EnsureAdmissionOpen()
+    {
+        lock (gate)
+        {
+            ThrowIfDisposed();
+            if (!admissionOpen)
+            {
+                pending = null;
+                admissionOpen = true;
+                admissionGeneration++;
+            }
+            return admissionGeneration;
+        }
+    }
+
     public long CloseAdmission()
     {
         lock (gate)
