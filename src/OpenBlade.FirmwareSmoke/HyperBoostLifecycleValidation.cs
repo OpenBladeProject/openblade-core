@@ -49,7 +49,8 @@ internal sealed record HyperBoostLifecycleJournalObservation(
     PerformancePreset? BaseMode,
     HyperBoostLifecycleRestoreIntent? RestoreIntent,
     bool? RequiresCoolingPad,
-    string? Sha256)
+    string? Sha256,
+    Guid? TransitionId = null)
 {
     internal static HyperBoostLifecycleJournalObservation Missing { get; } =
         new(false, true, null, null, null, null, null);
@@ -62,7 +63,8 @@ internal sealed record HyperBoostLifecycleJournalDiagnostic(
     PerformancePreset? BaseMode,
     bool? RequiresCoolingPad,
     HyperBoostLifecycleRestoreIntent? RestoreIntent,
-    string? Sha256);
+    string? Sha256,
+    Guid? TransitionId = null);
 
 internal sealed record HyperBoostLifecycleRestoreIntent(
     PerformancePreset Performance,
@@ -127,7 +129,9 @@ internal sealed record HyperBoostLifecycleMarker(
     string OwnershipJournalSha256,
     HyperBoostLifecycleRestoreIntent RestoreIntent)
 {
-    internal const int CurrentSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 3;
+
+    public Guid TransitionId { get; init; }
 
     internal bool IsWellFormed =>
         SchemaVersion == CurrentSchemaVersion
@@ -146,6 +150,7 @@ internal sealed record HyperBoostLifecycleMarker(
             ProcessId: > 0,
             StartUtcTicks: > 0,
         }
+        && TransitionId != Guid.Empty
         && IsSha256(OwnershipJournalSha256);
 
     private static bool IsSha256(string? value) =>
@@ -192,7 +197,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
     internal const string OwnershipJournalFileName = "hyperboost-ownership.json";
     private const string OwnedConfirmedJournalState = "OwnedConfirmed";
     private static readonly TimeSpan ObservationDelay = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan ArmFailureCleanupTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan ArmFailureInspectionTimeout = TimeSpan.FromSeconds(20);
     private const int MaximumObservationAttempts = 12;
 
     private readonly IFirmwareSmokeClient client;
@@ -317,8 +322,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
         DateTimeOffset armedAtUtc = timeProvider.GetUtcNow();
         bool applyAttempted = false;
         bool hyperBoostConfirmed = false;
-        bool cleanupAttempted = false;
         bool finalRestorationConfirmed = false;
+        Guid transitionId = useValidationRequest
+            ? validationBuild!.ValidationRunId
+            : Guid.NewGuid();
         try
         {
             applyAttempted = true;
@@ -338,6 +345,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                     .ConfigureAwait(false)
                 : await client.SetHyperBoostAsync(
                         enabled: true,
+                        transitionId,
                         cancellationToken)
                     .ConfigureAwait(false);
             if (applied.Status == ControlOperationStatus.Blocked)
@@ -372,7 +380,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                         cancellationToken)
                     .ConfigureAwait(false);
                 hyperBoostConfirmed = inspected.ConfirmedState?.HyperBoostActive == true;
-                return await FailArmAndRestoreIfNeededAsync(
+                return await FailArmReadOnlyAsync(
                         restoreIntent,
                         hyperBoostConfirmed,
                         "Typed service activation was not independently confirmed.",
@@ -391,12 +399,14 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 RestoreIntent: var journalRestoreIntent,
                 RequiresCoolingPad: var journalRequiresPad,
                 Sha256: not null,
+                TransitionId: var journalTransitionId,
             } && journalBase == baseMode
                 && journalRestoreIntent == restoreIntent
-                && journalRequiresPad == requiresCoolingPad;
+                && journalRequiresPad == requiresCoolingPad
+                && journalTransitionId == transitionId;
             if (!durableOwnership)
             {
-                return await FailArmAndRestoreIfNeededAsync(
+                return await FailArmReadOnlyAsync(
                         restoreIntent,
                         hyperBoostConfirmed,
                         "Durable service ownership was not confirmed after activation. "
@@ -415,7 +425,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 armedAtUtc,
                 serviceProcess!,
                 journal.Sha256!,
-                restoreIntent);
+                restoreIntent)
+            {
+                TransitionId = transitionId,
+            };
             try
             {
                 await CreateMarkerAsync(markerPath, marker, cancellationToken)
@@ -423,7 +436,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                return await FailArmAndRestoreIfNeededAsync(
+                return await FailArmReadOnlyAsync(
                         restoreIntent,
                         hyperBoostConfirmed,
                         $"The private lifecycle marker could not be created: {exception.Message}",
@@ -451,10 +464,9 @@ internal sealed class HyperBoostLifecycleValidationRunner
             if (applyAttempted)
             {
                 (bool active, bool restored) =
-                    await InspectAndRestoreAfterArmFailureAsync(restoreIntent)
+                    await InspectAfterArmFailureAsync(restoreIntent)
                     .ConfigureAwait(false);
                 hyperBoostConfirmed |= active;
-                cleanupAttempted = active;
                 finalRestorationConfirmed = restored;
             }
             throw;
@@ -464,10 +476,9 @@ internal sealed class HyperBoostLifecycleValidationRunner
             if (applyAttempted)
             {
                 (bool active, bool restored) =
-                    await InspectAndRestoreAfterArmFailureAsync(restoreIntent)
+                    await InspectAfterArmFailureAsync(restoreIntent)
                     .ConfigureAwait(false);
                 hyperBoostConfirmed |= active;
-                cleanupAttempted = active;
                 finalRestorationConfirmed = restored;
             }
             return new HyperBoostLifecycleArmResult(
@@ -476,7 +487,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 hyperBoostConfirmed,
                 false,
                 false,
-                cleanupAttempted,
+                false,
                 finalRestorationConfirmed,
                 applyAttempted && !finalRestorationConfirmed,
                 toolProductVersion,
@@ -486,10 +497,10 @@ internal sealed class HyperBoostLifecycleValidationRunner
     }
 
     private async Task<(bool HyperBoostActive, bool Restored)>
-        InspectAndRestoreAfterArmFailureAsync(
+        InspectAfterArmFailureAsync(
             HyperBoostLifecycleRestoreIntent restoreIntent)
     {
-        using var timeout = new CancellationTokenSource(ArmFailureCleanupTimeout);
+        using var timeout = new CancellationTokenSource(ArmFailureInspectionTimeout);
         try
         {
             ServiceStatusSnapshot inspected = await client.ObserveStateAsync(
@@ -502,8 +513,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 return (false, IsExactRestoredState(inspected, restoreIntent));
             }
 
-            return (true, await RestoreOnceAsync(restoreIntent, timeout.Token)
-                .ConfigureAwait(false));
+            return (true, false);
         }
         catch
         {
@@ -618,60 +628,27 @@ internal sealed class HyperBoostLifecycleValidationRunner
             marker);
     }
 
-    private async Task<HyperBoostLifecycleArmResult> FailArmAndRestoreIfNeededAsync(
+    private async Task<HyperBoostLifecycleArmResult> FailArmReadOnlyAsync(
         HyperBoostLifecycleRestoreIntent restoreIntent,
         bool hyperBoostConfirmed,
         string message,
         CancellationToken cancellationToken)
     {
-        bool cleanupAttempted = hyperBoostConfirmed;
-        bool restored = await RestoreOnceAsync(
-                restoreIntent,
-                cancellationToken)
-            .ConfigureAwait(false);
+        (bool active, bool restored) =
+            await InspectAfterArmFailureAsync(restoreIntent).ConfigureAwait(false);
+        hyperBoostConfirmed |= active;
         return new HyperBoostLifecycleArmResult(
             false,
             true,
             hyperBoostConfirmed,
             false,
             false,
-            cleanupAttempted,
+            false,
             restored,
             !restored,
             toolProductVersion,
-            message,
+            $"{message} No cleanup write was issued because the observed state could belong to another request.",
             null);
-    }
-
-    private async Task<bool> RestoreOnceAsync(
-        HyperBoostLifecycleRestoreIntent restoreIntent,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            ServiceStatusSnapshot current = await client.ObserveStateAsync(
-                    LiveReadingSensors.None,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (current.ConfirmedState?.HyperBoostActive != true)
-            {
-                return IsExactRestoredState(current, restoreIntent);
-            }
-
-            ControlOperationResult result = await client.SetHyperBoostAsync(
-                    enabled: false,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return IsAccepted(result)
-                && await WaitForStateAsync(
-                        candidate => IsExactRestoredState(candidate, restoreIntent),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private async Task<bool> WaitForStateAsync(
@@ -867,10 +844,6 @@ internal sealed class HyperBoostLifecycleValidationRunner
     private static bool IsManualFanMode(FanMode mode) =>
         mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
 
-    private static bool IsAccepted(ControlOperationResult result) =>
-        result.Status is ControlOperationStatus.Applied
-            or ControlOperationStatus.Stored;
-
     private static string InstalledGenerationSha256(FirmwareSmokeSnapshot snapshot)
     {
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
@@ -1022,6 +995,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             || journal.BaseMode != PerformancePreset.Balanced
             || journal.RequiresCoolingPad is null
             || journal.RestoreIntent is not { IsWellFormed: true }
+            || journal.TransitionId == Guid.Empty
             || !IsSha256(journal.Sha256))
         {
             return InvalidJournalObservation();
@@ -1034,7 +1008,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
             journal.BaseMode,
             journal.RestoreIntent,
             journal.RequiresCoolingPad,
-            journal.Sha256);
+            journal.Sha256,
+            journal.TransitionId);
     }
 
     private static HyperBoostLifecycleJournalObservation InvalidJournalObservation() =>
@@ -1053,6 +1028,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         + $"BaseMode={journal.BaseMode?.ToString() ?? "<null>"}; "
         + $"RequiresCoolingPad={journal.RequiresCoolingPad?.ToString() ?? "<null>"}; "
         + $"RestoreIntent={journal.RestoreIntent?.ToString() ?? "<null>"}; "
+        + $"TransitionId={journal.TransitionId?.ToString() ?? "<null>"}; "
         + $"Sha256Valid={IsSha256(journal.Sha256)}.";
 
     private bool ToolMatchesInstalledGeneration(FirmwareSmokeSnapshot snapshot)
@@ -1109,7 +1085,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 CustomPerformance: null,
                 GpuClockTuning: null,
                 FanControlSettings.FromLegacy(FanMode.Automatic)),
-            3 or 4 => new HyperBoostLifecycleRestoreIntent(
+            3 or 4 or 5 or 6 or 7 => new HyperBoostLifecycleRestoreIntent(
                 (PerformancePreset)root.GetProperty("restorePerformance").GetInt32(),
                 root.TryGetProperty("restoreCustomPerformance", out JsonElement custom)
                     && custom.ValueKind != JsonValueKind.Null
@@ -1126,17 +1102,23 @@ internal sealed class HyperBoostLifecycleValidationRunner
             _ => null,
         };
         HyperBoostLifecycleRecoveryBaseline? recoveryBaseline =
-            schemaVersion == 4
+            schemaVersion is 4 or 5 or 6 or 7
             && root.TryGetProperty("recoveryBaseline", out JsonElement recovery)
             && recovery.ValueKind != JsonValueKind.Null
                 ? recovery.Deserialize<HyperBoostLifecycleRecoveryBaseline>(
                     FirmwareSmokeFiles.JsonOptions)
                 : null;
-        bool valid = schemaVersion is 2 or 3 or 4
+        Guid? transitionId = schemaVersion == 7
+            && root.TryGetProperty("transitionId", out JsonElement transition)
+            && transition.ValueKind != JsonValueKind.Null
+                ? transition.GetGuid()
+                : null;
+        bool valid = schemaVersion is 2 or 3 or 4 or 5 or 6 or 7
             && stateName is not null
             && parsedBase == PerformancePreset.Balanced
             && updatedAtUtc != default
             && restoreIntent is { IsWellFormed: true }
+            && transitionId != Guid.Empty
             && (recoveryBaseline is null
                 || stateName == "RestorePending"
                     && recoveryBaseline.IsWellFormed);
@@ -1147,7 +1129,8 @@ internal sealed class HyperBoostLifecycleValidationRunner
             valid ? parsedBase : null,
             valid ? restoreIntent : null,
             requiresPad,
-            Convert.ToHexString(SHA256.HashData(bytes)));
+            Convert.ToHexString(SHA256.HashData(bytes)),
+            transitionId);
     }
 
     private static async Task<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>

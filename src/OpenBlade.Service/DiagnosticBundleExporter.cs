@@ -50,6 +50,8 @@ public sealed record DiagnosticHyperBoostOwnershipJournal(
 
     public string? RestoreRetryTarget { get; init; }
 
+    public Guid? TransitionId { get; init; }
+
     public static DiagnosticHyperBoostOwnershipJournal Missing { get; } = new(
         Exists: false,
         Valid: true,

@@ -13907,9 +13907,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostActive = false,
         };
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        Guid requestId = Guid.Parse("5e526af4-567f-4327-bd5e-dff12a3a8cf5");
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                requestId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
@@ -13921,6 +13925,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostOwnershipJournalState.OwnedConfirmed,
             journal.Journal?.State);
+        Assert.Equal(requestId, journal.Journal?.TransitionId);
     }
 
     [Fact]
