@@ -714,7 +714,8 @@ internal static class ThermalTransitionExecutor
             executeRecipe,
             revalidatePreflight,
             revalidateThermalRecovery,
-            cancellationToken);
+            revalidateSubmission: null,
+            cancellationToken: cancellationToken);
     }
 
     public static Task<ThermalFullTransitionExecution> ExecuteFullTransitionAsync(
@@ -729,6 +730,11 @@ internal static class ThermalTransitionExecutor
             revalidatePreflight,
         Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
             revalidateThermalRecovery,
+        Func<
+            ThermalTransitionStepPurpose,
+            IReadOnlyList<DeviceSubsystem>,
+            CancellationToken,
+            Task<ThermalRetryAdmission>> revalidateSubmission,
         CancellationToken cancellationToken)
     {
         if (attemptId == Guid.Empty)
@@ -742,6 +748,7 @@ internal static class ThermalTransitionExecutor
         ArgumentNullException.ThrowIfNull(executeRecipe);
         ArgumentNullException.ThrowIfNull(revalidatePreflight);
         ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
+        ArgumentNullException.ThrowIfNull(revalidateSubmission);
         return ExecuteFullTransitionCoreAsync(
             attemptId,
             declaredComponents,
@@ -750,6 +757,7 @@ internal static class ThermalTransitionExecutor
             executeRecipe,
             revalidatePreflight,
             revalidateThermalRecovery,
+            revalidateSubmission,
             cancellationToken);
     }
 
@@ -766,6 +774,11 @@ internal static class ThermalTransitionExecutor
             revalidatePreflight,
         Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
             revalidateThermalRecovery,
+        Func<
+            ThermalTransitionStepPurpose,
+            IReadOnlyList<DeviceSubsystem>,
+            CancellationToken,
+            Task<ThermalRetryAdmission>>? revalidateSubmission,
         CancellationToken cancellationToken)
     {
         var runner = new ThermalTransitionStepRunner(
@@ -773,7 +786,8 @@ internal static class ThermalTransitionExecutor
             declaredComponents,
             initialDevice,
             coordinatorFactory,
-            revalidateThermalRecovery);
+            revalidateThermalRecovery,
+            revalidateSubmission: revalidateSubmission);
         int preflightAttempts = 1;
         FullTransitionApplyOutcome outcome = await executeRecipe(
                 runner.CreateRecipeCoordinator(),

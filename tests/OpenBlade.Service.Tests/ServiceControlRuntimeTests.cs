@@ -13883,6 +13883,735 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
     }
 
+    [Fact]
+    public async Task ThermalConvergence_ReservationHashDriftBlocksBeforeSubmission()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("reservation-hash-drift");
+        int writesBeforeDrift = thermal.Context.Device.TotalSetterCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Provider.AfterTryGet = () =>
+        {
+            if (replaced.Task.IsCompleted)
+            {
+                return;
+            }
+
+            ThermalConvergenceLoadResult reserved = thermal.Store
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (reserved.State.InFlight is null)
+            {
+                return;
+            }
+
+            File.AppendAllText(thermal.Store.Path, "\r\n");
+            replaced.TrySetResult();
+        };
+
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Device.TotalSetterCalls > writesBeforeDrift
+                || thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                    != ThermalConvergenceState.Converging);
+
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        Assert.True(
+            thermal.Context.Device.TotalSetterCalls == writesBeforeDrift,
+            $"Expected no setter after durable hash drift; before={writesBeforeDrift}, after={thermal.Context.Device.TotalSetterCalls}, providerAdmissions={thermal.Context.Provider.TryGetCount}, history={string.Join(" | ", thermal.Context.History.Snapshot().CommandResults.Select(result => result.Detail))}");
+        ThermalConvergenceLoadResult changed = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.True(changed.IsAuthoritative);
+        Assert.NotNull(changed.State.InFlight);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_HyperBoostJournalChangeBlocksBeforeSubmission()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "hyperboost-journal-drift",
+                hyperBoostOwnershipJournalStore: journal);
+        int writesBeforeDrift = thermal.Context.Device.TotalSetterCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Provider.AfterTryGet = () =>
+        {
+            if (replaced.Task.IsCompleted)
+            {
+                return;
+            }
+
+            ThermalConvergenceLoadResult reserved = thermal.Store
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (reserved.State.InFlight is null)
+            {
+                return;
+            }
+
+            journal.Journal = CreatePendingHyperBoostJournal();
+            replaced.TrySetResult();
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence is
+            {
+                State: ThermalConvergenceState.RestorePending,
+                Reason: ThermalConvergenceReason.HyperBoostPending,
+            });
+        await WaitForAsync(
+            () =>
+            {
+                ThermalConvergenceLedgerState state = thermal.Store
+                    .LoadAsync(CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult()
+                    .State;
+                return state.InFlight is null && state.Tombstones.Count == 1;
+            });
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Assert.Equal(writesBeforeDrift, thermal.Context.Device.TotalSetterCalls);
+        Assert.True(thermal.Context.Runtime.GetStatus().WritesBlocked);
+        ThermalConvergenceLoadResult retained = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(retained.State.InFlight);
+        Assert.Single(retained.State.Tombstones);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_HyperBoostJournalHashDriftAfterFreshSessionChecksBlocksReplay()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "hyperboost-journal-retry-drift",
+                transitionRetryDelay: static (_, _) => Task.CompletedTask,
+                hyperBoostOwnershipJournalStore: journal);
+        int writesBeforeDrift = thermal.Context.Device.PerformanceSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        HyperBoostOwnershipJournal relinquished = new(
+            HyperBoostOwnershipJournalState.Relinquished,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow);
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected Maintain pre-write read failure."));
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.Journal = relinquished;
+        journal.JournalSha256Override = new string('A', 64);
+        int loadsBeforeRun = journal.LoadCalls;
+        int? replacedOnLoad = null;
+        journal.BeforeLoadResult = call =>
+        {
+            if (call == loadsBeforeRun + 5)
+            {
+                journal.JournalSha256Override = new string('B', 64);
+                replacedOnLoad = call;
+                replaced.TrySetResult();
+            }
+        };
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence is
+            {
+                State: ThermalConvergenceState.RestorePending,
+                Reason: ThermalConvergenceReason.HyperBoostPending,
+            });
+        await WaitForAsync(
+            () => thermal.Store.LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult()
+                .State.InFlight is null);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Assert.Equal(
+            writesBeforeDrift + 1,
+            thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(loadsBeforeRun + 5, replacedOnLoad);
+        Assert.Same(relinquished, journal.Journal);
+        Assert.Equal(new string('B', 64), journal.JournalSha256Override);
+        Assert.Contains(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "retryConsumed=True",
+                StringComparison.Ordinal) == true
+                && result.Detail.Contains(
+                    "durable HyperBoost journal changed",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_HyperBoostJournalChangeBlocksLaterCoupledSubmission()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "hyperboost-journal-coupled-drift",
+                hyperBoostOwnershipJournalStore: journal);
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans
+                && !replaced.Task.IsCompleted)
+            {
+                journal.Journal = CreatePendingHyperBoostJournal();
+                replaced.TrySetResult();
+            }
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence is
+            {
+                State: ThermalConvergenceState.RestorePending,
+                Reason: ThermalConvergenceReason.HyperBoostPending,
+            });
+        await WaitForAsync(
+            () => thermal.Store.LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult()
+                .State.InFlight is null);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        int thermalWrites = thermal.Context.Device.PerformanceSetCalls
+                - performanceWritesBefore
+            + thermal.Context.Device.FanSetCalls - fanWritesBefore;
+        Assert.Equal(1, thermalWrites);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_ReservationHashDriftBlocksLaterCoupledSubmission()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("coupled-hash-drift");
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Device.AfterSetter = subsystem =>
+        {
+            if (replaced.Task.IsCompleted
+                || subsystem is not (
+                    DeviceSubsystem.Performance or DeviceSubsystem.Fans))
+            {
+                return;
+            }
+
+            ThermalConvergenceLoadResult reserved = thermal.Store
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Assert.NotNull(reserved.State.InFlight);
+            File.AppendAllText(thermal.Store.Path, "\r\n");
+            replaced.TrySetResult();
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                == ThermalConvergenceState.ReconciliationUnavailable);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        int thermalWrites = thermal.Context.Device.PerformanceSetCalls
+                - performanceWritesBefore
+            + thermal.Context.Device.FanSetCalls - fanWritesBefore;
+        Assert.Equal(1, thermalWrites);
+        ThermalConvergenceLoadResult changed = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.True(changed.IsAuthoritative);
+        Assert.NotNull(changed.State.InFlight);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_KnownNotAppliedRetriesExactlyOnce()
+    {
+        var retryDelays = new List<TimeSpan>();
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "known-not-applied-retry",
+                transitionRetryDelay: (delay, _) =>
+                {
+                    retryDelays.Add(delay);
+                    return Task.CompletedTask;
+                });
+        int writesBeforeDrift = thermal.Context.Device.PerformanceSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected Maintain pre-write read failure."));
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                == ThermalConvergenceState.Matched);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
+
+        Assert.Equal(
+            writesBeforeDrift + 2,
+            thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
+        Assert.Contains(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "retryConsumed=True",
+                StringComparison.Ordinal) == true
+                && result.Detail.Contains("attempts=2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_ReservationDriftDuringRetryBlocksReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "retry-reservation-drift",
+                transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        int writesBeforeDrift = thermal.Context.Device.PerformanceSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        var replaced = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Device.BeforeQueuedPerformanceFailure = () =>
+        {
+            File.AppendAllText(thermal.Store.Path, "\r\n");
+            replaced.TrySetResult();
+        };
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected Maintain pre-write read failure."));
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                == ThermalConvergenceState.ReconciliationUnavailable);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Assert.Equal(
+            writesBeforeDrift + 1,
+            thermal.Context.Device.PerformanceSetCalls);
+        Assert.Contains(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "retryConsumed=True",
+                StringComparison.Ordinal) == true
+                && result.Detail.Contains(
+                    "durable Maintain reservation changed",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_IndeterminateStopsLaterWriteAndReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("indeterminate-no-replay");
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Maintain performance write."));
+        thermal.Context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Maintain fan write."));
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                is ThermalConvergenceState.Suppressed
+                    or ThermalConvergenceState.ReconciliationUnavailable);
+        int writesAfterAttempt = thermal.Context.Device.PerformanceSetCalls
+                - performanceWritesBefore
+            + thermal.Context.Device.FanSetCalls - fanWritesBefore;
+        Assert.Equal(1, writesAfterAttempt);
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        ThermalConvergenceLoadResult retired = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(retired.State.InFlight);
+        Assert.Single(retired.State.Tombstones);
+        Assert.Equal(
+            ThermalConvergenceState.Suppressed,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.State);
+        Assert.Equal(
+            writesAfterAttempt,
+            thermal.Context.Device.PerformanceSetCalls - performanceWritesBefore
+                + thermal.Context.Device.FanSetCalls - fanWritesBefore);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
+        Assert.Contains(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(
+                "retryConsumed=False",
+                StringComparison.Ordinal) == true
+                && result.Detail.Contains(
+                    "submission=Submitted",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_ShutdownAfterReservationBlocksSubmission()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("shutdown-after-reservation");
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        var shutdownStarted = new TaskCompletionSource<Task<ControlOperationResult>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Provider.AfterTryGet = () =>
+        {
+            if (shutdownStarted.Task.IsCompleted)
+            {
+                return;
+            }
+
+            ThermalConvergenceLoadResult reserved = thermal.Store
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (reserved.State.InFlight is not null)
+            {
+                shutdownStarted.TrySetResult(
+                    thermal.Context.Runtime.PrepareForShutdownAsync(
+                        CancellationToken.None));
+            }
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        Task<ControlOperationResult> shutdown = await shutdownStarted.Task
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        await shutdown;
+
+        Assert.Equal(
+            performanceWritesBefore,
+            thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWritesBefore, thermal.Context.Device.FanSetCalls);
+        Assert.Equal(
+            ThermalConvergenceReason.Shutdown,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.Reason);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_ShutdownAfterFirstSubmissionBlocksLaterCoupledWrite()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "shutdown-after-first-submission");
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        var shutdownStarted = new TaskCompletionSource<Task<ControlOperationResult>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans
+                && !shutdownStarted.Task.IsCompleted)
+            {
+                shutdownStarted.TrySetResult(
+                    thermal.Context.Runtime.PrepareForShutdownAsync(
+                        CancellationToken.None));
+            }
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        Task<ControlOperationResult> shutdown = await shutdownStarted.Task
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        await shutdown;
+
+        int thermalWrites = thermal.Context.Device.PerformanceSetCalls
+                - performanceWritesBefore
+            + thermal.Context.Device.FanSetCalls - fanWritesBefore;
+        Assert.Equal(1, thermalWrites);
+        Assert.Equal(
+            ThermalConvergenceReason.Shutdown,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.Reason);
+        ThermalConvergenceLoadResult retired = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(retired.State.InFlight);
+        Assert.Single(retired.State.Tombstones);
+        cancellation.Cancel();
+        try
+        {
+            await consumer;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_DeviceLossAfterReservationDoesNotReplayOnReconnect()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("device-loss-no-replay");
+        int writesBeforeDrift = thermal.Context.Device.TotalSetterCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        var disconnected = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Provider.AfterTryGet = () =>
+        {
+            if (disconnected.Task.IsCompleted)
+            {
+                return;
+            }
+
+            ThermalConvergenceLoadResult reserved = thermal.Store
+                .LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (reserved.State.InFlight is not null)
+            {
+                thermal.Context.Provider.Available = false;
+                disconnected.TrySetResult();
+            }
+        };
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () =>
+            {
+                ThermalConvergenceLedgerState state = thermal.Store
+                    .LoadAsync(CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult()
+                    .State;
+                return state.InFlight is null && state.Tombstones.Count == 1;
+            });
+        Assert.Equal(writesBeforeDrift, thermal.Context.Device.TotalSetterCalls);
+        ThermalConvergenceLoadResult retired = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(retired.State.InFlight);
+        Assert.Single(retired.State.Tombstones);
+
+        thermal.Context.Provider.AfterTryGet = null;
+        thermal.Context.Provider.Available = true;
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ThermalConvergenceState.Suppressed,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.State);
+        Assert.Equal(writesBeforeDrift, thermal.Context.Device.TotalSetterCalls);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_IndeterminateDeviceLossReconcilesWithoutReconnectReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                "indeterminate-device-loss-no-replay");
+        int performanceWritesBefore = thermal.Context.Device.PerformanceSetCalls;
+        int fanWritesBefore = thermal.Context.Device.FanSetCalls;
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        };
+        var disconnected = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        void DisconnectAfterPossibleSubmission()
+        {
+            thermal.Context.Provider.Available = false;
+            disconnected.TrySetResult();
+        }
+        thermal.Context.Device.BeforeQueuedPerformanceFailure =
+            DisconnectAfterPossibleSubmission;
+        thermal.Context.Device.BeforeQueuedFanFailure =
+            DisconnectAfterPossibleSubmission;
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Maintain performance write."));
+        thermal.Context.Device.FanFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected indeterminate Maintain fan write."));
+
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(
+            () =>
+            {
+                ThermalConvergenceLedgerState state = thermal.Store
+                    .LoadAsync(CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult()
+                    .State;
+                return state.InFlight is null && state.Tombstones.Count == 1;
+            });
+        int writesAfterAttempt = thermal.Context.Device.PerformanceSetCalls
+                - performanceWritesBefore
+            + thermal.Context.Device.FanSetCalls - fanWritesBefore;
+        Assert.Equal(1, writesAfterAttempt);
+
+        thermal.Context.Provider.Available = true;
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ThermalConvergenceState.Suppressed,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.State);
+        Assert.Equal(
+            writesAfterAttempt,
+            thermal.Context.Device.PerformanceSetCalls - performanceWritesBefore
+                + thermal.Context.Device.FanSetCalls - fanWritesBefore);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -13931,34 +14660,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 : ThermalConvergenceState.External,
             status.State);
         Assert.Equal(expected, status.Reason);
-        Assert.Equal(writesBeforeDrift, thermal.Context.Device.TotalSetterCalls);
-        cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
-    }
-
-    [Fact]
-    public async Task ThermalConvergence_ResumeBoundaryClearsQueuedCandidate()
-    {
-        ThermalConvergenceTestContext thermal =
-            await CreateThermalConvergenceContextAsync("resume-clearance");
-        int writesBeforeDrift = thermal.Context.Device.TotalSetterCalls;
-        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
-        {
-            Performance = PerformancePreset.Performance,
-        };
-        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
-
-        await thermal.Context.Runtime.BeginResumeValidationAsync(
-            CancellationToken.None);
-        using var cancellation = new CancellationTokenSource();
-        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
-            cancellation.Token);
-        await Task.Delay(50);
-
-        ThermalConvergenceStatus status = Assert.IsType<ThermalConvergenceStatus>(
-            thermal.Context.Runtime.GetStatus().ThermalConvergence);
-        Assert.Equal(ThermalConvergenceState.Paused, status.State);
-        Assert.Equal(ThermalConvergenceReason.LowPower, status.Reason);
         Assert.Equal(writesBeforeDrift, thermal.Context.Device.TotalSetterCalls);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
@@ -14206,6 +14907,107 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ThermalConvergence_RestartThenStrictReconcilesReservationReadOnly()
+    {
+        ThermalConvergenceTestContext source =
+            await CreateThermalConvergenceContextAsync("strict-restart-source");
+        DesiredDeviceState desired = source.Context.Runtime.GetStatus().DesiredState;
+        string performanceRevision = CreateTestThermalRevision(new
+        {
+            desired.Performance,
+            desired.CustomPerformance,
+            desired.GpuClockTuning,
+        });
+        string fanRevision = CreateTestThermalRevision(new
+        {
+            desired.Fans,
+            desired.FanControl,
+        });
+        string policyRevision = CreateTestThermalRevision(new
+        {
+            ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
+            ThermalPolicyUpgradeDisclosure =
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+        });
+
+        ThermalConvergenceTestContext restarted =
+            await CreateThermalConvergenceContextAsync(
+                "strict-restart-target",
+                beforeActivation: async (store, sid) =>
+                {
+                    var reserved = new ThermalConvergenceLedgerState(
+                        sid.Value,
+                        Guid.NewGuid(),
+                        "OpenBlade:verified-device",
+                        1,
+                        desired,
+                        performanceRevision,
+                        fanRevision,
+                        policyRevision,
+                        PowerSource.PluggedIn,
+                        ThermalConvergenceContradiction.Performance,
+                        new ThermalConvergenceInFlight(
+                            Guid.NewGuid(),
+                            [ThermalComponent.Performance],
+                            new ConfirmedDeviceState(
+                                PerformancePreset.Performance,
+                                desired.Fans.Value,
+                                Battery: null,
+                                Lighting: null),
+                            desired,
+                            ReconciliationRequired: true),
+                        [],
+                        null,
+                        [],
+                        [
+                            new ThermalConvergenceBudget(
+                                PowerSource.PluggedIn,
+                                ThermalComponent.Performance,
+                                performanceRevision,
+                                policyRevision,
+                                1,
+                                1),
+                        ]);
+                    Assert.True((await store.TrySaveAsync(
+                        null,
+                        reserved,
+                        CancellationToken.None)).Applied);
+                });
+        int writesBeforePolicyChange = restarted.Context.Device.TotalSetterCalls;
+        ControlOperationResult strict = await restarted.Context.Runtime
+            .SetThermalControlPolicyAsync(
+                ThermalControlPolicy.Strict,
+                static () => true,
+                CancellationToken.None);
+        ThermalConvergenceLoadResult retained = await restarted.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.NotNull(retained.State.InFlight);
+        Assert.Empty(retained.State.Tombstones);
+        Assert.Equal(
+            writesBeforePolicyChange,
+            restarted.Context.Device.TotalSetterCalls);
+        int writesBeforeReconciliation = restarted.Context.Device.TotalSetterCalls;
+
+        await restarted.Context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, strict.Status);
+        Assert.Equal(
+            writesBeforeReconciliation,
+            restarted.Context.Device.TotalSetterCalls);
+        ThermalConvergenceLoadResult persisted = await restarted.Store.LoadAsync(
+            CancellationToken.None);
+        Assert.Null(persisted.State.InFlight);
+        Assert.Equal(
+            ThermalTransitionDisposition.Confirmed,
+            Assert.Single(persisted.State.Tombstones).TerminalDisposition);
+        ThermalConvergenceStatus status = Assert.IsType<ThermalConvergenceStatus>(
+            restarted.Context.Runtime.GetStatus().ThermalConvergence);
+        Assert.Equal(ThermalControlPolicy.Strict, status.Policy);
+        Assert.Equal(ThermalConvergenceState.Suppressed, status.State);
+        Assert.Equal(ThermalConvergenceReason.Tombstoned, status.Reason);
+    }
+
+    [Fact]
     public async Task ThermalConvergence_RestartDoesNotConfirmExactManualIntentFromTopology()
     {
         var manual = new FanControlSettings(
@@ -14425,7 +15227,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PowerSource initialPowerSource = PowerSource.PluggedIn,
             Func<ThermalConvergenceStateStore, System.Security.Principal.SecurityIdentifier,
                 Task>? beforeActivation = null,
-            bool requireAuthoritativeSeed = true)
+            bool requireAuthoritativeSeed = true,
+            Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+            IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
     {
         string machineRoot = Path.Combine(directory, name);
         var userSid = new System.Security.Principal.SecurityIdentifier(
@@ -14468,7 +15272,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             initialPowerSource: initialPowerSource,
             userConfigurationRepository: new ThermalTestUserConfigurationRepository(
                 machineRoot,
-                validator));
+                validator),
+            transitionRetryDelay: transitionRetryDelay,
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
         PowerProfile active = initialPowerSource switch
         {
@@ -14512,6 +15318,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(value);
         return new Guid(SHA256.HashData(json).AsSpan(0, 16)).ToString("D");
     }
+
+    private static HyperBoostOwnershipJournal CreatePendingHyperBoostJournal() =>
+        new(
+            HyperBoostOwnershipJournalState.RestorePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow)
+        {
+            RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            TransitionId = Guid.NewGuid(),
+        };
 
     private sealed record ThermalConvergenceTestContext(
         TestContext Context,

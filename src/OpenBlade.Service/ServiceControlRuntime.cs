@@ -12010,10 +12010,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         // A failed thermal exchange can leave the EC busy for the protocol
         // timeout. Preserve the established settling window, but keep its
         // cancellation inside the executor's already-consumed retry lease.
-        await transitionRetryDelay(
-                recoveryDelay,
-                cancellationToken)
-            .ConfigureAwait(false);
+        if (recoveryDelay > TimeSpan.Zero)
+        {
+            await transitionRetryDelay(
+                    recoveryDelay,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         if (stillControlsSession?.Invoke() == false)
         {
@@ -15825,7 +15828,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return rejected;
     }
 
-    private bool ThermalConvergencePolicyAdmitted()
+    private bool ThermalConvergencePolicyAdmitted() =>
+        ThermalConvergenceReconciliationAdmitted()
+        && preferences.ThermalControlPolicy
+            == ThermalControlPolicy.MaintainDesiredState
+        && preferences.ThermalPolicyUpgradeDisclosure
+            != ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending;
+
+    private bool ThermalConvergenceReconciliationAdmitted()
     {
         Func<bool>? controlsSession = activeUserStillControlsSession;
         bool sessionActive;
@@ -15844,10 +15854,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && thermalConvergenceLedger is not null
             && !string.IsNullOrWhiteSpace(Volatile.Read(ref activeUserSid))
             && sessionActive
-            && preferences.ThermalControlPolicy
-                == ThermalControlPolicy.MaintainDesiredState
-            && preferences.ThermalPolicyUpgradeDisclosure
-                != ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending
             && Volatile.Read(ref protocolCompatibilityClients) == 0
             && !thermalConvergenceShutdown
             && !lowPowerGate.IsActive;
@@ -16088,7 +16094,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState confirmed,
         CancellationToken cancellationToken)
     {
-        if (!ThermalConvergencePolicyAdmitted())
+        bool reservedReconciliationAdmitted =
+            thermalConvergenceLedger?.InFlight is not null
+            && ThermalConvergenceReconciliationAdmitted();
+        if (!ThermalConvergencePolicyAdmitted()
+            && !reservedReconciliationAdmitted)
         {
             ThermalConvergenceReason reason =
                 preferences.ThermalControlPolicy == ThermalControlPolicy.Strict
@@ -16501,6 +16511,34 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
+            HyperBoostOwnershipJournalLoadResult expectedHyperBoostJournal;
+            try
+            {
+                expectedHyperBoostJournal = await hyperBoostOwnershipJournalStore
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                CloseThermalConvergenceForHyperBoostJournal(
+                    ThermalComponentsFor(candidate.Contradiction),
+                    $"The durable HyperBoost journal could not be inspected before Maintain reservation: {exception.Message}");
+                return;
+            }
+            if (!IsSafeMaintainHyperBoostJournalBaseline(
+                    expectedHyperBoostJournal))
+            {
+                CloseThermalConvergenceForHyperBoostJournal(
+                    [ThermalComponent.Performance, ThermalComponent.Fans],
+                    "The durable HyperBoost journal is not in a safe terminal state for Maintain reservation.");
+                return;
+            }
+
             ThermalComponent[] affected = ThermalComponentsFor(candidate.Contradiction);
             Guid transitionAttemptId = Guid.NewGuid();
             ThermalConvergenceLedgerState reserved = ReserveThermalConvergence(
@@ -16518,6 +16556,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ThermalConvergenceState.Paused,
                     ThermalConvergenceReason.InternalStateUnavailable,
                     affected);
+                return;
+            }
+            string? reservedSha256 = thermalConvergenceLedgerSha256;
+            if (string.IsNullOrWhiteSpace(reservedSha256))
+            {
+                thermalConvergenceLedgerAuthoritative = false;
+                thermalConvergenceArbiter.CloseAdmission();
+                PublishThermalConvergenceStatus(
+                    ThermalConvergenceState.ReconciliationUnavailable,
+                    ThermalConvergenceReason.InternalStateUnavailable,
+                    affected,
+                    explicitReapplyRequired: true);
                 return;
             }
             history.RecordSummary(
@@ -16564,24 +16614,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         desired,
                         token,
                         automaticWriteExclusionResolver: ResolveExclusions),
-                    (_, token) => RevalidateScopedThermalRetryAsync(
-                        candidate.Destination,
+                    (_, token) => RevalidateThermalConvergenceAdmissionAsync(
+                        candidate,
+                        reserved,
+                        reservedSha256,
+                        expectedHyperBoostJournal,
                         desired,
-                        stageDesired: null,
-                        activeUserStillControlsSession,
                         declared,
                         PowerTransitionAccessRetryDelay,
-                        token,
-                        () => ThermalConvergenceWriteBlockReason(candidate)),
-                    (_, token) => RevalidateScopedThermalRetryAsync(
-                        candidate.Destination,
+                        token),
+                    (_, token) => RevalidateThermalConvergenceAdmissionAsync(
+                        candidate,
+                        reserved,
+                        reservedSha256,
+                        expectedHyperBoostJournal,
                         desired,
-                        stageDesired: null,
-                        activeUserStillControlsSession,
                         declared,
                         ThermalPreWriteRetryDelay,
-                        token,
-                        () => ThermalConvergenceWriteBlockReason(candidate)),
+                        token),
+                    (purpose, components, token) =>
+                        RevalidateThermalConvergenceSubmissionAsync(
+                            candidate,
+                            reserved,
+                            reservedSha256,
+                            expectedHyperBoostJournal,
+                            desired,
+                            declared,
+                            purpose,
+                            components,
+                            token),
                     cancellationToken).ConfigureAwait(false);
 
             RecordThermalConvergenceTrace(execution.Trace);
@@ -16690,6 +16751,274 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return "The authoritative Maintain thermal intent changed before submission.";
         }
         return null;
+    }
+
+    private Task<ThermalRetryAdmission>
+        RevalidateThermalConvergenceSubmissionAsync(
+        ThermalConvergenceCandidate candidate,
+        ThermalConvergenceLedgerState expectedReservation,
+        string expectedReservationSha256,
+        HyperBoostOwnershipJournalLoadResult expectedHyperBoostJournal,
+        DesiredDeviceState expectedDesired,
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        ThermalTransitionStepPurpose purpose,
+        IReadOnlyList<DeviceSubsystem> submissionComponents,
+        CancellationToken cancellationToken)
+    {
+        if (purpose == ThermalTransitionStepPurpose.HyperBoost
+            || submissionComponents.Count == 0
+            || submissionComponents.Any(component =>
+                !declaredComponents.Contains(component)))
+        {
+            return Task.FromResult(ThermalRetryAdmission.Block(
+                "The requested thermal step is outside the durable Maintain reservation."));
+        }
+
+        return RevalidateThermalConvergenceAdmissionAsync(
+            candidate,
+            expectedReservation,
+            expectedReservationSha256,
+            expectedHyperBoostJournal,
+            expectedDesired,
+            declaredComponents,
+            TimeSpan.Zero,
+            cancellationToken);
+    }
+
+    private async Task<ThermalRetryAdmission>
+        RevalidateThermalConvergenceAdmissionAsync(
+        ThermalConvergenceCandidate candidate,
+        ThermalConvergenceLedgerState expectedReservation,
+        string expectedReservationSha256,
+        HyperBoostOwnershipJournalLoadResult expectedHyperBoostJournal,
+        DesiredDeviceState expectedDesired,
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        TimeSpan recoveryDelay,
+        CancellationToken cancellationToken)
+    {
+        string? durableBlock =
+            await RevalidateThermalConvergenceReservationAsync(
+                    expectedReservation,
+                    expectedReservationSha256,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (durableBlock is not null)
+        {
+            return ThermalRetryAdmission.Block(durableBlock);
+        }
+        durableBlock = await RevalidateThermalConvergenceHyperBoostJournalAsync(
+                expectedHyperBoostJournal,
+                expectedReservation.InFlight?.DeclaredComponents ?? [],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (durableBlock is not null)
+        {
+            return ThermalRetryAdmission.Block(durableBlock);
+        }
+
+        ThermalRetryAdmission scopedAdmission =
+            await RevalidateScopedThermalRetryAsync(
+                    candidate.Destination,
+                    expectedDesired,
+                    stageDesired: null,
+                    activeUserStillControlsSession,
+                    declaredComponents,
+                    recoveryDelay,
+                    cancellationToken,
+                    () => ThermalConvergenceWriteBlockReason(candidate))
+                .ConfigureAwait(false);
+        if (!scopedAdmission.Allowed || scopedAdmission.Device is null)
+        {
+            return scopedAdmission;
+        }
+
+        durableBlock = await RevalidateThermalConvergenceReservationAsync(
+                expectedReservation,
+                expectedReservationSha256,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (durableBlock is not null)
+        {
+            return ThermalRetryAdmission.Block(durableBlock);
+        }
+        durableBlock = await RevalidateThermalConvergenceHyperBoostJournalAsync(
+                expectedHyperBoostJournal,
+                expectedReservation.InFlight?.DeclaredComponents ?? [],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (durableBlock is not null)
+        {
+            return ThermalRetryAdmission.Block(durableBlock);
+        }
+
+        string? finalBlock = ThermalConvergenceWriteBlockReason(candidate);
+        return finalBlock is null
+            ? ThermalRetryAdmission.Allow(scopedAdmission.Device)
+            : ThermalRetryAdmission.Block(finalBlock);
+    }
+
+    private async Task<string?>
+        RevalidateThermalConvergenceReservationAsync(
+        ThermalConvergenceLedgerState expectedReservation,
+        string expectedReservationSha256,
+        CancellationToken cancellationToken)
+    {
+        if (!thermalConvergenceLedgerAuthoritative
+            || thermalConvergenceStore is null)
+        {
+            return "The durable Maintain reservation is unavailable before submission.";
+        }
+
+        try
+        {
+            ThermalConvergenceLoadResult load = await thermalConvergenceStore
+                .LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!load.IsAuthoritative
+                || !StringComparer.Ordinal.Equals(
+                    load.Sha256,
+                    expectedReservationSha256)
+                || !IsExpectedThermalConvergenceReservation(
+                    load.State,
+                    expectedReservation))
+            {
+                CloseThermalConvergenceReservationAuthority(
+                    expectedReservation,
+                    "The durable Maintain reservation changed before submission.");
+                return "The durable Maintain reservation changed before submission.";
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or ConfigurationQuarantinedException)
+        {
+            CloseThermalConvergenceReservationAuthority(
+                expectedReservation,
+                $"The durable Maintain reservation could not be inspected before submission: {exception.Message}");
+            return $"The durable Maintain reservation could not be inspected before submission: {exception.Message}";
+        }
+    }
+
+    private void CloseThermalConvergenceReservationAuthority(
+        ThermalConvergenceLedgerState expectedReservation,
+        string message)
+    {
+        thermalConvergenceLedgerAuthoritative = false;
+        thermalConvergenceArbiter.CloseAdmission();
+        history.RecordSummary(ControlOperationStatus.Blocked, message);
+        PublishThermalConvergenceStatus(
+            ThermalConvergenceState.ReconciliationUnavailable,
+            ThermalConvergenceReason.InternalStateUnavailable,
+            expectedReservation.InFlight?.DeclaredComponents ?? [],
+            explicitReapplyRequired: true);
+    }
+
+    private async Task<string?>
+        RevalidateThermalConvergenceHyperBoostJournalAsync(
+        HyperBoostOwnershipJournalLoadResult expected,
+        IReadOnlyList<ThermalComponent> affected,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            HyperBoostOwnershipJournalLoadResult current =
+                await hyperBoostOwnershipJournalStore
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (current.Invalid
+                || current.Journal != expected.Journal
+                || !StringComparer.Ordinal.Equals(current.Sha256, expected.Sha256))
+            {
+                const string message =
+                    "The durable HyperBoost journal changed before Maintain submission.";
+                CloseThermalConvergenceForHyperBoostJournal(affected, message);
+                return message;
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string message =
+                $"The durable HyperBoost journal could not be inspected before Maintain submission: {exception.Message}";
+            CloseThermalConvergenceForHyperBoostJournal(affected, message);
+            return message;
+        }
+    }
+
+    private void CloseThermalConvergenceForHyperBoostJournal(
+        IReadOnlyList<ThermalComponent> affected,
+        string message)
+    {
+        hyperBoostJournalSafetyBlock = true;
+        thermalConvergenceArbiter.CloseAdmission();
+        history.RecordSummary(ControlOperationStatus.Blocked, message);
+        PublishThermalConvergenceStatus(
+            ThermalConvergenceState.RestorePending,
+            ThermalConvergenceReason.HyperBoostPending,
+            affected,
+            explicitReapplyRequired: true);
+    }
+
+    private static bool IsSafeMaintainHyperBoostJournalBaseline(
+        HyperBoostOwnershipJournalLoadResult load) =>
+        !load.Invalid
+        && (load.Journal is null
+                && load.Sha256 is null
+            || load.Journal is { State: HyperBoostOwnershipJournalState.Relinquished }
+                && !string.IsNullOrWhiteSpace(load.Sha256));
+
+    private static bool IsExpectedThermalConvergenceReservation(
+        ThermalConvergenceLedgerState actual,
+        ThermalConvergenceLedgerState expected)
+    {
+        ThermalConvergenceInFlight? actualInFlight = actual.InFlight;
+        ThermalConvergenceInFlight? expectedInFlight = expected.InFlight;
+        return actualInFlight is not null
+            && expectedInFlight is not null
+            && actualInFlight.ReconciliationRequired
+            && actualInFlight.TransitionAttemptId
+                == expectedInFlight.TransitionAttemptId
+            && actualInFlight.DeclaredComponents.SequenceEqual(
+                expectedInFlight.DeclaredComponents)
+            && actualInFlight.PreWriteObservation
+                == expectedInFlight.PreWriteObservation
+            && actualInFlight.DesiredTarget == expectedInFlight.DesiredTarget
+            && string.Equals(
+                actual.ActiveUserSid,
+                expected.ActiveUserSid,
+                StringComparison.OrdinalIgnoreCase)
+            && actual.DeviceAuthorityEpoch == expected.DeviceAuthorityEpoch
+            && actual.IntentGeneration == expected.IntentGeneration
+            && StringComparer.Ordinal.Equals(
+                actual.DeviceFingerprint,
+                expected.DeviceFingerprint)
+            && actual.EffectiveIntent == expected.EffectiveIntent
+            && StringComparer.Ordinal.Equals(
+                actual.PerformanceDesiredRevision,
+                expected.PerformanceDesiredRevision)
+            && StringComparer.Ordinal.Equals(
+                actual.FanDesiredRevision,
+                expected.FanDesiredRevision)
+            && StringComparer.Ordinal.Equals(
+                actual.PolicyRevision,
+                expected.PolicyRevision)
+            && actual.SettledDestination == expected.SettledDestination
+            && actual.Contradiction == expected.Contradiction;
     }
 
     private ThermalConvergenceLedgerState ReserveThermalConvergence(
