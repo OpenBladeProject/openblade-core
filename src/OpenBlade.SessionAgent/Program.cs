@@ -341,8 +341,11 @@ internal static class Program
                 }
                 if (relaunchForIdentity)
                 {
-                    await acquiredOwner.DisposeAsync();
-                    return RelaunchAfterIdentityRegistration();
+                    return await RelaunchAfterIdentityRegistrationAsync(
+                            server,
+                            gpuServer,
+                            RelaunchAfterIdentityRegistration)
+                        .ConfigureAwait(false);
                 }
                 return 0;
             }
@@ -365,6 +368,20 @@ internal static class Program
         ReferenceEquals(completed, identityRegistrationTask)
         && identityRegistrationTask.IsCompletedSuccessfully
         && identityRegistrationTask.GetAwaiter().GetResult();
+
+    internal static async Task<int> RelaunchAfterIdentityRegistrationAsync(
+        SessionDisplayPipeServer displayServer,
+        SessionGpuPipeServer gpuServer,
+        Func<int> relaunch)
+    {
+        ArgumentNullException.ThrowIfNull(displayServer);
+        ArgumentNullException.ThrowIfNull(gpuServer);
+        ArgumentNullException.ThrowIfNull(relaunch);
+
+        await displayServer.DisposeAsync().ConfigureAwait(false);
+        await gpuServer.DisposeAsync().ConfigureAwait(false);
+        return relaunch();
+    }
 
     internal static async Task<bool> MonitorIdentityRegistrationAsync(
         bool enabled,

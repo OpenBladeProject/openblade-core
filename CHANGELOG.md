@@ -17,6 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Released both Session Agent pipe servers before starting an identity-change
+  replacement so the new process can acquire both per-user endpoints instead
+  of exiting as a duplicate.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
