@@ -374,7 +374,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
-    public async Task ArmAsync_MissingOwnedJournalRestoresOnceAndDoesNotCreateMarker()
+    public async Task ArmAsync_MissingOwnedJournalRequiresRecoveryWithoutWrite()
     {
         Directory.CreateDirectory(directory);
         var client = new FakeClient();
@@ -393,17 +393,17 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             CancellationToken.None);
 
         Assert.False(result.Success);
-        Assert.True(result.CleanupAttempted);
-        Assert.True(result.FinalRestorationConfirmed);
-        Assert.False(result.ManualRecoveryRequired);
+        Assert.False(result.CleanupAttempted);
+        Assert.False(result.FinalRestorationConfirmed);
+        Assert.True(result.ManualRecoveryRequired);
         Assert.Equal(1, client.EnableCalls);
-        Assert.Equal(1, client.DisableCalls);
-        Assert.False(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.True(client.Status.ConfirmedState?.HyperBoostActive);
         Assert.False(File.Exists(markerPath));
     }
 
     [Fact]
-    public async Task ArmAsync_IndeterminateApplyInspectsAndRestoresOnce()
+    public async Task ArmAsync_IndeterminateApplyInspectsWithoutCleanupWrite()
     {
         Directory.CreateDirectory(directory);
         var client = new FakeClient { ThrowAfterEnable = true };
@@ -422,12 +422,140 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         Assert.False(result.Success);
         Assert.True(result.HyperBoostConfirmed);
-        Assert.True(result.CleanupAttempted);
-        Assert.True(result.FinalRestorationConfirmed);
+        Assert.False(result.CleanupAttempted);
+        Assert.False(result.FinalRestorationConfirmed);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.True(client.Status.ConfirmedState?.HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task ArmAsync_FailedResultWithConfirmedOwnershipCreatesMarkerWithoutReplay()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient { FailResultAfterConfirmedEnable = true };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_016, 123_471),
+            () => OwnedJournal());
+        string markerPath = Path.Combine(directory, "failed-confirmed-owned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.HyperBoostConfirmed);
+        Assert.True(result.DurableOwnershipConfirmed);
+        Assert.True(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.True(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.True(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_FailedResultWithoutConfirmedOwnershipDoesNotWrite()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient { FailResultAfterConfirmedEnable = true };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_017, 123_472),
+            () => HyperBoostLifecycleJournalObservation.Missing);
+        string markerPath = Path.Combine(directory, "failed-confirmed-unowned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.HyperBoostConfirmed);
+        Assert.False(result.DurableOwnershipConfirmed);
+        Assert.False(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
+        Assert.False(result.FinalRestorationConfirmed);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.True(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_BlockedResultDoesNotClaimConcurrentOwnedActivation()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient
+        {
+            BlockEnableAndActivateExternallyOnNextObservation = true,
+        };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_018, 123_473),
+            () => OwnedJournal());
+        string markerPath = Path.Combine(directory, "blocked-concurrent-owned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.ValidationAttempted);
+        Assert.False(result.HyperBoostConfirmed);
+        Assert.False(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
         Assert.False(result.ManualRecoveryRequired);
         Assert.Equal(1, client.EnableCalls);
-        Assert.Equal(1, client.DisableCalls);
-        Assert.False(client.Status.ConfirmedState?.HyperBoostActive);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.Equal(1, client.ObserveCalls);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
+    public async Task ArmAsync_FailedResultDoesNotClaimConcurrentOwnedActivation()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient
+        {
+            FailEnableAndActivateExternallyOnNextObservation = true,
+        };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_019, 123_474),
+            () => OwnedJournal() with { TransitionId = Guid.NewGuid() });
+        string markerPath = Path.Combine(directory, "failed-concurrent-owned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.ValidationAttempted);
+        Assert.False(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.False(File.Exists(markerPath));
     }
 
     [Fact]
@@ -491,7 +619,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power");
+            "before low power",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -506,6 +635,47 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(1, result.RecoveryAttemptsObserved);
         Assert.Equal(1, result.RecoveryCompletionsObserved);
         Assert.True(result.StableSecondObservation);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsRecoveryEvidenceFromAnotherTransition()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_015, 123_470);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "substituted-transition.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        Assert.True(armed.Success);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before low power",
+            Guid.NewGuid());
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, result.RecoveryAttemptsObserved);
+        Assert.Equal(0, result.RecoveryCompletionsObserved);
         Assert.Equal(0, client.DisableCalls);
     }
 
@@ -535,7 +705,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before display-off safety boundary");
+            "before display-off safety boundary",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -576,7 +747,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before unexpected-exit recovery");
+            "before unexpected-exit recovery",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -616,10 +788,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power").Concat(
+            "before low power",
+            armed.Marker.TransitionId).Concat(
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(1),
-                    "before low power"))
+                    "before low power",
+                    armed.Marker.TransitionId))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
@@ -659,10 +833,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power").Concat(
+            "before low power",
+            armed.Marker.TransitionId).Concat(
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(3),
-                    "before display-off safety boundary"))
+                    "before display-off safety boundary",
+                    armed.Marker.TransitionId))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
@@ -784,7 +960,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(
             new
             {
-                schemaVersion = 5,
+                schemaVersion = 8,
                 state = 1,
                 baseMode = (int)PerformancePreset.Balanced,
                 updatedAtUtc = DateTimeOffset.UtcNow,
@@ -864,6 +1040,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         HyperBoostLifecycleRestoreIntent expected = RestoreIntent(
             PerformancePreset.Silent,
             FanMode.ManualCurve);
+        Guid transitionId = Guid.Parse("fd61ce01-f77c-445d-92a1-2b124646d640");
         string serviceJson = JsonSerializer.Serialize(
             new
             {
@@ -874,6 +1051,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 requiresCoolingPad = false,
                 restoreIntent = expected,
                 sha256 = new string('A', 64),
+                transitionId,
             },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         HyperBoostLifecycleJournalDiagnostic? diagnostic =
@@ -891,6 +1069,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(expected, observation.RestoreIntent);
         Assert.False(observation.RequiresCoolingPad);
         Assert.Equal(new string('A', 64), observation.Sha256);
+        Assert.Equal(transitionId, observation.TransitionId);
     }
 
     [Fact]
@@ -990,7 +1169,17 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             _ => Task.FromResult(snapshot),
             (_, _) => true,
             process,
-            _ => Task.FromResult(journal()),
+            _ =>
+            {
+                HyperBoostLifecycleJournalObservation observation = journal();
+                if (observation.Exists
+                    && observation.TransitionId is null
+                    && client.LastTransitionId is { } transitionId)
+                {
+                    observation = observation with { TransitionId = transitionId };
+                }
+                return Task.FromResult(observation);
+            },
             _ => Task.FromResult(diagnostics?.Invoke() ?? []),
             (_, _) => Task.CompletedTask,
             new FixedTimeProvider(new DateTimeOffset(
@@ -1026,20 +1215,25 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         FanControlSettings.FromLegacy(fans));
 
     private static IReadOnlyList<HyperBoostLifecycleDiagnosticResult>
-        RecoveryDiagnostics(DateTimeOffset timestamp, string boundary) =>
+        RecoveryDiagnostics(
+            DateTimeOffset timestamp,
+            string boundary,
+            Guid? transitionId) =>
         [
             new(
                 timestamp.AddMilliseconds(1),
                 "Service",
                 "Reconcile",
                 "Stored",
-                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}."),
+                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                transitionId),
             new(
                 timestamp.AddMilliseconds(2),
                 "Service",
                 "Reconcile",
                 "Applied",
-                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}."),
+                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.",
+                transitionId),
         ];
 
     private static FirmwareSmokeSnapshot Snapshot(ServiceStatusSnapshot status) => new(
@@ -1202,7 +1396,17 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         internal int ValidationEnableCalls { get; private set; }
 
+        internal Guid? LastTransitionId { get; private set; }
+
+        internal int ObserveCalls { get; private set; }
+
         internal bool ThrowAfterEnable { get; init; }
+
+        internal bool FailResultAfterConfirmedEnable { get; init; }
+
+        internal bool BlockEnableAndActivateExternallyOnNextObservation { get; init; }
+
+        internal bool FailEnableAndActivateExternallyOnNextObservation { get; init; }
 
         internal bool FailEnableAfterTransitionBaseline { get; init; }
 
@@ -1224,7 +1428,26 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
             LiveReadingSensors sensors,
-            CancellationToken cancellationToken) => Task.FromResult(Status);
+            CancellationToken cancellationToken)
+        {
+            ObserveCalls++;
+            if ((BlockEnableAndActivateExternallyOnNextObservation
+                    || FailEnableAndActivateExternallyOnNextObservation)
+                && EnableCalls > 0)
+            {
+                Status = Status with
+                {
+                    ConfirmedState = Status.ConfirmedState! with
+                    {
+                        HyperBoostActive = true,
+                        Performance = null,
+                        Fans = FanMode.Automatic,
+                    },
+                };
+            }
+
+            return Task.FromResult(Status);
+        }
 
         public Task<ControlOperationResult> SetHyperBoostAsync(
             bool enabled,
@@ -1237,6 +1460,18 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             else
             {
                 DisableCalls++;
+            }
+            if (enabled && BlockEnableAndActivateExternallyOnNextObservation)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The enable request was blocked before submission."));
+            }
+            if (enabled && FailEnableAndActivateExternallyOnNextObservation)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The enable request failed before the concurrent owner ran."));
             }
             if (enabled && FailEnableAfterTransitionBaseline)
             {
@@ -1269,6 +1504,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                             : null,
                 },
             };
+            if (enabled && FailResultAfterConfirmedEnable)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The enable outcome was indeterminate."));
+            }
             if (enabled && ThrowAfterEnable)
             {
                 throw new IOException("The apply result was indeterminate.");
@@ -1276,6 +1517,15 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             return Task.FromResult(new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 "Applied"));
+        }
+
+        public Task<ControlOperationResult> SetHyperBoostAsync(
+            bool enabled,
+            Guid requestId,
+            CancellationToken cancellationToken)
+        {
+            LastTransitionId = requestId;
+            return SetHyperBoostAsync(enabled, cancellationToken);
         }
 
         public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
@@ -1292,6 +1542,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             Assert.Equal(64, expectedServiceAssemblySha256.Length);
             Assert.Equal(64, expectedAdmissionManifestSha256.Length);
             ValidationEnableCalls++;
+            LastTransitionId = validationRunId;
             Status = Status with
             {
                 ConfirmedState = Status.ConfirmedState! with

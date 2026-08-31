@@ -23,6 +23,13 @@ public interface IFirmwareSmokeClient : IAsyncDisposable
         bool enabled,
         CancellationToken cancellationToken);
 
+    Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        Guid requestId,
+        CancellationToken cancellationToken) => SetHyperBoostAsync(
+            enabled,
+            cancellationToken);
+
     Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
         PadlessHyperBoostLifecycleScenario scenario,
         Guid validationRunId,
@@ -78,6 +85,12 @@ public sealed class FirmwareSmokeClient : IFirmwareSmokeClient
         bool enabled,
         CancellationToken cancellationToken) =>
         client.SetHyperBoostAsync(enabled, cancellationToken);
+
+    public Task<ControlOperationResult> SetHyperBoostAsync(
+        bool enabled,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        client.SetHyperBoostAsync(enabled, requestId, cancellationToken);
 
     public Task<ControlOperationResult> ValidatePadlessHyperBoostLifecycleAsync(
         PadlessHyperBoostLifecycleScenario scenario,

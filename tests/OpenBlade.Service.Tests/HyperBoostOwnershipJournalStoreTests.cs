@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -19,6 +20,7 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         int stateValue)
     {
         var state = (HyperBoostOwnershipJournalState)stateValue;
+        Guid transitionId = Guid.Parse("c105c95c-0c7b-49be-95c0-9a08252976e9");
         string path = Path.Combine(directory, "hyperboost-ownership.json");
         var store = new HyperBoostOwnershipJournalStore(path);
         var expected = new HyperBoostOwnershipJournal(
@@ -51,14 +53,17 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
                     HyperBoostOwnershipJournalState.RestorePending
                 ? HyperBoostRestoreRetryTarget.ExactJournalIntent
                 : HyperBoostRestoreRetryTarget.None,
+            TransitionId = transitionId,
         };
 
-        await store.WriteAsync(expected, CancellationToken.None);
+        string? writtenSha256 =
+            await store.WriteAsync(expected, CancellationToken.None);
         HyperBoostOwnershipJournalLoadResult loaded =
             await store.LoadAsync(CancellationToken.None);
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+        Assert.Equal(writtenSha256, loaded.Sha256);
         Assert.Matches("^[0-9A-F]{64}$", loaded.Sha256);
         DiagnosticHyperBoostOwnershipJournal diagnostics =
             ServiceControlRuntime.CreateHyperBoostOwnershipJournalDiagnostics(loaded);
@@ -72,6 +77,7 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.Equal(
             expected.RestoreRetryTarget.ToString(),
             diagnostics.RestoreRetryTarget);
+        Assert.Equal(transitionId, diagnostics.TransitionId);
         Assert.Equal(loaded.Sha256, diagnostics.Sha256);
     }
 
@@ -162,7 +168,68 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
         Assert.Equal(
             HyperBoostRestoreRetryDisposition.None,
             journal.RestoreRetryDisposition);
+        Assert.Null(journal.TransitionId);
         Assert.NotNull(journal.RecoveryBaseline);
+    }
+
+    [Fact]
+    public async Task Write_EmptyTransitionIdFailsClosed()
+    {
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var journal = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow)
+        {
+            TransitionId = Guid.Empty,
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.WriteAsync(
+            journal,
+            CancellationToken.None));
+
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task Load_SchemaSixDefaultsTransitionIdToNull()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var document = new HyperBoostOwnershipJournalDocument(
+            SchemaVersion: 6,
+            State: HyperBoostOwnershipJournalState.OwnedConfirmed,
+            BaseMode: PerformancePreset.Balanced,
+            UpdatedAtUtc: new DateTimeOffset(
+                2026,
+                8,
+                31,
+                12,
+                0,
+                0,
+                TimeSpan.Zero),
+            RequiresCoolingPad: false,
+            RestorePerformance: PerformancePreset.Balanced,
+            RestoreFanControl: FanControlSettings.FromLegacy(FanMode.Automatic),
+            RestoreRetryDisposition: HyperBoostRestoreRetryDisposition.None,
+            RestoreRetryTarget: HyperBoostRestoreRetryTarget.None);
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(
+                document,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            CancellationToken.None);
+        var store = new HyperBoostOwnershipJournalStore(path);
+
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        HyperBoostOwnershipJournal journal =
+            Assert.IsType<HyperBoostOwnershipJournal>(loaded.Journal);
+        Assert.False(loaded.Invalid);
+        Assert.Null(journal.TransitionId);
     }
 
     [Fact]
