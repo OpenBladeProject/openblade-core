@@ -56,12 +56,14 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
             TransitionId = transitionId,
         };
 
-        await store.WriteAsync(expected, CancellationToken.None);
+        string? writtenSha256 =
+            await store.WriteAsync(expected, CancellationToken.None);
         HyperBoostOwnershipJournalLoadResult loaded =
             await store.LoadAsync(CancellationToken.None);
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+        Assert.Equal(writtenSha256, loaded.Sha256);
         Assert.Matches("^[0-9A-F]{64}$", loaded.Sha256);
         DiagnosticHyperBoostOwnershipJournal diagnostics =
             ServiceControlRuntime.CreateHyperBoostOwnershipJournalDiagnostics(loaded);

@@ -4387,6 +4387,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool ownedLifecycleRestore = false;
         ThermalTransitionStepRunner? transitionRunner = null;
         HyperBoostOwnershipJournal? preparedTransitionJournal = null;
+        string? preparedTransitionJournalSha256 = null;
         if (!operationGateAlreadyHeld)
         {
             await operationGate.WaitAsync(token).ConfigureAwait(false);
@@ -4609,10 +4610,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         ? transitionId
                         : ownedHyperBoostTransitionId,
                 };
-                await hyperBoostOwnershipJournalStore.WriteAsync(
+                preparedTransitionJournalSha256 =
+                    await hyperBoostOwnershipJournalStore.WriteAsync(
                         preparedTransitionJournal,
                         token)
                     .ConfigureAwait(false);
+                if (preparedTransitionJournalSha256 is null)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Failed,
+                        "The HyperBoost ownership journal was prepared but its exact identity could not be retained. No hardware write was attempted; control writes remain blocked.");
+                }
                 ownershipJournalPrepared = true;
                 hyperBoostRestorePending = !enabled;
                 lastReportedRetainedHyperBoostRestoreJournal = null;
@@ -4814,7 +4823,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 ownedHyperBoostRequiresCoolingPad,
                                 transitionIntent!,
                                 "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.",
-                                transitionId: preparedTransitionJournal?.TransitionId)
+                                preparedTransitionJournal!,
+                                preparedTransitionJournalSha256!)
                             .ConfigureAwait(false);
                 }
                 bool restoreFailed = failedTransitionRestore is { Succeeded: false };
@@ -4969,15 +4979,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (enabled)
             {
-                bool journalFinalized =
-                    await TryWriteHyperBoostOwnershipJournalAsync(
-                        HyperBoostOwnershipJournalState.OwnedConfirmed,
-                        requestedBaseMode,
-                        journalRequiresCoolingPad,
-                        "HyperBoost was confirmed, but its durable ownership journal could not be finalized.",
-                        transitionIntent,
-                        transitionId: preparedTransitionJournal?.TransitionId)
-                    .ConfigureAwait(false);
+                var finalizedJournal = new HyperBoostOwnershipJournal(
+                    HyperBoostOwnershipJournalState.OwnedConfirmed,
+                    requestedBaseMode,
+                    journalRequiresCoolingPad,
+                    timeProvider.GetUtcNow())
+                {
+                    RestoreIntent = transitionIntent!,
+                    TransitionId = preparedTransitionJournal?.TransitionId,
+                };
+                HyperBoostOwnershipJournalMutationResult journalFinalization =
+                    await TryReplaceHyperBoostOwnershipJournalAsync(
+                            preparedTransitionJournal!,
+                            preparedTransitionJournalSha256!,
+                            finalizedJournal,
+                            "HyperBoost was confirmed, but its durable ownership journal could not be finalized.")
+                        .ConfigureAwait(false);
+                bool journalFinalized = journalFinalization.Applied;
                 if (!journalFinalized)
                 {
                     return await RestoreAfterHyperBoostJournalFailureAsync(
@@ -4988,6 +5006,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             requiresCoolingPad: false,
                             transitionIntent!,
                             preparedTransitionJournal!,
+                            preparedTransitionJournalSha256!,
                             transitionRunner)
                     .ConfigureAwait(false);
                 }
@@ -4995,15 +5014,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool disableJournalCleared = true;
             if (!enabled && ownedDisableAttempt)
             {
-                disableJournalCleared = transitionIntent is null
-                    ? await TryClearHyperBoostOwnershipJournalAsync(
-                            "HyperBoost was restored, but its durable ownership journal could not be cleared.")
-                        .ConfigureAwait(false)
-                    : await RetireHyperBoostOwnershipJournalAsync(
+                disableJournalCleared =
+                    await RetireHyperBoostOwnershipJournalAsync(
                             requestedBaseMode,
                             journalRequiresCoolingPad,
-                            transitionIntent,
-                            "HyperBoost was restored, but its durable ownership journal could not be retired.")
+                            transitionIntent!,
+                            "HyperBoost was restored, but its durable ownership journal could not be retired.",
+                            preparedTransitionJournal!,
+                            preparedTransitionJournalSha256!)
                         .ConfigureAwait(false);
             }
 
@@ -6803,10 +6821,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         try
         {
-            await hyperBoostOwnershipJournalStore.WriteAsync(
-                journal,
-                CancellationToken.None)
-            .ConfigureAwait(false);
+            string? writtenSha256 =
+                await hyperBoostOwnershipJournalStore.WriteAsync(
+                    journal,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (writtenSha256 is null)
+            {
+                hyperBoostJournalSafetyBlock = true;
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    $"{failureMessage} The journal identity could not be retained.");
+                return false;
+            }
             hyperBoostJournalSafetyBlock = false;
             hyperBoostRestorePending = journal.State
                 == HyperBoostOwnershipJournalState.RestorePending;
@@ -6874,6 +6901,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool requiresCoolingPad,
             HyperBoostRestoreIntent restoreIntent,
             HyperBoostOwnershipJournal expectedJournal,
+            string expectedJournalSha256,
             ThermalTransitionStepRunner transitionRunner)
     {
         device = transitionRunner.CurrentDevice;
@@ -6974,7 +7002,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         requiresCoolingPad,
                         restoreIntent,
                         "HyperBoost was restored after its ownership journal could not be finalized.",
-                        transitionId: expectedJournal.TransitionId)
+                        expectedJournal,
+                        expectedJournalSha256)
                     .ConfigureAwait(false);
                 hyperBoostOwnershipGeneration++;
                 ownsHyperBoost = false;
@@ -7089,10 +7118,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool requiresCoolingPad,
         HyperBoostRestoreIntent restoreIntent,
         string failureMessage,
-        HyperBoostOwnershipJournal? expectedJournal = null,
-        string? expectedSha256 = null,
-        Guid? transitionId = null)
+        HyperBoostOwnershipJournal expectedJournal,
+        string? expectedSha256)
     {
+        if (string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            hyperBoostJournalSafetyBlock = true;
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"{failureMessage} The expected ownership journal identity was unavailable.");
+            return false;
+        }
+
         bool relinquished = false;
         var relinquishedJournal = new HyperBoostOwnershipJournal(
             HyperBoostOwnershipJournalState.Relinquished,
@@ -7101,39 +7138,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             timeProvider.GetUtcNow())
         {
             RestoreIntent = restoreIntent,
-            TransitionId = expectedJournal?.TransitionId
-                ?? transitionId
-                ?? ownedHyperBoostTransitionId,
+            TransitionId = expectedJournal.TransitionId,
         };
         string? relinquishedSha256 = null;
         try
         {
-            if (expectedJournal is null)
-            {
-                await hyperBoostOwnershipJournalStore.WriteAsync(
+            HyperBoostOwnershipJournalMutationResult replacement =
+                await hyperBoostOwnershipJournalStore.TryReplaceAsync(
+                        expectedJournal,
+                        expectedSha256,
                         relinquishedJournal,
                         CancellationToken.None)
                     .ConfigureAwait(false);
-            }
-            else
+            if (!replacement.Applied)
             {
-                HyperBoostOwnershipJournalMutationResult replacement =
-                    await hyperBoostOwnershipJournalStore.TryReplaceAsync(
-                            expectedJournal,
-                            expectedSha256,
-                            relinquishedJournal,
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                if (!replacement.Applied)
-                {
-                    hyperBoostJournalSafetyBlock = true;
-                    history.RecordSummary(
-                        ControlOperationStatus.Failed,
-                        $"{failureMessage} The ownership journal changed before retirement.");
-                    return false;
-                }
-                relinquishedSha256 = replacement.Sha256;
+                hyperBoostJournalSafetyBlock = true;
+                history.RecordSummary(
+                    ControlOperationStatus.Failed,
+                    $"{failureMessage} The ownership journal changed before retirement.");
+                return false;
             }
+            relinquishedSha256 = replacement.Sha256;
             relinquished = true;
             hyperBoostRestorePending = false;
             lastReportedRetainedHyperBoostRestoreJournal = null;
@@ -7147,22 +7172,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            bool cleared;
-            if (expectedJournal is null)
-            {
-                await hyperBoostOwnershipJournalStore.ClearAsync(
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                cleared = true;
-            }
-            else
-            {
-                cleared = await hyperBoostOwnershipJournalStore.TryClearAsync(
-                        relinquishedJournal,
-                        relinquishedSha256,
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
+            bool cleared = await hyperBoostOwnershipJournalStore.TryClearAsync(
+                    relinquishedJournal,
+                    relinquishedSha256,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
             if (!cleared)
             {
                 hyperBoostJournalSafetyBlock = true;

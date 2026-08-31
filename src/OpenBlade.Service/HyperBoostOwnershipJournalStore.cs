@@ -159,7 +159,7 @@ internal interface IHyperBoostOwnershipJournalStore
     Task<HyperBoostOwnershipJournalLoadResult> LoadAsync(
         CancellationToken cancellationToken);
 
-    Task WriteAsync(
+    Task<string?> WriteAsync(
         HyperBoostOwnershipJournal journal,
         CancellationToken cancellationToken);
 
@@ -191,12 +191,12 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
         return Task.FromResult(new HyperBoostOwnershipJournalLoadResult(null, false));
     }
 
-    public Task WriteAsync(
+    public Task<string?> WriteAsync(
         HyperBoostOwnershipJournal journal,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+        return Task.FromResult<string?>(null);
     }
 
     public Task<HyperBoostOwnershipJournalMutationResult> TryReplaceAsync(
@@ -360,7 +360,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
         }
     }
 
-    public async Task WriteAsync(
+    public async Task<string?> WriteAsync(
         HyperBoostOwnershipJournal journal,
         CancellationToken cancellationToken)
     {
@@ -378,6 +378,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
             byte[] json = Serialize(journal);
             await AtomicFile.WriteAsync(path, json, cancellationToken)
                 .ConfigureAwait(false);
+            return Convert.ToHexString(SHA256.HashData(json));
         }
         finally
         {
