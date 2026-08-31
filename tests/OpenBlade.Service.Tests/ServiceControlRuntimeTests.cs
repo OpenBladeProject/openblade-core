@@ -14615,10 +14615,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.UntilPowerSourceChange,
                 CustomPerformanceSettings.Default),
             CancellationToken.None);
+        Guid transitionId = Guid.Parse("72d378a6-9bcb-4a6d-a506-4e6ab64f231e");
         Assert.Equal(
             ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(
-                true,
+                new SetHyperBoostRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    transitionId,
+                    Enabled: true),
                 CancellationToken.None)).Status);
         int exactFixedWritesBeforeExit = context.Device.FanControlWrites.Count(
             value => value == fanControl);
@@ -14662,6 +14666,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             Assert.Equal(
                 HyperBoostOwnershipJournalState.RestorePending,
                 journal.Journal?.State);
+            Assert.Equal(transitionId, journal.Journal?.TransitionId);
             Assert.True(context.Runtime.GetStatus().WritesBlocked);
             Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
         }
@@ -14713,10 +14718,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.UntilPowerSourceChange),
             fanControl,
             CancellationToken.None);
+        Guid transitionId = Guid.Parse("b94eca5c-4cf2-4cea-9211-00d0e77b63f8");
         Assert.Equal(
             ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(
-                true,
+                new SetHyperBoostRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    transitionId,
+                    Enabled: true),
                 CancellationToken.None)).Status);
         journal.FailClear = true;
 
@@ -14730,6 +14739,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             journal.Journal);
         Assert.Equal(HyperBoostOwnershipJournalState.Relinquished, retained.State);
         Assert.Equal(fanControl, retained.RestoreIntent.FanControl);
+        Assert.Equal(transitionId, retained.TransitionId);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
         int settersAfterExit = context.Device.TotalSetterCalls;
@@ -16224,10 +16234,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ConfigurePadlessHyperBoost(context);
         context.Device.UseScopedPerformanceFanRead = true;
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        Guid transitionId = Guid.Parse("3c825d7a-b251-421d-ae7a-c4bd5b0391b8");
         Assert.Equal(
             ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(
-                true,
+                new SetHyperBoostRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    transitionId,
+                    Enabled: true),
                 CancellationToken.None)).Status);
         context.Device.HyperBoostFailures.Enqueue(
             new BladeWriteException(
@@ -16264,6 +16278,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.BatterySaver,
             pending.RestoreIntent.Performance);
+        Assert.Equal(transitionId, pending.TransitionId);
         Assert.Equal(
             performanceCallsBeforeBoundary + 1,
             context.Device.PerformanceSetCalls);
@@ -17197,10 +17212,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformancePreset.Performance,
                 OverrideLifetime.UntilPowerSourceChange),
             CancellationToken.None);
+        Guid transitionId = Guid.Parse("c01ffdf1-4767-4ab4-b706-bdf87a79d386");
         Assert.Equal(
             ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(
-                true,
+                new SetHyperBoostRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    transitionId,
+                    Enabled: true),
                 CancellationToken.None)).Status);
 
         context.Telemetry.Current = CreateTelemetry(destination);
@@ -17229,6 +17248,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(settersAfterRestoration, context.Device.TotalSetterCalls);
         Assert.Null(journal.Journal);
+        DiagnosticCommandResult[] lifecycleDiagnostics = context.History.Snapshot()
+            .CommandResults
+            .Where(record =>
+                record.Detail?.Contains(
+                    "OpenBlade-owned HyperBoost",
+                    StringComparison.Ordinal) == true)
+            .ToArray();
+        Assert.Equal(2, lifecycleDiagnostics.Length);
+        Assert.All(
+            lifecycleDiagnostics,
+            record => Assert.Equal(transitionId, record.TransitionId));
     }
 
     [Fact]
@@ -17512,9 +17542,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 new CapabilityUnavailableException(
                     "Injected restoration refusal."));
         }
+        Guid transitionId = Guid.Parse("4672aa84-a300-4e27-9601-770f6c6f748b");
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
@@ -17527,6 +17561,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 StringComparison.OrdinalIgnoreCase);
             Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
             Assert.NotNull(journal.Journal);
+            Assert.Equal(transitionId, journal.Journal?.TransitionId);
             Assert.True(context.Runtime.GetStatus().WritesBlocked);
         }
         else
@@ -17748,9 +17783,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     WriteSubmissionState.Indeterminate,
                     "Injected indeterminate journal-fallback restore."));
         };
+        Guid transitionId = Guid.Parse("4c4e7954-380b-4704-99ec-13bcd1cc058f");
 
         ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, failed.Status);
@@ -17765,6 +17804,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
+        Assert.Equal(transitionId, journal.Journal?.TransitionId);
 
         ControlOperationResult recovered =
             await context.Runtime.RecoverHyperBoostRestoreAsync(
@@ -17828,9 +17868,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.AfterHyperBoostFailure = () =>
             context.Device.FanFailure = new CapabilityUnavailableException(
                 "Injected fan restoration refusal.");
+        Guid transitionId = Guid.Parse("88a867fe-8ee7-414f-b3b5-a3bf94f26b39");
 
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
@@ -17843,6 +17887,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.NotNull(journal.Journal);
+        Assert.Equal(transitionId, journal.Journal?.TransitionId);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(result.Message, context.Runtime.GetStatus().Message);
     }
@@ -18800,9 +18845,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
                     "Injected indeterminate restore."));
+        Guid transitionId = Guid.Parse("f909d17d-bb28-46e9-8c20-9468dbeb6277");
 
         ControlOperationResult failed = await context.Runtime.SetHyperBoostAsync(
-            true,
+            new SetHyperBoostRequest(
+                OpenBladeIpc.ProtocolVersion,
+                transitionId,
+                Enabled: true),
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, failed.Status);
@@ -18819,6 +18868,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             PerformancePreset.Performance,
             journal.Journal?.RestoreIntent.Performance);
+        Assert.Equal(transitionId, journal.Journal?.TransitionId);
         int settersAfterFailure = context.Device.TotalSetterCalls;
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
@@ -19474,10 +19524,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformancePreset.Performance,
                 OverrideLifetime.UntilPowerSourceChange),
             CancellationToken.None);
+        Guid transitionId = Guid.Parse("3b14066e-320f-4ba6-8426-9b852e582249");
         Assert.Equal(
             ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(
-                true,
+                new SetHyperBoostRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    transitionId,
+                    Enabled: true),
                 CancellationToken.None)).Status);
         bool injectedIncompleteReadback = false;
         context.Device.AfterReadState = () =>
@@ -19508,6 +19562,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
+        Assert.Equal(transitionId, journal.Journal?.TransitionId);
         Assert.Equal(2, context.Device.HyperBoostSetCalls);
         int settersAfterFailure = context.Device.TotalSetterCalls;
 
@@ -21071,7 +21126,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             FanMode.Fixed,
             3700,
             ManualFanCurve.Default);
-        HyperBoostOwnershipJournal original = CreateRestorePendingJournal(fanControl);
+        Guid transitionId = Guid.Parse("5ad84083-450c-4697-81e7-839a9d1d84b6");
+        HyperBoostOwnershipJournal original =
+            CreateRestorePendingJournal(fanControl) with
+            {
+                TransitionId = transitionId,
+            };
         var journal = new RecordingHyperBoostOwnershipJournalStore
         {
             Journal = original,
@@ -21095,6 +21155,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             journal.Journal);
         Assert.Equal(HyperBoostOwnershipJournalState.Relinquished, retained.State);
         Assert.Equal(original.RestoreIntent, retained.RestoreIntent);
+        Assert.Equal(transitionId, retained.TransitionId);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 

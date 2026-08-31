@@ -619,7 +619,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power");
+            "before low power",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -634,6 +635,47 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(1, result.RecoveryAttemptsObserved);
         Assert.Equal(1, result.RecoveryCompletionsObserved);
         Assert.True(result.StableSecondObservation);
+        Assert.Equal(0, client.DisableCalls);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_RejectsRecoveryEvidenceFromAnotherTransition()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleServiceProcess process = new(42_015, 123_470);
+        HyperBoostLifecycleJournalObservation journal = OwnedJournal();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics = [];
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => process,
+            () => journal,
+            () => diagnostics);
+        string markerPath = Path.Combine(directory, "substituted-transition.json");
+        HyperBoostLifecycleArmResult armed = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+        Assert.True(armed.Success);
+        client.RestoreWithoutClientWrite();
+        journal = HyperBoostLifecycleJournalObservation.Missing;
+        diagnostics = RecoveryDiagnostics(
+            armed.Marker!.ArmedAtUtc,
+            "before low power",
+            Guid.NewGuid());
+
+        HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, result.RecoveryAttemptsObserved);
+        Assert.Equal(0, result.RecoveryCompletionsObserved);
         Assert.Equal(0, client.DisableCalls);
     }
 
@@ -663,7 +705,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before display-off safety boundary");
+            "before display-off safety boundary",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -704,7 +747,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before unexpected-exit recovery");
+            "before unexpected-exit recovery",
+            armed.Marker.TransitionId);
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
             snapshot,
@@ -744,10 +788,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power").Concat(
+            "before low power",
+            armed.Marker.TransitionId).Concat(
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(1),
-                    "before low power"))
+                    "before low power",
+                    armed.Marker.TransitionId))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
@@ -787,10 +833,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         journal = HyperBoostLifecycleJournalObservation.Missing;
         diagnostics = RecoveryDiagnostics(
             armed.Marker!.ArmedAtUtc,
-            "before low power").Concat(
+            "before low power",
+            armed.Marker.TransitionId).Concat(
                 RecoveryDiagnostics(
                     armed.Marker.ArmedAtUtc.AddMilliseconds(3),
-                    "before display-off safety boundary"))
+                    "before display-off safety boundary",
+                    armed.Marker.TransitionId))
             .ToArray();
 
         HyperBoostLifecycleVerifyResult result = await runner.VerifyAsync(
@@ -1167,20 +1215,25 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         FanControlSettings.FromLegacy(fans));
 
     private static IReadOnlyList<HyperBoostLifecycleDiagnosticResult>
-        RecoveryDiagnostics(DateTimeOffset timestamp, string boundary) =>
+        RecoveryDiagnostics(
+            DateTimeOffset timestamp,
+            string boundary,
+            Guid? transitionId) =>
         [
             new(
                 timestamp.AddMilliseconds(1),
                 "Service",
                 "Reconcile",
                 "Stored",
-                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}."),
+                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                transitionId),
             new(
                 timestamp.AddMilliseconds(2),
                 "Service",
                 "Reconcile",
                 "Applied",
-                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}."),
+                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.",
+                transitionId),
         ];
 
     private static FirmwareSmokeSnapshot Snapshot(ServiceStatusSnapshot status) => new(

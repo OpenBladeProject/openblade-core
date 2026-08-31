@@ -190,7 +190,8 @@ internal sealed record HyperBoostLifecycleDiagnosticResult(
     string Subsystem,
     string Action,
     string Status,
-    string? Detail);
+    string? Detail,
+    Guid? TransitionId = null);
 
 internal sealed class HyperBoostLifecycleValidationRunner
 {
@@ -591,6 +592,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             : ["before unexpected-exit recovery"];
         int attempts = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
+            && entry.TransitionId == marker.TransitionId
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>
@@ -599,6 +601,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                     StringComparison.Ordinal) == true));
         int completions = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
+            && entry.TransitionId == marker.TransitionId
             && entry.Subsystem == "Service"
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>

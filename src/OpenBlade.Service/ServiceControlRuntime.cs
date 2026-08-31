@@ -4797,7 +4797,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 journalRequiresCoolingPad,
                                 "The failed HyperBoost transition restore could not preserve its fresh recovery baseline.",
                                 transitionIntent,
-                                failedTransitionRecoveryBaseline)
+                                failedTransitionRecoveryBaseline,
+                                transitionId: preparedTransitionJournal?.TransitionId)
                             .ConfigureAwait(false)
                         : readback.HyperBoostActive
                         ? await TryWriteHyperBoostOwnershipJournalAsync(
@@ -4812,7 +4813,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 requestedBaseMode,
                                 ownedHyperBoostRequiresCoolingPad,
                                 transitionIntent!,
-                                "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.")
+                                "HyperBoost was confirmed inactive after a mismatched transition, but its ownership journal could not be retired.",
+                                expectedJournal: preparedTransitionJournal)
                             .ConfigureAwait(false);
                 }
                 bool restoreFailed = failedTransitionRestore is { Succeeded: false };
@@ -4932,7 +4934,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                         .DeferredPreSubmission
                                         ? HyperBoostRestoreRetryTarget
                                             .CurrentPowerDestination
-                                        : HyperBoostRestoreRetryTarget.None)
+                                        : HyperBoostRestoreRetryTarget.None,
+                                transitionId: preparedTransitionJournal?.TransitionId)
                             .ConfigureAwait(false);
                     }
                     hyperBoostJournalSafetyBlock = true;
@@ -5100,6 +5103,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionIntent,
                             pendingBaseMode,
                             journalRequiresCoolingPad,
+                            preparedTransitionJournal?.TransitionId,
                             transitionRunner)
                         .ConfigureAwait(false);
                 }
@@ -5130,6 +5134,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionIntent,
                             pendingBaseMode,
                             journalRequiresCoolingPad,
+                            preparedTransitionJournal?.TransitionId,
                             transitionRunner)
                         .ConfigureAwait(false);
                 }
@@ -5233,6 +5238,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionIntent,
                             pendingBaseMode,
                             journalRequiresCoolingPad,
+                            preparedTransitionJournal?.TransitionId,
                             transitionRunner)
                         .ConfigureAwait(false);
                 }
@@ -5341,6 +5347,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             transitionIntent,
                             pendingBaseMode,
                             journalRequiresCoolingPad,
+                            preparedTransitionJournal?.TransitionId,
                             transitionRunner)
                         .ConfigureAwait(false);
                 }
@@ -5700,6 +5707,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         intent,
                         baseMode,
                         requiresCoolingPad,
+                        transitionId,
                         transitionRunner)
                     .ConfigureAwait(false);
                 if (!restoration.Succeeded)
@@ -6329,6 +6337,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PerformancePreset recoveryBaseMode = ownedHyperBoostBaseMode
             ?? PerformancePreset.Balanced;
         bool recoveryRequiresCoolingPad = ownedHyperBoostRequiresCoolingPad;
+        Guid? recoveryTransitionId = ownedHyperBoostTransitionId;
         if (transitionRunner is null)
         {
             hyperBoostJournalSafetyBlock = true;
@@ -6387,7 +6396,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     ? HyperBoostRestoreRetryTarget.ExactJournalIntent
                                     : HyperBoostRestoreRetryTarget
                                         .CurrentPowerDestination
-                                : HyperBoostRestoreRetryTarget.None)
+                                : HyperBoostRestoreRetryTarget.None,
+                        transitionId: recoveryTransitionId)
                     .ConfigureAwait(false);
             }
             hyperBoostJournalSafetyBlock = true;
@@ -6449,6 +6459,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         PerformancePreset baseMode = pendingIndeterminateHyperBoostEntryBaseMode;
+        Guid? recoveryTransitionId =
+            pendingIndeterminateHyperBoostEntryTransitionId;
         if (confirmed.HyperBoostActive)
         {
             bool journalFinalized = await TryWriteHyperBoostOwnershipJournalAsync(
@@ -6564,7 +6576,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             requiresCoolingPad: false,
                             "The failed HyperBoost entry restore could not be preserved for one explicit recovery.",
                             restoreIntent,
-                            failureObservation.RecoveryBaseline)
+                            failureObservation.RecoveryBaseline,
+                            transitionId: recoveryTransitionId)
                         .ConfigureAwait(false);
             hyperBoostJournalSafetyBlock = true;
             hyperBoostRestorePending = restoreMarkerWritten;
@@ -6622,6 +6635,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HyperBoostRestoreIntent intent,
         PerformancePreset baseMode,
         bool requiresCoolingPad,
+        Guid? transitionId,
         ThermalTransitionStepRunner transitionRunner)
     {
         device = transitionRunner.CurrentDevice;
@@ -6675,7 +6689,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     requiresCoolingPad,
                     "The failed HyperBoost entry baseline restore could not preserve its fresh recovery baseline.",
                     intent,
-                    failureObservation.RecoveryBaseline)
+                    failureObservation.RecoveryBaseline,
+                    transitionId: transitionId)
                 .ConfigureAwait(false);
         hyperBoostJournalSafetyBlock = true;
         hyperBoostRestorePending = recoveryRecorded;
@@ -6925,7 +6940,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 requiresCoolingPad,
                                 "The failed ownership-journal fallback restore could not preserve its fresh recovery baseline.",
                                 restoreIntent,
-                                failureObservation.RecoveryBaseline)
+                                failureObservation.RecoveryBaseline,
+                                transitionId: expectedJournal.TransitionId)
                             .ConfigureAwait(false);
                     hyperBoostJournalSafetyBlock = true;
                     hyperBoostRestorePending = recoveryRecorded;
@@ -6957,7 +6973,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         baseMode,
                         requiresCoolingPad,
                         restoreIntent,
-                        "HyperBoost was restored after its ownership journal could not be finalized.")
+                        "HyperBoost was restored after its ownership journal could not be finalized.",
+                        expectedJournal,
+                        expectedSha256: null)
                     .ConfigureAwait(false);
                 hyperBoostOwnershipGeneration++;
                 ownsHyperBoost = false;
@@ -9614,6 +9632,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long expectedOwnershipGeneration = 0;
         PowerSource exitPowerSource = PowerSource.ExternalUnknown;
         long expectedExitPowerSourceGeneration = 0;
+        Guid? lifecycleTransitionId = null;
         try
         {
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -9666,6 +9685,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
                 expectedExitPowerSourceGeneration = powerSourceGeneration;
+                lifecycleTransitionId = ownedHyperBoostTransitionId;
             }
             finally
             {
@@ -9680,11 +9700,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : $"before {reasonLabel}";
             history.RecordSummary(
                 ControlOperationStatus.Stored,
-                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.");
+                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                lifecycleTransitionId);
 
             ControlOperationResult result = await SetHyperBoostCoreAsync(
                     enabled: false,
-                    transitionId: ownedHyperBoostTransitionId,
+                    transitionId: lifecycleTransitionId,
                     expectedOwnershipGeneration,
                     lifecycleValidation: null,
                     restoreUserIntent: true,
@@ -9699,7 +9720,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             string restored =
                 $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.";
-            history.RecordSummary(ControlOperationStatus.Applied, restored);
+            history.RecordSummary(
+                ControlOperationStatus.Applied,
+                restored,
+                lifecycleTransitionId);
             return new ControlOperationResult(ControlOperationStatus.Applied, restored);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

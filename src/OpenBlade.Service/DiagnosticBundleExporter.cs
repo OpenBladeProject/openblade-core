@@ -29,7 +29,10 @@ public sealed record DiagnosticCommandResult(
     string Subsystem,
     string Action,
     string Status,
-    string? Detail);
+    string? Detail)
+{
+    public Guid? TransitionId { get; init; }
+}
 
 public sealed record DiagnosticHyperBoostRestoreIntent(
     PerformancePreset Performance,
