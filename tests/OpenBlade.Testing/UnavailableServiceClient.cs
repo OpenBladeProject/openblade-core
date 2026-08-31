@@ -102,6 +102,15 @@ internal abstract class UnavailableServiceClient : IServiceClient
         CancellationToken token) =>
         Unavailable("External lighting override policy is unavailable.");
 
+    public virtual Task<ControlOperationResult> SetThermalControlPolicyAsync(
+        ThermalControlPolicy policy,
+        CancellationToken token) =>
+        Unavailable("Thermal control policy is unavailable.");
+
+    public virtual Task<ControlOperationResult> AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+        CancellationToken token) =>
+        Unavailable("Thermal control policy disclosure is unavailable.");
+
     public virtual Task<ControlOperationResult> SetLightingRefreshRateAsync(
         LightingRefreshRate refreshRate,
         CancellationToken token) =>

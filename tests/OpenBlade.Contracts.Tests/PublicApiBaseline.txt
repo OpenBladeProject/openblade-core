@@ -1,4 +1,17 @@
 # Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
+type sealed class OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest left, OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest left, OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest right)
+  method virtual OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest other)
 type enum OpenBlade.Contracts.AdapterPowerState
   field System.Int32 value__
   field const OpenBlade.Contracts.AdapterPowerState Battery = 9
@@ -935,10 +948,19 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
 type static class OpenBlade.Contracts.IpcMessageCodec
+  method static System.Threading.Tasks.Task WriteProtocol51ReadOnlyServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task<OpenBlade.Contracts.ServiceRequest> ReadRequestAsync(System.IO.Stream stream, System.Threading.CancellationToken token)
+  method static System.Threading.Tasks.Task<OpenBlade.Contracts.ServiceRequest> ReadRequestWithProtocol51CompatibilityAsync(System.IO.Stream stream, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task<OpenBlade.Contracts.ServiceServerFrame> ReadServerFrameAsync(System.IO.Stream stream, System.Threading.CancellationToken token)
+type sealed class OpenBlade.Contracts.IpcProtocolVersionMismatchException
+  base System.IO.IOException
+  ctor (System.Int32 expectedVersion, System.Int32 actualVersion)
+  method System.Int32 get_ActualVersion()
+  method System.Int32 get_ExpectedVersion()
+  property System.Int32 ActualVersion { get; }
+  property System.Int32 ExpectedVersion { get; }
 type enum OpenBlade.Contracts.KeyboardBrightnessDirection
   field System.Int32 value__
   field const OpenBlade.Contracts.KeyboardBrightnessDirection Decrease = 0
@@ -1266,7 +1288,8 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 51
+  field const System.Int32 ProtocolVersion = 52
+  field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1802,6 +1825,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.ProfileSet get_Profiles()
   method OpenBlade.Contracts.ServiceStatusSnapshot <Clone>$()
   method OpenBlade.Contracts.SessionControlAccess get_ControlAccess()
+  method OpenBlade.Contracts.ThermalConvergenceStatus get_ThermalConvergence()
   method System.Boolean get_AllowUntestedFirmware()
   method System.Boolean get_AlwaysOverrideExternalLightingChanges()
   method System.Boolean get_DeviceVerified()
@@ -1860,6 +1884,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_Revision(System.Int64 value)
   method System.Void set_ServiceVersion(System.String value)
   method System.Void set_StartupAnimationEnabled(System.Nullable<System.Boolean> value)
+  method System.Void set_ThermalConvergence(OpenBlade.Contracts.ThermalConvergenceStatus value)
   method System.Void set_UnconfirmedWrites(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
   method System.Void set_WritesBlocked(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
@@ -1889,6 +1914,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.PowerSource ActivePowerSource { get; init; }
   property OpenBlade.Contracts.ProfileSet Profiles { get; init; }
   property OpenBlade.Contracts.SessionControlAccess ControlAccess { get; init; }
+  property OpenBlade.Contracts.ThermalConvergenceStatus ThermalConvergence { get; init; }
   property System.Boolean AllowUntestedFirmware { get; init; }
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }
   property System.Boolean DeviceVerified { get; init; }
@@ -2167,6 +2193,22 @@ type sealed class OpenBlade.Contracts.SetPlaybackMuteIndicatorRequest
   method virtual OpenBlade.Contracts.SetPlaybackMuteIndicatorRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetPlaybackMuteIndicatorRequest other)
   property System.Boolean Muted { get; init; }
+type sealed class OpenBlade.Contracts.SetThermalControlPolicyRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetThermalControlPolicyRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.ThermalControlPolicy Policy)
+  method OpenBlade.Contracts.ThermalControlPolicy get_Policy()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.ThermalControlPolicy Policy)
+  method System.Void set_Policy(OpenBlade.Contracts.ThermalControlPolicy value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetThermalControlPolicyRequest left, OpenBlade.Contracts.SetThermalControlPolicyRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetThermalControlPolicyRequest left, OpenBlade.Contracts.SetThermalControlPolicyRequest right)
+  method virtual OpenBlade.Contracts.SetThermalControlPolicyRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetThermalControlPolicyRequest other)
+  property OpenBlade.Contracts.ThermalControlPolicy Policy { get; init; }
 type enum OpenBlade.Contracts.SettingValueSource
   field System.Int32 value__
   field const OpenBlade.Contracts.SettingValueSource ConfirmedFirmwareState = 0
@@ -2313,6 +2355,82 @@ type sealed class OpenBlade.Contracts.SubsystemApplyResults
   property OpenBlade.Contracts.ControlResult Fans { get; init; }
   property OpenBlade.Contracts.ControlResult Lighting { get; init; }
   property OpenBlade.Contracts.ControlResult Performance { get; init; }
+type enum OpenBlade.Contracts.ThermalComponent
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThermalComponent Fans = 1
+  field const OpenBlade.Contracts.ThermalComponent Performance = 0
+type enum OpenBlade.Contracts.ThermalControlPolicy
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThermalControlPolicy MaintainDesiredState = 0
+  field const OpenBlade.Contracts.ThermalControlPolicy Strict = 1
+type enum OpenBlade.Contracts.ThermalConvergenceReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThermalConvergenceReason AwaitingFreshObservation = 7
+  field const OpenBlade.Contracts.ThermalConvergenceReason BudgetExhausted = 18
+  field const OpenBlade.Contracts.ThermalConvergenceReason CompetingControllerPresent = 12
+  field const OpenBlade.Contracts.ThermalConvergenceReason CompetingControllerUncertain = 13
+  field const OpenBlade.Contracts.ThermalConvergenceReason ConfigurationQuarantined = 4
+  field const OpenBlade.Contracts.ThermalConvergenceReason ConfigurationUnavailable = 3
+  field const OpenBlade.Contracts.ThermalConvergenceReason DeviceIdentityBlocked = 9
+  field const OpenBlade.Contracts.ThermalConvergenceReason DeviceUnavailable = 8
+  field const OpenBlade.Contracts.ThermalConvergenceReason HyperBoostActive = 14
+  field const OpenBlade.Contracts.ThermalConvergenceReason HyperBoostPending = 15
+  field const OpenBlade.Contracts.ThermalConvergenceReason InactiveSession = 5
+  field const OpenBlade.Contracts.ThermalConvergenceReason InternalStateUnavailable = 21
+  field const OpenBlade.Contracts.ThermalConvergenceReason LowPower = 11
+  field const OpenBlade.Contracts.ThermalConvergenceReason ManualFanReadbackAmbiguous = 16
+  field const OpenBlade.Contracts.ThermalConvergenceReason None = 0
+  field const OpenBlade.Contracts.ThermalConvergenceReason PendingReconciliation = 17
+  field const OpenBlade.Contracts.ThermalConvergenceReason PowerUnsettled = 10
+  field const OpenBlade.Contracts.ThermalConvergenceReason ProtocolCompatibilityClient = 6
+  field const OpenBlade.Contracts.ThermalConvergenceReason Shutdown = 20
+  field const OpenBlade.Contracts.ThermalConvergenceReason StrictPolicy = 1
+  field const OpenBlade.Contracts.ThermalConvergenceReason Tombstoned = 19
+  field const OpenBlade.Contracts.ThermalConvergenceReason UpgradeDisclosurePending = 2
+type enum OpenBlade.Contracts.ThermalConvergenceState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThermalConvergenceState AwaitingObservation = 1
+  field const OpenBlade.Contracts.ThermalConvergenceState Converging = 2
+  field const OpenBlade.Contracts.ThermalConvergenceState External = 5
+  field const OpenBlade.Contracts.ThermalConvergenceState Matched = 0
+  field const OpenBlade.Contracts.ThermalConvergenceState Paused = 3
+  field const OpenBlade.Contracts.ThermalConvergenceState ReconciliationUnavailable = 7
+  field const OpenBlade.Contracts.ThermalConvergenceState RestorePending = 6
+  field const OpenBlade.Contracts.ThermalConvergenceState Suppressed = 4
+type sealed class OpenBlade.Contracts.ThermalConvergenceStatus
+  interface System.IEquatable<OpenBlade.Contracts.ThermalConvergenceStatus>
+  ctor (OpenBlade.Contracts.ThermalControlPolicy Policy, OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState Disclosure, OpenBlade.Contracts.ThermalConvergenceState State, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThermalComponent> AffectedComponents, OpenBlade.Contracts.ThermalConvergenceReason Reason, System.Boolean ExplicitReapplyRequired)
+  method OpenBlade.Contracts.ThermalControlPolicy get_Policy()
+  method OpenBlade.Contracts.ThermalConvergenceReason get_Reason()
+  method OpenBlade.Contracts.ThermalConvergenceState get_State()
+  method OpenBlade.Contracts.ThermalConvergenceStatus <Clone>$()
+  method OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState get_Disclosure()
+  method System.Boolean get_ExplicitReapplyRequired()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThermalComponent> get_AffectedComponents()
+  method System.Void Deconstruct(out OpenBlade.Contracts.ThermalControlPolicy Policy, out OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState Disclosure, out OpenBlade.Contracts.ThermalConvergenceState State, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThermalComponent> AffectedComponents, out OpenBlade.Contracts.ThermalConvergenceReason Reason, out System.Boolean ExplicitReapplyRequired)
+  method System.Void set_AffectedComponents(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThermalComponent> value)
+  method System.Void set_Disclosure(OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState value)
+  method System.Void set_ExplicitReapplyRequired(System.Boolean value)
+  method System.Void set_Policy(OpenBlade.Contracts.ThermalControlPolicy value)
+  method System.Void set_Reason(OpenBlade.Contracts.ThermalConvergenceReason value)
+  method System.Void set_State(OpenBlade.Contracts.ThermalConvergenceState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ThermalConvergenceStatus left, OpenBlade.Contracts.ThermalConvergenceStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ThermalConvergenceStatus left, OpenBlade.Contracts.ThermalConvergenceStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ThermalConvergenceStatus other)
+  property OpenBlade.Contracts.ThermalControlPolicy Policy { get; init; }
+  property OpenBlade.Contracts.ThermalConvergenceReason Reason { get; init; }
+  property OpenBlade.Contracts.ThermalConvergenceState State { get; init; }
+  property OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState Disclosure { get; init; }
+  property System.Boolean ExplicitReapplyRequired { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ThermalComponent> AffectedComponents { get; init; }
+type enum OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState Acknowledged = 2
+  field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState NotRequired = 0
+  field const OpenBlade.Contracts.ThermalPolicyUpgradeDisclosureState UpgradeDisclosurePending = 1
 type sealed class OpenBlade.Contracts.TidalLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.TidalLightingParameters>

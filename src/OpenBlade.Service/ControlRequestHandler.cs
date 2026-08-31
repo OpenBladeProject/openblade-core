@@ -61,6 +61,35 @@ public sealed class ControlRequestHandler
     public async Task<ServiceResponse> HandleAsync(
         ServiceRequest request,
         ServiceClientContext client,
+        CancellationToken cancellationToken) => await HandleCoreAsync(
+            request,
+            client,
+            activateUserConfiguration: true,
+            cancellationToken);
+
+    internal async Task<ServiceResponse> HandleProtocol51ReadOnlyAsync(
+        ServiceRequest request,
+        ServiceClientContext client,
+        CancellationToken cancellationToken)
+    {
+        if (request is not (GetStatusRequest or SubscribeStatusRequest))
+        {
+            throw new ArgumentException(
+                "Protocol 51 compatibility admits read-only status requests only.",
+                nameof(request));
+        }
+
+        return await HandleCoreAsync(
+            request,
+            client,
+            activateUserConfiguration: false,
+            cancellationToken);
+    }
+
+    private async Task<ServiceResponse> HandleCoreAsync(
+        ServiceRequest request,
+        ServiceClientContext client,
+        bool activateUserConfiguration,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -87,7 +116,8 @@ public sealed class ControlRequestHandler
             return Failure(request.RequestId, accessDecision.Rejection);
         }
 
-        if (request is not ShutdownOpenBladeRequest
+        if (activateUserConfiguration
+            && request is not ShutdownOpenBladeRequest
             && client.IsInteractive
             && accessDecision.Access == SessionControlAccess.Active)
         {
@@ -115,16 +145,20 @@ public sealed class ControlRequestHandler
         Func<bool> stillControlsSession = () =>
             ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
                 == SessionControlAccess.Active;
+        Func<bool> stillControlsActiveLocalSession = () =>
+            ServiceRequestAccessPolicy.IsActiveLocalInteractiveClient(
+                client,
+                sessionAuthority);
 
         return request switch
         {
             GetStatusRequest or SubscribeStatusRequest => Status(
                 request.RequestId,
-                accessDecision.Access),
+                client),
             ObserveStateRequest observe => await ObserveStatusAsync(
                 observe.RequestId,
                 observe.EffectiveLiveReadings,
-                accessDecision.Access,
+                client,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -197,6 +231,17 @@ public sealed class ControlRequestHandler
                 await runtime.SetFirmwareCompatibilityOverrideAsync(
                     set.Enabled,
                     cancellationToken)),
+            SetThermalControlPolicyRequest set => Result(
+                request.RequestId,
+                await runtime.SetThermalControlPolicyAsync(
+                    set.Policy,
+                    stillControlsActiveLocalSession,
+                    cancellationToken)),
+            AcknowledgeThermalPolicyUpgradeDisclosureRequest => Result(
+                request.RequestId,
+                await runtime.AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+                    stillControlsActiveLocalSession,
+                    cancellationToken)),
             ReapplyChangedSettingsRequest => Result(
                 request.RequestId,
                 await runtime.ReapplyChangedSettingsAsync(
@@ -247,6 +292,9 @@ public sealed class ControlRequestHandler
         };
     }
 
+    internal IDisposable RegisterProtocolCompatibilityClient() =>
+        runtime.RegisterProtocolCompatibilityClient();
+
     private ServiceResponse RequestShutdown(Guid requestId)
     {
         shutdownSignal.RequestShutdownAfterResponse();
@@ -260,19 +308,19 @@ public sealed class ControlRequestHandler
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
         LiveReadingSensors requestedLiveReadings,
-        SessionControlAccess access,
+        ServiceClientContext client,
         CancellationToken cancellationToken)
     {
         await runtime.ObserveAsync(requestedLiveReadings, cancellationToken);
-        return Status(requestId, access);
+        return Status(requestId, client);
     }
 
-    private ServiceResponse Status(Guid requestId, SessionControlAccess access) => new(
+    private ServiceResponse Status(Guid requestId, ServiceClientContext client) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: ProjectStatus(runtime.GetStatus(), access),
+        Status: ProjectStatus(runtime.GetStatus(), client),
         Result: null,
         Archive: null);
 
@@ -318,6 +366,7 @@ public sealed class ControlRequestHandler
             AllowUntestedFirmware = false,
             KeyboardLightingControlMode = KeyboardLightingControlMode.OpenBlade,
             PerformanceShortcutPreview = null,
+            ThermalConvergence = null,
             ControlAccess = access,
         };
     }

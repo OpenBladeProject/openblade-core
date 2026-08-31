@@ -1317,4 +1317,151 @@
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>[!! Détéctéd ón thís láptóp, bút OpenBlade cánnót sáfélý chángé ít wíth thé cúrrént évídéncé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="OpenBlade components have different versions. Update or repair OpenBlade to restore control." xml:space="preserve">
+    <value>[!! OpenBlade cómpónénts hávé dífférént vérsíóns. Úpdáté ór répáír OpenBlade tó réstóré cóntról. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Maintain desired state" xml:space="preserve">
+    <value>[!! Máíntáín désíréd státé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Strict" xml:space="preserve">
+    <value>[!! Stríct ~~~ !!]</value>
+  </data>
+  <data name="Thermal control policy" xml:space="preserve">
+    <value>[!! Thérmál cóntról pólícý ~~~~~~~ !!]</value>
+  </data>
+  <data name="Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action." xml:space="preserve">
+    <value>[!! Sáfétý máínténáncé fór án OpenBlade-ównéd mánúál fán cúrvé cóntínúés ín bóth módés. Máíntáín névér túrns ón HýpérBóóst; HýpérBóóst rémáíns án éxplícít áctíón. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Thermal state" xml:space="preserve">
+    <value>[!! Thérmál státé ~~~~~ !!]</value>
+  </data>
+  <data name="Affected controls" xml:space="preserve">
+    <value>[!! Áfféctéd cóntróls ~~~~~~ !!]</value>
+  </data>
+  <data name="Affected controls:" xml:space="preserve">
+    <value>[!! Áfféctéd cóntróls: ~~~~~~ !!]</value>
+  </data>
+  <data name="Maintain desired state is now the default" xml:space="preserve">
+    <value>[!! Máíntáín désíréd státé ís nów thé défáúlt ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported." xml:space="preserve">
+    <value>[!! OpenBlade cán nów récóncílé chángéd pérfórmáncé ánd fán íntént ín thé báckgróúnd. Báckgróúnd réstórátíón stáýs páúséd úntíl ýóú séléct Gót ít. Ít stíll vérífíés thé láptóp, pówér, cóntróllér sáfétý, ánd réádbáck béfóré áný chángé. Máíntáín névér túrns ón HýpérBóóst. Séléct Stríct íf ýóú ónlý wánt dríft répórtéd. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Got it" xml:space="preserve">
+    <value>[!! Gót ít ~~ !!]</value>
+  </data>
+  <data name="Reapply" xml:space="preserve">
+    <value>[!! Réápplý ~~~ !!]</value>
+  </data>
+  <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve">
+    <value>[!! OpenBlade répórts pérfórmáncé ór fán chángés mádé élséwhéré ánd wáíts fór ýóú tó réápplý thém. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible." xml:space="preserve">
+    <value>[!! OpenBlade chécks pérfórmáncé ánd fán íntént ín thé báckgróúnd ánd sáfélý réstórés chángéd séttíngs whén póssíblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Up to date" xml:space="preserve">
+    <value>[!! Úp tó dáté ~~~ !!]</value>
+  </data>
+  <data name="Checking current state" xml:space="preserve">
+    <value>[!! Chéckíng cúrrént státé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Restoring saved settings" xml:space="preserve">
+    <value>[!! Réstóríng sávéd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Paused" xml:space="preserve">
+    <value>[!! Páúséd ~~~ !!]</value>
+  </data>
+  <data name="Needs your action" xml:space="preserve">
+    <value>[!! Nééds ýóúr áctíón ~~~~~~ !!]</value>
+  </data>
+  <data name="Restore pending" xml:space="preserve">
+    <value>[!! Réstóré péndíng ~~~~~ !!]</value>
+  </data>
+  <data name="Reconciliation unavailable" xml:space="preserve">
+    <value>[!! Récóncílíátíón únáváíláblé ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Performance and fans" xml:space="preserve">
+    <value>[!! Pérfórmáncé ánd fáns ~~~~~~~ !!]</value>
+  </data>
+  <data name="Saved performance and fan intent match the confirmed laptop state." xml:space="preserve">
+    <value>[!! Sávéd pérfórmáncé ánd fán íntént mátch thé cónfírméd láptóp státé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is applying the saved performance and fan intent and will confirm it by readback." xml:space="preserve">
+    <value>[!! OpenBlade ís ápplýíng thé sávéd pérfórmáncé ánd fán íntént ánd wíll cónfírm ít bý réádbáck. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues." xml:space="preserve">
+    <value>[!! Stríct módé shóws dríft wíthóút chángíng ít báck. Mánúál fán-cúrvé sáfétý máínténáncé cóntínúés. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Review the new default policy before background reconciliation can begin." xml:space="preserve">
+    <value>[!! Révíéw thé néw défáúlt pólícý béfóré báckgróúnd récóncílíátíón cán bégín. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The saved thermal configuration is unavailable." xml:space="preserve">
+    <value>[!! Thé sávéd thérmál cónfígúrátíón ís únáváíláblé. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The saved thermal configuration could not be trusted. Strict behavior is active." xml:space="preserve">
+    <value>[!! Thé sávéd thérmál cónfígúrátíón cóúld nót bé trústéd. Stríct béhávíór ís áctívé. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Reconciliation waits for this local Windows session to become active." xml:space="preserve">
+    <value>[!! Récóncílíátíón wáíts fór thís lócál Windows séssíón tó bécómé áctívé. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation." xml:space="preserve">
+    <value>[!! Án óldér OpenBlade cómpónént ís cónnéctéd. Úpdáté ór répáír OpenBlade tó résúmé récóncílíátíón. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is waiting for a fresh, complete read of the laptop state." xml:space="preserve">
+    <value>[!! OpenBlade ís wáítíng fór á frésh, cómplété réád óf thé láptóp státé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The supported laptop control device is temporarily unavailable." xml:space="preserve">
+    <value>[!! Thé súppórtéd láptóp cóntról dévícé ís témpórárílý únáváíláblé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not verify the exact supported laptop identity." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót vérífý thé éxáct súppórtéd láptóp ídéntítý. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Reconciliation waits until the power source is confirmed and stable." xml:space="preserve">
+    <value>[!! Récóncílíátíón wáíts úntíl thé pówér sóúrcé ís cónfírméd ánd stáblé. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Reconciliation is paused while Windows enters or leaves low power." xml:space="preserve">
+    <value>[!! Récóncílíátíón ís páúséd whílé Windows éntérs ór léávés lów pówér. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve">
+    <value>[!! Ánóthér Razer cóntróllér ís áctívé, só OpenBlade wíll nót cómpété fór thésé séttíngs. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót cónfírm whéthér ánóthér Razer cóntróllér ís áctívé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost temporarily owns performance and fan state." xml:space="preserve">
+    <value>[!! HýpérBóóst témpórárílý ówns pérfórmáncé ánd fán státé. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is finishing the HyperBoost transition before reconciling other settings." xml:space="preserve">
+    <value>[!! OpenBlade ís fíníshíng thé HýpérBóóst tránsítíón béfóré récóncílíng óthér séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it." xml:space="preserve">
+    <value>[!! Fírmwáré répórts mánúál fán cóntról wíthóút thé éxáct cúrvé, só OpenBlade wíll nót gúéss ór répláý ít. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="A possibly submitted change must be confirmed by readback before another write." xml:space="preserve">
+    <value>[!! Á póssíblý súbmíttéd chángé múst bé cónfírméd bý réádbáck béfóré ánóthér wríté. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again." xml:space="preserve">
+    <value>[!! Áútómátíc récóncílíátíón stóppéd áftér íts bóúndéd áttémpt. Réápplý éxplícítlý tó trý ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="This drift is recorded as unresolved. Reapply explicitly after checking the laptop state." xml:space="preserve">
+    <value>[!! Thís dríft ís récórdéd ás únrésólvéd. Réápplý éxplícítlý áftér chéckíng thé láptóp státé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Reconciliation is closed while OpenBlade shuts down." xml:space="preserve">
+    <value>[!! Récóncílíátíón ís clóséd whílé OpenBlade shúts dówn. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade cannot safely persist or reconcile this state right now." xml:space="preserve">
+    <value>[!! OpenBlade cánnót sáfélý pérsíst ór récóncílé thís státé ríght nów. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Thermal reconciliation status is unavailable." xml:space="preserve">
+    <value>[!! Thérmál récóncílíátíón státús ís únáváíláblé. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Review thermal control policy" xml:space="preserve">
+    <value>[!! Révíéw thérmál cóntról pólícý ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Review policy" xml:space="preserve">
+    <value>[!! Révíéw pólícý ~~~~~ !!]</value>
+  </data>
+  <data name="Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it." xml:space="preserve">
+    <value>[!! Révíéw thé néw Máíntáín désíréd státé défáúlt. Báckgróúnd récóncílíátíón stáýs páúséd úntíl ýóú séléct Gót ít. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

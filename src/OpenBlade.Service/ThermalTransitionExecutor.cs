@@ -707,6 +707,7 @@ internal static class ThermalTransitionExecutor
         ArgumentNullException.ThrowIfNull(revalidatePreflight);
         ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
         return ExecuteFullTransitionCoreAsync(
+            Guid.NewGuid(),
             declaredComponents,
             initialDevice,
             coordinatorFactory,
@@ -716,8 +717,8 @@ internal static class ThermalTransitionExecutor
             cancellationToken);
     }
 
-    private static async Task<ThermalFullTransitionExecution>
-        ExecuteFullTransitionCoreAsync(
+    public static Task<ThermalFullTransitionExecution> ExecuteFullTransitionAsync(
+        Guid attemptId,
         IReadOnlyList<DeviceSubsystem> declaredComponents,
         IBladeDevice initialDevice,
         Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
@@ -730,7 +731,43 @@ internal static class ThermalTransitionExecutor
             revalidateThermalRecovery,
         CancellationToken cancellationToken)
     {
-        Guid attemptId = Guid.NewGuid();
+        if (attemptId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A thermal transition attempt ID is required.",
+                nameof(attemptId));
+        }
+        ArgumentNullException.ThrowIfNull(initialDevice);
+        ArgumentNullException.ThrowIfNull(coordinatorFactory);
+        ArgumentNullException.ThrowIfNull(executeRecipe);
+        ArgumentNullException.ThrowIfNull(revalidatePreflight);
+        ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
+        return ExecuteFullTransitionCoreAsync(
+            attemptId,
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            executeRecipe,
+            revalidatePreflight,
+            revalidateThermalRecovery,
+            cancellationToken);
+    }
+
+    private static async Task<ThermalFullTransitionExecution>
+        ExecuteFullTransitionCoreAsync(
+        Guid attemptId,
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ControlCoordinator, CancellationToken, Task<FullTransitionApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidatePreflight,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidateThermalRecovery,
+        CancellationToken cancellationToken)
+    {
         var runner = new ThermalTransitionStepRunner(
             attemptId,
             declaredComponents,

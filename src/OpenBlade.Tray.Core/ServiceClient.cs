@@ -218,6 +218,22 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 enabled),
             token);
 
+    public Task<ControlOperationResult> SetThermalControlPolicyAsync(
+        ThermalControlPolicy policy,
+        CancellationToken token) => SendMutationAsync(
+            new SetThermalControlPolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                policy),
+            token);
+
+    public Task<ControlOperationResult> AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+        CancellationToken token) => SendMutationAsync(
+            new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> SetLightingRefreshRateAsync(
         LightingRefreshRate refreshRate,
         CancellationToken token) => SendMutationAsync(
@@ -693,7 +709,8 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     }
 
     private static bool IsRetryableTransportFailure(Exception exception) =>
-        exception is IOException or TimeoutException;
+        (exception is IOException or TimeoutException)
+        && exception is not IpcProtocolVersionMismatchException;
 
     private async Task DelayAfterCapacityRejectionAsync(
         Exception exception,

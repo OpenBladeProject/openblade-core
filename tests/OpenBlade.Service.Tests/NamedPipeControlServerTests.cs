@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
+using System.Text.Json.Nodes;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -26,6 +27,100 @@ public sealed class NamedPipeControlServerTests
         Assert.True(response.Success);
         Assert.Equal(request.RequestId, response.RequestId);
         Assert.NotNull(response.Status);
+    }
+
+    [Fact]
+    public async Task Protocol51GetStatus_ReturnsFrozenReadOnlyProjectionAndReleasesLease()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        await using (serverConnection)
+        await using (client)
+        {
+            Task serverTask = context.Server.ServeConnectionAsync(
+                serverConnection,
+                timeout.Token);
+            Guid requestId = Guid.NewGuid();
+            await WriteProtocol51RequestAsync(client, "getStatus", requestId, timeout.Token);
+
+            JsonObject response = await ReadJsonFrameAsync(client, timeout.Token);
+            await serverTask;
+
+            Assert.Equal(51, response["version"]!.GetValue<int>());
+            Assert.Equal(requestId, response["requestId"]!.GetValue<Guid>());
+            Assert.True(response["success"]!.GetValue<bool>());
+            JsonObject status = Assert.IsType<JsonObject>(response["status"]);
+            Assert.True(status["writesBlocked"]!.GetValue<bool>());
+            Assert.Null(status["thermalConvergence"]);
+            Assert.Equal(0, context.Runtime.ActivationCalls);
+            Assert.Equal(0, context.Runtime.ProtocolCompatibilityClients);
+        }
+    }
+
+    [Fact]
+    public async Task Protocol51Mutation_IsRejectedBeforeHandler()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        await using (serverConnection)
+        await using (client)
+        {
+            Task serverTask = context.Server.ServeConnectionAsync(
+                serverConnection,
+                timeout.Token);
+            Guid requestId = Guid.NewGuid();
+            await WriteProtocol51RequestAsync(
+                client,
+                "setFullChargeOverride",
+                requestId,
+                timeout.Token,
+                "\"enabled\":true");
+
+            JsonObject response = await ReadJsonFrameAsync(client, timeout.Token);
+            await serverTask;
+
+            Assert.Equal(51, response["version"]!.GetValue<int>());
+            Assert.False(response["success"]!.GetValue<bool>());
+            Assert.Contains(
+                "Update or repair",
+                response["error"]!.GetValue<string>(),
+                StringComparison.Ordinal);
+            Assert.Equal(0, context.Runtime.FullChargeOverrideCalls);
+            Assert.Equal(0, context.Runtime.ProtocolCompatibilityClients);
+        }
+    }
+
+    [Fact]
+    public async Task Protocol51Subscription_HoldsCompatibilityLeaseForConnectionLifetime()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        await using (serverConnection)
+        {
+            Task serverTask = context.Server.ServeConnectionAsync(
+                serverConnection,
+                timeout.Token);
+            await WriteProtocol51RequestAsync(
+                client,
+                "subscribeStatus",
+                Guid.NewGuid(),
+                timeout.Token);
+
+            _ = await ReadJsonFrameAsync(client, timeout.Token);
+            Assert.Equal(0, context.Runtime.ActivationCalls);
+            Assert.Equal(1, context.Runtime.ProtocolCompatibilityClients);
+            context.Hub.Publish(CreateStatus(1));
+            JsonObject update = await ReadJsonFrameAsync(client, timeout.Token);
+            Assert.Equal("statusEvent", update["frame"]!.GetValue<string>());
+            Assert.Equal(51, update["version"]!.GetValue<int>());
+
+            await client.DisposeAsync();
+            await serverTask;
+            Assert.Equal(0, context.Runtime.ProtocolCompatibilityClients);
+        }
     }
 
     [Fact]
@@ -630,7 +725,7 @@ public sealed class NamedPipeControlServerTests
             new ControlRequestHandler(runtime, new StubArchiveProvider()),
             hub,
             time);
-        return new TestServer(pipeName, server, hub);
+        return new TestServer(pipeName, server, hub, runtime);
     }
 
     private static async Task<NamedPipeClientStream> ConnectAsync(
@@ -648,6 +743,38 @@ public sealed class NamedPipeControlServerTests
         await using var stream = new MemoryStream();
         await IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None);
         return stream.ToArray();
+    }
+
+    private static async Task WriteProtocol51RequestAsync(
+        Stream stream,
+        string operation,
+        Guid requestId,
+        CancellationToken token,
+        string? additionalMembers = null)
+    {
+        string suffix = string.IsNullOrEmpty(additionalMembers)
+            ? string.Empty
+            : $",{additionalMembers}";
+        byte[] payload = Encoding.UTF8.GetBytes(
+            $"{{\"operation\":\"{operation}\",\"version\":51,\"requestId\":\"{requestId}\"{suffix}}}");
+        byte[] prefix = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
+        await stream.WriteAsync(prefix, token);
+        await stream.WriteAsync(payload, token);
+        await stream.FlushAsync(token);
+    }
+
+    private static async Task<JsonObject> ReadJsonFrameAsync(
+        Stream stream,
+        CancellationToken token)
+    {
+        byte[] prefix = new byte[sizeof(int)];
+        await stream.ReadExactlyAsync(prefix, token);
+        int length = BinaryPrimitives.ReadInt32LittleEndian(prefix);
+        Assert.InRange(length, 1, OpenBladeIpc.MaximumMessageBytes);
+        byte[] payload = new byte[length];
+        await stream.ReadExactlyAsync(payload, token);
+        return Assert.IsType<JsonObject>(JsonNode.Parse(payload));
     }
 
     private static (Stream Server, Stream Client) CreateDuplexPair()
@@ -699,24 +826,56 @@ public sealed class NamedPipeControlServerTests
     private sealed record TestServer(
         string PipeName,
         NamedPipeControlServer Server,
-        StatusSubscriptionHub Hub);
+        StatusSubscriptionHub Hub,
+        StubRuntime Runtime);
 
     private sealed class StubRuntime(ServiceStatusSnapshot status) : IServiceControlRuntime
     {
+        private int protocolCompatibilityClients;
+
         public ServiceStatusSnapshot Status { get; } = status;
+        public int FullChargeOverrideCalls { get; private set; }
+        public int ActivationCalls { get; private set; }
+        public int ProtocolCompatibilityClients =>
+            Volatile.Read(ref protocolCompatibilityClients);
         public ServiceStatusSnapshot GetStatus() => Status;
+        public Task ActivateUserAsync(
+            SecurityIdentifier userSid,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            ActivationCalls++;
+            return Task.CompletedTask;
+        }
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Result();
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
+        public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token)
+        {
+            FullChargeOverrideCalls++;
+            return Result();
+        }
+        public IDisposable RegisterProtocolCompatibilityClient()
+        {
+            Interlocked.Increment(ref protocolCompatibilityClients);
+            return new CallbackDisposable(() =>
+                Interlocked.Decrement(ref protocolCompatibilityClients));
+        }
         public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken) =>
             Task.CompletedTask;
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
+    }
+
+    private sealed class CallbackDisposable(Action callback) : IDisposable
+    {
+        private Action? callback = callback;
+
+        public void Dispose() => Interlocked.Exchange(ref callback, null)?.Invoke();
     }
 
     private sealed class StubArchiveProvider : IDiagnosticArchiveProvider

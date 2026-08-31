@@ -103,7 +103,7 @@ public sealed class ServiceClientTests
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
 
-        await Assert.ThrowsAsync<InvalidDataException>(
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
             () => client.GetStatusAsync(timeout.Token));
         await server;
     }
@@ -183,7 +183,7 @@ public sealed class ServiceClientTests
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
 
-        await Assert.ThrowsAsync<InvalidDataException>(
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
             () => client.ObserveStateAsync(true, timeout.Token));
         await server;
     }
@@ -283,6 +283,10 @@ public sealed class ServiceClientTests
                 DisplayBrightnessHidUsage.Decrement,
                 timeout.Token),
             await client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
+            await client.SetThermalControlPolicyAsync(
+                ThermalControlPolicy.Strict,
+                timeout.Token),
+            await client.AcknowledgeThermalPolicyUpgradeDisclosureAsync(timeout.Token),
             await client.SetLightingRefreshRateAsync(
                 LightingRefreshRate.SixtyHz,
                 timeout.Token),
@@ -338,6 +342,10 @@ public sealed class ServiceClientTests
             request => Assert.True(
                 Assert.IsType<SetExternalLightingOverridePolicyRequest>(request).Enabled),
             request => Assert.Equal(
+                ThermalControlPolicy.Strict,
+                Assert.IsType<SetThermalControlPolicyRequest>(request).Policy),
+            request => Assert.IsType<AcknowledgeThermalPolicyUpgradeDisclosureRequest>(request),
+            request => Assert.Equal(
                 LightingRefreshRate.SixtyHz,
                 Assert.IsType<SetLightingRefreshRateRequest>(request).RefreshRate),
             request => Assert.True(
@@ -367,7 +375,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(21, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(23, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -1012,9 +1020,19 @@ public sealed class ServiceClientTests
         await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => reader.MoveNextAsync().AsTask());
+        Exception failure = wrongVersion
+            ? await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
+                () => reader.MoveNextAsync().AsTask())
+            : await Assert.ThrowsAsync<InvalidDataException>(
+                () => reader.MoveNextAsync().AsTask());
         await server;
 
+        if (wrongVersion)
+        {
+            var mismatch = Assert.IsType<IpcProtocolVersionMismatchException>(failure);
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, mismatch.ExpectedVersion);
+            Assert.Equal(1, mismatch.ActualVersion);
+        }
         Assert.Equal(1, attempts);
     }
 
@@ -1070,7 +1088,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 21; index++)
+        for (int index = 0; index < 23; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

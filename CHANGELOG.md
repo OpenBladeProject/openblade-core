@@ -7,6 +7,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added Maintain desired state as the default thermal-control policy. The
+  service now reconciles confirmed performance and fan-topology drift through
+  one bounded, journaled transition authority while Strict remains available
+  as an explicit advisory-only policy. Upgraded profiles require an in-app
+  disclosure acknowledgement before background convergence starts; legacy
+  IPC clients remain read-only until updated.
 - Added an explicitly enrolled, TPM-authorized local-development deployment
   broker for quiet OpenBlade build installation without repeated UAC prompts,
   with a protected Burn environment, exact first-install rollback recovery,
