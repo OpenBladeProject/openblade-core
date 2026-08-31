@@ -325,7 +325,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             // A possibly submitted transition can return Failed before later
             // read-only reconciliation confirms service ownership. Never replay
             // the enable here; the exact state and journal gates below decide.
-            _ = useValidationRequest
+            ControlOperationResult applied = useValidationRequest
                 ? await client.ValidatePadlessHyperBoostLifecycleAsync(
                         scenario == HyperBoostLifecycleScenario.LowPower
                             ? PadlessHyperBoostLifecycleScenario.LowPower
@@ -340,6 +340,22 @@ internal sealed class HyperBoostLifecycleValidationRunner
                         enabled: true,
                         cancellationToken)
                     .ConfigureAwait(false);
+            if (applied.Status == ControlOperationStatus.Blocked)
+            {
+                return new HyperBoostLifecycleArmResult(
+                    Success: false,
+                    ValidationAttempted: true,
+                    HyperBoostConfirmed: false,
+                    DurableOwnershipConfirmed: false,
+                    MarkerCreated: false,
+                    CleanupAttempted: false,
+                    FinalRestorationConfirmed: false,
+                    ManualRecoveryRequired: false,
+                    ToolProductVersion: toolProductVersion,
+                    Message: $"Typed service activation was blocked before submission. {applied.Message}",
+                    Marker: null);
+            }
+
             hyperBoostConfirmed = await WaitForStateAsync(
                     candidate => candidate.ConfirmedState is
                     {

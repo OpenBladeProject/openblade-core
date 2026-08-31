@@ -492,6 +492,40 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     }
 
     [Fact]
+    public async Task ArmAsync_BlockedResultDoesNotClaimConcurrentOwnedActivation()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient
+        {
+            BlockEnableAndActivateExternallyOnNextObservation = true,
+        };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status);
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_018, 123_473),
+            () => OwnedJournal());
+        string markerPath = Path.Combine(directory, "blocked-concurrent-owned.json");
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            markerPath,
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.ValidationAttempted);
+        Assert.False(result.HyperBoostConfirmed);
+        Assert.False(result.MarkerCreated);
+        Assert.False(result.CleanupAttempted);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(1, client.EnableCalls);
+        Assert.Equal(0, client.DisableCalls);
+        Assert.Equal(1, client.ObserveCalls);
+        Assert.False(File.Exists(markerPath));
+    }
+
+    [Fact]
     public async Task ArmAsync_InactiveFailedEntryRequiresExactRestoreConfirmation()
     {
         Directory.CreateDirectory(directory);
@@ -1263,9 +1297,13 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         internal int ValidationEnableCalls { get; private set; }
 
+        internal int ObserveCalls { get; private set; }
+
         internal bool ThrowAfterEnable { get; init; }
 
         internal bool FailResultAfterConfirmedEnable { get; init; }
+
+        internal bool BlockEnableAndActivateExternallyOnNextObservation { get; init; }
 
         internal bool FailEnableAfterTransitionBaseline { get; init; }
 
@@ -1287,7 +1325,25 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
             LiveReadingSensors sensors,
-            CancellationToken cancellationToken) => Task.FromResult(Status);
+            CancellationToken cancellationToken)
+        {
+            ObserveCalls++;
+            if (BlockEnableAndActivateExternallyOnNextObservation
+                && EnableCalls > 0)
+            {
+                Status = Status with
+                {
+                    ConfirmedState = Status.ConfirmedState! with
+                    {
+                        HyperBoostActive = true,
+                        Performance = null,
+                        Fans = FanMode.Automatic,
+                    },
+                };
+            }
+
+            return Task.FromResult(Status);
+        }
 
         public Task<ControlOperationResult> SetHyperBoostAsync(
             bool enabled,
@@ -1300,6 +1356,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             else
             {
                 DisableCalls++;
+            }
+            if (enabled && BlockEnableAndActivateExternallyOnNextObservation)
+            {
+                return Task.FromResult(new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The enable request was blocked before submission."));
             }
             if (enabled && FailEnableAfterTransitionBaseline)
             {
