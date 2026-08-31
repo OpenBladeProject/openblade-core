@@ -65,7 +65,7 @@ internal static class Program
                     "Fatal process failure",
                     exception,
                     processTerminating: true);
-            return 1;
+            throw;
         }
     }
 
