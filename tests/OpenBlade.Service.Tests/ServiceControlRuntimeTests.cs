@@ -13587,6 +13587,185 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ThermalConvergence_RejectedStrictPolicyPreservesQueuedCandidate()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("rejected-strict");
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        ThermalConvergenceStatus before = Assert.IsType<ThermalConvergenceStatus>(
+            thermal.Context.Runtime.GetStatus().ThermalConvergence);
+        Assert.Equal(ThermalConvergenceState.Converging, before.State);
+        int writesBefore = thermal.Context.Device.TotalSetterCalls;
+        var setterObserved = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        thermal.Context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                setterObserved.TrySetResult();
+            }
+        };
+
+        ControlOperationResult rejected = await thermal.Context.Runtime
+            .SetThermalControlPolicyAsync(
+                ThermalControlPolicy.Strict,
+                static () => false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, rejected.Status);
+        Assert.Equal(
+            before,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence);
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await setterObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(thermal.Context.Device.TotalSetterCalls > writesBefore);
+        cancellation.Cancel();
+        await consumer.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_NewlyQuarantinedPolicySaveReturnsBlocked()
+    {
+        const string name = "quarantined-policy-save";
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(name);
+        string profilePath = Path.Combine(
+            directory,
+            name,
+            "users",
+            thermal.UserSid.Value,
+            "profiles.json");
+        await File.AppendAllTextAsync(profilePath, " ");
+        int writesBefore = thermal.Context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .SetThermalControlPolicyAsync(
+                ThermalControlPolicy.Strict,
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        ThermalConvergenceStatus status = Assert.IsType<ThermalConvergenceStatus>(
+            thermal.Context.Runtime.GetStatus().ThermalConvergence);
+        Assert.Equal(ThermalControlPolicy.MaintainDesiredState, status.Policy);
+        Assert.Equal(ThermalConvergenceState.Paused, status.State);
+        Assert.Equal(
+            ThermalConvergenceReason.ConfigurationQuarantined,
+            status.Reason);
+        Assert.Equal(writesBefore, thermal.Context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_NewlyQuarantinedDisclosureSaveReturnsBlocked()
+    {
+        const string name = "quarantined-disclosure-save";
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                name,
+                configuration => configuration with
+                {
+                    Preferences = configuration.Preferences with
+                    {
+                        ThermalControlPolicy =
+                            ThermalControlPolicy.MaintainDesiredState,
+                        ThermalPolicyUpgradeDisclosure =
+                            ThermalPolicyUpgradeDisclosureState
+                                .UpgradeDisclosurePending,
+                    },
+                });
+        string profilePath = Path.Combine(
+            directory,
+            name,
+            "users",
+            thermal.UserSid.Value,
+            "profiles.json");
+        await File.AppendAllTextAsync(profilePath, " ");
+        int writesBefore = thermal.Context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        ThermalConvergenceStatus status = Assert.IsType<ThermalConvergenceStatus>(
+            thermal.Context.Runtime.GetStatus().ThermalConvergence);
+        Assert.Equal(ThermalControlPolicy.MaintainDesiredState, status.Policy);
+        Assert.Equal(
+            ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            status.Disclosure);
+        Assert.Equal(ThermalConvergenceState.Paused, status.State);
+        Assert.Equal(
+            ThermalConvergenceReason.ConfigurationQuarantined,
+            status.Reason);
+        Assert.Equal(writesBefore, thermal.Context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_QuarantinedLedgerDoesNotPersistEffectiveStrict()
+    {
+        const string name = "quarantined-ledger-policy";
+        byte[] corruptLedger = [0x7B, 0x62, 0x61, 0x64];
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync(
+                name,
+                configuration => configuration with
+                {
+                    Preferences = configuration.Preferences with
+                    {
+                        ThermalControlPolicy =
+                            ThermalControlPolicy.MaintainDesiredState,
+                    },
+                },
+                beforeActivation: async (_, sid) =>
+                {
+                    string ledgerPath = Path.Combine(
+                        directory,
+                        name,
+                        "users",
+                        sid.Value,
+                        "thermal-convergence.json");
+                    await File.WriteAllBytesAsync(ledgerPath, corruptLedger);
+                },
+                requireAuthoritativeSeed: false);
+        ThermalConvergenceStatus effective = Assert.IsType<ThermalConvergenceStatus>(
+            thermal.Context.Runtime.GetStatus().ThermalConvergence);
+        Assert.Equal(ThermalControlPolicy.Strict, effective.Policy);
+        Assert.Equal(
+            ThermalConvergenceReason.ConfigurationQuarantined,
+            effective.Reason);
+
+        await thermal.Context.Runtime.SetExternalLightingOverridePolicyAsync(
+            enabled: true,
+            CancellationToken.None);
+
+        string userRoot = Path.Combine(
+            directory,
+            name,
+            "users",
+            thermal.UserSid.Value);
+        var configurationStore = new BatteryConfigurationStore(
+            Path.Combine(userRoot, "profiles.json"),
+            Path.Combine(userRoot, "battery-preferences.json"),
+            Path.Combine(userRoot, "battery-configuration.commit.json"));
+        BatteryConfiguration reloaded = await configurationStore.LoadAsync(
+            CancellationToken.None);
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            reloaded.Preferences.ThermalControlPolicy);
+        Assert.Equal(
+            corruptLedger,
+            await File.ReadAllBytesAsync(
+                Path.Combine(userRoot, "thermal-convergence.json")));
+    }
+
+    [Fact]
     public async Task ThermalConvergence_MaintainReservesBeforeOneWriteAndTombstonesRepeatDrift()
     {
         ThermalConvergenceTestContext thermal =
@@ -14101,7 +14280,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 confirmedStateFactory = null,
             PowerSource initialPowerSource = PowerSource.PluggedIn,
             Func<ThermalConvergenceStateStore, System.Security.Principal.SecurityIdentifier,
-                Task>? beforeActivation = null)
+                Task>? beforeActivation = null,
+            bool requireAuthoritativeSeed = true)
     {
         string machineRoot = Path.Combine(directory, name);
         var userSid = new System.Security.Principal.SecurityIdentifier(
@@ -14131,9 +14311,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await beforeActivation(convergenceStore, userSid);
             ThermalConvergenceLoadResult seeded = await convergenceStore.LoadAsync(
                 CancellationToken.None);
-            Assert.True(
-                seeded.IsAuthoritative,
-                $"Seeded convergence state was quarantined as {seeded.QuarantineReason}.");
+            if (requireAuthoritativeSeed)
+            {
+                Assert.True(
+                    seeded.IsAuthoritative,
+                    $"Seeded convergence state was quarantined as {seeded.QuarantineReason}.");
+            }
         }
 
         TestContext context = CreateContext(

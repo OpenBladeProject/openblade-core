@@ -1089,19 +1089,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Volatile.Write(
                     ref activeConfigurationDisposition,
                     (int)context.Configuration.Disposition);
-                BatteryAutomationPreferences loadedPreferences =
-                    thermalConvergenceLedgerAuthoritative
-                        ? context.Configuration.Preferences
-                        : context.Configuration.Preferences with
-                        {
-                            ThermalControlPolicy = ThermalControlPolicy.Strict,
-                        };
                 automation = new ProfileAutomationState(
                     profiles,
-                    loadedPreferences,
+                    context.Configuration.Preferences,
                     powerSource,
                     overrides);
-                preferences = loadedPreferences;
+                // A non-authoritative convergence ledger fails closed at the
+                // effective-policy boundary. Preserve the user's durable policy
+                // here so an unrelated preference save cannot turn that runtime
+                // fallback into a permanent Strict selection.
+                preferences = context.Configuration.Preferences;
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
                 deviceProvider.SetLightingRefreshRate(
@@ -1223,13 +1220,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             throw new ArgumentOutOfRangeException(nameof(policy));
         }
         ArgumentNullException.ThrowIfNull(stillControlsSession);
-        if (policy == ThermalControlPolicy.Strict)
-        {
-            CloseThermalConvergenceAdmission(
-                ThermalConvergenceReason.StrictPolicy,
-                thermalConvergenceShutdown: false);
-        }
-
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -1292,6 +1282,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         == ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending
                         ? "Maintain desired thermal state is selected and will remain paused until the upgrade disclosure is acknowledged."
                         : "Maintain desired thermal state is selected; a fresh safe observation is required before background convergence.");
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            ControlOperationResult blocked = ConfigurationQuarantineBlocked();
+            CloseThermalConvergenceAdmission(
+                ThermalConvergenceReason.ConfigurationQuarantined,
+                thermalConvergenceShutdown: false);
+            return blocked;
         }
         finally
         {
@@ -1360,6 +1358,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(
                 ControlOperationStatus.Stored,
                 "The Maintain desired state disclosure was acknowledged. A fresh safe observation is required before background convergence.");
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            ControlOperationResult blocked = ConfigurationQuarantineBlocked();
+            CloseThermalConvergenceAdmission(
+                ThermalConvergenceReason.ConfigurationQuarantined,
+                thermalConvergenceShutdown: false);
+            return blocked;
         }
         finally
         {

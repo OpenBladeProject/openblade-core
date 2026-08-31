@@ -78,23 +78,25 @@ internal static class ThermalConvergenceClassifier
                         contradiction |= ThermalConvergenceContradiction.Performance;
                     }
                 }
+            }
+        }
 
-                // GPU clock tuning is independent of the selected performance
-                // preset. A disabled intent is an explicit reset to defaults;
-                // managed devices may represent a confirmed reset by omitting
-                // the offsets entirely.
-                if (desired.GpuClockTuning is { } tuning)
-                {
-                    if (tuning.Enabled && confirmed.GpuClockOffsets is null)
-                    {
-                        observationUnavailable = true;
-                    }
-                    else if (confirmed.GpuClockOffsets is { } observedOffsets
-                        && observedOffsets.Current != tuning.EffectiveOffsets)
-                    {
-                        contradiction |= ThermalConvergenceContradiction.Performance;
-                    }
-                }
+        // GPU clock tuning is independent of the firmware performance selector.
+        // Both-manual topology deliberately hides that selector, so its absence
+        // must not hide a confirmed GPU-offset contradiction. Outside that
+        // topology, keep an unavailable selector readback fail-closed instead of
+        // turning a partial observation into an aggregate performance write.
+        if ((bothManual || confirmed.Performance is not null)
+            && desired.GpuClockTuning is { } tuning)
+        {
+            if (tuning.Enabled && confirmed.GpuClockOffsets is null)
+            {
+                observationUnavailable = true;
+            }
+            else if (confirmed.GpuClockOffsets is { } observedOffsets
+                && observedOffsets.Current != tuning.EffectiveOffsets)
+            {
+                contradiction |= ThermalConvergenceContradiction.Performance;
             }
         }
 

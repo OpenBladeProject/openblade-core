@@ -168,6 +168,66 @@ public sealed class ThermalConvergenceClassifierTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ManualTopologyDoesNotHideConfirmedGpuClockDrift(
+        bool exactManualIntentOwned)
+    {
+        DesiredDeviceState desired = Desired(
+            PerformancePreset.Balanced,
+            FanMode.Fixed) with
+        {
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(100, 200)),
+        };
+        ConfirmedDeviceState confirmed = Confirmed(null, FanMode.Fixed) with
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test GPU",
+                new GpuClockOffsetRange(-300, 300, CurrentMegahertz: 0),
+                new GpuClockOffsetRange(-500, 500, CurrentMegahertz: 0)),
+        };
+
+        ThermalConvergenceAssessment result = ThermalConvergenceClassifier.Classify(
+            desired,
+            confirmed,
+            exactManualIntentOwned);
+
+        Assert.Equal(ThermalConvergenceObservationKind.Candidate, result.Kind);
+        Assert.Equal(ThermalConvergenceContradiction.Performance, result.Contradiction);
+    }
+
+    [Fact]
+    public void UnavailableAutomaticPerformanceReadbackKeepsGpuDriftReadOnly()
+    {
+        DesiredDeviceState desired = Desired(
+            PerformancePreset.Balanced,
+            FanMode.Automatic) with
+        {
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                new GpuClockOffsetSettings(100, 200)),
+        };
+        ConfirmedDeviceState confirmed = Confirmed(null, FanMode.Automatic) with
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test GPU",
+                new GpuClockOffsetRange(-300, 300, CurrentMegahertz: 0),
+                new GpuClockOffsetRange(-500, 500, CurrentMegahertz: 0)),
+        };
+
+        ThermalConvergenceAssessment result = ThermalConvergenceClassifier.Classify(
+            desired,
+            confirmed);
+
+        Assert.Equal(
+            ThermalConvergenceObservationKind.AwaitingObservation,
+            result.Kind);
+        Assert.Equal(ThermalConvergenceContradiction.None, result.Contradiction);
+    }
+
+    [Theory]
     [InlineData(0, 0, false)]
     [InlineData(100, 200, true)]
     public void DisabledGpuClockTuningRequiresConfirmedDefaultOffsets(
