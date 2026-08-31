@@ -16270,6 +16270,58 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_RetirementClearExceptionPublishesNewerRestorePendingJournal()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(
+                true,
+                CancellationToken.None)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+            HyperBoostActive = false,
+        };
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalClear = () =>
+        {
+            HyperBoostOwnershipJournal current =
+                Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+            Assert.Equal(
+                HyperBoostOwnershipJournalState.Relinquished,
+                current.State);
+            changedJournal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                current.BaseMode,
+                current.RequiresCoolingPad,
+                current.UpdatedAtUtc.AddMinutes(1))
+            {
+                RestoreIntent = current.RestoreIntent,
+                TransitionId = current.TransitionId,
+            };
+            journal.Journal = changedJournal;
+            throw new IOException("Injected clear race failure.");
+        };
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_UnspecifiedPreSubmissionFailureDoesNotRetry()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -18428,6 +18480,52 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             HyperBoostOwnershipJournalState.EnablePending,
             journal.Journal?.State);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_PendingEntryReplacementRacePublishesNewerRestorePendingJournal()
+    {
+        Guid transitionId = Guid.Parse("6b4a809d-bdc9-450d-a622-fdb69577ca49");
+        var original = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.EnablePending,
+            PerformancePreset.Balanced,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow)
+        {
+            RestoreIntent = HyperBoostRestoreIntent.BalancedAutomatic,
+            TransitionId = transitionId,
+        };
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = original,
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        HyperBoostOwnershipJournal? changedJournal = null;
+        journal.BeforeConditionalReplace = () =>
+        {
+            changedJournal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                original.BaseMode,
+                original.RequiresCoolingPad,
+                original.UpdatedAtUtc.AddMinutes(1))
+            {
+                RestoreIntent = original.RestoreIntent,
+                TransitionId = transitionId,
+            };
+            journal.Journal = changedJournal;
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Same(changedJournal, journal.Journal);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
     }
 
     [Fact]

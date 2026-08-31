@@ -5078,7 +5078,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 "The failed HyperBoost exit restore could not preserve its fresh recovery baseline.")
                             .ConfigureAwait(false)).Applied;
                     hyperBoostJournalSafetyBlock = true;
-                    hyperBoostRestorePending = recoveryRecorded;
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
@@ -6626,7 +6625,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         "The indeterminate HyperBoost exit restore could not preserve its fresh recovery baseline.")
                     .ConfigureAwait(false)).Applied;
             hyperBoostJournalSafetyBlock = true;
-            hyperBoostRestorePending = recoveryRecorded;
             pendingIndeterminateHyperBoostJournal = null;
             pendingIndeterminateHyperBoostJournalSha256 = null;
             string failedMessage =
@@ -6848,7 +6846,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         "The failed HyperBoost entry restore could not be preserved for one explicit recovery.")
                     .ConfigureAwait(false)).Applied;
             hyperBoostJournalSafetyBlock = true;
-            hyperBoostRestorePending = restoreMarkerWritten;
             pendingIndeterminateHyperBoostJournal = null;
             pendingIndeterminateHyperBoostJournalSha256 = null;
             string failedMessage =
@@ -6979,7 +6976,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The failed HyperBoost entry baseline restore could not preserve its fresh recovery baseline.")
                 .ConfigureAwait(false)).Applied;
         hyperBoostJournalSafetyBlock = true;
-        hyperBoostRestorePending = recoveryRecorded;
         string message =
             $"HyperBoost was not submitted, but its entry baseline could not be restored. {restoration.Message} Control writes remain blocked."
             + (recoveryRecorded
@@ -7237,7 +7233,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                 "The failed ownership-journal fallback restore could not preserve its fresh recovery baseline.")
                             .ConfigureAwait(false)).Applied;
                     hyperBoostJournalSafetyBlock = true;
-                    hyperBoostRestorePending = recoveryRecorded;
                     hyperBoostOwnershipGeneration++;
                     ownsHyperBoost = false;
                     ownedHyperBoostBaseMode = null;
@@ -7450,11 +7445,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
+            bool exactRelinquishedStillCurrent = relinquished
+                && await IsExpectedHyperBoostJournalCurrentAsync(
+                        relinquishedJournal,
+                        relinquishedSha256,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 $"{failureMessage} The journal could not be removed: {exception.Message}");
-            hyperBoostJournalSafetyBlock = !relinquished;
-            return relinquished;
+            if (exactRelinquishedStillCurrent)
+            {
+                hyperBoostJournalSafetyBlock = false;
+                hyperBoostRestorePending = false;
+                return true;
+            }
+
+            await RefreshHyperBoostJournalPendingStateAfterMutationMissAsync()
+                .ConfigureAwait(false);
+            return false;
         }
     }
 
@@ -7592,16 +7601,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         RestoreIntent = destinationIntent,
                         TransitionId = journal.TransitionId,
                     };
-                    HyperBoostOwnershipJournalMutationResult replacement =
-                        await TryReplaceHyperBoostOwnershipJournalAsync(
-                                journal,
-                                load.Sha256,
-                                replacementJournal,
-                                "The pending HyperBoost entry could not be converted to the current full-power destination recovery.")
-                            .ConfigureAwait(false);
-                    bool converted = replacement.Applied;
+                    await TryReplaceHyperBoostOwnershipJournalAsync(
+                            journal,
+                            load.Sha256,
+                            replacementJournal,
+                            "The pending HyperBoost entry could not be converted to the current full-power destination recovery.")
+                        .ConfigureAwait(false);
                     hyperBoostJournalSafetyBlock = true;
-                    hyperBoostRestorePending = converted;
                 }
             }
             return new InactiveHyperBoostJournalRetirement(false);
