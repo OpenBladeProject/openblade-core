@@ -2159,7 +2159,11 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "CanonicalizeLocalizationSnapshotPixels(\r\n            pixelBytes,\r\n            bitmap.PixelWidth,\r\n            bitmap.PixelHeight)",
+            "CaptureCanonicalSnapshotFrameAsync(element)",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "stableFrame.Pixels.AsSpan().SequenceEqual(candidate.Pixels)",
             app,
             StringComparison.Ordinal);
         Assert.Contains("majorityCount >= 6", app, StringComparison.Ordinal);
@@ -2187,6 +2191,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'settings-appearance'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-narrow'", capture, StringComparison.Ordinal);
         Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
+        Assert.Contains(
+            "frameStabilization = 'two-consecutive-canonical-frames-v1'",
+            capture,
+            StringComparison.Ordinal);
         Assert.Contains(
             "windowActivation = 'stable-title-foreground-v1'",
             capture,

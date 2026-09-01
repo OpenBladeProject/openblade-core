@@ -1028,6 +1028,57 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "The localization snapshot window has no renderable content.");
         }
 
+        LocalizationSnapshotFrame stableFrame =
+            await CaptureCanonicalSnapshotFrameAsync(element);
+        var stabilization = Stopwatch.StartNew();
+        while (true)
+        {
+            await Task.Delay(100);
+            LocalizationSnapshotFrame candidate =
+                await CaptureCanonicalSnapshotFrameAsync(element);
+            if (stableFrame.Width == candidate.Width
+                && stableFrame.Height == candidate.Height
+                && stableFrame.Pixels.AsSpan().SequenceEqual(candidate.Pixels))
+            {
+                stableFrame = candidate;
+                break;
+            }
+
+            if (stabilization.Elapsed >= TimeSpan.FromSeconds(10))
+            {
+                throw new InvalidOperationException(
+                    "The localization snapshot did not produce two consecutive "
+                        + "canonical frames within 10 seconds.");
+            }
+
+            stableFrame = candidate;
+        }
+
+        using var stream = new InMemoryRandomAccessStream();
+        BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
+            BitmapEncoder.PngEncoderId,
+            stream);
+        encoder.SetPixelData(
+            BitmapPixelFormat.Bgra8,
+            BitmapAlphaMode.Premultiplied,
+            checked((uint)stableFrame.Width),
+            checked((uint)stableFrame.Height),
+            96,
+            96,
+            stableFrame.Pixels);
+        await encoder.FlushAsync();
+
+        stream.Seek(0);
+        using var reader = new DataReader(stream.GetInputStreamAt(0));
+        await reader.LoadAsync(checked((uint)stream.Size));
+        byte[] encoded = new byte[checked((int)stream.Size)];
+        reader.ReadBytes(encoded);
+        await File.WriteAllBytesAsync(path, encoded);
+    }
+
+    private static async Task<LocalizationSnapshotFrame>
+        CaptureCanonicalSnapshotFrameAsync(UIElement element)
+    {
         var bitmap = new RenderTargetBitmap();
         await bitmap.RenderAsync(element);
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
@@ -1037,10 +1088,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         Windows.Storage.Streams.IBuffer pixels = await bitmap.GetPixelsAsync();
-        using var stream = new InMemoryRandomAccessStream();
-        BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
-            BitmapEncoder.PngEncoderId,
-            stream);
         using var pixelReader = DataReader.FromBuffer(pixels);
         byte[] pixelBytes = new byte[checked((int)pixels.Length)];
         pixelReader.ReadBytes(pixelBytes);
@@ -1048,22 +1095,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             pixelBytes,
             bitmap.PixelWidth,
             bitmap.PixelHeight);
-        encoder.SetPixelData(
-            BitmapPixelFormat.Bgra8,
-            BitmapAlphaMode.Premultiplied,
-            checked((uint)bitmap.PixelWidth),
-            checked((uint)bitmap.PixelHeight),
-            96,
-            96,
+        return new LocalizationSnapshotFrame(
+            bitmap.PixelWidth,
+            bitmap.PixelHeight,
             pixelBytes);
-        await encoder.FlushAsync();
-
-        stream.Seek(0);
-        using var reader = new DataReader(stream.GetInputStreamAt(0));
-        await reader.LoadAsync(checked((uint)stream.Size));
-        byte[] encoded = new byte[checked((int)stream.Size)];
-        reader.ReadBytes(encoded);
-        await File.WriteAllBytesAsync(path, encoded);
     }
 
     private static void CanonicalizeLocalizationSnapshotPixels(
@@ -1163,6 +1198,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         pixels[index + 2] = (byte)(value >> 16);
         pixels[index + 3] = (byte)(value >> 24);
     }
+
+    private readonly record struct LocalizationSnapshotFrame(
+        int Width,
+        int Height,
+        byte[] Pixels);
 
     private static bool IsAdjacentSnapshotPaletteColor(uint value, uint candidate)
     {

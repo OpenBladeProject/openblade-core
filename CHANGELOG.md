@@ -17,6 +17,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Stabilized disconnected translator-package screenshots on slower renderers by
+  requiring two consecutive canonical frames before archiving each Tray and
+  installer surface, preserving byte-identical package exports across fresh
+  processes.
 - Waited for each previous Tray window to finish closing before rebuilding the
   next localized shell, preventing rapid in-process language changes from
   overlapping native WinUI teardown.

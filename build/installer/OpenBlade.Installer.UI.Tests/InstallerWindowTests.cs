@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
@@ -329,33 +331,14 @@ public sealed class InstallerWindowTests
                     {
                         AssertWithinSnapshot(visual, action);
                     }
-                    var bitmap = new RenderTargetBitmap(
-                        width,
-                        height,
-                        96,
-                        96,
-                        PixelFormats.Pbgra32);
-                    var backgroundVisual = new DrawingVisual();
-                    using (DrawingContext drawing = backgroundVisual.RenderOpen())
-                    {
-                        drawing.DrawRectangle(
-                            Assert.IsType<SolidColorBrush>(window.Resources["WindowBrush"]),
-                            null,
-                            new Rect(0, 0, width, height));
-                    }
-                    bitmap.Render(backgroundVisual);
-                    bitmap.Render(visual);
-                    byte[] topLeftPixel = new byte[4];
-                    bitmap.CopyPixels(
-                        new Int32Rect(0, 0, 1, 1),
-                        topLeftPixel,
-                        4,
-                        0);
-                    Assert.Equal(new byte[] { 0xF7, 0xF7, 0xF7, 0xFF }, topLeftPixel);
+                    var background = Assert.IsType<SolidColorBrush>(
+                        window.Resources["WindowBrush"]);
                     int stride = width * 4;
-                    byte[] pixels = new byte[stride * height];
-                    bitmap.CopyPixels(pixels, stride, 0);
-                    CanonicalizeLocalizationSnapshotPixels(pixels, width, height);
+                    byte[] pixels = CaptureStableLocalizationSnapshotPixels(
+                        visual,
+                        background,
+                        width,
+                        height);
                     BitmapSource canonicalBitmap = BitmapSource.Create(
                         width,
                         height,
@@ -377,6 +360,79 @@ public sealed class InstallerWindowTests
                 }
             });
         }
+    }
+
+    private static byte[] CaptureStableLocalizationSnapshotPixels(
+        FrameworkElement visual,
+        SolidColorBrush background,
+        int width,
+        int height)
+    {
+        byte[] stable = CaptureCanonicalLocalizationSnapshotPixels(
+            visual,
+            background,
+            width,
+            height);
+        Stopwatch stabilization = Stopwatch.StartNew();
+        while (true)
+        {
+            Thread.Sleep(100);
+            PumpDispatcher(visual.Dispatcher);
+            visual.UpdateLayout();
+            byte[] candidate = CaptureCanonicalLocalizationSnapshotPixels(
+                visual,
+                background,
+                width,
+                height);
+            if (stable.SequenceEqual(candidate))
+            {
+                return candidate;
+            }
+
+            if (stabilization.Elapsed >= TimeSpan.FromSeconds(10))
+            {
+                throw new InvalidOperationException(
+                    "The installer localization snapshot did not produce two "
+                        + "consecutive canonical frames within 10 seconds.");
+            }
+
+            stable = candidate;
+        }
+    }
+
+    private static byte[] CaptureCanonicalLocalizationSnapshotPixels(
+        FrameworkElement visual,
+        SolidColorBrush background,
+        int width,
+        int height)
+    {
+        var bitmap = new RenderTargetBitmap(
+            width,
+            height,
+            96,
+            96,
+            PixelFormats.Pbgra32);
+        var backgroundVisual = new DrawingVisual();
+        using (DrawingContext drawing = backgroundVisual.RenderOpen())
+        {
+            drawing.DrawRectangle(
+                background,
+                null,
+                new Rect(0, 0, width, height));
+        }
+        bitmap.Render(backgroundVisual);
+        bitmap.Render(visual);
+        byte[] topLeftPixel = new byte[4];
+        bitmap.CopyPixels(
+            new Int32Rect(0, 0, 1, 1),
+            topLeftPixel,
+            4,
+            0);
+        Assert.Equal(new byte[] { 0xF7, 0xF7, 0xF7, 0xFF }, topLeftPixel);
+        byte[] pixels = new byte[checked(width * height * 4)];
+        bitmap.CopyPixels(pixels, width * 4, 0);
+        CanonicalizeLocalizationSnapshotPixels(pixels, width, height);
+        return pixels;
     }
 
     private static void CanonicalizeLocalizationSnapshotPixels(

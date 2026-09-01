@@ -810,6 +810,9 @@ throw 'Target catalog was not write-locked during import.'
     Assert-Equal 'bgra8-4-bit-midpoint-local-majority-v1' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
+    Assert-Equal 'two-consecutive-canonical-frames-v1' `
+        $manifest.screenshotRenderProfile.frameStabilization `
+        'The package manifest must record deterministic frame stabilization.'
     Assert-Equal 'stable-title-foreground-v1' `
         $manifest.screenshotRenderProfile.windowActivation `
         'The package manifest must record deterministic title activation styling.'
@@ -824,6 +827,22 @@ throw 'Target catalog was not write-locked during import.'
     Assert-Equal $firstArchiveHash `
         (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash `
         'Repeated package exports must produce the same archive bytes.'
+    $freshPowerShell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') {
+        'pwsh.exe'
+    } else {
+        'powershell.exe'
+    })
+    & $freshPowerShell -NoProfile -ExecutionPolicy Bypass `
+        -File $packageScript `
+        -Locale ru-RU `
+        -OutputDirectory $packageRoot `
+        -Force
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Fresh-process translator package export failed.'
+    }
+    Assert-Equal $firstArchiveHash `
+        (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash `
+        'Fresh-process package exports must produce the same archive bytes.'
 
     $captureScript = [IO.File]::ReadAllText((
         Join-Path $repository 'build\Capture-LocalizationSnapshots.ps1'))

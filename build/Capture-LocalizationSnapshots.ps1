@@ -130,6 +130,7 @@ $manifest = [ordered]@{
         dpi = '96-process-local-DPIUNAWARE'
         installerRendering = 'software'
         pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v1'
+        frameStabilization = 'two-consecutive-canonical-frames-v1'
         windowActivation = 'stable-title-foreground-v1'
         data = 'sanitized-fixed-preview'
     }
