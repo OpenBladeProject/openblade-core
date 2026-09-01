@@ -55,6 +55,11 @@ public sealed class ThermalExternalDriftValidationTests
         Assert.Equal(PerformancePreset.Balanced, result.FinalPerformance);
         Assert.Equal(FanMode.Automatic, result.FinalFans);
         Assert.Equal(1, result.MaintainAttemptCount);
+        Assert.Equal(1, result.SyntheticWriteAttemptCount);
+        Assert.Equal("OpenBlade:verified-device", result.DeviceFingerprint);
+        Assert.Equal(
+            Guid.Parse("EFB30F48-9FC8-43C4-B9A2-54D808CEBA5B"),
+            result.MaintainTransitionAttemptId);
         Assert.Equal(1, client.ValidationCalls);
         Assert.Equal(0, client.ObserveCalls);
         Assert.Equal(0, client.ReapplyCalls);
@@ -180,6 +185,10 @@ public sealed class ThermalExternalDriftValidationTests
             ValidManifest() with { ValidationRunId = Guid.Empty },
             ValidManifest() with { SourceRevision = new string('A', 39) },
             ValidManifest() with { SourceRevision = new string('Z', 40) },
+            ValidManifest() with { LocalDevVersion = "0.20.0" },
+            ValidManifest() with { LocalDevVersion = "invalid" },
+            ValidManifest() with { InstallerSha256 = new string('A', 63) },
+            ValidManifest() with { FirmwareSmokeSha256 = new string('A', 65) },
             ValidManifest() with { ServiceAssemblySha256 = new string('A', 63) },
             ValidManifest() with { ProtocolAssemblySha256 = new string('A', 65) },
             ValidManifest() with { ProductionFixtureSha256 = new string('Z', 64) },
@@ -209,6 +218,30 @@ public sealed class ThermalExternalDriftValidationTests
         }
     }
 
+    [Fact]
+    public void Manifest_ConfirmsExactFirmwareSmokeBytes()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(path, [1, 2, 3, 4]);
+            string hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    File.ReadAllBytes(path)));
+            ThermalExternalDriftValidationBuildManifest manifest =
+                ValidManifest() with { FirmwareSmokeSha256 = hash };
+
+            Assert.True(manifest.MatchesFirmwareSmoke(path));
+            Assert.False(
+                (manifest with { FirmwareSmokeSha256 = new string('A', 64) })
+                    .MatchesFirmwareSmoke(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static ThermalExternalDriftValidationRunner Runner(
         FakeClient client,
         ManualTimeProvider clock,
@@ -226,6 +259,9 @@ public sealed class ThermalExternalDriftValidationTests
         SchemaVersion: 1,
         ValidationRunId: Guid.Parse("5B409034-47C6-41BA-BA6F-0046570C1A5C"),
         SourceRevision: new string('A', 40),
+        LocalDevVersion: "65535.1.2.3",
+        InstallerSha256: new string('E', 64),
+        FirmwareSmokeSha256: new string('F', 64),
         ServiceAssemblySha256: new string('B', 64),
         ProtocolAssemblySha256: new string('C', 64),
         ProductionFixtureSha256: new string('D', 64));
@@ -243,7 +279,7 @@ public sealed class ThermalExternalDriftValidationTests
             "ThermalConvergence",
             "Reconcile",
             "Applied",
-            "Maintain thermal convergence attempt 1 confirmed the desired state."),
+            "Maintain thermal convergence attempt efb30f48-9fc8-43c4-b9a2-54d808ceba5b: components=Performance; stage=Confirmed."),
     ];
 
     private static HyperBoostLifecycleDiagnosticResult InjectionDiagnostic(
@@ -252,7 +288,7 @@ public sealed class ThermalExternalDriftValidationTests
         "ThermalExternalDriftValidation",
         "Inject",
         "Applied",
-        "Thermal validation confirmed one Service-owned synthetic performance mutation.",
+        "Thermal validation confirmed one Service-owned synthetic performance mutation; deviceFingerprint=OpenBlade:verified-device; desired intent unchanged.",
         validationRunId);
 
     private static ServiceStatusSnapshot Status(

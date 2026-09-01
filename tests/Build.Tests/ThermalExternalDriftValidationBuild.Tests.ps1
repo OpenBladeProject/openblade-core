@@ -13,14 +13,22 @@ $requiredScriptFragments = @(
     'git -C $repoRoot status --porcelain',
     'validation output directory must be outside the source repository',
     'validation output directory must be empty',
-    '-p:OpenBladeThermalExternalDriftValidation=true',
-    '-p:SourceRevision=$revision',
+    '-BuildChannel LocalDev',
+    '-LocalDevVersion $LocalDevVersion',
+    '-SourceRevision $revision',
+    '-ThermalExternalDriftValidation',
+    "artifacts\win-x64\OpenBlade\payload",
+    "artifacts\win-x64\OpenBlade-Setup.exe",
+    'OpenBlade-Setup.exe',
     'OpenBlade.Service.dll',
     'OpenBlade.Protocol.dll',
     'Rz09_0581_02e0_3_01_BatteryProduction.json',
     'serviceAssemblySha256',
     'protocolAssemblySha256',
     'productionFixtureSha256',
+    'localDevVersion',
+    'installerSha256',
+    'firmwareSmokeSha256',
     'thermal-external-drift-validation-build.json'
 )
 foreach ($fragment in $requiredScriptFragments) {
@@ -29,10 +37,15 @@ foreach ($fragment in $requiredScriptFragments) {
     }
 }
 
-if ($publish.IndexOf(
+foreach ($publishFragment in @(
+        "`$buildIdentity.Channel -ne 'LocalDev'",
+        'Thermal external-drift validation installers are restricted to the LocalDev channel.',
+        '--property:OpenBladeThermalExternalDriftValidation=true',
         '--property:OpenBladeThermalExternalDriftValidation=false',
-        [StringComparison]::Ordinal) -lt 0) {
-    throw 'Production publishing does not explicitly disable the validation build marker.'
+        '$payload ($productionPublishArguments + $serviceValidationArguments)')) {
+    if ($publish.IndexOf($publishFragment, [StringComparison]::Ordinal) -lt 0) {
+        throw "Coordinated publishing is missing validation boundary: $publishFragment"
+    }
 }
 
 $requiredProjectFragments = @(

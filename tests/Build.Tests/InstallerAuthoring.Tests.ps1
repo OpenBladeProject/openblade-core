@@ -523,6 +523,8 @@ foreach ($requiredText in @(
         'BuildChannel',
         'BuildRevision',
         '--property:OpenBladePadlessHyperBoostLifecycleValidation=false',
+        '--property:OpenBladeThermalExternalDriftValidation=false',
+        'Thermal external-drift validation installers are restricted to the LocalDev channel.',
         'Write-OpenBladeNightlyArtifactMetadata',
         'upgradeProbeVersion',
         'upgrade-probe-validation')) {

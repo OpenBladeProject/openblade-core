@@ -4360,7 +4360,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (IsThermalExternalDriftCandidate(candidate, readback))
             {
                 string detail =
-                    $"Thermal external-drift validation run {request.ValidationRunId:D} confirmed one Service-owned synthetic performance mutation from {fresh.Performance} to {candidate}; desired intent and convergence authority were unchanged, and the periodic Maintain observation now owns reconciliation.";
+                    $"Thermal external-drift validation run {request.ValidationRunId:D} confirmed one Service-owned synthetic performance mutation from {fresh.Performance} to {candidate}; deviceFingerprint={expectedLedger!.DeviceFingerprint}; desired intent and convergence authority were unchanged, and the periodic Maintain observation now owns reconciliation.";
                 history.RecordSummary(
                     ControlOperationStatus.Applied,
                     detail,
@@ -4476,6 +4476,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         if (expectedLedger is not
             {
+                DeviceAuthorityEpoch: var deviceAuthorityEpoch,
+                DeviceFingerprint: { } deviceFingerprint,
                 InFlight: null,
                 Contradiction: ThermalConvergenceContradiction.None,
                 EffectiveIntent: not null,
@@ -4484,6 +4486,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             })
         {
             return "The durable convergence ledger is not in a settled authoritative state.";
+        }
+        if (deviceAuthorityEpoch == Guid.Empty
+            || string.IsNullOrWhiteSpace(deviceFingerprint))
+        {
+            return "The durable convergence ledger is not bound to a confirmed device authority epoch.";
         }
         bool performanceClaimSpent = expectedLedger.Tombstones.Any(tombstone =>
                 tombstone.Destination == PowerSource.PluggedIn

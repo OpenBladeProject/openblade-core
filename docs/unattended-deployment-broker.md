@@ -155,3 +155,15 @@ The reserved version deliberately makes a developer bundle newer than normal
 release versions on that enrolled machine. Returning the machine to a Stable or
 Nightly installation is therefore an attended maintenance action; this tool is
 not a transparent release-channel switcher.
+
+For the exact RZ09-0581 thermal external-drift validation tracked in issue
+#354, the same script accepts the explicit
+`-ThermalExternalDriftValidation` switch together with an empty external
+`-ValidationOutputDirectory`. That opt-in builds one coordinated LocalDev
+installer containing the validation-marked Service and matching IPC clients,
+then stages those exact installer bytes through the unchanged signed inbox and
+fixed broker operation. The external directory receives the installer,
+FirmwareSmoke tool, and a manifest binding their source, version, and hashes.
+The switch is rejected for Stable and Nightly publishing, does not install
+FirmwareSmoke, and does not add a broker command or caller-selected installer
+argument.

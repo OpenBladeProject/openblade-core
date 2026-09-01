@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Contracts;
 
@@ -8,6 +9,9 @@ internal sealed record ThermalExternalDriftValidationBuildManifest(
     int SchemaVersion,
     Guid ValidationRunId,
     string SourceRevision,
+    string LocalDevVersion,
+    string InstallerSha256,
+    string FirmwareSmokeSha256,
     string ServiceAssemblySha256,
     string ProtocolAssemblySha256,
     string ProductionFixtureSha256)
@@ -16,6 +20,10 @@ internal sealed record ThermalExternalDriftValidationBuildManifest(
         SchemaVersion == 1
         && ValidationRunId != Guid.Empty
         && IsHex(SourceRevision, 40)
+        && Version.TryParse(LocalDevVersion, out Version? localDevVersion)
+        && localDevVersion.Major == 65535
+        && IsHex(InstallerSha256, 64)
+        && IsHex(FirmwareSmokeSha256, 64)
         && IsHex(ServiceAssemblySha256, 64)
         && IsHex(ProtocolAssemblySha256, 64)
         && IsHex(ProductionFixtureSha256, 64);
@@ -24,6 +32,19 @@ internal sealed record ThermalExternalDriftValidationBuildManifest(
         value is not null
         && value.Length == length
         && value.All(Uri.IsHexDigit);
+
+    internal bool MatchesFirmwareSmoke(string path)
+    {
+        if (!IsWellFormed || !File.Exists(path))
+        {
+            return false;
+        }
+        using FileStream stream = File.OpenRead(path);
+        return string.Equals(
+            Convert.ToHexString(SHA256.HashData(stream)),
+            FirmwareSmokeSha256,
+            StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 internal sealed record ThermalExternalDriftValidationResult(
@@ -39,6 +60,9 @@ internal sealed record ThermalExternalDriftValidationResult(
     bool ManualRecoveryRequired,
     Guid ValidationRunId,
     string SourceRevision,
+    string LocalDevVersion,
+    string InstallerSha256,
+    string FirmwareSmokeSha256,
     string ServiceAssemblySha256,
     string ProtocolAssemblySha256,
     string ProductionFixtureSha256,
@@ -50,6 +74,9 @@ internal sealed record ThermalExternalDriftValidationResult(
     PerformancePreset? FinalPerformance,
     FanMode? FinalFans,
     int MaintainAttemptCount,
+    int SyntheticWriteAttemptCount,
+    string? DeviceFingerprint,
+    Guid? MaintainTransitionAttemptId,
     string Message);
 
 internal sealed class ThermalExternalDriftValidationRunner
@@ -207,18 +234,34 @@ internal sealed class ThermalExternalDriftValidationRunner
 
         IReadOnlyList<HyperBoostLifecycleDiagnosticResult> diagnostics =
             await readDiagnostics(cancellationToken).ConfigureAwait(false);
-        int maintainAttemptCount = diagnostics.Count(result =>
+        HyperBoostLifecycleDiagnosticResult[] maintainDiagnostics = diagnostics.Where(result =>
             result.Timestamp >= startedAt
             && result.Detail?.StartsWith(
                 "Maintain thermal convergence attempt ",
-                StringComparison.Ordinal) == true);
-        bool injectionDiagnostic = diagnostics.Any(result =>
+                StringComparison.Ordinal) == true).ToArray();
+        int maintainAttemptCount = maintainDiagnostics.Length;
+        Guid? maintainTransitionAttemptId = maintainAttemptCount == 1
+            ? ReadMaintainTransitionAttemptId(maintainDiagnostics[0].Detail)
+            : null;
+        HyperBoostLifecycleDiagnosticResult[] injectionDiagnostics = diagnostics.Where(result =>
             result.Timestamp >= startedAt
             && result.TransitionId == manifest.ValidationRunId
             && result.Detail?.Contains(
                 "confirmed one Service-owned synthetic performance mutation",
-                StringComparison.Ordinal) == true);
-        bool maintainAttemptObserved = maintainAttemptCount == 1;
+                StringComparison.Ordinal) == true).ToArray();
+        string? deviceFingerprint = injectionDiagnostics.Length == 1
+            ? ReadDiagnosticValue(
+                injectionDiagnostics[0].Detail,
+                "deviceFingerprint=")
+            : null;
+        int syntheticWriteAttemptCount = injectionDiagnostics.Length == 1 ? 1 : 0;
+        bool injectionDiagnostic = syntheticWriteAttemptCount == 1
+            && deviceFingerprint?.StartsWith(
+                "OpenBlade:",
+                StringComparison.Ordinal) == true
+            && deviceFingerprint.Length > "OpenBlade:".Length;
+        bool maintainAttemptObserved = maintainAttemptCount == 1
+            && maintainTransitionAttemptId.HasValue;
 
         bool noReplayObserved = false;
         if (sameServiceProcess
@@ -257,12 +300,17 @@ internal sealed class ThermalExternalDriftValidationRunner
             {
                 diagnostics = await readDiagnostics(cancellationToken)
                     .ConfigureAwait(false);
-                maintainAttemptCount = diagnostics.Count(result =>
+                maintainDiagnostics = diagnostics.Where(result =>
                     result.Timestamp >= startedAt
                     && result.Detail?.StartsWith(
                         "Maintain thermal convergence attempt ",
-                        StringComparison.Ordinal) == true);
-                noReplayObserved = maintainAttemptCount == 1;
+                        StringComparison.Ordinal) == true).ToArray();
+                maintainAttemptCount = maintainDiagnostics.Length;
+                maintainTransitionAttemptId = maintainAttemptCount == 1
+                    ? ReadMaintainTransitionAttemptId(maintainDiagnostics[0].Detail)
+                    : null;
+                noReplayObserved = maintainAttemptCount == 1
+                    && maintainTransitionAttemptId.HasValue;
             }
         }
 
@@ -312,7 +360,10 @@ internal sealed class ThermalExternalDriftValidationRunner
             candidate,
             final,
             maintainAttemptCount,
-            message);
+            message,
+            syntheticWriteAttemptCount,
+            deviceFingerprint,
+            maintainTransitionAttemptId);
     }
 
     private static string? BaselineBlockReason(
@@ -400,6 +451,40 @@ internal sealed class ThermalExternalDriftValidationRunner
         && baseline.DesiredState.Performance.Value is
             PerformancePreset.Balanced or PerformancePreset.Silent;
 
+    private static Guid? ReadMaintainTransitionAttemptId(string? detail)
+    {
+        const string prefix = "Maintain thermal convergence attempt ";
+        if (detail is null || !detail.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+        int separator = detail.IndexOf(':', prefix.Length);
+        return separator > prefix.Length
+            && Guid.TryParseExact(
+                detail[prefix.Length..separator],
+                "D",
+                out Guid attemptId)
+                ? attemptId
+                : null;
+    }
+
+    private static string? ReadDiagnosticValue(string? detail, string key)
+    {
+        if (detail is null)
+        {
+            return null;
+        }
+        int start = detail.IndexOf(key, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return null;
+        }
+        start += key.Length;
+        int end = detail.IndexOf(';', start);
+        string value = end < 0 ? detail[start..] : detail[start..end];
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
     private long ToTimestampDelta(TimeSpan duration) =>
         (long)(duration.TotalSeconds * timeProvider.TimestampFrequency);
 
@@ -421,7 +506,10 @@ internal sealed class ThermalExternalDriftValidationRunner
         PerformancePreset? injectedPerformance,
         ServiceStatusSnapshot final,
         int maintainAttemptCount,
-        string message) => new(
+        string message,
+        int syntheticWriteAttemptCount = 0,
+        string? deviceFingerprint = null,
+        Guid? maintainTransitionAttemptId = null) => new(
             success,
             injectionAttempted,
             injectionConfirmed,
@@ -434,6 +522,9 @@ internal sealed class ThermalExternalDriftValidationRunner
             manualRecoveryRequired,
             manifest.ValidationRunId,
             manifest.SourceRevision,
+            manifest.LocalDevVersion,
+            manifest.InstallerSha256,
+            manifest.FirmwareSmokeSha256,
             manifest.ServiceAssemblySha256,
             manifest.ProtocolAssemblySha256,
             manifest.ProductionFixtureSha256,
@@ -445,6 +536,9 @@ internal sealed class ThermalExternalDriftValidationRunner
             final.ConfirmedState?.Performance,
             final.ConfirmedState?.Fans,
             maintainAttemptCount,
+            syntheticWriteAttemptCount,
+            deviceFingerprint,
+            maintainTransitionAttemptId,
             message);
 
     private static async Task<IReadOnlyList<HyperBoostLifecycleDiagnosticResult>>

@@ -14,7 +14,8 @@ param(
     [int]$BuildRevision = 0,
     [string]$LocalDevVersion,
     [string]$SourceRevision,
-    [string]$WorkflowRunId
+    [string]$WorkflowRunId,
+    [switch]$ThermalExternalDriftValidation
 )
 
 Set-StrictMode -Version 3.0
@@ -106,6 +107,13 @@ $buildIdentity = Resolve-OpenBladeBuildIdentity `
     -LocalDevVersion $LocalDevVersion `
     -SourceRevision $SourceRevision
 
+if ($ThermalExternalDriftValidation -and $buildIdentity.Channel -ne 'LocalDev') {
+    throw 'Thermal external-drift validation installers are restricted to the LocalDev channel.'
+}
+if ($ThermalExternalDriftValidation -and $SourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
+    throw 'Thermal external-drift validation installers require an exact source revision.'
+}
+
 function Invoke-OpenBladeSigning {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -127,8 +135,7 @@ $publishArguments = @(
     '--runtime', 'win-x64',
     '--self-contained', 'true',
     '--property:PublishTrimmed=false',
-    '--property:OpenBladePadlessHyperBoostLifecycleValidation=false',
-    '--property:OpenBladeThermalExternalDriftValidation=false'
+    '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
 )
 if ($buildIdentity.Channel -ne 'Stable') {
     $publishArguments += @(
@@ -146,6 +153,14 @@ $productionPublishArguments = @(
     # development-only qualifier and satellite resource.
     '--property:SatelliteResourceLanguages=en-US%3Bzh-CN%3Bru-RU',
     '--property:OpenBladeIncludePseudoLocalization=false'
+)
+$serviceValidationArguments = @(
+    if ($ThermalExternalDriftValidation) {
+        '--property:OpenBladeThermalExternalDriftValidation=true'
+    }
+    else {
+        '--property:OpenBladeThermalExternalDriftValidation=false'
+    }
 )
 $setupPublishArguments = @(
     '--property:PublishSingleFile=true',
@@ -176,7 +191,7 @@ try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
-        $payload $productionPublishArguments
+        $payload ($productionPublishArguments + $serviceValidationArguments)
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `

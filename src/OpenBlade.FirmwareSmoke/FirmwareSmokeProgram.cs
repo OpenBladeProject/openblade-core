@@ -379,6 +379,14 @@ public static class FirmwareSmokeProgram
             throw new InvalidDataException(
                 "The thermal external-drift validation-build manifest is malformed.");
         }
+        string processPath = Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The running FirmwareSmoke executable path is unavailable.");
+        if (!manifest.MatchesFirmwareSmoke(processPath))
+        {
+            throw new InvalidDataException(
+                "The running FirmwareSmoke executable does not match the validation-build manifest.");
+        }
 
         ServiceStatusSnapshot current = await client.GetStatusAsync(cancellationToken)
             .ConfigureAwait(false);

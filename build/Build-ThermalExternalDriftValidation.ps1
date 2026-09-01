@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [Parameter(Mandatory)]
+    [string]$LocalDevVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,21 +39,22 @@ else {
     New-Item -ItemType Directory -Path $resolvedOutput | Out-Null
 }
 
-$serviceOutput = Join-Path $resolvedOutput 'service'
 $toolOutput = Join-Path $resolvedOutput 'firmware-smoke'
-& dotnet publish (Join-Path $repoRoot 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
-    -c Release `
-    --no-restore `
-    -p:NuGetAudit=false `
-    -p:OpenBladeThermalExternalDriftValidation=true `
-    -p:SourceRevision=$revision `
-    -o $serviceOutput
+$publishScript = Join-Path $repoRoot 'build\Publish.ps1'
+& powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $publishScript `
+    -Configuration Release `
+    -BuildChannel LocalDev `
+    -LocalDevVersion $LocalDevVersion `
+    -SourceRevision $revision `
+    -ThermalExternalDriftValidation
 if ($LASTEXITCODE -ne 0) {
-    throw "Validation Service publish failed with exit code $LASTEXITCODE."
+    throw "Coordinated validation installer publish failed with exit code $LASTEXITCODE."
 }
 & dotnet publish (Join-Path $repoRoot 'src\OpenBlade.FirmwareSmoke\OpenBlade.FirmwareSmoke.csproj') `
     -c Release `
-    --no-restore `
     -p:NuGetAudit=false `
     -p:SourceRevision=$revision `
     -o $toolOutput
@@ -59,27 +62,39 @@ if ($LASTEXITCODE -ne 0) {
     throw "Validation FirmwareSmoke publish failed with exit code $LASTEXITCODE."
 }
 
-$serviceAssembly = Join-Path $serviceOutput 'OpenBlade.Service.dll'
-$protocolAssembly = Join-Path $serviceOutput 'OpenBlade.Protocol.dll'
+$payload = Join-Path $repoRoot 'artifacts\win-x64\OpenBlade\payload'
+$serviceAssembly = Join-Path $payload 'OpenBlade.Service.dll'
+$protocolAssembly = Join-Path $payload 'OpenBlade.Protocol.dll'
 $fixture = Join-Path $repoRoot `
     'src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_3_01_BatteryProduction.json'
 $tool = Join-Path $toolOutput 'OpenBlade.FirmwareSmoke.exe'
-foreach ($required in @($serviceAssembly, $protocolAssembly, $fixture, $tool)) {
+$publishedInstaller = Join-Path $repoRoot 'artifacts\win-x64\OpenBlade-Setup.exe'
+foreach ($required in @(
+        $serviceAssembly,
+        $protocolAssembly,
+        $fixture,
+        $tool,
+        $publishedInstaller)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "The validation artifact is missing: $required"
     }
 }
+$installer = Join-Path $resolvedOutput 'OpenBlade-Setup.exe'
+Copy-Item -LiteralPath $publishedInstaller -Destination $installer
 
 $manifest = [ordered]@{
     schemaVersion = 1
     validationRunId = [guid]::NewGuid()
     sourceRevision = $revision
+    localDevVersion = $LocalDevVersion
+    installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+    firmwareSmokeSha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash
     serviceAssemblySha256 = (Get-FileHash -LiteralPath $serviceAssembly -Algorithm SHA256).Hash
     protocolAssemblySha256 = (Get-FileHash -LiteralPath $protocolAssembly -Algorithm SHA256).Hash
     productionFixtureSha256 = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
 }
 $manifestPath = Join-Path $resolvedOutput 'thermal-external-drift-validation-build.json'
 $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-Write-Host "Validation Service: $serviceAssembly"
+Write-Host "Validation installer: $installer"
 Write-Host "Validation FirmwareSmoke: $tool"
 Write-Host "Validation manifest: $manifestPath"

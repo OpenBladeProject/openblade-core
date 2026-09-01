@@ -152,6 +152,10 @@
       "patterns": ["build/Build-PadlessHyperBoostLifecycleValidation.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/PadlessHyperBoostLifecycleValidationBuild.cs", "src/OpenBlade.Protocol/HyperBoostWithoutCoolingPadEvidence.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json"]
     },
     {
+      "test": "tests/Build.Tests/ThermalExternalDriftValidationBuild.Tests.ps1",
+      "patterns": ["build/Build-ThermalExternalDriftValidation.ps1", "build/Publish.ps1", "build/development-deployment/Invoke-LocalDevDeployment.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/ThermalExternalDriftValidationBuild.cs", "src/OpenBlade.Protocol/ProductionFixtureSource.cs", "src/OpenBlade.Protocol/TrustedFixtureHashRegistry.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json"]
+    },
+    {
       "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
       "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml"]
     },
@@ -234,7 +238,7 @@
     },
     {
       "test": "tests/Build.Tests/LocalDevDeploymentReleaseBoundary.Tests.ps1",
-      "patterns": ["build/Publish.ps1", "build/StoreSubmissionValidation.ps1", "build/installer/*", "build/development-deployment/*", "build/tools/OpenBlade.LocalDevDeployment.Tool/*", "src/OpenBlade.Deployment/*", "src/OpenBlade.DeploymentBroker/*", "src/OpenBlade.DeploymentClient/*", "src/OpenBlade.DevelopmentDeployment.Setup/*", "src/OpenBlade.Setup/LocalDevEnrollmentUser.cs", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/Program.cs"]
+      "patterns": ["build/Build-ThermalExternalDriftValidation.ps1", "build/Publish.ps1", "build/StoreSubmissionValidation.ps1", "build/installer/*", "build/development-deployment/*", "build/tools/OpenBlade.LocalDevDeployment.Tool/*", "src/OpenBlade.Deployment/*", "src/OpenBlade.DeploymentBroker/*", "src/OpenBlade.DeploymentClient/*", "src/OpenBlade.DevelopmentDeployment.Setup/*", "src/OpenBlade.Setup/LocalDevEnrollmentUser.cs", "src/OpenBlade.Setup/OpenBlade.Setup.csproj", "src/OpenBlade.Setup/Program.cs"]
     },
     {
       "test": "tests/Build.Tests/UsbPcapCaptureControl.Tests.ps1",

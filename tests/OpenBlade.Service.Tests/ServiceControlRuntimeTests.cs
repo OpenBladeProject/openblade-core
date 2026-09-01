@@ -13621,7 +13621,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             result => result.TransitionId == runId
                 && result.Detail?.Contains(
                     "confirmed one Service-owned synthetic performance mutation",
-                    StringComparison.Ordinal) == true);
+                    StringComparison.Ordinal) == true
+                && result.Detail.Contains(
+                    "deviceFingerprint=OpenBlade:",
+                    StringComparison.Ordinal));
 
         using var cancellation = new CancellationTokenSource();
         Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
