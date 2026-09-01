@@ -40,9 +40,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   refreshes Windows GPU enumeration, appears on both Home and Laptop, requires
   explicit per-app selection, waits for graceful shutdown, and confirms each
   force-close separately against a freshly validated process identity. Force
-  close now terminates only that exact process so elevated app hosts do not
-  fail under broader tree-wide access checks, while ambient NVIDIA Overlay and
-  Windows Explorer processes stay out of the cleanup list.
+  close now tries the selected app's process tree before falling back to only
+  that exact process when Windows denies the broader operation, while ambient
+  NVIDIA Overlay and Windows Explorer processes stay out of the cleanup list.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep

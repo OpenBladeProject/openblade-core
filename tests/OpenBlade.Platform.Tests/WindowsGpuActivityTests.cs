@@ -421,7 +421,7 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
-    public void ForceClose_KillsOnlyExactRetainedTarget()
+    public void ForceClose_KillsRetainedTargetTree()
     {
         var target = new FakeProcessActionTarget();
         var factory = new FakeProcessActionTargetFactory(target);
@@ -430,7 +430,54 @@ public sealed class WindowsGpuActivityTests
         WindowsGpuAppActionResult result = Assert.Single(manager.ForceClose([App()]));
 
         Assert.True(result.Succeeded);
-        Assert.Equal([false], target.KillEntireProcessTreeArguments);
+        Assert.Equal([true], target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void ForceClose_FallsBackToExactTargetAfterRecoverableTreeFailure()
+    {
+        var target = new FakeProcessActionTarget();
+        target.KillExceptions[true] = new UnauthorizedAccessException("tree denied");
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.ForceClose([App()]));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal([true, false], target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void ForceClose_FailedFallbackReturnsProtocolSafeError()
+    {
+        var target = new FakeProcessActionTarget();
+        target.KillExceptions[true] = new UnauthorizedAccessException("tree denied");
+        target.KillExceptions[false] = new InvalidOperationException(
+            " \u0001" + new string('x', 5000) + " ");
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.ForceClose([App()]));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("Windows could not close this process.", result.Error);
+        Assert.Equal([true, false], target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void ForceClose_DoesNotFallbackAfterProgrammingDefect()
+    {
+        var target = new FakeProcessActionTarget();
+        target.KillExceptions[true] = new NullReferenceException("defect");
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        Assert.Throws<NullReferenceException>(() => manager.ForceClose([App()]));
+
+        Assert.Equal([true], target.KillEntireProcessTreeArguments);
         Assert.Equal(1, target.DisposeCalls);
     }
 
@@ -531,7 +578,7 @@ public sealed class WindowsGpuActivityTests
         WindowsGpuAppActionResult result = Assert.Single(manager.CloseGracefully([App()]));
 
         Assert.False(result.Succeeded);
-        Assert.Equal("process exited", result.Error);
+        Assert.Equal("Windows could not close this process.", result.Error);
         Assert.Equal(1, target.CloseMainWindowCalls);
         Assert.Equal(1, target.DisposeCalls);
     }
@@ -608,6 +655,8 @@ public sealed class WindowsGpuActivityTests
 
         internal Exception? CloseMainWindowException { get; set; }
 
+        internal Dictionary<bool, Exception> KillExceptions { get; } = [];
+
         internal int IdentityReadCalls { get; private set; }
 
         internal int CloseMainWindowCalls { get; private set; }
@@ -681,8 +730,14 @@ public sealed class WindowsGpuActivityTests
             return true;
         }
 
-        public void Kill(bool entireProcessTree) =>
+        public void Kill(bool entireProcessTree)
+        {
             KillEntireProcessTreeArguments.Add(entireProcessTree);
+            if (KillExceptions.TryGetValue(entireProcessTree, out Exception? exception))
+            {
+                throw exception;
+            }
+        }
 
         public void Dispose() => DisposeCalls++;
     }

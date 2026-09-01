@@ -46,6 +46,7 @@ public interface IWindowsGpuAppManager
 /// </summary>
 public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
 {
+    private const string ProcessActionFailure = "Windows could not close this process.";
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint TokenQuery = 0x0008;
     private const int ActivitySampleAttempts = 20;
@@ -386,11 +387,7 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                     bool succeeded;
                     if (force)
                     {
-                        // Terminate only the freshly revalidated process. Tree-wide
-                        // termination can fail for elevated app hosts even when the
-                        // selected process itself remains terminable; the verification
-                        // scan reports any surviving child holders separately.
-                        target.Kill(entireProcessTree: false);
+                        KillProcessTreeWithExactFallback(target);
                         succeeded = true;
                     }
                     else
@@ -410,7 +407,11 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
             catch (Exception exception) when (IsRecoverableProcessActionException(exception))
             {
-                results.Add(Failed(app, exception.Message));
+                Trace.TraceWarning(
+                    "OpenBlade could not act on GPU process {0}: {1}",
+                    app.ProcessId,
+                    exception);
+                results.Add(Failed(app, ProcessActionFailure));
             }
             if (cancellationToken.IsCancellationRequested)
             {
@@ -418,6 +419,22 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
         }
         return results;
+    }
+
+    private static void KillProcessTreeWithExactFallback(
+        IWindowsProcessActionTarget target)
+    {
+        try
+        {
+            target.Kill(entireProcessTree: true);
+        }
+        catch (Exception exception) when (IsRecoverableProcessActionException(exception))
+        {
+            // A tree-wide request can fail while the freshly revalidated process
+            // itself remains terminable. Retrying only that exact process preserves
+            // the attended action without transferring approval to another PID.
+            target.Kill(entireProcessTree: false);
+        }
     }
 
     internal static bool IsRecoverableProcessActionException(Exception exception) =>

@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly DispatcherQueue dispatcherQueue;
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
     private readonly SemaphoreSlim gpuAppOperationGate = new(1, 1);
+    private readonly CancellationTokenSource gpuAppActionLifetime = new();
     private readonly GpuAppCleanupVisibilityTracker gpuAppVisibilityTracker = new();
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
@@ -529,6 +530,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             return;
         }
+
+        gpuAppActionLifetime.Cancel();
 
         Task? activeInitialization;
         lock (initializationSync)
@@ -2029,12 +2032,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        CancellationToken actionToken = gpuAppActionLifetime.Token;
+        bool gateAcquired = false;
         button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, false);
-        await gpuAppOperationGate.WaitAsync();
+        gpuAppObservationLoop.Stop();
         try
         {
-            SessionGpuResponse scan = await QueryGpuAppsAsync(CancellationToken.None);
-            await ApplyGpuAppVisibilityAsync(scan, CancellationToken.None);
+            await gpuAppOperationGate.WaitAsync(actionToken);
+            gateAcquired = true;
+            SessionGpuResponse scan = await QueryGpuAppsAsync(actionToken);
+            await ApplyGpuAppVisibilityAsync(scan, actionToken);
 
             if (scan.Status == SessionGpuOperationStatus.Failed)
             {
@@ -2077,6 +2084,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SessionGpuApp[] selected = await ShowGpuAppSelectionDialogAsync(
                 eligible,
                 blocked);
+            actionToken.ThrowIfCancellationRequested();
             if (selected.Length == 0)
             {
                 return;
@@ -2085,7 +2093,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             SessionGpuResponse gracefulClose = await gpuAppAdapter.CloseAsync(
                 selected,
                 force: false,
-                CancellationToken.None);
+                actionToken);
             TraceGpuResponseDiagnostics("graceful close", gracefulClose);
             if (GpuAppCleanupPolicy.ShouldAbortGracefulClose(
                 gracefulClose.Status == SessionGpuOperationStatus.Failed,
@@ -2100,10 +2108,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                         "The Session Agent could not ask the selected apps to close."));
                 return;
             }
-            await Task.Delay(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromSeconds(5), actionToken);
             SessionGpuResponse afterClose = await QueryGpuAppsAsync(
-                CancellationToken.None);
-            await ApplyGpuAppVisibilityAsync(afterClose, CancellationToken.None);
+                actionToken);
+            await ApplyGpuAppVisibilityAsync(afterClose, actionToken);
             if (afterClose.Status is SessionGpuOperationStatus.Failed
                 or SessionGpuOperationStatus.PartiallySucceeded)
             {
@@ -2145,7 +2153,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     CloseButtonText = LocalizedResources.Get("MainWindow_GpuApps_KeepRunningButton", "Keep running"),
                     DefaultButton = ContentDialogButton.Close,
                 };
-                if (await ShowContentDialogAsync(forceConfirmation) != ContentDialogResult.Primary)
+                ContentDialogResult? forceResult = await ShowContentDialogAsync(
+                    forceConfirmation);
+                actionToken.ThrowIfCancellationRequested();
+                if (forceResult != ContentDialogResult.Primary)
                 {
                     continue;
                 }
@@ -2155,7 +2166,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SessionGpuResponse forcedApp = await gpuAppAdapter.CloseAsync(
                     [app],
                     force: true,
-                    CancellationToken.None);
+                    actionToken);
                 TraceGpuResponseDiagnostics("force close", forcedApp);
                 foreach (SessionGpuActionResult result in forcedApp.Results.Where(
                     result => !result.Succeeded))
@@ -2193,8 +2204,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 TimeProvider.System,
                 GpuAppForceCloseSettleBudget,
                 GpuAppForceCloseRetryInterval,
-                CancellationToken.None);
-            await ApplyGpuAppVisibilityAsync(finalScan, CancellationToken.None);
+                actionToken);
+            await ApplyGpuAppVisibilityAsync(finalScan, actionToken);
             if (finalScan.Status is SessionGpuOperationStatus.Failed
                 or SessionGpuOperationStatus.PartiallySucceeded)
             {
@@ -2240,6 +2251,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     : LocalizedResources.Get("MainWindow_GpuApps_StillRunningTitle", "GPU apps still running"),
                 finalMessage);
         }
+        catch (OperationCanceledException) when (actionToken.IsCancellationRequested)
+        {
+            // Window teardown cancels the attended cleanup without showing a
+            // failure dialog against the closing visual tree.
+        }
         catch (Exception exception) when (
             exception is IOException
                 or InvalidDataException
@@ -2258,10 +2274,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            gpuAppOperationGate.Release();
-            button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, true);
+            if (gateAcquired)
+            {
+                gpuAppOperationGate.Release();
+            }
             Interlocked.Exchange(ref gpuAppActionActive, 0);
-            UpdateGpuAppObservationState();
+            if (Volatile.Read(ref disposed) == 0)
+            {
+                button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, true);
+                UpdateGpuAppObservationState();
+            }
         }
     }
 

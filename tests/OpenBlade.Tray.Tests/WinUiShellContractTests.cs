@@ -319,7 +319,25 @@ public sealed class WinUiShellContractTests
             handler,
             StringComparison.Ordinal);
         Assert.Contains("app.Name", handler, StringComparison.Ordinal);
-        Assert.Contains("await gpuAppOperationGate.WaitAsync()", handler, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.Stop()", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "await gpuAppOperationGate.WaitAsync(actionToken)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("if (gateAcquired)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "Task.Delay(TimeSpan.FromSeconds(5), actionToken)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationToken.None", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (OperationCanceledException) when (actionToken.IsCancellationRequested)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (Volatile.Read(ref disposed) == 0)",
+            handler,
+            StringComparison.Ordinal);
         Assert.Contains("gpuAppOperationGate.WaitAsync(0, cancellationToken)", handler, StringComparison.Ordinal);
         Assert.True(
             handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
@@ -2881,6 +2899,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("gpuAppObservationLoop.StartOrWake()", window, StringComparison.Ordinal);
         Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
         Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
+        int gpuActionCancellation = window.IndexOf(
+            "gpuAppActionLifetime.Cancel();",
+            StringComparison.Ordinal);
+        int gpuObservationDisposal = window.IndexOf(
+            "gpuAppObservationLoop.DisposeAsync",
+            StringComparison.Ordinal);
+        Assert.True(
+            gpuActionCancellation >= 0
+                && gpuActionCancellation < gpuObservationDisposal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(

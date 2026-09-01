@@ -260,6 +260,27 @@ public sealed class GpuAppForceCloseOutcomeTrackerTests
         Assert.Empty(delays);
     }
 
+    [Fact]
+    public async Task ForceVerificationPropagatesCancellationFromDelay()
+    {
+        using var cancellation = new CancellationTokenSource();
+
+        Task<bool> verification = GpuAppForceCloseVerification.VerifyAsync(
+            _ => Task.FromResult(true),
+            shouldRetry: response => response,
+            async (_, token) =>
+            {
+                cancellation.Cancel();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+            TimeProvider.System,
+            settleBudget: TimeSpan.FromSeconds(5),
+            retryInterval: TimeSpan.FromMilliseconds(750),
+            cancellation.Token);
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => verification);
+    }
+
     public enum VerificationStatus
     {
         Succeeded,
