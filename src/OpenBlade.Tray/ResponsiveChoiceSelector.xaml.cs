@@ -14,6 +14,25 @@ public sealed class ResponsiveChoiceSelectionChangedEventArgs(object? selectedIt
     public object? SelectedItem { get; } = selectedItem;
 }
 
+internal readonly record struct ResponsiveChoiceSelectorLayoutSnapshot(
+    double RootWidth,
+    double RasterizationScale,
+    double AvailableWidth,
+    double MinimumWindowWidth,
+    double MeasuredExpandedWidth,
+    double EstimatedExpandedWidth,
+    double EffectiveExpandedWidth,
+    double MinimumHostWidth,
+    double CompactWidth,
+    double ExpandedWidth,
+    bool CompactVisible,
+    bool ExpandedVisible)
+{
+    public override string ToString() =>
+        FormattableString.Invariant(
+            $"root={RootWidth:F1}, scale={RasterizationScale:F2}, available={AvailableWidth:F1}, minWindow={MinimumWindowWidth:F1}, measured={MeasuredExpandedWidth:F1}, estimated={EstimatedExpandedWidth:F1}, effective={EffectiveExpandedWidth:F1}, minHost={MinimumHostWidth:F1}, compact={CompactWidth:F1}/{CompactVisible}, expanded={ExpandedWidth:F1}/{ExpandedVisible}");
+}
+
 public sealed partial class ResponsiveChoiceSelector
     : Microsoft.UI.Xaml.Controls.UserControl
 {
@@ -164,6 +183,35 @@ public sealed partial class ResponsiveChoiceSelector
     {
         SynchronizeSelection(SelectedItem);
         UpdatePresentationMode();
+    }
+
+    internal ResponsiveChoiceSelectorLayoutSnapshot CaptureLayoutSnapshot()
+    {
+        double rootWidth = XamlRoot?.Size.Width ?? 0;
+        double rasterizationScale = XamlRoot?.RasterizationScale ?? 1;
+        double availableWidth = responsiveHost is null
+            ? rootWidth
+            : responsiveHost.ActualWidth;
+        double minimumWindowWidth = Math.Max(0, ExpandedMinWindowWidth);
+        double estimatedExpandedWidth = EstimateExpandedOptionsWidth();
+        double effectiveExpandedWidth = measuredExpandedWidth > 0
+            ? measuredExpandedWidth
+            : estimatedExpandedWidth;
+        double minimumHostWidth = effectiveExpandedWidth
+            + Math.Max(0, ExpandedWidthAllowance);
+        return new ResponsiveChoiceSelectorLayoutSnapshot(
+            rootWidth,
+            rasterizationScale,
+            availableWidth,
+            minimumWindowWidth,
+            measuredExpandedWidth,
+            estimatedExpandedWidth,
+            effectiveExpandedWidth,
+            minimumHostWidth,
+            CompactSelector.ActualWidth,
+            ExpandedSelector.ActualWidth,
+            CompactSelector.Visibility == Visibility.Visible,
+            ExpandedSelector.Visibility == Visibility.Visible);
     }
 
     private static void OnItemsSourceChanged(
@@ -485,16 +533,11 @@ public sealed partial class ResponsiveChoiceSelector
 
     private void UpdatePresentationMode()
     {
-        double windowWidth = XamlRoot?.Size.Width ?? 0;
-        double availableWidth = responsiveHost is null
-            ? windowWidth
-            : responsiveHost.ActualWidth;
-        double minimumWindowWidth = Math.Max(0, ExpandedMinWindowWidth);
-        double expandedOptionsWidth = measuredExpandedWidth > 0
-            ? measuredExpandedWidth
-            : EstimateExpandedOptionsWidth();
-        double minimumHostWidth = expandedOptionsWidth
-            + Math.Max(0, ExpandedWidthAllowance);
+        ResponsiveChoiceSelectorLayoutSnapshot layout = CaptureLayoutSnapshot();
+        double windowWidth = layout.RootWidth;
+        double availableWidth = layout.AvailableWidth;
+        double minimumWindowWidth = layout.MinimumWindowWidth;
+        double minimumHostWidth = layout.MinimumHostWidth;
         bool hasProjectedSelection = SelectedItem is not null
             && projectedOptions.Any(option => OptionsEqual(option, SelectedItem));
         bool useExpanded = projectedOptions.Count > 0
