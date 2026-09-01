@@ -2098,6 +2098,10 @@ public sealed class WinUiShellContractTests
     public void LocalizationSnapshotsDoNotActivateDormantApplicationResources()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string canonicalizer = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "LocalizationSnapshotPixelCanonicalizer.cs");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string capture = ReadRepositoryFile("build", "Capture-LocalizationSnapshots.ps1");
 
@@ -2166,8 +2170,22 @@ public sealed class WinUiShellContractTests
             "stableFrame.Pixels.AsSpan().SequenceEqual(candidate.Pixels)",
             app,
             StringComparison.Ordinal);
-        Assert.Contains("majorityCount >= 6", app, StringComparison.Ordinal);
-        Assert.Contains("channelDelta > 16", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "LocalizationSnapshotPixelCanonicalizer.Canonicalize(",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("majorityCount >= 6", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains(
+            "firstCount != 4 || secondCount != 4",
+            canonicalizer,
+            StringComparison.Ordinal);
+        Assert.Contains("GetRgbBrightness", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains("transitions == 2", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
+        Assert.Contains(
+            "bgra8-4-bit-midpoint-local-majority-v2",
+            canonicalizer,
+            StringComparison.Ordinal);
         Assert.Contains(
             "$env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture",
             capture,
@@ -2193,6 +2211,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'profiles-wide'", capture, StringComparison.Ordinal);
         Assert.Contains(
             "frameStabilization = 'two-consecutive-canonical-frames-v1'",
+            capture,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(

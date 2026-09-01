@@ -1091,7 +1091,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         using var pixelReader = DataReader.FromBuffer(pixels);
         byte[] pixelBytes = new byte[checked((int)pixels.Length)];
         pixelReader.ReadBytes(pixelBytes);
-        CanonicalizeLocalizationSnapshotPixels(
+        LocalizationSnapshotPixelCanonicalizer.Canonicalize(
             pixelBytes,
             bitmap.PixelWidth,
             bitmap.PixelHeight);
@@ -1101,131 +1101,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             pixelBytes);
     }
 
-    private static void CanonicalizeLocalizationSnapshotPixels(
-        byte[] pixels,
-        int width,
-        int height)
-    {
-        if (width <= 0 || height <= 0 ||
-            pixels.Length != checked(width * height * 4))
-        {
-            throw new InvalidOperationException(
-                "The localization snapshot pixel buffer is not BGRA8 data.");
-        }
-
-        for (int index = 0; index < pixels.Length; index += 4)
-        {
-            byte alpha = pixels[index + 3];
-            for (int channel = 0; channel < 3; channel++)
-            {
-                byte value = pixels[index + channel];
-                byte canonical = value is 0 or 255
-                    ? value
-                    : (byte)((value & 0xF0) | 0x07);
-                pixels[index + channel] = Math.Min(canonical, alpha);
-            }
-        }
-
-        byte[] quantized = (byte[])pixels.Clone();
-        for (int y = 1; y < height - 1; y++)
-        {
-            for (int x = 1; x < width - 1; x++)
-            {
-                int centerIndex = ((y * width) + x) * 4;
-                uint center = ReadSnapshotPixel(quantized, centerIndex);
-                uint majority = 0;
-                int majorityBalance = 0;
-                for (int candidateY = y - 1; candidateY <= y + 1; candidateY++)
-                {
-                    for (int candidateX = x - 1; candidateX <= x + 1; candidateX++)
-                    {
-                        if (candidateX == x && candidateY == y)
-                        {
-                            continue;
-                        }
-
-                        uint candidate = ReadSnapshotPixel(
-                            quantized,
-                            ((candidateY * width) + candidateX) * 4);
-                        if (majorityBalance == 0)
-                        {
-                            majority = candidate;
-                            majorityBalance = 1;
-                        }
-                        else
-                        {
-                            majorityBalance += candidate == majority ? 1 : -1;
-                        }
-                    }
-                }
-
-                int majorityCount = 0;
-                for (int neighborY = y - 1; neighborY <= y + 1; neighborY++)
-                {
-                    for (int neighborX = x - 1; neighborX <= x + 1; neighborX++)
-                    {
-                        if ((neighborX != x || neighborY != y) &&
-                            ReadSnapshotPixel(
-                                quantized,
-                                ((neighborY * width) + neighborX) * 4) == majority)
-                        {
-                            majorityCount++;
-                        }
-                    }
-                }
-
-                if (majorityCount >= 6 &&
-                    IsAdjacentSnapshotPaletteColor(center, majority))
-                {
-                    WriteSnapshotPixel(pixels, centerIndex, majority);
-                }
-            }
-        }
-    }
-
-    private static uint ReadSnapshotPixel(byte[] pixels, int index)
-    {
-        return (uint)(pixels[index] |
-            (pixels[index + 1] << 8) |
-            (pixels[index + 2] << 16) |
-            (pixels[index + 3] << 24));
-    }
-
-    private static void WriteSnapshotPixel(byte[] pixels, int index, uint value)
-    {
-        pixels[index] = (byte)value;
-        pixels[index + 1] = (byte)(value >> 8);
-        pixels[index + 2] = (byte)(value >> 16);
-        pixels[index + 3] = (byte)(value >> 24);
-    }
-
     private readonly record struct LocalizationSnapshotFrame(
         int Width,
         int Height,
         byte[] Pixels);
-
-    private static bool IsAdjacentSnapshotPaletteColor(uint value, uint candidate)
-    {
-        if ((byte)(value >> 24) != (byte)(candidate >> 24))
-        {
-            return false;
-        }
-
-        bool differs = false;
-        for (int shift = 0; shift <= 16; shift += 8)
-        {
-            int channelDelta = Math.Abs(
-                (byte)(value >> shift) - (byte)(candidate >> shift));
-            if (channelDelta > 16)
-            {
-                return false;
-            }
-
-            differs |= channelDelta != 0;
-        }
-
-        return differs;
-    }
 
     private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)
     {
