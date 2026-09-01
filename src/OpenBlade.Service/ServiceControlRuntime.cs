@@ -91,6 +91,14 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Pad-less HyperBoost lifecycle validation is unavailable."));
 
+    Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        ValidateThermalExternalDriftRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Thermal external-drift validation is unavailable."));
+
 
     Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
@@ -479,6 +487,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool hyperBoostRestorePending;
     private HyperBoostOwnershipJournal? lastReportedRetainedHyperBoostRestoreJournal;
     private readonly HashSet<Guid> padlessHyperBoostLifecycleValidationRuns = [];
+    private readonly HashSet<Guid> thermalExternalDriftValidationRuns = [];
     private long hyperBoostOwnershipGeneration;
     private long powerSourceGeneration;
     // Advances before power work waits on operationGate so an already-running
@@ -4153,6 +4162,478 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             exitPowerSourceOverride: null,
             expectedExitPowerSourceGeneration: null,
             token);
+    }
+
+    public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        ValidateThermalExternalDriftRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        ThermalExternalDriftValidationBuildIdentity build =
+            ThermalExternalDriftValidationBuildIdentity.ReadCurrent();
+        if (!build.Matches(
+                request.ExpectedSourceRevision,
+                request.ExpectedServiceAssemblySha256,
+                request.ExpectedProtocolAssemblySha256,
+                request.ExpectedProductionFixtureSha256))
+        {
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Thermal external-drift validation requires the exact validation-marked Service, Protocol assembly, source revision, and captured production fixture."));
+        }
+
+        return ValidateThermalExternalDriftCoreAsync(
+            request,
+            stillControlsSession,
+            token);
+    }
+
+    internal async Task<ControlOperationResult> ValidateThermalExternalDriftCoreAsync(
+        ValidateThermalExternalDriftRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        EnsureInitialized();
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!stillControlsSession())
+            {
+                return ThermalExternalDriftBlocked(
+                    "The active Windows session changed before validation preflight completed.");
+            }
+            if (!fullObservationCompleted || startupProfileReconciliationPending)
+            {
+                return ThermalExternalDriftBlocked(
+                    "Thermal external-drift validation requires completed startup reconciliation and a fresh full observation.");
+            }
+            if (!ThermalConvergencePolicyAdmitted())
+            {
+                return ThermalExternalDriftBlocked(
+                    "Thermal external-drift validation requires an admitted Maintain desired state policy in the active local session.");
+            }
+            if (Volatile.Read(ref pendingPowerAdmissions) > 0
+                || Volatile.Read(ref pendingSessionAdmissions) > 0)
+            {
+                return ThermalExternalDriftBlocked(
+                    "A power or active-user admission is queued before validation.");
+            }
+
+            long expectedPowerAdmissionEpoch =
+                Interlocked.Read(ref powerAdmissionEpoch);
+            long expectedSessionAdmissionEpoch =
+                Interlocked.Read(ref sessionAdmissionEpoch);
+            string? expectedActiveUserSid = Volatile.Read(ref activeUserSid);
+            string? expectedLedgerSha256 = thermalConvergenceLedgerSha256;
+            ThermalConvergenceLedgerState? expectedLedger = thermalConvergenceLedger;
+
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(token);
+            ServiceStatusSnapshot current = GetStatus();
+            string? preflightBlock = ThermalExternalDriftPreflightBlockReason(
+                current,
+                powerSource,
+                expectedLedger,
+                expectedLedgerSha256,
+                expectedPowerAdmissionEpoch,
+                expectedSessionAdmissionEpoch,
+                expectedActiveUserSid,
+                stillControlsSession);
+            if (preflightBlock is not null)
+            {
+                return ThermalExternalDriftBlocked(preflightBlock);
+            }
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device)
+                || device is not IThermalExternalDriftValidationDevice validationDevice)
+            {
+                return ThermalExternalDriftBlocked(
+                    "The exact RZ09-0581 validation-only device path is unavailable.");
+            }
+
+            DeviceCapabilities capabilities = await device.ReadCapabilitiesAsync(token)
+                .ConfigureAwait(false);
+            if (!capabilities.PerformancePresets.Contains(PerformancePreset.Balanced)
+                || !capabilities.PerformancePresets.Contains(PerformancePreset.Silent))
+            {
+                return ThermalExternalDriftBlocked(
+                    "The exact device no longer admits both captured automatic validation presets.");
+            }
+
+            ConfirmedDeviceState fresh = await device
+                .ReadPerformanceFanStateAsync(token)
+                .ConfigureAwait(false);
+            DesiredDeviceState desired = current.DesiredState;
+            if (!IsThermalExternalDriftBaseline(desired, fresh))
+            {
+                return ThermalExternalDriftBlocked(
+                    "Fresh readback must match a Balanced or Silent performance intent with Automatic fans and no GPU tuning before validation.");
+            }
+
+            PowerSource finalPowerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(token);
+            current = GetStatus();
+            string? finalBlock = ThermalExternalDriftPreflightBlockReason(
+                current,
+                finalPowerSource,
+                expectedLedger,
+                expectedLedgerSha256,
+                expectedPowerAdmissionEpoch,
+                expectedSessionAdmissionEpoch,
+                expectedActiveUserSid,
+                stillControlsSession);
+            if (finalBlock is not null
+                || !IsThermalExternalDriftBaseline(current.DesiredState, fresh)
+                || current.DesiredState != desired)
+            {
+                return ThermalExternalDriftBlocked(
+                    finalBlock
+                    ?? "The authoritative thermal intent changed before validation submission.");
+            }
+            string? durableBlock =
+                await RevalidateThermalExternalDriftLedgerAsync(
+                        expectedLedger,
+                        expectedLedgerSha256,
+                        token)
+                    .ConfigureAwait(false);
+            if (durableBlock is not null)
+            {
+                return ThermalExternalDriftBlocked(durableBlock);
+            }
+            if (!thermalExternalDriftValidationRuns.Add(request.ValidationRunId))
+            {
+                return ThermalExternalDriftBlocked(
+                    "This thermal external-drift validation run was already used.");
+            }
+
+            PerformancePreset candidate = desired.Performance.Value ==
+                PerformancePreset.Balanced
+                    ? PerformancePreset.Silent
+                    : PerformancePreset.Balanced;
+            Exception? possibleSubmission = null;
+            try
+            {
+                await validationDevice.InjectPerformanceDriftOnceAsync(
+                        candidate,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception) when (
+                exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                return ThermalExternalDriftFailed(
+                    $"The single synthetic drift submission was proven not applied and was not retried: {exception.Message}");
+            }
+            catch (BladeWriteException exception)
+            {
+                possibleSubmission = exception;
+            }
+            catch (Exception exception)
+            {
+                possibleSubmission = exception;
+            }
+
+            ConfirmedDeviceState readback;
+            try
+            {
+                readback = await device
+                    .ReadPerformanceFanStateAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LatchThermalExternalDriftConfirmation(
+                    current,
+                    fresh,
+                    candidate,
+                    "Synthetic performance drift may have been submitted, but readback failed. No retry or restoration write was issued.");
+                return ThermalExternalDriftFailed(
+                    $"Synthetic performance drift requires read-only reconciliation before any recovery: {exception.Message}");
+            }
+
+            if (IsThermalExternalDriftCandidate(candidate, readback))
+            {
+                string detail =
+                    $"Thermal external-drift validation run {request.ValidationRunId:D} confirmed one Service-owned synthetic performance mutation from {fresh.Performance} to {candidate}; desired intent and convergence authority were unchanged, and the periodic Maintain observation now owns reconciliation.";
+                history.RecordSummary(
+                    ControlOperationStatus.Applied,
+                    detail,
+                    request.ValidationRunId);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    possibleSubmission is null
+                        ? detail
+                        : detail + " The setter reported possible submission, and fresh readback resolved it without replay.");
+            }
+
+            if (IsThermalExternalDriftBaseline(desired, readback))
+            {
+                return ThermalExternalDriftFailed(
+                    possibleSubmission is null
+                        ? "The synthetic mutation returned without error, but fresh readback remained at the original baseline. No retry was issued."
+                        : "The synthetic mutation reported possible submission, but fresh readback resolved to the original baseline. No retry was issued.");
+            }
+
+            LatchThermalExternalDriftConfirmation(
+                current,
+                fresh,
+                candidate,
+                "Synthetic performance drift may have been submitted, but readback was ambiguous. No retry or restoration write was issued.");
+            return ThermalExternalDriftFailed(
+                "Synthetic performance drift requires read-only reconciliation before any recovery; the validation run stopped without replay.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return ThermalExternalDriftFailed(
+                $"Thermal external-drift validation stopped safely before a confirmed result: {exception.Message}");
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private string? ThermalExternalDriftPreflightBlockReason(
+        ServiceStatusSnapshot current,
+        PowerSource powerSource,
+        ThermalConvergenceLedgerState? expectedLedger,
+        string? expectedLedgerSha256,
+        long expectedPowerAdmissionEpoch,
+        long expectedSessionAdmissionEpoch,
+        string? expectedActiveUserSid,
+        Func<bool> stillControlsSession)
+    {
+        if (!stillControlsSession()
+            || Interlocked.Read(ref powerAdmissionEpoch)
+                != expectedPowerAdmissionEpoch
+            || Interlocked.Read(ref sessionAdmissionEpoch)
+                != expectedSessionAdmissionEpoch
+            || Volatile.Read(ref pendingPowerAdmissions) > 0
+            || Volatile.Read(ref pendingSessionAdmissions) > 0
+            || !string.Equals(
+                Volatile.Read(ref activeUserSid),
+                expectedActiveUserSid,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Power or active-user authority changed during validation preflight.";
+        }
+        if (!ThermalConvergencePolicyAdmitted()
+            || !ReferenceEquals(thermalConvergenceLedger, expectedLedger)
+            || !string.Equals(
+                thermalConvergenceLedgerSha256,
+                expectedLedgerSha256,
+                StringComparison.Ordinal))
+        {
+            return "Maintain policy or durable convergence authority changed during validation preflight.";
+        }
+        if (powerSource != PowerSource.PluggedIn
+            || current.ActivePowerSource != PowerSource.PluggedIn)
+        {
+            return "Thermal external-drift validation requires confirmed settled full power.";
+        }
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || lowPowerGate.IsActive
+            || thermalConvergenceShutdown
+            || HasPendingWriteConfirmations())
+        {
+            return "Device, lifecycle, shutdown, or pending-write admission is closed.";
+        }
+        if (!controllerPresenceObserved
+            || FanControllerAdmissionUnsafe(current))
+        {
+            return "Competing-controller absence could not be freshly confirmed.";
+        }
+        if (current.ExternalChanges.Count > 0
+            || current.UnconfirmedWrites.Count > 0
+            || current.ConfirmedState?.HyperBoostActive == true
+            || current.HyperBoostRestorePending
+            || hyperBoostJournalSafetyBlock
+            || hyperBoostRestorePending
+            || pendingIndeterminateHyperBoostEntryIntent is not null
+            || pendingIndeterminateHyperBoostExitIntent is not null)
+        {
+            return "External, unconfirmed, or HyperBoost state must be fully settled before validation.";
+        }
+        if (current.ThermalConvergence is not
+            {
+                Policy: ThermalControlPolicy.MaintainDesiredState,
+                State: ThermalConvergenceState.Matched,
+                Reason: ThermalConvergenceReason.None,
+            })
+        {
+            return "Maintain convergence must be freshly matched before synthetic drift is admitted.";
+        }
+        if (expectedLedger is not
+            {
+                InFlight: null,
+                Contradiction: ThermalConvergenceContradiction.None,
+                EffectiveIntent: not null,
+                PerformanceDesiredRevision: { } performanceRevision,
+                PolicyRevision: { } policyRevision,
+            })
+        {
+            return "The durable convergence ledger is not in a settled authoritative state.";
+        }
+        bool performanceClaimSpent = expectedLedger.Tombstones.Any(tombstone =>
+                tombstone.Destination == PowerSource.PluggedIn
+                && tombstone.Contradiction.HasFlag(
+                    ThermalConvergenceContradiction.Performance)
+                && string.Equals(
+                    tombstone.PerformanceDesiredRevision,
+                    performanceRevision,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    tombstone.PolicyRevision,
+                    policyRevision,
+                    StringComparison.Ordinal))
+            || expectedLedger.Budgets.Any(budget =>
+                budget.Destination == PowerSource.PluggedIn
+                && budget.Component == ThermalComponent.Performance
+                && string.Equals(
+                    budget.DesiredRevision,
+                    performanceRevision,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    budget.PolicyRevision,
+                    policyRevision,
+                    StringComparison.Ordinal)
+                && budget.ConsumedClaims >= budget.MaximumClaims);
+        return performanceClaimSpent
+            ? "The current performance convergence claim is already spent; explicitly Reapply before starting a new validation run."
+            : null;
+    }
+
+    private static bool IsThermalExternalDriftBaseline(
+        DesiredDeviceState desired,
+        ConfirmedDeviceState confirmed)
+    {
+        FanMode desiredFanMode = desired.FanControl?.Mode ?? desired.Fans.Value;
+        bool gpuIntentSafe = desired.GpuClockTuning is null
+            || desired.GpuClockTuning == GpuClockTuningSettings.Disabled;
+        bool gpuReadbackSafe = confirmed.GpuClockOffsets is null
+            || confirmed.GpuClockOffsets.Current == GpuClockOffsetSettings.Default;
+        return desired.Performance.Value is
+                PerformancePreset.Balanced or PerformancePreset.Silent
+            && desiredFanMode == FanMode.Automatic
+            && desired.CustomPerformance is null
+            && gpuIntentSafe
+            && confirmed.Performance == desired.Performance.Value
+            && confirmed.Fans == FanMode.Automatic
+            && !confirmed.HyperBoostActive
+            && confirmed.CustomPerformance is null
+            && gpuReadbackSafe;
+    }
+
+    private static bool IsThermalExternalDriftCandidate(
+        PerformancePreset candidate,
+        ConfirmedDeviceState confirmed) => confirmed.Performance == candidate
+            && confirmed.Fans == FanMode.Automatic
+            && !confirmed.HyperBoostActive
+            && confirmed.CustomPerformance is null
+            && (confirmed.GpuClockOffsets is null
+                || confirmed.GpuClockOffsets.Current
+                    == GpuClockOffsetSettings.Default);
+
+    private async Task<string?> RevalidateThermalExternalDriftLedgerAsync(
+        ThermalConvergenceLedgerState? expectedLedger,
+        string? expectedLedgerSha256,
+        CancellationToken cancellationToken)
+    {
+        if (!thermalConvergenceLedgerAuthoritative
+            || thermalConvergenceStore is null
+            || expectedLedger is null)
+        {
+            return "Durable Maintain authority is unavailable before validation submission.";
+        }
+
+        try
+        {
+            ThermalConvergenceLoadResult load = await thermalConvergenceStore
+                .LoadAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (load.IsAuthoritative
+                && StringComparer.Ordinal.Equals(
+                    load.Sha256,
+                    expectedLedgerSha256))
+            {
+                return null;
+            }
+
+            const string changed =
+                "Durable Maintain authority changed before validation submission.";
+            CloseThermalConvergenceReservationAuthority(expectedLedger, changed);
+            return changed;
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or ConfigurationQuarantinedException)
+        {
+            string unavailable =
+                $"Durable Maintain authority could not be inspected before validation submission: {exception.Message}";
+            CloseThermalConvergenceReservationAuthority(
+                expectedLedger,
+                unavailable);
+            return unavailable;
+        }
+    }
+
+    private void LatchThermalExternalDriftConfirmation(
+        ServiceStatusSnapshot baseline,
+        ConfirmedDeviceState preWrite,
+        PerformancePreset candidate,
+        string message)
+    {
+        DesiredDeviceState candidateTarget = baseline.DesiredState with
+        {
+            Performance = baseline.DesiredState.Performance with
+            {
+                Value = candidate,
+            },
+            CustomPerformance = null,
+        };
+        SetPendingWriteConfirmation(
+            DeviceSubsystem.Performance,
+            new PendingWriteConfirmation(
+                PowerSource.PluggedIn,
+                candidateTarget,
+                preWrite));
+        PublishIfChanged(GetStatus() with
+        {
+            WritesBlocked = true,
+            UnconfirmedWrites = CurrentUnconfirmedWrites(),
+            Message = message,
+        });
+        history.RecordSummary(ControlOperationStatus.Failed, message);
+    }
+
+    private ControlOperationResult ThermalExternalDriftBlocked(string message)
+    {
+        history.RecordSummary(ControlOperationStatus.Blocked, message);
+        return new ControlOperationResult(ControlOperationStatus.Blocked, message);
+    }
+
+    private ControlOperationResult ThermalExternalDriftFailed(string message)
+    {
+        history.RecordSummary(ControlOperationStatus.Failed, message);
+        return new ControlOperationResult(ControlOperationStatus.Failed, message);
     }
 
     internal static PadlessHyperBoostLifecycleRunClaim ClaimPadlessLifecycleRun(

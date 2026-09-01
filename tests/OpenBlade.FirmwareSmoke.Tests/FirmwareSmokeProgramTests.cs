@@ -28,6 +28,18 @@ public sealed class FirmwareSmokeProgramTests
                 RazerBladeModelCatalog.Rz090528ModelNumber));
     }
 
+    [Theory]
+    [InlineData("RZ09-0581", "RZ09-0581-THERMAL-EXTERNAL-DRIFT")]
+    [InlineData("rz09-05819en1", "RZ09-0581-THERMAL-EXTERNAL-DRIFT")]
+    public void ThermalExternalDriftConfirmation_UsesCanonicalExactModel(
+        string modelNumber,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            FirmwareSmokeProgram.ThermalExternalDriftConfirmation(modelNumber));
+    }
+
     [Fact]
     public void ParseExpectedFirmwareChanges_AcceptsAnySupportedCombination()
     {

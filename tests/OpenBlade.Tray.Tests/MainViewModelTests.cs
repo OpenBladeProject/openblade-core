@@ -8205,7 +8205,7 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient
         {
-            WatchFailure = new IpcProtocolVersionMismatchException(52, 51),
+            WatchFailure = new IpcProtocolVersionMismatchException(53, 51),
         };
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
 

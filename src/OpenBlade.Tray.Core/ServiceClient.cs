@@ -143,6 +143,23 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 expectedAdmissionManifestSha256),
             token);
 
+    public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedProtocolAssemblySha256,
+        string expectedProductionFixtureSha256,
+        CancellationToken token) => SendMutationAsync(
+            new ValidateThermalExternalDriftRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                validationRunId,
+                expectedSourceRevision,
+                expectedServiceAssemblySha256,
+                expectedProtocolAssemblySha256,
+                expectedProductionFixtureSha256),
+            token);
+
     public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token) => SendMutationAsync(

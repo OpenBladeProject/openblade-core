@@ -177,6 +177,12 @@ public sealed class ControlRequestHandler
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(
                     validate,
                     cancellationToken)),
+            ValidateThermalExternalDriftRequest validate => Result(
+                request.RequestId,
+                await runtime.ValidateThermalExternalDriftAsync(
+                    validate,
+                    stillControlsSession,
+                    cancellationToken)),
             CyclePerformanceShortcutRequest cycle => Result(
                 request.RequestId,
                 await runtime.CyclePerformanceShortcutAsync(

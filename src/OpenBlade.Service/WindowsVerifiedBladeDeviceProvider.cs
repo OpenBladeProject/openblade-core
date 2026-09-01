@@ -321,6 +321,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
         IPadlessHyperBoostLifecycleValidationDevice,
+        IThermalExternalDriftValidationDevice,
         IDisposable
     {
         private const int MaximumStateReadAttempts = 3;
@@ -1214,6 +1215,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             retainGpuClockOffsetManagement,
             allowFreshSessionRetry: false,
             cancellationToken);
+
+        Task IThermalExternalDriftValidationDevice.InjectPerformanceDriftOnceAsync(
+            PerformancePreset candidate,
+            CancellationToken cancellationToken)
+        {
+            if (!ThermalExternalDriftValidationBuildIdentity.ReadCurrent().Enabled
+                || !WindowsHostIdentitySource.IsExactRz090581WindowsHost())
+            {
+                return RejectProductionWrite(
+                    "Thermal external-drift injection requires an exact RZ09-0581 validation build.");
+            }
+
+            return SetPerformanceCoreAsync(
+                candidate,
+                customPerformance: null,
+                gpuClockOffsets: null,
+                retainGpuClockOffsetManagement: true,
+                allowFreshSessionRetry: false,
+                cancellationToken);
+        }
 
         private async Task SetPerformanceCoreAsync(
             PerformancePreset value,

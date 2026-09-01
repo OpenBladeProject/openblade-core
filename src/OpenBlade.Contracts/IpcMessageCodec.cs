@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 52;
+    public const int ProtocolVersion = 53;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -233,6 +233,12 @@ public static class IpcMessageCodec
                 && IsHex(validate.ExpectedSourceRevision, 40)
                 && IsHex(validate.ExpectedServiceAssemblySha256, 64)
                 && IsHex(validate.ExpectedAdmissionManifestSha256, 64),
+            ValidateThermalExternalDriftRequest validate =>
+                validate.ValidationRunId != Guid.Empty
+                && IsHex(validate.ExpectedSourceRevision, 40)
+                && IsHex(validate.ExpectedServiceAssemblySha256, 64)
+                && IsHex(validate.ExpectedProtocolAssemblySha256, 64)
+                && IsHex(validate.ExpectedProductionFixtureSha256, 64),
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetPerformanceShortcutPreviewRequest preview =>
                 preview.SessionId != Guid.Empty

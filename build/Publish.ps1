@@ -127,7 +127,8 @@ $publishArguments = @(
     '--runtime', 'win-x64',
     '--self-contained', 'true',
     '--property:PublishTrimmed=false',
-    '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
+    '--property:OpenBladePadlessHyperBoostLifecycleValidation=false',
+    '--property:OpenBladeThermalExternalDriftValidation=false'
 )
 if ($buildIdentity.Channel -ne 'Stable') {
     $publishArguments += @(
