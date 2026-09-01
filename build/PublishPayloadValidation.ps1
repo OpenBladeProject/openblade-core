@@ -70,11 +70,23 @@ function Assert-DynamicLightingIdentityPayload {
     $descriptorPath = Join-Path $Payload 'OpenBlade.DynamicLighting.identity.json'
     $packageExists = Test-Path -LiteralPath $packagePath -PathType Leaf
     $descriptorExists = Test-Path -LiteralPath $descriptorPath -PathType Leaf
-    if (-not $packageExists -and -not $descriptorExists) {
-        return
+    if ($packageExists -or $descriptorExists) {
+        throw 'The retired Dynamic Lighting identity package and descriptor must not be present in a production payload.'
     }
+}
+
+function Assert-DynamicLightingIdentityAuthoringArtifacts {
+    param([Parameter(Mandatory)][string]$Payload)
+
+    $packagePath = Join-Path $Payload 'OpenBlade.DynamicLighting.msix'
+    $descriptorPath = Join-Path $Payload 'OpenBlade.DynamicLighting.identity.json'
+    $packageExists = Test-Path -LiteralPath $packagePath -PathType Leaf
+    $descriptorExists = Test-Path -LiteralPath $descriptorPath -PathType Leaf
     if ($packageExists -ne $descriptorExists) {
         throw 'The Dynamic Lighting identity package and descriptor must either both be present or both be absent.'
+    }
+    if (-not $packageExists) {
+        throw 'The Dynamic Lighting identity authoring package and descriptor are missing.'
     }
 
     try {

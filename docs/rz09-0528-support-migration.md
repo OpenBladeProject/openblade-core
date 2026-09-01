@@ -166,8 +166,10 @@ renderer before delegation completes.
 
 Production publishing must not emit the retired sparse background-provider
 identity, and Session Agent startup must not register it or relaunch under it.
-Retain its authoring only as developer evidence and keep Setup's exact
-publisher-scoped removal path solely for cleaning legacy installations.
+Retain its authoring only as developer evidence. Setup rejects those artifacts
+from new payloads, keeps exact publisher-scoped removal for legacy installs,
+and can re-register the prior identity only while rolling back a failed update
+or uninstall to that legacy tree.
 
 The WDL toggle is an ownership choice, not an educational surface. Keep its UI
 short, do not add a redundant Settings launcher, and do not imply that Windows

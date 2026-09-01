@@ -59,7 +59,7 @@ public interface ISetupPlatform
         BundleOwnershipIdentity ownership,
         CancellationToken cancellationToken);
     Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken);
-    Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken);
+    Task RestoreDynamicLightingIdentityAsync(CancellationToken cancellationToken);
     Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
@@ -126,8 +126,6 @@ public sealed class SetupCommandRunner(
                 progress.Report(SetupProgressCode.RemoveDynamicLighting);
                 await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
-                progress.Report(SetupProgressCode.RegisterDynamicLighting);
-                await platform.InstallDynamicLightingIdentityAsync(cancellationToken);
                 if (!invocation.BundleManaged)
                 {
                     progress.Report(SetupProgressCode.WriteStandaloneUninstaller);
@@ -207,7 +205,7 @@ public sealed class SetupCommandRunner(
                     if (priorLifecycle?.DynamicLightingIdentityRegistered == true)
                     {
                         await RecoverAsync(
-                            () => platform.InstallDynamicLightingIdentityAsync(recoveryToken),
+                            () => platform.RestoreDynamicLightingIdentityAsync(recoveryToken),
                             recoveryFailures);
                     }
 
@@ -340,7 +338,7 @@ public sealed class SetupCommandRunner(
             if (uninstallLifecycle.DynamicLightingIdentityRegistered)
             {
                 await RecoverAsync(
-                    () => platform.InstallDynamicLightingIdentityAsync(recoveryTimeout.Token),
+                    () => platform.RestoreDynamicLightingIdentityAsync(recoveryTimeout.Token),
                     recoveryFailures);
             }
 
