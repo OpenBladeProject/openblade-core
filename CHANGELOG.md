@@ -17,6 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Normalized adjacent-palette ties at rounded localization-snapshot corners so
+  translator-package archives remain byte-identical across fresh processes
+  without smoothing meaningful single-pixel details.
 - Stabilized disconnected translator-package screenshots on slower renderers by
   requiring two consecutive canonical frames before archiving each Tray and
   installer surface, preserving byte-identical package exports across fresh

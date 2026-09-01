@@ -30,6 +30,8 @@
              Link="ElevatedServiceControlLauncher.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\PageHeaderLayoutPolicy.cs"
              Link="PageHeaderLayoutPolicy.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"
+             Link="LocalizationSnapshotPixelCanonicalizer.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\RazerServiceStopOperation.cs"
              Link="RazerServiceStopOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ServiceStateConfirmation.cs"
