@@ -5526,6 +5526,9 @@ public sealed class MainViewModelTests
             ThermalControlPolicy.MaintainDesiredState,
             viewModel.SelectedThermalControlPolicyOption.Policy);
         Assert.True(viewModel.CanChangeThermalControlPolicy);
+        Assert.Equal(
+            "OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back.",
+            viewModel.ThermalPolicyDescription);
         Assert.Contains(
             "never turns on HyperBoost",
             viewModel.ThermalControlPolicyCommonNote,

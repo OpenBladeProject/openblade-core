@@ -1365,7 +1365,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ThermalControlPolicy.Strict => TrayText.Get(
             "OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them."),
         _ => TrayText.Get(
-            "OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible."),
+            "OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back."),
     };
 
     public string ThermalControlPolicyHeading => TrayText.Get("Thermal control policy");
