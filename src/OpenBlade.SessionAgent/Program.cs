@@ -11,9 +11,6 @@ namespace OpenBlade.SessionAgent;
 
 internal static class Program
 {
-    private const string IdentityRegistrationRelaunchArgument =
-        "--identity-registration-relaunch";
-
     [STAThread]
     private static int Main(string[] args)
     {
@@ -52,9 +49,7 @@ internal static class Program
 
         try
         {
-            return RunAsync(args.Contains(
-                IdentityRegistrationRelaunchArgument,
-                StringComparer.Ordinal)).GetAwaiter().GetResult();
+            return RunAsync().GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
@@ -69,7 +64,7 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunAsync(bool identityRegistrationRelaunch)
+    private static async Task<int> RunAsync()
     {
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
@@ -291,10 +286,6 @@ internal static class Program
                 Task microphoneMuteTask = microphoneMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
                     lampArrayObservation.RunAsync(lifetime.Token);
-                Task<bool> identityRegistrationTask =
-                    MonitorIdentityRegistrationAsync(
-                        enabled: !identityRegistrationRelaunch,
-                        lifetime.Token);
                 Task[] supervisedTasks =
                 [
                     serverTask,
@@ -310,12 +301,8 @@ internal static class Program
                     playbackMuteTask,
                     microphoneMuteTask,
                     lampArrayObservationTask,
-                    identityRegistrationTask,
                 ];
                 Task completed = await Task.WhenAny(supervisedTasks).ConfigureAwait(false);
-                bool relaunchForIdentity = ShouldRelaunchForIdentity(
-                    completed,
-                    identityRegistrationTask);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -339,11 +326,6 @@ internal static class Program
                 {
                     ExceptionDispatchInfo.Capture(terminalFailure).Throw();
                 }
-                if (relaunchForIdentity)
-                {
-                    await acquiredOwner.DisposeAsync();
-                    return RelaunchAfterIdentityRegistration();
-                }
                 return 0;
             }
             finally
@@ -357,60 +339,6 @@ internal static class Program
                 }
             }
         }
-    }
-
-    internal static bool ShouldRelaunchForIdentity(
-        Task completed,
-        Task<bool> identityRegistrationTask) =>
-        ReferenceEquals(completed, identityRegistrationTask)
-        && identityRegistrationTask.IsCompletedSuccessfully
-        && identityRegistrationTask.GetAwaiter().GetResult();
-
-    internal static async Task<bool> MonitorIdentityRegistrationAsync(
-        bool enabled,
-        CancellationToken cancellationToken,
-        PerUserDynamicLightingRegistration? registration = null)
-    {
-        if (enabled)
-        {
-            try
-            {
-                if (await (registration ?? new PerUserDynamicLightingRegistration())
-                        .EnsureRegisteredAsync(cancellationToken))
-                {
-                    return true;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                Trace.TraceWarning(
-                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
-                    exception.Message);
-            }
-        }
-
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        return false;
-    }
-
-    private static int RelaunchAfterIdentityRegistration()
-    {
-        string executablePath = Environment.ProcessPath
-            ?? throw new InvalidOperationException(
-                "The Session Agent executable path is unavailable.");
-        using Process? process = Process.Start(new ProcessStartInfo
-        {
-            FileName = executablePath,
-            Arguments = IdentityRegistrationRelaunchArgument,
-            UseShellExecute = false,
-            WorkingDirectory = AppContext.BaseDirectory,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        });
-        return process is null ? 1 : 0;
     }
 
     internal static bool TryAcquireStartupOwnership(

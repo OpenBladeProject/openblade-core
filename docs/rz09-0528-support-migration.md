@@ -164,6 +164,11 @@ keyboard lighting to Windows and issue no competing background lighting
 writes. Switching ownership must stop and dispose the active OpenBlade
 renderer before delegation completes.
 
+Production publishing must not emit the retired sparse background-provider
+identity, and Session Agent startup must not register it or relaunch under it.
+Retain its authoring only as developer evidence and keep Setup's exact
+publisher-scoped removal path solely for cleaning legacy installations.
+
 The WDL toggle is an ownership choice, not an educational surface. Keep its UI
 short, do not add a redundant Settings launcher, and do not imply that Windows
 owns unrelated logo controls.
