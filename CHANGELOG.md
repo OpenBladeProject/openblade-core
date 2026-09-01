@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.19.37-nightly.39] - 2026-09-01
+
 ### Added
 
 - Added an explicitly enrolled, TPM-authorized local-development deployment
@@ -1655,7 +1657,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...HEAD
+[0.19.37-nightly.39]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...v0.19.37-nightly.39
 [0.19.15-nightly.34]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...v0.19.15-nightly.34
 [0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
 [0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16
