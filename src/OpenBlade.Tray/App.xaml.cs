@@ -39,6 +39,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         "--responsive-choice-selector-smoke";
     private const string LiveLocalizationSmokeArgument =
         "--live-localization-smoke";
+    private const string LiveLocalizationSmokePreferencePathVariable =
+        "OPENBLADE_LIVE_LOCALIZATION_SMOKE_PREFERENCE_PATH";
     private const string LocalizationSnapshotDirectoryVariable =
         "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
     private const string LocalizationSnapshotPageVariable =
@@ -115,7 +117,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (commandLineArguments is
             [_, LiveLocalizationSmokeArgument, string localizationSmokeReportPath])
         {
-            _ = RunLiveLocalizationSmokeAsync(localizationSmokeReportPath);
+            _ = RunLiveLocalizationSmokeAsync(
+                localizationSmokeReportPath,
+                Environment.GetEnvironmentVariable(
+                    LiveLocalizationSmokePreferencePathVariable));
             return;
         }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
@@ -402,10 +407,26 @@ public partial class App : Microsoft.UI.Xaml.Application
             ? "qps-ploc"
             : Environment.GetEnvironmentVariable(LocalizationLanguageVariable);
 
-    private async Task RunLiveLocalizationSmokeAsync(string smokeReportPath)
+    private async Task RunLiveLocalizationSmokeAsync(
+        string smokeReportPath,
+        string? preferencePath)
     {
+        LiveLocalizationSmokeContext? smokeContext = null;
         try
         {
+            smokeContext = new LiveLocalizationSmokeContext(
+                smokeReportPath,
+                string.IsNullOrWhiteSpace(preferencePath)
+                    ? UiPreferenceStore.CreateDefault()
+                    : new UiPreferenceStore(preferencePath));
+            smokeContext.Report("initialize smoke infrastructure");
+            smokeContext.Report("load expected smoke preferences");
+            UiPreferences expectedPreferences = await smokeContext.PreferenceStore
+                .LoadAsync()
+                .WaitAsync(LiveLocalizationSmokeContext.RefreshTimeout);
+            SpecialKeyBindingPreference[] expectedBindings = expectedPreferences
+                .EffectiveSpecialKeyBindings
+                .ToArray();
             System.Windows.Forms.Application.EnableVisualStyles();
             processorPolicy = WindowsProcessorEfficiencyPolicy.Discover();
             uiDispatcherQueue = DispatcherQueue.GetForCurrentThread()
@@ -460,20 +481,38 @@ public partial class App : Microsoft.UI.Xaml.Application
             ApplyRuntimeLocalizationPreference(cases[0].Preference);
             MainWindow initialWindow = CreateMainWindow(
                 startupRegistration,
-                cases[0].Preference);
+                cases[0].Preference,
+                smokeContext.PreferenceStore,
+                UpdateCheckInterval.ManualOnly);
             AttachWindowSurfaces(initialWindow, sessionAgentEventEndpoint);
-            await windowInitializationTask;
+            await smokeContext.RunPhaseAsync(
+                "initialize Russian window",
+                () => windowInitializationTask,
+                LiveLocalizationSmokeContext.RefreshTimeout);
             initialWindow.ShowAndActivate();
             CreateTrayIconHost();
             AssertLiveLocalizationState(cases[0], previousWindow: null);
+            SpecialKeyBindingPreference[] initialBindings = initialWindow
+                .SpecialKeyBindings
+                .Select(binding => binding.ToPreference())
+                .ToArray();
+            if (!expectedBindings.SequenceEqual(initialBindings))
+            {
+                throw new InvalidOperationException(
+                    "The localization smoke did not load the isolated M-key preferences.");
+            }
 
             ITrayIconHost initialTrayIcon = trayIconHost
                 ?? throw new InvalidOperationException(
                     "The localization smoke test did not create a tray icon.");
-            await RefreshLanguageAsync(
-                UiLanguagePreference.SimplifiedChinese,
-                _ => throw new InvalidOperationException(
-                    "Injected replacement tray icon failure."));
+            await smokeContext.RunPhaseAsync(
+                "refresh Russian to failed Chinese rollback",
+                () => RefreshLanguageAsync(
+                    UiLanguagePreference.SimplifiedChinese,
+                    _ => throw new InvalidOperationException(
+                        "Injected replacement tray icon failure."),
+                    smokeContext),
+                LiveLocalizationSmokeContext.RefreshTimeout);
             if (!ReferenceEquals(mainWindow, initialWindow)
                 || !ReferenceEquals(trayIconHost, initialTrayIcon)
                 || !initialWindow.IsWindowVisible)
@@ -500,7 +539,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                     presenter.Maximize();
                 }
 
-                await RefreshLanguageAsync(smokeCase.Preference);
+                await smokeContext.RunPhaseAsync(
+                    $"refresh to {smokeCase.Preference}",
+                    () => RefreshLanguageAsync(
+                        smokeCase.Preference,
+                        liveLocalizationSmokeContext: smokeContext),
+                    LiveLocalizationSmokeContext.RefreshTimeout);
                 AssertLiveLocalizationState(
                     smokeCase,
                     previousWindow,
@@ -516,16 +560,54 @@ public partial class App : Microsoft.UI.Xaml.Application
                 }
             }
 
-            File.WriteAllText(smokeReportPath, "completed");
-            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            await smokeContext.RunPhaseAsync(
+                "dispose live localization smoke surfaces",
+                () => DisposeLiveLocalizationSmokeSurfacesAsync(smokeContext),
+                LiveLocalizationSmokeContext.CleanupTimeout);
+            smokeContext.Report("completed");
             Environment.Exit(0);
         }
         catch (Exception exception)
         {
-            File.WriteAllText(smokeReportPath, exception.ToString());
-            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            ReportLiveLocalizationSmokeFailure(
+                smokeContext,
+                smokeReportPath,
+                exception);
+            if (exception is LiveLocalizationSmokePhaseTimeoutException)
+            {
+                Environment.Exit(1);
+                return;
+            }
+            if (smokeContext is not null)
+            {
+                try
+                {
+                    await smokeContext.RunPhaseAsync(
+                        "dispose live localization smoke surfaces after failure",
+                        () => DisposeLiveLocalizationSmokeSurfacesAsync(smokeContext),
+                        LiveLocalizationSmokeContext.CleanupTimeout);
+                }
+                catch (Exception cleanupException)
+                {
+                    smokeContext.Report($"cleanup failed: {cleanupException}");
+                }
+            }
             Environment.Exit(1);
         }
+    }
+
+    private static void ReportLiveLocalizationSmokeFailure(
+        LiveLocalizationSmokeContext? smokeContext,
+        string smokeReportPath,
+        Exception exception)
+    {
+        if (smokeContext is not null)
+        {
+            smokeContext.Report($"failed: {exception}");
+            return;
+        }
+
+        File.WriteAllText(smokeReportPath, exception.ToString());
     }
 
     private void AssertLiveLocalizationState(
@@ -611,7 +693,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             "M1 selected action");
     }
 
-    private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
+    private async Task DisposeLiveLocalizationSmokeSurfacesAsync(
+        LiveLocalizationSmokeContext smokeContext)
     {
         DisposeSurfaceSafely("localization smoke tray icon", trayIconHost);
         trayIconHost = null;
@@ -630,6 +713,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (mainWindow is not null)
         {
             DetachWindowEvents(mainWindow);
+            smokeContext.Report("dispose current localization smoke window");
             await DisposeWindowSafelyAsync(mainWindow);
             CloseWindowSafely(mainWindow);
             mainWindow = null;
@@ -2018,6 +2102,44 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedKeyboardShortcutAction,
         string ExpectedActionAccessibleName);
 
+    private sealed class LiveLocalizationSmokeContext(
+        string reportPath,
+        UiPreferenceStore preferenceStore)
+    {
+        public static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(8);
+        public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
+
+        public UiPreferenceStore PreferenceStore { get; } = preferenceStore;
+
+        public void Report(string phase) => File.AppendAllText(
+            reportPath,
+            $"{DateTimeOffset.UtcNow:O} {phase}{Environment.NewLine}");
+
+        public async Task RunPhaseAsync(
+            string phase,
+            Func<Task> operation,
+            TimeSpan timeout)
+        {
+            Report(phase);
+            try
+            {
+                await operation().WaitAsync(timeout);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new LiveLocalizationSmokePhaseTimeoutException(
+                    $"Live localization smoke phase '{phase}' exceeded "
+                    + $"{timeout.TotalSeconds:0} seconds.",
+                    exception);
+            }
+        }
+    }
+
+    private sealed class LiveLocalizationSmokePhaseTimeoutException(
+        string message,
+        Exception innerException)
+        : TimeoutException(message, innerException);
+
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
         ResponsiveChoiceSelectorSmokeOption? selected)
@@ -2053,13 +2175,17 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private MainWindow CreateMainWindow(
         IStartupRegistration startupRegistration,
-        UiLanguagePreference? initialLanguageOverride = null)
+        UiLanguagePreference? initialLanguageOverride = null,
+        UiPreferenceStore? preferenceStore = null,
+        UpdateCheckInterval? initialUpdateCheckConsentOverride = null)
     {
         return new MainWindow(
             processorPolicy,
             startupRegistration,
             TryShowTrayNotification,
-            initialLanguageOverride: initialLanguageOverride);
+            initialLanguageOverride: initialLanguageOverride,
+            preferenceStore: preferenceStore,
+            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride);
     }
 
     private void AttachWindowSurfaces(
@@ -2148,7 +2274,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private async Task RefreshLanguageAsync(
         UiLanguagePreference preference,
-        Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null)
+        Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null,
+        LiveLocalizationSmokeContext? liveLocalizationSmokeContext = null)
     {
         MainWindow? previousWindow = mainWindow;
         IStartupRegistration? registration = startupRegistration;
@@ -2187,7 +2314,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 preference,
                 commitTrayLanguage: false);
 
-            replacement = CreateMainWindow(registration, preference);
+            replacement = CreateMainWindow(
+                registration,
+                preference,
+                liveLocalizationSmokeContext?.PreferenceStore,
+                liveLocalizationSmokeContext is null
+                    ? null
+                    : UpdateCheckInterval.ManualOnly);
             Task replacementInitialization = replacement.InitializeAsync();
             await replacementInitialization;
             replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint);
@@ -2212,6 +2345,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             {
                 DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
                 replacementSurfaces.Dispose();
+                liveLocalizationSmokeContext?.Report(
+                    $"dispose replacement {preference} window during exit");
                 await DisposeWindowSafelyAsync(replacement);
                 CloseWindowSafely(replacement);
                 return;
@@ -2244,12 +2379,16 @@ public partial class App : Microsoft.UI.Xaml.Application
 
             DisposeSurfaceSafely("previous tray icon", previousTrayIcon);
             previousSurfaces.Dispose();
+            liveLocalizationSmokeContext?.Report(
+                $"dispose previous window before committing {preference}");
             await DisposeWindowSafelyAsync(previousWindow);
             CloseWindowSafely(previousWindow);
 
             if (wasVisible)
             {
                 replacement.ShowLanguageSettings();
+                liveLocalizationSmokeContext?.Report(
+                    $"start update checking after {preference} refresh");
                 await replacement.StartUpdateCheckingAsync();
             }
         }
@@ -2270,6 +2409,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             replacementSurfaces?.Dispose();
             if (replacement is not null)
             {
+                liveLocalizationSmokeContext?.Report(
+                    $"dispose failed {preference} replacement window");
                 await DisposeWindowSafelyAsync(replacement);
                 CloseWindowSafely(replacement);
             }

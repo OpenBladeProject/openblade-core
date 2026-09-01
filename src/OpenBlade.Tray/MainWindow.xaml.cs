@@ -54,6 +54,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly WindowsProcessorEfficiencyPolicy processorPolicy;
     private readonly bool localizationSnapshotMode;
     private readonly UiLanguagePreference? initialLanguageOverride;
+    private readonly UpdateCheckInterval? initialUpdateCheckConsentOverride;
     private readonly Func<TrayNotification, bool> showNotification;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly SessionGpuAppAdapter gpuAppAdapter;
@@ -148,10 +149,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         IStartupRegistration startupRegistration,
         Func<TrayNotification, bool>? showNotification = null,
         bool localizationSnapshotMode = false,
-        UiLanguagePreference? initialLanguageOverride = null)
+        UiLanguagePreference? initialLanguageOverride = null,
+        UiPreferenceStore? preferenceStore = null,
+        UpdateCheckInterval? initialUpdateCheckConsentOverride = null)
     {
         this.localizationSnapshotMode = localizationSnapshotMode;
         this.initialLanguageOverride = initialLanguageOverride;
+        this.initialUpdateCheckConsentOverride = initialUpdateCheckConsentOverride;
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
         ArgumentNullException.ThrowIfNull(startupRegistration);
@@ -257,9 +261,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         Root.SizeChanged += OnRootSizeChanged;
         AppWindow.Changed += OnAppWindowChanged;
 
-        preferenceStore = UiPreferenceStore.CreateDefault();
+        this.preferenceStore = preferenceStore ?? UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
-            preferenceStore.SaveAsync,
+            this.preferenceStore.SaveAsync,
             exception => Trace.TraceError(
                 "OpenBlade preference save failed: {0}",
                 exception));
@@ -763,6 +767,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             Trace.TraceError(
                 "OpenBlade preference initialization failed; using Follow Windows: {0}",
                 exception);
+        }
+
+        if (initialUpdateCheckConsentOverride is { } consentOverride)
+        {
+            initialUpdateCheckInterval = consentOverride;
+            initialUpdateCheckPromptShown = true;
+            initialLastSuccessfulUpdateCheckAt = null;
+            initialUpdateCheckRetryAfter = null;
         }
 
         if (Volatile.Read(ref disposed) != 0)

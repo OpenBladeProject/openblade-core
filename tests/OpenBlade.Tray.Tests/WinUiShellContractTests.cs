@@ -2301,6 +2301,10 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "MainWindow.xaml.cs");
+        string smokeTests = ReadRepositoryFile(
+            "tests",
+            "OpenBlade.Tray.Tests",
+            "TrayXamlStartupSmokeTests.cs");
 
         int refreshStart = app.IndexOf(
             "private async Task RefreshLanguageAsync",
@@ -2323,7 +2327,7 @@ public sealed class WinUiShellContractTests
             temporaryOverride,
             StringComparison.Ordinal);
         int create = refresh.IndexOf(
-            "replacement = CreateMainWindow(registration, preference)",
+            "replacement = CreateMainWindow(",
             StringComparison.Ordinal);
         int initialize = refresh.IndexOf(
             "await replacementInitialization",
@@ -2362,6 +2366,22 @@ public sealed class WinUiShellContractTests
         Assert.Contains("OverlappedPresenterState.Maximized", refresh, StringComparison.Ordinal);
         Assert.Contains("presenter.Maximize()", refresh, StringComparison.Ordinal);
         Assert.Contains("replacement.ShowLanguageSettings()", refresh, StringComparison.Ordinal);
+        Assert.Contains(
+            "liveLocalizationSmokeContext?.PreferenceStore",
+            refresh,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "UpdateCheckInterval.ManualOnly",
+            refresh,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "start update checking after {preference} refresh",
+            refresh,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "dispose previous window before committing {preference}",
+            refresh,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("SessionAgentLauncher", refresh, StringComparison.Ordinal);
 
         int smokeStart = app.IndexOf(
@@ -2373,7 +2393,7 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.True(smokeStart >= 0 && smokeStart < smokeEnd);
         string smoke = app[smokeStart..smokeEnd];
-        Assert.Contains("await RefreshLanguageAsync(", smoke, StringComparison.Ordinal);
+        Assert.Contains("() => RefreshLanguageAsync(", smoke, StringComparison.Ordinal);
         Assert.Contains("Injected replacement tray icon failure", smoke, StringComparison.Ordinal);
         Assert.Contains("ReferenceEquals(trayIconHost, initialTrayIcon)", smoke, StringComparison.Ordinal);
         Assert.Contains("expectMaximized", smoke, StringComparison.Ordinal);
@@ -2383,6 +2403,37 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains("ExpectedKeyboardShortcutAction", smoke, StringComparison.Ordinal);
         Assert.Contains("ExpectedActionAccessibleName", smoke, StringComparison.Ordinal);
+        Assert.Contains("LiveLocalizationSmokeContext.RefreshTimeout", smoke, StringComparison.Ordinal);
+        Assert.Contains("LiveLocalizationSmokeContext.CleanupTimeout", smoke, StringComparison.Ordinal);
+        Assert.Contains("File.AppendAllText", app, StringComparison.Ordinal);
+        Assert.Contains("operation().WaitAsync(timeout)", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "exception is LiveLocalizationSmokePhaseTimeoutException",
+            smoke,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (initialUpdateCheckConsentOverride is { } consentOverride)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("initialUpdateCheckPromptShown = true", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "preferenceStore ?? UiPreferenceStore.CreateDefault()",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("foreach (bool existingPreferences", smokeTests, StringComparison.Ordinal);
+        Assert.Contains("isolatePreferences: true", smokeTests, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+Shift+M", smokeTests, StringComparison.Ordinal);
+        Assert.Contains(
+            "The localization smoke did not load the isolated M-key preferences.",
+            smoke,
+            StringComparison.Ordinal);
+        Assert.Contains("Phase report:", smokeTests, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(45)", smokeTests, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(5)", smokeTests, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
