@@ -2270,6 +2270,40 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void SimplifiedChineseProfileNotificationsDoNotInheritEnglishWordSpacing()
+    {
+        XDocument catalog = XDocument.Load(RepositoryPath(
+            "src",
+            "OpenBlade.Tray",
+            "Strings",
+            "zh-CN",
+            "Resources.resw"));
+        Dictionary<string, string> values = catalog.Root!
+            .Elements("data")
+            .ToDictionary(
+                element => (string)element.Attribute("name")!,
+                element => element.Element("value")!.Value,
+                StringComparer.Ordinal);
+        string body = values["MainWindow_Notification_ProfileChangedBody"];
+
+        foreach (string profileKey in new[]
+        {
+            "MainWindow_Notification_ProfileAc",
+            "MainWindow_Notification_ProfileActive",
+            "MainWindow_Notification_ProfileBattery",
+            "MainWindow_Notification_ProfileUsbC",
+        })
+        {
+            string notification = string.Format(body, values[profileKey]);
+            Assert.DoesNotContain(' ', notification);
+        }
+
+        Assert.Equal(
+            "OpenBlade已切换到USB-C配置方案。",
+            string.Format(body, values["MainWindow_Notification_ProfileUsbC"]));
+    }
+
+    [Fact]
     public void AppAppliesPersistedLanguageBeforeWinUiResourcesLoad()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");

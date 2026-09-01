@@ -600,13 +600,13 @@
     <value>电池配置方案</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
-    <value>OpenBlade 已切换到{0}。</value>
+    <value>OpenBlade已切换到{0}。</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
     <value>电源配置方案已切换</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>USB-C 配置方案</value>
+    <value>USB-C配置方案</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer 官方固件更新助手</value>
