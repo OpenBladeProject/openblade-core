@@ -357,6 +357,9 @@
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>关闭使用 NVIDIA GPU 的应用？</value>
   </data>
+  <data name="MainWindow_GpuApps_CloseRequestFailed" xml:space="preserve">
+    <value>Session Agent 无法请求关闭所选应用。</value>
+  </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
     <value>所选应用已停止占用 NVIDIA GPU。GPU 可能需要片刻才能恢复低功耗状态。</value>
   </data>
@@ -367,7 +370,7 @@
     <value>Windows GPU 活动计数器不可用。</value>
   </data>
   <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
-    <value>- PID {0}：{1}</value>
+    <value>- PID {0}：OpenBlade 无法关闭此应用。</value>
   </data>
   <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
     <value>&#xA;&#xA;报告的失败：&#xA;{0}</value>
@@ -390,8 +393,11 @@
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
     <value>继续运行</value>
   </data>
-  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>没有可安全关闭的 GPU 占用进程。&#xA;&#xA;</value>
+  <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
+    <value>超过 {0} 个应用正在使用 NVIDIA GPU。OpenBlade 无法根据不完整的列表验证能否安全关闭。请手动关闭应用，然后重新扫描。</value>
+  </data>
+  <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
+    <value>使用 GPU 的应用过多</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>没有可关闭的 GPU 应用</value>
@@ -400,10 +406,18 @@
     <value>当前用户会话中没有应用占用 NVIDIA GPU。</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
-    <value>&#xA;&#xA;无法关闭：&#xA;</value>
+    <value>OpenBlade 无法安全关闭这些应用：&#xA;&#xA;</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableReason" xml:space="preserve">
+    <value>OpenBlade 无法安全关闭此应用。</value>
+  </data>
+  <data name="MainWindow_GpuApps_OtherAppsHeading" xml:space="preserve">
+    <value>其他应用仍在使用 NVIDIA GPU，因此 GPU 可能无法进入休眠状态：
+
+</value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>Session Agent 无法完成 GPU 应用操作：{0}</value>
+    <value>Session Agent 无法完成 GPU 应用操作。</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
     <value>GPU 应用仍在运行</value>

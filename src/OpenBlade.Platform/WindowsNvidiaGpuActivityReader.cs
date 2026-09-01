@@ -127,7 +127,14 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
                     ref bufferSize,
                     out itemCount,
                     0);
-                if (status != PdhMoreData || bufferSize == 0 || itemCount == 0)
+                CounterArraySizingResult sizingResult = ClassifyCounterArraySizingResult(
+                    status,
+                    bufferSize);
+                if (sizingResult == CounterArraySizingResult.Failed)
+                {
+                    return new WindowsGpuActivitySnapshot(false, []);
+                }
+                if (sizingResult == CounterArraySizingResult.Empty)
                 {
                     return new WindowsGpuActivitySnapshot(true, []);
                 }
@@ -211,6 +218,14 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
             && processId > 0;
     }
 
+    internal static CounterArraySizingResult ClassifyCounterArraySizingResult(
+        uint status,
+        uint bufferSize) => status != PdhMoreData
+            ? CounterArraySizingResult.Failed
+            : bufferSize == 0
+                ? CounterArraySizingResult.Empty
+                : CounterArraySizingResult.Ready;
+
     public void Dispose()
     {
         lock (sync)
@@ -251,6 +266,13 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
     }
 
     internal readonly record struct QueryHandles(nint Query, nint Counter);
+
+    internal enum CounterArraySizingResult
+    {
+        Failed,
+        Empty,
+        Ready,
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PdhFormattedCounterValueItem

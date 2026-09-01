@@ -1,3 +1,4 @@
+using System.Text;
 using OpenBlade.Session;
 
 namespace OpenBlade.Session.Tests;
@@ -75,8 +76,8 @@ public sealed class SessionGpuIpcCodecTests
             SessionGpuOperationStatus.PartiallySucceeded,
             "Some applications could not be closed.",
             [
-                new SessionGpuApp(42, 123456, "game", @"C:\Games\game.exe", 0, true, null),
-                new SessionGpuApp(8, 987654, "dwm", null, 0.2, false, "Windows process"),
+                new SessionGpuApp(42, 123456, "game", 0, true, null),
+                new SessionGpuApp(8, 987654, "dwm", 0.2, false, "Windows process"),
             ],
             [
                 new SessionGpuActionResult(42, 123456, true, null),
@@ -85,6 +86,10 @@ public sealed class SessionGpuIpcCodecTests
         using var stream = new MemoryStream();
 
         await SessionGpuIpcCodec.WriteResponseAsync(stream, expected);
+        Assert.DoesNotContain(
+            "executablePath",
+            Encoding.UTF8.GetString(stream.ToArray()),
+            StringComparison.OrdinalIgnoreCase);
         stream.Position = 0;
         SessionGpuResponse actual = await SessionGpuIpcCodec.ReadResponseAsync(stream);
 
@@ -104,7 +109,7 @@ public sealed class SessionGpuIpcCodecTests
             Guid.NewGuid(),
             SessionGpuOperationStatus.Succeeded,
             null,
-            [new SessionGpuApp(42, 123456, "game", null, 1, true, "Contradiction")],
+            [new SessionGpuApp(42, 123456, "game", 1, true, "Contradiction")],
             []);
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>

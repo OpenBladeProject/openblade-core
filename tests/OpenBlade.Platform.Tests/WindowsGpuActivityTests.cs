@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Principal;
 using OpenBlade.Platform;
 
 namespace OpenBlade.Platform.Tests;
@@ -50,20 +52,17 @@ public sealed class WindowsGpuActivityTests
             10,
             0,
             sessionId,
-            "explorer",
-            hasWindow: true);
+            "explorer");
         WindowsGpuAppManager.ProcessEntry browser = Entry(
             20,
             10,
             sessionId,
-            "browser",
-            hasWindow: true);
+            "browser");
         WindowsGpuAppManager.ProcessEntry helper = Entry(
             30,
             20,
             sessionId,
-            "browser",
-            hasWindow: false);
+            "browser");
         Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
         {
             [10] = explorer,
@@ -84,14 +83,12 @@ public sealed class WindowsGpuActivityTests
             30,
             20,
             5,
-            "browser",
-            hasWindow: false);
+            "browser");
         WindowsGpuAppManager.ProcessEntry differentUserParent = Entry(
             20,
             10,
             5,
-            "browser",
-            hasWindow: true) with
+            "browser") with
         {
             SameUser = false,
         };
@@ -107,20 +104,18 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
-    public void OwningApplication_DoesNotAttributeDifferentExecutableToWindowedParent()
+    public void OwningApplication_DoesNotAttributeDifferentProcessNameToParent()
     {
         WindowsGpuAppManager.ProcessEntry terminal = Entry(
             20,
             10,
             5,
-            "terminal",
-            hasWindow: true);
+            "terminal");
         WindowsGpuAppManager.ProcessEntry compute = Entry(
             30,
             20,
             5,
-            "python",
-            hasWindow: false);
+            "python");
         Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
         {
             [20] = terminal,
@@ -133,20 +128,48 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
+    public void OwningApplication_DoesNotClimbToNewerReusedParentProcessId()
+    {
+        WindowsGpuAppManager.ProcessEntry helper = Entry(
+            30,
+            20,
+            5,
+            "browser") with
+        {
+            StartTimeUtcTicks = 100,
+        };
+        WindowsGpuAppManager.ProcessEntry reusedParent = Entry(
+            20,
+            10,
+            5,
+            "browser") with
+        {
+            StartTimeUtcTicks = 200,
+        };
+        Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
+        {
+            [20] = reusedParent,
+            [30] = helper,
+        };
+
+        Assert.Equal(
+            helper,
+            WindowsGpuAppManager.SelectOwningApplication(helper, table));
+    }
+
+    [Fact]
     public void AppProjection_UsesPopulatedParentChainForGpuHelper()
     {
         WindowsGpuAppManager.ProcessEntry browser = Entry(
             20,
             10,
             5,
-            "browser",
-            hasWindow: true);
+            "browser");
         WindowsGpuAppManager.ProcessEntry helper = Entry(
             30,
             20,
             5,
-            "browser",
-            hasWindow: false);
+            "browser");
         Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
         {
             [20] = browser,
@@ -161,20 +184,6 @@ public sealed class WindowsGpuActivityTests
         Assert.Equal(browser.ProcessId, app.ProcessId);
         Assert.Equal(browser.Name, app.Name);
         Assert.Equal(4.5, app.UtilizationPercent);
-    }
-
-    [Fact]
-    public void ActiveProcessSelection_ExcludesIdleEngineOwnersAndNoise()
-    {
-        WindowsGpuProcessActivity[] active = WindowsGpuAppManager.SelectActiveProcesses(
-        [
-            new WindowsGpuProcessActivity(40, 0),
-            new WindowsGpuProcessActivity(41, 0.1),
-            new WindowsGpuProcessActivity(42, 0.1001),
-        ]);
-
-        WindowsGpuProcessActivity result = Assert.Single(active);
-        Assert.Equal(42, result.ProcessId);
     }
 
     [Fact]
@@ -204,6 +213,29 @@ public sealed class WindowsGpuActivityTests
         Assert.Equal(42, process.ProcessId);
         Assert.Equal(2.5, process.UtilizationPercent);
         Assert.Equal([150, 150, 150], delays);
+    }
+
+    [Fact]
+    public void ActivitySampling_RefreshFailureReturnsBeforeReadingOrWaiting()
+    {
+        int readCalls = 0;
+        List<int> delays = [];
+
+        WindowsGpuActivitySnapshot actual =
+            WindowsGpuAppManager.RefreshAndReadActivitySample(
+                () => false,
+                () =>
+                {
+                    readCalls++;
+                    return new WindowsGpuActivitySnapshot(true, []);
+                },
+                delays.Add,
+                CancellationToken.None);
+
+        Assert.False(actual.IsAvailable);
+        Assert.Empty(actual.Processes);
+        Assert.Equal(0, readCalls);
+        Assert.Empty(delays);
     }
 
     [Fact]
@@ -317,6 +349,26 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
+    public void ReaderSizingResult_DistinguishesErrorsFromEmptyAndReadyArrays()
+    {
+        Assert.Equal(
+            WindowsNvidiaGpuActivityReader.CounterArraySizingResult.Failed,
+            WindowsNvidiaGpuActivityReader.ClassifyCounterArraySizingResult(
+                0,
+                512));
+        Assert.Equal(
+            WindowsNvidiaGpuActivityReader.CounterArraySizingResult.Empty,
+            WindowsNvidiaGpuActivityReader.ClassifyCounterArraySizingResult(
+                0x800007D2,
+                0));
+        Assert.Equal(
+            WindowsNvidiaGpuActivityReader.CounterArraySizingResult.Ready,
+            WindowsNvidiaGpuActivityReader.ClassifyCounterArraySizingResult(
+                0x800007D2,
+                512));
+    }
+
+    [Fact]
     public void ProcessFailurePolicy_ContainsTreeKillAggregateWithoutHidingCodeBugs()
     {
         Assert.True(WindowsGpuAppManager.IsRecoverableProcessActionException(
@@ -327,18 +379,291 @@ public sealed class WindowsGpuActivityTests
             new OperationCanceledException("cancellation remains control flow")));
     }
 
+    [Fact]
+    public void GracefulClose_ValidatesAndActsOnSingleRetainedTarget()
+    {
+        var target = new FakeProcessActionTarget();
+        var recycled = new FakeProcessActionTarget();
+        var factory = new FakeProcessActionTargetFactory(target, recycled);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.CloseGracefully([App()]));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, factory.OpenCalls);
+        Assert.Equal([42], factory.RequestedProcessIds);
+        Assert.True(target.IdentityReadCalls > 0);
+        Assert.Equal(1, target.CloseMainWindowCalls);
+        Assert.Equal(1, target.DisposeCalls);
+        Assert.Equal(0, recycled.IdentityReadCalls);
+        Assert.Equal(0, recycled.CloseMainWindowCalls);
+        Assert.Equal(0, recycled.DisposeCalls);
+    }
+
+    [Fact]
+    public void ForceClose_KillsEntireTreeOnRetainedTarget()
+    {
+        var target = new FakeProcessActionTarget();
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.ForceClose([App()]));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal([true], target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Theory]
+    [InlineData("exited")]
+    [InlineData("process-id")]
+    [InlineData("start-time")]
+    [InlineData("session")]
+    [InlineData("user")]
+    [InlineData("name")]
+    public void Close_IdentityMismatchDoesNotActAndDisposes(string mismatch)
+    {
+        var target = new FakeProcessActionTarget();
+        switch (mismatch)
+        {
+            case "exited":
+                target.HasExitedValue = true;
+                break;
+            case "process-id":
+                target.ProcessIdValue++;
+                break;
+            case "start-time":
+                target.StartTimeUtcTicksValue++;
+                break;
+            case "session":
+                target.SessionIdValue++;
+                break;
+            case "user":
+                target.SameUserValue = false;
+                break;
+            case "name":
+                target.NameValue = "recycled";
+                break;
+        }
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.CloseGracefully([App()]));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("identity changed", result.Error, StringComparison.Ordinal);
+        Assert.Equal(0, target.CloseMainWindowCalls);
+        Assert.Empty(target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void Close_ProtectedRetainedTargetDoesNotActAndDisposes()
+    {
+        var target = new FakeProcessActionTarget
+        {
+            NameValue = "OpenBlade.Tray",
+        };
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+        WindowsGpuApp app = App() with { Name = target.NameValue };
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.CloseGracefully([app]));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("protected", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, target.CloseMainWindowCalls);
+        Assert.Empty(target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void Close_CancellationAfterValidationDoesNotActAndDisposes()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var target = new FakeProcessActionTarget
+        {
+            OnNameRead = cancellation.Cancel,
+        };
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        IReadOnlyList<WindowsGpuAppActionResult> results = manager.CloseGracefully(
+            [App()],
+            cancellation.Token);
+
+        Assert.Empty(results);
+        Assert.Equal(0, target.CloseMainWindowCalls);
+        Assert.Empty(target.KillEntireProcessTreeArguments);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    [Fact]
+    public void Close_RecoverableActionFailureDisposesRetainedTarget()
+    {
+        var target = new FakeProcessActionTarget
+        {
+            CloseMainWindowException = new InvalidOperationException("process exited"),
+        };
+        var factory = new FakeProcessActionTargetFactory(target);
+        using WindowsGpuAppManager manager = CreateManager(factory);
+
+        WindowsGpuAppActionResult result = Assert.Single(manager.CloseGracefully([App()]));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("process exited", result.Error);
+        Assert.Equal(1, target.CloseMainWindowCalls);
+        Assert.Equal(1, target.DisposeCalls);
+    }
+
+    private static WindowsGpuAppManager CreateManager(
+        WindowsGpuAppManager.IWindowsProcessActionTargetFactory factory)
+    {
+        var reader = new WindowsNvidiaGpuActivityReader(
+            () => null,
+            () => null,
+            _ => { });
+        var userSid = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+        return new WindowsGpuAppManager(reader, userSid, currentSessionId: 7, factory);
+    }
+
+    private static WindowsGpuApp App() => new(
+        ProcessId: 42,
+        StartTimeUtcTicks: 1234,
+        Name: "browser",
+        UtilizationPercent: 5,
+        CanClose: true,
+        BlockReason: null);
+
     private static WindowsGpuAppManager.ProcessEntry Entry(
         int processId,
         int parentProcessId,
         int sessionId,
-        string name,
-        bool hasWindow) => new(
+        string name) => new(
             processId,
             parentProcessId,
             sessionId,
             DateTime.UtcNow.Ticks,
             name,
-            $@"C:\Apps\{name}.exe",
-            hasWindow,
             SameUser: true);
+
+    private sealed class FakeProcessActionTargetFactory(
+        params FakeProcessActionTarget[] targets) :
+        WindowsGpuAppManager.IWindowsProcessActionTargetFactory
+    {
+        private readonly Queue<FakeProcessActionTarget> targets = new(targets);
+
+        internal int OpenCalls { get; private set; }
+
+        internal List<int> RequestedProcessIds { get; } = [];
+
+        public bool TryOpen(
+            int processId,
+            [NotNullWhen(true)]
+            out WindowsGpuAppManager.IWindowsProcessActionTarget? target)
+        {
+            OpenCalls++;
+            RequestedProcessIds.Add(processId);
+            target = targets.Count == 0 ? null : targets.Dequeue();
+            return target is not null;
+        }
+    }
+
+    private sealed class FakeProcessActionTarget :
+        WindowsGpuAppManager.IWindowsProcessActionTarget
+    {
+        internal bool HasExitedValue { get; set; }
+
+        internal int ProcessIdValue { get; set; } = 42;
+
+        internal int SessionIdValue { get; set; } = 7;
+
+        internal long StartTimeUtcTicksValue { get; set; } = 1234;
+
+        internal string NameValue { get; set; } = "browser";
+
+        internal bool SameUserValue { get; set; } = true;
+
+        internal Action? OnNameRead { get; set; }
+
+        internal Exception? CloseMainWindowException { get; set; }
+
+        internal int IdentityReadCalls { get; private set; }
+
+        internal int CloseMainWindowCalls { get; private set; }
+
+        internal List<bool> KillEntireProcessTreeArguments { get; } = [];
+
+        internal int DisposeCalls { get; private set; }
+
+        public bool HasExited
+        {
+            get
+            {
+                IdentityReadCalls++;
+                return HasExitedValue;
+            }
+        }
+
+        public int ProcessId
+        {
+            get
+            {
+                IdentityReadCalls++;
+                return ProcessIdValue;
+            }
+        }
+
+        public int SessionId
+        {
+            get
+            {
+                IdentityReadCalls++;
+                return SessionIdValue;
+            }
+        }
+
+        public long StartTimeUtcTicks
+        {
+            get
+            {
+                IdentityReadCalls++;
+                return StartTimeUtcTicksValue;
+            }
+        }
+
+        public string Name
+        {
+            get
+            {
+                IdentityReadCalls++;
+                OnNameRead?.Invoke();
+                return NameValue;
+            }
+        }
+
+        public bool SameUser
+        {
+            get
+            {
+                IdentityReadCalls++;
+                return SameUserValue;
+            }
+        }
+
+        public bool CloseMainWindow()
+        {
+            CloseMainWindowCalls++;
+            if (CloseMainWindowException is not null)
+            {
+                throw CloseMainWindowException;
+            }
+            return true;
+        }
+
+        public void Kill(bool entireProcessTree) =>
+            KillEntireProcessTreeArguments.Add(entireProcessTree);
+
+        public void Dispose() => DisposeCalls++;
+    }
 }

@@ -186,7 +186,6 @@ public static class SessionGpuIpcCodec
         && ValidName(value.Name)
         && double.IsFinite(value.UtilizationPercent)
         && value.UtilizationPercent >= 0
-        && (value.ExecutablePath is null || ValidText(value.ExecutablePath))
         && (value.BlockReason is null || ValidText(value.BlockReason))
         && (value.CanClose ? value.BlockReason is null : value.BlockReason is not null);
 

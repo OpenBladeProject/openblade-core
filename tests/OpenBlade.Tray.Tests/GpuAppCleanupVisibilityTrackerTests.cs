@@ -4,6 +4,34 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class GpuAppCleanupVisibilityTrackerTests
 {
+    [Theory]
+    [InlineData(true, 10)]
+    [InlineData(false, 30)]
+    public void ObservationIntervalReflectsCleanupCardVisibility(
+        bool cleanupCardVisible,
+        int expectedSeconds) => Assert.Equal(
+            TimeSpan.FromSeconds(expectedSeconds),
+            GpuAppObservationPolicy.GetInterval(cleanupCardVisible));
+
+    [Theory]
+    [InlineData(true, true, false, false, true)]
+    [InlineData(true, false, true, true, true)]
+    [InlineData(true, false, true, false, false)]
+    [InlineData(true, false, false, true, false)]
+    [InlineData(false, true, false, false, false)]
+    public void ObservationRequiresLaptopOrPinnedPowerModeDashboard(
+        bool windowVisible,
+        bool laptopPageVisible,
+        bool homePageVisible,
+        bool powerModeCardPinned,
+        bool expected) => Assert.Equal(
+            expected,
+            GpuAppObservationPolicy.ShouldObserve(
+                windowVisible,
+                laptopPageVisible,
+                homePageVisible,
+                powerModeCardPinned));
+
     [Fact]
     public void ClosableAppShowsImmediately()
     {

@@ -34,7 +34,6 @@ public sealed record SessionGpuApp(
     int ProcessId,
     long StartTimeUtcTicks,
     string Name,
-    string? ExecutablePath,
     double UtilizationPercent,
     bool CanClose,
     string? BlockReason);

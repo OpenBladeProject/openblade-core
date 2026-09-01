@@ -308,19 +308,17 @@ type sealed class OpenBlade.Session.SessionGpuActionResult
   property System.String Error { get; init; }
 type sealed class OpenBlade.Session.SessionGpuApp
   interface System.IEquatable<OpenBlade.Session.SessionGpuApp>
-  ctor (System.Int32 ProcessId, System.Int64 StartTimeUtcTicks, System.String Name, System.String ExecutablePath, System.Double UtilizationPercent, System.Boolean CanClose, System.String BlockReason)
+  ctor (System.Int32 ProcessId, System.Int64 StartTimeUtcTicks, System.String Name, System.Double UtilizationPercent, System.Boolean CanClose, System.String BlockReason)
   method OpenBlade.Session.SessionGpuApp <Clone>$()
   method System.Boolean get_CanClose()
   method System.Double get_UtilizationPercent()
   method System.Int32 get_ProcessId()
   method System.Int64 get_StartTimeUtcTicks()
   method System.String get_BlockReason()
-  method System.String get_ExecutablePath()
   method System.String get_Name()
-  method System.Void Deconstruct(out System.Int32 ProcessId, out System.Int64 StartTimeUtcTicks, out System.String Name, out System.String ExecutablePath, out System.Double UtilizationPercent, out System.Boolean CanClose, out System.String BlockReason)
+  method System.Void Deconstruct(out System.Int32 ProcessId, out System.Int64 StartTimeUtcTicks, out System.String Name, out System.Double UtilizationPercent, out System.Boolean CanClose, out System.String BlockReason)
   method System.Void set_BlockReason(System.String value)
   method System.Void set_CanClose(System.Boolean value)
-  method System.Void set_ExecutablePath(System.String value)
   method System.Void set_Name(System.String value)
   method System.Void set_ProcessId(System.Int32 value)
   method System.Void set_StartTimeUtcTicks(System.Int64 value)
@@ -336,7 +334,6 @@ type sealed class OpenBlade.Session.SessionGpuApp
   property System.Int32 ProcessId { get; init; }
   property System.Int64 StartTimeUtcTicks { get; init; }
   property System.String BlockReason { get; init; }
-  property System.String ExecutablePath { get; init; }
   property System.String Name { get; init; }
 type sealed class OpenBlade.Session.SessionGpuAppIdentity
   interface System.IEquatable<OpenBlade.Session.SessionGpuAppIdentity>

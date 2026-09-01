@@ -55,22 +55,17 @@ public sealed class SessionGpuRequestDispatcher
                 [],
                 []);
         }
-        if (scan.Apps.Count > SessionGpuIpc.MaximumApps)
-        {
-            return Response(
-                request.RequestId,
-                SessionGpuOperationStatus.Failed,
-                "Too many GPU applications were detected to return safely.",
-                [],
-                []);
-        }
-
         if (request is QueryGpuAppsRequest)
         {
+            bool truncated = scan.Apps.Count > SessionGpuIpc.MaximumApps;
             return Response(
                 request.RequestId,
-                SessionGpuOperationStatus.Succeeded,
-                null,
+                truncated
+                    ? SessionGpuOperationStatus.PartiallySucceeded
+                    : SessionGpuOperationStatus.Succeeded,
+                truncated
+                    ? $"Only the first {SessionGpuIpc.MaximumApps} GPU applications are shown."
+                    : null,
                 scan.Apps,
                 []);
         }
@@ -156,7 +151,6 @@ public sealed class SessionGpuRequestDispatcher
         app.ProcessId,
         app.StartTimeUtcTicks,
         app.Name,
-        app.ExecutablePath,
         app.UtilizationPercent,
         app.CanClose,
         app.BlockReason);
