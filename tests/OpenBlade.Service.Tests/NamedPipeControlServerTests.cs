@@ -159,25 +159,30 @@ public sealed class NamedPipeControlServerTests
     public async Task PersistentConnectionCapacity_RejectsOverflowAndPreservesOrdinaryRequests()
     {
         TestServer context = CreateServer();
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        var persistentConnections = new List<Stream>();
-        var persistentTasks = new List<Task>();
+        using CancellationTokenSource assertionTimeout = new(TimeSpan.FromSeconds(5));
+        using CancellationTokenSource persistentLifetime = new();
+        var persistentConnections = new List<PersistentTestConnection>();
         try
         {
             for (int index = 0; index < StatusSubscriptionHub.MaximumSubscribers; index++)
             {
-                (Stream serverConnection, Stream client) = CreateDuplexPair();
-                persistentConnections.Add(serverConnection);
-                persistentConnections.Add(client);
-                persistentTasks.Add(context.Server.ServeConnectionAsync(
-                    serverConnection,
-                    timeout.Token));
+                PersistentTestConnection connection =
+                    await StartPersistentConnectionAsync(
+                        context.Server,
+                        persistentLifetime.Token,
+                        assertionTimeout.Token);
+                persistentConnections.Add(connection);
                 var request = new SubscribeStatusRequest(
                     OpenBladeIpc.ProtocolVersion,
                     Guid.NewGuid());
-                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                await IpcMessageCodec.WriteRequestAsync(
+                    connection.Client,
+                    request,
+                    assertionTimeout.Token);
                 ServiceResponse admitted = Assert.IsType<ServiceResponse>(
-                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                    await IpcMessageCodec.ReadServerFrameAsync(
+                        connection.Client,
+                        assertionTimeout.Token));
                 Assert.True(admitted.Success);
             }
 
@@ -194,25 +199,31 @@ public sealed class NamedPipeControlServerTests
                         .ToRgbBytes()),
             })
             {
-                (Stream serverConnection, Stream client) = CreateDuplexPair();
-                persistentConnections.Add(serverConnection);
-                persistentConnections.Add(client);
-                persistentTasks.Add(context.Server.ServeConnectionAsync(
-                    serverConnection,
-                    timeout.Token));
-                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                PersistentTestConnection connection =
+                    await StartPersistentConnectionAsync(
+                        context.Server,
+                        persistentLifetime.Token,
+                        assertionTimeout.Token);
+                persistentConnections.Add(connection);
+                await IpcMessageCodec.WriteRequestAsync(
+                    connection.Client,
+                    request,
+                    assertionTimeout.Token);
                 ServiceResponse admitted = Assert.IsType<ServiceResponse>(
-                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                    await IpcMessageCodec.ReadServerFrameAsync(
+                        connection.Client,
+                        assertionTimeout.Token));
                 Assert.True(admitted.Success);
             }
 
-            (Stream overflowServer, Stream overflowClient) = CreateDuplexPair();
+            (Stream overflowServer, Stream overflowClient) =
+                await CreateDuplexPairAsync(assertionTimeout.Token);
             await using (overflowServer)
             await using (overflowClient)
             {
                 Task overflowTask = context.Server.ServeConnectionAsync(
                     overflowServer,
-                    timeout.Token);
+                    assertionTimeout.Token);
                 var overflow = new PulseReactiveKeyRequest(
                     OpenBladeIpc.ProtocolVersion,
                     Guid.NewGuid(),
@@ -220,43 +231,96 @@ public sealed class NamedPipeControlServerTests
                 await IpcMessageCodec.WriteRequestAsync(
                     overflowClient,
                     overflow,
-                    timeout.Token);
+                    assertionTimeout.Token);
                 ServiceResponse rejected = Assert.IsType<ServiceResponse>(
-                    await IpcMessageCodec.ReadServerFrameAsync(overflowClient, timeout.Token));
+                    await IpcMessageCodec.ReadServerFrameAsync(
+                        overflowClient,
+                        assertionTimeout.Token));
                 await overflowTask;
 
                 Assert.False(rejected.Success);
                 Assert.Equal(ServiceResponseErrorCode.CapacityUnavailable, rejected.ErrorCode);
             }
 
-            (Stream ordinaryServer, Stream ordinaryClient) = CreateDuplexPair();
+            (Stream ordinaryServer, Stream ordinaryClient) =
+                await CreateDuplexPairAsync(assertionTimeout.Token);
             await using (ordinaryServer)
             await using (ordinaryClient)
             {
                 Task ordinaryTask = context.Server.ServeConnectionAsync(
                     ordinaryServer,
-                    timeout.Token);
+                    assertionTimeout.Token);
                 var request = new GetStatusRequest(
                     OpenBladeIpc.ProtocolVersion,
                     Guid.NewGuid());
                 await IpcMessageCodec.WriteRequestAsync(
                     ordinaryClient,
                     request,
-                    timeout.Token);
+                    assertionTimeout.Token);
                 ServiceResponse response = Assert.IsType<ServiceResponse>(
-                    await IpcMessageCodec.ReadServerFrameAsync(ordinaryClient, timeout.Token));
+                    await IpcMessageCodec.ReadServerFrameAsync(
+                        ordinaryClient,
+                        assertionTimeout.Token));
                 await ordinaryTask;
 
                 Assert.True(response.Success);
             }
+
+            PersistentTestConnection released = persistentConnections[0];
+            await released.Client.DisposeAsync();
+            await released.ServerTask.WaitAsync(assertionTimeout.Token);
+            await released.Server.DisposeAsync();
+            persistentConnections.RemoveAt(0);
+
+            PersistentTestConnection replacement =
+                await StartPersistentConnectionAsync(
+                    context.Server,
+                    persistentLifetime.Token,
+                    assertionTimeout.Token);
+            persistentConnections.Add(replacement);
+            var replacementRequest = new SubscribeStatusRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid());
+            await IpcMessageCodec.WriteRequestAsync(
+                replacement.Client,
+                replacementRequest,
+                assertionTimeout.Token);
+            ServiceResponse replacementResponse = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(
+                    replacement.Client,
+                    assertionTimeout.Token));
+            Assert.True(replacementResponse.Success);
+
+            assertionTimeout.Cancel();
+            Assert.All(
+                persistentConnections,
+                connection => Assert.False(connection.ServerTask.IsCompleted));
         }
         finally
         {
-            foreach (Stream connection in persistentConnections)
+            persistentLifetime.Cancel();
+            foreach (PersistentTestConnection connection in persistentConnections)
             {
-                await connection.DisposeAsync();
+                await connection.Client.DisposeAsync();
             }
-            await Task.WhenAll(persistentTasks);
+
+            using CancellationTokenSource teardownTimeout =
+                new(TimeSpan.FromSeconds(5));
+            try
+            {
+                await Task.WhenAll(persistentConnections.Select(
+                    connection => AwaitPersistentCleanupAsync(
+                        connection,
+                        persistentLifetime.Token,
+                        teardownTimeout.Token)));
+            }
+            finally
+            {
+                foreach (PersistentTestConnection connection in persistentConnections)
+                {
+                    await connection.Server.DisposeAsync();
+                }
+            }
         }
     }
 
@@ -377,7 +441,8 @@ public sealed class NamedPipeControlServerTests
                 authority),
             hub);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        (Stream serverConnection, Stream client) =
+            await CreateDuplexPairAsync(timeout.Token);
         await using (serverConnection)
         await using (client)
         {
@@ -430,7 +495,8 @@ public sealed class NamedPipeControlServerTests
                 new MutableSessionAuthority(3)),
             hub);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        (Stream serverConnection, Stream client) = CreateDuplexPair();
+        (Stream serverConnection, Stream client) =
+            await CreateDuplexPairAsync(timeout.Token);
         await using (serverConnection)
         await using (client)
         {
@@ -650,23 +716,64 @@ public sealed class NamedPipeControlServerTests
         return stream.ToArray();
     }
 
-    private static (Stream Server, Stream Client) CreateDuplexPair()
+    private static async Task<PersistentTestConnection> StartPersistentConnectionAsync(
+        NamedPipeControlServer server,
+        CancellationToken persistentLifetime,
+        CancellationToken assertionToken)
     {
-        var serverReader = new AnonymousPipeServerStream(
-            PipeDirection.In,
-            HandleInheritability.Inheritable);
-        var clientWriter = new AnonymousPipeClientStream(
-            PipeDirection.Out,
-            serverReader.GetClientHandleAsString());
-        var serverWriter = new AnonymousPipeServerStream(
-            PipeDirection.Out,
-            HandleInheritability.Inheritable);
-        var clientReader = new AnonymousPipeClientStream(
-            PipeDirection.In,
-            serverWriter.GetClientHandleAsString());
-        return (
-            new DuplexStream(serverReader, serverWriter),
-            new DuplexStream(clientReader, clientWriter));
+        (Stream serverConnection, Stream client) =
+            await CreateDuplexPairAsync(assertionToken);
+        return new PersistentTestConnection(
+            serverConnection,
+            client,
+            server.ServeConnectionAsync(serverConnection, persistentLifetime));
+    }
+
+    private static async Task AwaitPersistentCleanupAsync(
+        PersistentTestConnection connection,
+        CancellationToken persistentLifetime,
+        CancellationToken teardownToken)
+    {
+        try
+        {
+            await connection.ServerTask.WaitAsync(teardownToken);
+        }
+        catch (OperationCanceledException exception)
+            when (persistentLifetime.IsCancellationRequested &&
+                  !teardownToken.IsCancellationRequested &&
+                  exception.CancellationToken == persistentLifetime)
+        {
+        }
+    }
+
+    private static async Task<(Stream Server, Stream Client)> CreateDuplexPairAsync(
+        CancellationToken cancellationToken)
+    {
+        string pipeName = $"OpenBlade.Tests.Duplex.{Guid.NewGuid():N}";
+        var server = new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.InOut,
+            maxNumberOfServerInstances: 1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+        var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        try
+        {
+            Task accepting = server.WaitForConnectionAsync(cancellationToken);
+            await client.ConnectAsync(cancellationToken);
+            await accepting;
+            return (server, client);
+        }
+        catch
+        {
+            await client.DisposeAsync();
+            await server.DisposeAsync();
+            throw;
+        }
     }
 
     private static byte[] Frame(byte[] payload)
@@ -700,6 +807,11 @@ public sealed class NamedPipeControlServerTests
         string PipeName,
         NamedPipeControlServer Server,
         StatusSubscriptionHub Hub);
+
+    private sealed record PersistentTestConnection(
+        Stream Server,
+        Stream Client,
+        Task ServerTask);
 
     private sealed class StubRuntime(ServiceStatusSnapshot status) : IServiceControlRuntime
     {
@@ -735,55 +847,6 @@ public sealed class NamedPipeControlServerTests
         public int? SessionId { get; set; } = sessionId;
 
         public int? GetControlSessionId() => SessionId;
-    }
-
-    private sealed class DuplexStream(Stream reader, Stream writer) : Stream
-    {
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => true;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush() => writer.Flush();
-        public override Task FlushAsync(CancellationToken cancellationToken) =>
-            writer.FlushAsync(cancellationToken);
-        public override int Read(byte[] buffer, int offset, int count) =>
-            reader.Read(buffer, offset, count);
-        public override ValueTask<int> ReadAsync(
-            Memory<byte> buffer,
-            CancellationToken cancellationToken = default) =>
-            reader.ReadAsync(buffer, cancellationToken);
-        public override void Write(byte[] buffer, int offset, int count) =>
-            writer.Write(buffer, offset, count);
-        public override ValueTask WriteAsync(
-            ReadOnlyMemory<byte> buffer,
-            CancellationToken cancellationToken = default) =>
-            writer.WriteAsync(buffer, cancellationToken);
-        public override long Seek(long offset, SeekOrigin origin) =>
-            throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                reader.Dispose();
-                writer.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await reader.DisposeAsync();
-            await writer.DisposeAsync();
-            GC.SuppressFinalize(this);
-        }
     }
 
     private sealed class BlockingWriteStream(byte[] input) : Stream
