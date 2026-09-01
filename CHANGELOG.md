@@ -32,6 +32,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   lighting to Windows without registering a competing background provider.
   New Setup payloads reject the retired identity artifacts while exact legacy
   cleanup and rollback restoration remain available for older installations.
+- Reworked the Simplified Chinese Tray, runtime status, installer, and Setup
+  text to use natural Windows-style wording while preserving exact hardware,
+  firmware, service-state, rollback, and recovery semantics.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
