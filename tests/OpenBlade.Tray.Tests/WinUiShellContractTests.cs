@@ -2348,6 +2348,9 @@ public sealed class WinUiShellContractTests
         int disposePrevious = refresh.IndexOf(
             "await DisposeWindowSafelyAsync(previousWindow)",
             StringComparison.Ordinal);
+        int closePrevious = refresh.IndexOf(
+            "await CloseWindowSafelyAsync(previousWindow)",
+            StringComparison.Ordinal);
         Assert.True(
             tryBlock >= 0
             && tryBlock < temporaryOverride
@@ -2358,7 +2361,8 @@ public sealed class WinUiShellContractTests
             && prepareSurfaces < attach
             && attach < commitTrayLanguage
             && commitTrayLanguage < commit
-            && commit < disposePrevious);
+            && commit < disposePrevious
+            && disposePrevious < closePrevious);
         Assert.Contains("commitTrayLanguage: false", refresh, StringComparison.Ordinal);
         Assert.Contains("CreateTrayIconHost(replacement)", refresh, StringComparison.Ordinal);
         Assert.Contains("replacementCommitted = true", refresh, StringComparison.Ordinal);
@@ -2380,6 +2384,19 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "dispose previous window before committing {preference}",
+            refresh,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "previous window closed for {preference}",
+            refresh,
+            StringComparison.Ordinal);
+        Assert.Contains("window.Closed += OnClosed", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "await closed.Task.WaitAsync(TimeSpan.FromSeconds(5))",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The previous window did not close while applying {preference}.",
             refresh,
             StringComparison.Ordinal);
         Assert.DoesNotContain("SessionAgentLauncher", refresh, StringComparison.Ordinal);
@@ -2434,6 +2451,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Phase report:", smokeTests, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromSeconds(45)", smokeTests, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromSeconds(5)", smokeTests, StringComparison.Ordinal);
+        Assert.Contains("unchecked((uint)process.ExitCode):X8", smokeTests, StringComparison.Ordinal);
 
         int languageChange = window.IndexOf(
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
