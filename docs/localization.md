@@ -159,3 +159,33 @@ reviewer familiar with the target language checks tone, grammar, placeholders,
 and access keys. An OpenBlade maintainer checks hardware facts, safety wording,
 and capability semantics against en-US. Both reviews are required before a new
 culture is added to a release payload.
+
+### Simplified Chinese style
+
+Write `zh-CN` text as concise, neutral Windows UI copy instead of preserving
+English sentence structure. Prefer direct state descriptions and actions, omit
+subjects when Chinese does not need them, and use `请` only when the user must
+take an action. Do not remove conditions, consequences, or distinctions between
+checking, verification, submission, completion, application, and confirmed
+readback merely to shorten a sentence.
+
+Use these terms consistently:
+
+- `配置方案` for OpenBlade power-source profiles, with `方案` permitted only in
+  compact labels where the referent is unambiguous;
+- `实时数据` for live readings or details;
+- `控制项` for interactive UI controls and plain `控制` for a capability;
+- `已在 OpenBlade 外部更改` for state changed outside OpenBlade;
+- `安装程序` for the running installer, `安装包` for a bundle or build,
+  `安装项` for a registered Windows Installed apps entry, and `注册项` only
+  when the registration mechanism itself matters;
+- `卸载` for removing OpenBlade, `移除` for registered entries or components,
+  and `删除` for files or saved data;
+- `偏好设置` for preferences and `设置` for settings; and
+- `恢复之前的安装状态` for installer rollback.
+
+Keep `OpenBlade`, `Razer`, `NVIDIA`, `Windows`, and the exact `Session Agent`
+component name unchanged. Use `显示助手` only when the English source describes
+the helper role rather than naming that component. Translate `checking` as
+`检查`; use `验证通过` or `已确认` only when the authoritative state actually
+establishes that stronger result.
