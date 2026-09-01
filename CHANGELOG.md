@@ -17,6 +17,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Waited for each previous Tray window to finish closing before rebuilding the
+  next localized shell, preventing rapid in-process language changes from
+  overlapping native WinUI teardown.
 - Removed the dormant Session Agent Dynamic Lighting sparse-package
   self-registration and relaunch path. OpenBlade continues delegating keyboard
   lighting to Windows without registering a competing background provider.

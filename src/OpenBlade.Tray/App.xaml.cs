@@ -419,6 +419,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 string.IsNullOrWhiteSpace(preferencePath)
                     ? UiPreferenceStore.CreateDefault()
                     : new UiPreferenceStore(preferencePath));
+            UnhandledException += (_, eventArgs) => smokeContext.Report(
+                $"WinUI unhandled exception: {eventArgs.Exception}");
             smokeContext.Report("initialize smoke infrastructure");
             smokeContext.Report("load expected smoke preferences");
             UiPreferences expectedPreferences = await smokeContext.PreferenceStore
@@ -715,7 +717,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             DetachWindowEvents(mainWindow);
             smokeContext.Report("dispose current localization smoke window");
             await DisposeWindowSafelyAsync(mainWindow);
-            CloseWindowSafely(mainWindow);
+            await CloseWindowSafelyAsync(mainWindow);
             mainWindow = null;
         }
         DisposeSurfaceSafely(
@@ -2308,11 +2310,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                 ?? SystemUiCulture.Name;
             using IDisposable temporaryTrayLanguage =
                 TrayLocalization.BeginTemporaryLanguageOverride(replacementTrayLanguage);
+            liveLocalizationSmokeContext?.Report(
+                $"hide previous window for {preference}");
             previousWindow.StartHiddenObservation();
             previousWindow.AppWindow.Hide();
             ApplyRuntimeLocalizationPreference(
                 preference,
                 commitTrayLanguage: false);
+            liveLocalizationSmokeContext?.Report(
+                $"create {preference} replacement window");
 
             replacement = CreateMainWindow(
                 registration,
@@ -2322,7 +2328,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                     ? null
                     : UpdateCheckInterval.ManualOnly);
             Task replacementInitialization = replacement.InitializeAsync();
+            liveLocalizationSmokeContext?.Report(
+                $"initialize {preference} replacement window");
             await replacementInitialization;
+            liveLocalizationSmokeContext?.Report(
+                $"create {preference} replacement surfaces");
             replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint);
             replacementTrayIcon = replacementTrayIconFactory?.Invoke(replacement)
                 ?? CreateTrayIconHost(replacement);
@@ -2348,7 +2358,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 liveLocalizationSmokeContext?.Report(
                     $"dispose replacement {preference} window during exit");
                 await DisposeWindowSafelyAsync(replacement);
-                CloseWindowSafely(replacement);
+                await CloseWindowSafelyAsync(replacement);
                 return;
             }
 
@@ -2382,7 +2392,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             liveLocalizationSmokeContext?.Report(
                 $"dispose previous window before committing {preference}");
             await DisposeWindowSafelyAsync(previousWindow);
-            CloseWindowSafely(previousWindow);
+            liveLocalizationSmokeContext?.Report(
+                $"close previous window before completing {preference}");
+            if (!await CloseWindowSafelyAsync(previousWindow))
+            {
+                throw new InvalidOperationException(
+                    $"The previous window did not close while applying {preference}.");
+            }
+            liveLocalizationSmokeContext?.Report(
+                $"previous window closed for {preference}");
 
             if (wasVisible)
             {
@@ -2403,6 +2421,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 {
                     replacement.ShowAndActivate();
                 }
+                if (liveLocalizationSmokeContext is not null)
+                {
+                    throw;
+                }
                 return;
             }
             DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
@@ -2412,7 +2434,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 liveLocalizationSmokeContext?.Report(
                     $"dispose failed {preference} replacement window");
                 await DisposeWindowSafelyAsync(replacement);
-                CloseWindowSafely(replacement);
+                await CloseWindowSafelyAsync(replacement);
             }
             ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
             CultureInfo.CurrentUICulture = previousUiCulture;
@@ -2509,17 +2531,30 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private static void CloseWindowSafely(MainWindow window)
+    private static async Task<bool> CloseWindowSafelyAsync(MainWindow window)
     {
+        var closed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnClosed(object sender, WindowEventArgs args) => closed.TrySetResult();
+
+        window.Closed += OnClosed;
         try
         {
             window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            return true;
         }
         catch (Exception exception)
         {
             Trace.TraceError(
                 "OpenBlade main window close failed: {0}",
                 exception);
+            return false;
+        }
+        finally
+        {
+            window.Closed -= OnClosed;
         }
     }
 
