@@ -32,6 +32,184 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Theory]
+    [InlineData(0u, 128u, false, false)]
+    [InlineData(0x800007D2u, 0u, true, false)]
+    [InlineData(0x800007D2u, 128u, true, true)]
+    public void CounterArraySizing_RejectsErrorsAndDistinguishesAvailableEmpty(
+        uint status,
+        uint bufferSize,
+        bool expectedAvailable,
+        bool expectedHasData)
+    {
+        bool available = WindowsNvidiaGpuActivityReader.TryClassifyCounterArraySizing(
+            status,
+            bufferSize,
+            out bool hasData);
+
+        Assert.Equal(expectedAvailable, available);
+        Assert.Equal(expectedHasData, hasData);
+    }
+
+    [Fact]
+    public void CounterArrayFill_RetriesOneResizeAndFreesBothBuffers()
+    {
+        const uint moreData = 0x800007D2;
+        int fillCalls = 0;
+        List<int> allocatedSizes = [];
+        List<nint> freedBuffers = [];
+        var expected = new WindowsGpuActivitySnapshot(
+            true,
+            [new WindowsGpuProcessActivity(42, 3.5)]);
+
+        WindowsGpuActivitySnapshot actual =
+            WindowsNvidiaGpuActivityReader.ReadFormattedCounterArrayWithRetry(
+                bufferSize: 64,
+                (ref uint bufferSize, out uint itemCount, nint buffer) =>
+                {
+                    fillCalls++;
+                    if (fillCalls == 1)
+                    {
+                        Assert.Equal((nint)100, buffer);
+                        Assert.Equal(64u, bufferSize);
+                        bufferSize = 128;
+                        itemCount = 0;
+                        return moreData;
+                    }
+
+                    Assert.Equal((nint)200, buffer);
+                    Assert.Equal(128u, bufferSize);
+                    itemCount = 2;
+                    return 0;
+                },
+                (buffer, itemCount) =>
+                {
+                    Assert.Equal((nint)200, buffer);
+                    Assert.Equal(2u, itemCount);
+                    return expected;
+                },
+                size =>
+                {
+                    allocatedSizes.Add(size);
+                    return (nint)(allocatedSizes.Count * 100);
+                },
+                freedBuffers.Add);
+
+        Assert.Same(expected, actual);
+        Assert.Equal(2, fillCalls);
+        Assert.Equal([64, 128], allocatedSizes);
+        Assert.Equal([(nint)100, (nint)200], freedBuffers);
+    }
+
+    [Fact]
+    public void CounterArrayFill_SecondResizeRequestFailsUnavailableWithoutLeaking()
+    {
+        const uint moreData = 0x800007D2;
+        int fillCalls = 0;
+        int projectCalls = 0;
+        List<int> allocatedSizes = [];
+        List<nint> freedBuffers = [];
+
+        WindowsGpuActivitySnapshot actual =
+            WindowsNvidiaGpuActivityReader.ReadFormattedCounterArrayWithRetry(
+                bufferSize: 64,
+                (ref uint bufferSize, out uint itemCount, nint _) =>
+                {
+                    fillCalls++;
+                    bufferSize = fillCalls == 1 ? 128u : 256u;
+                    itemCount = 0;
+                    return moreData;
+                },
+                (_, _) =>
+                {
+                    projectCalls++;
+                    return new WindowsGpuActivitySnapshot(true, []);
+                },
+                size =>
+                {
+                    allocatedSizes.Add(size);
+                    return (nint)(allocatedSizes.Count * 100);
+                },
+                freedBuffers.Add);
+
+        Assert.False(actual.IsAvailable);
+        Assert.Equal(2, fillCalls);
+        Assert.Equal(0, projectCalls);
+        Assert.Equal([64, 128], allocatedSizes);
+        Assert.Equal([(nint)100, (nint)200], freedBuffers);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(uint.MaxValue)]
+    public void CounterArrayFill_InvalidRetrySizeFailsBeforeSecondAllocation(
+        uint retrySize)
+    {
+        const uint moreData = 0x800007D2;
+        int fillCalls = 0;
+        int projectCalls = 0;
+        List<int> allocatedSizes = [];
+        List<nint> freedBuffers = [];
+
+        WindowsGpuActivitySnapshot actual =
+            WindowsNvidiaGpuActivityReader.ReadFormattedCounterArrayWithRetry(
+                bufferSize: 64,
+                (ref uint bufferSize, out uint itemCount, nint _) =>
+                {
+                    fillCalls++;
+                    bufferSize = retrySize;
+                    itemCount = 0;
+                    return moreData;
+                },
+                (_, _) =>
+                {
+                    projectCalls++;
+                    return new WindowsGpuActivitySnapshot(true, []);
+                },
+                size =>
+                {
+                    allocatedSizes.Add(size);
+                    return (nint)100;
+                },
+                freedBuffers.Add);
+
+        Assert.False(actual.IsAvailable);
+        Assert.Equal(1, fillCalls);
+        Assert.Equal(0, projectCalls);
+        Assert.Equal([64], allocatedSizes);
+        Assert.Equal([(nint)100], freedBuffers);
+    }
+
+    [Fact]
+    public void CounterArrayFill_NonSizingErrorFailsUnavailableWithoutRetry()
+    {
+        int fillCalls = 0;
+        int projectCalls = 0;
+        int freeCalls = 0;
+
+        WindowsGpuActivitySnapshot actual =
+            WindowsNvidiaGpuActivityReader.ReadFormattedCounterArrayWithRetry(
+                bufferSize: 64,
+                (ref uint bufferSize, out uint itemCount, nint _) =>
+                {
+                    fillCalls++;
+                    itemCount = 0;
+                    return 5;
+                },
+                (_, _) =>
+                {
+                    projectCalls++;
+                    return new WindowsGpuActivitySnapshot(true, []);
+                },
+                _ => (nint)100,
+                _ => freeCalls++);
+
+        Assert.False(actual.IsAvailable);
+        Assert.Equal(1, fillCalls);
+        Assert.Equal(0, projectCalls);
+        Assert.Equal(1, freeCalls);
+    }
+
+    [Theory]
     [InlineData("OpenBlade.Tray")]
     [InlineData("OpenBlade.SessionAgent")]
     [InlineData("dwm")]
@@ -198,6 +376,103 @@ public sealed class WindowsGpuActivityTests
 
         Assert.Same(expected, actual);
         Assert.Equal([150, 150], delays);
+    }
+
+    [Fact]
+    public void ReaderRefresh_ReplacesQueryAndAdapterLuid()
+    {
+        int locateCalls = 0;
+        Queue<WindowsNvidiaGpuActivityReader.QueryHandles> handles = new(
+        [
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)11, (nint)12),
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)21, (nint)22),
+        ]);
+        List<nint> closedQueries = [];
+        var reader = new WindowsNvidiaGpuActivityReader(
+            () =>
+            {
+                locateCalls++;
+                return NvidiaLuid;
+            },
+            () => handles.Dequeue(),
+            closedQueries.Add);
+
+        Assert.True(reader.Refresh());
+        Assert.Equal([(nint)11], closedQueries);
+        reader.Dispose();
+
+        Assert.Equal(2, locateCalls);
+        Assert.Equal([(nint)11, (nint)21], closedQueries);
+    }
+
+    [Fact]
+    public void ReaderRefresh_RecoversAfterAdapterLuidIsTemporarilyUnavailable()
+    {
+        Queue<string?> luidTokens = new([NvidiaLuid, null, NvidiaLuid]);
+        Queue<WindowsNvidiaGpuActivityReader.QueryHandles> handles = new(
+        [
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)11, (nint)12),
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)21, (nint)22),
+        ]);
+        List<nint> closedQueries = [];
+        var reader = new WindowsNvidiaGpuActivityReader(
+            luidTokens.Dequeue,
+            () => handles.Dequeue(),
+            closedQueries.Add);
+
+        Assert.False(reader.Refresh());
+        Assert.True(reader.Refresh());
+        reader.Dispose();
+
+        Assert.Empty(luidTokens);
+        Assert.Empty(handles);
+        Assert.Equal([(nint)11, (nint)21], closedQueries);
+    }
+
+    [Fact]
+    public void ReaderRefresh_FailedReplacementRetainsOldQueryUntilDispose()
+    {
+        Queue<WindowsNvidiaGpuActivityReader.QueryHandles?> handles = new(
+        [
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)11, (nint)12),
+            null,
+        ]);
+        List<nint> closedQueries = [];
+        var reader = new WindowsNvidiaGpuActivityReader(
+            () => NvidiaLuid,
+            handles.Dequeue,
+            closedQueries.Add);
+
+        Assert.False(reader.Refresh());
+        Assert.Empty(closedQueries);
+
+        reader.Dispose();
+        reader.Dispose();
+
+        Assert.Empty(handles);
+        Assert.Equal([(nint)11], closedQueries);
+    }
+
+    [Fact]
+    public void ReaderDispose_MissingCloseEntryPointClearsQueryExactlyOnce()
+    {
+        int closeCalls = 0;
+        var reader = new WindowsNvidiaGpuActivityReader(
+            () => NvidiaLuid,
+            () => new WindowsNvidiaGpuActivityReader.QueryHandles(
+                (nint)11,
+                (nint)12),
+            _ =>
+            {
+                closeCalls++;
+                throw new EntryPointNotFoundException();
+            });
+
+        reader.Dispose();
+        reader.Dispose();
+
+        Assert.Equal(1, closeCalls);
+        Assert.False(reader.Refresh());
     }
 
     [Fact]

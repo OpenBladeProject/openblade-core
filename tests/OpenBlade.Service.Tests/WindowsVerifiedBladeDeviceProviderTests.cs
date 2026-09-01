@@ -2469,7 +2469,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         public int DisposeCount { get; private set; }
 
-        public bool IsActive() => false;
+        public bool? IsActive(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return false;
+        }
 
         public void Dispose() => DisposeCount++;
     }

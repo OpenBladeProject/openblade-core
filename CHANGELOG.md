@@ -22,6 +22,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   lighting to Windows without registering a competing background provider.
   New Setup payloads reject the retired identity artifacts while exact legacy
   cleanup and rollback restoration remain available for older installations.
+- Refreshed Windows NVIDIA GPU activity counters before service thermal and
+  clock-offset decisions so processes that start after service launch are not
+  missed. Failed refreshes and unavailable samples now remain unknown so fan
+  control fails safe without probing NVIDIA APIs.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
