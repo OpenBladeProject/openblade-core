@@ -2278,7 +2278,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 Content = LocalizedResources.Format(
                     "MainWindow_GpuApps_AppItem",
-                    "{0} (PID {1})",
+                    "- {0} (PID {1})",
                     app.Name,
                     app.ProcessId),
                 IsChecked = false,
@@ -2295,7 +2295,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 Text = LocalizedResources.Get(
                     "MainWindow_GpuApps_NotCloseableHeading",
-                    "Not closeable:"),
+                    "\n\nNot closeable:\n").Trim(),
                 Margin = new Thickness(0, 8, 0, 0),
             });
             content.Children.Add(CreateGpuAppsDialogContent(
