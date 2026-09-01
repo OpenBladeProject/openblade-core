@@ -276,9 +276,30 @@ public sealed class WinUiShellContractTests
             "finalScan.Status == SessionGpuOperationStatus.Failed",
             handler,
             StringComparison.Ordinal);
+        Assert.Contains("IsPrimaryButtonEnabled = false", handler, StringComparison.Ordinal);
+        Assert.Contains("IsChecked = false", handler, StringComparison.Ordinal);
+        Assert.Contains("selected,", handler, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(5)", handler, StringComparison.Ordinal);
+        Assert.Contains("[app]", handler, StringComparison.Ordinal);
+        Assert.Contains("force: true", handler, StringComparison.Ordinal);
+        Assert.Contains("forceAttempted = true", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "forcedApp.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("app.Name", handler, StringComparison.Ordinal);
+        Assert.Contains("await gpuAppOperationGate.WaitAsync()", handler, StringComparison.Ordinal);
+        Assert.Contains("gpuAppOperationGate.WaitAsync(0, cancellationToken)", handler, StringComparison.Ordinal);
         Assert.True(
             handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
                 > handler.IndexOf("SessionGpuResponse finalScan", StringComparison.Ordinal));
+
+        string observationState = SliceMethod(
+            codeBehind,
+            "private void UpdateGpuAppObservationState()",
+            "private async void OnDisplayRefreshTimerTick");
+        Assert.Contains("HomePage.Visibility", observationState, StringComparison.Ordinal);
+        Assert.Contains("LaptopPage.Visibility", observationState, StringComparison.Ordinal);
     }
 
     [Fact]

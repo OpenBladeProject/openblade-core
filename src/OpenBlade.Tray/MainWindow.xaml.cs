@@ -42,6 +42,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
+    private readonly SemaphoreSlim gpuAppOperationGate = new(1, 1);
+    private readonly GpuAppCleanupVisibilityTracker gpuAppVisibilityTracker = new();
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly AccentColorManager accentColorManager;
     private readonly UISettings dashboardTextSettings = new();
@@ -68,6 +70,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly object initializationSync = new();
     private Task? initializationTask;
     private Task? displayRefreshTask;
+    private int gpuAppActionActive;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingWindowsPowerModeSelection;
@@ -2019,7 +2022,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
+        if (Interlocked.CompareExchange(ref gpuAppActionActive, 1, 0) != 0)
+        {
+            return;
+        }
+
         button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, false);
+        await gpuAppOperationGate.WaitAsync();
         try
         {
             SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
@@ -2053,37 +2062,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 return;
             }
 
-            var confirmation = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot,
-                Title = LocalizedResources.Get(
-                    "MainWindow_GpuApps_CloseConfirmationTitle",
-                    "Close apps using the NVIDIA GPU?"),
-                Content = CreateGpuAppsDialogContent(
-                    LocalizedResources.Get(
-                        "MainWindow_GpuApps_CloseConfirmationIntro",
-                        "OpenBlade will ask these apps to close. Save your work first.\n\n")
-                    + FormatGpuApps(eligible, includeBlockReason: false)
-                    + (blocked.Length == 0
-                        ? string.Empty
-                        : LocalizedResources.Get(
-                            "MainWindow_GpuApps_NotCloseableHeading",
-                            "\n\nNot closeable:\n")
-                            + FormatGpuApps(blocked, includeBlockReason: true))),
-                PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_CloseButton", "Close apps"),
-                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
-                DefaultButton = ContentDialogButton.Close,
-            };
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            SessionGpuApp[] selected = await ShowGpuAppSelectionDialogAsync(
+                eligible,
+                blocked);
+            if (selected.Length == 0)
             {
                 return;
             }
 
             _ = await gpuAppAdapter.CloseAsync(
-                eligible,
+                selected,
                 force: false,
                 CancellationToken.None);
-            await Task.Delay(TimeSpan.FromSeconds(2));
+            await Task.Delay(TimeSpan.FromSeconds(5));
             SessionGpuResponse afterClose = await gpuAppAdapter.QueryAsync(
                 CancellationToken.None);
             await ApplyGpuAppVisibilityAsync(afterClose, CancellationToken.None);
@@ -2096,7 +2087,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                         "GPU activity could not be checked after closing apps."));
                 return;
             }
-            SessionGpuApp[] remaining = MatchTargets(afterClose.Apps, eligible);
+            SessionGpuApp[] remaining = MatchTargets(afterClose.Apps, selected);
             if (remaining.Length == 0)
             {
                 await ShowGpuAppsMessageAsync(
@@ -2107,30 +2098,56 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 return;
             }
 
-            var forceConfirmation = new ContentDialog
+            var forceFailures = new List<string>();
+            bool forceAttempted = false;
+            foreach (SessionGpuApp app in remaining)
             {
-                XamlRoot = Root.XamlRoot,
-                Title = LocalizedResources.Get(
-                    "MainWindow_GpuApps_ForceConfirmationTitle",
-                    "Force close remaining apps?"),
-                Content = CreateGpuAppsDialogContent(
-                    LocalizedResources.Get(
-                        "MainWindow_GpuApps_ForceConfirmationIntro",
-                        "These apps did not close. Force closing can discard unsaved work.\n\n")
-                    + FormatGpuApps(remaining, includeBlockReason: false)),
-                PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_ForceButton", "Force close"),
-                CloseButtonText = LocalizedResources.Get("MainWindow_GpuApps_KeepRunningButton", "Keep running"),
-                DefaultButton = ContentDialogButton.Close,
-            };
-            if (await forceConfirmation.ShowAsync() != ContentDialogResult.Primary)
+                var forceConfirmation = new ContentDialog
+                {
+                    XamlRoot = Root.XamlRoot,
+                    Title = LocalizedResources.Get(
+                        "MainWindow_GpuApps_ForceConfirmationTitle",
+                        "Force close remaining apps?"),
+                    Content = CreateGpuAppsDialogContent(
+                        LocalizedResources.Get(
+                            "MainWindow_GpuApps_ForceConfirmationIntro",
+                            "These apps did not close. Force closing can discard unsaved work.\n\n")
+                        + FormatGpuApps([app], includeBlockReason: false)),
+                    PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_ForceButton", "Force close"),
+                    CloseButtonText = LocalizedResources.Get("MainWindow_GpuApps_KeepRunningButton", "Keep running"),
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await forceConfirmation.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    continue;
+                }
+
+                forceAttempted = true;
+                SessionGpuResponse forcedApp = await gpuAppAdapter.CloseAsync(
+                    [app],
+                    force: true,
+                    CancellationToken.None);
+                forceFailures.AddRange(
+                    forcedApp.Results
+                        .Where(result => !result.Succeeded)
+                        .Select(result => LocalizedResources.Format(
+                            "MainWindow_GpuApps_FailureItem",
+                            "- PID {0}: {1}",
+                            result.ProcessId,
+                            result.Error)));
+                if (forcedApp.Status == SessionGpuOperationStatus.Failed
+                    && forcedApp.Results.Count == 0
+                    && !string.IsNullOrWhiteSpace(forcedApp.Error))
+                {
+                    forceFailures.Add($"- {forcedApp.Error}");
+                }
+            }
+
+            if (!forceAttempted)
             {
                 return;
             }
 
-            SessionGpuResponse forced = await gpuAppAdapter.CloseAsync(
-                remaining,
-                force: true,
-                CancellationToken.None);
             await Task.Delay(TimeSpan.FromMilliseconds(750));
             SessionGpuResponse finalScan = await gpuAppAdapter.QueryAsync(CancellationToken.None);
             await ApplyGpuAppVisibilityAsync(finalScan, CancellationToken.None);
@@ -2152,21 +2169,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     "MainWindow_GpuApps_SurvivorsHeading",
                     "Some apps could not be closed:\n\n")
                     + FormatGpuApps(survivors, includeBlockReason: true);
-            if (forced.Results.Any(result => !result.Succeeded))
+            if (forceFailures.Count > 0)
             {
-                string failures = string.Join(
-                    Environment.NewLine,
-                    forced.Results
-                        .Where(result => !result.Succeeded)
-                        .Select(result => LocalizedResources.Format(
-                            "MainWindow_GpuApps_FailureItem",
-                            "- PID {0}: {1}",
-                            result.ProcessId,
-                            result.Error)));
                 finalMessage += LocalizedResources.Format(
                     "MainWindow_GpuApps_FailuresHeading",
                     "\n\nReported failures:\n{0}",
-                    failures);
+                    string.Join(Environment.NewLine, forceFailures));
             }
             await ShowGpuAppsMessageAsync(
                 survivors.Length == 0
@@ -2189,25 +2197,125 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
+            gpuAppOperationGate.Release();
             button.SetValue(Microsoft.UI.Xaml.Controls.Control.IsEnabledProperty, true);
+            Interlocked.Exchange(ref gpuAppActionActive, 0);
+            UpdateGpuAppObservationState();
         }
     }
 
     private async Task ObserveGpuAppActivityAsync(CancellationToken cancellationToken)
     {
-        SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await ApplyGpuAppVisibilityAsync(scan, cancellationToken).ConfigureAwait(false);
+        if (!await gpuAppOperationGate.WaitAsync(0, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            SessionGpuResponse scan = await gpuAppAdapter.QueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await ApplyGpuAppVisibilityAsync(scan, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gpuAppOperationGate.Release();
+        }
     }
 
-    private Task ApplyGpuAppVisibilityAsync(
+    private async Task ApplyGpuAppVisibilityAsync(
         SessionGpuResponse scan,
-        CancellationToken cancellationToken) =>
-        scan.Status == SessionGpuOperationStatus.Failed
-            ? Task.CompletedTask
-            : ViewModel.SetGpuAppCleanupVisibleAsync(
-                scan.Apps.Count > 0,
-                cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        bool visible = scan.Status == SessionGpuOperationStatus.Failed
+            ? gpuAppVisibilityTracker.ObserveFailedScan()
+            : gpuAppVisibilityTracker.ObserveSuccessfulScan(
+                scan.Apps.Any(app => app.CanClose));
+        await ViewModel.SetGpuAppCleanupVisibleAsync(visible, cancellationToken);
+    }
+
+    private async Task<SessionGpuApp[]> ShowGpuAppSelectionDialogAsync(
+        IReadOnlyList<SessionGpuApp> eligible,
+        IReadOnlyList<SessionGpuApp> blocked)
+    {
+        SessionGpuApp[] snapshot = eligible.ToArray();
+        var choices = new List<(
+            SessionGpuApp App,
+            Microsoft.UI.Xaml.Controls.CheckBox CheckBox)>(snapshot.Length);
+        var content = new StackPanel
+        {
+            Spacing = 8,
+            MaxWidth = 560,
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = LocalizedResources.Get(
+                "MainWindow_GpuApps_CloseConfirmationIntro",
+                "OpenBlade will ask these apps to close. Save your work first.\n\n"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var confirmation = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = LocalizedResources.Get(
+                "MainWindow_GpuApps_CloseConfirmationTitle",
+                "Close apps using the NVIDIA GPU?"),
+            PrimaryButtonText = LocalizedResources.Get("MainWindow_GpuApps_CloseButton", "Close apps"),
+            CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = false,
+        };
+
+        void UpdateSelectionState(object sender, RoutedEventArgs args) =>
+            confirmation.IsPrimaryButtonEnabled = choices.Any(
+                choice => choice.CheckBox.IsChecked == true);
+
+        foreach (SessionGpuApp app in snapshot)
+        {
+            var checkBox = new Microsoft.UI.Xaml.Controls.CheckBox
+            {
+                Content = LocalizedResources.Format(
+                    "MainWindow_GpuApps_AppItem",
+                    "{0} (PID {1})",
+                    app.Name,
+                    app.ProcessId),
+                IsChecked = false,
+            };
+            checkBox.Checked += UpdateSelectionState;
+            checkBox.Unchecked += UpdateSelectionState;
+            choices.Add((app, checkBox));
+            content.Children.Add(checkBox);
+        }
+
+        if (blocked.Count > 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = LocalizedResources.Get(
+                    "MainWindow_GpuApps_NotCloseableHeading",
+                    "Not closeable:"),
+                Margin = new Thickness(0, 8, 0, 0),
+            });
+            content.Children.Add(CreateGpuAppsDialogContent(
+                FormatGpuApps(blocked, includeBlockReason: true)));
+        }
+
+        confirmation.Content = new ScrollViewer
+        {
+            Content = content,
+            MaxHeight = 480,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        ContentDialogResult result = await confirmation.ShowAsync();
+        return result == ContentDialogResult.Primary
+            ? choices
+                .Where(choice => choice.CheckBox.IsChecked == true)
+                .Select(choice => choice.App)
+                .ToArray()
+            : [];
+    }
 
     private async Task ShowGpuAppsMessageAsync(string title, string message)
     {
@@ -2251,11 +2359,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         IReadOnlyList<SessionGpuApp> current,
         IReadOnlyList<SessionGpuApp> targets)
     {
-        HashSet<(int ProcessId, long StartTimeUtcTicks)> identities = targets
-            .Select(app => (app.ProcessId, app.StartTimeUtcTicks))
+        HashSet<(int ProcessId, long StartTimeUtcTicks, string Name)> identities = targets
+            .Select(app => (app.ProcessId, app.StartTimeUtcTicks, app.Name))
             .ToHashSet();
         return current
-            .Where(app => identities.Contains((app.ProcessId, app.StartTimeUtcTicks)))
+            .Where(app => identities.Contains((app.ProcessId, app.StartTimeUtcTicks, app.Name)))
             .ToArray();
     }
 
@@ -3117,7 +3225,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void UpdateGpuAppObservationState()
     {
-        if (windowVisible && HomePage.Visibility == Visibility.Visible)
+        if (windowVisible
+            && (HomePage.Visibility == Visibility.Visible
+                || LaptopPage.Visibility == Visibility.Visible))
         {
             gpuAppObservationLoop.StartOrWake();
         }

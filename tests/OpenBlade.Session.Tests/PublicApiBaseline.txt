@@ -361,8 +361,8 @@ type sealed class OpenBlade.Session.SessionGpuAppIdentity
 type static class OpenBlade.Session.SessionGpuIpc
   field const System.Int32 MaximumApps = 128
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 1
-  field const System.String PipeNamePrefix = "OpenBlade.Session.Gpu.v1"
+  field const System.Int32 ProtocolVersion = 2
+  field const System.String PipeNamePrefix = "OpenBlade.Session.Gpu.v2"
 type static class OpenBlade.Session.SessionGpuIpcCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionGpuRequest request, System.Threading.CancellationToken cancellationToken = null)
   method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionGpuResponse response, System.Threading.CancellationToken cancellationToken = null)

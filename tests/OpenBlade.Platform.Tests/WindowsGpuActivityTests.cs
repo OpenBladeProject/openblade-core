@@ -180,14 +180,18 @@ public sealed class WindowsGpuActivityTests
     [Fact]
     public void ActivitySampling_RetriesTransientStartupFailureAndPrimesRateCounter()
     {
-        var expected = new WindowsGpuActivitySnapshot(
+        var first = new WindowsGpuActivitySnapshot(
             true,
             [new WindowsGpuProcessActivity(42, 3.5)]);
+        var second = new WindowsGpuActivitySnapshot(
+            true,
+            [new WindowsGpuProcessActivity(42, 2.5)]);
         Queue<WindowsGpuActivitySnapshot> snapshots = new(
         [
             new WindowsGpuActivitySnapshot(false, []),
             new WindowsGpuActivitySnapshot(true, []),
-            expected,
+            first,
+            second,
         ]);
         List<int> delays = [];
 
@@ -196,8 +200,120 @@ public sealed class WindowsGpuActivityTests
             delays.Add,
             CancellationToken.None);
 
-        Assert.Same(expected, actual);
-        Assert.Equal([150, 150], delays);
+        WindowsGpuProcessActivity process = Assert.Single(actual.Processes);
+        Assert.Equal(42, process.ProcessId);
+        Assert.Equal(2.5, process.UtilizationPercent);
+        Assert.Equal([150, 150, 150], delays);
+    }
+
+    [Fact]
+    public void StableProcessIntersection_IncludesIdleHoldersAndUsesLatestValue()
+    {
+        WindowsGpuProcessActivity[] actual = WindowsGpuAppManager.IntersectStableProcesses(
+        [
+            new WindowsGpuProcessActivity(40, 8.5),
+            new WindowsGpuProcessActivity(41, 0),
+        ],
+        [
+            new WindowsGpuProcessActivity(40, 0),
+            new WindowsGpuProcessActivity(41, 0),
+        ]);
+
+        Assert.Collection(
+            actual,
+            process =>
+            {
+                Assert.Equal(40, process.ProcessId);
+                Assert.Equal(0, process.UtilizationPercent);
+            },
+            process =>
+            {
+                Assert.Equal(41, process.ProcessId);
+                Assert.Equal(0, process.UtilizationPercent);
+            });
+    }
+
+    [Fact]
+    public void StableProcessIntersection_OmitsTransientProcesses()
+    {
+        WindowsGpuProcessActivity[] actual = WindowsGpuAppManager.IntersectStableProcesses(
+        [
+            new WindowsGpuProcessActivity(40, 1),
+            new WindowsGpuProcessActivity(41, 2),
+        ],
+        [
+            new WindowsGpuProcessActivity(41, 3),
+            new WindowsGpuProcessActivity(42, 4),
+        ]);
+
+        WindowsGpuProcessActivity process = Assert.Single(actual);
+        Assert.Equal(41, process.ProcessId);
+        Assert.Equal(3, process.UtilizationPercent);
+    }
+
+    [Fact]
+    public void StableProcessIntersection_DeduplicatesLatestSnapshotByProcessId()
+    {
+        WindowsGpuProcessActivity[] actual = WindowsGpuAppManager.IntersectStableProcesses(
+            [new WindowsGpuProcessActivity(42, 1)],
+            [
+                new WindowsGpuProcessActivity(42, 2),
+                new WindowsGpuProcessActivity(42, 3),
+            ]);
+
+        WindowsGpuProcessActivity process = Assert.Single(actual);
+        Assert.Equal(42, process.ProcessId);
+        Assert.Equal(3, process.UtilizationPercent);
+    }
+
+    [Fact]
+    public void ReaderRefresh_ReplacesQueryAndAdapterLuidBeforeCleanupScan()
+    {
+        int locateCalls = 0;
+        Queue<WindowsNvidiaGpuActivityReader.QueryHandles> handles = new(
+        [
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)11, (nint)12),
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)21, (nint)22),
+        ]);
+        List<nint> closedQueries = [];
+        var reader = new WindowsNvidiaGpuActivityReader(
+            () =>
+            {
+                locateCalls++;
+                return NvidiaLuid;
+            },
+            () => handles.Dequeue(),
+            closedQueries.Add);
+
+        Assert.True(reader.Refresh());
+        reader.Dispose();
+
+        Assert.Equal(2, locateCalls);
+        Assert.Equal([(nint)11, (nint)21], closedQueries);
+    }
+
+    [Fact]
+    public void ReaderRefresh_RecoversAfterAdapterLuidIsTemporarilyUnavailable()
+    {
+        Queue<string?> luidTokens = new([NvidiaLuid, null, NvidiaLuid]);
+        Queue<WindowsNvidiaGpuActivityReader.QueryHandles> handles = new(
+        [
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)11, (nint)12),
+            new WindowsNvidiaGpuActivityReader.QueryHandles((nint)21, (nint)22),
+        ]);
+        List<nint> closedQueries = [];
+        var reader = new WindowsNvidiaGpuActivityReader(
+            luidTokens.Dequeue,
+            () => handles.Dequeue(),
+            closedQueries.Add);
+
+        Assert.False(reader.Refresh());
+        Assert.True(reader.Refresh());
+        reader.Dispose();
+
+        Assert.Empty(luidTokens);
+        Assert.Empty(handles);
+        Assert.Equal([(nint)11, (nint)21], closedQueries);
     }
 
     [Fact]

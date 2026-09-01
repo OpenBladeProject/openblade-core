@@ -25,6 +25,25 @@ public sealed class SessionGpuRequestDispatcher
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.Version != SessionGpuIpc.ProtocolVersion)
+        {
+            return Response(
+                request.RequestId,
+                SessionGpuOperationStatus.Failed,
+                "The Session GPU IPC protocol version is unsupported.",
+                [],
+                []);
+        }
+        if (request is CloseGpuAppsRequest { Force: true, Targets.Count: not 1 })
+        {
+            return Response(
+                request.RequestId,
+                SessionGpuOperationStatus.Failed,
+                "Force close requires exactly one confirmed application.",
+                [],
+                []);
+        }
+
         WindowsGpuAppScan scan = manager.Scan(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (!scan.IsAvailable)
@@ -74,7 +93,7 @@ public sealed class SessionGpuRequestDispatcher
                     target.ProcessId,
                     target.StartTimeUtcTicks,
                     false,
-                    "The process exited or its identity changed after confirmation."));
+                    "The process no longer holds GPU resources or its identity changed after confirmation."));
             }
         }
 

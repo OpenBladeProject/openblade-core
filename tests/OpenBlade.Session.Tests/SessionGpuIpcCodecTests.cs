@@ -42,6 +42,31 @@ public sealed class SessionGpuIpcCodecTests
     }
 
     [Fact]
+    public async Task ForceCloseRequest_RejectsMultipleTargets()
+    {
+        var request = new CloseGpuAppsRequest(
+            SessionGpuIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Force: true,
+            [
+                new SessionGpuAppIdentity(42, 123456, "game"),
+                new SessionGpuAppIdentity(43, 789012, "overlay"),
+            ]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            SessionGpuIpcCodec.WriteRequestAsync(new MemoryStream(), request));
+    }
+
+    [Fact]
+    public async Task VersionOneRequest_IsRejected()
+    {
+        var request = new QueryGpuAppsRequest(1, Guid.NewGuid());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            SessionGpuIpcCodec.WriteRequestAsync(new MemoryStream(), request));
+    }
+
+    [Fact]
     public async Task Response_RoundTripsEligibleBlockedAndPartialResults()
     {
         var expected = new SessionGpuResponse(
@@ -50,7 +75,7 @@ public sealed class SessionGpuIpcCodecTests
             SessionGpuOperationStatus.PartiallySucceeded,
             "Some applications could not be closed.",
             [
-                new SessionGpuApp(42, 123456, "game", @"C:\Games\game.exe", 12.5, true, null),
+                new SessionGpuApp(42, 123456, "game", @"C:\Games\game.exe", 0, true, null),
                 new SessionGpuApp(8, 987654, "dwm", null, 0.2, false, "Windows process"),
             ],
             [

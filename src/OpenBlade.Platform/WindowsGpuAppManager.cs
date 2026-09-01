@@ -42,7 +42,7 @@ public interface IWindowsGpuAppManager
 }
 
 /// <summary>
-/// Finds and closes current-user applications actively using NVIDIA WDDM engines.
+/// Finds and closes current-user applications holding NVIDIA WDDM engine contexts.
 /// The caller remains responsible for showing the destructive confirmation.
 /// </summary>
 public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
@@ -104,6 +104,7 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
 
     public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
     {
+        _ = reader.Refresh();
         WindowsGpuActivitySnapshot sample = ReadActivitySample(
             reader.Read,
             Thread.Sleep,
@@ -116,16 +117,15 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                 []);
         }
 
-        WindowsGpuProcessActivity[] activeProcesses = SelectActiveProcesses(
-            sample.Processes);
+        IReadOnlyList<WindowsGpuProcessActivity> stableProcesses = sample.Processes;
         Dictionary<int, int> parents = WindowsProcessTree.ReadParents();
         Dictionary<int, ProcessEntry> processTable = ReadProcessTable(
-            activeProcesses,
+            stableProcesses,
             parents,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<WindowsGpuApp> apps = CreateApps(
-            activeProcesses,
+            stableProcesses,
             processTable,
             currentSessionId);
         return new WindowsGpuAppScan(true, null, apps);
@@ -155,21 +155,32 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(sleep);
         bool hasPrime = false;
+        WindowsGpuActivitySnapshot? previous = null;
         for (int attempt = 0; attempt < ActivitySampleAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             WindowsGpuActivitySnapshot snapshot = read();
             if (snapshot.IsAvailable)
             {
-                if (hasPrime)
+                if (!hasPrime)
                 {
-                    return snapshot;
+                    hasPrime = true;
                 }
-                hasPrime = true;
+                else if (previous is not null)
+                {
+                    return new WindowsGpuActivitySnapshot(
+                        true,
+                        IntersectStableProcesses(previous.Processes, snapshot.Processes));
+                }
+                else
+                {
+                    previous = snapshot;
+                }
             }
             else
             {
                 hasPrime = false;
+                previous = null;
             }
 
             if (attempt + 1 < ActivitySampleAttempts)
@@ -179,6 +190,32 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         }
 
         return new WindowsGpuActivitySnapshot(false, []);
+    }
+
+    internal static WindowsGpuProcessActivity[] IntersectStableProcesses(
+        IReadOnlyList<WindowsGpuProcessActivity> first,
+        IReadOnlyList<WindowsGpuProcessActivity> second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
+        HashSet<int> firstProcessIds = first
+            .Select(process => process.ProcessId)
+            .Where(processId => processId > 0)
+            .ToHashSet();
+        Dictionary<int, WindowsGpuProcessActivity> latestByProcess = [];
+        foreach (WindowsGpuProcessActivity process in second)
+        {
+            if (process.ProcessId > 0 && firstProcessIds.Contains(process.ProcessId))
+            {
+                latestByProcess[process.ProcessId] = process;
+            }
+        }
+
+        return latestByProcess.Values
+            .OrderByDescending(process => process.UtilizationPercent)
+            .ThenBy(process => process.ProcessId)
+            .ToArray();
     }
 
     internal static WindowsGpuProcessActivity[] SelectActiveProcesses(

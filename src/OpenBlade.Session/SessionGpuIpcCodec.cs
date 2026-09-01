@@ -125,6 +125,7 @@ public static class SessionGpuIpcCodec
             QueryGpuAppsRequest => true,
             CloseGpuAppsRequest value => value.Targets is not null
                 && value.Targets.Count is > 0 and <= SessionGpuIpc.MaximumApps
+                && (!value.Force || value.Targets.Count == 1)
                 && value.Targets.All(ValidIdentity)
                 && value.Targets.Select(target => target.ProcessId).Distinct().Count()
                     == value.Targets.Count,

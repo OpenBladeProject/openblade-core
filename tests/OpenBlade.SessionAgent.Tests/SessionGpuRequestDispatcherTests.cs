@@ -32,6 +32,24 @@ public sealed class SessionGpuRequestDispatcherTests
     }
 
     [Fact]
+    public async Task Query_RejectsVersionOneBeforeScanning()
+    {
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = Scan(App(42, 123, "game", canClose: true)),
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+
+        SessionGpuResponse response = await dispatcher.DispatchAsync(
+            new QueryGpuAppsRequest(1, Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.Equal(SessionGpuOperationStatus.Failed, response.Status);
+        Assert.Contains("protocol version", response.Error, StringComparison.Ordinal);
+        Assert.Equal(0, manager.ScanCount);
+    }
+
+    [Fact]
     public async Task Close_RejectsChangedIdentityBeforeInvokingManager()
     {
         var manager = new FakeGpuAppManager
@@ -50,6 +68,7 @@ public sealed class SessionGpuRequestDispatcherTests
 
         Assert.Equal(SessionGpuOperationStatus.Failed, response.Status);
         Assert.Single(response.Results);
+        Assert.Contains("no longer holds GPU resources", response.Results[0].Error, StringComparison.Ordinal);
         Assert.Contains("identity changed", response.Results[0].Error, StringComparison.Ordinal);
         Assert.Equal(0, manager.CloseCount);
         Assert.Equal(0, manager.ForceCount);
@@ -77,6 +96,35 @@ public sealed class SessionGpuRequestDispatcherTests
         Assert.Equal(0, manager.CloseCount);
         Assert.Equal(1, manager.ForceCount);
         Assert.Equal(target, Assert.Single(manager.LastTargets));
+    }
+
+    [Fact]
+    public async Task ForceClose_RejectsMultipleTargetsBeforeScanningOrInvokingManager()
+    {
+        WindowsGpuApp first = App(42, 123, "first", canClose: true);
+        WindowsGpuApp second = App(43, 456, "second", canClose: true);
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = Scan(first, second),
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+
+        SessionGpuResponse response = await dispatcher.DispatchAsync(
+            new CloseGpuAppsRequest(
+                SessionGpuIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Force: true,
+                [
+                    new SessionGpuAppIdentity(first.ProcessId, first.StartTimeUtcTicks, first.Name),
+                    new SessionGpuAppIdentity(second.ProcessId, second.StartTimeUtcTicks, second.Name),
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(SessionGpuOperationStatus.Failed, response.Status);
+        Assert.Contains("exactly one", response.Error, StringComparison.Ordinal);
+        Assert.Equal(0, manager.ScanCount);
+        Assert.Equal(0, manager.CloseCount);
+        Assert.Equal(0, manager.ForceCount);
     }
 
     [Fact]
@@ -120,7 +168,7 @@ public sealed class SessionGpuRequestDispatcherTests
     }
 
     [Fact]
-    public async Task ForceClose_ReturnsCompletedAndUnattemptedResultsWhenDeadlineExpires()
+    public async Task GracefulClose_ReturnsCompletedAndUnattemptedResultsWhenDeadlineExpires()
     {
         WindowsGpuApp first = App(42, 123, "first", canClose: true);
         WindowsGpuApp second = App(43, 456, "second", canClose: true);
@@ -128,8 +176,8 @@ public sealed class SessionGpuRequestDispatcherTests
         var manager = new FakeGpuAppManager
         {
             ScanResult = Scan(first, second),
-            ForceAction = cancellation.Cancel,
-            ForceResult =
+            CloseAction = cancellation.Cancel,
+            CloseResult =
             [
                 new WindowsGpuAppActionResult(
                     first.ProcessId,
@@ -144,7 +192,7 @@ public sealed class SessionGpuRequestDispatcherTests
             new CloseGpuAppsRequest(
                 SessionGpuIpc.ProtocolVersion,
                 Guid.NewGuid(),
-                Force: true,
+                Force: false,
                 [
                     new SessionGpuAppIdentity(
                         first.ProcessId,
@@ -192,6 +240,10 @@ public sealed class SessionGpuRequestDispatcherTests
 
         public Action? ScanAction { get; init; }
 
+        public Action? CloseAction { get; init; }
+
+        public IReadOnlyList<WindowsGpuAppActionResult>? CloseResult { get; init; }
+
         public Action? ForceAction { get; init; }
 
         public IReadOnlyList<WindowsGpuAppActionResult>? ForceResult { get; init; }
@@ -200,10 +252,13 @@ public sealed class SessionGpuRequestDispatcherTests
 
         public int ForceCount { get; private set; }
 
+        public int ScanCount { get; private set; }
+
         public IReadOnlyList<WindowsGpuApp> LastTargets { get; private set; } = [];
 
         public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
         {
+            ScanCount++;
             ScanAction?.Invoke();
             return ScanResult;
         }
@@ -214,7 +269,8 @@ public sealed class SessionGpuRequestDispatcherTests
         {
             CloseCount++;
             LastTargets = apps;
-            return Success(apps);
+            CloseAction?.Invoke();
+            return CloseResult ?? Success(apps);
         }
 
         public IReadOnlyList<WindowsGpuAppActionResult> ForceClose(
