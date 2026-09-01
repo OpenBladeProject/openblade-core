@@ -466,7 +466,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         return Task.CompletedTask;
     }
 
-    public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+    public Task RestoreDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
         dynamicLightingIdentityRegistration.InstallIfPresentAsync(
             paths.InstallDirectory,
             CurrentUserSid,

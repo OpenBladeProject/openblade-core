@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Removed the dormant Session Agent Dynamic Lighting sparse-package
+  self-registration and relaunch path. OpenBlade continues delegating keyboard
+  lighting to Windows without registering a competing background provider.
+  New Setup payloads reject the retired identity artifacts while exact legacy
+  cleanup and rollback restoration remain available for older installations.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
