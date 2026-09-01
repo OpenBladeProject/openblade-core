@@ -74,6 +74,12 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         "wininit",
         "winlogon",
     };
+    private static readonly HashSet<string> IgnoredGpuProcessNames = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer",
+        "nvidia overlay",
+    };
 
     private readonly WindowsNvidiaGpuActivityReader reader;
     private readonly SecurityIdentifier currentUserSid;
@@ -164,6 +170,9 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     internal static bool IsProtectedProcessName(string name) =>
         name.StartsWith("OpenBlade", StringComparison.OrdinalIgnoreCase)
         || ProtectedProcessNames.Contains(name);
+
+    internal static bool IsIgnoredGpuProcessName(string name) =>
+        IgnoredGpuProcessNames.Contains(name);
 
     internal static WindowsGpuActivitySnapshot ReadActivitySample(
         Func<WindowsGpuActivitySnapshot> read,
@@ -263,6 +272,10 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
 
             ProcessEntry target = SelectOwningApplication(observed, processTable);
+            if (IsIgnoredGpuProcessName(target.Name))
+            {
+                continue;
+            }
             WindowsGpuApp candidate = CreateApp(
                 target,
                 activity.UtilizationPercent,
@@ -373,7 +386,11 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                     bool succeeded;
                     if (force)
                     {
-                        target.Kill(entireProcessTree: true);
+                        // Terminate only the freshly revalidated process. Tree-wide
+                        // termination can fail for elevated app hosts even when the
+                        // selected process itself remains terminable; the verification
+                        // scan reports any surviving child holders separately.
+                        target.Kill(entireProcessTree: false);
                         succeeded = true;
                     }
                     else

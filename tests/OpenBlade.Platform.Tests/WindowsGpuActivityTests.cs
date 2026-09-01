@@ -186,6 +186,26 @@ public sealed class WindowsGpuActivityTests
         Assert.Equal(4.5, app.UtilizationPercent);
     }
 
+    [Theory]
+    [InlineData("Explorer")]
+    [InlineData("NVIDIA Overlay")]
+    public void AppProjection_OmitsWhitelistedAmbientProcesses(string name)
+    {
+        WindowsGpuAppManager.ProcessEntry process = Entry(
+            30,
+            0,
+            5,
+            name);
+
+        Assert.Empty(WindowsGpuAppManager.CreateApps(
+            [new WindowsGpuProcessActivity(process.ProcessId, 0)],
+            new Dictionary<int, WindowsGpuAppManager.ProcessEntry>
+            {
+                [process.ProcessId] = process,
+            },
+            currentSessionId: process.SessionId));
+    }
+
     [Fact]
     public void ActivitySampling_RetriesTransientStartupFailureAndPrimesRateCounter()
     {
@@ -401,7 +421,7 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
-    public void ForceClose_KillsEntireTreeOnRetainedTarget()
+    public void ForceClose_KillsOnlyExactRetainedTarget()
     {
         var target = new FakeProcessActionTarget();
         var factory = new FakeProcessActionTargetFactory(target);
@@ -410,7 +430,7 @@ public sealed class WindowsGpuActivityTests
         WindowsGpuAppActionResult result = Assert.Single(manager.ForceClose([App()]));
 
         Assert.True(result.Succeeded);
-        Assert.Equal([true], target.KillEntireProcessTreeArguments);
+        Assert.Equal([false], target.KillEntireProcessTreeArguments);
         Assert.Equal(1, target.DisposeCalls);
     }
 
