@@ -94,6 +94,7 @@ public sealed class Worker(
                 .RunAsync(token),
             token => new ServicePeriodicObservationLoop(runtime, lowPowerGate, logger)
                 .RunAsync(token),
+            runtime.RunThermalConvergenceAsync,
             token => new ServiceFanCurveLoop(runtime, logger).RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(

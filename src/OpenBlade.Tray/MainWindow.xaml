@@ -3145,11 +3145,92 @@
                                     AutomationProperties.Name="Customize Settings page" />
                         </Grid>
 
+                        <InfoBar x:Name="ThermalPolicyUpgradeDisclosureInfoBar"
+                                 Margin="0,0,0,18"
+                                 IsOpen="{x:Bind ViewModel.HasThermalPolicyUpgradeDisclosure, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Title="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureTitle, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureMessage, Mode=OneWay}"
+                                 AutomationProperties.Name="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureTitle, Mode=OneWay}"
+                                 AutomationProperties.HelpText="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureMessage, Mode=OneWay}">
+                            <InfoBar.ActionButton>
+                                <Button MinHeight="40"
+                                        Padding="16,8"
+                                        Content="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureActionLabel, Mode=OneWay}"
+                                        Command="{x:Bind ViewModel.AcknowledgeThermalPolicyUpgradeDisclosureCommand, Mode=OneWay}"
+                                        AutomationProperties.Name="{x:Bind ViewModel.ThermalPolicyUpgradeDisclosureActionLabel, Mode=OneWay}" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
+
                         <StackPanel x:Name="SettingsSectionHost">
                         <StackPanel x:Name="SettingsBehaviorSection">
                         <TextBlock x:Uid="MainWindow_TextBlockBehavior" Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsThermalControlPolicyAvailable, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalControlPolicyHeading, Mode=OneWay}"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalPolicyDescription, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalControlPolicyCommonNote, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <local:ResponsiveChoiceSelector x:Name="ThermalControlPolicySelector"
+                                                                    Grid.Column="1"
+                                                                    CompactMinWidth="190"
+                                                                    ExpandedMinWindowWidth="800"
+                                                                    AccessibleName="{x:Bind ViewModel.ThermalControlPolicyHeading, Mode=OneWay}"
+                                                                    ItemsSource="{x:Bind ViewModel.AvailableThermalControlPolicyOptions, Mode=OneWay}"
+                                                                    DisplayMemberPath="Label"
+                                                                    SelectedItem="{x:Bind ViewModel.SelectedThermalControlPolicyOption, Mode=OneWay}"
+                                                                    IsEnabled="{x:Bind ViewModel.CanChangeThermalControlPolicy, Mode=OneWay}"
+                                                                    SelectionChanged="OnThermalControlPolicyChanged" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsThermalControlPolicyAvailable, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalConvergenceHeading, Mode=OneWay}"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalConvergenceStateLabel, Mode=OneWay}"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind ViewModel.ThermalConvergenceDetail, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="4"
+                                                    Visibility="{x:Bind ViewModel.HasThermalConvergenceAffectedComponents, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind ViewModel.ThermalAffectedComponentsLabel, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.ThermalConvergenceAffectedComponents, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            MinHeight="40"
+                                            Padding="16,8"
+                                            Content="{x:Bind ViewModel.ThermalReapplyActionLabel, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanReapplyChangedSettings, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.ThermalConvergenceExplicitReapplyRequired, Mode=OneWay}"
+                                            Click="OnReapplyChangedSettingsClick"
+                                            AutomationProperties.Name="{x:Bind ViewModel.ThermalReapplyActionLabel, Mode=OneWay}" />
+                                </Grid>
+                            </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>

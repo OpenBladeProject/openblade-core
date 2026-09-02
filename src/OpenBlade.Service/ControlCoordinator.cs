@@ -245,7 +245,8 @@ public sealed class ControlCoordinator
                     state,
                     value,
                     customPerformance,
-                    effectiveGpuClockTuning)
+                    effectiveGpuClockTuning,
+                    firmwarePerformanceSelectorHidden: false)
                     ? SetGpuClockOffsetsAsync(
                         effectiveGpuClockTuning!.EffectiveOffsets,
                         effectiveGpuClockTuning.Enabled,
@@ -1040,13 +1041,15 @@ public sealed class ControlCoordinator
             desired.Performance.Value,
             desired.Fans.Value);
         bool manualFansDesired = DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value);
+        bool FirmwarePerformanceSelectorHidden(ConfirmedDeviceState state) =>
+            manualFansDesired && DeviceSubsystemOrder.IsManualFanMode(state.Fans);
         bool PerformanceStateMatches(ConfirmedDeviceState state) =>
-            manualFansDesired && DeviceSubsystemOrder.IsManualFanMode(state.Fans)
-            || PerformanceMatches(
-                state,
-                desired.Performance.Value,
-                desired.CustomPerformance,
-                desired.GpuClockTuning);
+            (FirmwarePerformanceSelectorHidden(state)
+                || PerformancePresetMatches(
+                    state,
+                    desired.Performance.Value,
+                    desired.CustomPerformance))
+            && GpuClockTuningMatches(state, desired.GpuClockTuning);
         return new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
@@ -1068,7 +1071,8 @@ public sealed class ControlCoordinator
                         state,
                         desired.Performance.Value,
                         desired.CustomPerformance,
-                        desired.GpuClockTuning)
+                        desired.GpuClockTuning,
+                        FirmwarePerformanceSelectorHidden(state))
                         ? SetGpuClockOffsetsAsync(
                             desired.GpuClockTuning!.EffectiveOffsets,
                             desired.GpuClockTuning.Enabled,
@@ -2550,13 +2554,24 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
         GpuClockTuningSettings? gpuClockTuning) =>
+        PerformancePresetMatches(state, performance, customPerformance)
+        && GpuClockTuningMatches(state, gpuClockTuning);
+
+    private static bool PerformancePresetMatches(
+        ConfirmedDeviceState state,
+        PerformancePreset performance,
+        CustomPerformanceSettings? customPerformance) =>
         state.Performance == performance
         && (performance != PerformancePreset.Custom
             || state.CustomPerformance is { } confirmed
                 && customPerformance is { } desired
                 && confirmed.Cpu == desired.Cpu
-                && confirmed.Gpu == desired.Gpu)
-        && (gpuClockTuning is null
+                && confirmed.Gpu == desired.Gpu);
+
+    private bool GpuClockTuningMatches(
+        ConfirmedDeviceState state,
+        GpuClockTuningSettings? gpuClockTuning) =>
+        gpuClockTuning is null
             || (gpuClockTuning.Enabled
                 ? state.GpuClockOffsets?.Current == gpuClockTuning.EffectiveOffsets
                 : device is IGpuClockOffsetManagementDevice managedDevice
@@ -2566,7 +2581,7 @@ public sealed class ControlCoordinator
                             or GpuClockOffsetManagementState
                                 .RelinquishedDefaultConfirmed
                     : state.GpuClockOffsets?.Current ==
-                        GpuClockOffsetSettings.Default));
+                        GpuClockOffsetSettings.Default);
 
     private static bool PerformanceStateMatches(
         ConfirmedDeviceState left,
@@ -2592,14 +2607,11 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState state,
         PerformancePreset performance,
         CustomPerformanceSettings? customPerformance,
-        GpuClockTuningSettings? gpuClockTuning) =>
+        GpuClockTuningSettings? gpuClockTuning,
+        bool firmwarePerformanceSelectorHidden) =>
         gpuClockTuning is not null
-        && state.Performance == performance
-        && (performance != PerformancePreset.Custom
-            || state.CustomPerformance is { } confirmed
-                && customPerformance is { } desired
-                && confirmed.Cpu == desired.Cpu
-                && confirmed.Gpu == desired.Gpu);
+        && (firmwarePerformanceSelectorHidden
+            || PerformancePresetMatches(state, performance, customPerformance));
 
     private Task ApplyPerformanceAndGpuClockTuningAsync(
         PerformancePreset performance,

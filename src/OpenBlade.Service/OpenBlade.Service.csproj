@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UserSecretsId>dotnet-OpenBlade.Service-da4c3e6f-538f-4bb3-b922-bbdc93aa5415</UserSecretsId>
     <OpenBladePadlessHyperBoostLifecycleValidation Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == ''">false</OpenBladePadlessHyperBoostLifecycleValidation>
+    <OpenBladeThermalExternalDriftValidation Condition="'$(OpenBladeThermalExternalDriftValidation)' == ''">false</OpenBladeThermalExternalDriftValidation>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,7 +12,9 @@
                       Value="$(OpenBladePadlessHyperBoostLifecycleValidation)" />
     <AssemblyMetadata Include="OpenBladeValidationSourceRevision"
                       Value="$(SourceRevision)"
-                      Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true'" />
+                      Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true' or '$(OpenBladeThermalExternalDriftValidation)' == 'true'" />
+    <AssemblyMetadata Include="OpenBladeThermalExternalDriftValidation"
+                      Value="$(OpenBladeThermalExternalDriftValidation)" />
   </ItemGroup>
 
   <Target Name="ValidatePadlessHyperBoostLifecycleValidationBuild"
@@ -19,6 +22,13 @@
           Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true'">
     <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(SourceRevision)', '^[0-9a-fA-F]{40}$')) != 'True'"
            Text="Pad-less HyperBoost lifecycle validation builds require SourceRevision to be the exact 40-character commit SHA." />
+  </Target>
+
+  <Target Name="ValidateThermalExternalDriftValidationBuild"
+          BeforeTargets="CoreCompile"
+          Condition="'$(OpenBladeThermalExternalDriftValidation)' == 'true'">
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(SourceRevision)', '^[0-9a-fA-F]{40}$')) != 'True'"
+           Text="Thermal external-drift validation builds require SourceRevision to be the exact 40-character commit SHA." />
   </Target>
 
   <ItemGroup>

@@ -7,6 +7,37 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Fact]
+    public async Task ThermalExternalDriftValidation_NormalBuildNeverOpensHid()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+            },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var validation = Assert.IsAssignableFrom<
+            IThermalExternalDriftValidationDevice>(device);
+
+        CapabilityUnavailableException failure =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
+                () => validation.InjectPerformanceDriftOnceAsync(
+                    PerformancePreset.Silent,
+                    CancellationToken.None));
+
+        Assert.Contains("validation build", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(0, factory.OpenCount);
+        Assert.Equal(0, port.SetPerformanceCount);
+    }
+
+    [Fact]
     public async Task ReadPerformanceFanState_SkipsUnrelatedBatteryQueries()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(

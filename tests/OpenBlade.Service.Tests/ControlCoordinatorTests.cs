@@ -662,6 +662,50 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task FullReconcile_ManualTopologyGpuDriftSkipsFirmwareAndFanWrites()
+    {
+        var requestedOffsets = new GpuClockOffsetSettings(75, 150);
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.State = device.State with
+        {
+            Performance = null,
+            Fans = FanMode.Fixed,
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 1000, 0),
+                new GpuClockOffsetRange(-2000, 6000, 0)),
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced,
+            },
+            FanModes = new HashSet<FanMode> { FanMode.Fixed },
+            GpuOverclock = WritableGpuOverclockCapabilities,
+        };
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Fans = new ResolvedSetting<FanMode>(
+                FanMode.Fixed,
+                SettingValueSource.PowerProfile),
+            GpuClockTuning = new GpuClockTuningSettings(
+                Enabled: true,
+                requestedOffsets),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(desired, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(0, device.PerformanceSetCalls);
+        Assert.Equal(0, device.FanSetCalls);
+        Assert.Equal(1, device.GpuClockSetCalls);
+        Assert.Equal(requestedOffsets, device.State.GpuClockOffsets?.Current);
+    }
+
+    [Fact]
     public async Task ScopedPerformance_DisablingManagedDefaultOffsetsRelinquishesPolling()
     {
         RecordingBladeDevice device = CreateMatchingDevice();

@@ -13,7 +13,8 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 15;
+    internal const int CurrentSchemaVersion = 16;
+    internal const int FrozenThermalPolicyPredecessorSchemaVersion = 15;
     internal const int LegacyWindowsPowerModeSchemaVersion = 14;
     internal const int LatestSupportedSchemaVersion = 13;
     internal const int PreviousSchemaVersion = 12;
@@ -183,7 +184,7 @@ public sealed class ProfileStore
         {
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
-        if (schemaVersion == CurrentSchemaVersion
+        if (schemaVersion >= PerformanceWindowsPowerModeProfileSchemaVersion
             && (!parsed.RootElement.TryGetProperty("profiles", out JsonElement profilesElement)
                 || profilesElement.ValueKind != JsonValueKind.Object
                 || !profilesElement.TryGetProperty("windowsPowerModes", out _)))

@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
     [string]$TpmKeyName,
-    [switch]$StageOnly
+    [switch]$StageOnly,
+    [switch]$ThermalExternalDriftValidation,
+    [string]$ValidationOutputDirectory
 )
 
 Set-StrictMode -Version 3.0
@@ -28,20 +30,43 @@ if ($baseVersion -notmatch '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-
 }
 $localDevVersion = Get-OpenBladeNextLocalDevBuildVersion
 
-$publishScript = Join-Path $repository 'build\Publish.ps1'
-& powershell.exe `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File $publishScript `
-    -Configuration Release `
-    -BuildChannel LocalDev `
-    -LocalDevVersion $localDevVersion `
-    -SourceRevision $head
-if ($LASTEXITCODE -ne 0) {
-    throw "The ordinary OpenBlade publish failed with exit code $LASTEXITCODE."
+if ($ThermalExternalDriftValidation) {
+    if ([string]::IsNullOrWhiteSpace($ValidationOutputDirectory)) {
+        throw '-ValidationOutputDirectory is required for thermal external-drift validation.'
+    }
+    $validationBuildScript = Join-Path $repository `
+        'build\Build-ThermalExternalDriftValidation.ps1'
+    & powershell.exe `
+        -NoProfile `
+        -ExecutionPolicy Bypass `
+        -File $validationBuildScript `
+        -OutputDirectory $ValidationOutputDirectory `
+        -LocalDevVersion $localDevVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "The coordinated thermal validation build failed with exit code $LASTEXITCODE."
+    }
+    $installer = Join-Path ([IO.Path]::GetFullPath($ValidationOutputDirectory)) `
+        'OpenBlade-Setup.exe'
+}
+else {
+    if (-not [string]::IsNullOrWhiteSpace($ValidationOutputDirectory)) {
+        throw '-ValidationOutputDirectory is valid only with -ThermalExternalDriftValidation.'
+    }
+    $publishScript = Join-Path $repository 'build\Publish.ps1'
+    & powershell.exe `
+        -NoProfile `
+        -ExecutionPolicy Bypass `
+        -File $publishScript `
+        -Configuration Release `
+        -BuildChannel LocalDev `
+        -LocalDevVersion $localDevVersion `
+        -SourceRevision $head
+    if ($LASTEXITCODE -ne 0) {
+        throw "The ordinary OpenBlade publish failed with exit code $LASTEXITCODE."
+    }
+    $installer = Join-Path $repository 'artifacts\win-x64\OpenBlade-Setup.exe'
 }
 
-$installer = Join-Path $repository 'artifacts\win-x64\OpenBlade-Setup.exe'
 $toolProject = Join-Path $repository (
     'build\tools\OpenBlade.LocalDevDeployment.Tool\OpenBlade.LocalDevDeployment.Tool.csproj')
 & dotnet run `
@@ -78,3 +103,8 @@ Write-Host (
     'Applied and relaunched local OpenBlade build {0} as {1} without another UAC prompt.' -f
         $head,
         $localDevVersion)
+if ($ThermalExternalDriftValidation) {
+    Write-Host (
+        'Thermal external-drift validation evidence: {0}' -f
+            ([IO.Path]::GetFullPath($ValidationOutputDirectory)))
+}
