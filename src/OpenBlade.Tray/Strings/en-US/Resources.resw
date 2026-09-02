@@ -359,6 +359,9 @@
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>Close apps using the NVIDIA GPU?</value>
   </data>
+  <data name="MainWindow_GpuApps_CloseRequestFailed" xml:space="preserve">
+    <value>The Session Agent could not ask the selected apps to close.</value>
+  </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
     <value>The selected apps released their NVIDIA GPU engines. The GPU may take a moment to return to sleep.</value>
   </data>
@@ -369,7 +372,7 @@
     <value>Windows GPU activity counters are unavailable.</value>
   </data>
   <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
-    <value>- PID {0}: {1}</value>
+    <value>- PID {0}: OpenBlade could not close this app.</value>
   </data>
   <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
     <value>
@@ -397,10 +400,11 @@ Reported failures:
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
     <value>Keep running</value>
   </data>
-  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>No GPU users can be closed safely.
-
-</value>
+  <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
+    <value>More than {0} applications are using the NVIDIA GPU. OpenBlade cannot verify a safe close from a partial list. Close apps manually, then scan again.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
+    <value>Too many GPU apps to verify</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>No GPU apps to close</value>
@@ -409,13 +413,20 @@ Reported failures:
     <value>No current-user apps are holding an NVIDIA GPU engine.</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
-    <value>
+    <value>OpenBlade cannot safely close these apps:
 
-Not closeable:
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableReason" xml:space="preserve">
+    <value>OpenBlade cannot safely close this app.</value>
+  </data>
+  <data name="MainWindow_GpuApps_OtherAppsHeading" xml:space="preserve">
+    <value>Other apps are still using the NVIDIA GPU, so it may remain awake:
+
 </value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>The Session Agent could not complete the GPU app operation: {0}</value>
+    <value>The Session Agent could not complete the GPU app operation.</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
     <value>GPU apps still running</value>
