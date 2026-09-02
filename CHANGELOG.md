@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.20.5-nightly.40] - 2026-09-02
+
 ### Added
 
 - Added automatic restoration of performance and fan settings changed outside
@@ -31,7 +33,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
   sample or after five idle seconds, and the GPU activity gate no longer
   blocks a thread for its 150 ms sample window. Manual fan curves and Tray
   live readings no longer re-initialize NVML every second under a GPU load.
-
 - Reloaded Session Agent special-key bindings from a file-change notification
   on the tray preferences file instead of polling it every second, removing a
   permanent one-second wake-up. Bounded polling remains only while the
@@ -1732,7 +1733,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.5-nightly.40...HEAD
+[0.20.5-nightly.40]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...v0.20.5-nightly.40
 [0.19.37-nightly.39]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...v0.19.37-nightly.39
 [0.19.15-nightly.34]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...v0.19.15-nightly.34
 [0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
