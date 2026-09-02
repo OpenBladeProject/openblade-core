@@ -43,6 +43,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   close now tries the selected app's process tree before falling back to only
   that exact process when Windows denies the broader operation, while ambient
   NVIDIA Overlay and Windows Explorer processes stay out of the cleanup list.
+- Refreshed Windows NVIDIA GPU activity counters before service thermal and
+  clock-offset decisions so processes that start after service launch are not
+  missed. Failed refreshes and unavailable samples now remain unknown so fan
+  control fails safe without probing NVIDIA APIs.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
