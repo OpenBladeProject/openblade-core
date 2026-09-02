@@ -2899,7 +2899,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (initialLaunch
             && window.StartMinimized
-            && !window.UpdateViewModel.NeedsConsentPrompt)
+            && !window.UpdateViewModel.NeedsConsentPrompt
+            && !window.ViewModel.ShouldForceWindowVisibleForThermalDisclosure)
         {
             window.StartHiddenObservation();
             await window.StartUpdateCheckingAsync();

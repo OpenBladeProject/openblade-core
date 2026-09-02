@@ -30,6 +30,29 @@ public sealed class ServicePeriodicObservationLoopTests
     }
 
     [Fact]
+    public async Task RunAsync_MaintainPolicyAddsOneTrayIndependentFullObservation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new RecordingRuntime(cancellation)
+        {
+            ThermalObservationEnabled = true,
+        };
+        var loop = new ServicePeriodicObservationLoop(
+            runtime,
+            new LowPowerGate(),
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask);
+
+        await loop.RunAsync(cancellation.Token);
+
+        Assert.Equal(1, runtime.RefreshCalls);
+        Assert.Equal(1, runtime.DriverModeMaintenanceCalls);
+        Assert.Equal(1, runtime.RestoreCalls);
+        Assert.Equal(1, runtime.ThermalObservationCalls);
+        Assert.False(runtime.LastThermalObservationIncludedLiveReadings);
+    }
+
+    [Fact]
     public async Task RunAsync_PowerRefreshFailureDoesNotSkipDriverModeMaintenance()
     {
         using var cancellation = new CancellationTokenSource();
@@ -130,6 +153,9 @@ public sealed class ServicePeriodicObservationLoopTests
         public int RefreshCalls { get; private set; }
         public int DriverModeMaintenanceCalls { get; private set; }
         public int RestoreCalls { get; private set; }
+        public int ThermalObservationCalls { get; private set; }
+        public bool LastThermalObservationIncludedLiveReadings { get; private set; }
+        public bool ThermalObservationEnabled { get; init; }
         public Exception? RefreshFailure { get; init; }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
@@ -160,7 +186,16 @@ public sealed class ServicePeriodicObservationLoopTests
 
         public Task ObserveAsync(
             bool includeLiveReadings,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            ThermalObservationCalls++;
+            LastThermalObservationIncludedLiveReadings = includeLiveReadings;
+            cancellation.Cancel();
+            return Task.CompletedTask;
+        }
+
+        public bool ShouldRunThermalConvergenceObservation() =>
+            ThermalObservationEnabled;
 
         public Task RefreshPowerSourceClassificationAsync(
             CancellationToken cancellationToken)
@@ -174,7 +209,10 @@ public sealed class ServicePeriodicObservationLoopTests
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)
         {
             RestoreCalls++;
-            cancellation.Cancel();
+            if (!ThermalObservationEnabled)
+            {
+                cancellation.Cancel();
+            }
             return Task.CompletedTask;
         }
 

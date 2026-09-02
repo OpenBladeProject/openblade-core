@@ -498,6 +498,27 @@ public sealed class ProfileSetValidatorTests
             CreateValidator().ValidatePreferences(null!));
     }
 
+    [Fact]
+    public void ValidatePreferences_RejectsUndefinedThermalPolicy()
+    {
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator().ValidatePreferences(new BatteryAutomationPreferences(
+                ThermalControlPolicy: (ThermalControlPolicy)999)));
+
+        Assert.Contains("thermal control policy", exception.Message);
+    }
+
+    [Fact]
+    public void ValidatePreferences_RejectsUndefinedThermalDisclosureState()
+    {
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() =>
+            CreateValidator().ValidatePreferences(new BatteryAutomationPreferences(
+                ThermalPolicyUpgradeDisclosure:
+                    (ThermalPolicyUpgradeDisclosureState)999)));
+
+        Assert.Contains("disclosure state", exception.Message);
+    }
+
     [Theory]
     [InlineData(PowerSource.PluggedIn)]
     [InlineData(PowerSource.Battery)]

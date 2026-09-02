@@ -11,6 +11,7 @@ public sealed partial class MainViewModel
         && left.ControlAccess == right.ControlAccess
         && left.WritesBlocked == right.WritesBlocked
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
+        && ThermalConvergenceEqual(left.ThermalConvergence, right.ThermalConvergence)
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
             StringComparer.Ordinal)
@@ -53,6 +54,19 @@ public sealed partial class MainViewModel
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static bool ThermalConvergenceEqual(
+        ThermalConvergenceStatus? left,
+        ThermalConvergenceStatus? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null
+            && right is not null
+            && left.Policy == right.Policy
+            && left.Disclosure == right.Disclosure
+            && left.State == right.State
+            && left.Reason == right.Reason
+            && left.ExplicitReapplyRequired == right.ExplicitReapplyRequired
+            && left.AffectedComponents.SequenceEqual(right.AffectedComponents));
 
     private static bool CapabilitiesEqual(
         DeviceCapabilities? left,

@@ -86,6 +86,14 @@ public sealed class IpcMessageCodecTests
             new string('a', 40),
             new string('B', 64),
             new string('C', 64)),
+        new ValidateThermalExternalDriftRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new string('a', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64)),
         new CyclePerformanceShortcutRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -149,6 +157,13 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
         new RecoverHyperBoostRestoreRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid()),
+        new SetThermalControlPolicyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ThermalControlPolicy.MaintainDesiredState),
+        new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid()),
         new SetLightingSuppressionRequest(
@@ -340,6 +355,38 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.GetType(), actual.GetType());
     }
 
+    [Theory]
+    [InlineData("validationRunId", "00000000-0000-0000-0000-000000000000")]
+    [InlineData("expectedSourceRevision", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("expectedSourceRevision", "gggggggggggggggggggggggggggggggggggggggg")]
+    [InlineData("expectedServiceAssemblySha256", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")]
+    [InlineData("expectedServiceAssemblySha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    [InlineData("expectedProtocolAssemblySha256", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")]
+    [InlineData("expectedProtocolAssemblySha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    [InlineData("expectedProductionFixtureSha256", "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")]
+    [InlineData("expectedProductionFixtureSha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    public async Task ThermalExternalDriftValidationRequest_RejectsMalformedIdentity(
+        string propertyName,
+        string malformedValue)
+    {
+        var request = new ValidateThermalExternalDriftRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new string('a', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64));
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceRequest>(request)));
+        root[propertyName] = malformedValue;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
     [Fact]
     public async Task LightingRequestRejectsMismatchedTypedEffectParameters()
     {
@@ -467,7 +514,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -578,7 +625,8 @@ public sealed class IpcMessageCodecTests
         root["version"] = OpenBladeIpc.ProtocolVersion - 1;
         Assert.IsType<JsonObject>(root["profiles"]).Remove("windowsPowerModes");
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.ReadRequestAsync(
                 FrameJson(root.ToJsonString()),
                 CancellationToken.None));
@@ -717,7 +765,8 @@ public sealed class IpcMessageCodecTests
         JsonObject status = Assert.IsType<JsonObject>(root["status"]);
         Assert.IsType<JsonObject>(status["profiles"]).Remove("windowsPowerModes");
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(
                 FrameJson(root.ToJsonString()),
                 CancellationToken.None));
@@ -1052,7 +1101,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1652,7 +1701,8 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion - 1,
             Guid.NewGuid());
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
@@ -1665,7 +1715,8 @@ public sealed class IpcMessageCodecTests
         using MemoryStream stream = FrameJson(
             $$"""{"operation":"getStatus","version":{{previousProtocolVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
@@ -1690,7 +1741,8 @@ public sealed class IpcMessageCodecTests
               }
               """);
 
-        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
@@ -2083,6 +2135,74 @@ public sealed class IpcMessageCodecTests
         Assert.Equal("IPC message exceeds the 64 KiB limit.", exception.Message);
     }
 
+    [Theory]
+    [InlineData("getStatus")]
+    [InlineData("subscribeStatus")]
+    public async Task ReadRequestWithProtocol51CompatibilityAsync_AcceptsFrozenReads(
+        string operation)
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""{"operation":"{{operation}}","version":51,"requestId":"{{requestId}}"}""");
+
+        ServiceRequest request =
+            await IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(
+                stream,
+                CancellationToken.None);
+
+        Assert.Equal(OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion, request.Version);
+        Assert.Equal(requestId, request.RequestId);
+        Assert.True(request is GetStatusRequest or SubscribeStatusRequest);
+    }
+
+    [Fact]
+    public async Task ReadRequestWithProtocol51CompatibilityAsync_ParsesMutationForEdgeRejection()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""{"operation":"setFullChargeOverride","version":51,"requestId":"{{requestId}}","enabled":true}""");
+
+        SetFullChargeOverrideRequest request = Assert.IsType<SetFullChargeOverrideRequest>(
+            await IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(
+                stream,
+                CancellationToken.None));
+
+        Assert.Equal(OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion, request.Version);
+        Assert.Equal(requestId, request.RequestId);
+    }
+
+    [Fact]
+    public async Task WriteProtocol51ReadOnlyServerFrameAsync_OmitsNewStateAndBlocksWrites()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            WritesBlocked = false,
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.Acknowledged,
+                ThermalConvergenceState.Matched,
+                [],
+                ThermalConvergenceReason.None,
+                ExplicitReapplyRequired: false),
+        };
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+
+        JsonObject root = FramedJsonObject(stream);
+        Assert.Equal(51, root["version"]!.GetValue<int>());
+        JsonObject projected = Assert.IsType<JsonObject>(root["status"]);
+        Assert.True(projected["writesBlocked"]!.GetValue<bool>());
+        Assert.Null(projected["thermalConvergence"]);
+        Assert.Contains(
+            "Update or repair",
+            projected["message"]!.GetValue<string>(),
+            StringComparison.Ordinal);
+    }
+
     private static MemoryStream FrameJson(string json)
     {
         byte[] payload = Encoding.UTF8.GetBytes(json);
@@ -2139,6 +2259,193 @@ public sealed class IpcMessageCodecTests
                 stream,
                 new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ThermalControlRequests_RoundTripTypedPolicyAndDisclosureAcknowledgement()
+    {
+        var policyRequest = new SetThermalControlPolicyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            ThermalControlPolicy.Strict);
+        var acknowledgementRequest = new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid());
+
+        Assert.Equal(policyRequest, await RoundTripRequestAsync(policyRequest));
+        Assert.Equal(
+            acknowledgementRequest,
+            await RoundTripRequestAsync(acknowledgementRequest));
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsUnknownThermalControlPolicy()
+    {
+        var request = new SetThermalControlPolicyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            (ThermalControlPolicy)999);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                new MemoryStream(),
+                request,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsUnmappedThermalPolicyMember()
+    {
+        using MemoryStream stream = FrameJson(
+            $$"""
+            {
+              "operation":"setThermalControlPolicy",
+              "version":{{OpenBladeIpc.ProtocolVersion}},
+              "requestId":"{{Guid.NewGuid()}}",
+              "policy":0,
+              "enabled":true
+            }
+            """);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsDuplicateThermalPolicyMember()
+    {
+        using MemoryStream stream = FrameJson(
+            $$"""
+            {
+              "operation":"setThermalControlPolicy",
+              "version":{{OpenBladeIpc.ProtocolVersion}},
+              "requestId":"{{Guid.NewGuid()}}",
+              "policy":0,
+              "Policy":1
+            }
+            """);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ThermalConvergenceStatus_RoundTripsStructuredPublicState()
+    {
+        var thermal = new ThermalConvergenceStatus(
+            ThermalControlPolicy.MaintainDesiredState,
+            ThermalPolicyUpgradeDisclosureState.Acknowledged,
+            ThermalConvergenceState.Suppressed,
+            [ThermalComponent.Performance, ThermalComponent.Fans],
+            ThermalConvergenceReason.BudgetExhausted,
+            ExplicitReapplyRequired: true);
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            ThermalConvergence = thermal,
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.NotNull(actual.ThermalConvergence);
+        Assert.Equal(thermal.Policy, actual.ThermalConvergence.Policy);
+        Assert.Equal(thermal.Disclosure, actual.ThermalConvergence.Disclosure);
+        Assert.Equal(thermal.State, actual.ThermalConvergence.State);
+        Assert.Equal(thermal.AffectedComponents, actual.ThermalConvergence.AffectedComponents);
+        Assert.Equal(thermal.Reason, actual.ThermalConvergence.Reason);
+        Assert.Equal(
+            thermal.ExplicitReapplyRequired,
+            actual.ThermalConvergence.ExplicitReapplyRequired);
+    }
+
+    public static TheoryData<string, int> UnknownThermalStatusEnums => new()
+    {
+        { nameof(ThermalConvergenceStatus.Policy), 999 },
+        { nameof(ThermalConvergenceStatus.Disclosure), 999 },
+        { nameof(ThermalConvergenceStatus.State), 999 },
+        { nameof(ThermalConvergenceStatus.Reason), 999 },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnknownThermalStatusEnums))]
+    public async Task ReadServerFrameAsync_RejectsUnknownThermalStatusEnum(
+        string propertyName,
+        int value)
+    {
+        JsonObject thermal = CreateThermalStatusJson();
+        thermal[propertyName] = value;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(CreateStatusFrameJson(thermal).ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(999, 1)]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    public async Task ReadServerFrameAsync_RejectsMalformedThermalAffectedComponents(
+        int first,
+        int second)
+    {
+        JsonObject thermal = CreateThermalStatusJson();
+        thermal[nameof(ThermalConvergenceStatus.AffectedComponents)] =
+            new JsonArray(first, second);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(CreateStatusFrameJson(thermal).ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnmappedThermalStatusMember()
+    {
+        JsonObject thermal = CreateThermalStatusJson();
+        thermal["transitionAttemptId"] = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(CreateStatusFrameJson(thermal).ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ProtocolMismatchException_PreservesExpectedAndActualVersions()
+    {
+        int actualVersion = OpenBladeIpc.ProtocolVersion - 1;
+        using MemoryStream stream = FrameJson(
+            $$"""{"operation":"getStatus","version":{{actualVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
+
+        IpcProtocolVersionMismatchException exception =
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
+                IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+
+        Assert.Equal(OpenBladeIpc.ProtocolVersion, exception.ExpectedVersion);
+        Assert.Equal(actualVersion, exception.ActualVersion);
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    private static JsonObject CreateThermalStatusJson() =>
+        Assert.IsType<JsonObject>(JsonNode.Parse(JsonSerializer.Serialize(
+            new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.Acknowledged,
+                ThermalConvergenceState.Converging,
+                [ThermalComponent.Performance, ThermalComponent.Fans],
+                ThermalConvergenceReason.None,
+                ExplicitReapplyRequired: false))));
+
+    private static JsonObject CreateStatusFrameJson(JsonObject thermal)
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus());
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
+        status[nameof(ServiceStatusSnapshot.ThermalConvergence)] = thermal;
+        return root;
     }
 
     private static ServiceResponse CreateArchiveResponse(DiagnosticArchive archive) =>

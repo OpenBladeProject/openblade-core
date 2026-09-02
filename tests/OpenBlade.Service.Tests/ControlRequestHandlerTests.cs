@@ -46,6 +46,21 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Enabled: true),
+            new SetThermalControlPolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThermalControlPolicy.Strict),
+            new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+            new ValidateThermalExternalDriftRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new string('A', 40),
+                new string('B', 64),
+                new string('C', 64),
+                new string('D', 64)),
             new ReapplyChangedSettingsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
@@ -98,6 +113,8 @@ public sealed class ControlRequestHandlerTests
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
+            "SetThermalControlPolicy", "AcknowledgeThermalPolicyUpgradeDisclosure",
+            "ValidateThermalExternalDrift",
             "ReapplyChangedSettings",
             "RecoverHyperBoostRestore",
             "SetLightingSuppression",
@@ -195,7 +212,114 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Status.PerformanceOverride);
         Assert.Null(response.Status.FanOverride);
         Assert.Null(response.Status.LightingOverride);
+        Assert.Null(response.Status.ThermalConvergence);
         Assert.Equal(["GetStatus"], runtime.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandleAsync_SessionChangeDuringActivationRedactsInitialStatus(
+        bool subscription)
+    {
+        var authority = new MutableSessionAuthority(4);
+        var runtime = new RecordingRuntime
+        {
+            AfterActivation = () => authority.SessionId = 5,
+        };
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            authority);
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+        ServiceRequest request = subscription
+            ? new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid())
+            : new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+
+        ServiceResponse response = await handler.HandleAsync(
+            request,
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(1, runtime.ActivationCalls);
+        Assert.Equal(SessionControlAccess.InactiveSession, response.Status!.ControlAccess);
+        Assert.Null(response.Status.ThermalConvergence);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Protocol51ReadOnlyStatusNeverActivatesUserConfiguration(
+        bool subscription)
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier("S-1-5-21-1-2-3-1001"),
+            SessionId: 4,
+            IsAdministrator: false,
+            ServiceClientLogonKind.Interactive);
+        ServiceRequest request = subscription
+            ? new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid())
+            : new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+
+        ServiceResponse response = await handler.HandleProtocol51ReadOnlyAsync(
+            request,
+            client,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(0, runtime.ActivationCalls);
+        Assert.NotNull(response.Status);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RejectsLocalSystemThermalPolicyChanges()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(
+            runtime,
+            new ThrowingArchiveProvider(),
+            NullServiceShutdownSignal.Instance,
+            new FixedSessionAuthority(4));
+        var client = new ServiceClientContext(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            SessionId: 0,
+            IsAdministrator: true,
+            ServiceClientLogonKind.LocalSystem);
+        ServiceRequest[] requests =
+        [
+            new SetThermalControlPolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                ThermalControlPolicy.MaintainDesiredState),
+            new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
+        ];
+
+        foreach (ServiceRequest request in requests)
+        {
+            ServiceResponse response = await handler.HandleAsync(
+                request,
+                client,
+                CancellationToken.None);
+
+            Assert.False(response.Success);
+            Assert.Contains("active local interactive", response.Error);
+        }
+
+        Assert.Empty(runtime.Calls);
     }
 
     [Fact]
@@ -227,7 +351,7 @@ public sealed class ControlRequestHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_ReusesAccessDecisionForAuthorizationAndProjection()
+    public async Task HandleAsync_RechecksAccessAfterActivationBeforeStatusProjection()
     {
         var runtime = new RecordingRuntime();
         var authority = new CountingSessionAuthority(4);
@@ -248,7 +372,7 @@ public sealed class ControlRequestHandlerTests
             CancellationToken.None);
 
         Assert.True(response.Success);
-        Assert.Equal(1, authority.Calls);
+        Assert.Equal(2, authority.Calls);
     }
 
     [Fact]
@@ -453,6 +577,8 @@ public sealed class ControlRequestHandlerTests
 
         public Action? AfterActivation { get; init; }
 
+        public int ActivationCalls { get; private set; }
+
         public Task ActivateUserAsync(
             SecurityIdentifier userSid,
             CancellationToken cancellationToken) => ActivationFailure is null
@@ -464,6 +590,7 @@ public sealed class ControlRequestHandlerTests
             Func<bool> stillControlsSession,
             CancellationToken cancellationToken)
         {
+            ActivationCalls++;
             Task activation = ActivateUserAsync(userSid, cancellationToken);
             if (activation.IsCompletedSuccessfully)
             {
@@ -488,7 +615,16 @@ public sealed class ControlRequestHandlerTests
                     new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
                 PowerSource.PluggedIn,
                 new LiveReadings(-18_000, 2_400, 2_500),
-                null, null, null, false);
+                null, null, null, false)
+            {
+                ThermalConvergence = new ThermalConvergenceStatus(
+                    ThermalControlPolicy.MaintainDesiredState,
+                    ThermalPolicyUpgradeDisclosureState.NotRequired,
+                    ThermalConvergenceState.Matched,
+                    [],
+                    ThermalConvergenceReason.None,
+                    ExplicitReapplyRequired: false),
+            };
         }
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) =>
@@ -551,6 +687,35 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(enabled);
             return Record("SetFirmwareCompatibilityOverride");
+        }
+
+        public Task<ControlOperationResult> SetThermalControlPolicyAsync(
+            ThermalControlPolicy policy,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(ThermalControlPolicy.Strict, policy);
+            Assert.True(stillControlsSession());
+            return Record("SetThermalControlPolicy");
+        }
+
+        public Task<ControlOperationResult>
+            AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            Assert.True(stillControlsSession());
+            return Record("AcknowledgeThermalPolicyUpgradeDisclosure");
+        }
+
+        public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+            ValidateThermalExternalDriftRequest request,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            Assert.NotEqual(Guid.Empty, request.ValidationRunId);
+            Assert.True(stillControlsSession());
+            return Record("ValidateThermalExternalDrift");
         }
 
         public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
