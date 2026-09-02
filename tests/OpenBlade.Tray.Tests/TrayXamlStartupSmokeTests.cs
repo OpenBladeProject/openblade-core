@@ -264,9 +264,11 @@ public sealed class TrayXamlStartupSmokeTests
             Path.GetDirectoryName(testPath)!,
             "..",
             ".."));
+        // Smoke arguments exist only in harness builds; the ordinary bin\ output
+        // is the shipped Tray and ignores them.
         string outputDirectory = pseudoLocalized
             ? "bin-localization-preview"
-            : "bin";
+            : "bin-developer-harness";
         return Path.Combine(
             repository,
             "src",

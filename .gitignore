@@ -2,6 +2,7 @@
 .superpowers/
 **/bin/
 **/bin-localization-preview/
+**/bin-developer-harness/
 **/obj/
 artifacts/
 *.user

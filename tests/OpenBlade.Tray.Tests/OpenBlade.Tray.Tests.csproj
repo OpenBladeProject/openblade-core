@@ -55,7 +55,7 @@
   <Target Name="BuildTrayForXamlStartupSmoke" BeforeTargets="Build">
     <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
              Targets="Build"
-             Properties="Configuration=$(Configuration)"
+             Properties="Configuration=$(Configuration);OpenBladeDeveloperHarness=true"
              BuildInParallel="false" />
     <MSBuild Projects="..\..\src\OpenBlade.Tray\OpenBlade.Tray.csproj"
              Targets="Build"
