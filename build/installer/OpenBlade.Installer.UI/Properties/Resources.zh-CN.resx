@@ -37,10 +37,10 @@
     <value>正在部署 OpenBlade 文件…</value>
   </data>
   <data name="Another OpenBlade {0} installer build is already registered. {1}" xml:space="preserve">
-    <value>系统中已注册另一个 OpenBlade {0} 安装程序。{1}</value>
+    <value>系统中已注册另一个版本为 {0} 的 OpenBlade 安装包。{1}</value>
   </data>
   <data name="Applying the requested changes…" xml:space="preserve">
-    <value>正在进行所需更改…</value>
+    <value>正在应用所选更改…</value>
   </data>
   <data name="Applying OpenBlade changes…" xml:space="preserve">
     <value>正在更新 OpenBlade…</value>
@@ -52,10 +52,10 @@
     <value>要取消当前操作吗？</value>
   </data>
   <data name="Cancellation requested; waiting for safe rollback." xml:space="preserve">
-    <value>正在取消；请等待安装程序安全恢复原状。</value>
+    <value>已收到取消请求，正在等待安装程序安全恢复之前的安装状态。</value>
   </data>
   <data name="Cancelling and restoring the previous state…" xml:space="preserve">
-    <value>正在取消操作并恢复原状…</value>
+    <value>正在取消操作并恢复之前的安装状态…</value>
   </data>
   <data name="Checking the OpenBlade service…" xml:space="preserve">
     <value>正在检查 OpenBlade 服务…</value>
@@ -85,13 +85,13 @@
     <value>安装 OpenBlade</value>
   </data>
   <data name="Installer entry removed" xml:space="preserve">
-    <value>安装程序条目已移除</value>
+    <value>安装项已移除</value>
   </data>
   <data name="Install the OpenBlade service, Session Agent, and tray application for this PC." xml:space="preserve">
     <value>为这台电脑安装 OpenBlade 服务、Session Agent 和托盘应用。</value>
   </data>
   <data name="Installer cleanup required" xml:space="preserve">
-    <value>需要清理旧安装程序</value>
+    <value>需要清理 OpenBlade 安装项</value>
   </data>
   <data name="Installing OpenBlade" xml:space="preserve">
     <value>正在安装 OpenBlade</value>
@@ -103,7 +103,7 @@
     <value>正在安装所需的 Windows 组件…</value>
   </data>
   <data name="Its cached installer is unavailable, so setup cannot safely repair or remove it. Use Windows installer recovery before trying again." xml:space="preserve">
-    <value>找不到该版本缓存的安装程序，因此无法安全修复或卸载。请先使用 Windows 安装程序恢复工具，然后重试。</value>
+    <value>找不到该版本的缓存安装包，因此无法安全修复或卸载该版本。请先使用 Windows 安装程序恢复工具，然后重试。</value>
   </data>
   <data name="Keep _working" xml:space="preserve">
     <value>继续(_W)</value>
@@ -118,7 +118,7 @@
     <value>OpenBlade</value>
   </data>
   <data name="OpenBlade {0} is installed. This installer contains older version {1}. Setup made no changes. Use version {0} or a newer installer." xml:space="preserve">
-    <value>已安装 OpenBlade {0}。此安装程序包含较旧的版本 {1}。安装程序未进行任何更改。请使用版本 {0} 或更高版本的安装程序。</value>
+    <value>已安装 OpenBlade {0}。此安装包中的版本 {1} 较旧。安装程序未作任何更改。请使用已安装的 {0} 版本，或改用更新的安装包。</value>
   </data>
   <data name="OpenBlade {0} is installed" xml:space="preserve">
     <value>已安装 OpenBlade {0}</value>
@@ -142,19 +142,19 @@
     <value>无法开始所选操作：{0}</value>
   </data>
   <data name="OpenBlade uninstall could not inspect the installed state: {0}" xml:space="preserve">
-    <value>OpenBlade 卸载程序无法检查当前安装状态：{0}</value>
+    <value>卸载 OpenBlade 时无法检查当前安装状态：{0}</value>
   </data>
   <data name="OpenBlade uninstall could not verify complete removal. The installer ownership marker, service, or installed files are still present." xml:space="preserve">
-    <value>OpenBlade 卸载程序无法确认卸载已完成。安装程序所有权标记、服务或已安装文件仍然存在。</value>
+    <value>无法确认 OpenBlade 已完全卸载。安装程序归属标记、服务或已安装文件仍然存在。</value>
   </data>
   <data name="OpenBlade uninstall could not verify complete removal: {0}" xml:space="preserve">
-    <value>OpenBlade 卸载程序无法确认卸载已完成：{0}</value>
+    <value>无法确认 OpenBlade 已完全卸载：{0}</value>
   </data>
   <data name="Windows Installer did not plan this installer entry for removal. Another installer may still depend on it. Remove any dependent OpenBlade installer entry first, then try again." xml:space="preserve">
-    <value>Windows 安装程序未计划移除此安装程序条目。另一个安装程序可能仍依赖它。请先移除任何依赖它的 OpenBlade 安装程序条目，然后重试。</value>
+    <value>Windows 安装程序未计划移除此安装项。另一个安装包可能仍依赖此安装项。请先移除任何依赖它的 OpenBlade 安装项，然后重试。</value>
   </data>
   <data name="OpenBlade setup found {0} related installer registrations. Setup stopped before making changes because executing one legacy bundle can recursively launch the others. Use Uninstall on each registered OpenBlade entry when available. If duplicates remain, use Windows installer recovery before running this installer again." xml:space="preserve">
-    <value>发现 {0} 个与 OpenBlade 相关的安装程序注册项。运行其中一个旧版安装包时，可能会循环启动其他安装包，因此本安装程序已在更改系统前停止。如有“卸载”选项，请逐一卸载这些 OpenBlade 项。如果仍有重复项，请先使用 Windows 安装程序恢复工具，然后再次运行此安装程序。</value>
+    <value>发现 {0} 个与 OpenBlade 相关的安装项。运行其中一个旧版安装包时，其他安装包可能会相互启动，因此安装程序已在更改系统前停止。如有“卸载”选项，请逐一卸载这些 OpenBlade 安装项。如果仍有重复项，请先使用 Windows 安装程序恢复工具，然后再次运行此安装程序。</value>
   </data>
   <data name="OpenBlade was installed, but it could not be launched: {0}" xml:space="preserve">
     <value>OpenBlade 已安装，但无法启动：{0}</value>
@@ -163,7 +163,7 @@
     <value>OpenBlade 已卸载</value>
   </data>
   <data name="OpenBlade will stop safely and restore the previous installation state." xml:space="preserve">
-    <value>安装程序会安全停止 OpenBlade，并恢复原来的安装状态。</value>
+    <value>OpenBlade 安装程序会安全停止，并恢复之前的安装状态。</value>
   </data>
   <data name="Preparing OpenBlade files…" xml:space="preserve">
     <value>正在准备 OpenBlade 文件…</value>
@@ -178,7 +178,7 @@
     <value>正在检查当前安装…</value>
   </data>
   <data name="Recording installer ownership…" xml:space="preserve">
-    <value>正在保存安装程序注册信息…</value>
+    <value>正在记录安装程序归属信息…</value>
   </data>
   <data name="Registering Dynamic Lighting…" xml:space="preserve">
     <value>正在注册动态照明…</value>
@@ -187,7 +187,7 @@
     <value>同时删除已保存的配置方案和设置(_P)</value>
   </data>
   <data name="Removing an earlier OpenBlade registration…" xml:space="preserve">
-    <value>正在清理旧版 OpenBlade 的注册信息…</value>
+    <value>正在移除旧版 OpenBlade 安装项…</value>
   </data>
   <data name="Removing Dynamic Lighting registration…" xml:space="preserve">
     <value>正在注销动态照明…</value>
@@ -208,10 +208,10 @@
     <value>正在删除已保存的 OpenBlade 数据…</value>
   </data>
   <data name="Removing the OpenBlade service…" xml:space="preserve">
-    <value>正在卸载 OpenBlade 服务…</value>
+    <value>正在移除 OpenBlade 服务…</value>
   </data>
   <data name="Repair overwrites the installed files with this installer, or uninstall OpenBlade while keeping saved profiles. To remove saved profiles too, close this installer and uninstall the registered OpenBlade entry from Windows Installed apps." xml:space="preserve">
-    <value>选择“修复”会使用此安装程序替换现有 OpenBlade 文件；选择“卸载”会保留已保存的配置方案。如果还要删除这些配置方案，请关闭此安装程序，然后在 Windows“已安装的应用”中卸载 OpenBlade。</value>
+    <value>选择“修复”会用此安装程序覆盖已安装的文件；选择“卸载”会卸载 OpenBlade，但保留已保存的配置方案。如果还要删除这些配置方案，请关闭此安装程序，然后在 Windows“已安装的应用”中选择对应的 OpenBlade 安装项并卸载。</value>
   </data>
   <data name="Repair the installed files, or remove OpenBlade from this PC." xml:space="preserve">
     <value>修复已安装的文件，或从这台电脑卸载 OpenBlade。</value>
@@ -220,13 +220,13 @@
     <value>正在修复 OpenBlade</value>
   </data>
   <data name="Use the installed OpenBlade version" xml:space="preserve">
-    <value>请使用已安装版本的 OpenBlade 安装程序</value>
+    <value>使用已安装的 OpenBlade 版本</value>
   </data>
   <data name="Resolve existing OpenBlade installers" xml:space="preserve">
-    <value>处理现有的 OpenBlade 安装程序</value>
+    <value>解决 OpenBlade 安装项冲突</value>
   </data>
   <data name="Restoring the previous installation state…" xml:space="preserve">
-    <value>正在恢复先前的安装状态…</value>
+    <value>正在恢复之前的安装状态…</value>
   </data>
   <data name="Run this installer interactively and choose Repair or Uninstall." xml:space="preserve">
     <value>请直接打开此安装程序，然后选择“修复”或“卸载”。</value>
@@ -244,7 +244,7 @@
     <value>安装程序</value>
   </data>
   <data name="Setup cannot safely choose one maintenance owner for this state. Use Windows Installed apps to repair or remove the registered bundle first." xml:space="preserve">
-    <value>当前状态对应多个安装程序，无法安全确定应由哪一个执行维护。请先在 Windows“已安装的应用”中修复或卸载已注册的 OpenBlade。</value>
+    <value>当前状态下无法安全确定由哪个安装程序执行维护。请先在 Windows“已安装的应用”中修复或卸载对应的 OpenBlade 安装项。</value>
   </data>
   <data name="Setup completed successfully." xml:space="preserve">
     <value>操作已成功完成。</value>
@@ -268,7 +268,7 @@
     <value>操作进度</value>
   </data>
   <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
-    <value>操作已取消，原来的安装状态已恢复。</value>
+    <value>操作已取消，之前的安装状态已恢复。</value>
   </data>
   <data name="Show _details" xml:space="preserve">
     <value>显示详细信息(_D)</value>
@@ -277,7 +277,7 @@
     <value>正在关闭 OpenBlade 组件…</value>
   </data>
   <data name="The registered OpenBlade installer ownership token is missing or malformed. Use Windows installer recovery before trying again." xml:space="preserve">
-    <value>找不到或无法识别已注册的 OpenBlade 安装程序信息。请先使用 Windows 安装程序恢复工具，然后重试。</value>
+    <value>已注册的 OpenBlade 安装程序归属标记缺失或格式不正确。请先使用 Windows 安装程序恢复工具，然后重试。</value>
   </data>
   <data name="The setup command is unavailable." xml:space="preserve">
     <value>无法执行此安装命令。</value>
@@ -295,9 +295,9 @@
     <value>已保存的配置方案和设置已保留。</value>
   </data>
   <data name="This installer entry was removed. Another OpenBlade installer still owns the installation." xml:space="preserve">
-    <value>此安装程序条目已移除。另一个 OpenBlade 安装程序仍拥有此安装。</value>
+    <value>此安装项已移除，但当前安装仍由另一个 OpenBlade 安装程序管理。</value>
   </data>
   <data name="This installer entry was removed. OpenBlade was already absent." xml:space="preserve">
-    <value>此安装程序条目已移除。OpenBlade 已经不存在。</value>
+    <value>此安装项已移除。OpenBlade 原本就未安装。</value>
   </data>
 </root>

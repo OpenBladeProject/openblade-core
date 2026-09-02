@@ -4,10 +4,10 @@ namespace OpenBlade.Session;
 
 public static class SessionGpuIpc
 {
-    public const int ProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
     public const int MaximumApps = 128;
     public const int MaximumMessageBytes = 64 * 1024;
-    public const string PipeNamePrefix = "OpenBlade.Session.Gpu.v1";
+    public const string PipeNamePrefix = "OpenBlade.Session.Gpu.v2";
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
@@ -34,7 +34,6 @@ public sealed record SessionGpuApp(
     int ProcessId,
     long StartTimeUtcTicks,
     string Name,
-    string? ExecutablePath,
     double UtilizationPercent,
     bool CanClose,
     string? BlockReason);
