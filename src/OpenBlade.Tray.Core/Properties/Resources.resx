@@ -1320,52 +1320,51 @@
   <data name="OpenBlade components have different versions. Update or repair OpenBlade to restore control." xml:space="preserve">
     <value>OpenBlade components have different versions. Update or repair OpenBlade to restore control.</value>
   </data>
-  <data name="Maintain desired state" xml:space="preserve"><value>Maintain desired state</value></data>
-  <data name="Strict" xml:space="preserve"><value>Strict</value></data>
-  <data name="Thermal control policy" xml:space="preserve"><value>Thermal control policy</value></data>
-  <data name="Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action." xml:space="preserve"><value>Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action.</value></data>
-  <data name="Thermal state" xml:space="preserve"><value>Thermal state</value></data>
+  <data name="Restore them" xml:space="preserve"><value>Restore them</value></data>
+  <data name="Just tell me" xml:space="preserve"><value>Just tell me</value></data>
+  <data name="If settings change outside OpenBlade" xml:space="preserve"><value>If settings change outside OpenBlade</value></data>
+  <data name="Fan speed and curve changes cannot be detected." xml:space="preserve"><value>Fan speed and curve changes cannot be detected.</value></data>
+  <data name="More about limits" xml:space="preserve"><value>More about limits</value></data>
   <data name="Affected controls" xml:space="preserve"><value>Affected controls</value></data>
   <data name="Affected controls:" xml:space="preserve"><value>Affected controls:</value></data>
-  <data name="Maintain desired state is now the default" xml:space="preserve"><value>Maintain desired state is now the default</value></data>
-  <data name="OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported." xml:space="preserve"><value>OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported.</value></data>
+  <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve"><value>OpenBlade now restores settings changed elsewhere</value></data>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically." xml:space="preserve"><value>If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically.</value></data>
   <data name="Got it" xml:space="preserve"><value>Got it</value></data>
   <data name="Reapply" xml:space="preserve"><value>Reapply</value></data>
-  <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them.</value></data>
-  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back.</value></data>
+  <data name="Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself." xml:space="preserve"><value>Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Up to date</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Checking current state</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Restoring saved settings</value></data>
-  <data name="Paused" xml:space="preserve"><value>Paused</value></data>
-  <data name="Needs your action" xml:space="preserve"><value>Needs your action</value></data>
+  <data name="Restoration paused" xml:space="preserve"><value>Restoration paused</value></data>
+  <data name="Needs you to reapply" xml:space="preserve"><value>Needs you to reapply</value></data>
   <data name="Restore pending" xml:space="preserve"><value>Restore pending</value></data>
-  <data name="Reconciliation unavailable" xml:space="preserve"><value>Reconciliation unavailable</value></data>
+  <data name="Cannot confirm the change" xml:space="preserve"><value>Cannot confirm the change</value></data>
   <data name="Performance and fans" xml:space="preserve"><value>Performance and fans</value></data>
-  <data name="Saved performance and fan intent match the confirmed laptop state." xml:space="preserve"><value>Saved performance and fan intent match the confirmed laptop state.</value></data>
-  <data name="OpenBlade is applying the saved performance and fan intent and will confirm it by readback." xml:space="preserve"><value>OpenBlade is applying the saved performance and fan intent and will confirm it by readback.</value></data>
-  <data name="Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues." xml:space="preserve"><value>Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues.</value></data>
-  <data name="Review the new default policy before background reconciliation can begin." xml:space="preserve"><value>Review the new default policy before background reconciliation can begin.</value></data>
-  <data name="The saved thermal configuration is unavailable." xml:space="preserve"><value>The saved thermal configuration is unavailable.</value></data>
-  <data name="The saved thermal configuration could not be trusted. Strict behavior is active." xml:space="preserve"><value>The saved thermal configuration could not be trusted. Strict behavior is active.</value></data>
-  <data name="Reconciliation waits for this local Windows session to become active." xml:space="preserve"><value>Reconciliation waits for this local Windows session to become active.</value></data>
-  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation." xml:space="preserve"><value>An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation.</value></data>
+  <data name="Your saved settings match the laptop." xml:space="preserve"><value>Your saved settings match the laptop.</value></data>
+  <data name="OpenBlade is restoring your saved settings and will confirm the result." xml:space="preserve"><value>OpenBlade is restoring your saved settings and will confirm the result.</value></data>
+  <data name="Changes made elsewhere are reported, not restored. Fan curve safety maintenance continues." xml:space="preserve"><value>Changes made elsewhere are reported, not restored. Fan curve safety maintenance continues.</value></data>
+  <data name="Review the new default before OpenBlade starts restoring settings in the background." xml:space="preserve"><value>Review the new default before OpenBlade starts restoring settings in the background.</value></data>
+  <data name="The saved performance and fan settings are unavailable." xml:space="preserve"><value>The saved performance and fan settings are unavailable.</value></data>
+  <data name="The saved performance and fan settings could not be trusted. Changes made elsewhere are only reported." xml:space="preserve"><value>The saved performance and fan settings could not be trusted. Changes made elsewhere are only reported.</value></data>
+  <data name="Restoration waits for this Windows session to become active." xml:space="preserve"><value>Restoration waits for this Windows session to become active.</value></data>
+  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume restoring settings." xml:space="preserve"><value>An older OpenBlade component is connected. Update or repair OpenBlade to resume restoring settings.</value></data>
   <data name="OpenBlade is waiting for a fresh, complete read of the laptop state." xml:space="preserve"><value>OpenBlade is waiting for a fresh, complete read of the laptop state.</value></data>
-  <data name="The supported laptop control device is temporarily unavailable." xml:space="preserve"><value>The supported laptop control device is temporarily unavailable.</value></data>
-  <data name="OpenBlade could not verify the exact supported laptop identity." xml:space="preserve"><value>OpenBlade could not verify the exact supported laptop identity.</value></data>
-  <data name="Reconciliation waits until the power source is confirmed and stable." xml:space="preserve"><value>Reconciliation waits until the power source is confirmed and stable.</value></data>
-  <data name="Reconciliation is paused while Windows enters or leaves low power." xml:space="preserve"><value>Reconciliation is paused while Windows enters or leaves low power.</value></data>
+  <data name="The laptop control device is temporarily unavailable." xml:space="preserve"><value>The laptop control device is temporarily unavailable.</value></data>
+  <data name="OpenBlade could not verify which laptop this is." xml:space="preserve"><value>OpenBlade could not verify which laptop this is.</value></data>
+  <data name="Restoration waits until the power source is confirmed and stable." xml:space="preserve"><value>Restoration waits until the power source is confirmed and stable.</value></data>
+  <data name="Restoration is paused while Windows enters or leaves low power." xml:space="preserve"><value>Restoration is paused while Windows enters or leaves low power.</value></data>
   <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve"><value>Another Razer controller is active, so OpenBlade will not compete for these settings.</value></data>
   <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve"><value>OpenBlade could not confirm whether another Razer controller is active.</value></data>
-  <data name="HyperBoost temporarily owns performance and fan state." xml:space="preserve"><value>HyperBoost temporarily owns performance and fan state.</value></data>
-  <data name="OpenBlade is finishing the HyperBoost transition before reconciling other settings." xml:space="preserve"><value>OpenBlade is finishing the HyperBoost transition before reconciling other settings.</value></data>
-  <data name="Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it." xml:space="preserve"><value>Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it.</value></data>
-  <data name="A possibly submitted change must be confirmed by readback before another write." xml:space="preserve"><value>A possibly submitted change must be confirmed by readback before another write.</value></data>
-  <data name="Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again." xml:space="preserve"><value>Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again.</value></data>
-  <data name="This drift is recorded as unresolved. Reapply explicitly after checking the laptop state." xml:space="preserve"><value>This drift is recorded as unresolved. Reapply explicitly after checking the laptop state.</value></data>
-  <data name="Reconciliation is closed while OpenBlade shuts down." xml:space="preserve"><value>Reconciliation is closed while OpenBlade shuts down.</value></data>
-  <data name="OpenBlade cannot safely persist or reconcile this state right now." xml:space="preserve"><value>OpenBlade cannot safely persist or reconcile this state right now.</value></data>
-  <data name="Thermal reconciliation status is unavailable." xml:space="preserve"><value>Thermal reconciliation status is unavailable.</value></data>
+  <data name="HyperBoost controls performance and fans right now." xml:space="preserve"><value>HyperBoost controls performance and fans right now.</value></data>
+  <data name="OpenBlade is finishing the HyperBoost change before restoring other settings." xml:space="preserve"><value>OpenBlade is finishing the HyperBoost change before restoring other settings.</value></data>
+  <data name="The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it." xml:space="preserve"><value>The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it.</value></data>
+  <data name="A change that may have been sent must be confirmed before OpenBlade tries again." xml:space="preserve"><value>A change that may have been sent must be confirmed before OpenBlade tries again.</value></data>
+  <data name="Automatic restoration stopped after its one attempt. Select Reapply to try again." xml:space="preserve"><value>Automatic restoration stopped after its one attempt. Select Reapply to try again.</value></data>
+  <data name="This change is recorded as unresolved. Check the laptop, then select Reapply." xml:space="preserve"><value>This change is recorded as unresolved. Check the laptop, then select Reapply.</value></data>
+  <data name="Restoration is closed while OpenBlade shuts down." xml:space="preserve"><value>Restoration is closed while OpenBlade shuts down.</value></data>
+  <data name="OpenBlade cannot safely save or restore this state right now." xml:space="preserve"><value>OpenBlade cannot safely save or restore this state right now.</value></data>
+  <data name="The performance and fan status is unavailable." xml:space="preserve"><value>The performance and fan status is unavailable.</value></data>
   <data name="Review thermal control policy" xml:space="preserve"><value>Review thermal control policy</value></data>
   <data name="Review policy" xml:space="preserve"><value>Review policy</value></data>
-  <data name="Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it." xml:space="preserve"><value>Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it.</value></data>
+  <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Review the new default. Restoration stays paused until you select Got it.</value></data>
 </root>
