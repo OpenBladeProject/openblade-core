@@ -140,15 +140,17 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        bool gpuActive = includeGpu && gpuActivitySource.IsActive();
+        bool? gpuActive = includeGpu
+            ? gpuActivitySource.IsActive(cancellationToken)
+            : false;
         return ValueTask.FromResult(new FanTemperatureReadings(
             CpuCelsius: includeCpu
                 ? cpuTemperatureReader()
                 : null,
-            GpuCelsius: gpuActive
+            GpuCelsius: gpuActive is true
                 ? gpuTemperatureReader()
                 : null,
-            GpuInactive: includeGpu && !gpuActive));
+            GpuInactive: includeGpu && gpuActive is false));
     }
 
     public void Dispose()

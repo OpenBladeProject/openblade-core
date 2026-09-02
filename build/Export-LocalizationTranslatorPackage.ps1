@@ -91,7 +91,9 @@ controlling hardware.
         [string]$captureManifest.renderProfile.dpi -cne
             '96-process-local-DPIUNAWARE' -or
         [string]$captureManifest.renderProfile.pixelCanonicalization -cne
-            'bgra8-4-bit-midpoint-local-majority-v1') {
+            'bgra8-4-bit-midpoint-local-majority-v2' -or
+        [string]$captureManifest.renderProfile.frameStabilization -cne
+            'two-consecutive-canonical-frames-v1') {
         throw 'Localization snapshot manifest has an unexpected render profile.'
     }
     $screenshotRenderProfile = $captureManifest.renderProfile

@@ -162,9 +162,13 @@ public sealed class TrayXamlStartupSmokeTests
             }
 
             string diagnostic = await ReadSmokeReportAsync(reportPath);
+            string exitCode = process.ExitCode == 0
+                ? "0"
+                : $"{process.ExitCode} (0x{unchecked((uint)process.ExitCode):X8})";
             Assert.True(
                 process.ExitCode == 0,
-                $"Tray smoke '{argument}' exited with {process.ExitCode}: {diagnostic}");
+                $"Tray smoke '{argument}' process {process.Id} exited with "
+                    + $"{exitCode}:{Environment.NewLine}{diagnostic}");
         }
         finally
         {

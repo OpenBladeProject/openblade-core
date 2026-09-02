@@ -359,6 +359,9 @@
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>Закрыть приложения, использующие GPU NVIDIA?</value>
   </data>
+  <data name="MainWindow_GpuApps_CloseRequestFailed" xml:space="preserve">
+    <value>Агенту сеанса не удалось отправить выбранным приложениям запрос на закрытие.</value>
+  </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
     <value>Выбранные приложения прекратили использовать GPU NVIDIA. Переход GPU в спящий режим может занять некоторое время.</value>
   </data>
@@ -369,7 +372,7 @@
     <value>Счётчики активности GPU Windows недоступны.</value>
   </data>
   <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
-    <value>- PID {0}: {1}</value>
+    <value>- PID {0}: OpenBlade не удалось закрыть это приложение.</value>
   </data>
   <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
     <value>
@@ -397,10 +400,11 @@
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
     <value>Оставить запущенными</value>
   </data>
-  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>Нет приложений, использующих GPU, которые можно безопасно закрыть.
-
-</value>
+  <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
+    <value>Более {0} приложений используют GPU NVIDIA. OpenBlade не может проверить безопасное закрытие по неполному списку. Закройте приложения вручную и повторите сканирование.</value>
+  </data>
+  <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
+    <value>Слишком много приложений с активным GPU</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>Нет приложений, использующих GPU</value>
@@ -409,13 +413,20 @@
     <value>Ни одно приложение текущего пользователя сейчас не использует GPU NVIDIA.</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
-    <value>
+    <value>OpenBlade не может безопасно закрыть эти приложения:
 
-Нельзя закрыть:
+</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableReason" xml:space="preserve">
+    <value>OpenBlade не может безопасно закрыть это приложение.</value>
+  </data>
+  <data name="MainWindow_GpuApps_OtherAppsHeading" xml:space="preserve">
+    <value>Другие приложения по-прежнему используют GPU NVIDIA, поэтому он может не перейти в спящий режим:
+
 </value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>Агенту сеанса не удалось выполнить операцию с приложениями, использующими GPU: {0}</value>
+    <value>Агенту сеанса не удалось выполнить операцию с приложениями, использующими GPU.</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
     <value>Приложения, использующие GPU, всё ещё работают</value>

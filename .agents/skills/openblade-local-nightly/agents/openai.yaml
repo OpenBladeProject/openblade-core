@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenBlade Local Nightly"
+  short_description: "Publish a Nightly when hosted CI is unavailable"
+  default_prompt: "Use $openblade-local-nightly to prepare, publish, and verify an authorized local Nightly fallback because hosted CI is unavailable."
