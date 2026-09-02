@@ -13,16 +13,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
   as an explicit advisory-only policy. Upgraded profiles require an in-app
   disclosure acknowledgement before background convergence starts; legacy
   IPC clients remain read-only until updated.
-- Added an explicitly enrolled, TPM-authorized local-development deployment
-  broker for quiet OpenBlade build installation without repeated UAC prompts,
-  with a protected Burn environment, exact first-install rollback recovery,
-  bounded broker-shutdown cleanup, LocalSystem-safe shortcut resolution,
-  normal-session process shutdown and rollback relaunch, normal-user legacy
-  startup cleanup, and normal-token ACL verification plus bounded client
-  failure diagnostics.
 
 ### Fixed
 
+- Stopped counting Windows System-process video-memory paging as NVIDIA GPU
+  activity in the service. Fan-curve and clock-offset decisions no longer
+  initialize NVML when the discrete GPU only paged during one of its own power
+  transitions, so the GPU temperature no longer flickers into Tray telemetry on
+  an idle desktop.
 - Normalized adjacent-palette ties at rounded localization-snapshot corners so
   translator-package archives remain byte-identical across fresh processes
   without smoothing meaningful single-pixel details.
@@ -33,11 +31,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Waited for each previous Tray window to finish closing before rebuilding the
   next localized shell, preventing rapid in-process language changes from
   overlapping native WinUI teardown.
-- Removed the dormant Session Agent Dynamic Lighting sparse-package
-  self-registration and relaunch path. OpenBlade continues delegating keyboard
-  lighting to Windows without registering a competing background provider.
-  New Setup payloads reject the retired identity artifacts while exact legacy
-  cleanup and rollback restoration remain available for older installations.
 - Reworked the Simplified Chinese Tray, runtime status, installer, and Setup
   text to use natural Windows-style wording while preserving exact hardware,
   firmware, service-state, rollback, and recovery semantics.
@@ -55,13 +48,33 @@ All notable changes to OpenBlade are documented in this file. The project follow
   control fails safe without probing NVIDIA APIs.
 - Removed English-style spaces around embedded Latin product and power-source
   names in Simplified Chinese profile-change notifications.
+- Registered the Tray and Session Agent for Windows Application Restart so
+  Windows can relaunch them after supported crash and update shutdowns, while
+  preserving intentional user exits and single-instance ownership.
+
+## [0.19.37-nightly.39] - 2026-09-01
+
+### Added
+
+- Added an explicitly enrolled, TPM-authorized local-development deployment
+  broker for quiet OpenBlade build installation without repeated UAC prompts,
+  with a protected Burn environment, exact first-install rollback recovery,
+  bounded broker-shutdown cleanup, LocalSystem-safe shortcut resolution,
+  normal-session process shutdown and rollback relaunch, normal-user legacy
+  startup cleanup, and normal-token ACL verification plus bounded client
+  failure diagnostics.
+
+### Fixed
+
+- Removed the dormant Session Agent Dynamic Lighting sparse-package
+  self-registration and relaunch path. OpenBlade continues delegating keyboard
+  lighting to Windows without registering a competing background provider.
+  New Setup payloads reject the retired identity artifacts while exact legacy
+  cleanup and rollback restoration remain available for older installations.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
   lifecycle validation available for safe crash and resume testing.
-- Registered the Tray and Session Agent for Windows Application Restart so
-  Windows can relaunch them after supported crash and update shutdowns, while
-  preserving intentional user exits and single-instance ownership.
 - Blocked older OpenBlade installers from replacing a newer installed version.
   Interactive setup now leaves the installation and saved settings unchanged
   and directs the user to the installed or a newer installer; quiet and
@@ -1691,7 +1704,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...HEAD
+[0.19.37-nightly.39]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...v0.19.37-nightly.39
 [0.19.15-nightly.34]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...v0.19.15-nightly.34
 [0.8.4-nightly.20]: https://github.com/OSSBlade/openblade-core/compare/v0.5.1-nightly.16...v0.8.4-nightly.20
 [0.5.1-nightly.16]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.11...v0.5.1-nightly.16

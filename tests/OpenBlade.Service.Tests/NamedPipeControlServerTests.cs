@@ -257,13 +257,16 @@ public sealed class NamedPipeControlServerTests
     public async Task PersistentConnectionCapacity_RejectsOverflowAndPreservesOrdinaryRequests()
     {
         TestServer context = CreateServer();
-        using CancellationTokenSource assertionTimeout = new(TimeSpan.FromSeconds(5));
+        TimeSpan assertionBound = TimeSpan.FromSeconds(5);
+        using CancellationTokenSource assertionTimeout = new(assertionBound);
         using CancellationTokenSource persistentLifetime = new();
         var persistentConnections = new List<PersistentTestConnection>();
+        string phase = "start";
         try
         {
             for (int index = 0; index < StatusSubscriptionHub.MaximumSubscribers; index++)
             {
+                phase = $"admit status subscriber {index + 1}/{StatusSubscriptionHub.MaximumSubscribers}";
                 PersistentTestConnection connection =
                     await StartPersistentConnectionAsync(
                         context.Server,
@@ -297,6 +300,7 @@ public sealed class NamedPipeControlServerTests
                         .ToRgbBytes()),
             })
             {
+                phase = $"admit persistent {request.GetType().Name}";
                 PersistentTestConnection connection =
                     await StartPersistentConnectionAsync(
                         context.Server,
@@ -314,6 +318,7 @@ public sealed class NamedPipeControlServerTests
                 Assert.True(admitted.Success);
             }
 
+            phase = "reject overflow persistent request at capacity";
             (Stream overflowServer, Stream overflowClient) =
                 await CreateDuplexPairAsync(assertionTimeout.Token);
             await using (overflowServer)
@@ -340,6 +345,7 @@ public sealed class NamedPipeControlServerTests
                 Assert.Equal(ServiceResponseErrorCode.CapacityUnavailable, rejected.ErrorCode);
             }
 
+            phase = "serve ordinary GetStatus request at capacity";
             (Stream ordinaryServer, Stream ordinaryClient) =
                 await CreateDuplexPairAsync(assertionTimeout.Token);
             await using (ordinaryServer)
@@ -364,12 +370,14 @@ public sealed class NamedPipeControlServerTests
                 Assert.True(response.Success);
             }
 
+            phase = "release first status subscriber";
             PersistentTestConnection released = persistentConnections[0];
             await released.Client.DisposeAsync();
             await released.ServerTask.WaitAsync(assertionTimeout.Token);
             await released.Server.DisposeAsync();
             persistentConnections.RemoveAt(0);
 
+            phase = "admit replacement status subscriber";
             PersistentTestConnection replacement =
                 await StartPersistentConnectionAsync(
                     context.Server,
@@ -389,10 +397,20 @@ public sealed class NamedPipeControlServerTests
                     assertionTimeout.Token));
             Assert.True(replacementResponse.Success);
 
+            phase = "completed";
             assertionTimeout.Cancel();
             Assert.All(
                 persistentConnections,
                 connection => Assert.False(connection.ServerTask.IsCompleted));
+        }
+        catch (OperationCanceledException exception)
+            when (assertionTimeout.IsCancellationRequested && phase != "completed")
+        {
+            throw new TimeoutException(
+                $"Persistent-connection capacity test stalled in phase '{phase}' "
+                + $"after the {assertionBound.TotalSeconds:0}-second assertion bound; "
+                + DescribePersistentConnections(persistentConnections),
+                exception);
         }
         finally
         {
@@ -402,8 +420,8 @@ public sealed class NamedPipeControlServerTests
                 await connection.Client.DisposeAsync();
             }
 
-            using CancellationTokenSource teardownTimeout =
-                new(TimeSpan.FromSeconds(5));
+            TimeSpan teardownBound = TimeSpan.FromSeconds(5);
+            using CancellationTokenSource teardownTimeout = new(teardownBound);
             try
             {
                 await Task.WhenAll(persistentConnections.Select(
@@ -411,6 +429,16 @@ public sealed class NamedPipeControlServerTests
                         connection,
                         persistentLifetime.Token,
                         teardownTimeout.Token)));
+            }
+            catch (OperationCanceledException exception)
+                when (teardownTimeout.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    "Persistent-connection capacity test stalled in phase 'teardown' "
+                    + $"after the {teardownBound.TotalSeconds:0}-second teardown bound "
+                    + $"(last assertion phase '{phase}'); "
+                    + DescribePersistentConnections(persistentConnections),
+                    exception);
             }
             finally
             {
@@ -857,6 +885,17 @@ public sealed class NamedPipeControlServerTests
             serverConnection,
             client,
             server.ServeConnectionAsync(serverConnection, persistentLifetime));
+    }
+
+    private static string DescribePersistentConnections(
+        IReadOnlyList<PersistentTestConnection> connections)
+    {
+        int completed = connections.Count(
+            connection => connection.ServerTask.IsCompleted);
+        int faulted = connections.Count(
+            connection => connection.ServerTask.IsFaulted);
+        return $"persistent connections={connections.Count}, "
+            + $"server tasks completed={completed}, faulted={faulted}";
     }
 
     private static async Task AwaitPersistentCleanupAsync(

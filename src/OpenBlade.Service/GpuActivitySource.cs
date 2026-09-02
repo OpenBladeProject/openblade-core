@@ -27,6 +27,11 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
 {
     private const int SampleDelayMilliseconds = 150;
 
+    // PID 4 is the Windows System process. Its copy-engine entries on the NVIDIA
+    // adapter are video-memory paging that accompanies the adapter's own power
+    // transitions, not a workload, so they must not open NVML on their own.
+    private const int SystemProcessId = 4;
+
     private readonly object sync = new();
     private readonly WindowsNvidiaGpuActivityReader? reader;
     private readonly Func<bool> refresh;
@@ -73,10 +78,13 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             WindowsGpuActivitySnapshot snapshot = read();
             return snapshot.IsAvailable
-                ? snapshot.Processes.Any(process => process.IsActive)
+                ? snapshot.Processes.Any(IsWorkloadProcess)
                 : null;
         }
     }
+
+    internal static bool IsWorkloadProcess(WindowsGpuProcessActivity process) =>
+        process.IsActive && process.ProcessId != SystemProcessId;
 
     private static void WaitForNextSample(
         int milliseconds,
