@@ -205,6 +205,7 @@ internal sealed class ThermalExternalDriftValidationRunner
         ServiceStatusSnapshot final = baseline;
         bool sameServiceProcess = true;
         bool convergenceConfirmed = false;
+        bool driftObserved = false;
         long convergenceDeadline = timeProvider.GetTimestamp()
             + ToTimestampDelta(ConvergenceTimeout);
         while (timeProvider.GetTimestamp() < convergenceDeadline)
@@ -217,7 +218,15 @@ internal sealed class ThermalExternalDriftValidationRunner
             }
 
             final = await getStatus(cancellationToken).ConfigureAwait(false);
-            if (BaselineRestored(baseline, final)
+            if (!driftObserved)
+            {
+                // The published status can lag the confirmed synthetic write by a
+                // poll or two. A restored-looking baseline before the drift has been
+                // published is the pre-injection state, not convergence.
+                driftObserved = DriftPublished(candidate, final);
+            }
+            if (driftObserved
+                && BaselineRestored(baseline, final)
                 && final.ThermalConvergence is
                 {
                     State: ThermalConvergenceState.Matched,
@@ -262,6 +271,22 @@ internal sealed class ThermalExternalDriftValidationRunner
             && deviceFingerprint.Length > "OpenBlade:".Length;
         bool maintainAttemptObserved = maintainAttemptCount == 1
             && maintainTransitionAttemptId.HasValue;
+        if (!convergenceConfirmed
+            && sameServiceProcess
+            && maintainAttemptObserved
+            && BaselineRestored(baseline, final)
+            && final.ThermalConvergence is
+            {
+                State: ThermalConvergenceState.Matched,
+                Reason: ThermalConvergenceReason.None,
+            }
+            && final.ExternalChanges.Count == 0
+            && final.UnconfirmedWrites.Count == 0)
+        {
+            // Convergence finished between polls, so the drift was never published
+            // to this client. The Service ledger still proves exactly one attempt.
+            convergenceConfirmed = true;
+        }
 
         bool noReplayObserved = false;
         if (sameServiceProcess
@@ -418,6 +443,15 @@ internal sealed class ThermalExternalDriftValidationRunner
                 ? "Validation requires a confirmed matching Balanced or Silent baseline with Automatic fans."
                 : null;
     }
+
+    private static bool DriftPublished(
+        PerformancePreset candidate,
+        ServiceStatusSnapshot status) =>
+        status.ConfirmedState?.Performance == candidate
+        || status.ExternalChanges.Contains(DeviceSubsystem.Performance)
+        || status.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
+        || status.ThermalConvergence?.State is
+            ThermalConvergenceState.External or ThermalConvergenceState.Converging;
 
     private static bool BaselineRestored(
         ServiceStatusSnapshot baseline,

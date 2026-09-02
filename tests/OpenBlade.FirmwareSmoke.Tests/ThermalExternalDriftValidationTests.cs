@@ -68,6 +68,43 @@ public sealed class ThermalExternalDriftValidationTests
     }
 
     [Fact]
+    public async Task RunAsync_WaitsForPublishedDriftBeforeAcceptingRestoredBaseline()
+    {
+        ThermalExternalDriftValidationBuildManifest manifest = ValidManifest();
+        ServiceStatusSnapshot baseline = Status(PerformancePreset.Balanced);
+        ServiceStatusSnapshot drifted = Status(
+            PerformancePreset.Silent,
+            external: true,
+            convergenceState: ThermalConvergenceState.External,
+            convergenceReason: ThermalConvergenceReason.None);
+        ServiceStatusSnapshot restored = Status(PerformancePreset.Balanced);
+        // The first poll after injection still publishes the pre-injection
+        // state; the Service ledger only shows the Maintain attempt once the
+        // drifted and restored snapshots have been consumed.
+        var client = new FakeClient(baseline)
+        {
+            OnValidate = fake => fake.Enqueue(baseline, drifted, restored),
+        };
+        var clock = new ManualTimeProvider(Start);
+        HyperBoostLifecycleServiceProcess process = StableProcess();
+        IReadOnlyList<HyperBoostLifecycleDiagnosticResult> ledger =
+            SuccessfulDiagnostics(manifest.ValidationRunId);
+        ThermalExternalDriftValidationResult result = await Runner(
+            client,
+            clock,
+            () => process,
+            () => client.QueuedCount == 0 ? ledger : [InjectionDiagnostic(manifest.ValidationRunId)])
+            .RunAsync(manifest, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.ConvergenceConfirmed);
+        Assert.True(result.MaintainAttemptObserved);
+        Assert.True(result.NoReplayObserved);
+        Assert.Equal(0, client.QueuedCount);
+        Assert.Equal(PerformancePreset.Balanced, result.FinalPerformance);
+    }
+
+    [Fact]
     public async Task RunAsync_RejectsServiceProcessChangeAsStartupReconciliation()
     {
         ThermalExternalDriftValidationBuildManifest manifest = ValidManifest();
@@ -391,6 +428,7 @@ public sealed class ThermalExternalDriftValidationTests
         internal int ValidationCalls { get; private set; }
 
         internal int ReapplyCalls { get; private set; }
+        internal int QueuedCount => queuedStatuses.Count;
 
         internal void Enqueue(params ServiceStatusSnapshot[] statuses)
         {
