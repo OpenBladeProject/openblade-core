@@ -1,263 +1,149 @@
 <div align="center">
   <img src="src/OpenBlade.Tray/Assets/Brand/OpenBlade.png" width="128" alt="OpenBlade">
   <h1>OpenBlade</h1>
-  <p><strong>Native Windows control for Razer Blade laptops.</strong></p>
+  <p><strong>Control your Razer Blade without Razer Synapse.</strong></p>
   <p>
-    <a href="https://github.com/OSSBlade/openblade-docs">Documentation</a>
+    <a href="https://github.com/OSSBlade/openblade-core/releases">Download</a>
     ·
-    <a href="https://github.com/OSSBlade/openblade-core/releases">Releases</a>
+    <a href="https://github.com/OSSBlade/openblade-docs">User guide</a>
     ·
-    <a href="CHANGELOG.md">Changelog</a>
+    <a href="CHANGELOG.md">What's new</a>
   </p>
 </div>
 
-OpenBlade is a tray-first utility for performance, thermals, battery, display
-behavior, special keys, and lighting. It runs without the Razer Synapse
-application and does not install a sensor or control kernel driver. When the
-exact admitted RZ09-0581 Razer driver stack is already present, OpenBlade can
-use it for the native Windows brightness flyout. WMI remains the fallback. See
-the [Razer driver package notes](docs/razer-brightness-driver-package.md) for
-the model, validation, and redistribution limits.
-
-Hardware support is evidence-based. OpenBlade is Razer-only, and a control is
-enabled only when its command has reviewed, sanitized capture evidence for the
-exact laptop. BIOS versions remain evidence provenance unless a capability has
-an explicit firmware-specific restriction.
+OpenBlade is a small, free app that lives in your Windows system tray and gives
+you the controls Synapse offers: performance modes, fan behavior, battery charge
+limits, keyboard lighting, display settings, and the special keys on your
+laptop. There is no account to create, nothing is sent to the cloud, and it
+only checks for updates if you turn that on.
 
 | Dashboard | Lighting |
 | :---: | :---: |
 | <img src="docs/images/openblade-dashboard.png" alt="OpenBlade dashboard" width="410"> | <img src="docs/images/openblade-lighting.png" alt="OpenBlade lighting controls" width="410"> |
 
-## Current hardware support
+## Supported laptops
 
-| Laptop | USB identity |
+| Laptop | Model number |
 | --- | --- |
-| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` |
-| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` |
+| Razer Blade 16 (2026) | `RZ09-0581` |
+| Razer Blade 16 (2025) | `RZ09-0528` |
 
-## What it controls
+OpenBlade only works with these models. A control appears for your laptop only
+after it has been tested on that exact model, so you will not find buttons that
+do nothing or do the wrong thing.
 
-- AC, USB-C, and battery profiles with automatic power-source switching
-- Power modes, including padless HyperBoost on RZ09-0581, fan behavior,
-  NVIDIA GPU clock offsets, and battery charge limits
-- Keyboard and lid-logo lighting, including streamed effects and a playback
-  mute indicator
-- Display profiles, brightness behavior, function-row behavior, and M1 through
-  M5 Fn-layer bindings
-- Battery power and health, fan RPM, CPU temperature, and NVIDIA GPU telemetry
-- Optional GitHub release checks with a user-selected startup interval
-- Bounded, redacted diagnostics and guided firmware-update smoke tests
-- Separate profiles, overrides, display state, and UI preferences for each
-  Windows user, backed by one machine-wide service
-- Fast User Switching without tray restarts; background trays stay connected
-  with user-specific configuration redacted and regain control on switch-back
-- A Session Agent for every user, with individual tray startup preferences;
-  profile and display automation, configured special keys, and interactive
-  lighting continue after tray exit
+## Why people use it
 
-## Hardware safety
+You do not need to install or sign in to Razer Synapse. If Razer software is
+already running, OpenBlade warns you that the two may conflict and offers to
+stop it for you.
 
-OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
+OpenBlade talks to the laptop over the same USB channel Razer uses, and it does
+not install a driver to read sensors or set fans. That means one less thing
+that can crash your system or stop working after a Windows update.
 
-- Only the active physical console user can change hardware. Remote Desktop
-  sessions are read-only, and writes fail closed when no console session is
-  attached.
-- Battery and firmware changes affect the physical laptop regardless of which
-  user requests them.
-- The LocalSystem service is the only process that owns the laptop control HID
-  handle, and it serializes every hardware operation.
-- The protocol layer encodes validated 90-byte Razer reports. Service IPC
-  exposes typed operations only; there is no raw-command endpoint.
-- Every admitted write has a trusted capture fixture. Automatic and stateful
-  controls also require independent readback.
-- Temporary pipe, enumeration, or read failures preserve the last confirmed UI
-  state, but every write performs fresh identity and safety checks.
-- Razer software is reported as a possible conflict. OpenBlade does not stop it
-  or silently fight external changes.
-- [Unexpected service-exit recovery](docs/service-crash-recovery.md) uses the
-  bounded SCM policy, observes fresh exact-device state, and resumes only
-  eligible OpenBlade-owned producers.
+You set up a profile for plugged in, for USB-C power, and for battery, and
+OpenBlade switches between them as soon as you plug in or unplug. Closing the
+window changes nothing: profiles, display settings, lighting, and your special
+keys keep working in the background.
 
-Capture tools are kept outside the installed product, and raw captures are
-never production admission artifacts.
+OpenBlade is careful with your hardware. If it cannot confirm which laptop it
+is talking to, or cannot confirm that a change took effect, it stops rather
+than guessing. It only accepts changes from the person signed in at the laptop
+itself. A Remote Desktop session can see the current state but cannot change
+anything.
 
-## Architecture
+OpenBlade is free software under the GPL, so you can read every line of code
+that touches your laptop.
 
-```mermaid
-flowchart LR
-    Tray["Tray<br>WinUI 3, user session"]
-    Agent["Session Agent<br>Raw Input and user APIs"]
-    Service["Service<br>LocalSystem"]
-    Windows["Windows session APIs"]
-    Blade["Razer Blade firmware"]
+## What you can control
 
-    Tray <-->|"typed service IPC"| Service
-    Tray <-->|"display IPC"| Agent
-    Agent <-->|"typed service IPC"| Service
-    Agent -->|"display, audio, and input"| Windows
-    Service -->|"validated HID reports"| Blade
-```
+### Performance and cooling
 
-| Area | Responsibility |
-| --- | --- |
-| `OpenBlade.Contracts` | Versioned service IPC, profiles, capabilities, and device state |
-| `OpenBlade.Protocol` | Report encoding, fixtures, checksums, admission, and HID transport |
-| `OpenBlade.Service` | Hardware ownership, automation, configuration, and named-pipe server |
-| `OpenBlade.SessionAgent` | Current-user display, input, audio, and streamed-lighting work |
-| `OpenBlade.Tray.Core` / `OpenBlade.Tray` | Presentation policy and the WinUI 3 tray interface |
-| `OpenBlade.Setup` | Transactional install, repair, shutdown, and uninstall |
-| `OpenBlade.Capture` / `OpenBlade.FirmwareSmoke` | Developer-only protocol and firmware validation |
+- Power modes, including HyperBoost on the Blade 16 (2026) without the Razer
+  cooling pad that Synapse requires
+- Fan behavior: automatic, fixed speed, or your own curve
+- NVIDIA GPU clock offsets for extra headroom or quieter running
+- Live readouts for CPU temperature, fan RPM, GPU temperature and load, and
+  battery power draw
+- If another app changes your performance or fan settings behind your back,
+  OpenBlade can put them back or just let you know
+- A list of apps holding the NVIDIA GPU awake on an idle desktop, with a way
+  to close them
 
-[AGENTS.md](AGENTS.md) contains the full codebase map and engineering
-constraints. [VERSIONING.md](VERSIONING.md) defines product, schema, and IPC
-compatibility policy.
+### Battery
 
-## Build and test
+- Charge limits to keep the battery healthy when the laptop stays plugged in,
+  with a one-key toggle
+- Battery health and power figures on the dashboard
+- Separate settings per power source, applied automatically
 
-You need Windows 11 x64 and the .NET 10 SDK.
+### Lighting
 
-```powershell
-git submodule update --init --recursive
-dotnet restore OpenBlade.slnx -p:NuGetAudit=false
-dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
-dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
-```
+- Keyboard and lid-logo lighting with the built-in effects, plus streaming
+  effects that react in real time
+- The keyboard shows when your microphone or speakers are muted
+- Import Razer `.chroma` keyboard files, or share your own `.oblight` presets
+  with other OpenBlade users
 
-The build treats warnings as errors and uses deterministic assemblies. Tests
-cover protocol encoding, device admission, IPC, service behavior, presentation
-policy, setup transactions, and release-payload boundaries.
+### Display and keys
 
-## Publish and install
+- Display profiles and brightness behavior, including the native Windows
+  brightness flyout
+- Choose whether the function row acts as F-keys or media keys by default
+- Bind the M1 to M5 keys on the Fn layer to the actions you want, including
+  Gaming mode, mute, and charge-limit toggles
 
-Create the installer and production artifacts:
+### Everyday details
 
-```powershell
-.\build\Publish.ps1
-```
+- A dashboard you can rearrange. Show the sections you care about and drag
+  them into the order you want
+- Each Windows user on the laptop gets their own profiles and preferences.
+  You can switch users without restarting anything, and only the user who is
+  signed in on screen can change hardware settings
+- Export and import your profiles to move them to another machine
+- Optional update checks on a schedule you pick, with a Nightly channel if you
+  want to try new features early
+- A diagnostics package you can share when reporting a problem. Your user
+  name, computer name, and personal folder paths are stripped out before it is
+  written, and the laptop serial number is never included
+- Available in English, Simplified Chinese, and Russian, or set it to follow
+  your Windows language
 
-- Graphical installer: `artifacts\win-x64\OpenBlade-Setup.exe`
-- Normal installation: double-click the graphical installer; do not use
-  **Run as administrator**
-- Uninstall: use Windows Settings or the graphical installer; saved profiles
-  and preferences remain unless explicitly purged
-- Quiet installation: setup does not launch OpenBlade; the caller must start
-  `OpenBlade.Tray.exe` from its original normal-integrity process and confirm
-  that the Tray and Session Agent are running
-- Microsoft Store quiet-install lifecycle remains incomplete until
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved;
-  see the [submission notes](docs/microsoft-store-submission.md)
+## Install
 
-See [build, installation, and Nightly releases](docs/build-install-and-nightly.md)
-for development revisions, recovery commands, signing, Store constraints, and
-installer troubleshooting.
+1. Download `OpenBlade-Setup.exe` from the
+   [latest release](https://github.com/OSSBlade/openblade-core/releases/latest).
+2. Double-click it and choose **Install**. Windows will ask for permission
+   once, when setup is ready to make changes. Do not use "Run as
+   administrator"; the installer asks for what it needs on its own.
+3. Choose **Launch OpenBlade**. The app appears in your system tray.
 
-### Nightly builds
+To remove it, use Windows Settings > Installed apps. Your saved profiles stay
+on disk unless you tick the option to remove them too.
 
-- Built from committed `main` every day at 09:17 UTC or on manual request
-- Published as GitHub prereleases with the installer, checksum, metadata, and
-  exact-commit changelog snapshot
-- Offered in the app only when the **Nightly** update channel is selected
-- Test builds, not stable releases; unless release signing is connected, the
-  installer is expected to report `NotSigned`
-- Verify the installer against its included SHA-256 file
+Nightly builds are unsigned test builds, so Windows may show a warning before
+installing one. They are only offered inside the app when you switch the update
+channel to **Nightly**.
 
-## Hardware development
+## Good to know
 
-`OpenBlade.Capture` provides typed target checks, read-only queries, fixture
-validation, and explicitly named reversible validation commands. It has no raw
-command mode.
+- OpenBlade needs Windows 11 x64, version 24H2 or later.
+- OpenBlade does not fight Razer software for control of the hardware. If
+  both are running, you may see settings change unexpectedly. Stop one of them.
+- Battery and firmware settings apply to the physical laptop, no matter which
+  Windows user changed them.
+- The full user guide and compatibility notes live in the
+  [openblade-docs](https://github.com/OSSBlade/openblade-docs) repository.
 
-```powershell
-dotnet run --project src\OpenBlade.Capture -- target
-dotnet run --project src\OpenBlade.Capture -- scan
-dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
-dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
-```
+## For developers
 
-The RZ09-0581 cadence validator measures whether the admitted `1532:02E0`
-matrix transport can sustain progressive 30, 45, and 60 Hz writes. Stop the
-OpenBlade service first, substitute the laptop's admitted BIOS version, and
-choose a directory for the sanitized timestamped JSON and Markdown results:
-
-```powershell
-dotnet run --project src\OpenBlade.Capture -- `
-  validate-rz09-0581-lighting-cadence `
-  --confirm-target RZ09-0581:1532:02E0:4.00:000C:0001:375 `
-  --rates 30,45,60 --pattern tidal --brightness 100 --seconds 15 `
-  --output .\lighting-cadence-results
-```
-
-`--rates 30,45,60` is an exact, ordered confirmation of the fixed validation
-plan; subsets, reordering, and other rates are rejected before hardware opens.
-
-Choose `marker` for a Spectrum base with a 12-bit per-frame counter suitable
-for high-speed video, or `tidal` for the captured five-second green/blue Tidal
-motion used for direct operator comparison across the three rates.
-
-The run replaces the current keyboard effect. That unknown pre-test effect
-cannot be read or restored; a healthy run finishes at the explicitly confirmed
-Static green baseline.
-
-This validates host-to-keyboard transport completion and records operator
-confirmation of visible stability. It does not measure the LEDs' exact optical
-refresh rate. Each stage also records the validator process's CPU time across
-the measured window. Developer-only phase timing splits each successful
-end-to-end write into queue wait, the strict competing-controller check, native
-submit-to-completion, managed completion handling, and residual host work. The
-frame-budget p99 gate excludes only the strict validator guard when every
-completed frame has exactly one aligned, nonnegative phase attribution.
-Completion ratio and maximum gap are independent end-to-end gates; achieved
-rate and skipped-frame count remain end-to-end diagnostics reflected in
-completion. Any missing, extra, or over-attributed phase timing disables guard
-subtraction and falls back to complete end-to-end write timing.
-The validator retains strict per-write controller checks throughout each stage;
-it does not switch to the production Advisory policy during measurement.
-
-`singleLogicalProcessorPercent` treats one fully occupied
-logical processor as 100%; `wholeMachineCapacityPercent` divides that value by
-the recorded logical-processor count, matching Task Manager's process-wide
-normalization. Near each deadline, the developer tool uses a process-local
-precision wait instead of changing the Windows timer period, so its CPU result
-measures the validator's intentional spin-wait cost rather than the installed
-service's `Task.Delay` scheduler. If a write outcome is indeterminate, the
-validator stops without retrying or restoring lighting and reports that manual
-recovery is required.
-
-The installed-product firmware workflow starts with a read-only baseline:
-
-```powershell
-.\scripts\Test-FirmwareUpdate.ps1 -Phase Baseline
-```
-
-Do not run USBPcap and OpenBlade control against the same interface at the same
-time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
-payloads. Capture procedures and restoration requirements are documented in
-the separate capture and documentation repositories.
-
-## Keyboard lighting files
-
-Users can write and share data-only `.oblight` presets for effects already
-supported by their laptop. The same importer accepts Razer `.chroma` version 1
-keyboard files. Uniform files convert losslessly; classic Keyboard per-key
-animations use a bounded, exact-model logical-key projection on the verified
-RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
-per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
-features** in Settings to show the importer. The versioned format, schema,
-compatibility rules, and example are in
-[`docs/keyboard-lighting-file-format.md`](docs/keyboard-lighting-file-format.md).
-
-## Contributing
-
-Read [AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process
-boundaries. Keep changes narrow, add focused tests, and run the affected project
-tests before the full solution. Hardware support is not complete until its
-read/query, apply, readback, and restoration workflow has passed on the exact
-target.
-
-Commits follow Conventional Commits. Version and migration rules are in
-[VERSIONING.md](VERSIONING.md). Resource keys, fallback behavior, and the
-pseudo-localization review workflow are in
-[docs/localization.md](docs/localization.md).
+Everything technical lives in the [developer guide](docs/developer-guide.md):
+architecture, the hardware safety model, build and test commands, publishing,
+the capture and validation tools, and the lighting file format. Read
+[AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process
+boundaries. Commit messages follow Conventional Commits, and version rules are
+in [VERSIONING.md](VERSIONING.md).
 
 ## License
 

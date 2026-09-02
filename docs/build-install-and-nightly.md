@@ -2,7 +2,7 @@
 
 This document covers production publishing, installation, recovery, and the
 Nightly release workflow. For ordinary source builds, use the commands in the
-main [README](../README.md#build-and-test).
+[developer guide](developer-guide.md#build-and-test).
 
 ## Publish artifacts
 
