@@ -96,6 +96,19 @@ public interface IServiceClient : IServiceStatusWatcher
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetThermalControlPolicyAsync(
+        ThermalControlPolicy policy,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Thermal control policy is unavailable."));
+
+    Task<ControlOperationResult> AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Thermal control policy disclosure is unavailable."));
+
     Task<ControlOperationResult> SetLightingRefreshRateAsync(
         LightingRefreshRate refreshRate,
         CancellationToken token);

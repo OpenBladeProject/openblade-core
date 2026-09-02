@@ -707,17 +707,19 @@ internal static class ThermalTransitionExecutor
         ArgumentNullException.ThrowIfNull(revalidatePreflight);
         ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
         return ExecuteFullTransitionCoreAsync(
+            Guid.NewGuid(),
             declaredComponents,
             initialDevice,
             coordinatorFactory,
             executeRecipe,
             revalidatePreflight,
             revalidateThermalRecovery,
-            cancellationToken);
+            revalidateSubmission: null,
+            cancellationToken: cancellationToken);
     }
 
-    private static async Task<ThermalFullTransitionExecution>
-        ExecuteFullTransitionCoreAsync(
+    public static Task<ThermalFullTransitionExecution> ExecuteFullTransitionAsync(
+        Guid attemptId,
         IReadOnlyList<DeviceSubsystem> declaredComponents,
         IBladeDevice initialDevice,
         Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
@@ -728,15 +730,64 @@ internal static class ThermalTransitionExecutor
             revalidatePreflight,
         Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
             revalidateThermalRecovery,
+        Func<
+            ThermalTransitionStepPurpose,
+            IReadOnlyList<DeviceSubsystem>,
+            CancellationToken,
+            Task<ThermalRetryAdmission>> revalidateSubmission,
         CancellationToken cancellationToken)
     {
-        Guid attemptId = Guid.NewGuid();
+        if (attemptId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A thermal transition attempt ID is required.",
+                nameof(attemptId));
+        }
+        ArgumentNullException.ThrowIfNull(initialDevice);
+        ArgumentNullException.ThrowIfNull(coordinatorFactory);
+        ArgumentNullException.ThrowIfNull(executeRecipe);
+        ArgumentNullException.ThrowIfNull(revalidatePreflight);
+        ArgumentNullException.ThrowIfNull(revalidateThermalRecovery);
+        ArgumentNullException.ThrowIfNull(revalidateSubmission);
+        return ExecuteFullTransitionCoreAsync(
+            attemptId,
+            declaredComponents,
+            initialDevice,
+            coordinatorFactory,
+            executeRecipe,
+            revalidatePreflight,
+            revalidateThermalRecovery,
+            revalidateSubmission,
+            cancellationToken);
+    }
+
+    private static async Task<ThermalFullTransitionExecution>
+        ExecuteFullTransitionCoreAsync(
+        Guid attemptId,
+        IReadOnlyList<DeviceSubsystem> declaredComponents,
+        IBladeDevice initialDevice,
+        Func<IBladeDevice, ThermalTransitionStepRunner, ControlCoordinator>
+            coordinatorFactory,
+        Func<ControlCoordinator, CancellationToken, Task<FullTransitionApplyOutcome>>
+            executeRecipe,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidatePreflight,
+        Func<Guid, CancellationToken, Task<ThermalRetryAdmission>>
+            revalidateThermalRecovery,
+        Func<
+            ThermalTransitionStepPurpose,
+            IReadOnlyList<DeviceSubsystem>,
+            CancellationToken,
+            Task<ThermalRetryAdmission>>? revalidateSubmission,
+        CancellationToken cancellationToken)
+    {
         var runner = new ThermalTransitionStepRunner(
             attemptId,
             declaredComponents,
             initialDevice,
             coordinatorFactory,
-            revalidateThermalRecovery);
+            revalidateThermalRecovery,
+            revalidateSubmission: revalidateSubmission);
         int preflightAttempts = 1;
         FullTransitionApplyOutcome outcome = await executeRecipe(
                 runner.CreateRecipeCoordinator(),

@@ -1317,4 +1317,55 @@
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>已在此笔记本上检测到该功能，但根据当前证据，OpenBlade 无法安全地更改它。</value>
   </data>
+  <data name="OpenBlade components have different versions. Update or repair OpenBlade to restore control." xml:space="preserve">
+    <value>OpenBlade 组件版本不一致。请更新或修复 OpenBlade 以恢复控制。</value>
+  </data>
+  <data name="Maintain desired state" xml:space="preserve"><value>保持目标状态</value></data>
+  <data name="Strict" xml:space="preserve"><value>严格模式</value></data>
+  <data name="Thermal control policy" xml:space="preserve"><value>性能与风扇控制策略</value></data>
+  <data name="Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action." xml:space="preserve"><value>在两种模式下，OpenBlade 都会继续维护由其拥有的手动风扇曲线安全性。保持模式绝不会开启 HyperBoost；HyperBoost 仅能由用户明确启动。</value></data>
+  <data name="Thermal state" xml:space="preserve"><value>性能与风扇状态</value></data>
+  <data name="Affected controls" xml:space="preserve"><value>受影响的控制项</value></data>
+  <data name="Affected controls:" xml:space="preserve"><value>受影响的控制项：</value></data>
+  <data name="Maintain desired state is now the default" xml:space="preserve"><value>“保持目标状态”现已成为默认设置</value></data>
+  <data name="OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported." xml:space="preserve"><value>OpenBlade 现在可以在后台恢复被更改的性能与风扇目标。在你选择“知道了”之前，后台恢复将保持暂停。每次更改前，OpenBlade 仍会验证笔记本电脑、供电、控制器安全性和回读结果。保持模式绝不会开启 HyperBoost。如果你只希望报告偏差，请选择严格模式。</value></data>
+  <data name="Got it" xml:space="preserve"><value>知道了</value></data>
+  <data name="Reapply" xml:space="preserve"><value>重新应用</value></data>
+  <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade 会报告在其他位置进行的性能或风扇更改，并等待你重新应用设置。</value></data>
+  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade 会保持你选择的性能模式和风扇设置。如果这些设置发生变化，OpenBlade 会在安全的情况下将其恢复。</value></data>
+  <data name="Up to date" xml:space="preserve"><value>已匹配</value></data>
+  <data name="Checking current state" xml:space="preserve"><value>正在检查当前状态</value></data>
+  <data name="Restoring saved settings" xml:space="preserve"><value>正在恢复已保存的设置</value></data>
+  <data name="Paused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="Needs your action" xml:space="preserve"><value>需要你操作</value></data>
+  <data name="Restore pending" xml:space="preserve"><value>等待恢复</value></data>
+  <data name="Reconciliation unavailable" xml:space="preserve"><value>状态恢复不可用</value></data>
+  <data name="Performance and fans" xml:space="preserve"><value>性能和风扇</value></data>
+  <data name="Saved performance and fan intent match the confirmed laptop state." xml:space="preserve"><value>已保存的性能与风扇目标和已确认的笔记本状态一致。</value></data>
+  <data name="OpenBlade is applying the saved performance and fan intent and will confirm it by readback." xml:space="preserve"><value>OpenBlade 正在应用已保存的性能和风扇目标，并将通过回读进行确认。</value></data>
+  <data name="Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues." xml:space="preserve"><value>严格模式只显示偏移，不会自动改回。手动风扇曲线的安全维护仍会继续。</value></data>
+  <data name="Review the new default policy before background reconciliation can begin." xml:space="preserve"><value>请先查看新的默认策略，然后才能开始后台状态恢复。</value></data>
+  <data name="The saved thermal configuration is unavailable." xml:space="preserve"><value>已保存的性能与风扇配置不可用。</value></data>
+  <data name="The saved thermal configuration could not be trusted. Strict behavior is active." xml:space="preserve"><value>无法信任已保存的性能与风扇配置。当前使用严格模式。</value></data>
+  <data name="Reconciliation waits for this local Windows session to become active." xml:space="preserve"><value>状态恢复会等待此本地 Windows 会话变为活动状态。</value></data>
+  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation." xml:space="preserve"><value>当前连接了较旧的 OpenBlade 组件。请更新或修复 OpenBlade 以恢复状态恢复功能。</value></data>
+  <data name="OpenBlade is waiting for a fresh, complete read of the laptop state." xml:space="preserve"><value>OpenBlade 正在等待重新完整读取笔记本状态。</value></data>
+  <data name="The supported laptop control device is temporarily unavailable." xml:space="preserve"><value>受支持的笔记本控制设备暂时不可用。</value></data>
+  <data name="OpenBlade could not verify the exact supported laptop identity." xml:space="preserve"><value>OpenBlade 无法准确验证受支持的笔记本型号。</value></data>
+  <data name="Reconciliation waits until the power source is confirmed and stable." xml:space="preserve"><value>状态恢复会等待电源来源得到确认并稳定下来。</value></data>
+  <data name="Reconciliation is paused while Windows enters or leaves low power." xml:space="preserve"><value>Windows 进入或退出低功耗状态时，状态恢复会暂停。</value></data>
+  <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve"><value>另一个 Razer 控制器处于活动状态，因此 OpenBlade 不会争夺这些设置。</value></data>
+  <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve"><value>OpenBlade 无法确认是否有另一个 Razer 控制器处于活动状态。</value></data>
+  <data name="HyperBoost temporarily owns performance and fan state." xml:space="preserve"><value>HyperBoost 暂时接管性能与风扇状态。</value></data>
+  <data name="OpenBlade is finishing the HyperBoost transition before reconciling other settings." xml:space="preserve"><value>OpenBlade 正在完成 HyperBoost 转换，然后再恢复其他设置。</value></data>
+  <data name="Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it." xml:space="preserve"><value>固件只报告手动风扇控制而不提供准确曲线，因此 OpenBlade 不会猜测或重放该曲线。</value></data>
+  <data name="A possibly submitted change must be confirmed by readback before another write." xml:space="preserve"><value>可能已提交的更改必须先通过回读确认，才能进行下一次写入。</value></data>
+  <data name="Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again." xml:space="preserve"><value>自动状态恢复已在有限尝试后停止。请明确选择“重新应用”以再次尝试。</value></data>
+  <data name="This drift is recorded as unresolved. Reapply explicitly after checking the laptop state." xml:space="preserve"><value>此偏移已记录为未解决。请检查笔记本状态后明确选择“重新应用”。</value></data>
+  <data name="Reconciliation is closed while OpenBlade shuts down." xml:space="preserve"><value>OpenBlade 关闭期间，状态恢复入口已关闭。</value></data>
+  <data name="OpenBlade cannot safely persist or reconcile this state right now." xml:space="preserve"><value>OpenBlade 当前无法安全地保存或恢复此状态。</value></data>
+  <data name="Thermal reconciliation status is unavailable." xml:space="preserve"><value>性能与风扇状态恢复信息不可用。</value></data>
+  <data name="Review thermal control policy" xml:space="preserve"><value>查看性能与风扇控制策略</value></data>
+  <data name="Review policy" xml:space="preserve"><value>查看策略</value></data>
+  <data name="Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it." xml:space="preserve"><value>请查看新的“保持目标状态”默认设置。在你选择“知道了”之前，后台状态恢复会保持暂停。</value></data>
 </root>

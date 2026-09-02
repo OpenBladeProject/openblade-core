@@ -238,7 +238,12 @@ public sealed class BatteryConfigurationStore
                 ProfileSet migrated = ReadLegacy(snapshot.Profile.Contents);
                 var configuration = new BatteryConfiguration(
                     migrated,
-                    new BatteryAutomationPreferences(),
+                    new BatteryAutomationPreferences(
+                        ThermalControlPolicy:
+                            ThermalControlPolicy.MaintainDesiredState,
+                        ThermalPolicyUpgradeDisclosure:
+                            ThermalPolicyUpgradeDisclosureState
+                                .UpgradeDisclosurePending),
                     Recovered: false);
                 if (materializeAdmittedState)
                 {
@@ -339,7 +344,8 @@ public sealed class BatteryConfigurationStore
 
         BatteryAutomationPreferences preferences = ReadPreferences(
             preferenceJson,
-            marker.SchemaVersion);
+            marker.SchemaVersion,
+            out bool preferencesMigrated);
         bool legacyProtectionEnabled = preferences.ProtectionEnabled ?? true;
         ProfileSet profiles = profileStore.ReadDocument(
             profileJson,
@@ -353,7 +359,6 @@ public sealed class BatteryConfigurationStore
                 ConfigurationQuarantineReason.MixedSchema);
         }
 
-        bool preferencesMigrated = preferences.ProtectionEnabled.HasValue;
         preferences = preferences with { ProtectionEnabled = null };
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
@@ -415,9 +420,27 @@ public sealed class BatteryConfigurationStore
 
     private BatteryAutomationPreferences ReadPreferences(
         ReadOnlySpan<byte> json,
-        int expectedSchemaVersion)
+        int expectedSchemaVersion,
+        out bool migrated)
     {
         RejectDuplicateMembers(json);
+        using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
+        if (parsed.RootElement.ValueKind != JsonValueKind.Object
+            || !parsed.RootElement.TryGetProperty("preferences", out JsonElement preferencesElement)
+            || preferencesElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("The battery preferences are missing.");
+        }
+        if (expectedSchemaVersion >= ProfileStore.CurrentSchemaVersion
+            && (!preferencesElement.TryGetProperty("thermalControlPolicy", out _)
+                || !preferencesElement.TryGetProperty(
+                    "thermalPolicyUpgradeDisclosure",
+                    out _)))
+        {
+            throw new InvalidDataException(
+                "The current battery preferences are missing thermal policy state.");
+        }
+
         BatteryPreferencesDocument? document =
             JsonSerializer.Deserialize<BatteryPreferencesDocument>(
                 json,
@@ -444,8 +467,19 @@ public sealed class BatteryConfigurationStore
                 "The current battery preference document contains a legacy setting.");
         }
 
-        validator.ValidatePreferences(document.Preferences);
-        return document.Preferences;
+        BatteryAutomationPreferences preferences = expectedSchemaVersion
+            < ProfileStore.CurrentSchemaVersion
+                ? document.Preferences with
+                {
+                    ThermalControlPolicy = ThermalControlPolicy.MaintainDesiredState,
+                    ThermalPolicyUpgradeDisclosure =
+                        ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+                }
+                : document.Preferences;
+        validator.ValidatePreferences(preferences);
+        migrated = expectedSchemaVersion < ProfileStore.CurrentSchemaVersion
+            || preferences.ProtectionEnabled.HasValue;
+        return preferences;
     }
 
     private async Task SaveConfigurationTransactionAsync(
@@ -744,6 +778,10 @@ public sealed class BatteryConfigurationStore
         bool wasEmpty) => new(
             SafeConfiguration(recovered) with
             {
+                Preferences = new BatteryAutomationPreferences(
+                    ThermalControlPolicy: ThermalControlPolicy.Strict,
+                    ThermalPolicyUpgradeDisclosure:
+                        ThermalPolicyUpgradeDisclosureState.NotRequired),
                 Disposition = ConfigurationLoadDisposition.Quarantined,
                 QuarantineReason = reason,
             },
