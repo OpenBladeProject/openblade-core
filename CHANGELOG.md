@@ -16,6 +16,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Compiled the Tray developer smoke and localization-snapshot harnesses only
+  into harness builds. The shipped Tray no longer contains them or reacts to
+  their launch arguments and environment variables.
 - Kept the service thermal sensors open between samples. The Razer EC
   thermal-zone counter stays open instead of being re-created on every read,
   the NVIDIA NVML session is held only while consecutive samples report the

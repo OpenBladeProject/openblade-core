@@ -2274,6 +2274,54 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DeveloperHarnessCompilesOnlyIntoHarnessBuilds()
+    {
+        string harness = ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
+        string tests = ReadRepositoryFile(
+            "tests",
+            "OpenBlade.Tray.Tests",
+            "OpenBlade.Tray.Tests.csproj");
+        string smoke = ReadRepositoryFile(
+            "tests",
+            "OpenBlade.Tray.Tests",
+            "TrayXamlStartupSmokeTests.cs");
+
+        Assert.Contains("#if OPENBLADE_DEVELOPER_HARNESS", harness, StringComparison.Ordinal);
+        Assert.Contains(
+            "private bool TryRunDeveloperHarness(string[] commandLineArguments) => false;",
+            harness,
+            StringComparison.Ordinal);
+        Assert.EndsWith("#endif" + Environment.NewLine, harness, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (TryRunDeveloperHarness(commandLineArguments))",
+            app,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("--xaml-startup-smoke", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "<DefineConstants Condition=\"'$(OpenBladeDeveloperHarness)' == 'true'\">$(DefineConstants);OPENBLADE_DEVELOPER_HARNESS</DefineConstants>",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<OpenBladeDeveloperHarness Condition=\"'$(OpenBladeDeveloperHarness)' == '' and '$(OpenBladeLocalizationPreview)' == 'true'\">true</OpenBladeDeveloperHarness>",
+            project,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "OPENBLADE_DEVELOPER_HARNESS",
+            project.Replace(
+                "$(DefineConstants);OPENBLADE_DEVELOPER_HARNESS",
+                string.Empty,
+                StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Properties=\"Configuration=$(Configuration);OpenBladeDeveloperHarness=true\"",
+            tests,
+            StringComparison.Ordinal);
+        Assert.Contains(": \"bin-developer-harness\";", smoke, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LocalizationSnapshotsDoNotActivateDormantApplicationResources()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")

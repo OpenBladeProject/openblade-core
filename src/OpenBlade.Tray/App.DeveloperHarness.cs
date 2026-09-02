@@ -23,6 +23,53 @@ using XamlTextBlock = Microsoft.UI.Xaml.Controls.TextBlock;
 namespace OpenBlade.Tray;
 
 /// <summary>
+/// The one hook the product launch path accepts from the live-localization
+/// smoke. It is compiled into every build so <c>RefreshLanguageAsync</c> keeps
+/// one signature; only harness builds ever create an instance.
+/// </summary>
+public partial class App
+{
+    private sealed class LiveLocalizationSmokeContext(
+        string reportPath,
+        UiPreferenceStore preferenceStore)
+    {
+        public static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(8);
+        public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
+
+        public UiPreferenceStore PreferenceStore { get; } = preferenceStore;
+
+        public void Report(string phase) => File.AppendAllText(
+            reportPath,
+            $"{DateTimeOffset.UtcNow:O} {phase}{Environment.NewLine}");
+
+        public async Task RunPhaseAsync(
+            string phase,
+            Func<Task> operation,
+            TimeSpan timeout)
+        {
+            Report(phase);
+            try
+            {
+                await operation().WaitAsync(timeout);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new LiveLocalizationSmokePhaseTimeoutException(
+                    $"Live localization smoke phase '{phase}' exceeded "
+                    + $"{timeout.TotalSeconds:0} seconds.",
+                    exception);
+            }
+        }
+    }
+
+    private sealed class LiveLocalizationSmokePhaseTimeoutException(
+        string message,
+        Exception innerException)
+        : TimeoutException(message, innerException);
+}
+
+#if OPENBLADE_DEVELOPER_HARNESS
+/// <summary>
 /// Developer-only smoke and localization-snapshot harnesses. Build checks
 /// and the translator workflow start the Tray with one of the arguments or
 /// environment variables below; an ordinary launch never enters this file.
@@ -1773,44 +1820,6 @@ public partial class App
         string ExpectedKeyboardShortcutAction,
         string ExpectedActionAccessibleName);
 
-    private sealed class LiveLocalizationSmokeContext(
-        string reportPath,
-        UiPreferenceStore preferenceStore)
-    {
-        public static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(8);
-        public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
-
-        public UiPreferenceStore PreferenceStore { get; } = preferenceStore;
-
-        public void Report(string phase) => File.AppendAllText(
-            reportPath,
-            $"{DateTimeOffset.UtcNow:O} {phase}{Environment.NewLine}");
-
-        public async Task RunPhaseAsync(
-            string phase,
-            Func<Task> operation,
-            TimeSpan timeout)
-        {
-            Report(phase);
-            try
-            {
-                await operation().WaitAsync(timeout);
-            }
-            catch (TimeoutException exception)
-            {
-                throw new LiveLocalizationSmokePhaseTimeoutException(
-                    $"Live localization smoke phase '{phase}' exceeded "
-                    + $"{timeout.TotalSeconds:0} seconds.",
-                    exception);
-            }
-        }
-    }
-
-    private sealed class LiveLocalizationSmokePhaseTimeoutException(
-        string message,
-        Exception innerException)
-        : TimeoutException(message, innerException);
-
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
         ResponsiveChoiceSelectorSmokeOption? selected)
@@ -1844,3 +1853,12 @@ public partial class App
         }
     }
 }
+#else
+namespace OpenBlade.Tray;
+
+public partial class App
+{
+    // The shipped Tray has no developer harness; every launch is a product launch.
+    private bool TryRunDeveloperHarness(string[] commandLineArguments) => false;
+}
+#endif

@@ -14,10 +14,17 @@
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- The developer smoke and localization-snapshot harnesses compile only into
+         harness builds (Tray tests, localization snapshots, translator packages).
+         The shipped Tray does not contain them or their launch triggers. -->
+    <OpenBladeDeveloperHarness Condition="'$(OpenBladeDeveloperHarness)' == '' and '$(OpenBladeLocalizationPreview)' == 'true'">true</OpenBladeDeveloperHarness>
+    <DefineConstants Condition="'$(OpenBladeDeveloperHarness)' == 'true'">$(DefineConstants);OPENBLADE_DEVELOPER_HARNESS</DefineConstants>
     <AssemblyName Condition="'$(OpenBladeLocalizationPreview)' == 'true'">OpenBlade.LocalizationPreview</AssemblyName>
     <BaseOutputPath Condition="'$(OpenBladeLocalizationPreview)' == 'true'">bin-localization-preview\</BaseOutputPath>
     <IntermediateOutputPath Condition="'$(OpenBladeLocalizationPreview)' == 'true'">obj\localization-preview\$(Configuration)\</IntermediateOutputPath>
-    <DefaultItemExcludes>$(DefaultItemExcludes);bin-localization-preview\**;obj-localization-preview\**;obj\localization-preview\**</DefaultItemExcludes>
+    <BaseOutputPath Condition="'$(OpenBladeDeveloperHarness)' == 'true' and '$(OpenBladeLocalizationPreview)' != 'true'">bin-developer-harness\</BaseOutputPath>
+    <IntermediateOutputPath Condition="'$(OpenBladeDeveloperHarness)' == 'true' and '$(OpenBladeLocalizationPreview)' != 'true'">obj\developer-harness\$(Configuration)\</IntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin-localization-preview\**;obj-localization-preview\**;obj\localization-preview\**;bin-developer-harness\**;obj\developer-harness\**</DefaultItemExcludes>
     <ApplicationIcon Condition="Exists('Assets\Brand\OpenBlade.ico')">Assets\Brand\OpenBlade.ico</ApplicationIcon>
     <!-- On .NET 10, this prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler while WinForms supplies the tray icon. -->
     <ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>
