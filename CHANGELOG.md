@@ -24,8 +24,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
   blocks a thread for its 150 ms sample window. Manual fan curves and Tray
   live readings no longer re-initialize NVML every second under a GPU load.
 
+- Reloaded Session Agent special-key bindings from a file-change notification
+  on the tray preferences file instead of polling it every second, removing a
+  permanent one-second wake-up. Bounded polling remains only while the
+  preferences directory does not exist yet or a watcher cannot be armed.
+
 ### Fixed
 
+- Quarantined a persistent override document whose JSON root is not an object
+  instead of failing service startup. A `manual-overrides.json` file containing
+  an array, `null`, a string, or a number now loads as safe defaults with
+  thermal writes disabled, and saves report the quarantine, matching every other
+  malformed override document.
 - Stopped counting Windows System-process video-memory paging as NVIDIA GPU
   activity in the service. Fan-curve and clock-offset decisions no longer
   initialize NVML when the discrete GPU only paged during one of its own power

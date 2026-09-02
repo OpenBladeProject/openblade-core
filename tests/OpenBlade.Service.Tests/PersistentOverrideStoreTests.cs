@@ -276,6 +276,55 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.False(File.Exists(path + ".tmp"));
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"text\"")]
+    [InlineData("42")]
+    public async Task Load_NonObjectRootRemainsBytePreservedInQuarantine(string content)
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, content);
+        byte[] original = await File.ReadAllBytesAsync(path);
+        var store = new PersistentOverrideStore(path);
+
+        PersistentOverrideLoadResult recovered = await store.LoadAsync(CancellationToken.None);
+        PersistentOverrideLoadResult verified = await store.LoadAsync(CancellationToken.None);
+
+        Assert.True(recovered.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, recovered.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.InvalidDocument, recovered.QuarantineReason);
+        Assert.Equal(PersistentOverrideState.Empty, recovered.Overrides);
+        Assert.True(verified.Recovered);
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, verified.Disposition);
+        Assert.Equal(PersistentOverrideState.Empty, verified.Overrides);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    public async Task Save_NonObjectRootRejectsSaveAsQuarantined(string content)
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, content);
+        byte[] original = await File.ReadAllBytesAsync(path);
+        var store = new PersistentOverrideStore(path);
+        var overrides = new PersistentOverrideState(
+            PerformancePreset.Silent,
+            null,
+            null);
+
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.SaveAsync(overrides, CancellationToken.None));
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal([path], Directory.GetFiles(directory));
+    }
+
     [Fact]
     public async Task Load_FutureSchemaRemainsBytePreservedAndRejectsEverySave()
     {
