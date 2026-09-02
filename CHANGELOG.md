@@ -14,6 +14,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
   disclosure acknowledgement before background convergence starts; legacy
   IPC clients remain read-only until updated.
 
+### Changed
+
+- Reloaded Session Agent special-key bindings from a file-change notification
+  on the tray preferences file instead of polling it every second, removing a
+  permanent one-second wake-up. Bounded polling remains only while the
+  preferences directory does not exist yet or a watcher cannot be armed.
+
 ### Fixed
 
 - Quarantined a persistent override document whose JSON root is not an object
