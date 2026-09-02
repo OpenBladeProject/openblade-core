@@ -3296,10 +3296,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public bool Disposed { get; private set; }
 
-        bool? IGpuActivitySource.IsActive(CancellationToken cancellationToken)
+        ValueTask<bool?> IGpuActivitySource.IsActiveAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Active;
+            return new(Active);
         }
 
         public void Dispose() => Disposed = true;
@@ -3311,14 +3311,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public ManualResetEventSlim Release { get; } = new();
 
-        public bool? IsActive(CancellationToken cancellationToken = default)
+        public ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
         {
             Entered.Set();
             if (!Release.Wait(TimeSpan.FromSeconds(5), cancellationToken))
             {
                 throw new TimeoutException("GPU activity probe was not released.");
             }
-            return true;
+            return new(true);
         }
 
         public void Dispose()

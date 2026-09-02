@@ -763,7 +763,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
-                    ReadManagedGpuClockOffsets(cancellationToken);
+                    await ReadManagedGpuClockOffsetsAsync(cancellationToken)
+                        .ConfigureAwait(false);
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
                 TransitionLightingReadResult lightingRead =
@@ -813,6 +814,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
+                GpuClockOffsetCapabilities? managedGpuClockOffsets =
+                    await ReadManagedGpuClockOffsetsAsync(cancellationToken)
+                        .ConfigureAwait(false);
                 return new ConfirmedDeviceState(
                     performanceFan.Performance,
                     performanceFan.Fans,
@@ -821,7 +825,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     HyperBoostActive = performanceFan.HyperBoostActive,
                     CustomPerformance = performanceFan.CustomPerformance,
-                    GpuClockOffsets = ReadManagedGpuClockOffsets(cancellationToken),
+                    GpuClockOffsets = managedGpuClockOffsets,
                 };
             }
         }
@@ -1615,7 +1619,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             };
         }
 
-        private GpuClockOffsetCapabilities? ReadManagedGpuClockOffsets(
+        private async ValueTask<GpuClockOffsetCapabilities?> ReadManagedGpuClockOffsetsAsync(
             CancellationToken cancellationToken)
         {
             GpuClockOffsetCapabilities? initialConfirmed;
@@ -1630,7 +1634,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 initialConfirmed = confirmedManagedGpuClockOffsets;
             }
 
-            bool? gpuActive = gpuActivitySource.IsActive(cancellationToken);
+            bool? gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
+                .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
             lock (gpuClockOffsetManagementSync)

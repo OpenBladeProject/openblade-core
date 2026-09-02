@@ -6,7 +6,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class GpuActivitySourceTests
 {
     [Fact]
-    public void IsActive_RefreshesAndPrimesBeforeEachDecisionAndObservesNewProcesses()
+    public async Task IsActive_RefreshesAndPrimesBeforeEachDecisionAndObservesNewProcesses()
     {
         List<string> calls = [];
         Queue<WindowsGpuActivitySnapshot> snapshots = new(
@@ -29,10 +29,14 @@ public sealed class GpuActivitySourceTests
                 calls.Add("read");
                 return snapshots.Dequeue();
             },
-            (milliseconds, _) => calls.Add($"delay:{milliseconds}"));
+            (milliseconds, _) =>
+            {
+                calls.Add($"delay:{milliseconds}");
+                return Task.CompletedTask;
+            });
 
-        Assert.Equal(false, source.IsActive());
-        Assert.Equal(true, source.IsActive());
+        Assert.Equal(false, await source.IsActiveAsync());
+        Assert.Equal(true, await source.IsActiveAsync());
 
         Assert.Equal(
             [
@@ -50,7 +54,7 @@ public sealed class GpuActivitySourceTests
     }
 
     [Fact]
-    public void IsActive_RefreshFailureReturnsUnknownWithoutReadingStaleSnapshot()
+    public async Task IsActive_RefreshFailureReturnsUnknownWithoutReadingStaleSnapshot()
     {
         int readCalls = 0;
         int delayCalls = 0;
@@ -63,16 +67,20 @@ public sealed class GpuActivitySourceTests
                     true,
                     [new WindowsGpuProcessActivity(42, 100)]);
             },
-            (_, _) => delayCalls++);
+            (_, _) =>
+            {
+                delayCalls++;
+                return Task.CompletedTask;
+            });
 
-        Assert.Null(source.IsActive());
+        Assert.Null(await source.IsActiveAsync());
 
         Assert.Equal(0, readCalls);
         Assert.Equal(0, delayCalls);
     }
 
     [Fact]
-    public void IsActive_UnavailableFinalSampleReturnsUnknown()
+    public async Task IsActive_UnavailableFinalSampleReturnsUnknown()
     {
         Queue<WindowsGpuActivitySnapshot> snapshots = new(
         [
@@ -86,15 +94,15 @@ public sealed class GpuActivitySourceTests
         var source = new WindowsGpuActivitySource(
             () => true,
             snapshots.Dequeue,
-            (_, _) => { });
+            (_, _) => Task.CompletedTask);
 
-        Assert.Null(source.IsActive());
+        Assert.Null(await source.IsActiveAsync());
 
         Assert.Empty(snapshots);
     }
 
     [Fact]
-    public void IsActive_CancellationDuringWaitSkipsFinalRead()
+    public async Task IsActive_CancellationDuringWaitSkipsFinalRead()
     {
         int readCalls = 0;
         using var cancellation = new CancellationTokenSource();
@@ -110,12 +118,38 @@ public sealed class GpuActivitySourceTests
                 Assert.Equal(150, milliseconds);
                 cancellation.Cancel();
                 Assert.True(cancellationToken.IsCancellationRequested);
+                return Task.CompletedTask;
             });
 
-        Assert.Throws<OperationCanceledException>(
-            () => source.IsActive(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => source.IsActiveAsync(cancellation.Token).AsTask());
 
         Assert.Equal(1, readCalls);
+    }
+
+    [Fact]
+    public async Task IsActive_WaitsAsynchronouslyInsteadOfBlockingTheCaller()
+    {
+        var waitStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseWait = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new WindowsGpuActivitySource(
+            () => true,
+            () => new WindowsGpuActivitySnapshot(true, []),
+            (_, _) =>
+            {
+                waitStarted.SetResult();
+                return releaseWait.Task;
+            });
+
+        ValueTask<bool?> decision = source.IsActiveAsync();
+        await waitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(decision.IsCompleted);
+        releaseWait.SetResult();
+
+        Assert.Equal(false, await decision.AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -124,9 +158,10 @@ public sealed class GpuActivitySourceTests
         object callsSync = new();
         List<string> calls = [];
         int delayCalls = 0;
-        using var firstDelayEntered = new ManualResetEventSlim();
-        using var releaseFirstDelay = new ManualResetEventSlim();
-        using var secondCallStarted = new ManualResetEventSlim();
+        var firstDelayEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstDelay = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var source = new WindowsGpuActivitySource(
             () =>
             {
@@ -152,19 +187,16 @@ public sealed class GpuActivitySourceTests
                 }
                 if (Interlocked.Increment(ref delayCalls) == 1)
                 {
-                    firstDelayEntered.Set();
-                    Assert.True(releaseFirstDelay.Wait(TimeSpan.FromSeconds(5)));
+                    firstDelayEntered.TrySetResult();
+                    return releaseFirstDelay.Task;
                 }
+
+                return Task.CompletedTask;
             });
 
-        Task<bool?> first = Task.Run(() => source.IsActive());
-        Assert.True(firstDelayEntered.Wait(TimeSpan.FromSeconds(5)));
-        Task<bool?> second = Task.Run(() =>
-        {
-            secondCallStarted.Set();
-            return source.IsActive();
-        });
-        Assert.True(secondCallStarted.Wait(TimeSpan.FromSeconds(5)));
+        Task<bool?> first = source.IsActiveAsync().AsTask();
+        await firstDelayEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task<bool?> second = source.IsActiveAsync().AsTask();
 
         try
         {
@@ -177,7 +209,7 @@ public sealed class GpuActivitySourceTests
         }
         finally
         {
-            releaseFirstDelay.Set();
+            releaseFirstDelay.SetResult();
         }
 
         Assert.Equal([false, false], await Task.WhenAll(first, second));
@@ -203,8 +235,10 @@ public sealed class GpuActivitySourceTests
     {
         int refreshCalls = 0;
         int readCalls = 0;
-        using var delayEntered = new ManualResetEventSlim();
-        using var releaseDelay = new ManualResetEventSlim();
+        var delayEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDelay = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         using var disposeStarted = new ManualResetEventSlim();
         var source = new WindowsGpuActivitySource(
             () =>
@@ -219,12 +253,12 @@ public sealed class GpuActivitySourceTests
             },
             (_, _) =>
             {
-                delayEntered.Set();
-                Assert.True(releaseDelay.Wait(TimeSpan.FromSeconds(5)));
+                delayEntered.TrySetResult();
+                return releaseDelay.Task;
             });
 
-        Task<bool?> decision = Task.Run(() => source.IsActive());
-        Assert.True(delayEntered.Wait(TimeSpan.FromSeconds(5)));
+        Task<bool?> decision = source.IsActiveAsync().AsTask();
+        await delayEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Task dispose = Task.Run(() =>
         {
             disposeStarted.Set();
@@ -239,18 +273,18 @@ public sealed class GpuActivitySourceTests
         }
         finally
         {
-            releaseDelay.Set();
+            releaseDelay.SetResult();
         }
 
         Assert.Equal(false, await decision);
         await dispose;
-        Assert.Null(source.IsActive());
+        Assert.Null(await source.IsActiveAsync());
         Assert.Equal(1, refreshCalls);
         Assert.Equal(2, readCalls);
     }
 
     [Fact]
-    public void IsActive_IgnoresSystemProcessPagingUnlessAUserProcessIsActive()
+    public async Task IsActive_IgnoresSystemProcessPagingUnlessAUserProcessIsActive()
     {
         Queue<WindowsGpuActivitySnapshot> snapshots = new(
         [
@@ -269,10 +303,10 @@ public sealed class GpuActivitySourceTests
         var source = new WindowsGpuActivitySource(
             () => true,
             snapshots.Dequeue,
-            (_, _) => { });
+            (_, _) => Task.CompletedTask);
 
-        Assert.Equal(false, source.IsActive());
-        Assert.Equal(true, source.IsActive());
+        Assert.Equal(false, await source.IsActiveAsync());
+        Assert.Equal(true, await source.IsActiveAsync());
         Assert.Empty(snapshots);
     }
 
