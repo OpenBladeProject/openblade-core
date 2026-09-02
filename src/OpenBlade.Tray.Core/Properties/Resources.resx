@@ -1321,17 +1321,15 @@
     <value>OpenBlade components have different versions. Update or repair OpenBlade to restore control.</value>
   </data>
   <data name="Restore them" xml:space="preserve"><value>Restore them</value></data>
-  <data name="Just tell me" xml:space="preserve"><value>Just tell me</value></data>
+  <data name="Notify me" xml:space="preserve"><value>Notify me</value></data>
   <data name="If settings change outside OpenBlade" xml:space="preserve"><value>If settings change outside OpenBlade</value></data>
   <data name="Fan speed and curve changes cannot be detected." xml:space="preserve"><value>Fan speed and curve changes cannot be detected.</value></data>
-  <data name="More about limits" xml:space="preserve"><value>More about limits</value></data>
   <data name="Affected controls" xml:space="preserve"><value>Affected controls</value></data>
   <data name="Affected controls:" xml:space="preserve"><value>Affected controls:</value></data>
   <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve"><value>OpenBlade now restores settings changed elsewhere</value></data>
-  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically." xml:space="preserve"><value>If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically.</value></data>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically." xml:space="preserve"><value>If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically.</value></data>
   <data name="Got it" xml:space="preserve"><value>Got it</value></data>
   <data name="Reapply" xml:space="preserve"><value>Reapply</value></data>
-  <data name="Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself." xml:space="preserve"><value>Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Up to date</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Checking current state</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Restoring saved settings</value></data>

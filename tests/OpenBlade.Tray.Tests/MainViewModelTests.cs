@@ -5532,10 +5532,6 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Fan speed and curve changes cannot be detected.",
             viewModel.ThermalControlPolicyCommonNote);
-        Assert.Contains(
-            "never turns on HyperBoost",
-            viewModel.ThermalPolicyLimitsDetail,
-            StringComparison.Ordinal);
         Assert.False(viewModel.HasThermalConvergenceAttention);
 
         Assert.True(await viewModel.SetThermalControlPolicyAsync(

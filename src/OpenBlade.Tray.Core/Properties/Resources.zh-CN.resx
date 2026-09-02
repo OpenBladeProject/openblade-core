@@ -1321,17 +1321,15 @@
     <value>OpenBlade 组件版本不一致。请更新或修复 OpenBlade 以恢复控制。</value>
   </data>
   <data name="Restore them" xml:space="preserve"><value>恢复设置</value></data>
-  <data name="Just tell me" xml:space="preserve"><value>仅通知我</value></data>
+  <data name="Notify me" xml:space="preserve"><value>通知我</value></data>
   <data name="If settings change outside OpenBlade" xml:space="preserve"><value>当设置在 OpenBlade 之外被更改时</value></data>
   <data name="Fan speed and curve changes cannot be detected." xml:space="preserve"><value>无法检测风扇转速和曲线的更改。</value></data>
-  <data name="More about limits" xml:space="preserve"><value>了解更多限制</value></data>
   <data name="Affected controls" xml:space="preserve"><value>受影响的控制项</value></data>
   <data name="Affected controls:" xml:space="preserve"><value>受影响的控制项：</value></data>
   <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve"><value>OpenBlade 现在会恢复在其他位置更改的设置</value></data>
-  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically." xml:space="preserve"><value>如果性能模式或风扇设置在 OpenBlade 之外被更改，现在会在通过安全检查后恢复。在你选择“知道了”之前，恢复将保持暂停。如果你只希望收到通知，请选择“仅通知我”。HyperBoost 绝不会自动开启。</value></data>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically." xml:space="preserve"><value>如果性能模式或风扇设置在 OpenBlade 之外被更改，现在会在通过安全检查后恢复。在你选择“知道了”之前，恢复将保持暂停。选择“通知我”即可只报告更改而不恢复。HyperBoost 绝不会自动开启。</value></data>
   <data name="Got it" xml:space="preserve"><value>知道了</value></data>
   <data name="Reapply" xml:space="preserve"><value>重新应用</value></data>
-  <data name="Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself." xml:space="preserve"><value>在两种模式下，OpenBlade 都会继续维护由其设置的风扇曲线安全性。OpenBlade 绝不会自行开启 HyperBoost。</value></data>
   <data name="Up to date" xml:space="preserve"><value>已匹配</value></data>
   <data name="Checking current state" xml:space="preserve"><value>正在检查当前状态</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>正在恢复已保存的设置</value></data>

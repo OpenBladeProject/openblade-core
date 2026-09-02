@@ -197,7 +197,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 TrayText.Get("Restore them")),
             new(
                 ThermalControlPolicy.Strict,
-                TrayText.Get("Just tell me")),
+                TrayText.Get("Notify me")),
         ],
         WindowsPowerModes:
         [
@@ -1366,18 +1366,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ThermalControlPolicyCommonNote => TrayText.Get(
         "Fan speed and curve changes cannot be detected.");
 
-    public string ThermalPolicyLimitsHeading => TrayText.Get("More about limits");
-
-    public string ThermalPolicyLimitsDetail => TrayText.Get(
-        "Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself.");
-
     public string ThermalAffectedComponentsLabel => TrayText.Get("Affected controls:");
 
     public string ThermalPolicyUpgradeDisclosureTitle => TrayText.Get(
         "OpenBlade now restores settings changed elsewhere");
 
     public string ThermalPolicyUpgradeDisclosureMessage => TrayText.Get(
-        "If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically.");
+        "If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically.");
 
     public string ThermalPolicyUpgradeDisclosureActionLabel => TrayText.Get("Got it");
 

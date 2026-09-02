@@ -1321,17 +1321,15 @@
     <value>Компоненты OpenBlade имеют разные версии. Обновите или восстановите OpenBlade, чтобы вернуть управление.</value>
   </data>
   <data name="Restore them" xml:space="preserve"><value>Восстановить их</value></data>
-  <data name="Just tell me" xml:space="preserve"><value>Только сообщать</value></data>
+  <data name="Notify me" xml:space="preserve"><value>Уведомлять меня</value></data>
   <data name="If settings change outside OpenBlade" xml:space="preserve"><value>Если настройки изменены вне OpenBlade</value></data>
   <data name="Fan speed and curve changes cannot be detected." xml:space="preserve"><value>Изменения скорости вентиляторов и кривой не обнаруживаются.</value></data>
-  <data name="More about limits" xml:space="preserve"><value>Подробнее об ограничениях</value></data>
   <data name="Affected controls" xml:space="preserve"><value>Затронутые элементы управления</value></data>
   <data name="Affected controls:" xml:space="preserve"><value>Затронутые элементы управления:</value></data>
   <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve"><value>Теперь OpenBlade восстанавливает настройки, изменённые в другом месте</value></data>
-  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically." xml:space="preserve"><value>Если режим производительности или настройка вентиляторов изменяются вне OpenBlade, они теперь восстанавливаются после проверок безопасности. Восстановление останется приостановленным, пока вы не нажмёте «Понятно». Выберите «Только сообщать», если нужно лишь уведомление. HyperBoost никогда не включается автоматически.</value></data>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically." xml:space="preserve"><value>Если режим производительности или настройка вентиляторов изменяются вне OpenBlade, они теперь восстанавливаются после проверок безопасности. Восстановление останется приостановленным, пока вы не нажмёте «Понятно». Выберите «Уведомлять меня», чтобы об изменениях только сообщалось без восстановления. HyperBoost никогда не включается автоматически.</value></data>
   <data name="Got it" xml:space="preserve"><value>Понятно</value></data>
   <data name="Reapply" xml:space="preserve"><value>Применить снова</value></data>
-  <data name="Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself." xml:space="preserve"><value>Безопасное обслуживание кривой вентиляторов, заданной OpenBlade, продолжается в обоих режимах. OpenBlade никогда не включает HyperBoost самостоятельно.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Соответствует настройкам</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Проверка текущего состояния</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Восстановление сохранённых настроек</value></data>

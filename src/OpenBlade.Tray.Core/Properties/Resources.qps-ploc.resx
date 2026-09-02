@@ -1323,17 +1323,14 @@
   <data name="Restore them" xml:space="preserve">
     <value>[!! Réstóré thém ~~~~ !!]</value>
   </data>
-  <data name="Just tell me" xml:space="preserve">
-    <value>[!! Júst téll mé ~~~~ !!]</value>
+  <data name="Notify me" xml:space="preserve">
+    <value>[!! Nótífý mé ~~~ !!]</value>
   </data>
   <data name="If settings change outside OpenBlade" xml:space="preserve">
     <value>[!! Íf séttíngs chángé óútsídé OpenBlade ~~~~~~~~~ !!]</value>
   </data>
   <data name="Fan speed and curve changes cannot be detected." xml:space="preserve">
     <value>[!! Fán spééd ánd cúrvé chángés cánnót bé détéctéd. ~~~~~~~~~~~~~~ !!]</value>
-  </data>
-  <data name="More about limits" xml:space="preserve">
-    <value>[!! Móré ábóút límíts ~~~~~~ !!]</value>
   </data>
   <data name="Affected controls" xml:space="preserve">
     <value>[!! Áfféctéd cóntróls ~~~~~~ !!]</value>
@@ -1344,17 +1341,14 @@
   <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve">
     <value>[!! OpenBlade nów réstórés séttíngs chángéd élséwhéré ~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Just tell me if you only want to be notified. HyperBoost is never turned on automatically." xml:space="preserve">
-    <value>[!! Íf ýóúr pérfórmáncé módé ór fán séttíng chángés óútsídé OpenBlade, ít ís nów réstóréd áftér sáfétý chécks. Réstórátíón stáýs páúséd úntíl ýóú séléct Gót ít. Chóósé Júst téll mé íf ýóú ónlý wánt tó bé nótífíéd. HýpérBóóst ís névér túrnéd ón áútómátícállý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically." xml:space="preserve">
+    <value>[!! Íf ýóúr pérfórmáncé módé ór fán séttíng chángés óútsídé OpenBlade, ít ís nów réstóréd áftér sáfétý chécks. Réstórátíón stáýs páúséd úntíl ýóú séléct Gót ít. Chóósé Nótífý mé tó hávé chángés répórtéd wíthóút réstóríng thém. HýpérBóóst ís névér túrnéd ón áútómátícállý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Got it" xml:space="preserve">
     <value>[!! Gót ít ~~ !!]</value>
   </data>
   <data name="Reapply" xml:space="preserve">
     <value>[!! Réápplý ~~~ !!]</value>
-  </data>
-  <data name="Safety maintenance for a fan curve OpenBlade set continues in both modes. OpenBlade never turns on HyperBoost by itself." xml:space="preserve">
-    <value>[!! Sáfétý máínténáncé fór á fán cúrvé OpenBlade sét cóntínúés ín bóth módés. OpenBlade névér túrns ón HýpérBóóst bý ítsélf. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Up to date" xml:space="preserve">
     <value>[!! Úp tó dáté ~~~ !!]</value>

@@ -10,7 +10,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added automatic restoration of performance and fan settings changed outside
   OpenBlade, and made it the default. The service reconciles confirmed
   performance and fan-topology drift through one bounded, journaled transition
-  authority. The setting offers Restore them, or Just tell me, which reports
+  authority. The setting offers Restore them, or Notify me, which reports
   the change and leaves it in place. It also states that fan speed and curve
   changes cannot be detected, because firmware reports only generic manual
   control. Upgraded profiles require an in-app disclosure acknowledgement

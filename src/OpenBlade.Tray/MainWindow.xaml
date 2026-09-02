@@ -3181,15 +3181,6 @@
                                         <TextBlock Text="{x:Bind ViewModel.ThermalControlPolicyCommonNote, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
-                                        <Expander Header="{x:Bind ViewModel.ThermalPolicyLimitsHeading, Mode=OneWay}"
-                                                  Margin="0,4,0,0"
-                                                  HorizontalAlignment="Left"
-                                                  HorizontalContentAlignment="Stretch"
-                                                  AutomationProperties.Name="{x:Bind ViewModel.ThermalPolicyLimitsHeading, Mode=OneWay}">
-                                            <TextBlock Text="{x:Bind ViewModel.ThermalPolicyLimitsDetail, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap" />
-                                        </Expander>
                                     </StackPanel>
                                     <local:ResponsiveChoiceSelector x:Name="ThermalControlPolicySelector"
                                                                     Grid.Column="1"
