@@ -153,7 +153,7 @@ try {
     }
 }
 finally {
-    Remove-Item Function:\global:dotnet
+    Remove-Item Function:\dotnet
     Remove-Variable OpenBladeMockDotNetCalls -Scope Global
     $resolvedTemporaryRoot = [IO.Path]::GetFullPath($temporaryRoot)
     $resolvedSystemTemporaryRoot = [IO.Path]::GetFullPath(
@@ -196,6 +196,13 @@ $wrongLane = [ordered]@{
 Assert-ThrowsLike -Pattern '*outside its lane*' -Message `
     'The affected runner must reject scripts outside Build.Tests.' -Action {
     & $runner -Lane Contracts -PlanJson $wrongLane
+}
+
+if (Get-Command dotnet -CommandType Function -ErrorAction SilentlyContinue) {
+    throw 'The affected runner tests must remove their global dotnet function.'
+}
+if (Get-Variable OpenBladeMockDotNetCalls -Scope Global -ErrorAction SilentlyContinue) {
+    throw 'The affected runner tests must remove their global call collection.'
 }
 
 Write-Host 'Affected CI runner tests passed.'

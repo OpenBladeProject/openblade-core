@@ -39,6 +39,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         "--responsive-choice-selector-smoke";
     private const string LiveLocalizationSmokeArgument =
         "--live-localization-smoke";
+    private const string LiveLocalizationSmokePreferencePathVariable =
+        "OPENBLADE_LIVE_LOCALIZATION_SMOKE_PREFERENCE_PATH";
     private const string LocalizationSnapshotDirectoryVariable =
         "OPENBLADE_LOCALIZATION_SNAPSHOT_DIR";
     private const string LocalizationSnapshotPageVariable =
@@ -116,7 +118,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (commandLineArguments is
             [_, LiveLocalizationSmokeArgument, string localizationSmokeReportPath])
         {
-            _ = RunLiveLocalizationSmokeAsync(localizationSmokeReportPath);
+            _ = RunLiveLocalizationSmokeAsync(
+                localizationSmokeReportPath,
+                Environment.GetEnvironmentVariable(
+                    LiveLocalizationSmokePreferencePathVariable));
             return;
         }
         if (commandLineArguments is [_, XamlStartupSmokeArgument, string smokeReportPath])
@@ -411,10 +416,28 @@ public partial class App : Microsoft.UI.Xaml.Application
             ? "qps-ploc"
             : Environment.GetEnvironmentVariable(LocalizationLanguageVariable);
 
-    private async Task RunLiveLocalizationSmokeAsync(string smokeReportPath)
+    private async Task RunLiveLocalizationSmokeAsync(
+        string smokeReportPath,
+        string? preferencePath)
     {
+        LiveLocalizationSmokeContext? smokeContext = null;
         try
         {
+            smokeContext = new LiveLocalizationSmokeContext(
+                smokeReportPath,
+                string.IsNullOrWhiteSpace(preferencePath)
+                    ? UiPreferenceStore.CreateDefault()
+                    : new UiPreferenceStore(preferencePath));
+            UnhandledException += (_, eventArgs) => smokeContext.Report(
+                $"WinUI unhandled exception: {eventArgs.Exception}");
+            smokeContext.Report("initialize smoke infrastructure");
+            smokeContext.Report("load expected smoke preferences");
+            UiPreferences expectedPreferences = await smokeContext.PreferenceStore
+                .LoadAsync()
+                .WaitAsync(LiveLocalizationSmokeContext.RefreshTimeout);
+            SpecialKeyBindingPreference[] expectedBindings = expectedPreferences
+                .EffectiveSpecialKeyBindings
+                .ToArray();
             System.Windows.Forms.Application.EnableVisualStyles();
             processorPolicy = WindowsProcessorEfficiencyPolicy.Discover();
             uiDispatcherQueue = DispatcherQueue.GetForCurrentThread()
@@ -469,20 +492,38 @@ public partial class App : Microsoft.UI.Xaml.Application
             ApplyRuntimeLocalizationPreference(cases[0].Preference);
             MainWindow initialWindow = CreateMainWindow(
                 startupRegistration,
-                cases[0].Preference);
+                cases[0].Preference,
+                smokeContext.PreferenceStore,
+                UpdateCheckInterval.ManualOnly);
             AttachWindowSurfaces(initialWindow, sessionAgentEventEndpoint);
-            await windowInitializationTask;
+            await smokeContext.RunPhaseAsync(
+                "initialize Russian window",
+                () => windowInitializationTask,
+                LiveLocalizationSmokeContext.RefreshTimeout);
             initialWindow.ShowAndActivate();
             CreateTrayIconHost();
             AssertLiveLocalizationState(cases[0], previousWindow: null);
+            SpecialKeyBindingPreference[] initialBindings = initialWindow
+                .SpecialKeyBindings
+                .Select(binding => binding.ToPreference())
+                .ToArray();
+            if (!expectedBindings.SequenceEqual(initialBindings))
+            {
+                throw new InvalidOperationException(
+                    "The localization smoke did not load the isolated M-key preferences.");
+            }
 
             ITrayIconHost initialTrayIcon = trayIconHost
                 ?? throw new InvalidOperationException(
                     "The localization smoke test did not create a tray icon.");
-            await RefreshLanguageAsync(
-                UiLanguagePreference.SimplifiedChinese,
-                _ => throw new InvalidOperationException(
-                    "Injected replacement tray icon failure."));
+            await smokeContext.RunPhaseAsync(
+                "refresh Russian to failed Chinese rollback",
+                () => RefreshLanguageAsync(
+                    UiLanguagePreference.SimplifiedChinese,
+                    _ => throw new InvalidOperationException(
+                        "Injected replacement tray icon failure."),
+                    smokeContext),
+                LiveLocalizationSmokeContext.RefreshTimeout);
             if (!ReferenceEquals(mainWindow, initialWindow)
                 || !ReferenceEquals(trayIconHost, initialTrayIcon)
                 || !initialWindow.IsWindowVisible)
@@ -509,7 +550,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                     presenter.Maximize();
                 }
 
-                await RefreshLanguageAsync(smokeCase.Preference);
+                await smokeContext.RunPhaseAsync(
+                    $"refresh to {smokeCase.Preference}",
+                    () => RefreshLanguageAsync(
+                        smokeCase.Preference,
+                        liveLocalizationSmokeContext: smokeContext),
+                    LiveLocalizationSmokeContext.RefreshTimeout);
                 AssertLiveLocalizationState(
                     smokeCase,
                     previousWindow,
@@ -525,16 +571,54 @@ public partial class App : Microsoft.UI.Xaml.Application
                 }
             }
 
-            File.WriteAllText(smokeReportPath, "completed");
-            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            await smokeContext.RunPhaseAsync(
+                "dispose live localization smoke surfaces",
+                () => DisposeLiveLocalizationSmokeSurfacesAsync(smokeContext),
+                LiveLocalizationSmokeContext.CleanupTimeout);
+            smokeContext.Report("completed");
             Environment.Exit(0);
         }
         catch (Exception exception)
         {
-            File.WriteAllText(smokeReportPath, exception.ToString());
-            await DisposeLiveLocalizationSmokeSurfacesAsync();
+            ReportLiveLocalizationSmokeFailure(
+                smokeContext,
+                smokeReportPath,
+                exception);
+            if (exception is LiveLocalizationSmokePhaseTimeoutException)
+            {
+                Environment.Exit(1);
+                return;
+            }
+            if (smokeContext is not null)
+            {
+                try
+                {
+                    await smokeContext.RunPhaseAsync(
+                        "dispose live localization smoke surfaces after failure",
+                        () => DisposeLiveLocalizationSmokeSurfacesAsync(smokeContext),
+                        LiveLocalizationSmokeContext.CleanupTimeout);
+                }
+                catch (Exception cleanupException)
+                {
+                    smokeContext.Report($"cleanup failed: {cleanupException}");
+                }
+            }
             Environment.Exit(1);
         }
+    }
+
+    private static void ReportLiveLocalizationSmokeFailure(
+        LiveLocalizationSmokeContext? smokeContext,
+        string smokeReportPath,
+        Exception exception)
+    {
+        if (smokeContext is not null)
+        {
+            smokeContext.Report($"failed: {exception}");
+            return;
+        }
+
+        File.WriteAllText(smokeReportPath, exception.ToString());
     }
 
     private void AssertLiveLocalizationState(
@@ -620,7 +704,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             "M1 selected action");
     }
 
-    private async Task DisposeLiveLocalizationSmokeSurfacesAsync()
+    private async Task DisposeLiveLocalizationSmokeSurfacesAsync(
+        LiveLocalizationSmokeContext smokeContext)
     {
         DisposeSurfaceSafely("localization smoke tray icon", trayIconHost);
         trayIconHost = null;
@@ -639,8 +724,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (mainWindow is not null)
         {
             DetachWindowEvents(mainWindow);
+            smokeContext.Report("dispose current localization smoke window");
             await DisposeWindowSafelyAsync(mainWindow);
-            CloseWindowSafely(mainWindow);
+            await CloseWindowSafelyAsync(mainWindow);
             mainWindow = null;
         }
         DisposeSurfaceSafely(
@@ -951,34 +1037,44 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "The localization snapshot window has no renderable content.");
         }
 
-        var bitmap = new RenderTargetBitmap();
-        await bitmap.RenderAsync(element);
-        if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+        LocalizationSnapshotFrame stableFrame =
+            await CaptureCanonicalSnapshotFrameAsync(element);
+        var stabilization = Stopwatch.StartNew();
+        while (true)
         {
-            throw new InvalidOperationException(
-                "The localization snapshot window produced an empty image.");
+            await Task.Delay(100);
+            LocalizationSnapshotFrame candidate =
+                await CaptureCanonicalSnapshotFrameAsync(element);
+            if (stableFrame.Width == candidate.Width
+                && stableFrame.Height == candidate.Height
+                && stableFrame.Pixels.AsSpan().SequenceEqual(candidate.Pixels))
+            {
+                stableFrame = candidate;
+                break;
+            }
+
+            if (stabilization.Elapsed >= TimeSpan.FromSeconds(10))
+            {
+                throw new InvalidOperationException(
+                    "The localization snapshot did not produce two consecutive "
+                        + "canonical frames within 10 seconds.");
+            }
+
+            stableFrame = candidate;
         }
 
-        Windows.Storage.Streams.IBuffer pixels = await bitmap.GetPixelsAsync();
         using var stream = new InMemoryRandomAccessStream();
         BitmapEncoder encoder = await BitmapEncoder.CreateAsync(
             BitmapEncoder.PngEncoderId,
             stream);
-        using var pixelReader = DataReader.FromBuffer(pixels);
-        byte[] pixelBytes = new byte[checked((int)pixels.Length)];
-        pixelReader.ReadBytes(pixelBytes);
-        CanonicalizeLocalizationSnapshotPixels(
-            pixelBytes,
-            bitmap.PixelWidth,
-            bitmap.PixelHeight);
         encoder.SetPixelData(
             BitmapPixelFormat.Bgra8,
             BitmapAlphaMode.Premultiplied,
-            checked((uint)bitmap.PixelWidth),
-            checked((uint)bitmap.PixelHeight),
+            checked((uint)stableFrame.Width),
+            checked((uint)stableFrame.Height),
             96,
             96,
-            pixelBytes);
+            stableFrame.Pixels);
         await encoder.FlushAsync();
 
         stream.Seek(0);
@@ -989,126 +1085,35 @@ public partial class App : Microsoft.UI.Xaml.Application
         await File.WriteAllBytesAsync(path, encoded);
     }
 
-    private static void CanonicalizeLocalizationSnapshotPixels(
-        byte[] pixels,
-        int width,
-        int height)
+    private static async Task<LocalizationSnapshotFrame>
+        CaptureCanonicalSnapshotFrameAsync(UIElement element)
     {
-        if (width <= 0 || height <= 0 ||
-            pixels.Length != checked(width * height * 4))
+        var bitmap = new RenderTargetBitmap();
+        await bitmap.RenderAsync(element);
+        if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
         {
             throw new InvalidOperationException(
-                "The localization snapshot pixel buffer is not BGRA8 data.");
+                "The localization snapshot window produced an empty image.");
         }
 
-        for (int index = 0; index < pixels.Length; index += 4)
-        {
-            byte alpha = pixels[index + 3];
-            for (int channel = 0; channel < 3; channel++)
-            {
-                byte value = pixels[index + channel];
-                byte canonical = value is 0 or 255
-                    ? value
-                    : (byte)((value & 0xF0) | 0x07);
-                pixels[index + channel] = Math.Min(canonical, alpha);
-            }
-        }
-
-        byte[] quantized = (byte[])pixels.Clone();
-        for (int y = 1; y < height - 1; y++)
-        {
-            for (int x = 1; x < width - 1; x++)
-            {
-                int centerIndex = ((y * width) + x) * 4;
-                uint center = ReadSnapshotPixel(quantized, centerIndex);
-                uint majority = 0;
-                int majorityBalance = 0;
-                for (int candidateY = y - 1; candidateY <= y + 1; candidateY++)
-                {
-                    for (int candidateX = x - 1; candidateX <= x + 1; candidateX++)
-                    {
-                        if (candidateX == x && candidateY == y)
-                        {
-                            continue;
-                        }
-
-                        uint candidate = ReadSnapshotPixel(
-                            quantized,
-                            ((candidateY * width) + candidateX) * 4);
-                        if (majorityBalance == 0)
-                        {
-                            majority = candidate;
-                            majorityBalance = 1;
-                        }
-                        else
-                        {
-                            majorityBalance += candidate == majority ? 1 : -1;
-                        }
-                    }
-                }
-
-                int majorityCount = 0;
-                for (int neighborY = y - 1; neighborY <= y + 1; neighborY++)
-                {
-                    for (int neighborX = x - 1; neighborX <= x + 1; neighborX++)
-                    {
-                        if ((neighborX != x || neighborY != y) &&
-                            ReadSnapshotPixel(
-                                quantized,
-                                ((neighborY * width) + neighborX) * 4) == majority)
-                        {
-                            majorityCount++;
-                        }
-                    }
-                }
-
-                if (majorityCount >= 6 &&
-                    IsAdjacentSnapshotPaletteColor(center, majority))
-                {
-                    WriteSnapshotPixel(pixels, centerIndex, majority);
-                }
-            }
-        }
+        Windows.Storage.Streams.IBuffer pixels = await bitmap.GetPixelsAsync();
+        using var pixelReader = DataReader.FromBuffer(pixels);
+        byte[] pixelBytes = new byte[checked((int)pixels.Length)];
+        pixelReader.ReadBytes(pixelBytes);
+        LocalizationSnapshotPixelCanonicalizer.Canonicalize(
+            pixelBytes,
+            bitmap.PixelWidth,
+            bitmap.PixelHeight);
+        return new LocalizationSnapshotFrame(
+            bitmap.PixelWidth,
+            bitmap.PixelHeight,
+            pixelBytes);
     }
 
-    private static uint ReadSnapshotPixel(byte[] pixels, int index)
-    {
-        return (uint)(pixels[index] |
-            (pixels[index + 1] << 8) |
-            (pixels[index + 2] << 16) |
-            (pixels[index + 3] << 24));
-    }
-
-    private static void WriteSnapshotPixel(byte[] pixels, int index, uint value)
-    {
-        pixels[index] = (byte)value;
-        pixels[index + 1] = (byte)(value >> 8);
-        pixels[index + 2] = (byte)(value >> 16);
-        pixels[index + 3] = (byte)(value >> 24);
-    }
-
-    private static bool IsAdjacentSnapshotPaletteColor(uint value, uint candidate)
-    {
-        if ((byte)(value >> 24) != (byte)(candidate >> 24))
-        {
-            return false;
-        }
-
-        bool differs = false;
-        for (int shift = 0; shift <= 16; shift += 8)
-        {
-            int channelDelta = Math.Abs(
-                (byte)(value >> shift) - (byte)(candidate >> shift));
-            if (channelDelta > 16)
-            {
-                return false;
-            }
-
-            differs |= channelDelta != 0;
-        }
-
-        return differs;
-    }
+    private readonly record struct LocalizationSnapshotFrame(
+        int Width,
+        int Height,
+        byte[] Pixels);
 
     private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)
     {
@@ -1852,12 +1857,6 @@ public partial class App : Microsoft.UI.Xaml.Application
             layoutWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 600));
             layoutWindow.Activate();
             await layoutLoaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            double rasterizationScale = layoutSelector.XamlRoot?.RasterizationScale ?? 1;
-            layoutWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(
-                (int)Math.Ceiling(1400 * rasterizationScale),
-                (int)Math.Ceiling(600 * rasterizationScale)));
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
 
             var layoutCompact = layoutSelector.FindName("CompactSelector")
                 as Microsoft.UI.Xaml.Controls.ComboBox
@@ -1865,66 +1864,85 @@ public partial class App : Microsoft.UI.Xaml.Application
             var layoutExpanded = layoutSelector.FindName("ExpandedSelector")
                 as Microsoft.UI.Xaml.Controls.SelectorBar
                 ?? throw new InvalidOperationException("Layout expanded selector was not created.");
+            string DescribeLayout() => FormattableString.Invariant(
+                $"windowPixels={layoutWindow.AppWindow.Size.Width}x{layoutWindow.AppWindow.Size.Height}, {layoutSelector.CaptureLayoutSnapshot()}, hostActual={layoutHost.ActualWidth:F1}, supporting={supportingContent.ActualWidth:F1}, authoritative={(layoutSelector.SelectedItem as ResponsiveChoiceSelectorSmokeOption)?.Key ?? "<null>"}, compactSelection={(layoutCompact.SelectedItem as ResponsiveChoiceSelectorSmokeOption)?.Key ?? "<null>"}, expandedSelection={(layoutExpanded.SelectedItem?.Tag as ResponsiveChoiceSelectorSmokeOption)?.Key ?? "<null>"}");
+            double rasterizationScale = layoutSelector.XamlRoot?.RasterizationScale ?? 1;
+            ResponsiveChoiceSelectorLayoutSnapshot wideLayout =
+                await WaitForResponsiveSelectorLayoutAsync(
+                    layoutHost,
+                    layoutSelector,
+                    () => layoutWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(
+                        (int)Math.Ceiling(1400 * rasterizationScale),
+                        (int)Math.Ceiling(600 * rasterizationScale))),
+                    layout => layout.ExpandedVisible && layout.ExpandedWidth > 0,
+                    "A wide settings row did not use the expanded presentation",
+                    DescribeLayout);
             RequireResponsiveSelector(
                 layoutCompact.Visibility == Visibility.Collapsed
                     && layoutExpanded.Visibility == Visibility.Visible,
-                "A wide settings row did not use the expanded presentation.");
-            double expandedWidth = layoutExpanded.ActualWidth;
+                $"A wide settings row did not use the expanded presentation: {DescribeLayout()}.");
+            double expandedWidth = wideLayout.ExpandedWidth;
             RequireResponsiveSelector(
                 double.IsFinite(expandedWidth) && expandedWidth > 0,
-                "The expanded presentation did not report a usable width.");
+                $"The expanded presentation did not report a usable width: {DescribeLayout()}.");
 
             const double minimumSupportingWidth = 240;
-            double constrainedHostWidth = expandedWidth
-                + layoutHost.ColumnSpacing
-                + minimumSupportingWidth
-                - 1;
-            layoutHost.Width = constrainedHostWidth;
-            layoutHost.UpdateLayout();
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            double constrainedHostWidth = wideLayout.MinimumHostWidth - 1;
+            ResponsiveChoiceSelectorLayoutSnapshot constrainedLayout =
+                await WaitForResponsiveSelectorLayoutAsync(
+                    layoutHost,
+                    layoutSelector,
+                    () => layoutHost.Width = constrainedHostWidth,
+                    layout => layout.CompactVisible
+                        && supportingContent.ActualWidth >= minimumSupportingWidth,
+                    "A constrained settings row did not use the compact presentation",
+                    DescribeLayout);
             RequireResponsiveSelector(
                 layoutCompact.Visibility == Visibility.Visible
                     && layoutExpanded.Visibility == Visibility.Collapsed,
                 $"A constrained settings row did not use the compact presentation: "
-                + $"host={layoutHost.ActualWidth}, supporting={supportingContent.ActualWidth}, "
-                + $"expanded={layoutExpanded.ActualWidth}, measured={expandedWidth}.");
+                    + $"{DescribeLayout()}.");
             RequireResponsiveSelector(
                 supportingContent.ActualWidth >= minimumSupportingWidth,
-                "The compact presentation did not preserve supporting content width.");
+                $"The compact presentation did not preserve supporting content width: "
+                    + $"{DescribeLayout()}.");
 
             File.WriteAllText(smokeReportPath, "restore expanded responsive host");
-            double latestExpandedWidth = Math.Max(
-                expandedWidth,
-                layoutExpanded.ActualWidth);
-            layoutHost.Width = latestExpandedWidth
-                + layoutHost.ColumnSpacing
-                + minimumSupportingWidth
-                + 2;
-            layoutHost.UpdateLayout();
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            double restoredHostWidth = constrainedLayout.MinimumHostWidth + 2;
+            await WaitForResponsiveSelectorLayoutAsync(
+                layoutHost,
+                layoutSelector,
+                () => layoutHost.Width = restoredHostWidth,
+                layout => layout.ExpandedVisible
+                    && layout.AvailableWidth >= layout.MinimumHostWidth
+                    && supportingContent.ActualWidth >= minimumSupportingWidth,
+                "A widened settings row did not safely restore the expanded presentation",
+                DescribeLayout);
             RequireResponsiveSelector(
                 layoutCompact.Visibility == Visibility.Collapsed
                     && layoutExpanded.Visibility == Visibility.Visible
                     && supportingContent.ActualWidth >= minimumSupportingWidth,
                 $"A widened settings row did not safely restore the expanded presentation: "
-                + $"host={layoutHost.ActualWidth}, supporting={supportingContent.ActualWidth}, "
-                + $"expanded={layoutExpanded.ActualWidth}, measured={expandedWidth}.");
+                    + $"{DescribeLayout()}.");
 
-            layoutHost.Width = constrainedHostWidth;
-            layoutHost.UpdateLayout();
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
-            await DrainDispatcherAsync(layoutSelector.DispatcherQueue);
+            await WaitForResponsiveSelectorLayoutAsync(
+                layoutHost,
+                layoutSelector,
+                () => layoutHost.Width = constrainedHostWidth,
+                layout => layout.CompactVisible
+                    && ReferenceEquals(layoutCompact.SelectedItem, powerModeOptions[0]),
+                "A second constrained layout did not preserve compact selection",
+                DescribeLayout);
             RequireResponsiveSelector(
                 layoutCompact.Visibility == Visibility.Visible
                     && layoutExpanded.Visibility == Visibility.Collapsed
                     && ReferenceEquals(layoutCompact.SelectedItem, powerModeOptions[0]),
-                "A second constrained layout did not preserve compact selection.");
+                $"A second constrained layout did not preserve compact selection: "
+                    + $"{DescribeLayout()}.");
 
+            File.WriteAllText(smokeReportPath, $"completed: {DescribeLayout()}");
             layoutWindow.Close();
             smokeWindow.Close();
-            File.WriteAllText(smokeReportPath, "completed");
             Environment.Exit(0);
         }
         catch (Exception exception)
@@ -1945,6 +1963,51 @@ public partial class App : Microsoft.UI.Xaml.Application
             throw new InvalidOperationException("The responsive selector dispatcher is unavailable.");
         }
         return drained.Task;
+    }
+
+    private static async Task<ResponsiveChoiceSelectorLayoutSnapshot>
+        WaitForResponsiveSelectorLayoutAsync(
+            Microsoft.UI.Xaml.FrameworkElement layoutRoot,
+            ResponsiveChoiceSelector selector,
+            Action changeLayout,
+            Func<ResponsiveChoiceSelectorLayoutSnapshot, bool> isComplete,
+            string expectation,
+            Func<string> describeLayout)
+    {
+        var completed = new TaskCompletionSource<ResponsiveChoiceSelectorLayoutSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        ResponsiveChoiceSelectorLayoutSnapshot latest = selector.CaptureLayoutSnapshot();
+
+        void ObserveLayout()
+        {
+            latest = selector.CaptureLayoutSnapshot();
+            if (isComplete(latest))
+            {
+                completed.TrySetResult(latest);
+            }
+        }
+
+        void OnLayoutUpdated(object? sender, object args) => ObserveLayout();
+
+        layoutRoot.LayoutUpdated += OnLayoutUpdated;
+        try
+        {
+            changeLayout();
+            layoutRoot.UpdateLayout();
+            ObserveLayout();
+            return await completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (TimeoutException exception)
+        {
+            throw new InvalidOperationException(
+                $"{expectation} after observable layout completion: "
+                    + $"{describeLayout()}, latest={latest}.",
+                exception);
+        }
+        finally
+        {
+            layoutRoot.LayoutUpdated -= OnLayoutUpdated;
+        }
     }
 
     private static void RequireResponsiveSelector(bool condition, string message)
@@ -1968,6 +2031,44 @@ public partial class App : Microsoft.UI.Xaml.Application
         string ExpectedDefaultAction,
         string ExpectedKeyboardShortcutAction,
         string ExpectedActionAccessibleName);
+
+    private sealed class LiveLocalizationSmokeContext(
+        string reportPath,
+        UiPreferenceStore preferenceStore)
+    {
+        public static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(8);
+        public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
+
+        public UiPreferenceStore PreferenceStore { get; } = preferenceStore;
+
+        public void Report(string phase) => File.AppendAllText(
+            reportPath,
+            $"{DateTimeOffset.UtcNow:O} {phase}{Environment.NewLine}");
+
+        public async Task RunPhaseAsync(
+            string phase,
+            Func<Task> operation,
+            TimeSpan timeout)
+        {
+            Report(phase);
+            try
+            {
+                await operation().WaitAsync(timeout);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new LiveLocalizationSmokePhaseTimeoutException(
+                    $"Live localization smoke phase '{phase}' exceeded "
+                    + $"{timeout.TotalSeconds:0} seconds.",
+                    exception);
+            }
+        }
+    }
+
+    private sealed class LiveLocalizationSmokePhaseTimeoutException(
+        string message,
+        Exception innerException)
+        : TimeoutException(message, innerException);
 
     private sealed class ResponsiveChoiceSelectorSmokeModel(
         IReadOnlyList<ResponsiveChoiceSelectorSmokeOption> options,
@@ -2004,13 +2105,17 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private MainWindow CreateMainWindow(
         IStartupRegistration startupRegistration,
-        UiLanguagePreference? initialLanguageOverride = null)
+        UiLanguagePreference? initialLanguageOverride = null,
+        UiPreferenceStore? preferenceStore = null,
+        UpdateCheckInterval? initialUpdateCheckConsentOverride = null)
     {
         return new MainWindow(
             processorPolicy,
             startupRegistration,
             TryShowTrayNotification,
-            initialLanguageOverride: initialLanguageOverride);
+            initialLanguageOverride: initialLanguageOverride,
+            preferenceStore: preferenceStore,
+            initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride);
     }
 
     private void AttachWindowSurfaces(
@@ -2099,7 +2204,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private async Task RefreshLanguageAsync(
         UiLanguagePreference preference,
-        Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null)
+        Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null,
+        LiveLocalizationSmokeContext? liveLocalizationSmokeContext = null)
     {
         MainWindow? previousWindow = mainWindow;
         IStartupRegistration? registration = startupRegistration;
@@ -2132,15 +2238,29 @@ public partial class App : Microsoft.UI.Xaml.Application
                 ?? SystemUiCulture.Name;
             using IDisposable temporaryTrayLanguage =
                 TrayLocalization.BeginTemporaryLanguageOverride(replacementTrayLanguage);
+            liveLocalizationSmokeContext?.Report(
+                $"hide previous window for {preference}");
             previousWindow.StartHiddenObservation();
             previousWindow.AppWindow.Hide();
             ApplyRuntimeLocalizationPreference(
                 preference,
                 commitTrayLanguage: false);
+            liveLocalizationSmokeContext?.Report(
+                $"create {preference} replacement window");
 
-            replacement = CreateMainWindow(registration, preference);
+            replacement = CreateMainWindow(
+                registration,
+                preference,
+                liveLocalizationSmokeContext?.PreferenceStore,
+                liveLocalizationSmokeContext is null
+                    ? null
+                    : UpdateCheckInterval.ManualOnly);
             Task replacementInitialization = replacement.InitializeAsync();
+            liveLocalizationSmokeContext?.Report(
+                $"initialize {preference} replacement window");
             await replacementInitialization;
+            liveLocalizationSmokeContext?.Report(
+                $"create {preference} replacement surfaces");
             replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint);
             replacementTrayIcon = replacementTrayIconFactory?.Invoke(replacement)
                 ?? CreateTrayIconHost(replacement);
@@ -2163,8 +2283,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             {
                 DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
                 replacementSurfaces.Dispose();
+                liveLocalizationSmokeContext?.Report(
+                    $"dispose replacement {preference} window during exit");
                 await DisposeWindowSafelyAsync(replacement);
-                CloseWindowSafely(replacement);
+                await CloseWindowSafelyAsync(replacement);
                 return;
             }
 
@@ -2195,12 +2317,24 @@ public partial class App : Microsoft.UI.Xaml.Application
 
             DisposeSurfaceSafely("previous tray icon", previousTrayIcon);
             previousSurfaces.Dispose();
+            liveLocalizationSmokeContext?.Report(
+                $"dispose previous window before committing {preference}");
             await DisposeWindowSafelyAsync(previousWindow);
-            CloseWindowSafely(previousWindow);
+            liveLocalizationSmokeContext?.Report(
+                $"close previous window before completing {preference}");
+            if (!await CloseWindowSafelyAsync(previousWindow))
+            {
+                throw new InvalidOperationException(
+                    $"The previous window did not close while applying {preference}.");
+            }
+            liveLocalizationSmokeContext?.Report(
+                $"previous window closed for {preference}");
 
             if (wasVisible)
             {
                 replacement.ShowLanguageSettings();
+                liveLocalizationSmokeContext?.Report(
+                    $"start update checking after {preference} refresh");
                 await replacement.StartUpdateCheckingAsync();
             }
         }
@@ -2215,14 +2349,20 @@ public partial class App : Microsoft.UI.Xaml.Application
                 {
                     replacement.ShowAndActivate();
                 }
+                if (liveLocalizationSmokeContext is not null)
+                {
+                    throw;
+                }
                 return;
             }
             DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
             replacementSurfaces?.Dispose();
             if (replacement is not null)
             {
+                liveLocalizationSmokeContext?.Report(
+                    $"dispose failed {preference} replacement window");
                 await DisposeWindowSafelyAsync(replacement);
-                CloseWindowSafely(replacement);
+                await CloseWindowSafelyAsync(replacement);
             }
             ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
             CultureInfo.CurrentUICulture = previousUiCulture;
@@ -2319,17 +2459,30 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private static void CloseWindowSafely(MainWindow window)
+    private static async Task<bool> CloseWindowSafelyAsync(MainWindow window)
     {
+        var closed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnClosed(object sender, WindowEventArgs args) => closed.TrySetResult();
+
+        window.Closed += OnClosed;
         try
         {
             window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            return true;
         }
         catch (Exception exception)
         {
             Trace.TraceError(
                 "OpenBlade main window close failed: {0}",
                 exception);
+            return false;
+        }
+        finally
+        {
+            window.Closed -= OnClosed;
         }
     }
 

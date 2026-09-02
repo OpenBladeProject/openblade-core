@@ -22,7 +22,7 @@
     <value>完全关闭</value>
   </data>
   <data name="App_ExitDialog_Text" xml:space="preserve">
-    <value>退出 OpenBlade 时，可选择是否让键盘灯光、快捷键、配置方案和自动化功能继续在后台运行。</value>
+    <value>退出 OpenBlade 时，可以选择是否让键盘灯光、快捷键、配置方案和自动化继续在后台运行。</value>
   </data>
   <data name="App_ExitError_Heading" xml:space="preserve">
     <value>OpenBlade 无法关闭</value>
@@ -325,7 +325,7 @@
     <value>忽略此固件不匹配并继续运行</value>
   </data>
   <data name="MainWindow_FirmwareOverride_Warning" xml:space="preserve">
-    <value>强制启用控制功能后，OpenBlade 可能会向未经验证的固件发送已捕获的命令。笔记本电脑的具体型号/SKU 和 USB 设备身份检查仍必须全部通过。</value>
+    <value>强制启用控制后，OpenBlade 可能会发送尚未针对此固件验证的已捕获命令。笔记本电脑的确切型号/SKU 和 USB 设备身份检查仍须全部通过。</value>
   </data>
   <data name="MainWindow_FixedFanSpeedSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>固定风扇转速</value>
@@ -357,6 +357,9 @@
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>关闭使用 NVIDIA GPU 的应用？</value>
   </data>
+  <data name="MainWindow_GpuApps_CloseRequestFailed" xml:space="preserve">
+    <value>Session Agent 无法请求关闭所选应用。</value>
+  </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
     <value>所选应用已停止占用 NVIDIA GPU。GPU 可能需要片刻才能恢复低功耗状态。</value>
   </data>
@@ -367,7 +370,7 @@
     <value>Windows GPU 活动计数器不可用。</value>
   </data>
   <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
-    <value>- PID {0}：{1}</value>
+    <value>- PID {0}：OpenBlade 无法关闭此应用。</value>
   </data>
   <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
     <value>&#xA;&#xA;报告的失败：&#xA;{0}</value>
@@ -376,7 +379,7 @@
     <value>强制关闭</value>
   </data>
   <data name="MainWindow_GpuApps_ForceClosedBody" xml:space="preserve">
-    <value>所选应用已被强制关闭。GPU 可能需要片刻才能恢复低功耗状态。</value>
+    <value>已强制关闭所选应用。GPU 可能需要片刻才能恢复低功耗状态。</value>
   </data>
   <data name="MainWindow_GpuApps_ForceClosedTitle" xml:space="preserve">
     <value>GPU 应用已强制关闭</value>
@@ -390,8 +393,11 @@
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
     <value>继续运行</value>
   </data>
-  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>没有可安全关闭的 GPU 占用进程。&#xA;&#xA;</value>
+  <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
+    <value>超过 {0} 个应用正在使用 NVIDIA GPU。OpenBlade 无法根据不完整的列表验证能否安全关闭。请手动关闭应用，然后重新扫描。</value>
+  </data>
+  <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
+    <value>使用 GPU 的应用过多</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>没有可关闭的 GPU 应用</value>
@@ -400,10 +406,18 @@
     <value>当前用户会话中没有应用占用 NVIDIA GPU。</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
-    <value>&#xA;&#xA;无法关闭：&#xA;</value>
+    <value>OpenBlade 无法安全关闭这些应用：&#xA;&#xA;</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableReason" xml:space="preserve">
+    <value>OpenBlade 无法安全关闭此应用。</value>
+  </data>
+  <data name="MainWindow_GpuApps_OtherAppsHeading" xml:space="preserve">
+    <value>其他应用仍在使用 NVIDIA GPU，因此 GPU 可能无法进入休眠状态：
+
+</value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>Session Agent 无法完成 GPU 应用操作：{0}</value>
+    <value>Session Agent 无法完成 GPU 应用操作。</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
     <value>GPU 应用仍在运行</value>
@@ -555,7 +569,7 @@
     <value>使用 60 Hz 键盘灯光</value>
   </data>
   <data name="MainWindow_LightingUnavailableInfoBarText.Title" xml:space="preserve">
-    <value>灯光控制功能不可用</value>
+    <value>灯光控制不可用</value>
   </data>
   <data name="MainWindow_ListViewActiveTrayDashboardAdjustments.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>当前托盘仪表板调整项</value>
@@ -567,7 +581,7 @@
     <value>导航菜单页面</value>
   </data>
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>托盘图标悬停文本内容</value>
+    <value>托盘图标悬停信息内容</value>
   </data>
   <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
     <value>False</value>
@@ -585,7 +599,7 @@
     <value>检测到 Razer 控制器</value>
   </data>
   <data name="MainWindow_Notification_FirmwareUpdateTitle" xml:space="preserve">
-    <value>Razer 固件有可用更新</value>
+    <value>有可用的 Razer 固件更新</value>
   </data>
   <data name="MainWindow_Notification_OperationFailedTitle" xml:space="preserve">
     <value>OpenBlade 操作失败</value>
@@ -600,13 +614,13 @@
     <value>电池配置方案</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedBody" xml:space="preserve">
-    <value>OpenBlade 已切换到{0}。</value>
+    <value>OpenBlade已切换到{0}。</value>
   </data>
   <data name="MainWindow_Notification_ProfileChangedTitle" xml:space="preserve">
     <value>电源配置方案已切换</value>
   </data>
   <data name="MainWindow_Notification_ProfileUsbC" xml:space="preserve">
-    <value>USB-C 配置方案</value>
+    <value>USB-C配置方案</value>
   </data>
   <data name="MainWindow_OfficialFirmwareUpdatesCardText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Razer 官方固件更新助手</value>
@@ -675,7 +689,7 @@
     <value>正在 GitHub 上检查更新</value>
   </data>
   <data name="MainWindow_ProgressRingCheckingRazerForFirmwareVersions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>正在向 Razer 检查固件版本</value>
+    <value>正在查询 Razer 固件版本</value>
   </data>
   <data name="MainWindow_ProgressRingReadingOrApplyingFunctionKeyBehavior.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>正在读取或应用功能键行为</value>
@@ -777,7 +791,7 @@
     <value>正在检查…</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmBody" xml:space="preserve">
-    <value>以下已知控制器服务正在运行：&#xA;&#xA;{0}&#xA;&#xA;获得管理员授权后，OpenBlade 会重新核对同一份审核清单，并停止其中仍在运行的服务。这不会卸载 Razer 软件，也不会禁用这些服务自动启动。Razer 软件可能会再次启动它们；在此之前，依赖这些服务的功能可能无法使用。</value>
+    <value>以下已知控制器服务正在运行：&#xA;&#xA;{0}&#xA;&#xA;获得管理员授权后，OpenBlade 会重新检查同一份经审核的允许列表，并停止所有仍在运行的匹配服务。这不会卸载 Razer 软件，也不会禁用这些服务自动启动。Razer 软件可能会再次启动它们；在此之前，依赖这些服务的功能可能无法使用。</value>
   </data>
   <data name="MainWindow_StopRazer_ConfirmTitle" xml:space="preserve">
     <value>停止 Razer 服务？</value>
@@ -786,13 +800,13 @@
     <value>OpenBlade 无法停止 Razer 服务</value>
   </data>
   <data name="MainWindow_StopRazer_IndeterminateNote" xml:space="preserve">
-    <value>&#xA;&#xA;辅助程序未返回明确结果，但重新检查后已确认这些服务停止运行或已被卸载。</value>
+    <value>&#xA;&#xA;辅助程序未返回明确结果，但重新检查后已确认这些服务已停止或已卸载。</value>
   </data>
   <data name="MainWindow_StopRazer_NoneBody" xml:space="preserve">
-    <value>OpenBlade 未在审核清单中发现正在运行的 Synapse 或 Chroma 控制器服务。</value>
+    <value>OpenBlade 在经审核的允许列表中未发现正在运行的 Synapse 或 Chroma 控制器服务。</value>
   </data>
   <data name="MainWindow_StopRazer_NoneTitle" xml:space="preserve">
-    <value>没有已知的 Razer 控制器服务正在运行</value>
+    <value>没有正在运行的已知 Razer 控制器服务</value>
   </data>
   <data name="MainWindow_StopRazer_NoRetryNote" xml:space="preserve">
     <value>&#xA;&#xA;OpenBlade 未重试任何停止请求。</value>
@@ -807,7 +821,7 @@
     <value>停止服务</value>
   </data>
   <data name="MainWindow_StopRazer_StoppedHeading" xml:space="preserve">
-    <value>已停止或不再安装：&#xA;</value>
+    <value>已停止或已卸载：&#xA;</value>
   </data>
   <data name="MainWindow_StopRazer_Stopping" xml:space="preserve">
     <value>正在停止…</value>
@@ -831,7 +845,7 @@
     <value>停止 Razer 服务</value>
   </data>
   <data name="MainWindow_TaskbarHoverLabelExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>托盘图标悬停文本设置</value>
+    <value>托盘图标悬停信息设置</value>
   </data>
   <data name="MainWindow_TestedPlatformWarningBadgeText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>查看未经测试的系统版本</value>
@@ -984,10 +998,10 @@
     <value>勾选要显示的项目，并拖动调整顺序。</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue.Text" xml:space="preserve">
-    <value>到达检查时间后，将在启动时检查。</value>
+    <value>达到检查间隔后，会在下次启动时检查。</value>
   </data>
   <data name="MainWindow_TextBlockChecksAtStartupWhenDue2.Text" xml:space="preserve">
-    <value>到达检查时间后，将在启动时检查。</value>
+    <value>达到检查间隔后，会在下次启动时检查。</value>
   </data>
   <data name="MainWindow_TextBlockChooseANewColorPairForEach.Text" xml:space="preserve">
     <value>为每次潮汐循环选择一组新的颜色。</value>
@@ -1020,13 +1034,13 @@
     <value>选择左侧菜单中页面的顺序。</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToThreeLiveReadingsShown.Text" xml:space="preserve">
-    <value>选择最多三项实时数据，显示在弹出窗口底部。</value>
+    <value>最多可选择三项实时数据，显示在弹出窗口底部。</value>
   </data>
   <data name="MainWindow_TextBlockChooseUpToTwoSlidersForThe.Text" xml:space="preserve">
-    <value>为弹出窗口中部的固定区域选择最多两个滑块。</value>
+    <value>弹出窗口中部的固定区域最多可放置两个滑块。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhetherToShowTheAppName.Text" xml:space="preserve">
-    <value>选择鼠标指向托盘图标时要显示的应用名称、配置方案和实时数据。</value>
+    <value>选择将鼠标悬停在托盘图标上时是否显示应用名称、配置方案和实时数据。</value>
   </data>
   <data name="MainWindow_TextBlockChooseWhichLiveReadingsAppearInThe.Text" xml:space="preserve">
     <value>选择仪表板摘要中显示的实时数据。</value>
@@ -1107,7 +1121,7 @@
     <value>文档</value>
   </data>
   <data name="MainWindow_TextBlockDragActiveItemsToReorderThemChanges.Text" xml:space="preserve">
-    <value>拖动当前项目以调整顺序。更改会立即显示在此窗口旁的托盘弹出窗口中。</value>
+    <value>拖动已添加的项目以调整顺序。更改会立即显示在此窗口旁的托盘弹出窗口中。</value>
   </data>
   <data name="MainWindow_TextBlockDragPagesIntoTheOrderYouWant.Text" xml:space="preserve">
     <value>将页面拖动到所需顺序。仪表板始终位于最前，“关于”始终位于最后。</value>
@@ -1215,7 +1229,7 @@
     <value>闲置超时</value>
   </data>
   <data name="MainWindow_TextBlockIncreaseHowStronglyAudioLevelsDriveThe.Text" xml:space="preserve">
-    <value>增强音频电平对键盘颜色的驱动强度。</value>
+    <value>让音频电平对键盘颜色的影响更明显。</value>
   </data>
   <data name="MainWindow_TextBlockForGamersByTheCommunity.Text" xml:space="preserve">
     <value>为玩家而生。由社区打造。</value>
@@ -1239,7 +1253,7 @@
     <value>键盘灯光</value>
   </data>
   <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>键盘灯光预设导入</value>
+    <value>导入键盘灯光预设</value>
   </data>
   <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
     <value>实验功能</value>
@@ -1317,7 +1331,7 @@
     <value>有新的 Razer BIOS、EC 或 MCU 固件。</value>
   </data>
   <data name="MainWindow_TextBlockNewRazerControllersAdvisoriesStayVisible.Text" xml:space="preserve">
-    <value>检测到新的 Razer 控制器，相关提示会持续显示。</value>
+    <value>检测到新的 Razer 控制器，提示会持续显示。</value>
   </data>
   <data name="MainWindow_TextBlockNotifications.Text" xml:space="preserve">
     <value>通知</value>
@@ -1338,7 +1352,7 @@
     <value>OpenBlade Session Agent 版本</value>
   </data>
   <data name="MainWindow_TextBlockOpenBladeUsesTheLaptopFirmwareTemperatureAnd.Text" xml:space="preserve">
-    <value>OpenBlade 使用笔记本电脑固件温度和 NVIDIA GPU 温度。如果任一读数不可用，则使用最大风扇转速。</value>
+    <value>OpenBlade 使用笔记本电脑固件和 NVIDIA GPU 的温度读数。任一读数不可用时，风扇都会以最高转速运行。</value>
   </data>
   <data name="MainWindow_TextBlockOpenGitHubIssuesToReportABug.Text" xml:space="preserve">
     <value>前往 GitHub Issues 报告问题或提出改进建议。</value>
@@ -1470,7 +1484,7 @@
     <value>快捷键</value>
   </data>
   <data name="MainWindow_TextBlockShowAWiderRangeOfColorsAnd.Text" xml:space="preserve">
-    <value>在支持的内容中显示更广的颜色和亮度范围。</value>
+    <value>在支持的内容中显示更广的色彩和亮度范围。</value>
   </data>
   <data name="MainWindow_TextBlockShownOnDashboard.Text" xml:space="preserve">
     <value>在仪表板中显示</value>
@@ -1497,7 +1511,7 @@
     <value>源代码</value>
   </data>
   <data name="MainWindow_TextBlockStableOffersNormalReleasesNightlyOffersThe.Text" xml:space="preserve">
-    <value>稳定版适合日常使用；Nightly 版提供经过自动测试的最新版本。</value>
+    <value>稳定版提供常规版本；Nightly 版提供经过自动测试的最新版本。</value>
   </data>
   <data name="MainWindow_TextBlockStarlightColors.Text" xml:space="preserve">
     <value>星光颜色</value>
@@ -1545,7 +1559,7 @@
     <value>关闭灯光</value>
   </data>
   <data name="MainWindow_TextBlockTaskbarHoverLabel.Text" xml:space="preserve">
-    <value>托盘图标悬停文本</value>
+    <value>托盘图标悬停信息</value>
   </data>
   <data name="MainWindow_TextBlockTemporaryFullCharge.Text" xml:space="preserve">
     <value>临时充满电</value>
@@ -1554,7 +1568,7 @@
     <value>前六个控制项会始终显示，其他控制项可在弹出窗口中滚动查看。</value>
   </data>
   <data name="MainWindow_TextBlockTheseAreTheSettingsSavedInEach.Text" xml:space="preserve">
-    <value>这里显示各配置方案中保存的设置。带圆点的值包含尚未保存的更改；将鼠标悬停在该值上可预览更改后的值。</value>
+    <value>这里显示各配置方案中保存的设置。圆点表示该值有尚未保存的更改；将鼠标悬停在该值上可预览新值。</value>
   </data>
   <data name="MainWindow_TextBlockThunderboltFirmware.Text" xml:space="preserve">
     <value>Thunderbolt 5</value>
@@ -1569,7 +1583,7 @@
     <value>故障排除</value>
   </data>
   <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>开启实验性功能。</value>
+    <value>开启实验功能。</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>未保存</value>
@@ -1617,13 +1631,13 @@
     <value>在 GitHub 上查看 OpenBlade 并参与贡献。</value>
   </data>
   <data name="MainWindow_TextBlockViewFirmwareDownloadsAndReleaseDetailsOn.Text" xml:space="preserve">
-    <value>在 Razer 网站上查看固件下载和发行详情。</value>
+    <value>在 Razer 网站上查看固件下载和版本详情。</value>
   </data>
   <data name="MainWindow_TextBlockViewLiveConnectionAndControlDetails.Text" xml:space="preserve">
-    <value>查看实时连接和控制详情。</value>
+    <value>查看当前连接和控制详情。</value>
   </data>
   <data name="MainWindow_TextBlockWhenOffOpenBladeYieldsKeyboardLightingTo.Text" xml:space="preserve">
-    <value>关闭时，OpenBlade 会将键盘灯光控制权交给 Synapse。开启后，在外部更改发生时重新应用上一次 OpenBlade 效果。</value>
+    <value>关闭时，OpenBlade 会将键盘灯光控制权交给 Synapse。开启后，如果其他来源更改了灯光设置，OpenBlade 会重新应用上一次效果。</value>
   </data>
   <data name="MainWindow_TextBlockWhenTheDisplayTurnsOff.Text" xml:space="preserve">
     <value>显示器关闭时</value>
@@ -1668,10 +1682,10 @@
     <value>检测到另一个 Razer 控制器时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenARazerFirmwareUpdateIs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Razer 固件有可用更新时通知</value>
+    <value>有可用的 Razer 固件更新时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenTheActivePowerProfileChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>当前电源配置方案切换时通知</value>
+    <value>电源配置方案切换时通知</value>
   </data>
   <data name="MainWindow_ToggleSwitchNotifyWhenThePerformanceModeChanges.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>性能模式更改时通知</value>
@@ -1692,7 +1706,7 @@
     <value>仅手动检查</value>
   </data>
   <data name="MainWindow_UpdateConsent_Content" xml:space="preserve">
-    <value>OpenBlade 可在托盘启动时每天从 GitHub 检查一次新版本。检查不会发送硬件状态、配置方案、设置或诊断信息。稍后可在“设置”中更改此选项。</value>
+    <value>OpenBlade 可在托盘启动时每天检查一次 GitHub 上的新版本。检查时不会发送硬件状态、配置方案、设置或诊断信息。稍后可在“设置”中更改此选项。</value>
   </data>
   <data name="MainWindow_UpdateConsent_PrimaryButton" xml:space="preserve">
     <value>每天自动检查</value>

@@ -137,7 +137,7 @@ public sealed class ControlRequestHandler
                     cancellationToken)),
             SetHyperBoostRequest set => Result(
                 request.RequestId,
-                await runtime.SetHyperBoostAsync(set.Enabled, cancellationToken)),
+                await runtime.SetHyperBoostAsync(set, cancellationToken)),
             ValidatePadlessHyperBoostLifecycleRequest validate => Result(
                 request.RequestId,
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(

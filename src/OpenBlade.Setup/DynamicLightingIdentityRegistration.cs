@@ -282,19 +282,16 @@ public sealed class DynamicLightingIdentityRegistration(
             path => new FileInfo(path).Length,
             path => File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read));
 
-    internal static void ValidatePayloadArtifacts(
-        string payloadDirectory,
-        IEnumerable<string> relativePaths,
-        ISetupPayloadFileSystem files)
+    internal static void RejectRetiredPayloadArtifacts(IEnumerable<string> relativePaths)
     {
         ArgumentNullException.ThrowIfNull(relativePaths);
-        ArgumentNullException.ThrowIfNull(files);
         HashSet<string> manifest = new(relativePaths, StringComparer.OrdinalIgnoreCase);
-        _ = LoadArtifactsIfPresent(
-            payloadDirectory,
-            path => manifest.Contains(Path.GetRelativePath(payloadDirectory, path)),
-            files.GetFileLength,
-            files.OpenRead);
+        if (manifest.Contains(PackageFileName) || manifest.Contains(DescriptorFileName))
+        {
+            throw new InvalidDataException(
+                "The retired Dynamic Lighting identity package and descriptor must not "
+                + "be present in an OpenBlade setup payload.");
+        }
     }
 
     private static DynamicLightingIdentityArtifacts? LoadArtifactsIfPresent(

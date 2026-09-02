@@ -207,6 +207,86 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task UnknownGpu_ReadAfterManagedWriteUsesConfirmedOffsetsWithoutQuery()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        var activity = new FixedGpuActivitySource(IsActive: null);
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu,
+            activity);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var requested = new GpuClockOffsetSettings(125, 500);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([requested], gpu.Writes);
+        Assert.Equal(requested, state.GpuClockOffsets?.Current);
+    }
+
+    [Fact]
+    public async Task ActivityProbe_DoesNotHoldGpuClockOffsetManagementLock()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        var activity = new BlockingGpuActivitySource();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu,
+            activity);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        IGpuClockOffsetManagementDevice managedDevice =
+            Assert.IsAssignableFrom<IGpuClockOffsetManagementDevice>(device);
+        using var cancellation = new CancellationTokenSource();
+
+        await device.SetGpuClockOffsetsAsync(
+            new GpuClockOffsetSettings(125, 500),
+            default);
+        Task<ConfirmedDeviceState> read = device.ReadStateAsync(cancellation.Token);
+        Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
+        Task<GpuClockOffsetManagementState> stateRead = Task.Run(
+            () => managedDevice.GpuClockOffsetManagementState);
+
+        try
+        {
+            Task completed = await Task.WhenAny(stateRead, Task.Delay(100));
+            Assert.Same(stateRead, completed);
+            Assert.Equal(
+                GpuClockOffsetManagementState.Managed,
+                await stateRead);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            activity.Release.Set();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        }
+
+        Assert.Equal(1, gpu.QueryCount);
+    }
+
+    [Fact]
     public async Task ActiveGpu_ReadAfterManagedWriteRefreshesConfirmedOffsets()
     {
         DeviceCapabilities capabilities = WritableGpuCapabilities(
@@ -3178,15 +3258,42 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         }
     }
 
-    private sealed class FixedGpuActivitySource(bool IsActive)
+    private sealed class FixedGpuActivitySource(bool? IsActive)
         : IGpuActivitySource, IDisposable
     {
-        public bool Active { get; set; } = IsActive;
+        public bool? Active { get; set; } = IsActive;
 
         public bool Disposed { get; private set; }
 
-        bool IGpuActivitySource.IsActive() => Active;
+        bool? IGpuActivitySource.IsActive(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Active;
+        }
 
         public void Dispose() => Disposed = true;
+    }
+
+    private sealed class BlockingGpuActivitySource : IGpuActivitySource, IDisposable
+    {
+        public ManualResetEventSlim Entered { get; } = new();
+
+        public ManualResetEventSlim Release { get; } = new();
+
+        public bool? IsActive(CancellationToken cancellationToken = default)
+        {
+            Entered.Set();
+            if (!Release.Wait(TimeSpan.FromSeconds(5), cancellationToken))
+            {
+                throw new TimeoutException("GPU activity probe was not released.");
+            }
+            return true;
+        }
+
+        public void Dispose()
+        {
+            Entered.Dispose();
+            Release.Dispose();
+        }
     }
 }

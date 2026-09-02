@@ -26,27 +26,6 @@ public sealed class SessionAgentApplicationRestartContractTests
         Assert.True(displayInitialization > registration);
     }
 
-    [Fact]
-    public void IdentityRelaunchUnregistersBeforeStartingReplacement()
-    {
-        string runAsync = ReadRunAsync();
-        int identityBranch = runAsync.IndexOf(
-            "if (relaunchForIdentity)",
-            StringComparison.Ordinal);
-        int unregister = runAsync.IndexOf(
-            "applicationRestartRegistration.TryUnregister()",
-            identityBranch,
-            StringComparison.Ordinal);
-        int relaunch = runAsync.IndexOf(
-            "return RelaunchAfterIdentityRegistration();",
-            identityBranch,
-            StringComparison.Ordinal);
-
-        Assert.True(identityBranch >= 0);
-        Assert.True(unregister > identityBranch);
-        Assert.True(relaunch > unregister);
-    }
-
     private static string ReadRunAsync()
     {
         string program = ReadRepositoryFile(
@@ -57,7 +36,7 @@ public sealed class SessionAgentApplicationRestartContractTests
             "private static async Task<int> RunAsync",
             StringComparison.Ordinal);
         int end = program.IndexOf(
-            "internal static bool ShouldRelaunchForIdentity",
+            "internal static bool TryAcquireStartupOwnership",
             start,
             StringComparison.Ordinal);
 

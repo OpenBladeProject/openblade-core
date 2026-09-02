@@ -4,14 +4,18 @@ namespace OpenBlade.Service;
 
 internal interface IGpuActivitySource
 {
-    bool IsActive();
+    bool? IsActive(CancellationToken cancellationToken = default);
 }
 
 internal sealed class InactiveGpuActivitySource : IGpuActivitySource
 {
     internal static InactiveGpuActivitySource Instance { get; } = new();
 
-    public bool IsActive() => false;
+    public bool? IsActive(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return false;
+    }
 }
 
 /// <summary>
@@ -21,8 +25,14 @@ internal sealed class InactiveGpuActivitySource : IGpuActivitySource
 /// </summary>
 internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
 {
+    private const int SampleDelayMilliseconds = 150;
+
+    private readonly object sync = new();
     private readonly WindowsNvidiaGpuActivityReader? reader;
+    private readonly Func<bool> refresh;
     private readonly Func<WindowsGpuActivitySnapshot> read;
+    private readonly Action<int, CancellationToken> wait;
+    private bool disposed;
 
     internal WindowsGpuActivitySource()
         : this(new WindowsNvidiaGpuActivityReader())
@@ -32,32 +42,63 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
     private WindowsGpuActivitySource(WindowsNvidiaGpuActivityReader reader)
     {
         this.reader = reader;
+        refresh = reader.Refresh;
         read = reader.Read;
-        try
-        {
-            _ = read();
-        }
-        catch
-        {
-            reader.Dispose();
-            throw;
-        }
+        wait = WaitForNextSample;
     }
 
-    internal WindowsGpuActivitySource(Func<WindowsGpuActivitySnapshot> read)
+    internal WindowsGpuActivitySource(
+        Func<bool> refresh,
+        Func<WindowsGpuActivitySnapshot> read,
+        Action<int, CancellationToken> wait)
     {
+        this.refresh = refresh ?? throw new ArgumentNullException(nameof(refresh));
         this.read = read ?? throw new ArgumentNullException(nameof(read));
-        _ = read();
+        this.wait = wait ?? throw new ArgumentNullException(nameof(wait));
     }
 
-    public bool IsActive()
+    public bool? IsActive(CancellationToken cancellationToken = default)
     {
-        WindowsGpuActivitySnapshot snapshot = read();
-        return snapshot.Processes.Any(process => process.IsActive);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (disposed || !refresh())
+            {
+                return null;
+            }
+
+            _ = read();
+            wait(SampleDelayMilliseconds, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            WindowsGpuActivitySnapshot snapshot = read();
+            return snapshot.IsAvailable
+                ? snapshot.Processes.Any(process => process.IsActive)
+                : null;
+        }
+    }
+
+    private static void WaitForNextSample(
+        int milliseconds,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.WaitHandle.WaitOne(milliseconds))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     public void Dispose()
     {
-        reader?.Dispose();
+        lock (sync)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            reader?.Dispose();
+            disposed = true;
+        }
     }
 }

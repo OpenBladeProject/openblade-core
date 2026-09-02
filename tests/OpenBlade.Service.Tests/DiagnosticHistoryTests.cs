@@ -144,6 +144,23 @@ public sealed class DiagnosticHistoryTests
         Assert.Equal(time.GetUtcNow(), record.Timestamp);
     }
 
+    [Fact]
+    public void RecordSummary_PreservesTransitionIdentity()
+    {
+        var time = new FixedTimeProvider(DateTimeOffset.Parse("2026-07-15T12:34:56Z"));
+        var history = new DiagnosticHistory(timeProvider: time);
+        Guid transitionId = Guid.Parse("a178986d-e244-4730-97a4-9fc83672b3f2");
+
+        history.RecordSummary(
+            ControlOperationStatus.Applied,
+            "lifecycle restored",
+            transitionId);
+
+        DiagnosticCommandResult record = Assert.Single(
+            history.Snapshot().CommandResults);
+        Assert.Equal(transitionId, record.TransitionId);
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

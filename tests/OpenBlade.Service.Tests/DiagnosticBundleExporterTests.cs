@@ -153,6 +153,50 @@ public sealed class DiagnosticBundleExporterTests
                 .TryGetProperty("fanControl", out _));
     }
 
+    [Fact]
+    public async Task ExportAsync_PreservesTypedCommandEvidenceAcrossTokenCollisions()
+    {
+        Guid transitionId = Guid.Parse("a18b65e1-99ae-4d7a-a859-13d87be64aac");
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "3.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [new DiagnosticCommandResult(
+                DateTimeOffset.Parse("2026-07-15T12:00:00Z"),
+                "Fans",
+                "Maintain",
+                "Applied",
+                "manual fan restored")
+            {
+                TransitionId = transitionId,
+            }],
+            [],
+            ["a"]);
+
+        await using MemoryStream destination = new();
+        await DiagnosticBundleExporter.ExportAsync(
+            destination,
+            bundle,
+            CancellationToken.None);
+
+        destination.Position = 0;
+        using ZipArchive archive = new(destination, ZipArchiveMode.Read, leaveOpen: true);
+        string json = await ReadEntryAsync(archive, "command-results.json");
+        DiagnosticCommandResult result = Assert.Single(
+            JsonSerializer.Deserialize<DiagnosticCommandResult[]>(
+                json,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                })!);
+        Assert.Equal(transitionId, result.TransitionId);
+        Assert.DoesNotContain("a", result.Subsystem, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("a", result.Action, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("a", result.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("a", result.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("x")]
     [InlineData("xy")]
@@ -210,12 +254,32 @@ public sealed class DiagnosticBundleExporterTests
             "device.json",
             "capabilities.json",
             "configuration.json",
-            "command-results.json",
         })
         {
             string content = await ReadEntryAsync(archive, entryName);
             using JsonDocument document = JsonDocument.Parse(content);
             AssertNoSensitiveJsonString(document.RootElement, token);
+        }
+
+        using (JsonDocument commands = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "command-results.json")))
+        {
+            JsonElement command = commands.RootElement[0];
+            Assert.True(command.TryGetProperty("timestamp", out _));
+            Assert.True(command.TryGetProperty("transitionId", out _));
+            foreach (string propertyName in new[]
+            {
+                "subsystem",
+                "action",
+                "status",
+                "detail",
+            })
+            {
+                Assert.DoesNotContain(
+                    token,
+                    command.GetProperty(propertyName).GetString(),
+                    StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         string[] logRecords = (await ReadEntryAsync(archive, "logs.jsonl"))
