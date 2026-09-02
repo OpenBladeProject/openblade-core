@@ -3,6 +3,7 @@ using System.Diagnostics;
 namespace OpenBlade.Tray;
 
 public sealed record TrayExitSteps(
+    Action UnregisterApplicationRestart,
     Action UnregisterShutdown,
     Action DisposeShutdownEvent,
     Action DisposeTrayIcon,
@@ -61,6 +62,7 @@ public sealed class TrayExitLifecycle
 
     private async Task RunExitAsync()
     {
+        RunStep(steps.UnregisterApplicationRestart);
         RunStep(steps.UnregisterShutdown);
         RunStep(steps.DisposeShutdownEvent);
         RunStep(steps.DisposeTrayIcon);
