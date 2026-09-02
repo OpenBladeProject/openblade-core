@@ -22,6 +22,29 @@ public sealed class SessionAgentTaskSupervisionContractTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void StartupDoesNotRegisterRetiredDynamicLightingIdentity()
+    {
+        string program = ReadRepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "Program.cs");
+        string supervisedTasks = ExtractSupervisedTasks(program);
+
+        Assert.DoesNotContain(
+            "PerUserDynamicLightingRegistration",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "identity-registration-relaunch",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "identityRegistrationTask",
+            supervisedTasks,
+            StringComparison.Ordinal);
+    }
+
     private static string ExtractSupervisedTasks(string program)
     {
         const string declaration = "Task[] supervisedTasks =";

@@ -44,6 +44,7 @@ public sealed class TrayExitLifecycleTests
         var reported = new List<Exception>();
         var lifecycle = new TrayExitLifecycle(
             new TrayExitSteps(
+                UnregisterApplicationRestart: () => Throw("application-restart"),
                 UnregisterShutdown: () => Throw("registration"),
                 DisposeShutdownEvent: () => Throw("event"),
                 DisposeTrayIcon: () => Throw("tray"),
@@ -56,7 +57,16 @@ public sealed class TrayExitLifecycleTests
         await lifecycle.ExitAsync();
 
         Assert.Equal(
-            ["registration", "event", "tray", "viewmodel", "window", "coordinator", "application"],
+            [
+                "application-restart",
+                "registration",
+                "event",
+                "tray",
+                "viewmodel",
+                "window",
+                "coordinator",
+                "application",
+            ],
             attempted);
         Assert.Equal(attempted, reported.Select(exception => exception.Message));
 
@@ -79,6 +89,7 @@ public sealed class TrayExitLifecycleTests
         var attempted = new List<string>();
         var lifecycle = new TrayExitLifecycle(
             CreateSteps(
+                unregisterApplicationRestart: () => attempted.Add("application-restart"),
                 unregisterShutdown: () =>
                 {
                     attempted.Add("registration");
@@ -90,10 +101,13 @@ public sealed class TrayExitLifecycleTests
 
         await lifecycle.ExitAsync();
 
-        Assert.Equal(["registration", "event", "application"], attempted);
+        Assert.Equal(
+            ["application-restart", "registration", "event", "application"],
+            attempted);
     }
 
     private static TrayExitSteps CreateSteps(
+        Action? unregisterApplicationRestart = null,
         Action? unregisterShutdown = null,
         Action? disposeShutdownEvent = null,
         Action? disposeTrayIcon = null,
@@ -102,6 +116,7 @@ public sealed class TrayExitLifecycleTests
         Func<ValueTask>? disposeInstanceCoordinatorAsync = null,
         Action? exitApplication = null) =>
         new(
+            unregisterApplicationRestart ?? (() => { }),
             unregisterShutdown ?? (() => { }),
             disposeShutdownEvent ?? (() => { }),
             disposeTrayIcon ?? (() => { }),

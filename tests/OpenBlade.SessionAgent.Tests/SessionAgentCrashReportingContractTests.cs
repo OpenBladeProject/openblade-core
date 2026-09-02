@@ -3,22 +3,38 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class SessionAgentCrashReportingContractTests
 {
     [Fact]
-    public void MainWritesFatalFailuresWithoutSuppressingTheExitCode()
+    public void MainWritesFatalFailuresAndPreservesUnhandledTermination()
     {
         string program = ReadRepositoryFile(
             "src",
             "OpenBlade.SessionAgent",
             "Program.cs");
+        int runInvocation = program.IndexOf(
+            "return RunAsync(",
+            StringComparison.Ordinal);
+        int catchStart = program.IndexOf(
+            "catch (Exception exception)",
+            runInvocation,
+            StringComparison.Ordinal);
+        int mainEnd = program.IndexOf(
+            "private static async Task<int> RunAsync",
+            catchStart,
+            StringComparison.Ordinal);
 
-        Assert.Contains("catch (Exception exception)", program, StringComparison.Ordinal);
-        Assert.Contains("CrashReportWriter.CreateDefault", program, StringComparison.Ordinal);
-        Assert.Contains("\"OpenBlade.SessionAgent\"", program, StringComparison.Ordinal);
-        Assert.Contains("processTerminating: true", program, StringComparison.Ordinal);
+        Assert.True(runInvocation >= 0);
+        Assert.True(catchStart > runInvocation);
+        Assert.True(mainEnd > catchStart);
+        string fatalHandler = program[catchStart..mainEnd];
+
+        Assert.Contains("CrashReportWriter.CreateDefault", fatalHandler, StringComparison.Ordinal);
+        Assert.Contains("\"OpenBlade.SessionAgent\"", fatalHandler, StringComparison.Ordinal);
+        Assert.Contains("processTerminating: true", fatalHandler, StringComparison.Ordinal);
+        Assert.Contains("throw;", fatalHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("return 1;", fatalHandler, StringComparison.Ordinal);
         Assert.Contains("catch (Exception) when (terminalFailure is not null)", program,
             StringComparison.Ordinal);
         Assert.Contains("ExceptionDispatchInfo.Capture(terminalFailure).Throw()", program,
             StringComparison.Ordinal);
-        Assert.Contains("return 1;", program, StringComparison.Ordinal);
     }
 
     private static string ReadRepositoryFile(params string[] parts)

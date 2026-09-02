@@ -11,9 +11,6 @@ namespace OpenBlade.SessionAgent;
 
 internal static class Program
 {
-    private const string IdentityRegistrationRelaunchArgument =
-        "--identity-registration-relaunch";
-
     [STAThread]
     private static int Main(string[] args)
     {
@@ -52,9 +49,7 @@ internal static class Program
 
         try
         {
-            return RunAsync(args.Contains(
-                IdentityRegistrationRelaunchArgument,
-                StringComparer.Ordinal)).GetAwaiter().GetResult();
+            return RunAsync().GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
@@ -65,11 +60,11 @@ internal static class Program
                     "Fatal process failure",
                     exception,
                     processTerminating: true);
-            return 1;
+            throw;
         }
     }
 
-    private static async Task<int> RunAsync(bool identityRegistrationRelaunch)
+    private static async Task<int> RunAsync()
     {
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
@@ -105,23 +100,20 @@ internal static class Program
             return 0;
         }
         await using SessionAgentPipeOwner acquiredGpuOwner = gpuOwner!;
+        var applicationRestartRegistration =
+            new WindowsApplicationRestartRegistration();
+        _ = applicationRestartRegistration.TryRegister();
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
         {
+            var shutdownRequest = new SessionAgentShutdownRequest(
+                lifetime,
+                () => _ = applicationRestartRegistration.TryUnregister());
             RegisteredWaitHandle shutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
                 shutdownEvent,
-                static (state, _) =>
-                {
-                    try
-                    {
-                        ((CancellationTokenSource)state!).Cancel();
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                    }
-                },
-                lifetime,
+                static (state, _) => ((SessionAgentShutdownRequest)state!).Signal(),
+                shutdownRequest,
                 Timeout.Infinite,
                 executeOnlyOnce: true);
             try
@@ -291,10 +283,6 @@ internal static class Program
                 Task microphoneMuteTask = microphoneMuteIndicator.RunAsync(lifetime.Token);
                 Task lampArrayObservationTask =
                     lampArrayObservation.RunAsync(lifetime.Token);
-                Task<bool> identityRegistrationTask =
-                    MonitorIdentityRegistrationAsync(
-                        enabled: !identityRegistrationRelaunch,
-                        lifetime.Token);
                 Task[] supervisedTasks =
                 [
                     serverTask,
@@ -310,12 +298,8 @@ internal static class Program
                     playbackMuteTask,
                     microphoneMuteTask,
                     lampArrayObservationTask,
-                    identityRegistrationTask,
                 ];
                 Task completed = await Task.WhenAny(supervisedTasks).ConfigureAwait(false);
-                bool relaunchForIdentity = ShouldRelaunchForIdentity(
-                    completed,
-                    identityRegistrationTask);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -339,11 +323,6 @@ internal static class Program
                 {
                     ExceptionDispatchInfo.Capture(terminalFailure).Throw();
                 }
-                if (relaunchForIdentity)
-                {
-                    await acquiredOwner.DisposeAsync();
-                    return RelaunchAfterIdentityRegistration();
-                }
                 return 0;
             }
             finally
@@ -357,60 +336,6 @@ internal static class Program
                 }
             }
         }
-    }
-
-    internal static bool ShouldRelaunchForIdentity(
-        Task completed,
-        Task<bool> identityRegistrationTask) =>
-        ReferenceEquals(completed, identityRegistrationTask)
-        && identityRegistrationTask.IsCompletedSuccessfully
-        && identityRegistrationTask.GetAwaiter().GetResult();
-
-    internal static async Task<bool> MonitorIdentityRegistrationAsync(
-        bool enabled,
-        CancellationToken cancellationToken,
-        PerUserDynamicLightingRegistration? registration = null)
-    {
-        if (enabled)
-        {
-            try
-            {
-                if (await (registration ?? new PerUserDynamicLightingRegistration())
-                        .EnsureRegisteredAsync(cancellationToken))
-                {
-                    return true;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                Trace.TraceWarning(
-                    "OpenBlade per-user Dynamic Lighting registration failed: {0}",
-                    exception.Message);
-            }
-        }
-
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        return false;
-    }
-
-    private static int RelaunchAfterIdentityRegistration()
-    {
-        string executablePath = Environment.ProcessPath
-            ?? throw new InvalidOperationException(
-                "The Session Agent executable path is unavailable.");
-        using Process? process = Process.Start(new ProcessStartInfo
-        {
-            FileName = executablePath,
-            Arguments = IdentityRegistrationRelaunchArgument,
-            UseShellExecute = false,
-            WorkingDirectory = AppContext.BaseDirectory,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        });
-        return process is null ? 1 : 0;
     }
 
     internal static bool TryAcquireStartupOwnership(
@@ -451,5 +376,43 @@ internal static class Program
             false,
             EventResetMode.ManualReset,
             SessionAgentShutdownEndpoint.ForExecutablePath(executablePath));
+    }
+}
+
+internal sealed class SessionAgentShutdownRequest
+{
+    private readonly CancellationTokenSource lifetime;
+    private readonly Action unregisterApplicationRestart;
+
+    internal SessionAgentShutdownRequest(
+        CancellationTokenSource lifetime,
+        Action unregisterApplicationRestart)
+    {
+        this.lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+        this.unregisterApplicationRestart = unregisterApplicationRestart
+            ?? throw new ArgumentNullException(nameof(unregisterApplicationRestart));
+    }
+
+    internal void Signal()
+    {
+        try
+        {
+            unregisterApplicationRestart();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade Session Agent restart unregistration failed during intentional shutdown: {0} (0x{1:X8}).",
+                exception.GetType().Name,
+                exception.HResult);
+        }
+
+        try
+        {
+            lifetime.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 }

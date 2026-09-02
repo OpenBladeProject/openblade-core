@@ -359,6 +359,9 @@
   <data name="MainWindow_GpuApps_CloseConfirmationTitle" xml:space="preserve">
     <value>[!! Clósé ápps úsíng thé NVIDIA GPÚ? ~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_GpuApps_CloseRequestFailed" xml:space="preserve">
+    <value>[!! Thé Session Agent cóúld nót ásk thé séléctéd ápps tó clósé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_GpuApps_ClosedBody" xml:space="preserve">
     <value>[!! Thé séléctéd ápps réléáséd théír NVIDIA GPÚ éngínés. Thé GPÚ máý táké á mómént tó rétúrn tó sléép. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -369,7 +372,7 @@
     <value>[!! Windows GPÚ áctívítý cóúntérs áré únáváíláblé. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_FailureItem" xml:space="preserve">
-    <value>[!! - PÍD {0}: {1} ~~ !!]</value>
+    <value>[!! - PÍD {0}: OpenBlade cóúld nót clósé thís ápp. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_FailuresHeading" xml:space="preserve">
     <value>[!!
@@ -397,10 +400,11 @@ Répórtéd fáílúrés:
   <data name="MainWindow_GpuApps_KeepRunningButton" xml:space="preserve">
     <value>[!! Kéép rúnníng ~~~~ !!]</value>
   </data>
-  <data name="MainWindow_GpuApps_NoneSafeToClose" xml:space="preserve">
-    <value>[!! Nó GPÚ úsérs cán bé clóséd sáfélý.
-
- ~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_GpuApps_ListTruncatedWarning" xml:space="preserve">
+    <value>[!! Móré thán {0} ápplícátíóns áré úsíng thé NVIDIA GPÚ. OpenBlade cánnót vérífý á sáfé clósé fróm á pártíál líst. Clósé ápps mánúállý, thén scán ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_ListTruncatedTitle" xml:space="preserve">
+    <value>[!! Tóó máný GPÚ ápps tó vérífý ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_NoneToCloseTitle" xml:space="preserve">
     <value>[!! Nó GPÚ ápps tó clósé ~~~~~~ !!]</value>
@@ -409,13 +413,20 @@ Répórtéd fáílúrés:
     <value>[!! Nó cúrrént-úsér ápps áré hóldíng án NVIDIA GPÚ éngíné. ~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_NotCloseableHeading" xml:space="preserve">
-    <value>[!!
+    <value>[!! OpenBlade cánnót sáfélý clósé thésé ápps:
 
-Nót clóséáblé:
- ~~~~~ !!]</value>
+ ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_NotCloseableReason" xml:space="preserve">
+    <value>[!! OpenBlade cánnót sáfélý clósé thís ápp. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_GpuApps_OtherAppsHeading" xml:space="preserve">
+    <value>[!! Óthér ápps áré stíll úsíng thé NVIDIA GPÚ, só ít máý rémáín áwáké:
+
+ ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_SessionAgentFailure" xml:space="preserve">
-    <value>[!! Thé Session Agent cóúld nót cómplété thé GPÚ ápp ópérátíón: {0} ~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Thé Session Agent cóúld nót cómplété thé GPÚ ápp ópérátíón. ~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_GpuApps_StillRunningTitle" xml:space="preserve">
     <value>[!! GPÚ ápps stíll rúnníng ~~~~~~~ !!]</value>

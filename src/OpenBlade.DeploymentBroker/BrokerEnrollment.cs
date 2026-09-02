@@ -432,15 +432,31 @@ public sealed class BrokerEnrollmentStore(BrokerPaths paths)
         paths.ProtectFile(paths.EnrollmentPath);
     }
 
+    /// <summary>
+    /// Loads the enrollment, failing closed when the file or its containing directory is missing.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">
+    /// The enrollment file or its containing directory does not exist.
+    /// </exception>
     public async Task<BrokerEnrollment> LoadAsync(CancellationToken cancellationToken = default)
     {
-        ProtectedBrokerStorage.RejectReparsePoint(paths.RootDirectory);
-        ProtectedBrokerStorage.RejectReparsePoint(paths.EnrollmentPath);
-        paths.VerifyDirectory(paths.RootDirectory);
-        paths.VerifyFile(paths.EnrollmentPath);
-        byte[] bytes = await File.ReadAllBytesAsync(paths.EnrollmentPath, cancellationToken)
-            .ConfigureAwait(false);
-        return BrokerEnrollmentCodec.ParseCanonical(bytes);
+        try
+        {
+            ProtectedBrokerStorage.RejectReparsePoint(paths.RootDirectory);
+            ProtectedBrokerStorage.RejectReparsePoint(paths.EnrollmentPath);
+            paths.VerifyDirectory(paths.RootDirectory);
+            paths.VerifyFile(paths.EnrollmentPath);
+            byte[] bytes = await File.ReadAllBytesAsync(paths.EnrollmentPath, cancellationToken)
+                .ConfigureAwait(false);
+            return BrokerEnrollmentCodec.ParseCanonical(bytes);
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            throw new FileNotFoundException(
+                "The broker enrollment file or its containing directory does not exist.",
+                paths.EnrollmentPath,
+                exception);
+        }
     }
 }
 

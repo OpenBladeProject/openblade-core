@@ -23,10 +23,45 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Normalized adjacent-palette ties at rounded localization-snapshot corners so
+  translator-package archives remain byte-identical across fresh processes
+  without smoothing meaningful single-pixel details.
+- Stabilized disconnected translator-package screenshots on slower renderers by
+  requiring two consecutive canonical frames before archiving each Tray and
+  installer surface, preserving byte-identical package exports across fresh
+  processes.
+- Waited for each previous Tray window to finish closing before rebuilding the
+  next localized shell, preventing rapid in-process language changes from
+  overlapping native WinUI teardown.
+- Removed the dormant Session Agent Dynamic Lighting sparse-package
+  self-registration and relaunch path. OpenBlade continues delegating keyboard
+  lighting to Windows without registering a competing background provider.
+  New Setup payloads reject the retired identity artifacts while exact legacy
+  cleanup and rollback restoration remain available for older installations.
+- Reworked the Simplified Chinese Tray, runtime status, installer, and Setup
+  text to use natural Windows-style wording while preserving exact hardware,
+  firmware, service-state, rollback, and recovery semantics.
+- Detected stable idle NVIDIA GPU context holders in the GPU-app cleanup action,
+  including overlays that currently report zero utilization. Cleanup now
+  refreshes Windows GPU enumeration, appears on both Home and Laptop, requires
+  explicit per-app selection, waits for graceful shutdown, and confirms each
+  force-close separately against a freshly validated process identity. Force
+  close now tries the selected app's process tree before falling back to only
+  that exact process when Windows denies the broader operation, while ambient
+  NVIDIA Overlay and Windows Explorer processes stay out of the cleanup list.
+- Refreshed Windows NVIDIA GPU activity counters before service thermal and
+  clock-offset decisions so processes that start after service launch are not
+  missed. Failed refreshes and unavailable samples now remain unknown so fan
+  control fails safe without probing NVIDIA APIs.
+- Removed English-style spaces around embedded Latin product and power-source
+  names in Simplified Chinese profile-change notifications.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
   lifecycle validation available for safe crash and resume testing.
+- Registered the Tray and Session Agent for Windows Application Restart so
+  Windows can relaunch them after supported crash and update shutdowns, while
+  preserving intentional user exits and single-instance ownership.
 - Blocked older OpenBlade installers from replacing a newer installed version.
   Interactive setup now leaves the installation and saved settings unchanged
   and directs the user to the installed or a newer installer; quiet and

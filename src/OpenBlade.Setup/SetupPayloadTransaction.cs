@@ -551,10 +551,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             }
         }
 
-        DynamicLightingIdentityRegistration.ValidatePayloadArtifacts(
-            payloadRoot,
-            manifest.Keys,
-            files);
+        DynamicLightingIdentityRegistration.RejectRetiredPayloadArtifacts(manifest.Keys);
     }
 
     private static void RequireExactManifest(

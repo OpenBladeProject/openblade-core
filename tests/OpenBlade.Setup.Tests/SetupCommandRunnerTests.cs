@@ -53,7 +53,7 @@ public sealed class SetupCommandRunnerTests
                 "payload-stage", "lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
-                "dynamic-lighting-remove", "payload-activate", "dynamic-lighting-install",
+                "dynamic-lighting-remove", "payload-activate",
                 "uninstaller-install", "service-install",
                 "service-health", "agent-shortcut-install", "start-menu-install",
                 "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
@@ -269,7 +269,6 @@ public sealed class SetupCommandRunnerTests
     [InlineData("start-menu-install")]
     [InlineData("uninstall-shortcut-install")]
     [InlineData("uninstall-registration-install")]
-    [InlineData("dynamic-lighting-install")]
     public async Task Install_UpdatePostActivationFailure_RestoresOldTreeServiceAndShortcut(string failurePoint)
     {
         RecordingSetupPlatform platform = new()
@@ -432,7 +431,7 @@ public sealed class SetupCommandRunnerTests
         Assert.True(rollbackIndex >= 0);
         Assert.True(restoreIdentityIndex > rollbackIndex);
         Assert.True(restoreServiceIndex > restoreIdentityIndex);
-        Assert.Equal(2, platform.Operations.Count(
+        Assert.Equal(1, platform.Operations.Count(
             operation => operation == "dynamic-lighting-install"));
     }
 
@@ -1052,7 +1051,7 @@ public sealed class SetupCommandRunnerTests
             await AddAsync("bundle-ownership-remove", cancellationToken);
             bundleOwnership = null;
         }
-        public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+        public Task RestoreDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
             AddAsync("dynamic-lighting-install", cancellationToken);
         public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
             AddAsync("dynamic-lighting-remove", cancellationToken);

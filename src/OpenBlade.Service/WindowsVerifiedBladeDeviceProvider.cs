@@ -761,7 +761,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
-                GpuClockOffsetCapabilities? gpuOffsets = ReadManagedGpuClockOffsets();
+                GpuClockOffsetCapabilities? gpuOffsets =
+                    ReadManagedGpuClockOffsets(cancellationToken);
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
                 TransitionLightingReadResult lightingRead =
@@ -819,7 +820,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     HyperBoostActive = performanceFan.HyperBoostActive,
                     CustomPerformance = performanceFan.CustomPerformance,
-                    GpuClockOffsets = ReadManagedGpuClockOffsets(),
+                    GpuClockOffsets = ReadManagedGpuClockOffsets(cancellationToken),
                 };
             }
         }
@@ -1593,8 +1594,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             };
         }
 
-        private GpuClockOffsetCapabilities? ReadManagedGpuClockOffsets()
+        private GpuClockOffsetCapabilities? ReadManagedGpuClockOffsets(
+            CancellationToken cancellationToken)
         {
+            GpuClockOffsetCapabilities? initialConfirmed;
+            lock (gpuClockOffsetManagementSync)
+            {
+                if (gpuClockOffsetManagementState !=
+                    GpuClockOffsetManagementState.Managed)
+                {
+                    return null;
+                }
+
+                initialConfirmed = confirmedManagedGpuClockOffsets;
+            }
+
+            bool? gpuActive = gpuActivitySource.IsActive(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
             lock (gpuClockOffsetManagementSync)
             {
                 if (gpuClockOffsetManagementState !=
@@ -1605,7 +1622,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                 GpuClockOffsetCapabilities? confirmed =
                     confirmedManagedGpuClockOffsets;
-                if (!gpuActivitySource.IsActive())
+                if (confirmed != initialConfirmed || gpuActive is not true)
                 {
                     return confirmed;
                 }

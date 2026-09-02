@@ -76,6 +76,8 @@ public sealed class BrokerEnrollmentTests : IDisposable
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);
         BrokerEnrollmentStore store = new(paths);
+        Directory.CreateDirectory(root);
+
         await Assert.ThrowsAsync<FileNotFoundException>(() => store.LoadAsync());
 
         BrokerEnrollment expected = CreateEnrollment();
@@ -83,6 +85,15 @@ public sealed class BrokerEnrollmentTests : IDisposable
         await Assert.ThrowsAsync<IOException>(() => store.CreateOnceAsync(expected));
 
         Assert.Equal(expected, await store.LoadAsync());
+    }
+
+    [Fact]
+    public async Task Store_MissingContainingDirectoryFailsClosedAsMissingEnrollment()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(Path.Combine(root, "broker"));
+        BrokerEnrollmentStore store = new(paths);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => store.LoadAsync());
     }
 
     public void Dispose()

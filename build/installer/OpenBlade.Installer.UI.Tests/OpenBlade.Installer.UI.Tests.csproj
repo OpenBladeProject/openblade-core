@@ -23,4 +23,9 @@
     <ProjectReference Include="..\OpenBlade.Installer.UI\OpenBlade.Installer.UI.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"
+             Link="LocalizationSnapshotPixelCanonicalizer.cs" />
+  </ItemGroup>
+
 </Project>

@@ -591,7 +591,7 @@ public sealed class WindowsSetupPlatformServiceTests
         SetupInstallLifecycleState state =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
         await platform.RemoveDynamicLightingIdentityAsync(CancellationToken.None);
-        await platform.InstallDynamicLightingIdentityAsync(CancellationToken.None);
+        await platform.RestoreDynamicLightingIdentityAsync(CancellationToken.None);
 
         Assert.True(state.DynamicLightingIdentityRegistered);
         DynamicLightingIdentityRequest query = Assert.Single(identity.Queries);

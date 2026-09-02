@@ -9168,7 +9168,10 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         client.Publish(CreatePadlessHyperBoostStatus(
             CreateStatus(verified: true, blocked: false)));
-        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+        await WaitUntilAsync(() =>
+            viewModel.CanToggleHyperBoost
+            && viewModel.AvailableLaptopPerformanceOptions.Any(
+                option => option.IsHyperBoost));
 
         Assert.Equal(expectedDescription, viewModel.HyperBoostDescription);
         Assert.Equal(
