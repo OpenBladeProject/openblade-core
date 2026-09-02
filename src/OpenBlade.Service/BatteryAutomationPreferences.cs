@@ -14,7 +14,11 @@ public sealed record BatteryAutomationPreferences(
     KeyboardLightingControlMode KeyboardLightingControlMode =
         KeyboardLightingControlMode.OpenBlade,
     bool AllowUntestedFirmware = false,
-    LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz);
+    LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz,
+    ThermalControlPolicy ThermalControlPolicy =
+        ThermalControlPolicy.MaintainDesiredState,
+    ThermalPolicyUpgradeDisclosureState ThermalPolicyUpgradeDisclosure =
+        ThermalPolicyUpgradeDisclosureState.NotRequired);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

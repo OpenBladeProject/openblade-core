@@ -4187,6 +4187,49 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ThermalPolicyDisclosureIsAccessibleExplicitAndForcesVisibleLaunch()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+
+        int disclosureStart = xaml.IndexOf(
+            "x:Name=\"ThermalPolicyUpgradeDisclosureInfoBar\"",
+            StringComparison.Ordinal);
+        Assert.True(disclosureStart >= 0);
+        string disclosure = xaml[disclosureStart..xaml.IndexOf(
+            "</InfoBar>",
+            disclosureStart,
+            StringComparison.Ordinal)];
+        Assert.Contains("IsClosable=\"False\"", disclosure, StringComparison.Ordinal);
+        Assert.Contains(
+            "AcknowledgeThermalPolicyUpgradeDisclosureCommand",
+            disclosure,
+            StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name", disclosure, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.HelpText", disclosure, StringComparison.Ordinal);
+        Assert.DoesNotContain("Click=", disclosure, StringComparison.Ordinal);
+
+        Assert.Contains("x:Name=\"ThermalControlPolicySelector\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayMemberPath=\"Label\"", xaml[disclosureStart..], StringComparison.Ordinal);
+        Assert.Contains("OnThermalControlPolicyChanged", xaml, StringComparison.Ordinal);
+        Assert.Contains("ThermalConvergenceExplicitReapplyRequired", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Background=\"#", xaml[disclosureStart..], StringComparison.Ordinal);
+        Assert.Contains("ShowAndActivate();", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ShouldForceWindowVisibleForThermalDisclosure",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "!window.ViewModel.ShouldForceWindowVisibleForThermalDisclosure",
+            app,
+            StringComparison.Ordinal);
+    }
+
     private static string ProjectPath => GetProjectPath();
 
     private static string ReadRepositoryFile(params string[] segments) =>

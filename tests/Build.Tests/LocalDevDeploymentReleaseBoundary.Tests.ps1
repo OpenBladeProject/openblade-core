@@ -48,6 +48,8 @@ $setupProgramSource = [IO.File]::ReadAllText((
         Join-Path $repository 'src\OpenBlade.Setup\Program.cs'))
 $invokeLocalDevSource = [IO.File]::ReadAllText((
         Join-Path $repository 'build\development-deployment\Invoke-LocalDevDeployment.ps1'))
+$thermalValidationBuildSource = [IO.File]::ReadAllText((
+        Join-Path $repository 'build\Build-ThermalExternalDriftValidation.ps1'))
 
 foreach ($forbiddenPublishText in @(
         'src\OpenBlade.DeploymentBroker\OpenBlade.DeploymentBroker.csproj',
@@ -138,5 +140,25 @@ Assert-True (
     $invokeLocalDevSource.Contains('-BuildChannel LocalDev') -and
     $invokeLocalDevSource.Contains('-LocalDevVersion $localDevVersion')) `
     'Successive local builds must use the reserved monotonic Burn identity.'
+Assert-True (
+    $publishSource.Contains('[switch]$ThermalExternalDriftValidation') -and
+    $publishSource.Contains("`$buildIdentity.Channel -ne 'LocalDev'") -and
+    $publishSource.Contains('--property:OpenBladeThermalExternalDriftValidation=true') -and
+    $publishSource.Contains('--property:OpenBladeThermalExternalDriftValidation=false')) `
+    'Thermal validation must be an explicit LocalDev-only Service marker with an ordinary disabled path.'
+Assert-True (
+    $invokeLocalDevSource.Contains('[switch]$ThermalExternalDriftValidation') -and
+    $invokeLocalDevSource.Contains('-ValidationOutputDirectory is required') -and
+    $invokeLocalDevSource.Contains('Build-ThermalExternalDriftValidation.ps1') -and
+    $thermalValidationBuildSource.Contains('-BuildChannel LocalDev') -and
+    $thermalValidationBuildSource.Contains('-ThermalExternalDriftValidation')) `
+    'The fixed LocalDev workflow must require explicit validation opt-in and build one coordinated installer.'
+foreach ($forbiddenBrokerExpansion in @(
+        'OpenBlade.DeploymentBroker.exe',
+        '--operation',
+        '--installer-arguments')) {
+    Assert-True (-not $thermalValidationBuildSource.Contains($forbiddenBrokerExpansion)) `
+        "Thermal validation must not expand the broker surface with '$forbiddenBrokerExpansion'."
+}
 
 Write-Host 'Local-development deployment release-boundary tests passed.'

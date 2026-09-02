@@ -28,6 +28,12 @@ internal readonly record struct ServiceRequestAccessDecision(
 
 public static class ServiceRequestAccessPolicy
 {
+    public static bool IsActiveLocalInteractiveClient(
+        ServiceClientContext client,
+        IInteractiveSessionAuthority authority) =>
+        client.LogonKind == ServiceClientLogonKind.Interactive
+        && GetAccess(client, authority) == SessionControlAccess.Active;
+
     public static SessionControlAccess GetAccess(
         ServiceClientContext client,
         IInteractiveSessionAuthority authority)
@@ -76,6 +82,18 @@ public static class ServiceRequestAccessPolicy
                     : "This operation requires an administrator.");
         }
 
+        if (request is ValidateThermalExternalDriftRequest)
+        {
+            SessionControlAccess validationAccess = GetAccess(client, authority);
+            return new ServiceRequestAccessDecision(
+                validationAccess,
+                !client.IsAdministrator
+                    ? "Thermal external-drift validation requires a local administrator."
+                    : !IsActiveLocalInteractiveClient(client, authority)
+                        ? "Thermal external-drift validation requires the active local interactive session."
+                        : null);
+        }
+
         if (request is ValidatePadlessHyperBoostLifecycleRequest)
         {
             SessionControlAccess validationAccess = GetAccess(client, authority);
@@ -86,6 +104,17 @@ public static class ServiceRequestAccessPolicy
                     : validationAccess != SessionControlAccess.Active
                         ? "Pad-less HyperBoost lifecycle validation requires the active local interactive session."
                         : null);
+        }
+
+        if (request is SetThermalControlPolicyRequest
+            or AcknowledgeThermalPolicyUpgradeDisclosureRequest)
+        {
+            SessionControlAccess thermalPolicyAccess = GetAccess(client, authority);
+            return new ServiceRequestAccessDecision(
+                thermalPolicyAccess,
+                IsActiveLocalInteractiveClient(client, authority)
+                    ? null
+                    : "Thermal policy changes require the active local interactive Windows session.");
         }
 
         SessionControlAccess access = GetAccess(client, authority);

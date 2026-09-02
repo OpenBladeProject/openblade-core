@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(51, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -28,6 +28,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetHyperBoostRequest), "setHyperBoost"),
             (typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle"),
+            (typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift"),
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
@@ -40,6 +41,8 @@ public sealed class ServiceMessageContractTests
             (typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride"),
             (typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings"),
             (typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore"),
+            (typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy"),
+            (typeof(AcknowledgeThermalPolicyUpgradeDisclosureRequest), "acknowledgeThermalPolicyUpgradeDisclosure"),
             (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame"),
@@ -66,6 +69,7 @@ public sealed class ServiceMessageContractTests
             "ActivePowerSource", "LiveReadings",
             "PadlessHyperBoostEligibility",
             "HyperBoostRestorePending",
+            "ThermalConvergence",
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride",
             "BatteryPolicyOverride", "BatteryProtectionOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
@@ -100,6 +104,28 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(DisplayBrightnessHidAvailability), typeof(ServiceStatusSnapshot).GetProperty("DisplayBrightnessHidAvailability")!.PropertyType);
         Assert.Equal(typeof(BatteryPolicy), typeof(ServiceStatusSnapshot).GetProperty("BatteryPolicyOverride")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("BatteryProtectionOverride")!.PropertyType);
+        Assert.Equal(typeof(ThermalConvergenceStatus), typeof(ServiceStatusSnapshot).GetProperty("ThermalConvergence")!.PropertyType);
+    }
+
+    [Fact]
+    public void ThermalControlContracts_DeclareClosedPolicyAndStatusValues()
+    {
+        Assert.Equal(
+            ["MaintainDesiredState", "Strict"],
+            Enum.GetNames<ThermalControlPolicy>());
+        Assert.Equal(
+            ["NotRequired", "UpgradeDisclosurePending", "Acknowledged"],
+            Enum.GetNames<ThermalPolicyUpgradeDisclosureState>());
+        Assert.Equal(
+            [
+                "Matched", "AwaitingObservation", "Converging", "Paused",
+                "Suppressed", "External", "RestorePending",
+                "ReconciliationUnavailable",
+            ],
+            Enum.GetNames<ThermalConvergenceState>());
+        Assert.Equal(
+            ["Performance", "Fans"],
+            Enum.GetNames<ThermalComponent>());
     }
 
     [Fact]

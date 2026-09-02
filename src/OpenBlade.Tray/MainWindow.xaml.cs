@@ -86,6 +86,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingStartupAnimation;
     private bool changingFunctionKeySelection;
     private bool changingExternalLightingPolicy;
+    private bool changingThermalControlPolicy;
     private bool changingLightingRefreshRate;
     private bool changingFirmwareCompatibilityOverride;
     private bool changingWindowsDynamicLighting;
@@ -989,6 +990,32 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
         }
 
+        if (args.PropertyName == nameof(
+                MainViewModel.ShouldForceWindowVisibleForThermalDisclosure)
+            && ViewModel.ShouldForceWindowVisibleForThermalDisclosure)
+        {
+            void RevealThermalPolicyDisclosure()
+            {
+                ShowAndActivate();
+                MainNavigation.SelectedItem = SettingsNavigationItem;
+                ThermalPolicyUpgradeDisclosureInfoBar.StartBringIntoView(
+                    new BringIntoViewOptions
+                    {
+                        AnimationDesired = false,
+                        VerticalAlignmentRatio = 0,
+                    });
+            }
+
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                RevealThermalPolicyDisclosure();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(RevealThermalPolicyDisclosure);
+            }
+        }
+
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode)
             or nameof(MainViewModel.EnabledDashboardTelemetryItems)
@@ -1637,6 +1664,45 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
             toggle.IsEnabled = true;
             changingExternalLightingPolicy = false;
+        }
+    }
+
+    private async void OnThermalControlPolicyChanged(
+        object sender,
+        ResponsiveChoiceSelectionChangedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleThermalControlPolicyChangedAsync(sender),
+            nameof(OnThermalControlPolicyChanged));
+
+    private async Task HandleThermalControlPolicyChangedAsync(object sender)
+    {
+        if (changingThermalControlPolicy
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ResponsiveChoiceSelector selector
+            || selector.SelectedItem is not ThermalControlPolicyOption requested
+            || requested.Policy == ViewModel.SelectedThermalControlPolicyOption.Policy)
+        {
+            return;
+        }
+
+        if (ViewModel.SetThermalControlPolicyCommand is not AsyncRelayCommand command
+            || !command.CanExecute(requested))
+        {
+            selector.SelectedItem = ViewModel.SelectedThermalControlPolicyOption;
+            return;
+        }
+
+        changingThermalControlPolicy = true;
+        selector.IsEnabled = false;
+        try
+        {
+            await command.ExecuteAsync(requested);
+        }
+        finally
+        {
+            selector.SelectedItem = ViewModel.SelectedThermalControlPolicyOption;
+            selector.IsEnabled = ViewModel.CanChangeThermalControlPolicy;
+            changingThermalControlPolicy = false;
         }
     }
 

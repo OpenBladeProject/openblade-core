@@ -8,16 +8,33 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 51;
+    public const int ProtocolVersion = 53;
+    public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
 }
 
+public sealed class IpcProtocolVersionMismatchException : IOException
+{
+    public IpcProtocolVersionMismatchException(int expectedVersion, int actualVersion)
+        : base("IPC protocol version is unsupported.")
+    {
+        ExpectedVersion = expectedVersion;
+        ActualVersion = actualVersion;
+    }
+
+    public int ExpectedVersion { get; }
+
+    public int ActualVersion { get; }
+}
+
 public static class IpcMessageCodec
 {
     private static readonly JsonSerializerOptions SerializerOptions =
-        CreateSerializerOptions();
+        CreateSerializerOptions(omitThermalConvergence: false);
+    private static readonly JsonSerializerOptions Protocol51SerializerOptions =
+        CreateSerializerOptions(omitThermalConvergence: true);
 
     public static Task WriteRequestAsync(
         Stream stream,
@@ -35,6 +52,30 @@ public static class IpcMessageCodec
         ServiceRequest request = await ReadFramedAsync<ServiceRequest>(stream, token)
             .ConfigureAwait(false);
         ValidateRequest(request);
+        return request;
+    }
+
+    public static async Task<ServiceRequest> ReadRequestWithProtocol51CompatibilityAsync(
+        Stream stream,
+        CancellationToken token)
+    {
+        ServiceRequest request = await ReadFramedAsync<ServiceRequest>(
+                stream,
+                token,
+                allowProtocol51: true)
+            .ConfigureAwait(false);
+        if (request.Version == OpenBladeIpc.ProtocolVersion)
+        {
+            ValidateRequest(request);
+            return request;
+        }
+
+        if (request.Version != OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion
+            || request.RequestId == Guid.Empty)
+        {
+            throw new InvalidDataException("IPC request body is invalid.");
+        }
+
         return request;
     }
 
@@ -57,17 +98,49 @@ public static class IpcMessageCodec
         return frame;
     }
 
+    public static Task WriteProtocol51ReadOnlyServerFrameAsync(
+        Stream stream,
+        ServiceServerFrame frame,
+        CancellationToken token)
+    {
+        ValidateServerFrame(frame);
+        ServiceServerFrame projected = frame switch
+        {
+            ServiceResponse response => response with
+            {
+                Version = OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion,
+                Status = response.Status is null
+                    ? null
+                    : ProjectProtocol51ReadOnlyStatus(response.Status),
+            },
+            ServiceStatusEvent statusEvent => statusEvent with
+            {
+                Version = OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion,
+                Status = ProjectProtocol51ReadOnlyStatus(statusEvent.Status),
+            },
+            _ => throw new InvalidDataException("IPC server frame body is invalid."),
+        };
+        return WriteFramedAsync(
+            stream,
+            projected,
+            token,
+            Protocol51SerializerOptions);
+    }
+
     private static async Task WriteFramedAsync<T>(
         Stream stream,
         T message,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? serializerOptions = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(message);
         byte[] payload;
         try
         {
-            payload = JsonSerializer.SerializeToUtf8Bytes(message, SerializerOptions);
+            payload = JsonSerializer.SerializeToUtf8Bytes(
+                message,
+                serializerOptions ?? SerializerOptions);
         }
         catch (JsonException exception)
         {
@@ -92,7 +165,8 @@ public static class IpcMessageCodec
 
     private static async Task<T> ReadFramedAsync<T>(
         Stream stream,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowProtocol51 = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
         byte[] prefix = new byte[sizeof(int)];
@@ -107,7 +181,8 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            ValidatePayloadVersion(payload);
+            ValidateNoDuplicateObjectMembers(payload);
+            ValidatePayloadVersion(payload, allowProtocol51);
             return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
         }
@@ -158,6 +233,12 @@ public static class IpcMessageCodec
                 && IsHex(validate.ExpectedSourceRevision, 40)
                 && IsHex(validate.ExpectedServiceAssemblySha256, 64)
                 && IsHex(validate.ExpectedAdmissionManifestSha256, 64),
+            ValidateThermalExternalDriftRequest validate =>
+                validate.ValidationRunId != Guid.Empty
+                && IsHex(validate.ExpectedSourceRevision, 40)
+                && IsHex(validate.ExpectedServiceAssemblySha256, 64)
+                && IsHex(validate.ExpectedProtocolAssemblySha256, 64)
+                && IsHex(validate.ExpectedProductionFixtureSha256, 64),
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetPerformanceShortcutPreviewRequest preview =>
                 preview.SessionId != Guid.Empty
@@ -186,6 +267,8 @@ public static class IpcMessageCodec
             SetFirmwareCompatibilityOverrideRequest => true,
             ReapplyChangedSettingsRequest => true,
             RecoverHyperBoostRestoreRequest => true,
+            SetThermalControlPolicyRequest set => Enum.IsDefined(set.Policy),
+            AcknowledgeThermalPolicyUpgradeDisclosureRequest => true,
             SetLightingSuppressionRequest set => Enum.IsDefined(set.Reason),
             PulseReactiveKeyRequest pulse =>
                 pulse.Pulse.MatrixSlot <= ReactiveKeyPulse.MaximumMatrixSlot,
@@ -516,6 +599,57 @@ public static class IpcMessageCodec
             throw InvalidStatus("lighting-suppression collection is malformed");
         }
 
+        if (status.ThermalConvergence is { } thermalConvergence)
+        {
+            if (!Enum.IsDefined(thermalConvergence.Policy))
+            {
+                throw InvalidStatus("thermal-control policy is unknown");
+            }
+
+            if (!Enum.IsDefined(thermalConvergence.Disclosure))
+            {
+                throw InvalidStatus("thermal-policy disclosure state is unknown");
+            }
+
+            if (!Enum.IsDefined(thermalConvergence.State))
+            {
+                throw InvalidStatus("thermal-convergence state is unknown");
+            }
+
+            if (!Enum.IsDefined(thermalConvergence.Reason))
+            {
+                throw InvalidStatus("thermal-convergence reason is unknown");
+            }
+
+            if (thermalConvergence.AffectedComponents is null)
+            {
+                throw InvalidStatus("thermal-convergence affected-component collection is missing");
+            }
+
+            if (thermalConvergence.AffectedComponents.Count > 2)
+            {
+                throw InvalidStatus("thermal-convergence affected-component collection exceeds two entries");
+            }
+
+            if (!thermalConvergence.AffectedComponents.All(Enum.IsDefined))
+            {
+                throw InvalidStatus("thermal-convergence affected-component collection contains an unknown component");
+            }
+
+            SortedCollectionStatus affectedComponentStatus = ValidateSortedUnique(
+                thermalConvergence.AffectedComponents,
+                Comparer<ThermalComponent>.Default);
+            if (affectedComponentStatus == SortedCollectionStatus.Duplicate)
+            {
+                throw InvalidStatus("thermal-convergence affected-component collection contains duplicates");
+            }
+
+            if (affectedComponentStatus == SortedCollectionStatus.Unsorted)
+            {
+                throw InvalidStatus("thermal-convergence affected-component collection is not sorted");
+            }
+        }
+
         if (status.Capabilities is { IsWellFormed: false })
         {
             throw InvalidStatus("capability collections are malformed");
@@ -580,7 +714,9 @@ public static class IpcMessageCodec
         && profiles.Battery?.WindowsPowerMode is null
         && profiles.UsbC?.WindowsPowerMode is null;
 
-    private static void ValidatePayloadVersion(ReadOnlySpan<byte> payload)
+    private static void ValidatePayloadVersion(
+        ReadOnlySpan<byte> payload,
+        bool allowProtocol51)
     {
         var reader = new Utf8JsonReader(payload);
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
@@ -608,11 +744,47 @@ public static class IpcMessageCodec
                 && reader.TokenType == JsonTokenType.Number
                 && reader.TryGetInt32(out int version))
             {
+                if (allowProtocol51
+                    && version == OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion)
+                {
+                    return;
+                }
+
                 ValidateVersion(version);
                 return;
             }
 
             reader.Skip();
+        }
+    }
+
+    private static void ValidateNoDuplicateObjectMembers(ReadOnlyMemory<byte> payload)
+    {
+        using JsonDocument document = JsonDocument.Parse(payload);
+        ValidateNoDuplicateObjectMembers(document.RootElement);
+    }
+
+    private static void ValidateNoDuplicateObjectMembers(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    throw new JsonException("IPC message contains a duplicate member.");
+                }
+
+                ValidateNoDuplicateObjectMembers(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                ValidateNoDuplicateObjectMembers(item);
+            }
         }
     }
 
@@ -628,29 +800,49 @@ public static class IpcMessageCodec
     {
         if (version != OpenBladeIpc.ProtocolVersion)
         {
-            throw new InvalidDataException("IPC protocol version is unsupported.");
+            throw new IpcProtocolVersionMismatchException(
+                OpenBladeIpc.ProtocolVersion,
+                version);
         }
     }
 
     private static InvalidDataException InvalidBody(JsonException exception) =>
         new("IPC message body is invalid.", exception);
 
-    private static JsonSerializerOptions CreateSerializerOptions()
+    private static ServiceStatusSnapshot ProjectProtocol51ReadOnlyStatus(
+        ServiceStatusSnapshot status) => status with
+        {
+            WritesBlocked = true,
+            Message = "OpenBlade was updated. Update or repair the app to restore hardware control.",
+            ThermalConvergence = null,
+        };
+
+    private static JsonSerializerOptions CreateSerializerOptions(
+        bool omitThermalConvergence)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
-        resolver.Modifiers.Add(static typeInfo =>
+        resolver.Modifiers.Add(typeInfo =>
         {
-            if (typeInfo.Type != typeof(ProfileSet))
+            if (typeInfo.Type == typeof(ProfileSet))
             {
-                return;
+                JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "windowsPowerModes",
+                        StringComparison.OrdinalIgnoreCase));
+                windowsPowerModes.IsRequired = true;
             }
 
-            JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>
-                string.Equals(
-                    property.Name,
-                    "windowsPowerModes",
-                    StringComparison.OrdinalIgnoreCase));
-            windowsPowerModes.IsRequired = true;
+            if (omitThermalConvergence
+                && typeInfo.Type == typeof(ServiceStatusSnapshot))
+            {
+                JsonPropertyInfo thermalConvergence = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "thermalConvergence",
+                        StringComparison.OrdinalIgnoreCase));
+                thermalConvergence.ShouldSerialize = static (_, _) => false;
+            }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {

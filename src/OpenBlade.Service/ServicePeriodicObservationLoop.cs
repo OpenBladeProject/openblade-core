@@ -74,6 +74,16 @@ public sealed class ServicePeriodicObservationLoop
             {
                 return;
             }
+            if (runtime.ShouldRunThermalConvergenceObservation()
+                && !await RunStepAsync(
+                    token => runtime.ObserveAsync(
+                        includeLiveReadings: false,
+                        token),
+                    "thermal desired-state observation",
+                    stoppingToken))
+            {
+                return;
+            }
         }
     }
 

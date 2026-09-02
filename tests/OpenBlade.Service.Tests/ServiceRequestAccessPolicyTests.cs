@@ -116,6 +116,41 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void ThermalExternalDriftValidation_RequiresActiveLocalAdministrator()
+    {
+        var authority = new FixedSessionAuthority(4);
+        var request = new ValidateThermalExternalDriftRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64));
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4, administrator: true),
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4, administrator: false),
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 3, administrator: true),
+            authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            new ServiceClientContext(
+                new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                SessionId: 0,
+                IsAdministrator: true,
+                ServiceClientLogonKind.LocalSystem),
+            authority));
+    }
+
+    [Fact]
     public void FirmwareCompatibilityOverride_AllowsActiveStandardUserOnly()
     {
         var request = new SetFirmwareCompatibilityOverrideRequest(

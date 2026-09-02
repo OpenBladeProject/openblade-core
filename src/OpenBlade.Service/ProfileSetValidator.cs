@@ -136,6 +136,16 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The lighting refresh rate is undefined.");
         }
 
+        if (!Enum.IsDefined(preferences.ThermalControlPolicy))
+        {
+            throw Invalid("The thermal control policy is undefined.");
+        }
+
+        if (!Enum.IsDefined(preferences.ThermalPolicyUpgradeDisclosure))
+        {
+            throw Invalid("The thermal policy upgrade disclosure state is undefined.");
+        }
+
         if (preferences.LastKnownLighting is { } lighting)
         {
             ValidateLighting(lighting, "last-known");

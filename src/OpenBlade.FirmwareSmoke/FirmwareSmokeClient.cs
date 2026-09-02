@@ -41,10 +41,27 @@ public interface IFirmwareSmokeClient : IAsyncDisposable
                 ControlOperationStatus.Blocked,
                 "Pad-less HyperBoost lifecycle validation is unavailable."));
 
+    Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedProtocolAssemblySha256,
+        string expectedProductionFixtureSha256,
+        CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Thermal external-drift validation is unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
         CancellationToken cancellationToken);
+
+    Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Changed-setting reapplication is unavailable."));
 
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
@@ -107,11 +124,30 @@ public sealed class FirmwareSmokeClient : IFirmwareSmokeClient
             expectedAdmissionManifestSha256,
             cancellationToken);
 
+    public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedProtocolAssemblySha256,
+        string expectedProductionFixtureSha256,
+        CancellationToken cancellationToken) =>
+        client.ValidateThermalExternalDriftAsync(
+            validationRunId,
+            expectedSourceRevision,
+            expectedServiceAssemblySha256,
+            expectedProtocolAssemblySha256,
+            expectedProductionFixtureSha256,
+            cancellationToken);
+
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
         CancellationToken cancellationToken) =>
         client.SetFanControlOverrideAsync(value, settings, cancellationToken);
+
+    public Task<ControlOperationResult> ReapplyChangedSettingsAsync(
+        CancellationToken cancellationToken) =>
+        client.ReapplyChangedSettingsAsync(cancellationToken);
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,

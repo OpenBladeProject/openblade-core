@@ -39,6 +39,16 @@ public sealed class UserConfigurationRepositoryTests : IDisposable
         Assert.NotEqual(
             75,
             second.Configuration.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.NotNull(first.ThermalConvergenceStore);
+        Assert.NotNull(first.ThermalConvergence);
+        Assert.True(first.ThermalConvergence!.IsAuthoritative);
+        Assert.True(first.ThermalConvergence.State.IsEmpty);
+        Assert.Equal(firstSid.Value, first.ThermalConvergence.State.ActiveUserSid);
+        Assert.Contains(
+            Path.Combine("users", firstSid.Value, "thermal-convergence.json"),
+            first.ThermalConvergenceStore!.Path,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(first.ThermalConvergenceStore.Path));
     }
 
     [Fact]
@@ -216,6 +226,34 @@ public sealed class UserConfigurationRepositoryTests : IDisposable
             "users",
             ownerSid.Value,
             ".legacy-migration-complete")));
+    }
+
+    [Fact]
+    public async Task LoadAsync_QuarantinedThermalSidecarKeepsExplicitConfigurationAdmitted()
+    {
+        Directory.CreateDirectory(directory);
+        var userSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        string userDirectory = Path.Combine(directory, "users", userSid.Value);
+        Directory.CreateDirectory(userDirectory);
+        string sidecarPath = Path.Combine(userDirectory, "thermal-convergence.json");
+        byte[] evidence = "{ invalid-json"u8.ToArray();
+        await File.WriteAllBytesAsync(sidecarPath, evidence);
+
+        UserConfigurationContext loaded = await new UserConfigurationRepository(
+                directory,
+                validator)
+            .LoadAsync(userSid, CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Equal(ConfigurationQuarantineReason.None, loaded.QuarantineReason);
+        Assert.NotNull(loaded.ThermalConvergence);
+        Assert.Equal(
+            ConfigurationLoadDisposition.Quarantined,
+            loaded.ThermalConvergence!.Disposition);
+        Assert.Equal(
+            ConfigurationQuarantineReason.InvalidDocument,
+            loaded.ThermalConvergence.QuarantineReason);
+        Assert.Equal(evidence, await File.ReadAllBytesAsync(sidecarPath));
     }
 
     public void Dispose()

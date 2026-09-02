@@ -69,6 +69,12 @@ public static class FirmwareSmokeProgram
                         collector,
                         client,
                         cancellationToken).ConfigureAwait(false),
+                "thermal-external-drift" =>
+                    await RunThermalExternalDriftAsync(
+                        args,
+                        outputDirectory,
+                        client,
+                        cancellationToken).ConfigureAwait(false),
                 _ => UnknownCommand(command),
             };
         }
@@ -353,6 +359,65 @@ public static class FirmwareSmokeProgram
         return result.Success ? 0 : 2;
     }
 
+    private static async Task<int> RunThermalExternalDriftAsync(
+        string[] args,
+        string outputDirectory,
+        IFirmwareSmokeClient client,
+        CancellationToken cancellationToken)
+    {
+        string manifestPath = ReadOption(args, "--validation-build-manifest")
+            ?? throw new ArgumentException(
+                "--validation-build-manifest <manifest.json> is required.");
+        ThermalExternalDriftValidationBuildManifest manifest =
+            await FirmwareSmokeFiles.ReadJsonAsync<
+                    ThermalExternalDriftValidationBuildManifest>(
+                    manifestPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!manifest.IsWellFormed)
+        {
+            throw new InvalidDataException(
+                "The thermal external-drift validation-build manifest is malformed.");
+        }
+        string processPath = Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The running FirmwareSmoke executable path is unavailable.");
+        if (!manifest.MatchesFirmwareSmoke(processPath))
+        {
+            throw new InvalidDataException(
+                "The running FirmwareSmoke executable does not match the validation-build manifest.");
+        }
+
+        ServiceStatusSnapshot current = await client.GetStatusAsync(cancellationToken)
+            .ConfigureAwait(false);
+        string targetModel = current.Firmware?.ModelNumber ?? "unknown";
+        string confirmation = ThermalExternalDriftConfirmation(targetModel);
+        if (!string.Equals(
+            ReadOption(args, "--confirm-target"),
+            confirmation,
+            StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(
+                "Thermal external-drift validation requires --confirm-target "
+                + confirmation);
+            return 1;
+        }
+
+        ThermalExternalDriftValidationResult result =
+            await new ThermalExternalDriftValidationRunner(client)
+                .RunAsync(manifest, cancellationToken)
+                .ConfigureAwait(false);
+        Directory.CreateDirectory(outputDirectory);
+        await FirmwareSmokeFiles.WriteJsonAsync(
+            Path.Combine(outputDirectory, "thermal-external-drift.json"),
+            result,
+            cancellationToken).ConfigureAwait(false);
+        Console.WriteLine(result.Message);
+        Console.WriteLine(
+            "The tool never opens HID directly and does not initiate sleep, shutdown, service restart, or process termination.");
+        return result.Success ? 0 : 2;
+    }
+
     private static async Task<FirmwareSmokeSnapshot> ReadBaselineAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -450,6 +515,13 @@ public static class FirmwareSmokeProgram
             ? "LOW-POWER"
             : "UNEXPECTED-EXIT";
         return $"{canonical}-HYPERBOOST-{boundary}-LIFECYCLE";
+    }
+
+    internal static string ThermalExternalDriftConfirmation(string targetModel)
+    {
+        string canonical = RazerBladeModelCatalog.Find(targetModel)?.ModelNumber
+            ?? targetModel.Trim().ToUpperInvariant();
+        return $"{canonical}-THERMAL-EXTERNAL-DRIFT";
     }
 
     private static bool HasHyperBoostLifecycleConfirmation(
@@ -571,6 +643,10 @@ public static class FirmwareSmokeProgram
             "  hyperboost-lifecycle-verify --baseline <baseline.json> " +
             "--scenario <low-power|unexpected-exit> --marker <private-marker.json> " +
             "--confirm-target <MODEL>-HYPERBOOST-<BOUNDARY>-LIFECYCLE " +
+            "[--output <directory>]");
+        Console.WriteLine(
+            "  thermal-external-drift --validation-build-manifest <manifest.json> " +
+            "--confirm-target <MODEL>-THERMAL-EXTERNAL-DRIFT " +
             "[--output <directory>]");
         Console.WriteLine();
         Console.WriteLine(

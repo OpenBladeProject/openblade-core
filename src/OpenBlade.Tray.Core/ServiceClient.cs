@@ -143,6 +143,23 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 expectedAdmissionManifestSha256),
             token);
 
+    public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+        Guid validationRunId,
+        string expectedSourceRevision,
+        string expectedServiceAssemblySha256,
+        string expectedProtocolAssemblySha256,
+        string expectedProductionFixtureSha256,
+        CancellationToken token) => SendMutationAsync(
+            new ValidateThermalExternalDriftRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                validationRunId,
+                expectedSourceRevision,
+                expectedServiceAssemblySha256,
+                expectedProtocolAssemblySha256,
+                expectedProductionFixtureSha256),
+            token);
+
     public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
         CancellationToken token) => SendMutationAsync(
@@ -230,6 +247,22 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 enabled),
+            token);
+
+    public Task<ControlOperationResult> SetThermalControlPolicyAsync(
+        ThermalControlPolicy policy,
+        CancellationToken token) => SendMutationAsync(
+            new SetThermalControlPolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                policy),
+            token);
+
+    public Task<ControlOperationResult> AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+        CancellationToken token) => SendMutationAsync(
+            new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid()),
             token);
 
     public Task<ControlOperationResult> SetLightingRefreshRateAsync(
@@ -707,7 +740,8 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     }
 
     private static bool IsRetryableTransportFailure(Exception exception) =>
-        exception is IOException or TimeoutException;
+        (exception is IOException or TimeoutException)
+        && exception is not IpcProtocolVersionMismatchException;
 
     private async Task DelayAfterCapacityRejectionAsync(
         Exception exception,

@@ -12,6 +12,10 @@ public sealed record UserConfigurationContext(
     ConfigurationQuarantineReason OverrideQuarantineReason =
         ConfigurationQuarantineReason.None)
 {
+    internal ThermalConvergenceStateStore? ThermalConvergenceStore { get; init; }
+
+    internal ThermalConvergenceLoadResult? ThermalConvergence { get; init; }
+
     public ConfigurationLoadDisposition Disposition =>
         Configuration.Disposition == ConfigurationLoadDisposition.Admitted
         && OverrideDisposition == ConfigurationLoadDisposition.Admitted
@@ -67,6 +71,9 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
             validator);
         var overrides = new PersistentOverrideStore(
             Path.Combine(userDirectory, "manual-overrides.json"));
+        var thermalConvergence = new ThermalConvergenceStateStore(
+            Path.Combine(userDirectory, "thermal-convergence.json"),
+            userSid);
 
         await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -84,13 +91,21 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
             PersistentOverrideLoadResult loadedOverrides = await overrides
                 .LoadAsync(cancellationToken)
                 .ConfigureAwait(false);
+            ThermalConvergenceLoadResult loadedThermalConvergence =
+                await thermalConvergence
+                    .LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
             return new UserConfigurationContext(
                 store,
                 overrides,
                 configuration,
                 loadedOverrides.Overrides,
                 loadedOverrides.Disposition,
-                loadedOverrides.QuarantineReason);
+                loadedOverrides.QuarantineReason)
+            {
+                ThermalConvergenceStore = thermalConvergence,
+                ThermalConvergence = loadedThermalConvergence,
+            };
         }
         finally
         {
