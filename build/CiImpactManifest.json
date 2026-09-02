@@ -156,6 +156,10 @@
       "patterns": ["build/Build-ThermalExternalDriftValidation.ps1", "build/Publish.ps1", "build/development-deployment/Invoke-LocalDevDeployment.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/ThermalExternalDriftValidationBuild.cs", "src/OpenBlade.Protocol/ProductionFixtureSource.cs", "src/OpenBlade.Protocol/TrustedFixtureHashRegistry.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json"]
     },
     {
+      "test": "tests/Build.Tests/ChangelogReleases.Tests.ps1",
+      "patterns": ["build/Validate-ChangelogReleases.ps1", "build/NightlyChangelog.ps1", "CHANGELOG.md", "AGENTS.md", "tests/Build.Tests/ChangelogReleases.Tests.ps1"]
+    },
+    {
       "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
       "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml"]
     },

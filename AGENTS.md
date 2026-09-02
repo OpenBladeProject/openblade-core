@@ -218,7 +218,12 @@ unrelated worktrees and checkout changes.
    `### ` categories; continuation paragraphs, nested lists, and fenced blocks
    remain part of the preceding bullet. Editing a bullet already included in a
    published nightly creates a new entry at the next nightly boundary while
-   the earlier section retains its exact published wording.
+   the earlier section retains its exact published wording. Publishing a
+   release by hand skips that job, so record the published section in the same
+   change: regenerate with `Write-OpenBladeNightlyChangelogSnapshot` from
+   `build/NightlyChangelog.ps1` and confirm with
+   `build/Validate-ChangelogReleases.ps1`, which fails when a published release
+   has no dated section or no comparison link.
 9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
 10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
