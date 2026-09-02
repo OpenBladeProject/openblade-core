@@ -1854,8 +1854,6 @@ public partial class App
     }
 }
 #else
-namespace OpenBlade.Tray;
-
 public partial class App
 {
     // The shipped Tray has no developer harness; every launch is a product launch.
