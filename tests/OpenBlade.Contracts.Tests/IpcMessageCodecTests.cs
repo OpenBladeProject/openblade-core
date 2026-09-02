@@ -86,6 +86,14 @@ public sealed class IpcMessageCodecTests
             new string('a', 40),
             new string('B', 64),
             new string('C', 64)),
+        new ValidateThermalExternalDriftRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new string('a', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64)),
         new CyclePerformanceShortcutRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -347,6 +355,38 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.GetType(), actual.GetType());
     }
 
+    [Theory]
+    [InlineData("validationRunId", "00000000-0000-0000-0000-000000000000")]
+    [InlineData("expectedSourceRevision", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("expectedSourceRevision", "gggggggggggggggggggggggggggggggggggggggg")]
+    [InlineData("expectedServiceAssemblySha256", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")]
+    [InlineData("expectedServiceAssemblySha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    [InlineData("expectedProtocolAssemblySha256", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")]
+    [InlineData("expectedProtocolAssemblySha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    [InlineData("expectedProductionFixtureSha256", "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")]
+    [InlineData("expectedProductionFixtureSha256", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    public async Task ThermalExternalDriftValidationRequest_RejectsMalformedIdentity(
+        string propertyName,
+        string malformedValue)
+    {
+        var request = new ValidateThermalExternalDriftRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new string('a', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64));
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceRequest>(request)));
+        root[propertyName] = malformedValue;
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
     [Fact]
     public async Task LightingRequestRejectsMismatchedTypedEffectParameters()
     {
@@ -474,7 +514,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(52, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1061,7 +1101,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(52, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

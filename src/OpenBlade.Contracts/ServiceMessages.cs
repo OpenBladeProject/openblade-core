@@ -27,6 +27,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
 [JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
+[JsonDerivedType(typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift")]
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
@@ -119,6 +120,16 @@ public sealed record ValidatePadlessHyperBoostLifecycleRequest(
     string ExpectedSourceRevision,
     string ExpectedServiceAssemblySha256,
     string ExpectedAdmissionManifestSha256)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ValidateThermalExternalDriftRequest(
+    int Version,
+    Guid RequestId,
+    Guid ValidationRunId,
+    string ExpectedSourceRevision,
+    string ExpectedServiceAssemblySha256,
+    string ExpectedProtocolAssemblySha256,
+    string ExpectedProductionFixtureSha256)
     : ServiceRequest(Version, RequestId);
 
 public enum PadlessHyperBoostEligibilityState

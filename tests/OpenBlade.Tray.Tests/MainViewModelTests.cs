@@ -5526,6 +5526,9 @@ public sealed class MainViewModelTests
             ThermalControlPolicy.MaintainDesiredState,
             viewModel.SelectedThermalControlPolicyOption.Policy);
         Assert.True(viewModel.CanChangeThermalControlPolicy);
+        Assert.Equal(
+            "OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back.",
+            viewModel.ThermalPolicyDescription);
         Assert.Contains(
             "never turns on HyperBoost",
             viewModel.ThermalControlPolicyCommonNote,
@@ -8205,7 +8208,7 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient
         {
-            WatchFailure = new IpcProtocolVersionMismatchException(52, 51),
+            WatchFailure = new IpcProtocolVersionMismatchException(53, 51),
         };
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
 

@@ -1332,7 +1332,7 @@
   <data name="Got it" xml:space="preserve"><value>Понятно</value></data>
   <data name="Reapply" xml:space="preserve"><value>Применить снова</value></data>
   <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade сообщает об изменениях производительности или вентиляторов, сделанных вне приложения, и ждёт, пока вы примените настройки снова.</value></data>
-  <data name="OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible." xml:space="preserve"><value>OpenBlade в фоновом режиме проверяет заданные параметры производительности и вентиляторов и безопасно восстанавливает изменённые настройки, когда это возможно.</value></data>
+  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade сохраняет выбранные режим производительности и настройку вентиляторов. Если они изменятся, OpenBlade безопасно восстановит их.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Соответствует настройкам</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Проверка текущего состояния</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Восстановление сохранённых настроек</value></data>

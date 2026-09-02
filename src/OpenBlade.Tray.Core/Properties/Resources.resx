@@ -1332,7 +1332,7 @@
   <data name="Got it" xml:space="preserve"><value>Got it</value></data>
   <data name="Reapply" xml:space="preserve"><value>Reapply</value></data>
   <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them.</value></data>
-  <data name="OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible." xml:space="preserve"><value>OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible.</value></data>
+  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Up to date</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Checking current state</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Restoring saved settings</value></data>

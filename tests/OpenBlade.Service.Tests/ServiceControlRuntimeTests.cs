@@ -13587,6 +13587,244 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ThermalExternalDriftValidation_UsesOneHidWriteThenMaintainConverges()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-converges");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        ThermalConvergenceLoadResult ledgerBefore = await thermal.Store.LoadAsync(
+            CancellationToken.None);
+        Guid runId = Guid.NewGuid();
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult injection = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(runId),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.True(
+            injection.Status == ControlOperationStatus.Applied,
+            injection.Message);
+        Assert.Equal(writesBefore + 1, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            thermal.Context.Device.ConfirmedState.Performance);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            thermal.Context.Runtime.GetStatus().DesiredState.Performance.Value);
+        ThermalConvergenceLoadResult ledgerAfterInjection =
+            await thermal.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(ledgerBefore.Sha256, ledgerAfterInjection.Sha256);
+        Assert.Contains(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.TransitionId == runId
+                && result.Detail?.Contains(
+                    "confirmed one Service-owned synthetic performance mutation",
+                    StringComparison.Ordinal) == true
+                && result.Detail.Contains(
+                    "deviceFingerprint=OpenBlade:",
+                    StringComparison.Ordinal));
+
+        using var cancellation = new CancellationTokenSource();
+        Task consumer = thermal.Context.Runtime.RunThermalConvergenceAsync(
+            cancellation.Token);
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        await WaitForAsync(
+            () => thermal.Context.Runtime.GetStatus().ThermalConvergence?.State
+                == ThermalConvergenceState.Matched);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer);
+
+        Assert.Equal(writesBefore + 2, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            thermal.Context.Device.ConfirmedState.Performance);
+        Assert.Single(
+            thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.StartsWith(
+                "Maintain thermal convergence attempt ",
+                StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_StrictBlocksWithoutWriting()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-strict");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        ControlOperationResult policy = await thermal.Context.Runtime
+            .SetThermalControlPolicyAsync(
+                ThermalControlPolicy.Strict,
+                static () => true,
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, policy.Status);
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(Guid.NewGuid()),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writesBefore, thermal.Context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_KnownNotAppliedNeverRetriesOrReusesRun()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-known-not-applied");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.ThermalPreWriteRead,
+                "Injected pre-submission validation failure."));
+        Guid runId = Guid.NewGuid();
+        ValidateThermalExternalDriftRequest request =
+            CreateThermalExternalDriftValidationRequest(runId);
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult first = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                request,
+                static () => true,
+                CancellationToken.None);
+        ControlOperationResult second = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                request,
+                static () => true,
+                CancellationToken.None);
+
+        Assert.True(first.Status == ControlOperationStatus.Failed, first.Message);
+        Assert.Contains("not retried", first.Message, StringComparison.Ordinal);
+        Assert.Equal(ControlOperationStatus.Blocked, second.Status);
+        Assert.Contains("already used", second.Message, StringComparison.Ordinal);
+        Assert.Equal(writesBefore + 1, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            thermal.Context.Device.ConfirmedState.Performance);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_IndeterminateCandidateUsesReadbackWithoutReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-indeterminate");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        thermal.Context.Device.MutatePerformanceBeforeQueuedFailure = true;
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Injected possible validation submission."));
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(Guid.NewGuid()),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.Contains("readback resolved it", result.Message, StringComparison.Ordinal);
+        Assert.Equal(writesBefore + 1, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            thermal.Context.Device.ConfirmedState.Performance);
+        Assert.Empty(thermal.Context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_UnknownFailureUsesReadbackWithoutReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-unknown-failure");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        thermal.Context.Device.MutatePerformanceBeforeQueuedFailure = true;
+        thermal.Context.Device.PerformanceFailures.Enqueue(
+            new IOException("Injected unknown validation failure."));
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(Guid.NewGuid()),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.Contains("readback resolved it", result.Message, StringComparison.Ordinal);
+        Assert.Equal(writesBefore + 1, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Empty(thermal.Context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_DurableLedgerChangeBlocksHidWrite()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-ledger-change");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        bool changed = false;
+        thermal.Context.Provider.AfterTryGet = () =>
+        {
+            if (!changed)
+            {
+                File.AppendAllText(thermal.Store.Path, "\r\n");
+                changed = true;
+            }
+        };
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(Guid.NewGuid()),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("Durable Maintain authority changed", result.Message);
+        Assert.Equal(writesBefore, thermal.Context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            ThermalConvergenceState.ReconciliationUnavailable,
+            thermal.Context.Runtime.GetStatus().ThermalConvergence?.State);
+    }
+
+    [Fact]
+    public async Task ThermalExternalDriftValidation_AmbiguousReadbackBlocksWithoutReplay()
+    {
+        ThermalConvergenceTestContext thermal =
+            await CreateThermalConvergenceContextAsync("validation-ambiguous");
+        await PrepareThermalExternalDriftValidationAsync(thermal);
+        thermal.Context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                thermal.Context.Device.ConfirmedState =
+                    thermal.Context.Device.ConfirmedState with
+                    {
+                        Performance = PerformancePreset.Performance,
+                    };
+            }
+        };
+        int writesBefore = thermal.Context.Device.PerformanceSetCalls;
+
+        ControlOperationResult result = await thermal.Context.Runtime
+            .ValidateThermalExternalDriftCoreAsync(
+                CreateThermalExternalDriftValidationRequest(Guid.NewGuid()),
+                static () => true,
+                CancellationToken.None);
+
+        Assert.True(result.Status == ControlOperationStatus.Failed, result.Message);
+        Assert.Contains("read-only reconciliation", result.Message, StringComparison.Ordinal);
+        Assert.Equal(writesBefore + 1, thermal.Context.Device.PerformanceSetCalls);
+        Assert.True(thermal.Context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            DeviceSubsystem.Performance,
+            thermal.Context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Fact]
     public async Task ThermalConvergence_RejectedStrictPolicyPreservesQueuedCandidate()
     {
         ThermalConvergenceTestContext thermal =
@@ -15313,11 +15551,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Fail("The expected runtime state was not observed.");
     }
 
+    private static async Task PrepareThermalExternalDriftValidationAsync(
+        ThermalConvergenceTestContext thermal)
+    {
+        await thermal.Context.Runtime.ReconcileStartupProfileAsync(
+            CancellationToken.None);
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+    }
+
     private static string CreateTestThermalRevision<T>(T value)
     {
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(value);
         return new Guid(SHA256.HashData(json).AsSpan(0, 16)).ToString("D");
     }
+
+    private static ValidateThermalExternalDriftRequest
+        CreateThermalExternalDriftValidationRequest(Guid validationRunId) => new(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            validationRunId,
+            new string('A', 40),
+            new string('B', 64),
+            new string('C', 64),
+            new string('D', 64));
 
     private static HyperBoostOwnershipJournal CreatePendingHyperBoostJournal() =>
         new(
@@ -24657,7 +24913,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingBladeDevice :
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
-        ISingleAttemptThermalDevice
+        ISingleAttemptThermalDevice,
+        IThermalExternalDriftValidationDevice
     {
         public GpuClockOffsetManagementState GpuClockOffsetManagementState
         {
@@ -24768,6 +25025,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Exception? PerformanceFailure { get; set; }
 
         public Queue<Exception> PerformanceFailures { get; } = new();
+
+        public bool MutatePerformanceBeforeQueuedFailure { get; set; }
 
         public Action? BeforeQueuedPerformanceFailure { get; set; }
 
@@ -25055,6 +25314,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformanceWrites.Add(value);
             if (PerformanceFailures.TryDequeue(out Exception? queuedFailure))
             {
+                if (MutatePerformanceBeforeQueuedFailure)
+                {
+                    ConfirmedState = ConfirmedState with
+                    {
+                        Performance = value,
+                        CustomPerformance = null,
+                    };
+                }
                 BeforeQueuedPerformanceFailure?.Invoke();
                 throw queuedFailure;
             }
@@ -25129,6 +25396,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformanceWrites.Add(value);
             if (PerformanceFailures.TryDequeue(out Exception? queuedFailure))
             {
+                if (MutatePerformanceBeforeQueuedFailure)
+                {
+                    ConfirmedState = ConfirmedState with
+                    {
+                        Performance = value,
+                        CustomPerformance = value == PerformancePreset.Custom
+                            ? customPerformance
+                            : null,
+                    };
+                }
                 BeforeQueuedPerformanceFailure?.Invoke();
                 throw queuedFailure;
             }
@@ -25215,6 +25492,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             gpuClockOffsets,
             retainGpuClockOffsetManagement,
             cancellationToken);
+
+        Task IThermalExternalDriftValidationDevice
+            .InjectPerformanceDriftOnceAsync(
+            PerformancePreset candidate,
+            CancellationToken cancellationToken) => SetManagedPerformanceAsync(
+                candidate,
+                customPerformance: null,
+                gpuClockOffsets: null,
+                retainManagement: true,
+                cancellationToken);
 
         public Task SetGpuClockOffsetsAsync(
             GpuClockOffsetSettings value,

@@ -1332,7 +1332,7 @@
   <data name="Got it" xml:space="preserve"><value>知道了</value></data>
   <data name="Reapply" xml:space="preserve"><value>重新应用</value></data>
   <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade 会报告在其他位置进行的性能或风扇更改，并等待你重新应用设置。</value></data>
-  <data name="OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible." xml:space="preserve"><value>OpenBlade 会在后台检查性能与风扇目标，并在安全可行时恢复被更改的设置。</value></data>
+  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade 会保持你选择的性能模式和风扇设置。如果这些设置发生变化，OpenBlade 会在安全的情况下将其恢复。</value></data>
   <data name="Up to date" xml:space="preserve"><value>已匹配</value></data>
   <data name="Checking current state" xml:space="preserve"><value>正在检查当前状态</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>正在恢复已保存的设置</value></data>

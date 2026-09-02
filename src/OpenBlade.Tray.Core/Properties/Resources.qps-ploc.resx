@@ -1356,8 +1356,8 @@
   <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve">
     <value>[!! OpenBlade répórts pérfórmáncé ór fán chángés mádé élséwhéré ánd wáíts fór ýóú tó réápplý thém. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible." xml:space="preserve">
-    <value>[!! OpenBlade chécks pérfórmáncé ánd fán íntént ín thé báckgróúnd ánd sáfélý réstórés chángéd séttíngs whén póssíblé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve">
+    <value>[!! OpenBlade kééps ýóúr séléctéd pérfórmáncé módé ánd fán séttíng áctívé. Íf théý chángé, OpenBlade sáfélý chángés thém báck. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Up to date" xml:space="preserve">
     <value>[!! Úp tó dáté ~~~ !!]</value>

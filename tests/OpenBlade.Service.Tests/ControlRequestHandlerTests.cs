@@ -53,6 +53,14 @@ public sealed class ControlRequestHandlerTests
             new AcknowledgeThermalPolicyUpgradeDisclosureRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
+            new ValidateThermalExternalDriftRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                new string('A', 40),
+                new string('B', 64),
+                new string('C', 64),
+                new string('D', 64)),
             new ReapplyChangedSettingsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid()),
@@ -106,6 +114,7 @@ public sealed class ControlRequestHandlerTests
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
             "SetThermalControlPolicy", "AcknowledgeThermalPolicyUpgradeDisclosure",
+            "ValidateThermalExternalDrift",
             "ReapplyChangedSettings",
             "RecoverHyperBoostRestore",
             "SetLightingSuppression",
@@ -697,6 +706,16 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(stillControlsSession());
             return Record("AcknowledgeThermalPolicyUpgradeDisclosure");
+        }
+
+        public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
+            ValidateThermalExternalDriftRequest request,
+            Func<bool> stillControlsSession,
+            CancellationToken cancellationToken)
+        {
+            Assert.NotEqual(Guid.Empty, request.ValidationRunId);
+            Assert.True(stillControlsSession());
+            return Record("ValidateThermalExternalDrift");
         }
 
         public Task<ControlOperationResult> ReapplyChangedSettingsAsync(

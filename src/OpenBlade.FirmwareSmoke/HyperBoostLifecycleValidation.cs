@@ -860,7 +860,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
-    private static HyperBoostLifecycleServiceProcess? CaptureInstalledServiceProcess()
+    internal static HyperBoostLifecycleServiceProcess? CaptureInstalledServiceProcess()
     {
         Process[] processes = Process.GetProcessesByName("OpenBlade.Service");
         try
