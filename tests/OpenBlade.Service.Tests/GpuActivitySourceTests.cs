@@ -248,4 +248,42 @@ public sealed class GpuActivitySourceTests
         Assert.Equal(1, refreshCalls);
         Assert.Equal(2, readCalls);
     }
+
+    [Fact]
+    public void IsActive_IgnoresSystemProcessPagingUnlessAUserProcessIsActive()
+    {
+        Queue<WindowsGpuActivitySnapshot> snapshots = new(
+        [
+            new WindowsGpuActivitySnapshot(true, []),
+            new WindowsGpuActivitySnapshot(
+                true,
+                [new WindowsGpuProcessActivity(4, 0.24)]),
+            new WindowsGpuActivitySnapshot(true, []),
+            new WindowsGpuActivitySnapshot(
+                true,
+                [
+                    new WindowsGpuProcessActivity(4, 0.24),
+                    new WindowsGpuProcessActivity(42, 0.5),
+                ]),
+        ]);
+        var source = new WindowsGpuActivitySource(
+            () => true,
+            snapshots.Dequeue,
+            (_, _) => { });
+
+        Assert.Equal(false, source.IsActive());
+        Assert.Equal(true, source.IsActive());
+        Assert.Empty(snapshots);
+    }
+
+    [Fact]
+    public void IsWorkloadProcess_RequiresActiveUtilizationFromANonSystemProcess()
+    {
+        Assert.False(WindowsGpuActivitySource.IsWorkloadProcess(
+            new WindowsGpuProcessActivity(4, 5)));
+        Assert.False(WindowsGpuActivitySource.IsWorkloadProcess(
+            new WindowsGpuProcessActivity(42, 0.1)));
+        Assert.True(WindowsGpuActivitySource.IsWorkloadProcess(
+            new WindowsGpuProcessActivity(42, 0.2)));
+    }
 }
