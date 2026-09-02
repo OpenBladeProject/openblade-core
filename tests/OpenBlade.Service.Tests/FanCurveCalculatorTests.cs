@@ -125,6 +125,35 @@ public sealed class FanCurveCalculatorTests
         Assert.Equal(1, gpuReads);
     }
 
+    [Fact]
+    public async Task UnknownGpuDoesNotInvokeNvmlAndRetainsFanFailSafe()
+    {
+        int gpuReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new FixedGpuActivitySource(IsActive: null),
+            cpuTemperatureReader: () => 48,
+            gpuTemperatureReader: () =>
+            {
+                gpuReads++;
+                return 52;
+            });
+
+        FanTemperatureReadings readings = await source.ReadAsync(
+            includeCpu: true,
+            includeGpu: true,
+            CancellationToken.None);
+        FanTargetSpeeds targets = FanCurveCalculator.Calculate(
+            ManualFanCurve.Default,
+            readings,
+            maximumRpm: 5000);
+
+        Assert.Equal(48, readings.CpuCelsius);
+        Assert.Null(readings.GpuCelsius);
+        Assert.False(readings.GpuInactive);
+        Assert.Equal(0, gpuReads);
+        Assert.Equal(new FanTargetSpeeds(5000, 5000, FailSafe: true), targets);
+    }
+
     [Theory]
     [InlineData(2732, 0)]
     [InlineData(3010, 28)]
@@ -163,8 +192,12 @@ public sealed class FanCurveCalculatorTests
             SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
     }
 
-    private sealed record FixedGpuActivitySource(bool IsActive) : IGpuActivitySource
+    private sealed record FixedGpuActivitySource(bool? IsActive) : IGpuActivitySource
     {
-        bool IGpuActivitySource.IsActive() => IsActive;
+        bool? IGpuActivitySource.IsActive(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return IsActive;
+        }
     }
 }

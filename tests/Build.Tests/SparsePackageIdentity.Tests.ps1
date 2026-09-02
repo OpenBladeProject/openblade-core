@@ -220,7 +220,11 @@ try {
     Assert-True (
         (Split-Path -Parent $artifacts.DescriptorPath) -eq $payload) `
         'The sparse identity descriptor was not emitted beside the package.'
-    Assert-DynamicLightingIdentityPayload -Payload $payload
+    Assert-DynamicLightingIdentityAuthoringArtifacts -Payload $payload
+    Assert-ThrowsLike {
+        Assert-DynamicLightingIdentityPayload -Payload $payload
+    } 'must not be present in a production payload' `
+        'A reviewed identity pair in a production payload'
 
     $descriptorJson = Get-Content -Raw -LiteralPath $artifacts.DescriptorPath
     $descriptor = $descriptorJson |
@@ -256,7 +260,7 @@ try {
 
     [IO.File]::Delete($artifacts.DescriptorPath)
     Assert-ThrowsLike {
-        Assert-DynamicLightingIdentityPayload -Payload $payload
+        Assert-DynamicLightingIdentityAuthoringArtifacts -Payload $payload
     } 'must either both be present or both be absent' `
         'A package without its identity descriptor'
     [IO.File]::WriteAllText(
@@ -271,7 +275,7 @@ try {
         ($mismatched | ConvertTo-Json),
         [Text.UTF8Encoding]::new($false))
     Assert-ThrowsLike {
-        Assert-DynamicLightingIdentityPayload -Payload $payload
+        Assert-DynamicLightingIdentityAuthoringArtifacts -Payload $payload
     } 'differs from its reviewed descriptor' `
         'A package with a mismatched identity descriptor'
     [IO.File]::WriteAllText(

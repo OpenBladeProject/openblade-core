@@ -150,6 +150,17 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 - Treat all uncaptured write commands as unsafe and unsupported.
 - Read/query first. For a new write, save prior confirmed state, show the exact
   action, apply one value, read it back, and restore it.
+- Explicit approval for unattended hardware validation extends only to
+  captured, typed, reversible operations. Before each such operation, read and
+  save the prior confirmed state, pass fresh exact-device and applicable safety
+  admission, confirm the result by readback, and restore the saved state. If
+  submission or readback becomes ambiguous, stop further writes and reconcile
+  read-only. If restoration fails, stop and report it; never widen write
+  authority or guess.
+- Never initiate or arm sleep/resume validation unattended, including while
+  the user is unavailable. Keep it as the last physical-validation step and
+  require fresh approval immediately beforehand from a present user who can
+  resume the system and report the outcome.
 - Never run USBPcap capture and OpenBlade control against the same interface at
   the same time.
 - Never call `GenerateConsoleCtrlEvent` with process group `0`. USBPcapCMD must
@@ -193,8 +204,10 @@ unrelated worktrees and checkout changes.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-7. For hardware changes, complete the documented interactive validation before
-   marking support production-ready.
+7. For hardware changes, complete the documented physical validation before
+   marking support production-ready. Unattended portions are allowed only
+   within the explicit limits under Hardware and capture safety; lifecycle
+   steps that require a present user remain attended.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. The
    Nightly workflow treats each published tag as a release boundary, attaches
    an exact-source changelog snapshot, and opens or updates a draft pull request
@@ -287,7 +300,13 @@ test regression. Focused test projects that do not exercise Windows named-pipe
 client identity may still run in the sandbox.
 
 Use `build/Publish.ps1` and the payload validation tests for release or setup
-changes. Do not install or request UAC when the user is unavailable.
+changes. An explicitly approved unattended installation may use only the
+enrolled fixed-operation local-development deployment broker, and only when
+the approved operation can complete without displaying or requiring an
+interactive UAC prompt. While the user is unavailable, never initiate or wait
+for UAC, invoke generic elevation, use the broker for generic command
+execution, bypass its fixed-operation authorization, or fall back to another
+installation path.
 
 Do not run production publishing from a OneDrive-linked worktree. The deep WiX
 upgrade-probe extraction path repeatedly fails during validated cleanup there,

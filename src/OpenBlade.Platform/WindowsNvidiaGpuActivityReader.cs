@@ -31,19 +31,72 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
     private const uint PdhStatusNewData = 1;
 
     private readonly object sync = new();
-    private readonly string? nvidiaLuidToken;
+    private readonly Func<string?> locateNvidiaLuid;
+    private readonly Func<QueryHandles?> openQuery;
+    private readonly Action<nint> closeQuery;
+    private string? nvidiaLuidToken;
     private nint query;
     private nint counter;
     private bool disposed;
 
     public WindowsNvidiaGpuActivityReader()
+        : this(
+            NvidiaAdapterLocator.TryGetLuidToken,
+            TryOpenQuery,
+            query => _ = PdhCloseQuery(query))
     {
-        nvidiaLuidToken = NvidiaAdapterLocator.TryGetLuidToken();
-        if (nvidiaLuidToken is null
-            || PdhOpenQueryW(null, 0, out query) != 0
-            || PdhAddEnglishCounterW(query, CounterPath, 0, out counter) != 0)
+    }
+
+    internal WindowsNvidiaGpuActivityReader(
+        Func<string?> locateNvidiaLuid,
+        Func<QueryHandles?> openQuery,
+        Action<nint> closeQuery)
+    {
+        this.locateNvidiaLuid = locateNvidiaLuid
+            ?? throw new ArgumentNullException(nameof(locateNvidiaLuid));
+        this.openQuery = openQuery ?? throw new ArgumentNullException(nameof(openQuery));
+        this.closeQuery = closeQuery ?? throw new ArgumentNullException(nameof(closeQuery));
+        _ = Refresh();
+    }
+
+    /// <summary>
+    /// Recreates the wildcard counter and re-resolves the NVIDIA adapter LUID.
+    /// Consumers use this before each decision so a long-lived process can see
+    /// counter instances created after its original query was opened.
+    /// </summary>
+    public bool Refresh()
+    {
+        lock (sync)
         {
-            CloseQuery();
+            if (disposed)
+            {
+                return false;
+            }
+
+            try
+            {
+                string? replacementLuidToken = locateNvidiaLuid();
+                QueryHandles? handles = replacementLuidToken is null ? null : openQuery();
+                if (handles is null)
+                {
+                    return false;
+                }
+
+                nint previousQuery = query;
+                nvidiaLuidToken = replacementLuidToken;
+                query = handles.Value.Query;
+                counter = handles.Value.Counter;
+                CloseQueryHandle(previousQuery);
+                return true;
+            }
+            catch (DllNotFoundException)
+            {
+                return false;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return false;
+            }
         }
     }
 
@@ -55,6 +108,7 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
             {
                 return new WindowsGpuActivitySnapshot(false, []);
             }
+            string activeLuidToken = nvidiaLuidToken;
 
             try
             {
@@ -71,56 +125,67 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
                     ref bufferSize,
                     out itemCount,
                     0);
-                if (status != PdhMoreData || bufferSize == 0 || itemCount == 0)
+                if (!TryClassifyCounterArraySizing(
+                    status,
+                    bufferSize,
+                    out bool hasData))
+                {
+                    return new WindowsGpuActivitySnapshot(false, []);
+                }
+                if (!hasData)
                 {
                     return new WindowsGpuActivitySnapshot(true, []);
                 }
 
-                nint buffer = Marshal.AllocHGlobal(checked((int)bufferSize));
-                try
-                {
-                    status = PdhGetFormattedCounterArrayW(
-                        counter,
-                        PdhFormatDouble | PdhFormatNoCap100,
-                        ref bufferSize,
-                        out itemCount,
-                        buffer);
-                    if (status != 0)
+                return ReadFormattedCounterArrayWithRetry(
+                    bufferSize,
+                    (ref uint requiredSize, out uint count, nint buffer) =>
+                        PdhGetFormattedCounterArrayW(
+                            counter,
+                            PdhFormatDouble | PdhFormatNoCap100,
+                            ref requiredSize,
+                            out count,
+                            buffer),
+                    (buffer, count) =>
                     {
-                        return new WindowsGpuActivitySnapshot(false, []);
-                    }
-
-                    Dictionary<int, double> utilizationByProcess = [];
-                    int itemSize = Marshal.SizeOf<PdhFormattedCounterValueItem>();
-                    for (uint index = 0; index < itemCount; index++)
-                    {
-                        PdhFormattedCounterValueItem item =
-                            Marshal.PtrToStructure<PdhFormattedCounterValueItem>(
-                                nint.Add(buffer, checked((int)index * itemSize)));
-                        string? instance = Marshal.PtrToStringUni(item.Name);
-                        if (instance is null
-                            || item.Value.Status is not (PdhStatusValidData or PdhStatusNewData)
-                            || !double.IsFinite(item.Value.DoubleValue)
-                            || !TryParseNvidiaProcessId(instance, nvidiaLuidToken, out int processId))
+                        Dictionary<int, double> utilizationByProcess = [];
+                        int itemSize = Marshal.SizeOf<PdhFormattedCounterValueItem>();
+                        for (uint index = 0; index < count; index++)
                         {
-                            continue;
+                            PdhFormattedCounterValueItem item =
+                                Marshal.PtrToStructure<PdhFormattedCounterValueItem>(
+                                    nint.Add(buffer, checked((int)index * itemSize)));
+                            string? instance = Marshal.PtrToStringUni(item.Name);
+                            if (instance is null
+                                || item.Value.Status is not (
+                                    PdhStatusValidData or PdhStatusNewData)
+                                || !double.IsFinite(item.Value.DoubleValue)
+                                || !TryParseNvidiaProcessId(
+                                    instance,
+                                    activeLuidToken,
+                                    out int processId))
+                            {
+                                continue;
+                            }
+
+                            utilizationByProcess.TryGetValue(
+                                processId,
+                                out double existing);
+                            utilizationByProcess[processId] =
+                                existing + Math.Max(0, item.Value.DoubleValue);
                         }
 
-                        utilizationByProcess.TryGetValue(processId, out double existing);
-                        utilizationByProcess[processId] = existing + Math.Max(0, item.Value.DoubleValue);
-                    }
-
-                    WindowsGpuProcessActivity[] processes = utilizationByProcess
-                        .OrderByDescending(pair => pair.Value)
-                        .ThenBy(pair => pair.Key)
-                        .Select(pair => new WindowsGpuProcessActivity(pair.Key, pair.Value))
-                        .ToArray();
-                    return new WindowsGpuActivitySnapshot(true, processes);
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(buffer);
-                }
+                        WindowsGpuProcessActivity[] processes = utilizationByProcess
+                            .OrderByDescending(pair => pair.Value)
+                            .ThenBy(pair => pair.Key)
+                            .Select(pair => new WindowsGpuProcessActivity(
+                                pair.Key,
+                                pair.Value))
+                            .ToArray();
+                        return new WindowsGpuActivitySnapshot(true, processes);
+                    },
+                    static size => Marshal.AllocHGlobal(size),
+                    static buffer => Marshal.FreeHGlobal(buffer));
             }
             catch (DllNotFoundException)
             {
@@ -155,6 +220,66 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
             && processId > 0;
     }
 
+    internal static bool TryClassifyCounterArraySizing(
+        uint status,
+        uint bufferSize,
+        out bool hasData)
+    {
+        hasData = status == PdhMoreData && bufferSize > 0;
+        return status == PdhMoreData;
+    }
+
+    internal static WindowsGpuActivitySnapshot ReadFormattedCounterArrayWithRetry(
+        uint bufferSize,
+        FormattedCounterArrayReader readArray,
+        Func<nint, uint, WindowsGpuActivitySnapshot> project,
+        Func<int, nint> allocate,
+        Action<nint> free)
+    {
+        ArgumentNullException.ThrowIfNull(readArray);
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(allocate);
+        ArgumentNullException.ThrowIfNull(free);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            if (bufferSize == 0 || bufferSize > (uint)int.MaxValue)
+            {
+                return new WindowsGpuActivitySnapshot(false, []);
+            }
+
+            nint buffer = allocate((int)bufferSize);
+            if (buffer == 0)
+            {
+                return new WindowsGpuActivitySnapshot(false, []);
+            }
+
+            try
+            {
+                uint status = readArray(ref bufferSize, out uint itemCount, buffer);
+                if (status == 0)
+                {
+                    return project(buffer, itemCount);
+                }
+                if (status != PdhMoreData || attempt != 0)
+                {
+                    return new WindowsGpuActivitySnapshot(false, []);
+                }
+            }
+            finally
+            {
+                free(buffer);
+            }
+        }
+
+        return new WindowsGpuActivitySnapshot(false, []);
+    }
+
+    internal delegate uint FormattedCounterArrayReader(
+        ref uint bufferSize,
+        out uint itemCount,
+        nint buffer);
+
     public void Dispose()
     {
         lock (sync)
@@ -164,19 +289,80 @@ public sealed class WindowsNvidiaGpuActivityReader : IDisposable
                 return;
             }
             disposed = true;
-            CloseQuery();
+            CloseCurrentQuery();
         }
     }
 
-    private void CloseQuery()
+    private void CloseCurrentQuery()
     {
-        if (query != 0)
-        {
-            _ = PdhCloseQuery(query);
-        }
+        nint closingQuery = query;
         query = 0;
         counter = 0;
+        nvidiaLuidToken = null;
+        CloseQueryHandle(closingQuery);
     }
+
+    private void CloseQueryHandle(nint closingQuery)
+    {
+        if (closingQuery == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            closeQuery(closingQuery);
+        }
+        catch (DllNotFoundException)
+        {
+        }
+        catch (EntryPointNotFoundException)
+        {
+        }
+    }
+
+    private static QueryHandles? TryOpenQuery()
+    {
+        nint openedQuery = 0;
+        try
+        {
+            if (PdhOpenQueryW(null, 0, out openedQuery) != 0)
+            {
+                return null;
+            }
+
+            if (PdhAddEnglishCounterW(
+                openedQuery,
+                CounterPath,
+                0,
+                out nint openedCounter) != 0)
+            {
+                return null;
+            }
+
+            QueryHandles handles = new(openedQuery, openedCounter);
+            openedQuery = 0;
+            return handles;
+        }
+        finally
+        {
+            if (openedQuery != 0)
+            {
+                try
+                {
+                    _ = PdhCloseQuery(openedQuery);
+                }
+                catch (DllNotFoundException)
+                {
+                }
+                catch (EntryPointNotFoundException)
+                {
+                }
+            }
+        }
+    }
+
+    internal readonly record struct QueryHandles(nint Query, nint Counter);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PdhFormattedCounterValueItem

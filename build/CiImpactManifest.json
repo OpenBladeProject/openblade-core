@@ -204,6 +204,10 @@
       "patterns": [".github/workflows/ci.yml", ".github/workflows/build.yml", ".github/workflows/nightly.yml"]
     },
     {
+      "test": "tests/Build.Tests/LocalNightlySkill.Tests.ps1",
+      "patterns": [".agents/skills/openblade-local-nightly/*", "build/Publish.ps1", "build/PublishPayloadValidation.ps1", "build/NightlyChangelog.ps1"]
+    },
+    {
       "test": "tests/Build.Tests/PublishPayloadValidation.Tests.ps1",
       "patterns": ["build/PublishPayloadValidation.ps1"]
     },

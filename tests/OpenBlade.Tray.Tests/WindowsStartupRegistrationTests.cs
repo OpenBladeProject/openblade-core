@@ -40,6 +40,8 @@ public sealed class WindowsStartupRegistrationTests : IDisposable
         Assert.True(registration.ShouldStartForLaunchArguments(["OpenBlade.Tray.exe"]));
         Assert.True(registration.ShouldStartForLaunchArguments(
             ["OpenBlade.Tray.exe", "--notification"]));
+        Assert.True(registration.ShouldStartForLaunchArguments(
+            ["OpenBlade.Tray.exe", WindowsApplicationRestartRegistration.RestartArgument]));
         Assert.True(registration.ShouldStartForLaunchArguments(["--startup"]));
     }
 
