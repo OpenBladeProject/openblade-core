@@ -269,16 +269,195 @@ public sealed class WinUiShellContractTests
             "private async Task HandleCloseGpuAppsAsync",
             "private async Task ShowGpuAppsMessageAsync");
         Assert.Contains(
-            "afterClose.Status == SessionGpuOperationStatus.Failed",
+            "afterClose.Status is SessionGpuOperationStatus.Failed",
             handler,
             StringComparison.Ordinal);
         Assert.Contains(
-            "finalScan.Status == SessionGpuOperationStatus.Failed",
+            "finalScan.Status is SessionGpuOperationStatus.Failed",
             handler,
             StringComparison.Ordinal);
         Assert.True(
+            CountOccurrences(
+                handler,
+                "or SessionGpuOperationStatus.PartiallySucceeded") >= 2);
+        Assert.True(
+            handler.IndexOf(
+                "afterClose.Status is SessionGpuOperationStatus.Failed",
+                StringComparison.Ordinal)
+            < handler.IndexOf("MatchTargets(afterClose.Apps, selected)", StringComparison.Ordinal));
+        Assert.True(
+            handler.IndexOf(
+                "finalScan.Status is SessionGpuOperationStatus.Failed",
+                StringComparison.Ordinal)
+            < handler.IndexOf(
+                "SessionGpuApp[] survivors = finalScan.Apps",
+                StringComparison.Ordinal));
+        Assert.Contains("IsPrimaryButtonEnabled = false", handler, StringComparison.Ordinal);
+        Assert.Contains("IsChecked = false", handler, StringComparison.Ordinal);
+        Assert.Contains("selected,", handler, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(5)", handler, StringComparison.Ordinal);
+        Assert.Contains("SessionGpuResponse gracefulClose", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "GpuAppCleanupPolicy.ShouldAbortGracefulClose",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("gracefulClose.Results.Count", handler, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_GpuApps_CloseRequestFailed", handler, StringComparison.Ordinal);
+        Assert.Contains("[app]", handler, StringComparison.Ordinal);
+        Assert.Contains("force: true", handler, StringComparison.Ordinal);
+        Assert.Contains("forceOutcome.Approve(forceTarget)", handler, StringComparison.Ordinal);
+        Assert.Contains("forceOutcome.WasApproved", handler, StringComparison.Ordinal);
+        Assert.Contains("forceOutcome.ReconcileFailures", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "GpuAppForceCloseVerification.VerifyAsync",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("GpuAppForceCloseSettleBudget", handler, StringComparison.Ordinal);
+        Assert.Contains("GpuAppForceCloseRetryInterval", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "forcedApp.Status == SessionGpuOperationStatus.Failed",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("app.Name", handler, StringComparison.Ordinal);
+        Assert.Contains("gpuAppObservationLoop.Stop()", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "await gpuAppOperationGate.WaitAsync(actionToken)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("if (gateAcquired)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "Task.Delay(TimeSpan.FromSeconds(5), actionToken)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationToken.None", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (OperationCanceledException) when (actionToken.IsCancellationRequested)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (Volatile.Read(ref disposed) == 0)",
+            handler,
+            StringComparison.Ordinal);
+        Assert.Contains("gpuAppOperationGate.WaitAsync(0, cancellationToken)", handler, StringComparison.Ordinal);
+        Assert.True(
             handler.IndexOf("catch (Exception exception)", StringComparison.Ordinal)
                 > handler.IndexOf("SessionGpuResponse finalScan", StringComparison.Ordinal));
+        Assert.Contains("or TimeoutException)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "scan.Status == SessionGpuOperationStatus.PartiallySucceeded",
+            handler,
+            StringComparison.Ordinal);
+        Assert.True(
+            handler.IndexOf(
+                "scan.Status == SessionGpuOperationStatus.PartiallySucceeded",
+                StringComparison.Ordinal)
+            < handler.IndexOf(
+                "SessionGpuApp[] eligible",
+                StringComparison.Ordinal));
+        Assert.Contains("MainWindow_GpuApps_ListTruncatedTitle", handler, StringComparison.Ordinal);
+        Assert.Contains("MainWindow_GpuApps_ListTruncatedWarning", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("truncationWarning", handler, StringComparison.Ordinal);
+        Assert.Contains("TraceGpuResponseDiagnostics", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("scan.Error ??", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("gracefulClose.Error ??", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("afterClose.Error ??", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("finalScan.Error ??", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("exception.Message", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("result.Error", handler, StringComparison.Ordinal);
+        Assert.Contains("ShowGpuAppsCompletionAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("FormatRemainingGpuApps(otherApps)", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "!forceOutcome.WasApproved(ToGpuAppIdentity(app))",
+            handler,
+            StringComparison.Ordinal);
+
+        string gpuDialogFlow = SliceMethod(
+            codeBehind,
+            "private async Task HandleCloseGpuAppsAsync",
+            "private static TextBlock CreateGpuAppsDialogContent");
+        Assert.Equal(3, CountOccurrences(gpuDialogFlow, "ShowContentDialogAsync("));
+        Assert.DoesNotContain(".ShowAsync()", gpuDialogFlow, StringComparison.Ordinal);
+
+        string observation = SliceMethod(
+            codeBehind,
+            "private async Task<SessionGpuResponse> QueryGpuAppsAsync",
+            "private async Task ApplyGpuAppVisibilityAsync");
+        Assert.Contains(
+            "!cancellationToken.IsCancellationRequested",
+            observation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "gpuAppVisibilityTracker.ObserveFailedScan()",
+            observation,
+            StringComparison.Ordinal);
+
+        string formatting = SliceMethod(
+            codeBehind,
+            "private static string FormatGpuApps",
+            "private async Task ShowGpuAppsCompletionAsync");
+        Assert.Contains("MainWindow_GpuApps_NotCloseableReason", formatting, StringComparison.Ordinal);
+        Assert.DoesNotContain("app.BlockReason)", formatting, StringComparison.Ordinal);
+
+        string completion = SliceMethod(
+            codeBehind,
+            "private async Task ShowGpuAppsCompletionAsync",
+            "private static void TraceGpuResponseDiagnostics");
+        Assert.Contains("MainWindow_GpuApps_OtherAppsHeading", completion, StringComparison.Ordinal);
+        Assert.Contains("FormatProtectedGpuApps", completion, StringComparison.Ordinal);
+        Assert.Contains("app.CanClose", completion, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "GpuAppObservationPolicy.GetInterval(",
+            codeBehind,
+            StringComparison.Ordinal);
+
+        string observationState = SliceMethod(
+            codeBehind,
+            "private void UpdateGpuAppObservationState()",
+            "private async void OnDisplayRefreshTimerTick");
+        Assert.Contains("GpuAppObservationPolicy.ShouldObserve", observationState, StringComparison.Ordinal);
+        Assert.Contains("HomePage.Visibility", observationState, StringComparison.Ordinal);
+        Assert.Contains("LaptopPage.Visibility", observationState, StringComparison.Ordinal);
+        Assert.Contains("DashboardCardKind.PowerMode", observationState, StringComparison.Ordinal);
+        Assert.True(
+            CountOccurrences(codeBehind, "UpdateGpuAppObservationState();") >= 6);
+    }
+
+    [Fact]
+    public void GpuAppCleanupWarningsExistInEveryTrayCatalog()
+    {
+        string[] keys =
+        [
+            "MainWindow_GpuApps_CloseRequestFailed",
+            "MainWindow_GpuApps_FailureItem",
+            "MainWindow_GpuApps_ListTruncatedTitle",
+            "MainWindow_GpuApps_ListTruncatedWarning",
+            "MainWindow_GpuApps_NotCloseableReason",
+            "MainWindow_GpuApps_OtherAppsHeading",
+            "MainWindow_GpuApps_SessionAgentFailure",
+        ];
+
+        foreach (string culture in new[] { "en-US", "ru-RU", "zh-CN", "qps-ploc" })
+        {
+            XDocument catalog = XDocument.Load(RepositoryPath(
+                "src",
+                "OpenBlade.Tray",
+                "Strings",
+                culture,
+                "Resources.resw"));
+            Dictionary<string, string> resources = catalog.Root!
+                .Elements("data")
+                .ToDictionary(
+                    element => (string)element.Attribute("name")!,
+                    element => element.Element("value")?.Value ?? string.Empty,
+                    StringComparer.Ordinal);
+
+            Assert.All(keys, key =>
+            {
+                Assert.True(resources.TryGetValue(key, out string? value));
+                Assert.False(string.IsNullOrWhiteSpace(value));
+            });
+        }
     }
 
     [Fact]
@@ -2720,6 +2899,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("gpuAppObservationLoop.StartOrWake()", window, StringComparison.Ordinal);
         Assert.Contains("gpuAppObservationLoop.Stop()", window, StringComparison.Ordinal);
         Assert.Contains("gpuAppObservationLoop.DisposeAsync", window, StringComparison.Ordinal);
+        int gpuActionCancellation = window.IndexOf(
+            "gpuAppActionLifetime.Cancel();",
+            StringComparison.Ordinal);
+        int gpuObservationDisposal = window.IndexOf(
+            "gpuAppObservationLoop.DisposeAsync",
+            StringComparison.Ordinal);
+        Assert.True(
+            gpuActionCancellation >= 0
+                && gpuActionCancellation < gpuObservationDisposal);
         Assert.Contains("observationIntervalProvider: () => Timeout.InfiniteTimeSpan", window, StringComparison.Ordinal);
         Assert.Contains("trayIcon.MouseMove += OnTrayIconMouseMove", trayHost, StringComparison.Ordinal);
         int mouseMoveHandler = trayHost.IndexOf(

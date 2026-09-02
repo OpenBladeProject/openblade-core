@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Principal;
-using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Platform;
 
@@ -12,7 +12,6 @@ public sealed record WindowsGpuApp(
     int ProcessId,
     long StartTimeUtcTicks,
     string Name,
-    string? ExecutablePath,
     double UtilizationPercent,
     bool CanClose,
     string? BlockReason);
@@ -42,14 +41,14 @@ public interface IWindowsGpuAppManager
 }
 
 /// <summary>
-/// Finds and closes current-user applications actively using NVIDIA WDDM engines.
+/// Finds and closes current-user applications holding NVIDIA WDDM engine contexts.
 /// The caller remains responsible for showing the destructive confirmation.
 /// </summary>
 public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
 {
+    private const string ProcessActionFailure = "Windows could not close this process.";
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint TokenQuery = 0x0008;
-    private const int MaximumPathCharacters = 32768;
     private const int ActivitySampleAttempts = 20;
     private const int ActivitySampleIntervalMilliseconds = 150;
     private static readonly HashSet<string> ProtectedProcessNames = new(
@@ -76,10 +75,17 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         "wininit",
         "winlogon",
     };
+    private static readonly HashSet<string> IgnoredGpuProcessNames = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer",
+        "nvidia overlay",
+    };
 
     private readonly WindowsNvidiaGpuActivityReader reader;
     private readonly SecurityIdentifier currentUserSid;
     private readonly int currentSessionId;
+    private readonly IWindowsProcessActionTargetFactory processActionTargetFactory;
 
     public WindowsGpuAppManager()
         : this(CreateDefaultContext())
@@ -87,7 +93,11 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     }
 
     private WindowsGpuAppManager(DefaultContext context)
-        : this(context.Reader, context.UserSid, context.SessionId)
+        : this(
+            context.Reader,
+            context.UserSid,
+            context.SessionId,
+            new WindowsProcessActionTargetFactory(context.UserSid))
     {
     }
 
@@ -95,16 +105,32 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         WindowsNvidiaGpuActivityReader reader,
         SecurityIdentifier currentUserSid,
         int currentSessionId)
+        : this(
+            reader,
+            currentUserSid,
+            currentSessionId,
+            new WindowsProcessActionTargetFactory(currentUserSid))
+    {
+    }
+
+    internal WindowsGpuAppManager(
+        WindowsNvidiaGpuActivityReader reader,
+        SecurityIdentifier currentUserSid,
+        int currentSessionId,
+        IWindowsProcessActionTargetFactory processActionTargetFactory)
     {
         this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
         this.currentUserSid = currentUserSid
             ?? throw new ArgumentNullException(nameof(currentUserSid));
         this.currentSessionId = currentSessionId;
+        this.processActionTargetFactory = processActionTargetFactory
+            ?? throw new ArgumentNullException(nameof(processActionTargetFactory));
     }
 
     public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
     {
-        WindowsGpuActivitySnapshot sample = ReadActivitySample(
+        WindowsGpuActivitySnapshot sample = RefreshAndReadActivitySample(
+            reader.Refresh,
             reader.Read,
             Thread.Sleep,
             cancellationToken);
@@ -116,16 +142,15 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                 []);
         }
 
-        WindowsGpuProcessActivity[] activeProcesses = SelectActiveProcesses(
-            sample.Processes);
+        IReadOnlyList<WindowsGpuProcessActivity> stableProcesses = sample.Processes;
         Dictionary<int, int> parents = WindowsProcessTree.ReadParents();
         Dictionary<int, ProcessEntry> processTable = ReadProcessTable(
-            activeProcesses,
+            stableProcesses,
             parents,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<WindowsGpuApp> apps = CreateApps(
-            activeProcesses,
+            stableProcesses,
             processTable,
             currentSessionId);
         return new WindowsGpuAppScan(true, null, apps);
@@ -147,6 +172,9 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         name.StartsWith("OpenBlade", StringComparison.OrdinalIgnoreCase)
         || ProtectedProcessNames.Contains(name);
 
+    internal static bool IsIgnoredGpuProcessName(string name) =>
+        IgnoredGpuProcessNames.Contains(name);
+
     internal static WindowsGpuActivitySnapshot ReadActivitySample(
         Func<WindowsGpuActivitySnapshot> read,
         Action<int> sleep,
@@ -155,21 +183,32 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(sleep);
         bool hasPrime = false;
+        WindowsGpuActivitySnapshot? previous = null;
         for (int attempt = 0; attempt < ActivitySampleAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             WindowsGpuActivitySnapshot snapshot = read();
             if (snapshot.IsAvailable)
             {
-                if (hasPrime)
+                if (!hasPrime)
                 {
-                    return snapshot;
+                    hasPrime = true;
                 }
-                hasPrime = true;
+                else if (previous is not null)
+                {
+                    return new WindowsGpuActivitySnapshot(
+                        true,
+                        IntersectStableProcesses(previous.Processes, snapshot.Processes));
+                }
+                else
+                {
+                    previous = snapshot;
+                }
             }
             else
             {
                 hasPrime = false;
+                previous = null;
             }
 
             if (attempt + 1 < ActivitySampleAttempts)
@@ -181,11 +220,43 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         return new WindowsGpuActivitySnapshot(false, []);
     }
 
-    internal static WindowsGpuProcessActivity[] SelectActiveProcesses(
-        IReadOnlyList<WindowsGpuProcessActivity> processes)
+    internal static WindowsGpuActivitySnapshot RefreshAndReadActivitySample(
+        Func<bool> refresh,
+        Func<WindowsGpuActivitySnapshot> read,
+        Action<int> sleep,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(processes);
-        return processes.Where(process => process.IsActive).ToArray();
+        ArgumentNullException.ThrowIfNull(refresh);
+        cancellationToken.ThrowIfCancellationRequested();
+        return refresh()
+            ? ReadActivitySample(read, sleep, cancellationToken)
+            : new WindowsGpuActivitySnapshot(false, []);
+    }
+
+    internal static WindowsGpuProcessActivity[] IntersectStableProcesses(
+        IReadOnlyList<WindowsGpuProcessActivity> first,
+        IReadOnlyList<WindowsGpuProcessActivity> second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
+        HashSet<int> firstProcessIds = first
+            .Select(process => process.ProcessId)
+            .Where(processId => processId > 0)
+            .ToHashSet();
+        Dictionary<int, WindowsGpuProcessActivity> latestByProcess = [];
+        foreach (WindowsGpuProcessActivity process in second)
+        {
+            if (process.ProcessId > 0 && firstProcessIds.Contains(process.ProcessId))
+            {
+                latestByProcess[process.ProcessId] = process;
+            }
+        }
+
+        return latestByProcess.Values
+            .OrderByDescending(process => process.UtilizationPercent)
+            .ThenBy(process => process.ProcessId)
+            .ToArray();
     }
 
     internal static IReadOnlyList<WindowsGpuApp> CreateApps(
@@ -202,6 +273,10 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
 
             ProcessEntry target = SelectOwningApplication(observed, processTable);
+            if (IsIgnoredGpuProcessName(target.Name))
+            {
+                continue;
+            }
             WindowsGpuApp candidate = CreateApp(
                 target,
                 activity.UtilizationPercent,
@@ -238,6 +313,7 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             && visited.Add(parent.ProcessId)
             && parent.SessionId == observed.SessionId
             && parent.SameUser
+            && parent.StartTimeUtcTicks <= target.StartTimeUtcTicks
             && !IsProtectedProcessName(parent.Name)
             && string.Equals(parent.Name, target.Name, StringComparison.OrdinalIgnoreCase))
         {
@@ -265,50 +341,77 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                 continue;
             }
 
-            if (!TryReadProcess(app.ProcessId, out ProcessEntry? current)
-                || current.StartTimeUtcTicks != app.StartTimeUtcTicks
-                || current.SessionId != currentSessionId
-                || !current.SameUser
-                || !string.Equals(current.Name, app.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                results.Add(Failed(
-                    app,
-                    "The process exited or its identity changed after the GPU scan."));
-                continue;
-            }
-
-            if (IsProtectedProcessName(current.Name))
-            {
-                results.Add(Failed(app, "OpenBlade does not close protected processes."));
-                continue;
-            }
-
             try
             {
-                using Process process = Process.GetProcessById(app.ProcessId);
-                bool succeeded;
-                if (force)
+                if (!processActionTargetFactory.TryOpen(
+                    app.ProcessId,
+                    out IWindowsProcessActionTarget? target))
                 {
-                    process.Kill(entireProcessTree: true);
-                    succeeded = true;
-                }
-                else
-                {
-                    succeeded = process.CloseMainWindow();
-                }
-                results.Add(succeeded
-                    ? new WindowsGpuAppActionResult(
-                        app.ProcessId,
-                        app.StartTimeUtcTicks,
-                        true,
-                        null)
-                    : Failed(
+                    results.Add(Failed(
                         app,
-                        "The application has no window that can be closed gracefully."));
+                        "The process exited or its identity changed after the GPU scan."));
+                    continue;
+                }
+
+                using (target)
+                {
+                    if (target.HasExited
+                        || target.ProcessId != app.ProcessId
+                        || target.StartTimeUtcTicks != app.StartTimeUtcTicks
+                        || target.SessionId != currentSessionId
+                        || !target.SameUser
+                        || !string.Equals(
+                            target.Name,
+                            app.Name,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(Failed(
+                            app,
+                            "The process exited or its identity changed after the GPU scan."));
+                        continue;
+                    }
+
+                    if (IsProtectedProcessName(target.Name))
+                    {
+                        results.Add(Failed(
+                            app,
+                            "OpenBlade does not close protected processes."));
+                        continue;
+                    }
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return results;
+                    }
+
+                    bool succeeded;
+                    if (force)
+                    {
+                        KillProcessTreeWithExactFallback(target);
+                        succeeded = true;
+                    }
+                    else
+                    {
+                        succeeded = target.CloseMainWindow();
+                    }
+                    results.Add(succeeded
+                        ? new WindowsGpuAppActionResult(
+                            app.ProcessId,
+                            app.StartTimeUtcTicks,
+                            true,
+                            null)
+                        : Failed(
+                            app,
+                            "The application has no window that can be closed gracefully."));
+                }
             }
             catch (Exception exception) when (IsRecoverableProcessActionException(exception))
             {
-                results.Add(Failed(app, exception.Message));
+                Trace.TraceWarning(
+                    "OpenBlade could not act on GPU process {0}: {1}",
+                    app.ProcessId,
+                    exception);
+                results.Add(Failed(app, ProcessActionFailure));
             }
             if (cancellationToken.IsCancellationRequested)
             {
@@ -316,6 +419,22 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
         }
         return results;
+    }
+
+    private static void KillProcessTreeWithExactFallback(
+        IWindowsProcessActionTarget target)
+    {
+        try
+        {
+            target.Kill(entireProcessTree: true);
+        }
+        catch (Exception exception) when (IsRecoverableProcessActionException(exception))
+        {
+            // A tree-wide request can fail while the freshly revalidated process
+            // itself remains terminable. Retrying only that exact process preserves
+            // the attended action without transferring approval to another PID.
+            target.Kill(entireProcessTree: false);
+        }
     }
 
     internal static bool IsRecoverableProcessActionException(Exception exception) =>
@@ -352,7 +471,6 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             process.ProcessId,
             process.StartTimeUtcTicks,
             process.Name,
-            process.ExecutablePath,
             utilization,
             blockReason is null,
             blockReason);
@@ -410,16 +528,13 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             }
             try
             {
-                string? path = TryReadPath(handle);
                 entry = new ProcessEntry(
                     processId,
                     ParentProcessId: 0,
                     process.SessionId,
                     process.StartTime.ToUniversalTime().Ticks,
                     process.ProcessName,
-                    path,
-                    process.MainWindowHandle != 0,
-                    IsSameUser(handle));
+                    IsSameUser(handle, currentUserSid));
                 return true;
             }
             finally
@@ -433,7 +548,9 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         }
     }
 
-    private bool IsSameUser(nint processHandle)
+    private static bool IsSameUser(
+        nint processHandle,
+        SecurityIdentifier expectedUserSid)
     {
         if (!OpenProcessToken(processHandle, TokenQuery, out nint token))
         {
@@ -442,21 +559,12 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         try
         {
             using var identity = new WindowsIdentity(token);
-            return identity.User is not null && currentUserSid.Equals(identity.User);
+            return identity.User is not null && expectedUserSid.Equals(identity.User);
         }
         finally
         {
             _ = CloseHandle(token);
         }
-    }
-
-    private static string? TryReadPath(nint processHandle)
-    {
-        var path = new StringBuilder(MaximumPathCharacters);
-        int length = path.Capacity;
-        return QueryFullProcessImageNameW(processHandle, 0, path, ref length)
-            ? path.ToString()
-            : null;
     }
 
     private static WindowsGpuAppActionResult Failed(WindowsGpuApp app, string error) =>
@@ -485,8 +593,6 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         int SessionId,
         long StartTimeUtcTicks,
         string Name,
-        string? ExecutablePath,
-        bool HasMainWindow,
         bool SameUser);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -502,17 +608,103 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
         uint desiredAccess,
         out nint tokenHandle);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryFullProcessImageNameW(
-        nint processHandle,
-        uint flags,
-        StringBuilder executableName,
-        ref int size);
-
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(nint handle);
+
+    internal interface IWindowsProcessActionTargetFactory
+    {
+        bool TryOpen(
+            int processId,
+            [NotNullWhen(true)] out IWindowsProcessActionTarget? target);
+    }
+
+    internal interface IWindowsProcessActionTarget : IDisposable
+    {
+        bool HasExited { get; }
+
+        int ProcessId { get; }
+
+        int SessionId { get; }
+
+        long StartTimeUtcTicks { get; }
+
+        string Name { get; }
+
+        bool SameUser { get; }
+
+        bool CloseMainWindow();
+
+        void Kill(bool entireProcessTree);
+    }
+
+    private sealed class WindowsProcessActionTargetFactory(
+        SecurityIdentifier currentUserSid) : IWindowsProcessActionTargetFactory
+    {
+        private readonly SecurityIdentifier currentUserSid = currentUserSid
+            ?? throw new ArgumentNullException(nameof(currentUserSid));
+
+        public bool TryOpen(
+            int processId,
+            [NotNullWhen(true)] out IWindowsProcessActionTarget? target)
+        {
+            Process? process = null;
+            target = null;
+            try
+            {
+                process = Process.GetProcessById(processId);
+                SafeProcessHandle processHandle = process.SafeHandle;
+                if (processHandle.IsClosed || processHandle.IsInvalid)
+                {
+                    return false;
+                }
+
+                target = new WindowsProcessActionTarget(
+                    process,
+                    processHandle,
+                    currentUserSid);
+                process = null;
+                return true;
+            }
+            finally
+            {
+                process?.Dispose();
+            }
+        }
+    }
+
+    private sealed class WindowsProcessActionTarget(
+        Process process,
+        SafeProcessHandle processHandle,
+        SecurityIdentifier currentUserSid) : IWindowsProcessActionTarget
+    {
+        private readonly Process process = process
+            ?? throw new ArgumentNullException(nameof(process));
+        private readonly SafeProcessHandle processHandle = processHandle
+            ?? throw new ArgumentNullException(nameof(processHandle));
+        private readonly SecurityIdentifier currentUserSid = currentUserSid
+            ?? throw new ArgumentNullException(nameof(currentUserSid));
+
+        public bool HasExited => process.HasExited;
+
+        public int ProcessId => process.Id;
+
+        public int SessionId => process.SessionId;
+
+        public long StartTimeUtcTicks => process.StartTime.ToUniversalTime().Ticks;
+
+        public string Name => process.ProcessName;
+
+        public bool SameUser => IsSameUser(
+            processHandle.DangerousGetHandle(),
+            currentUserSid);
+
+        public bool CloseMainWindow() => process.CloseMainWindow();
+
+        public void Kill(bool entireProcessTree) => process.Kill(entireProcessTree);
+
+        public void Dispose() => process.Dispose();
+    }
 }
 
 internal static class WindowsProcessTree
