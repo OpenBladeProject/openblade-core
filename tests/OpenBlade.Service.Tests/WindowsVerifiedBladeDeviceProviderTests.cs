@@ -2469,10 +2469,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         public int DisposeCount { get; private set; }
 
-        public bool? IsActive(CancellationToken cancellationToken = default)
+        public ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return false;
+            return new(false);
         }
 
         public void Dispose() => DisposeCount++;

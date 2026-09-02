@@ -4,17 +4,17 @@ namespace OpenBlade.Service;
 
 internal interface IGpuActivitySource
 {
-    bool? IsActive(CancellationToken cancellationToken = default);
+    ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default);
 }
 
 internal sealed class InactiveGpuActivitySource : IGpuActivitySource
 {
     internal static InactiveGpuActivitySource Instance { get; } = new();
 
-    public bool? IsActive(CancellationToken cancellationToken = default)
+    public ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return false;
+        return new(false);
     }
 }
 
@@ -32,11 +32,11 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
     // transitions, not a workload, so they must not open NVML on their own.
     private const int SystemProcessId = 4;
 
-    private readonly object sync = new();
+    private readonly SemaphoreSlim gate = new(1, 1);
     private readonly WindowsNvidiaGpuActivityReader? reader;
     private readonly Func<bool> refresh;
     private readonly Func<WindowsGpuActivitySnapshot> read;
-    private readonly Action<int, CancellationToken> wait;
+    private readonly Func<int, CancellationToken, Task> wait;
     private bool disposed;
 
     internal WindowsGpuActivitySource()
@@ -49,56 +49,57 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
         this.reader = reader;
         refresh = reader.Refresh;
         read = reader.Read;
-        wait = WaitForNextSample;
+        wait = static (milliseconds, cancellationToken) =>
+            Task.Delay(milliseconds, cancellationToken);
     }
 
     internal WindowsGpuActivitySource(
         Func<bool> refresh,
         Func<WindowsGpuActivitySnapshot> read,
-        Action<int, CancellationToken> wait)
+        Func<int, CancellationToken, Task> wait)
     {
         this.refresh = refresh ?? throw new ArgumentNullException(nameof(refresh));
         this.read = read ?? throw new ArgumentNullException(nameof(read));
         this.wait = wait ?? throw new ArgumentNullException(nameof(wait));
     }
 
-    public bool? IsActive(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Samples the counters twice across the sample window without blocking a
+    /// thread-pool thread for the wait, so a caller holding a serialized
+    /// operation gate does not also pin a thread for the duration.
+    /// </summary>
+    public async ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (sync)
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
             if (disposed || !refresh())
             {
                 return null;
             }
 
             _ = read();
-            wait(SampleDelayMilliseconds, cancellationToken);
+            await wait(SampleDelayMilliseconds, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             WindowsGpuActivitySnapshot snapshot = read();
             return snapshot.IsAvailable
                 ? snapshot.Processes.Any(IsWorkloadProcess)
                 : null;
         }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     internal static bool IsWorkloadProcess(WindowsGpuProcessActivity process) =>
         process.IsActive && process.ProcessId != SystemProcessId;
 
-    private static void WaitForNextSample(
-        int milliseconds,
-        CancellationToken cancellationToken)
-    {
-        if (cancellationToken.WaitHandle.WaitOne(milliseconds))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-    }
-
     public void Dispose()
     {
-        lock (sync)
+        gate.Wait();
+        try
         {
             if (disposed)
             {
@@ -107,6 +108,10 @@ internal sealed class WindowsGpuActivitySource : IGpuActivitySource, IDisposable
 
             reader?.Dispose();
             disposed = true;
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 }

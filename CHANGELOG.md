@@ -5,6 +5,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Kept the service thermal sensors open between samples. The Razer EC
+  thermal-zone counter stays open instead of being re-created on every read,
+  the NVIDIA NVML session is held only while consecutive samples report the
+  discrete GPU active and is released on the first inactive or unknown
+  sample or after five idle seconds, and the GPU activity gate no longer
+  blocks a thread for its 150 ms sample window. Manual fan curves and Tray
+  live readings no longer re-initialize NVML every second under a GPU load.
+
 ### Fixed
 
 - Stopped counting Windows System-process video-memory paging as NVIDIA GPU
