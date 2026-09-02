@@ -37,6 +37,12 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(PerformancePreset.BatterySaver, configuration.Profiles.Battery.Performance);
         AssertBatteryProtection(configuration.Profiles, expected: true);
         Assert.Null(configuration.Preferences.ProtectionEnabled);
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            configuration.Preferences.ThermalControlPolicy);
+        Assert.Equal(
+            ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            configuration.Preferences.ThermalPolicyUpgradeDisclosure);
         Assert.All(paths.All, path => Assert.True(File.Exists(path)));
         Assert.All(paths.All, path => Assert.False(File.Exists(path + ".tmp")));
 
@@ -54,6 +60,172 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             marker.RootElement.GetProperty("preferencesSha256").GetString());
         Assert.True(File.GetLastWriteTimeUtc(paths.Marker) >= File.GetLastWriteTimeUtc(paths.Profiles));
         Assert.True(File.GetLastWriteTimeUtc(paths.Marker) >= File.GetLastWriteTimeUtc(paths.Preferences));
+    }
+
+    [Fact]
+    public async Task LoadAsync_AbsentAggregateCreatesMaintainWithoutUpgradeDisclosure()
+    {
+        Paths paths = CreatePaths();
+
+        BatteryConfiguration configuration = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            configuration.Preferences.ThermalControlPolicy);
+        Assert.Equal(
+            ThermalPolicyUpgradeDisclosureState.NotRequired,
+            configuration.Preferences.ThermalPolicyUpgradeDisclosure);
+        Assert.All(paths.All, path => Assert.True(File.Exists(path)));
+    }
+
+    [Fact]
+    public async Task LoadAsync_FrozenSchema15AggregateMigratesToMaintainWithDisclosurePending()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(
+                ProfileStore.FrozenThermalPolicyPredecessorSchemaVersion,
+                ProfileDefaults.CreateSafeDefaults()),
+            options);
+        byte[] preferences = Encoding.UTF8.GetBytes(
+            $$"""
+              {
+                "schemaVersion": {{ProfileStore.FrozenThermalPolicyPredecessorSchemaVersion}},
+                "preferences": {
+                  "alwaysOverrideExternalLightingChanges": false,
+                  "lastKnownLighting": null,
+                  "keyboardLightingControlMode": 0,
+                  "allowUntestedFirmware": false,
+                  "lightingRefreshRate": 0
+                }
+              }
+              """);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                ProfileStore.FrozenThermalPolicyPredecessorSchemaVersion,
+                Hash(profiles),
+                Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            loaded.Preferences.ThermalControlPolicy);
+        Assert.Equal(
+            ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            loaded.Preferences.ThermalPolicyUpgradeDisclosure);
+        using JsonDocument persistedPreferences = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Preferences));
+        JsonElement persisted = persistedPreferences.RootElement
+            .GetProperty("preferences");
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persistedPreferences.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            (int)ThermalControlPolicy.MaintainDesiredState,
+            persisted.GetProperty("thermalControlPolicy").GetInt32());
+        Assert.Equal(
+            (int)ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+            persisted.GetProperty("thermalPolicyUpgradeDisclosure").GetInt32());
+        using JsonDocument persistedMarker = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Marker));
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Preferences)),
+            persistedMarker.RootElement.GetProperty("preferencesSha256").GetString());
+    }
+
+    [Theory]
+    [InlineData("thermalControlPolicy")]
+    [InlineData("thermalPolicyUpgradeDisclosure")]
+    public async Task LoadAsync_CurrentSchemaMissingRequiredThermalMemberPreservesExactAggregate(
+        string missingMember)
+    {
+        Paths paths = CreatePaths();
+        _ = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+        string preferenceJson = await File.ReadAllTextAsync(paths.Preferences);
+        using JsonDocument parsed = JsonDocument.Parse(preferenceJson);
+        Dictionary<string, object?> members = parsed.RootElement
+            .GetProperty("preferences")
+            .EnumerateObject()
+            .Where(property => !property.NameEquals(missingMember))
+            .ToDictionary(
+                property => property.Name,
+                property => (object?)property.Value.Clone(),
+                StringComparer.Ordinal);
+        byte[] changedPreferences = JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                schemaVersion = ProfileStore.CurrentSchemaVersion,
+                preferences = members,
+            },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+        byte[] profiles = await File.ReadAllBytesAsync(paths.Profiles);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                ProfileStore.CurrentSchemaVersion,
+                Hash(profiles),
+                Hash(changedPreferences)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+        await File.WriteAllBytesAsync(paths.Preferences, changedPreferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(ThermalControlPolicy.Strict, loaded.Preferences.ThermalControlPolicy);
+        Assert.Equal(ConfigurationQuarantineReason.InvalidDocument, loaded.QuarantineReason);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
+    }
+
+    [Theory]
+    [InlineData("thermalControlPolicy", 99)]
+    [InlineData("thermalPolicyUpgradeDisclosure", 99)]
+    public async Task LoadAsync_CurrentSchemaUndefinedThermalEnumPreservesExactAggregate(
+        string member,
+        int undefinedValue)
+    {
+        Paths paths = CreatePaths();
+        _ = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        string preferences = await File.ReadAllTextAsync(paths.Preferences);
+        string original = member == "thermalControlPolicy"
+            ? $"\"{member}\": {(int)ThermalControlPolicy.MaintainDesiredState}"
+            : $"\"{member}\": {(int)ThermalPolicyUpgradeDisclosureState.NotRequired}";
+        byte[] changedPreferences = Encoding.UTF8.GetBytes(preferences.Replace(
+            original,
+            $"\"{member}\": {undefinedValue}",
+            StringComparison.Ordinal));
+        byte[] profiles = await File.ReadAllBytesAsync(paths.Profiles);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                ProfileStore.CurrentSchemaVersion,
+                Hash(profiles),
+                Hash(changedPreferences)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+        await File.WriteAllBytesAsync(paths.Preferences, changedPreferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+        FileSnapshot preserved = await ReadSnapshotAsync(paths);
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Quarantined, loaded.Disposition);
+        Assert.Equal(ThermalControlPolicy.Strict, loaded.Preferences.ThermalControlPolicy);
+        AssertSnapshotEqual(preserved, await ReadSnapshotAsync(paths));
     }
 
     [Fact]

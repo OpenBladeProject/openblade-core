@@ -5505,6 +5505,178 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ThermalPolicy_DefaultsToMaintainAndRemainsServiceAuthoritative()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+                ThermalConvergenceState.Matched,
+                [],
+                ThermalConvergenceReason.None,
+                ExplicitReapplyRequired: false),
+        });
+        await WaitUntilAsync(() => viewModel.IsThermalControlPolicyAvailable);
+
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            viewModel.SelectedThermalControlPolicyOption.Policy);
+        Assert.True(viewModel.CanChangeThermalControlPolicy);
+        Assert.Contains(
+            "never turns on HyperBoost",
+            viewModel.ThermalControlPolicyCommonNote,
+            StringComparison.Ordinal);
+
+        Assert.True(await viewModel.SetThermalControlPolicyAsync(
+            ThermalControlPolicy.Strict,
+            CancellationToken.None));
+        Assert.Equal(ThermalControlPolicy.Strict, client.ThermalControlPolicyRequest);
+        Assert.Equal(
+            ThermalControlPolicy.MaintainDesiredState,
+            viewModel.SelectedThermalControlPolicyOption.Policy);
+
+        client.Publish(client.CurrentStatus! with
+        {
+            Revision = 2,
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.Strict,
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+                ThermalConvergenceState.External,
+                [ThermalComponent.Performance],
+                ThermalConvergenceReason.StrictPolicy,
+                ExplicitReapplyRequired: true),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SelectedThermalControlPolicyOption.Policy
+                == ThermalControlPolicy.Strict);
+
+        Assert.Contains("without changing", viewModel.ThermalConvergenceDetail);
+        Assert.True(viewModel.ThermalConvergenceExplicitReapplyRequired);
+        Assert.True(viewModel.CanReapplyChangedSettings);
+    }
+
+    [Fact]
+    public async Task ThermalUpgradeDisclosure_RemainsUntilExplicitAcknowledgementIsObserved()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending,
+                ThermalConvergenceState.Paused,
+                [],
+                ThermalConvergenceReason.UpgradeDisclosurePending,
+                ExplicitReapplyRequired: false),
+        });
+        await WaitUntilAsync(() => viewModel.HasThermalPolicyUpgradeDisclosure);
+
+        Assert.True(viewModel.ShouldForceWindowVisibleForThermalDisclosure);
+        Assert.True(viewModel.CanAcknowledgeThermalPolicyUpgradeDisclosure);
+        Assert.Contains(
+            "paused",
+            viewModel.ThermalPolicyUpgradeDisclosureMessage,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "Got it",
+            viewModel.ThermalPolicyUpgradeDisclosureMessage,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "never turns on HyperBoost",
+            viewModel.ThermalPolicyUpgradeDisclosureMessage,
+            StringComparison.Ordinal);
+        Assert.Contains("paused", viewModel.AttentionDetails, StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(await viewModel.AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+            CancellationToken.None));
+        Assert.Equal(1, client.ThermalDisclosureAcknowledgementCalls);
+        Assert.True(viewModel.HasThermalPolicyUpgradeDisclosure);
+
+        client.Publish(client.CurrentStatus! with
+        {
+            Revision = 2,
+            ThermalConvergence = client.CurrentStatus!.ThermalConvergence! with
+            {
+                Disclosure = ThermalPolicyUpgradeDisclosureState.Acknowledged,
+                State = ThermalConvergenceState.AwaitingObservation,
+                Reason = ThermalConvergenceReason.AwaitingFreshObservation,
+            },
+        });
+        await WaitUntilAsync(() => !viewModel.HasThermalPolicyUpgradeDisclosure);
+
+        Assert.False(viewModel.ShouldForceWindowVisibleForThermalDisclosure);
+    }
+
+    [Theory]
+    [InlineData(ThermalConvergenceState.Matched, "Up to date")]
+    [InlineData(ThermalConvergenceState.AwaitingObservation, "Checking")]
+    [InlineData(ThermalConvergenceState.Converging, "Restoring")]
+    [InlineData(ThermalConvergenceState.Paused, "Paused")]
+    [InlineData(ThermalConvergenceState.Suppressed, "Needs")]
+    [InlineData(ThermalConvergenceState.External, "Changed")]
+    [InlineData(ThermalConvergenceState.RestorePending, "Restore pending")]
+    [InlineData(ThermalConvergenceState.ReconciliationUnavailable, "unavailable")]
+    public async Task ThermalConvergence_MapsEveryPublicState(
+        ThermalConvergenceState state,
+        string expectedLabel)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+                state,
+                [ThermalComponent.Performance, ThermalComponent.Fans],
+                ThermalConvergenceReason.PendingReconciliation,
+                ExplicitReapplyRequired: false),
+        });
+        await WaitUntilAsync(() => viewModel.IsThermalControlPolicyAvailable);
+
+        Assert.Contains(
+            expectedLabel,
+            viewModel.ThermalConvergenceStateLabel,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Performance and fans", viewModel.ThermalConvergenceAffectedComponents);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_ConvergingWithoutPauseReasonDescribesActiveApply()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+                ThermalConvergenceState.Converging,
+                [ThermalComponent.Performance],
+                ThermalConvergenceReason.None,
+                ExplicitReapplyRequired: false),
+        });
+        await WaitUntilAsync(() => viewModel.IsThermalControlPolicyAvailable);
+
+        Assert.Contains(
+            "applying",
+            viewModel.ThermalConvergenceDetail,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "match the confirmed",
+            viewModel.ThermalConvergenceDetail,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task LightingRefreshRate_RequiresLabsAndAdvertisedCapability()
     {
         var client = new FakeServiceClient();
@@ -8029,6 +8201,25 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ProtocolMismatch_DisablesCommandsAndShowsRepairAction()
+    {
+        var client = new FakeServiceClient
+        {
+            WatchFailure = new IpcProtocolVersionMismatchException(52, 51),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+
+        await viewModel.StartAsync();
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus.Contains("Update or repair", StringComparison.Ordinal));
+
+        Assert.False(viewModel.IsConnected);
+        Assert.True(viewModel.IsReadOnly);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+    }
+
+    [Fact]
     public async Task InactiveSessionStatusStaysConnectedAndRestoresControl()
     {
         var client = new FakeServiceClient();
@@ -9493,6 +9684,8 @@ public sealed class MainViewModelTests
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
+        public ThermalControlPolicy? ThermalControlPolicyRequest { get; private set; }
+        public int ThermalDisclosureAcknowledgementCalls { get; private set; }
         public LightingRefreshRate? LightingRefreshRate { get; private set; }
         public bool? FirmwareCompatibilityOverride { get; private set; }
         public int ReapplyChangedSettingsCalls { get; private set; }
@@ -9506,6 +9699,7 @@ public sealed class MainViewModelTests
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
         public Exception? MutationFailure { get; init; }
+        public Exception? WatchFailure { get; init; }
         public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public ServiceStatusSnapshot? GetStatusResponse { get; set; }
@@ -9526,6 +9720,11 @@ public sealed class MainViewModelTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
             WatchCalls++;
+            if (WatchFailure is not null)
+            {
+                await Task.Yield();
+                throw WatchFailure;
+            }
             try
             {
                 await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
@@ -9692,6 +9891,21 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             ExternalLightingOverridePolicy = enabled;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetThermalControlPolicyAsync(
+            ThermalControlPolicy policy,
+            CancellationToken token)
+        {
+            ThermalControlPolicyRequest = policy;
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult>
+            AcknowledgeThermalPolicyUpgradeDisclosureAsync(CancellationToken token)
+        {
+            ThermalDisclosureAcknowledgementCalls++;
             return MutateAsync(token);
         }
 

@@ -39,6 +39,8 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFirmwareCompatibilityOverrideRequest), "setFirmwareCompatibilityOverride")]
 [JsonDerivedType(typeof(ReapplyChangedSettingsRequest), "reapplyChangedSettings")]
 [JsonDerivedType(typeof(RecoverHyperBoostRestoreRequest), "recoverHyperBoostRestore")]
+[JsonDerivedType(typeof(SetThermalControlPolicyRequest), "setThermalControlPolicy")]
+[JsonDerivedType(typeof(AcknowledgeThermalPolicyUpgradeDisclosureRequest), "acknowledgeThermalPolicyUpgradeDisclosure")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
@@ -216,6 +218,82 @@ public sealed record ReapplyChangedSettingsRequest(int Version, Guid RequestId)
 public sealed record RecoverHyperBoostRestoreRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
+public enum ThermalControlPolicy
+{
+    MaintainDesiredState,
+    Strict,
+}
+
+public enum ThermalPolicyUpgradeDisclosureState
+{
+    NotRequired,
+    UpgradeDisclosurePending,
+    Acknowledged,
+}
+
+public sealed record SetThermalControlPolicyRequest(
+    int Version,
+    Guid RequestId,
+    ThermalControlPolicy Policy)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record AcknowledgeThermalPolicyUpgradeDisclosureRequest(
+    int Version,
+    Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
+public enum ThermalConvergenceState
+{
+    Matched,
+    AwaitingObservation,
+    Converging,
+    Paused,
+    Suppressed,
+    External,
+    RestorePending,
+    ReconciliationUnavailable,
+}
+
+public enum ThermalComponent
+{
+    Performance,
+    Fans,
+}
+
+public enum ThermalConvergenceReason
+{
+    None,
+    StrictPolicy,
+    UpgradeDisclosurePending,
+    ConfigurationUnavailable,
+    ConfigurationQuarantined,
+    InactiveSession,
+    ProtocolCompatibilityClient,
+    AwaitingFreshObservation,
+    DeviceUnavailable,
+    DeviceIdentityBlocked,
+    PowerUnsettled,
+    LowPower,
+    CompetingControllerPresent,
+    CompetingControllerUncertain,
+    HyperBoostActive,
+    HyperBoostPending,
+    ManualFanReadbackAmbiguous,
+    PendingReconciliation,
+    BudgetExhausted,
+    Tombstoned,
+    Shutdown,
+    InternalStateUnavailable,
+}
+
+public sealed record ThermalConvergenceStatus(
+    ThermalControlPolicy Policy,
+    ThermalPolicyUpgradeDisclosureState Disclosure,
+    ThermalConvergenceState State,
+    IReadOnlyList<ThermalComponent> AffectedComponents,
+    ThermalConvergenceReason Reason,
+    bool ExplicitReapplyRequired);
+
 public sealed record SetLightingSuppressionRequest(
     int Version,
     Guid RequestId,
@@ -337,6 +415,8 @@ public sealed record ServiceStatusSnapshot(
     public PadlessHyperBoostEligibilityState PadlessHyperBoostEligibility { get; init; }
 
     public bool HyperBoostRestorePending { get; init; }
+
+    public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

@@ -99,7 +99,10 @@ public sealed class NamedPipeControlServer
             {
                 request = await ReadRequestAsync(pipe, cancellationToken);
             }
-            catch (Exception exception) when (exception is InvalidDataException or JsonException)
+            catch (Exception exception) when (
+                exception is InvalidDataException
+                    or JsonException
+                    or IpcProtocolVersionMismatchException)
             {
                 await WriteFrameAsync(
                     pipe,
@@ -182,6 +185,8 @@ public sealed class NamedPipeControlServer
         ArgumentNullException.ThrowIfNull(connection);
         bool ownsPersistentSlot = false;
         bool ownsLightingStreamSlot = false;
+        IDisposable? protocolCompatibilityLease = null;
+        bool protocol51Compatibility = false;
         try
         {
             Type? streamingRequestType = null;
@@ -202,7 +207,10 @@ public sealed class NamedPipeControlServer
                             cancellationToken,
                             useDeadline: streamingRequestType is null);
                     }
-                    catch (Exception exception) when (exception is InvalidDataException or JsonException)
+                    catch (Exception exception) when (
+                        exception is InvalidDataException
+                            or JsonException
+                            or IpcProtocolVersionMismatchException)
                     {
                         await WriteFrameAsync(
                             connection,
@@ -210,6 +218,38 @@ public sealed class NamedPipeControlServer
                             cancellationToken);
                         return;
                     }
+                }
+
+                if (request.Version == OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion)
+                {
+                    if (request is not (GetStatusRequest or SubscribeStatusRequest))
+                    {
+                        await WriteFrameAsync(
+                            connection,
+                            Failure(
+                                request.RequestId,
+                                "This OpenBlade client is read-only because the service was updated. Update or repair OpenBlade before changing settings."),
+                            cancellationToken,
+                            protocol51Compatibility: true);
+                        return;
+                    }
+
+                    protocolCompatibilityLease ??=
+                        handler.RegisterProtocolCompatibilityClient();
+                    protocol51Compatibility = true;
+                    request = request switch
+                    {
+                        GetStatusRequest getStatus => getStatus with
+                        {
+                            Version = OpenBladeIpc.ProtocolVersion,
+                        },
+                        SubscribeStatusRequest subscribeStatus => subscribeStatus with
+                        {
+                            Version = OpenBladeIpc.ProtocolVersion,
+                        },
+                        _ => throw new InvalidOperationException(
+                            "Protocol 51 compatibility admitted an unsupported request."),
+                    };
                 }
 
                 if (!ownsPersistentSlot && IsPersistentRequest(request))
@@ -226,7 +266,8 @@ public sealed class NamedPipeControlServer
                                 request.RequestId,
                                 "The service has reached its lighting stream capacity.",
                                 ServiceResponseErrorCode.CapacityUnavailable),
-                            cancellationToken);
+                            cancellationToken,
+                            protocol51Compatibility);
                         return;
                     }
                     ownsLightingStreamSlot = lightingStream;
@@ -248,7 +289,8 @@ public sealed class NamedPipeControlServer
                                 request.RequestId,
                                 "The service has reached its persistent connection capacity.",
                                 ServiceResponseErrorCode.CapacityUnavailable),
-                            cancellationToken);
+                            cancellationToken,
+                            protocol51Compatibility);
                         return;
                     }
                     ownsPersistentSlot = true;
@@ -260,7 +302,8 @@ public sealed class NamedPipeControlServer
                         connection,
                         request,
                         client,
-                        cancellationToken);
+                        cancellationToken,
+                        protocol51Compatibility);
                     return;
                 }
 
@@ -276,11 +319,20 @@ public sealed class NamedPipeControlServer
                     return;
                 }
 
-                ServiceResponse response = await handler.HandleAsync(
-                    request,
-                    client,
-                    cancellationToken);
-                await WriteFrameAsync(connection, response, cancellationToken);
+                ServiceResponse response = protocol51Compatibility
+                    ? await handler.HandleProtocol51ReadOnlyAsync(
+                        request,
+                        client,
+                        cancellationToken)
+                    : await handler.HandleAsync(
+                        request,
+                        client,
+                        cancellationToken);
+                await WriteFrameAsync(
+                    connection,
+                    response,
+                    cancellationToken,
+                    protocol51Compatibility);
                 if (!response.Success)
                 {
                     return;
@@ -315,6 +367,7 @@ public sealed class NamedPipeControlServer
             {
                 Interlocked.Decrement(ref lightingStreamConnectionCount);
             }
+            protocolCompatibilityLease?.Dispose();
         }
     }
 
@@ -348,15 +401,25 @@ public sealed class NamedPipeControlServer
         Stream connection,
         ServiceRequest request,
         ServiceClientContext client,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool protocol51Compatibility)
     {
-        ServiceResponse initial = await handler.HandleAsync(
-            request,
-            client,
-            cancellationToken);
+        ServiceResponse initial = protocol51Compatibility
+            ? await handler.HandleProtocol51ReadOnlyAsync(
+                request,
+                client,
+                cancellationToken)
+            : await handler.HandleAsync(
+                request,
+                client,
+                cancellationToken);
         if (!initial.Success)
         {
-            await WriteFrameAsync(connection, initial, cancellationToken);
+            await WriteFrameAsync(
+                connection,
+                initial,
+                cancellationToken,
+                protocol51Compatibility);
             return;
         }
 
@@ -373,13 +436,18 @@ public sealed class NamedPipeControlServer
                     request.RequestId,
                     exception.Message,
                     ServiceResponseErrorCode.CapacityUnavailable),
-                cancellationToken);
+                cancellationToken,
+                protocol51Compatibility);
             return;
         }
 
         await using (lease)
         {
-            await WriteFrameAsync(connection, initial, cancellationToken);
+            await WriteFrameAsync(
+                connection,
+                initial,
+                cancellationToken,
+                protocol51Compatibility);
             long initialRevision = initial.Status?.Revision ?? -1;
 
             using CancellationTokenSource connectionLifetime =
@@ -389,7 +457,8 @@ public sealed class NamedPipeControlServer
                 lease,
                 initialRevision,
                 client,
-                connectionLifetime.Token);
+                connectionLifetime.Token,
+                protocol51Compatibility);
             Task disconnectTask = MonitorDisconnectAsync(
                 connection,
                 connectionLifetime.Token);
@@ -428,7 +497,8 @@ public sealed class NamedPipeControlServer
         StatusSubscriptionLease lease,
         long initialRevision,
         ServiceClientContext client,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool protocol51Compatibility)
     {
         await foreach (ServiceStatusSnapshot snapshot in
             lease.ReadAllAsync(cancellationToken))
@@ -444,7 +514,8 @@ public sealed class NamedPipeControlServer
                 new ServiceStatusEvent(
                     OpenBladeIpc.ProtocolVersion,
                     projected),
-                cancellationToken);
+                cancellationToken,
+                protocol51Compatibility);
         }
     }
 
@@ -459,7 +530,8 @@ public sealed class NamedPipeControlServer
     private async Task WriteFrameAsync(
         Stream connection,
         ServiceServerFrame frame,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool protocol51Compatibility = false)
     {
         using var deadline = new CancellationTokenSource(FrameWriteTimeout, timeProvider);
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -467,7 +539,17 @@ public sealed class NamedPipeControlServer
             deadline.Token);
         try
         {
-            await IpcMessageCodec.WriteServerFrameAsync(connection, frame, linked.Token);
+            if (protocol51Compatibility)
+            {
+                await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(
+                    connection,
+                    frame,
+                    linked.Token);
+            }
+            else
+            {
+                await IpcMessageCodec.WriteServerFrameAsync(connection, frame, linked.Token);
+            }
         }
         catch (OperationCanceledException exception)
             when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -483,7 +565,9 @@ public sealed class NamedPipeControlServer
     {
         if (!useDeadline)
         {
-            return await IpcMessageCodec.ReadRequestAsync(connection, cancellationToken);
+            return await IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(
+                connection,
+                cancellationToken);
         }
 
         using var deadline = new CancellationTokenSource(FrameReadTimeout, timeProvider);
@@ -492,7 +576,9 @@ public sealed class NamedPipeControlServer
             deadline.Token);
         try
         {
-            return await IpcMessageCodec.ReadRequestAsync(connection, linked.Token);
+            return await IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(
+                connection,
+                linked.Token);
         }
         catch (OperationCanceledException exception)
             when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

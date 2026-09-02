@@ -93,9 +93,13 @@ model's device-specific assumptions may be copied to the other.
 4. A temporary read, pipe, or enumeration failure is not proof that the laptop
    disappeared. Preserve last confirmed presentation through bounded retries,
    but perform fresh identity and safety checks before every write.
-5. Competing Razer software is advisory by default. Do not stop it or silently
-   fight external changes. Only the user-enabled lighting ownership policy may
-   restore lighting automatically.
+5. Never stop competing Razer software. Strict thermal control remains
+   advisory for externally changed performance and fan state. Maintain desired
+   state may reconcile confirmed thermal drift only after fresh competing-
+   controller absence, exact-device, power, session, durable-budget, and
+   readback admission; ambiguity or possible submission pauses instead of
+   fighting or replaying a command. Only the user-enabled lighting ownership
+   policy may restore lighting automatically.
 6. Keep queues bounded, cancellations observable, writes atomic, and native
    handles deterministically released. Do not add a kernel driver or depend on
    Synapse components. As an optional integration, the RZ09-0581 native-

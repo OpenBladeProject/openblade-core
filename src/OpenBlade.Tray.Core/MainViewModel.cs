@@ -27,6 +27,10 @@ public sealed record LiveReadingsRefreshOption(
     LiveReadingsCadence Cadence,
     string Label);
 
+public sealed record ThermalControlPolicyOption(
+    ThermalControlPolicy Policy,
+    string Label);
+
 public sealed record ProfileComparisonOption(
     PowerSource Source,
     string Label);
@@ -119,6 +123,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private sealed record LocalizedOptionCatalog(
         IReadOnlyList<ProfileComparisonOption> Comparison,
+        IReadOnlyList<ThermalControlPolicyOption> ThermalControlPolicies,
         IReadOnlyList<WindowsPowerModeOption> WindowsPowerModes,
         IReadOnlyList<FunctionKeyPrimaryOption> FunctionKeyPrimaryModes,
         IReadOnlyList<LightingEffectOption> LightingEffects,
@@ -141,6 +146,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private static IReadOnlyList<ProfileComparisonOption> ComparisonOptions =>
         CurrentLocalizedOptions.Comparison;
+
+    private static IReadOnlyList<ThermalControlPolicyOption> ThermalControlPolicyOptions =>
+        CurrentLocalizedOptions.ThermalControlPolicies;
 
     private static IReadOnlyList<WindowsPowerModeOption> WindowsPowerModeOptions =>
         CurrentLocalizedOptions.WindowsPowerModes;
@@ -181,6 +189,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             new(PowerSource.PluggedIn, "AC"),
             new(PowerSource.UsbC, "USB-C"),
             new(PowerSource.Battery, TrayText.Get("On battery")),
+        ],
+        ThermalControlPolicies:
+        [
+            new(
+                ThermalControlPolicy.MaintainDesiredState,
+                TrayText.Get("Maintain desired state")),
+            new(
+                ThermalControlPolicy.Strict,
+                TrayText.Get("Strict")),
         ],
         WindowsPowerModes:
         [
@@ -273,6 +290,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool hasUnconfirmedWrites;
     private string unconfirmedWritesText = string.Empty;
     private bool hasPendingHyperBoostRestore;
+    private ThermalConvergenceStatus? thermalConvergence;
+    private bool isThermalPolicyOperationInProgress;
+    private bool isThermalDisclosureAcknowledgementInProgress;
     private bool alwaysOverrideExternalLightingChanges;
     private LightingRefreshRate lightingRefreshRate = LightingRefreshRate.ThirtyHz;
     private bool allowUntestedFirmware;
@@ -590,6 +610,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && Volatile.Read(ref disposed) == 0
                 && StartupStateKnown
                 && requested != StartAtSignIn);
+        SetThermalControlPolicyCommand = CreateCommand(
+            async (parameter, token) =>
+            {
+                await SetThermalControlPolicyAsync(
+                    ((ThermalControlPolicyOption)parameter!).Policy,
+                    token);
+            },
+            CanSetThermalControlPolicy);
+        AcknowledgeThermalPolicyUpgradeDisclosureCommand = CreateCommand(
+            async (_, token) =>
+            {
+                await AcknowledgeThermalPolicyUpgradeDisclosureAsync(token);
+            },
+            _ => CanAcknowledgeThermalPolicyUpgradeDisclosure);
         ApplyOneShotLaptopControlCommand = CreateCommand(
             ApplyOneShotLaptopControlAsync,
             CanApplyOneShotLaptopControl);
@@ -617,6 +651,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)DiscardLaptopProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
+            (AsyncRelayCommand)SetThermalControlPolicyCommand,
+            (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
         ];
     }
@@ -1266,7 +1302,175 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string HyperBoostRestoreRecoveryText => TrayText.Get(
         "HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically.");
 
-    public bool ShowReapplyChangedSettings => HasExternalChanges
+    public IReadOnlyList<ThermalControlPolicyOption> AvailableThermalControlPolicyOptions =>
+        ThermalControlPolicyOptions;
+
+    public ThermalControlPolicyOption SelectedThermalControlPolicyOption =>
+        ThermalControlPolicyOptions.First(option => option.Policy ==
+            (thermalConvergence?.Policy ?? ThermalControlPolicy.MaintainDesiredState));
+
+    public bool IsThermalControlPolicyAvailable => thermalConvergence is not null;
+
+    public bool IsThermalPolicyOperationInProgress
+    {
+        get => isThermalPolicyOperationInProgress;
+        private set
+        {
+            if (isThermalPolicyOperationInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isThermalPolicyOperationInProgress, value);
+            Notify(nameof(CanChangeThermalControlPolicy));
+            NotifyCommands();
+        }
+    }
+
+    public bool CanChangeThermalControlPolicy => IsThermalControlPolicyAvailable
+        && IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && !IsThermalPolicyOperationInProgress;
+
+    public bool HasThermalPolicyUpgradeDisclosure => thermalConvergence?.Disclosure
+        == ThermalPolicyUpgradeDisclosureState.UpgradeDisclosurePending;
+
+    public bool ShouldForceWindowVisibleForThermalDisclosure =>
+        HasThermalPolicyUpgradeDisclosure;
+
+    public bool IsThermalDisclosureAcknowledgementInProgress
+    {
+        get => isThermalDisclosureAcknowledgementInProgress;
+        private set
+        {
+            if (isThermalDisclosureAcknowledgementInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isThermalDisclosureAcknowledgementInProgress, value);
+            Notify(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure));
+            NotifyCommands();
+        }
+    }
+
+    public bool CanAcknowledgeThermalPolicyUpgradeDisclosure =>
+        HasThermalPolicyUpgradeDisclosure
+        && IsConnected
+        && latestStatus?.ControlAccess == SessionControlAccess.Active
+        && !IsThermalDisclosureAcknowledgementInProgress;
+
+    public string ThermalPolicyDescription => thermalConvergence?.Policy switch
+    {
+        ThermalControlPolicy.Strict => TrayText.Get(
+            "OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them."),
+        _ => TrayText.Get(
+            "OpenBlade checks performance and fan intent in the background and safely restores changed settings when possible."),
+    };
+
+    public string ThermalControlPolicyHeading => TrayText.Get("Thermal control policy");
+
+    public string ThermalControlPolicyCommonNote => TrayText.Get(
+        "Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action.");
+
+    public string ThermalConvergenceHeading => TrayText.Get("Thermal state");
+
+    public string ThermalAffectedComponentsLabel => TrayText.Get("Affected controls:");
+
+    public string ThermalPolicyUpgradeDisclosureTitle => TrayText.Get(
+        "Maintain desired state is now the default");
+
+    public string ThermalPolicyUpgradeDisclosureMessage => TrayText.Get(
+        "OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported.");
+
+    public string ThermalPolicyUpgradeDisclosureActionLabel => TrayText.Get("Got it");
+
+    public string ThermalReapplyActionLabel => TrayText.Get("Reapply");
+
+    public string ThermalConvergenceStateLabel => thermalConvergence?.State switch
+    {
+        ThermalConvergenceState.Matched => TrayText.Get("Up to date"),
+        ThermalConvergenceState.AwaitingObservation => TrayText.Get("Checking current state"),
+        ThermalConvergenceState.Converging => TrayText.Get("Restoring saved settings"),
+        ThermalConvergenceState.Paused => TrayText.Get("Paused"),
+        ThermalConvergenceState.Suppressed => TrayText.Get("Needs your action"),
+        ThermalConvergenceState.External => TrayText.Get("Changed outside OpenBlade"),
+        ThermalConvergenceState.RestorePending => TrayText.Get("Restore pending"),
+        ThermalConvergenceState.ReconciliationUnavailable => TrayText.Get(
+            "Reconciliation unavailable"),
+        _ => TrayText.Get("Unavailable"),
+    };
+
+    public string ThermalConvergenceDetail => thermalConvergence?.Reason switch
+    {
+        ThermalConvergenceReason.None when thermalConvergence.State ==
+            ThermalConvergenceState.Converging => TrayText.Get(
+            "OpenBlade is applying the saved performance and fan intent and will confirm it by readback."),
+        ThermalConvergenceReason.None => TrayText.Get(
+            "Saved performance and fan intent match the confirmed laptop state."),
+        ThermalConvergenceReason.StrictPolicy => TrayText.Get(
+            "Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues."),
+        ThermalConvergenceReason.UpgradeDisclosurePending => TrayText.Get(
+            "Review the new default policy before background reconciliation can begin."),
+        ThermalConvergenceReason.ConfigurationUnavailable => TrayText.Get(
+            "The saved thermal configuration is unavailable."),
+        ThermalConvergenceReason.ConfigurationQuarantined => TrayText.Get(
+            "The saved thermal configuration could not be trusted. Strict behavior is active."),
+        ThermalConvergenceReason.InactiveSession => TrayText.Get(
+            "Reconciliation waits for this local Windows session to become active."),
+        ThermalConvergenceReason.ProtocolCompatibilityClient => TrayText.Get(
+            "An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation."),
+        ThermalConvergenceReason.AwaitingFreshObservation => TrayText.Get(
+            "OpenBlade is waiting for a fresh, complete read of the laptop state."),
+        ThermalConvergenceReason.DeviceUnavailable => TrayText.Get(
+            "The supported laptop control device is temporarily unavailable."),
+        ThermalConvergenceReason.DeviceIdentityBlocked => TrayText.Get(
+            "OpenBlade could not verify the exact supported laptop identity."),
+        ThermalConvergenceReason.PowerUnsettled => TrayText.Get(
+            "Reconciliation waits until the power source is confirmed and stable."),
+        ThermalConvergenceReason.LowPower => TrayText.Get(
+            "Reconciliation is paused while Windows enters or leaves low power."),
+        ThermalConvergenceReason.CompetingControllerPresent => TrayText.Get(
+            "Another Razer controller is active, so OpenBlade will not compete for these settings."),
+        ThermalConvergenceReason.CompetingControllerUncertain => TrayText.Get(
+            "OpenBlade could not confirm whether another Razer controller is active."),
+        ThermalConvergenceReason.HyperBoostActive => TrayText.Get(
+            "HyperBoost temporarily owns performance and fan state."),
+        ThermalConvergenceReason.HyperBoostPending => TrayText.Get(
+            "OpenBlade is finishing the HyperBoost transition before reconciling other settings."),
+        ThermalConvergenceReason.ManualFanReadbackAmbiguous => TrayText.Get(
+            "Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it."),
+        ThermalConvergenceReason.PendingReconciliation => TrayText.Get(
+            "A possibly submitted change must be confirmed by readback before another write."),
+        ThermalConvergenceReason.BudgetExhausted => TrayText.Get(
+            "Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again."),
+        ThermalConvergenceReason.Tombstoned => TrayText.Get(
+            "This drift is recorded as unresolved. Reapply explicitly after checking the laptop state."),
+        ThermalConvergenceReason.Shutdown => TrayText.Get(
+            "Reconciliation is closed while OpenBlade shuts down."),
+        ThermalConvergenceReason.InternalStateUnavailable => TrayText.Get(
+            "OpenBlade cannot safely persist or reconcile this state right now."),
+        _ => TrayText.Get("Thermal reconciliation status is unavailable."),
+    };
+
+    public string ThermalConvergenceAffectedComponents =>
+        thermalConvergence?.AffectedComponents?.Distinct().Order().ToArray() switch
+        {
+            [ThermalComponent.Performance] => TrayText.Get("Performance"),
+            [ThermalComponent.Fans] => TrayText.Get("Fans"),
+            [ThermalComponent.Performance, ThermalComponent.Fans] => TrayText.Get(
+                "Performance and fans"),
+            _ => string.Empty,
+        };
+
+    public bool HasThermalConvergenceAffectedComponents =>
+        !string.IsNullOrEmpty(ThermalConvergenceAffectedComponents);
+
+    public bool ThermalConvergenceExplicitReapplyRequired =>
+        thermalConvergence?.ExplicitReapplyRequired == true;
+
+    public bool ShowReapplyChangedSettings => (HasExternalChanges
+        || ThermalConvergenceExplicitReapplyRequired)
         && !HasUnconfirmedWrites;
 
     public bool IsReapplyChangedSettingsOperationInProgress
@@ -1283,10 +1487,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool CanReapplyChangedSettings => HasExternalChanges
+    public bool CanReapplyChangedSettings => (HasExternalChanges
+        || ThermalConvergenceExplicitReapplyRequired)
         && !HasUnconfirmedWrites
         && CanControlHardware
-        && HasReapplicableExternalChanges
+        && (HasReapplicableExternalChanges || ThermalConvergenceExplicitReapplyRequired)
         && !IsReapplyChangedSettingsOperationInProgress;
 
     private bool HasReapplicableExternalChanges =>
@@ -1397,6 +1602,51 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return accepted;
+    }
+
+    public async Task<bool> SetThermalControlPolicyAsync(
+        ThermalControlPolicy policy,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(policy)
+            || !CanChangeThermalControlPolicy
+            || thermalConvergence?.Policy == policy)
+        {
+            return false;
+        }
+
+        IsThermalPolicyOperationInProgress = true;
+        try
+        {
+            return await RunOperationAsync(
+                token => serviceClient.SetThermalControlPolicyAsync(policy, token),
+                cancellationToken);
+        }
+        finally
+        {
+            IsThermalPolicyOperationInProgress = false;
+        }
+    }
+
+    public async Task<bool> AcknowledgeThermalPolicyUpgradeDisclosureAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!CanAcknowledgeThermalPolicyUpgradeDisclosure)
+        {
+            return false;
+        }
+
+        IsThermalDisclosureAcknowledgementInProgress = true;
+        try
+        {
+            return await RunOperationAsync(
+                serviceClient.AcknowledgeThermalPolicyUpgradeDisclosureAsync,
+                cancellationToken);
+        }
+        finally
+        {
+            IsThermalDisclosureAcknowledgementInProgress = false;
+        }
     }
 
     public async Task<bool> SetLightingRefreshRateAsync(
@@ -1515,7 +1765,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || HasControllerDetectionWarning
             || HasExternalChanges
             || HasUnconfirmedWrites
-            || HasPendingHyperBoostRestore);
+            || HasPendingHyperBoostRestore
+            || HasThermalPolicyUpgradeDisclosure);
 
     public string AttentionSummary
     {
@@ -1528,6 +1779,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasUnconfirmedWrites)
             {
                 return TrayText.Get("State not confirmed");
+            }
+            if (HasThermalPolicyUpgradeDisclosure)
+            {
+                return TrayText.Get("Review thermal control policy");
             }
             if (HasPendingHyperBoostRestore)
             {
@@ -1549,6 +1804,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? string.Empty
         : HasUnconfirmedWrites
             ? TrayText.Get("State not confirmed")
+            : HasThermalPolicyUpgradeDisclosure
+            ? TrayText.Get("Review policy")
             : HasPendingHyperBoostRestore
             ? TrayText.Get("Recovery needed")
             : HasExternalChanges
@@ -1573,6 +1830,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasPendingHyperBoostRestore)
             {
                 details.Add(HyperBoostRestoreRecoveryText);
+            }
+            if (HasThermalPolicyUpgradeDisclosure)
+            {
+                details.Add(TrayText.Get(
+                    "Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it."));
             }
             if (HasExternalChanges)
             {
@@ -4230,6 +4492,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public ICommand DiscardLaptopProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
+    public ICommand SetThermalControlPolicyCommand { get; }
+    public ICommand AcknowledgeThermalPolicyUpgradeDisclosureCommand { get; }
     public ICommand ApplyOneShotLaptopControlCommand { get; }
 
     public ApplyOneShotLaptopControl StartupAnimationOnAction { get; } = new(
@@ -4265,6 +4529,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
         && !IsCheckingLaptopConnection(latestStatus);
+
+    private bool CanSetThermalControlPolicy(object? parameter) =>
+        parameter is ThermalControlPolicyOption option
+        && Enum.IsDefined(option.Policy)
+        && option.Policy != thermalConvergence?.Policy
+        && CanChangeThermalControlPolicy;
 
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
@@ -4695,6 +4965,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
+        catch (IpcProtocolVersionMismatchException) when (!token.IsCancellationRequested)
+        {
+            await dispatcher.InvokeAsync(
+                () => MarkDisconnected(TrayText.Get(
+                    "OpenBlade components have different versions. Update or repair OpenBlade to restore control.")),
+                token);
+        }
         catch (Exception) when (!token.IsCancellationRequested)
         {
             await dispatcher.InvokeAsync(MarkDisconnected, token);
@@ -4943,6 +5220,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 string.Join(", ", unconfirmedWrites.Select(SubsystemLabel)))
             : string.Empty;
         HasPendingHyperBoostRestore = status.HyperBoostRestorePending;
+        ApplyThermalConvergence(status.ThermalConvergence);
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
         LightingRefreshRate = status.LightingRefreshRate;
@@ -4965,6 +5243,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return externalChanges;
+    }
+
+    private void ApplyThermalConvergence(ThermalConvergenceStatus? value)
+    {
+        if (Equals(thermalConvergence, value))
+        {
+            return;
+        }
+
+        thermalConvergence = value;
+        Notify(nameof(AvailableThermalControlPolicyOptions));
+        Notify(nameof(SelectedThermalControlPolicyOption));
+        Notify(nameof(IsThermalControlPolicyAvailable));
+        Notify(nameof(CanChangeThermalControlPolicy));
+        Notify(nameof(HasThermalPolicyUpgradeDisclosure));
+        Notify(nameof(ShouldForceWindowVisibleForThermalDisclosure));
+        Notify(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure));
+        Notify(nameof(ThermalPolicyDescription));
+        Notify(nameof(ThermalConvergenceStateLabel));
+        Notify(nameof(ThermalConvergenceDetail));
+        Notify(nameof(ThermalConvergenceAffectedComponents));
+        Notify(nameof(HasThermalConvergenceAffectedComponents));
+        Notify(nameof(ThermalConvergenceExplicitReapplyRequired));
+        Notify(nameof(CanReapplyChangedSettings));
+        Notify(nameof(ShowReapplyChangedSettings));
+        Notify(nameof(HasAttention));
+        Notify(nameof(AttentionSummary));
+        Notify(nameof(AttentionBadgeLabel));
+        Notify(nameof(AttentionDetails));
+        NotifyCommands();
     }
 
     private DeviceCapabilities ApplyCapabilityPresentation(
@@ -9527,6 +9835,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(CanRecoverHyperBoostRestore));
         Notify(nameof(CanCheckCurrentState));
         Notify(nameof(ShowReapplyChangedSettings));
+        Notify(nameof(CanChangeThermalControlPolicy));
+        Notify(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure));
         Notify(nameof(CanEditPerformance));
         Notify(nameof(CanSelectLaptopPerformance));
         Notify(nameof(CanEditWindowsPowerMode));
