@@ -2276,7 +2276,8 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LocalizationSnapshotsDoNotActivateDormantApplicationResources()
     {
-        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")
+            + ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
         string canonicalizer = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -2539,7 +2540,8 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LanguageChangesRebuildEveryLocalizedTraySurfaceInProcess()
     {
-        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")
+            + ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
         string window = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
