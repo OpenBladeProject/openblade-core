@@ -194,10 +194,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         [
             new(
                 ThermalControlPolicy.MaintainDesiredState,
-                TrayText.Get("Maintain desired state")),
+                TrayText.Get("Restore them")),
             new(
                 ThermalControlPolicy.Strict,
-                TrayText.Get("Strict")),
+                TrayText.Get("Notify me")),
         ],
         WindowsPowerModes:
         [
@@ -1360,28 +1360,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && latestStatus?.ControlAccess == SessionControlAccess.Active
         && !IsThermalDisclosureAcknowledgementInProgress;
 
-    public string ThermalPolicyDescription => thermalConvergence?.Policy switch
-    {
-        ThermalControlPolicy.Strict => TrayText.Get(
-            "OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them."),
-        _ => TrayText.Get(
-            "OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back."),
-    };
-
-    public string ThermalControlPolicyHeading => TrayText.Get("Thermal control policy");
+    public string ThermalControlPolicyHeading =>
+        TrayText.Get("If settings change outside OpenBlade");
 
     public string ThermalControlPolicyCommonNote => TrayText.Get(
-        "Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action.");
-
-    public string ThermalConvergenceHeading => TrayText.Get("Thermal state");
+        "Fan speed and curve changes cannot be detected.");
 
     public string ThermalAffectedComponentsLabel => TrayText.Get("Affected controls:");
 
     public string ThermalPolicyUpgradeDisclosureTitle => TrayText.Get(
-        "Maintain desired state is now the default");
+        "OpenBlade now restores settings changed elsewhere");
 
     public string ThermalPolicyUpgradeDisclosureMessage => TrayText.Get(
-        "OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported.");
+        "If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically.");
 
     public string ThermalPolicyUpgradeDisclosureActionLabel => TrayText.Get("Got it");
 
@@ -1392,12 +1383,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ThermalConvergenceState.Matched => TrayText.Get("Up to date"),
         ThermalConvergenceState.AwaitingObservation => TrayText.Get("Checking current state"),
         ThermalConvergenceState.Converging => TrayText.Get("Restoring saved settings"),
-        ThermalConvergenceState.Paused => TrayText.Get("Paused"),
-        ThermalConvergenceState.Suppressed => TrayText.Get("Needs your action"),
+        ThermalConvergenceState.Paused => TrayText.Get("Restoration paused"),
+        ThermalConvergenceState.Suppressed => TrayText.Get("Needs you to reapply"),
         ThermalConvergenceState.External => TrayText.Get("Changed outside OpenBlade"),
         ThermalConvergenceState.RestorePending => TrayText.Get("Restore pending"),
         ThermalConvergenceState.ReconciliationUnavailable => TrayText.Get(
-            "Reconciliation unavailable"),
+            "Cannot confirm the change"),
         _ => TrayText.Get("Unavailable"),
     };
 
@@ -1405,52 +1396,52 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         ThermalConvergenceReason.None when thermalConvergence.State ==
             ThermalConvergenceState.Converging => TrayText.Get(
-            "OpenBlade is applying the saved performance and fan intent and will confirm it by readback."),
+            "OpenBlade is restoring your saved settings and will confirm the result."),
         ThermalConvergenceReason.None => TrayText.Get(
-            "Saved performance and fan intent match the confirmed laptop state."),
+            "Your saved settings match the laptop."),
         ThermalConvergenceReason.StrictPolicy => TrayText.Get(
-            "Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues."),
+            "Changes made elsewhere are reported, not restored. Fan curve safety maintenance continues."),
         ThermalConvergenceReason.UpgradeDisclosurePending => TrayText.Get(
-            "Review the new default policy before background reconciliation can begin."),
+            "Review the new default before OpenBlade starts restoring settings in the background."),
         ThermalConvergenceReason.ConfigurationUnavailable => TrayText.Get(
-            "The saved thermal configuration is unavailable."),
+            "The saved performance and fan settings are unavailable."),
         ThermalConvergenceReason.ConfigurationQuarantined => TrayText.Get(
-            "The saved thermal configuration could not be trusted. Strict behavior is active."),
+            "The saved performance and fan settings could not be trusted. Changes made elsewhere are only reported."),
         ThermalConvergenceReason.InactiveSession => TrayText.Get(
-            "Reconciliation waits for this local Windows session to become active."),
+            "Restoration waits for this Windows session to become active."),
         ThermalConvergenceReason.ProtocolCompatibilityClient => TrayText.Get(
-            "An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation."),
+            "An older OpenBlade component is connected. Update or repair OpenBlade to resume restoring settings."),
         ThermalConvergenceReason.AwaitingFreshObservation => TrayText.Get(
             "OpenBlade is waiting for a fresh, complete read of the laptop state."),
         ThermalConvergenceReason.DeviceUnavailable => TrayText.Get(
-            "The supported laptop control device is temporarily unavailable."),
+            "The laptop control device is temporarily unavailable."),
         ThermalConvergenceReason.DeviceIdentityBlocked => TrayText.Get(
-            "OpenBlade could not verify the exact supported laptop identity."),
+            "OpenBlade could not verify which laptop this is."),
         ThermalConvergenceReason.PowerUnsettled => TrayText.Get(
-            "Reconciliation waits until the power source is confirmed and stable."),
+            "Restoration waits until the power source is confirmed and stable."),
         ThermalConvergenceReason.LowPower => TrayText.Get(
-            "Reconciliation is paused while Windows enters or leaves low power."),
+            "Restoration is paused while Windows enters or leaves low power."),
         ThermalConvergenceReason.CompetingControllerPresent => TrayText.Get(
             "Another Razer controller is active, so OpenBlade will not compete for these settings."),
         ThermalConvergenceReason.CompetingControllerUncertain => TrayText.Get(
             "OpenBlade could not confirm whether another Razer controller is active."),
         ThermalConvergenceReason.HyperBoostActive => TrayText.Get(
-            "HyperBoost temporarily owns performance and fan state."),
+            "HyperBoost controls performance and fans right now."),
         ThermalConvergenceReason.HyperBoostPending => TrayText.Get(
-            "OpenBlade is finishing the HyperBoost transition before reconciling other settings."),
+            "OpenBlade is finishing the HyperBoost change before restoring other settings."),
         ThermalConvergenceReason.ManualFanReadbackAmbiguous => TrayText.Get(
-            "Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it."),
+            "The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it."),
         ThermalConvergenceReason.PendingReconciliation => TrayText.Get(
-            "A possibly submitted change must be confirmed by readback before another write."),
+            "A change that may have been sent must be confirmed before OpenBlade tries again."),
         ThermalConvergenceReason.BudgetExhausted => TrayText.Get(
-            "Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again."),
+            "Automatic restoration stopped after its one attempt. Select Reapply to try again."),
         ThermalConvergenceReason.Tombstoned => TrayText.Get(
-            "This drift is recorded as unresolved. Reapply explicitly after checking the laptop state."),
+            "This change is recorded as unresolved. Check the laptop, then select Reapply."),
         ThermalConvergenceReason.Shutdown => TrayText.Get(
-            "Reconciliation is closed while OpenBlade shuts down."),
+            "Restoration is closed while OpenBlade shuts down."),
         ThermalConvergenceReason.InternalStateUnavailable => TrayText.Get(
-            "OpenBlade cannot safely persist or reconcile this state right now."),
-        _ => TrayText.Get("Thermal reconciliation status is unavailable."),
+            "OpenBlade cannot safely save or restore this state right now."),
+        _ => TrayText.Get("The performance and fan status is unavailable."),
     };
 
     public string ThermalConvergenceAffectedComponents =>
@@ -1465,6 +1456,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasThermalConvergenceAffectedComponents =>
         !string.IsNullOrEmpty(ThermalConvergenceAffectedComponents);
+
+    /// <summary>
+    /// Gets a value indicating whether the thermal state row has something to
+    /// report. A matched state is the ordinary case and stays hidden so the row
+    /// is not permanent furniture that reads "up to date" and trains the user to
+    /// ignore it.
+    /// </summary>
+    public bool HasThermalConvergenceAttention =>
+        thermalConvergence is not null
+        && thermalConvergence.State != ThermalConvergenceState.Matched;
 
     public bool ThermalConvergenceExplicitReapplyRequired =>
         thermalConvergence?.ExplicitReapplyRequired == true;
@@ -1834,7 +1835,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (HasThermalPolicyUpgradeDisclosure)
             {
                 details.Add(TrayText.Get(
-                    "Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it."));
+                    "Review the new default. Restoration stays paused until you select Got it."));
             }
             if (HasExternalChanges)
             {
@@ -5260,7 +5261,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasThermalPolicyUpgradeDisclosure));
         Notify(nameof(ShouldForceWindowVisibleForThermalDisclosure));
         Notify(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure));
-        Notify(nameof(ThermalPolicyDescription));
+        Notify(nameof(HasThermalConvergenceAttention));
         Notify(nameof(ThermalConvergenceStateLabel));
         Notify(nameof(ThermalConvergenceDetail));
         Notify(nameof(ThermalConvergenceAffectedComponents));

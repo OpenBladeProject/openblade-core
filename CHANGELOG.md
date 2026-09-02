@@ -7,12 +7,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Added Maintain desired state as the default thermal-control policy. The
-  service now reconciles confirmed performance and fan-topology drift through
-  one bounded, journaled transition authority while Strict remains available
-  as an explicit advisory-only policy. Upgraded profiles require an in-app
-  disclosure acknowledgement before background convergence starts; legacy
-  IPC clients remain read-only until updated.
+- Added automatic restoration of performance and fan settings changed outside
+  OpenBlade, and made it the default. The service reconciles confirmed
+  performance and fan-topology drift through one bounded, journaled transition
+  authority. The setting offers Restore them, or Notify me, which reports
+  the change and leaves it in place. It also states that fan speed and curve
+  changes cannot be detected, because firmware reports only generic manual
+  control. Upgraded profiles require an in-app disclosure acknowledgement
+  before background restoration starts; legacy IPC clients remain read-only
+  until updated. The thermal state row appears only when it has something to
+  report, and its messages describe what OpenBlade is doing rather than using
+  internal terms such as reconciliation, readback, and drift.
 
 ### Changed
 

@@ -5527,12 +5527,12 @@ public sealed class MainViewModelTests
             viewModel.SelectedThermalControlPolicyOption.Policy);
         Assert.True(viewModel.CanChangeThermalControlPolicy);
         Assert.Equal(
-            "OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back.",
-            viewModel.ThermalPolicyDescription);
-        Assert.Contains(
-            "never turns on HyperBoost",
-            viewModel.ThermalControlPolicyCommonNote,
-            StringComparison.Ordinal);
+            "If settings change outside OpenBlade",
+            viewModel.ThermalControlPolicyHeading);
+        Assert.Equal(
+            "Fan speed and curve changes cannot be detected.",
+            viewModel.ThermalControlPolicyCommonNote);
+        Assert.False(viewModel.HasThermalConvergenceAttention);
 
         Assert.True(await viewModel.SetThermalControlPolicyAsync(
             ThermalControlPolicy.Strict,
@@ -5557,7 +5557,7 @@ public sealed class MainViewModelTests
             viewModel.SelectedThermalControlPolicyOption.Policy
                 == ThermalControlPolicy.Strict);
 
-        Assert.Contains("without changing", viewModel.ThermalConvergenceDetail);
+        Assert.Contains("not restored", viewModel.ThermalConvergenceDetail);
         Assert.True(viewModel.ThermalConvergenceExplicitReapplyRequired);
         Assert.True(viewModel.CanReapplyChangedSettings);
     }
@@ -5591,7 +5591,7 @@ public sealed class MainViewModelTests
             viewModel.ThermalPolicyUpgradeDisclosureMessage,
             StringComparison.Ordinal);
         Assert.Contains(
-            "never turns on HyperBoost",
+            "HyperBoost is never turned on automatically",
             viewModel.ThermalPolicyUpgradeDisclosureMessage,
             StringComparison.Ordinal);
         Assert.Contains("paused", viewModel.AttentionDetails, StringComparison.OrdinalIgnoreCase);
@@ -5624,7 +5624,7 @@ public sealed class MainViewModelTests
     [InlineData(ThermalConvergenceState.Suppressed, "Needs")]
     [InlineData(ThermalConvergenceState.External, "Changed")]
     [InlineData(ThermalConvergenceState.RestorePending, "Restore pending")]
-    [InlineData(ThermalConvergenceState.ReconciliationUnavailable, "unavailable")]
+    [InlineData(ThermalConvergenceState.ReconciliationUnavailable, "confirm")]
     public async Task ThermalConvergence_MapsEveryPublicState(
         ThermalConvergenceState state,
         string expectedLabel)
@@ -5651,6 +5651,48 @@ public sealed class MainViewModelTests
         Assert.Equal("Performance and fans", viewModel.ThermalConvergenceAffectedComponents);
     }
 
+    [Theory]
+    [InlineData(ThermalConvergenceState.Matched, false)]
+    [InlineData(ThermalConvergenceState.AwaitingObservation, true)]
+    [InlineData(ThermalConvergenceState.Converging, true)]
+    [InlineData(ThermalConvergenceState.Paused, true)]
+    [InlineData(ThermalConvergenceState.Suppressed, true)]
+    [InlineData(ThermalConvergenceState.External, true)]
+    [InlineData(ThermalConvergenceState.RestorePending, true)]
+    [InlineData(ThermalConvergenceState.ReconciliationUnavailable, true)]
+    public async Task ThermalConvergence_ShowsStateRowOnlyWhenItHasSomethingToReport(
+        ThermalConvergenceState state,
+        bool expectedAttention)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ThermalConvergence = new ThermalConvergenceStatus(
+                ThermalControlPolicy.MaintainDesiredState,
+                ThermalPolicyUpgradeDisclosureState.NotRequired,
+                state,
+                [ThermalComponent.Performance],
+                ThermalConvergenceReason.None,
+                ExplicitReapplyRequired: false),
+        });
+        await WaitUntilAsync(() => viewModel.IsThermalControlPolicyAvailable);
+
+        Assert.Equal(expectedAttention, viewModel.HasThermalConvergenceAttention);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_AttentionIsClosedWithoutServiceState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Assert.False(viewModel.IsThermalControlPolicyAvailable);
+        Assert.False(viewModel.HasThermalConvergenceAttention);
+    }
+
     [Fact]
     public async Task ThermalConvergence_ConvergingWithoutPauseReasonDescribesActiveApply()
     {
@@ -5670,11 +5712,11 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.IsThermalControlPolicyAvailable);
 
         Assert.Contains(
-            "applying",
+            "restoring",
             viewModel.ThermalConvergenceDetail,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
-            "match the confirmed",
+            "match the laptop",
             viewModel.ThermalConvergenceDetail,
             StringComparison.OrdinalIgnoreCase);
     }

@@ -1320,52 +1320,49 @@
   <data name="OpenBlade components have different versions. Update or repair OpenBlade to restore control." xml:space="preserve">
     <value>Компоненты OpenBlade имеют разные версии. Обновите или восстановите OpenBlade, чтобы вернуть управление.</value>
   </data>
-  <data name="Maintain desired state" xml:space="preserve"><value>Поддерживать заданное состояние</value></data>
-  <data name="Strict" xml:space="preserve"><value>Строгий режим</value></data>
-  <data name="Thermal control policy" xml:space="preserve"><value>Политика производительности и вентиляторов</value></data>
-  <data name="Safety maintenance for an OpenBlade-owned manual fan curve continues in both modes. Maintain never turns on HyperBoost; HyperBoost remains an explicit action." xml:space="preserve"><value>Безопасное обслуживание ручной кривой вентиляторов, которой владеет OpenBlade, продолжается в обоих режимах. Режим поддержания никогда не включает HyperBoost; HyperBoost запускается только явным действием.</value></data>
-  <data name="Thermal state" xml:space="preserve"><value>Состояние производительности и вентиляторов</value></data>
+  <data name="Restore them" xml:space="preserve"><value>Восстановить их</value></data>
+  <data name="Notify me" xml:space="preserve"><value>Уведомлять меня</value></data>
+  <data name="If settings change outside OpenBlade" xml:space="preserve"><value>Если настройки изменены вне OpenBlade</value></data>
+  <data name="Fan speed and curve changes cannot be detected." xml:space="preserve"><value>Изменения скорости вентиляторов и кривой не обнаруживаются.</value></data>
   <data name="Affected controls" xml:space="preserve"><value>Затронутые элементы управления</value></data>
   <data name="Affected controls:" xml:space="preserve"><value>Затронутые элементы управления:</value></data>
-  <data name="Maintain desired state is now the default" xml:space="preserve"><value>Теперь по умолчанию заданное состояние поддерживается</value></data>
-  <data name="OpenBlade can now reconcile changed performance and fan intent in the background. Background restoration stays paused until you select Got it. It still verifies the laptop, power, controller safety, and readback before any change. Maintain never turns on HyperBoost. Select Strict if you only want drift reported." xml:space="preserve"><value>Теперь OpenBlade может в фоновом режиме восстанавливать заданные параметры производительности и вентиляторов после внешних изменений. Фоновое восстановление останется приостановленным, пока вы не нажмёте «Понятно». Перед любым изменением по-прежнему проверяются ноутбук, питание, безопасность контроллеров и чтение состояния. Режим поддержания никогда не включает HyperBoost. Выберите строгий режим, если нужно только сообщать об отклонениях.</value></data>
+  <data name="OpenBlade now restores settings changed elsewhere" xml:space="preserve"><value>Теперь OpenBlade восстанавливает настройки, изменённые в другом месте</value></data>
+  <data name="If your performance mode or fan setting changes outside OpenBlade, it is now restored after safety checks. Restoration stays paused until you select Got it. Choose Notify me to have changes reported without restoring them. HyperBoost is never turned on automatically." xml:space="preserve"><value>Если режим производительности или настройка вентиляторов изменяются вне OpenBlade, они теперь восстанавливаются после проверок безопасности. Восстановление останется приостановленным, пока вы не нажмёте «Понятно». Выберите «Уведомлять меня», чтобы об изменениях только сообщалось без восстановления. HyperBoost никогда не включается автоматически.</value></data>
   <data name="Got it" xml:space="preserve"><value>Понятно</value></data>
   <data name="Reapply" xml:space="preserve"><value>Применить снова</value></data>
-  <data name="OpenBlade reports performance or fan changes made elsewhere and waits for you to reapply them." xml:space="preserve"><value>OpenBlade сообщает об изменениях производительности или вентиляторов, сделанных вне приложения, и ждёт, пока вы примените настройки снова.</value></data>
-  <data name="OpenBlade keeps your selected performance mode and fan setting active. If they change, OpenBlade safely changes them back." xml:space="preserve"><value>OpenBlade сохраняет выбранные режим производительности и настройку вентиляторов. Если они изменятся, OpenBlade безопасно восстановит их.</value></data>
   <data name="Up to date" xml:space="preserve"><value>Соответствует настройкам</value></data>
   <data name="Checking current state" xml:space="preserve"><value>Проверка текущего состояния</value></data>
   <data name="Restoring saved settings" xml:space="preserve"><value>Восстановление сохранённых настроек</value></data>
-  <data name="Paused" xml:space="preserve"><value>Приостановлено</value></data>
-  <data name="Needs your action" xml:space="preserve"><value>Требуется ваше действие</value></data>
+  <data name="Restoration paused" xml:space="preserve"><value>Восстановление приостановлено</value></data>
+  <data name="Needs you to reapply" xml:space="preserve"><value>Нужно применить настройки снова</value></data>
   <data name="Restore pending" xml:space="preserve"><value>Ожидается восстановление</value></data>
-  <data name="Reconciliation unavailable" xml:space="preserve"><value>Восстановление состояния недоступно</value></data>
+  <data name="Cannot confirm the change" xml:space="preserve"><value>Не удалось подтвердить изменение</value></data>
   <data name="Performance and fans" xml:space="preserve"><value>Производительность и вентиляторы</value></data>
-  <data name="Saved performance and fan intent match the confirmed laptop state." xml:space="preserve"><value>Сохранённые параметры производительности и вентиляторов соответствуют подтверждённому состоянию ноутбука.</value></data>
-  <data name="OpenBlade is applying the saved performance and fan intent and will confirm it by readback." xml:space="preserve"><value>OpenBlade применяет сохранённые параметры производительности и вентиляторов и подтвердит их чтением состояния.</value></data>
-  <data name="Strict mode shows drift without changing it back. Manual fan-curve safety maintenance continues." xml:space="preserve"><value>Строгий режим показывает отклонения, но не отменяет их. Безопасное обслуживание ручной кривой вентиляторов продолжается.</value></data>
-  <data name="Review the new default policy before background reconciliation can begin." xml:space="preserve"><value>Ознакомьтесь с новой политикой по умолчанию, прежде чем начнётся фоновое восстановление состояния.</value></data>
-  <data name="The saved thermal configuration is unavailable." xml:space="preserve"><value>Сохранённая конфигурация производительности и вентиляторов недоступна.</value></data>
-  <data name="The saved thermal configuration could not be trusted. Strict behavior is active." xml:space="preserve"><value>Достоверность сохранённой конфигурации не удалось подтвердить. Действует строгий режим.</value></data>
-  <data name="Reconciliation waits for this local Windows session to become active." xml:space="preserve"><value>Восстановление состояния ждёт, пока этот локальный сеанс Windows станет активным.</value></data>
-  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume reconciliation." xml:space="preserve"><value>Подключён более старый компонент OpenBlade. Обновите или восстановите OpenBlade, чтобы возобновить восстановление состояния.</value></data>
+  <data name="Your saved settings match the laptop." xml:space="preserve"><value>Сохранённые настройки соответствуют состоянию ноутбука.</value></data>
+  <data name="OpenBlade is restoring your saved settings and will confirm the result." xml:space="preserve"><value>OpenBlade восстанавливает сохранённые настройки и подтвердит результат.</value></data>
+  <data name="Changes made elsewhere are reported, not restored. Fan curve safety maintenance continues." xml:space="preserve"><value>Изменения, сделанные в другом месте, сообщаются, но не восстанавливаются. Безопасное обслуживание кривой вентиляторов продолжается.</value></data>
+  <data name="Review the new default before OpenBlade starts restoring settings in the background." xml:space="preserve"><value>Ознакомьтесь с новым режимом по умолчанию, прежде чем OpenBlade начнёт восстанавливать настройки в фоновом режиме.</value></data>
+  <data name="The saved performance and fan settings are unavailable." xml:space="preserve"><value>Сохранённые настройки производительности и вентиляторов недоступны.</value></data>
+  <data name="The saved performance and fan settings could not be trusted. Changes made elsewhere are only reported." xml:space="preserve"><value>Достоверность сохранённых настроек производительности и вентиляторов не удалось подтвердить. Изменения, сделанные в другом месте, только сообщаются.</value></data>
+  <data name="Restoration waits for this Windows session to become active." xml:space="preserve"><value>Восстановление ждёт, пока этот сеанс Windows станет активным.</value></data>
+  <data name="An older OpenBlade component is connected. Update or repair OpenBlade to resume restoring settings." xml:space="preserve"><value>Подключён более старый компонент OpenBlade. Обновите или восстановите OpenBlade, чтобы возобновить восстановление настроек.</value></data>
   <data name="OpenBlade is waiting for a fresh, complete read of the laptop state." xml:space="preserve"><value>OpenBlade ждёт нового полного чтения состояния ноутбука.</value></data>
-  <data name="The supported laptop control device is temporarily unavailable." xml:space="preserve"><value>Поддерживаемое устройство управления ноутбуком временно недоступно.</value></data>
-  <data name="OpenBlade could not verify the exact supported laptop identity." xml:space="preserve"><value>OpenBlade не удалось точно подтвердить поддерживаемую модель ноутбука.</value></data>
-  <data name="Reconciliation waits until the power source is confirmed and stable." xml:space="preserve"><value>Восстановление состояния ждёт подтверждения и стабилизации источника питания.</value></data>
-  <data name="Reconciliation is paused while Windows enters or leaves low power." xml:space="preserve"><value>Восстановление состояния приостановлено, пока Windows переходит в режим низкого энергопотребления или выходит из него.</value></data>
+  <data name="The laptop control device is temporarily unavailable." xml:space="preserve"><value>Устройство управления ноутбуком временно недоступно.</value></data>
+  <data name="OpenBlade could not verify which laptop this is." xml:space="preserve"><value>OpenBlade не удалось определить модель этого ноутбука.</value></data>
+  <data name="Restoration waits until the power source is confirmed and stable." xml:space="preserve"><value>Восстановление ждёт подтверждения и стабилизации источника питания.</value></data>
+  <data name="Restoration is paused while Windows enters or leaves low power." xml:space="preserve"><value>Восстановление приостановлено, пока Windows переходит в режим низкого энергопотребления или выходит из него.</value></data>
   <data name="Another Razer controller is active, so OpenBlade will not compete for these settings." xml:space="preserve"><value>Активен другой контроллер Razer, поэтому OpenBlade не будет конкурировать за эти настройки.</value></data>
   <data name="OpenBlade could not confirm whether another Razer controller is active." xml:space="preserve"><value>OpenBlade не удалось подтвердить, активен ли другой контроллер Razer.</value></data>
-  <data name="HyperBoost temporarily owns performance and fan state." xml:space="preserve"><value>HyperBoost временно управляет состоянием производительности и вентиляторов.</value></data>
-  <data name="OpenBlade is finishing the HyperBoost transition before reconciling other settings." xml:space="preserve"><value>OpenBlade завершает переход HyperBoost перед восстановлением остальных настроек.</value></data>
-  <data name="Firmware reports manual fan control without the exact curve, so OpenBlade will not guess or replay it." xml:space="preserve"><value>Прошивка сообщает о ручном управлении вентиляторами без точной кривой, поэтому OpenBlade не будет угадывать или повторно применять её.</value></data>
-  <data name="A possibly submitted change must be confirmed by readback before another write." xml:space="preserve"><value>Возможно отправленное изменение нужно подтвердить чтением состояния до следующей записи.</value></data>
-  <data name="Automatic reconciliation stopped after its bounded attempt. Reapply explicitly to try again." xml:space="preserve"><value>Автоматическое восстановление остановлено после ограниченной попытки. Чтобы повторить, явно примените настройки снова.</value></data>
-  <data name="This drift is recorded as unresolved. Reapply explicitly after checking the laptop state." xml:space="preserve"><value>Это отклонение отмечено как нерешённое. Проверьте состояние ноутбука и явно примените настройки снова.</value></data>
-  <data name="Reconciliation is closed while OpenBlade shuts down." xml:space="preserve"><value>Восстановление состояния отключено на время завершения работы OpenBlade.</value></data>
-  <data name="OpenBlade cannot safely persist or reconcile this state right now." xml:space="preserve"><value>Сейчас OpenBlade не может безопасно сохранить или восстановить это состояние.</value></data>
-  <data name="Thermal reconciliation status is unavailable." xml:space="preserve"><value>Состояние восстановления производительности и вентиляторов недоступно.</value></data>
+  <data name="HyperBoost controls performance and fans right now." xml:space="preserve"><value>Сейчас производительностью и вентиляторами управляет HyperBoost.</value></data>
+  <data name="OpenBlade is finishing the HyperBoost change before restoring other settings." xml:space="preserve"><value>OpenBlade завершает изменение HyperBoost перед восстановлением остальных настроек.</value></data>
+  <data name="The laptop reports manual fan control without the exact curve, so OpenBlade will not guess it." xml:space="preserve"><value>Ноутбук сообщает о ручном управлении вентиляторами без точной кривой, поэтому OpenBlade не будет её угадывать.</value></data>
+  <data name="A change that may have been sent must be confirmed before OpenBlade tries again." xml:space="preserve"><value>Возможно отправленное изменение нужно подтвердить, прежде чем OpenBlade повторит попытку.</value></data>
+  <data name="Automatic restoration stopped after its one attempt. Select Reapply to try again." xml:space="preserve"><value>Автоматическое восстановление остановлено после единственной попытки. Чтобы повторить, выберите «Применить снова».</value></data>
+  <data name="This change is recorded as unresolved. Check the laptop, then select Reapply." xml:space="preserve"><value>Это изменение отмечено как нерешённое. Проверьте ноутбук и выберите «Применить снова».</value></data>
+  <data name="Restoration is closed while OpenBlade shuts down." xml:space="preserve"><value>Восстановление отключено на время завершения работы OpenBlade.</value></data>
+  <data name="OpenBlade cannot safely save or restore this state right now." xml:space="preserve"><value>Сейчас OpenBlade не может безопасно сохранить или восстановить это состояние.</value></data>
+  <data name="The performance and fan status is unavailable." xml:space="preserve"><value>Состояние производительности и вентиляторов недоступно.</value></data>
   <data name="Review thermal control policy" xml:space="preserve"><value>Проверьте политику производительности и вентиляторов</value></data>
   <data name="Review policy" xml:space="preserve"><value>Проверьте политику</value></data>
-  <data name="Review the new Maintain desired state default. Background reconciliation stays paused until you select Got it." xml:space="preserve"><value>Ознакомьтесь с новым режимом «Поддерживать заданное состояние» по умолчанию. Фоновое восстановление останется приостановленным, пока вы не выберете «Понятно».</value></data>
+  <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Ознакомьтесь с новым режимом по умолчанию. Восстановление останется приостановленным, пока вы не выберете «Понятно».</value></data>
 </root>
