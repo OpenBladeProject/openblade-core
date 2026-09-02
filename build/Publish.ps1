@@ -156,7 +156,8 @@ $productionPublishArguments = @(
 )
 $serviceValidationArguments = @(
     if ($ThermalExternalDriftValidation) {
-        '--property:OpenBladeThermalExternalDriftValidation=true'
+        '--property:OpenBladeThermalExternalDriftValidation=true',
+        "--property:SourceRevision=$SourceRevision"
     }
     else {
         '--property:OpenBladeThermalExternalDriftValidation=false'
