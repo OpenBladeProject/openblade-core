@@ -17,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Stopped counting Windows System-process video-memory paging as NVIDIA GPU
+  activity in the service. Fan-curve and clock-offset decisions no longer
+  initialize NVML when the discrete GPU only paged during one of its own power
+  transitions, so the GPU temperature no longer flickers into Tray telemetry on
+  an idle desktop.
 - Normalized adjacent-palette ties at rounded localization-snapshot corners so
   translator-package archives remain byte-identical across fresh processes
   without smoothing meaningful single-pixel details.
