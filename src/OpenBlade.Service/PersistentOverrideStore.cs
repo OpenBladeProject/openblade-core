@@ -296,7 +296,8 @@ public sealed class PersistentOverrideStore
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
-        if (!parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
+        if (parsed.RootElement.ValueKind != JsonValueKind.Object
+            || !parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
             || !versionElement.TryGetInt32(out int schemaVersion))
         {
             throw new InvalidDataException("The persistent override schema is unsupported.");
