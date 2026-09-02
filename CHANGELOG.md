@@ -47,6 +47,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   clock-offset decisions so processes that start after service launch are not
   missed. Failed refreshes and unavailable samples now remain unknown so fan
   control fails safe without probing NVIDIA APIs.
+- Removed English-style spaces around embedded Latin product and power-source
+  names in Simplified Chinese profile-change notifications.
 - Bound every HyperBoost lifecycle submission and ownership-journal mutation to
   the exact durable journal identity. Concurrent journal changes now block
   before another hardware write, preserve newer recovery state, and keep
