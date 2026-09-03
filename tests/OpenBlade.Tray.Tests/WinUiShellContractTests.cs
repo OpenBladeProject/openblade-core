@@ -4058,7 +4058,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Click=\"OnGamingModeDetailsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnBatteryProtectionClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("IsChecked=\"{Binding BatteryProtectionEnabled, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
-        Assert.Contains("IsEnabled=\"{Binding CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"BatteryPowerStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PowerSourceStatus\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"FanSpeedStatus\"", dashboardXaml, StringComparison.Ordinal);
@@ -4088,22 +4088,22 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Click=\"OnSettingsClick\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains("DisplayMemberPath=\"Label\"", dashboardXaml, StringComparison.Ordinal);
         Assert.Contains(
-            "ItemsSource=\"{Binding AvailableLaptopPerformanceOptions, Mode=OneWay}\"",
+            "ItemsSource=\"{x:Bind ViewModel.AvailableLaptopPerformanceOptions, Mode=OneWay}\"",
             dashboardXaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "SelectedItem=\"{Binding SelectedLaptopPerformanceOption, Mode=OneWay}\"",
+            "SelectedItem=\"{x:Bind ViewModel.SelectedLaptopPerformanceOption, Mode=OneWay}\"",
             dashboardXaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Text=\"{Binding ActivePerformanceLabel, Mode=OneWay}\"",
+            "Text=\"{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}\"",
             dashboardXaml,
             StringComparison.Ordinal);
         Assert.Equal(
             2,
             CountOccurrences(
                 dashboardXaml,
-                "IsEnabled=\"{Binding CanSelectLaptopPerformance, Mode=OneWay}\""));
+                "IsEnabled=\"{x:Bind ViewModel.CanSelectLaptopPerformance, Mode=OneWay}\""));
         Assert.Contains(
             "ViewModel.SetLaptopPerformanceOptionAsync(",
             dashboardWindow,

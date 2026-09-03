@@ -41,17 +41,17 @@ public sealed class CapabilityPresentationTests
             Attribute(element, "Name") == "HyperBoostCard"
             || Attribute(element, "Name") == "HyperBoostToggle");
         Assert.Equal(
-            "{Binding AvailableLaptopPerformanceOptions}",
+            "{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}",
             Attribute(selector, "ItemsSource"));
         Assert.Equal(
             "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(selector, "SelectedItem"));
         Assert.Equal(
-            "{Binding CanSelectLaptopPerformance}",
+            "{x:Bind CanSelectLaptopPerformance, Mode=OneWay}",
             Attribute(selector, "IsEnabled"));
         XElement guidance = Assert.Single(row.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "{Binding HyperBoostDescription}");
+            && Attribute(element, "Text") == "{x:Bind HyperBoostDescription, Mode=OneWay}");
         Assert.Equal(
             "{Binding HyperBoostActive}",
             Attribute(guidance, "AnimatedVisibility.IsVisible"));
@@ -59,7 +59,7 @@ public sealed class CapabilityPresentationTests
             row.Descendants(),
             element => element.Name.LocalName == "ProgressRing");
         Assert.Equal(
-            "{Binding IsLaptopPerformanceOperationInProgress}",
+            "{x:Bind IsLaptopPerformanceOperationInProgress, Mode=OneWay}",
             Attribute(progress, "IsActive"));
     }
 
@@ -471,10 +471,10 @@ public sealed class CapabilityPresentationTests
         XElement gpuClockTuningToggle = document.Descendants()
             .Single(element => Attribute(element, "Name") == "GpuClockTuningToggle");
         Assert.Equal(
-            "{Binding IsGpuClockTuningEnabled, Mode=OneWay}",
+            "{x:Bind IsGpuClockTuningEnabled, Mode=OneWay}",
             Attribute(gpuClockTuningToggle, "IsOn"));
         Assert.Equal(
-            "{Binding CanToggleGpuClockTuning}",
+            "{x:Bind CanToggleGpuClockTuning, Mode=OneWay}",
             Attribute(gpuClockTuningToggle, "IsEnabled"));
         Assert.Equal(
             "OnGpuClockTuningToggled",
@@ -815,7 +815,7 @@ public sealed class CapabilityPresentationTests
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
         XElement temporaryFullCharge = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "Button"
-            && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
+            && Attribute(element, "Content") == "{x:Bind FullChargeActionLabel, Mode=OneWay}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
         Assert.Equal("Laptop performance", Attribute(performance, "AccessibleName"));
         Assert.Equal("OnWindowsPowerModeChanged", Attribute(windowsPowerMode, "SelectionChanged"));
@@ -823,12 +823,12 @@ public sealed class CapabilityPresentationTests
             "OnWindowsPowerModeSelectorLoaded",
             Attribute(windowsPowerMode, "Loaded"));
         Assert.Equal(
-            "{Binding AvailableWindowsPowerModeOptions}",
+            "{x:Bind AvailableWindowsPowerModeOptions, Mode=OneWay}",
             Attribute(windowsPowerMode, "ItemsSource"));
         Assert.Equal("Label", Attribute(windowsPowerMode, "DisplayMemberPath"));
         XElement windowsPowerModeDescription = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "{Binding SelectedWindowsPowerModeDescription}");
+            && Attribute(element, "Text") == "{x:Bind SelectedWindowsPowerModeDescription, Mode=OneWay}");
         Assert.Equal("Left", Attribute(windowsPowerModeDescription, "HorizontalAlignment"));
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
@@ -871,13 +871,13 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
-            "{Binding AvailableLaptopPerformanceOptions}",
+            "{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}",
             Attribute(performance, "ItemsSource"));
         Assert.Equal(
             "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
-            "{Binding CanSelectLaptopPerformance}",
+            "{x:Bind CanSelectLaptopPerformance, Mode=OneWay}",
             Attribute(performance, "IsEnabled"));
         Assert.All(
             new[]
@@ -886,7 +886,7 @@ public sealed class CapabilityPresentationTests
                 NamedElement(document, "ResponsiveChoiceSelector", "DashboardCustomGpuSelector"),
             },
             selector => Assert.Equal(
-                "{Binding CanEditPerformance}",
+                "{x:Bind CanEditPerformance, Mode=OneWay}",
                 Attribute(selector, "IsEnabled")));
         Assert.Equal(
             "{Binding IsPerformanceVisible}",
@@ -897,12 +897,12 @@ public sealed class CapabilityPresentationTests
                 "AnimatedVisibility.IsVisible"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
-            "{Binding AvailableActiveFanModeOptions}",
+            "{x:Bind AvailableActiveFanModeOptions, Mode=OneWay}",
             Attribute(fans, "ItemsSource"));
         Assert.Equal(
             "{Binding SelectedFanModeOption, Mode=OneWay}",
             Attribute(fans, "SelectedItem"));
-        Assert.Equal("{Binding CanChangeFanMode}", Attribute(fans, "IsEnabled"));
+        Assert.Equal("{x:Bind CanChangeFanMode, Mode=OneWay}", Attribute(fans, "IsEnabled"));
         Assert.Equal(
             "{Binding IsFanControlVisible}",
             Attribute(
@@ -916,7 +916,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind BatteryProtectionEnabled, Mode=OneWay}",
             Attribute(batteryProtection, "IsOn"));
-        Assert.Equal("{Binding CanAdjustChargeLimit}", Attribute(chargeLimit, "IsEnabled"));
+        Assert.Equal("{x:Bind CanAdjustChargeLimit, Mode=OneWay}", Attribute(chargeLimit, "IsEnabled"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
             Attribute(chargeLimit, "PointerPressed"));
@@ -988,9 +988,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(fansTemplate.Descendants(), element =>
             element.Name.LocalName == "Slider"
             && Attribute(element, "Name") == "FixedFanSpeedSlider"
-            && Attribute(element, "Minimum") == "{Binding FixedFanSpeedMinimumRpm}"
-            && Attribute(element, "Maximum") == "{Binding FixedFanSpeedMaximumRpm}"
-            && Attribute(element, "StepFrequency") == "{Binding FixedFanSpeedStepRpm}");
+            && Attribute(element, "Minimum") == "{x:Bind FixedFanSpeedMinimumRpm, Mode=OneWay}"
+            && Attribute(element, "Maximum") == "{x:Bind FixedFanSpeedMaximumRpm, Mode=OneWay}"
+            && Attribute(element, "StepFrequency") == "{x:Bind FixedFanSpeedStepRpm, Mode=OneWay}");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
 
@@ -1064,14 +1064,37 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(usage, "SelectedIndex"));
         });
 
+        // Selectors whose handler rejects a pick must keep a runtime OneWay
+        // {Binding} on SelectedItem: ResponsiveChoiceSelector.PublishSelection
+        // leaves the property untouched only for that binding kind, which is
+        // what RestoreAuthoritativeSelection needs to put the authoritative
+        // value back. A compiled binding takes the direct-write path instead,
+        // and the rejected pick would stay on screen.
         XElement[] runtimeBoundUsages = usages
             .Where(usage => Attribute(usage, "SelectedItem")?.StartsWith(
                 "{Binding ",
                 StringComparison.Ordinal) == true)
             .ToArray();
         Assert.Equal(5, runtimeBoundUsages.Length);
-        Assert.All(runtimeBoundUsages, usage =>
+        XElement[] immediateUsages = new[]
+            {
+                "DashboardPerformanceSelector",
+                "WindowsPowerModeSelector",
+                "DashboardCustomCpuSelector",
+                "DashboardCustomGpuSelector",
+                "DashboardFanModeSelector",
+            }
+            .Select(name => NamedElement(mainWindow, "ResponsiveChoiceSelector", name))
+            .ToArray();
+        Assert.Equal(
+            runtimeBoundUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
+            immediateUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal));
+        Assert.All(immediateUsages, usage =>
         {
+            Assert.StartsWith(
+                "{Binding ",
+                Assert.IsType<string>(Attribute(usage, "SelectedItem")),
+                StringComparison.Ordinal);
             string selectedItemBinding = Assert.IsType<string>(
                 Attribute(usage, "SelectedItem"));
             Assert.Contains(
