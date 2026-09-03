@@ -5,6 +5,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Stopped the tray's memory from growing for as long as it runs. The .NET 10
+  runtime records every managed object handed to native XAML in a debugger
+  list that is never trimmed, and each property change delivered to a XAML
+  `{Binding}` added another entry for the main view model; after a few hours
+  of use the hidden tray held a live 512 MB array. The tray now disables that
+  debugger-only bookkeeping, which returns a hidden tray to its normal
+  footprint.
+
 ## [0.20.5-nightly.40] - 2026-09-02
 
 ### Added
