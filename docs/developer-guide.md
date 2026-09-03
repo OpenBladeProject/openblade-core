@@ -26,10 +26,14 @@ flowchart LR
 | `OpenBlade.Contracts` | Versioned service IPC, profiles, capabilities, and device state |
 | `OpenBlade.Protocol` | Report encoding, fixtures, checksums, admission, and HID transport |
 | `OpenBlade.Service` | Hardware ownership, automation, configuration, and named-pipe server |
-| `OpenBlade.SessionAgent` | Current-user display, input, audio, and streamed-lighting work |
+| `OpenBlade.Session` / `OpenBlade.SessionAgent` | Current-user display, input, audio, and streamed-lighting work |
+| `OpenBlade.Display` | Display discovery and Windows refresh rate, HDR, and color profile changes |
+| `OpenBlade.Platform` | Windows NVIDIA GPU activity counters, GPU-app cleanup, and processor efficiency policy |
 | `OpenBlade.Tray.Core` / `OpenBlade.Tray` | Presentation policy and the WinUI 3 tray interface |
+| `OpenBlade.Deployment` | Release manifest parsing and signed-release verification for update checks |
 | `OpenBlade.Setup` | Transactional install, repair, shutdown, and uninstall |
 | `OpenBlade.Capture` / `OpenBlade.FirmwareSmoke` | Developer-only protocol and firmware validation |
+| `OpenBlade.DeploymentBroker` / `OpenBlade.DeploymentClient` | Local-development installation of locally built payloads, after explicit enrollment |
 
 [AGENTS.md](../AGENTS.md) contains the full codebase map and engineering
 constraints. [VERSIONING.md](../VERSIONING.md) defines product, schema, and IPC
