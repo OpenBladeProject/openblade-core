@@ -119,6 +119,20 @@ public sealed class WindowsBrokerInstalledStateVerifier(
         "OpenBlade.Tray.Core.dll",
     ];
 
+    /// <summary>
+    /// The protected files the documented tray-only deployment path may replace on
+    /// their own while shared contracts and both IPC versions are unchanged. Those
+    /// files may therefore carry a different build identity from the rest of the
+    /// payload; every other combination remains a refusal.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> TrayOnlyDeploymentPaths =
+    [
+        "OpenBlade.Session.dll",
+        "OpenBlade.Tray.exe",
+        "OpenBlade.Tray.dll",
+        "OpenBlade.Tray.Core.dll",
+    ];
+
     private readonly string installDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         "OpenBlade");
@@ -211,7 +225,8 @@ public sealed class WindowsBrokerInstalledStateVerifier(
         }
 
         using IncrementalHash payloadHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        string? productVersion = null;
+        string? serviceProductVersion = null;
+        string? trayProductVersion = null;
         foreach (string relativePath in ProtectedPayloadRelativePaths)
         {
             string path = Path.Combine(installDirectory, relativePath);
@@ -227,17 +242,32 @@ public sealed class WindowsBrokerInstalledStateVerifier(
             string fileProductVersion = identity.ProductVersion
                 ?? identity.FileVersion
                 ?? string.Empty;
-            if (productVersion is null)
+            if (TrayOnlyDeploymentPaths.Contains(relativePath, StringComparer.OrdinalIgnoreCase))
             {
-                productVersion = fileProductVersion;
+                if (trayProductVersion is null)
+                {
+                    trayProductVersion = fileProductVersion;
+                }
+                else if (!string.Equals(
+                    trayProductVersion,
+                    fileProductVersion,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException(
+                        "The installed OpenBlade tray payload does not share one build identity.");
+                }
+            }
+            else if (serviceProductVersion is null)
+            {
+                serviceProductVersion = fileProductVersion;
             }
             else if (!string.Equals(
-                productVersion,
+                serviceProductVersion,
                 fileProductVersion,
                 StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException(
-                    "The installed OpenBlade payload does not share one build identity.");
+                    "The installed OpenBlade service payload does not share one build identity.");
             }
 
             byte[] name = System.Text.Encoding.UTF8.GetBytes(relativePath);
@@ -258,12 +288,56 @@ public sealed class WindowsBrokerInstalledStateVerifier(
             }
         }
 
-        string effectiveProductVersion = productVersion
+        string effectiveServiceVersion = serviceProductVersion
             ?? throw new InvalidDataException("The installed OpenBlade payload is empty.");
-        return new BrokerInstalledState(
-            NormalizeVersion(effectiveProductVersion),
-            effectiveProductVersion,
+        return CreateInstalledState(
+            effectiveServiceVersion,
+            trayProductVersion ?? effectiveServiceVersion,
             Convert.ToHexString(payloadHash.GetHashAndReset()).ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// Describes the installed payload. A tray-only deployment leaves the tray
+    /// files on a newer identity than the service files, so that pair is recorded
+    /// rather than refused. The payload hash stays the rollback baseline in both
+    /// cases, and the mixed marker holds no '+', so
+    /// <see cref="MatchesSignedBuildIdentity"/> can never report a split payload as
+    /// the installed target: only a complete, coherent install can claim success.
+    /// </summary>
+    internal static BrokerInstalledState CreateInstalledState(
+        string serviceProductVersion,
+        string trayProductVersion,
+        string payloadSha256)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(payloadSha256);
+        if (string.Equals(
+            serviceProductVersion,
+            trayProductVersion,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            return new BrokerInstalledState(
+                NormalizeVersion(serviceProductVersion),
+                serviceProductVersion,
+                payloadSha256);
+        }
+
+        // Both members must still be canonical, exactly as one identity must be.
+        string serviceVersion = NormalizeVersion(serviceProductVersion);
+        string trayVersion = NormalizeVersion(trayProductVersion);
+        string marker = "mixed:" + Convert.ToHexString(
+            SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(
+                    string.Concat(serviceProductVersion, "\n", trayProductVersion))))
+            .ToLowerInvariant();
+
+        // The lower member is the conservative baseline: an upgrade has to advance
+        // every component, and restoring the same bytes reproduces it exactly.
+        return new BrokerInstalledState(
+            Version.Parse(trayVersion) < Version.Parse(serviceVersion)
+                ? trayVersion
+                : serviceVersion,
+            marker,
+            payloadSha256);
     }
 
     private static string NormalizeVersion(string? value)
