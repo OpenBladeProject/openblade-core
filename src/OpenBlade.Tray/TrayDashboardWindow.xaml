@@ -144,7 +144,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Uid="TrayDashboardWindow_ButtonCyclePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
-                                        IsEnabled="{Binding CanSelectLaptopPerformance, Mode=OneWay}"
+                                        IsEnabled="{x:Bind ViewModel.CanSelectLaptopPerformance, Mode=OneWay}"
                                         Click="OnPerformanceCycleClick"
                                         AutomationProperties.Name="Cycle performance mode">
                                     <FontIcon Glyph="&#xEC4A;"
@@ -155,7 +155,7 @@
                                         BorderThickness="1,0,0,0">
                                     <Button x:Uid="TrayDashboardWindow_ButtonChoosePerformanceMode" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
-                                            IsEnabled="{Binding CanSelectLaptopPerformance, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanSelectLaptopPerformance, Mode=OneWay}"
                                             Click="OnPerformanceDetailsClick"
                                             AutomationProperties.Name="Choose performance mode">
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" />
@@ -165,7 +165,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockPerformance" Text="Performance" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding ActivePerformanceLabel, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -183,7 +183,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Uid="TrayDashboardWindow_ButtonCycleFanMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
-                                        IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
+                                        IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
                                         Click="OnFansCycleClick"
                                         AutomationProperties.Name="Cycle fan mode">
                                     <PathIcon Width="{StaticResource QuickTileIconSize}"
@@ -196,7 +196,7 @@
                                         BorderThickness="1,0,0,0">
                                     <Button x:Uid="TrayDashboardWindow_ButtonChooseFanMode" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
-                                            IsEnabled="{Binding CanEditFanControl, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
                                             Click="OnFansDetailsClick"
                                             AutomationProperties.Name="Choose fan mode">
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" />
@@ -206,7 +206,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockFans" Text="Fans" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding SelectedFanModeOption.Label, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.SelectedFanModeOption.Label, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -224,7 +224,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Uid="TrayDashboardWindow_ButtonCycleLightingEffect" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
-                                        IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                        IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                         Click="OnLightingCycleClick"
                                         AutomationProperties.Name="Cycle lighting effect">
                                     <FontIcon Glyph="&#xE706;"
@@ -235,7 +235,7 @@
                                         BorderThickness="1,0,0,0">
                                     <Button x:Uid="TrayDashboardWindow_ButtonChooseLightingEffect" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
-                                            IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                             Click="OnLightingDetailsClick"
                                             AutomationProperties.Name="Choose lighting effect">
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" />
@@ -245,7 +245,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockLighting" Text="Lighting" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding SelectedLightingEffectOption.Label, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.SelectedLightingEffectOption.Label, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -258,7 +258,7 @@
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
                             <Button x:Uid="TrayDashboardWindow_ButtonToggleBatteryProtection" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
-                                    IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
                                     Click="OnBatteryProtectionClick"
                                     AutomationProperties.Name="Toggle battery protection">
                                 <FontIcon Glyph="&#xE83F;"
@@ -268,7 +268,7 @@
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockBatteryProtection" Text="Battery protection"
                                        Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding TrayDashboardChargeLimitLabel, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.TrayDashboardChargeLimitLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -281,7 +281,7 @@
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
                             <Button x:Uid="TrayDashboardWindow_ButtonCycleFunctionRowMode" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
-                                    IsEnabled="{Binding CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}"
                                     Click="OnFunctionRowCycleClick"
                                     AutomationProperties.Name="Cycle function row mode">
                                 <FontIcon Glyph="&#xE765;"
@@ -291,7 +291,7 @@
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockFunctionRow" Text="Function row"
                                        Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -309,7 +309,7 @@
                                 </Grid.ColumnDefinitions>
                                 <Button x:Uid="TrayDashboardWindow_ButtonToggleGamingMode" Style="{StaticResource QuickTileActionStyle}"
                                         CornerRadius="5,0,0,5"
-                                        IsEnabled="{Binding CanEditGamingMode, Mode=OneWay}"
+                                        IsEnabled="{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}"
                                         Click="OnGamingModeCycleClick"
                                         AutomationProperties.Name="Toggle gaming mode">
                                     <FontIcon Glyph="&#xE7FC;"
@@ -320,7 +320,7 @@
                                         BorderThickness="1,0,0,0">
                                     <Button x:Uid="TrayDashboardWindow_ButtonConfigureGamingModeKeys" Style="{StaticResource QuickTileActionStyle}"
                                             CornerRadius="0,5,5,0"
-                                            IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                            IsEnabled="{x:Bind ViewModel.CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                             Click="OnGamingModeDetailsClick"
                                             AutomationProperties.Name="Configure gaming mode keys">
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" />
@@ -331,7 +331,7 @@
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockGamingMode" Text="Gaming mode"
                                        Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding TrayDashboardGamingModeLabel, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.TrayDashboardGamingModeLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -344,7 +344,7 @@
                         <Border Style="{StaticResource QuickTileSurfaceStyle}">
                             <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUTuning" Style="{StaticResource QuickTileActionStyle}"
                                     CornerRadius="5"
-                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
                                     AutomationProperties.Name="Toggle GPU tuning">
                                 <FontIcon Glyph="&#xE950;"
@@ -354,7 +354,7 @@
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockGPUTuning" Text="GPU tuning"
                                        Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{Binding TrayDashboardGpuTuningLabel, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.TrayDashboardGpuTuningLabel, Mode=OneWay}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -377,7 +377,7 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Button x:Uid="TrayDashboardWindow_ButtonToggleChargeLimit" Style="{StaticResource QuickSliderIconButtonStyle}"
-                                    IsEnabled="{Binding CanChangeBatteryProtection, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
                                     Click="OnBatteryProtectionClick"
                                     ToolTipService.ToolTip="Toggle charge limit"
                                     AutomationProperties.Name="Toggle charge limit">
@@ -395,7 +395,7 @@
                                     LargeChange="5"
                                     SnapsTo="StepValues"
                                     IsThumbToolTipEnabled="True"
-                                    IsEnabled="{Binding CanAdjustChargeLimit, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanAdjustChargeLimit, Mode=OneWay}"
                                     AutomationProperties.Name="Charge limit"
                                     Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                     PointerPressed="OnChargeLimitPointerPressed"
@@ -422,7 +422,7 @@
                                     Minimum="0"
                                     Maximum="100"
                                     StepFrequency="5"
-                                    IsEnabled="{Binding CanControlLighting, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                     AutomationProperties.Name="Keyboard brightness"
                                     Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                         </Grid>
@@ -436,7 +436,7 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUClockTuning" Style="{StaticResource QuickSliderIconButtonStyle}"
-                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
                                     ToolTipService.ToolTip="Toggle GPU clock tuning"
                                     AutomationProperties.Name="Toggle GPU clock tuning">
@@ -448,13 +448,13 @@
                                     Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
-                                    Minimum="{Binding GpuCoreClockOffsetMinimum, Mode=OneWay}"
-                                    Maximum="{Binding GpuCoreClockOffsetMaximum, Mode=OneWay}"
-                                    Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
+                                    Minimum="{x:Bind ViewModel.GpuCoreClockOffsetMinimum, Mode=OneWay}"
+                                    Maximum="{x:Bind ViewModel.GpuCoreClockOffsetMaximum, Mode=OneWay}"
+                                    Value="{x:Bind ViewModel.GpuCoreClockOffsetMegahertz, Mode=OneWay}"
                                     StepFrequency="5"
                                     SmallChange="5"
                                     LargeChange="25"
-                                    IsEnabled="{Binding CanEditGpuClockTuning, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanEditGpuClockTuning, Mode=OneWay}"
                                     AutomationProperties.Name="GPU core clock offset"
                                     ValueChanged="OnGpuCoreClockOffsetChanged" />
                         </Grid>
@@ -468,7 +468,7 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Button x:Uid="TrayDashboardWindow_ButtonToggleGPUClockTuning2" Style="{StaticResource QuickSliderIconButtonStyle}"
-                                    IsEnabled="{Binding CanToggleGpuClockTuning, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanToggleGpuClockTuning, Mode=OneWay}"
                                     Click="OnGpuClockTuningClick"
                                     ToolTipService.ToolTip="Toggle GPU clock tuning"
                                     AutomationProperties.Name="Toggle GPU clock tuning">
@@ -480,13 +480,13 @@
                                     Grid.Column="1"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
-                                    Minimum="{Binding GpuMemoryClockOffsetMinimum, Mode=OneWay}"
-                                    Maximum="{Binding GpuMemoryClockOffsetMaximum, Mode=OneWay}"
-                                    Value="{Binding GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
+                                    Minimum="{x:Bind ViewModel.GpuMemoryClockOffsetMinimum, Mode=OneWay}"
+                                    Maximum="{x:Bind ViewModel.GpuMemoryClockOffsetMaximum, Mode=OneWay}"
+                                    Value="{x:Bind ViewModel.GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
                                     StepFrequency="5"
                                     SmallChange="5"
                                     LargeChange="25"
-                                    IsEnabled="{Binding CanEditGpuClockTuning, Mode=OneWay}"
+                                    IsEnabled="{x:Bind ViewModel.CanEditGpuClockTuning, Mode=OneWay}"
                                     AutomationProperties.Name="GPU memory clock offset"
                                     ValueChanged="OnGpuMemoryClockOffsetChanged" />
                         </Grid>
@@ -521,27 +521,27 @@
             <Grid Grid.Row="1">
                 <ListView x:Uid="TrayDashboardWindow_PerformanceDetailText" x:Name="PerformanceDetail"
                           Margin="14,2,14,10"
-                          ItemsSource="{Binding AvailableLaptopPerformanceOptions, Mode=OneWay}"
+                          ItemsSource="{x:Bind ViewModel.AvailableLaptopPerformanceOptions, Mode=OneWay}"
                           DisplayMemberPath="Label"
-                          SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
+                          SelectedItem="{x:Bind ViewModel.SelectedLaptopPerformanceOption, Mode=OneWay}"
                           SelectionMode="Single"
                           SelectionChanged="OnPerformanceChanged"
                           AutomationProperties.Name="Performance choices" />
                 <ListView x:Uid="TrayDashboardWindow_FansDetailText" x:Name="FansDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"
-                          ItemsSource="{Binding AvailableActiveFanModeOptions, Mode=OneWay}"
+                          ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
                           DisplayMemberPath="Label"
-                          SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
+                          SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
                           SelectionMode="Single"
                           SelectionChanged="OnFanModeChanged"
                           AutomationProperties.Name="Fan choices" />
                 <ListView x:Uid="TrayDashboardWindow_LightingDetailText" x:Name="LightingDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"
-                          ItemsSource="{Binding AvailableLightingEffectOptions, Mode=OneWay}"
+                          ItemsSource="{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}"
                           DisplayMemberPath="Label"
-                          SelectedItem="{Binding SelectedLightingEffectOption, Mode=TwoWay}"
+                          SelectedItem="{x:Bind ViewModel.SelectedLightingEffectOption, Mode=TwoWay}"
                           SelectionMode="Single"
                           AutomationProperties.Name="Lighting effect choices" />
                 <StackPanel x:Name="GamingModeDetail"
@@ -562,7 +562,7 @@
                         <ToggleSwitch x:Name="GamingModeWindowsKeyToggle"
                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                       Grid.Column="1"
-                                      IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                      IsEnabled="{x:Bind ViewModel.CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                       Toggled="OnGamingModeKeyPolicyToggled" />
                     </Grid>
                     <Grid ColumnSpacing="16">
@@ -575,7 +575,7 @@
                         <ToggleSwitch x:Name="GamingModeAltTabToggle"
                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                       Grid.Column="1"
-                                      IsEnabled="{Binding CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                      IsEnabled="{x:Bind ViewModel.CanEditGamingModeKeyPolicy, Mode=OneWay}"
                                       Toggled="OnGamingModeKeyPolicyToggled" />
                     </Grid>
                 </StackPanel>
@@ -600,8 +600,8 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE83F;" Style="{StaticResource StatusIconStyle}" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
-                                   ToolTipService.ToolTip="{Binding BatteryPowerFlowLabel, Mode=OneWay}"
+                                   Text="{x:Bind ViewModel.TrayDashboardBatteryPowerFlowLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{x:Bind ViewModel.BatteryPowerFlowLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                     <Grid x:Name="TemperatureStatus"
@@ -613,7 +613,7 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE9CA;" Style="{StaticResource StatusIconStyle}" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding TrayDashboardTemperatureLabel, Mode=OneWay}"
+                                   Text="{x:Bind ViewModel.TrayDashboardTemperatureLabel, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                     <Grid x:Name="PowerSourceStatus"
@@ -625,8 +625,8 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE945;" Style="{StaticResource StatusIconStyle}" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding TrayDashboardPowerSourceLabel, Mode=OneWay}"
-                                   ToolTipService.ToolTip="{Binding TroubleshootingPowerSourceStatus, Mode=OneWay}"
+                                   Text="{x:Bind ViewModel.TrayDashboardPowerSourceLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{x:Bind ViewModel.TroubleshootingPowerSourceStatus, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                     <Grid x:Name="FanSpeedStatus"
@@ -640,8 +640,8 @@
                                   Height="{StaticResource DashboardPrimaryIconSize}"
                                   Data="M8,6.5 C6.5,5.2 6.2,2.4 7.4,0.8 C8.5,0 10.2,0.3 10.8,1.8 C11.2,3.6 9.6,5.7 8,6.5 Z M9.5,8 C10.8,6.5 13.6,6.2 15.2,7.4 C16,8.5 15.7,10.2 14.2,10.8 C12.4,11.2 10.3,9.6 9.5,8 Z M8,9.5 C9.5,10.8 9.8,13.6 8.6,15.2 C7.5,16 5.8,15.7 5.2,14.2 C4.8,12.4 6.4,10.3 8,9.5 Z M6.5,8 C5.2,9.5 2.4,9.8 0.8,8.6 C0,7.5 0.3,5.8 1.8,5.2 C3.6,4.8 5.7,6.4 6.5,8 Z M8,6.75 A1.25,1.25 0 1 1 7.99,9.25 A1.25,1.25 0 1 1 8,6.75 Z" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding TrayDashboardFanSpeedLabel, Mode=OneWay}"
-                                   ToolTipService.ToolTip="{Binding TrayDashboardFanSpeedToolTip, Mode=OneWay}"
+                                   Text="{x:Bind ViewModel.TrayDashboardFanSpeedLabel, Mode=OneWay}"
+                                   ToolTipService.ToolTip="{x:Bind ViewModel.TrayDashboardFanSpeedToolTip, Mode=OneWay}"
                                    Style="{StaticResource StatusTextStyle}" />
                     </Grid>
                 </Grid>

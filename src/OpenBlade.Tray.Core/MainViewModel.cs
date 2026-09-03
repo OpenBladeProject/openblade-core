@@ -353,6 +353,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ManualFanCurve.Default.Cpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
     private IReadOnlyList<FanCurveEditorPoint> gpuFanCurveEditorPoints =
         ManualFanCurve.Default.Gpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
+    private IReadOnlyList<LiveReadingGroupDisplayItem> visibleDashboardTelemetryGroups = [];
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
     private long chargeLimitEditorRevision;
@@ -452,6 +453,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool subscriptionConnected;
     private bool changingTelemetryPreferences;
     private bool suppressProfileDifferenceNotifications;
+    private readonly Dictionary<string, object?> publishedComputedValues =
+        new(StringComparer.Ordinal);
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(
@@ -905,7 +908,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 };
                 groups.Add(new LiveReadingGroupDisplayItem(label, fanValue));
             }
-            return groups;
+            // Reuse the published list while its items are equal so an ItemsSource
+            // bound to it is neither re-set nor re-templated on every refresh.
+            visibleDashboardTelemetryGroups = StableOptionCollection.ReuseEquivalent(
+                visibleDashboardTelemetryGroups,
+                groups);
+            return visibleDashboardTelemetryGroups;
         }
     }
 
@@ -4990,26 +4998,29 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         bool wasSuppressed = suppressProfileDifferenceNotifications;
         suppressProfileDifferenceNotifications = true;
+        bool presentationApplied;
         try
         {
-            ApplyStatusCore(status);
+            presentationApplied = ApplyStatusCore(status);
         }
         finally
         {
             suppressProfileDifferenceNotifications = wasSuppressed;
         }
 
-        if (!suppressProfileDifferenceNotifications)
+        // A snapshot whose metadata is unchanged only refreshes live readings,
+        // which no profile-difference property depends on.
+        if (presentationApplied && !suppressProfileDifferenceNotifications)
         {
             NotifyProfileDifferenceState();
         }
     }
 
-    private void ApplyStatusCore(ServiceStatusSnapshot status)
+    private bool ApplyStatusCore(ServiceStatusSnapshot status)
     {
         if (status.Revision < latestAcceptedRevision)
         {
-            return;
+            return false;
         }
 
         bool performanceHoldReleased = ReleasePendingPerformanceHold(status);
@@ -5024,7 +5035,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && StatusMetadataEqual(previousStatus, status))
         {
             ApplyLiveReadings(status);
-            return;
+            return false;
         }
 
         bool checkingLaptopConnection = IsCheckingLaptopConnection(status);
@@ -5044,6 +5055,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ApplyCapabilityOptions(capabilities);
         NotifyCommands();
         NotifyPresentationState();
+        return true;
     }
 
     private void ApplyDeviceStatePresentation(
@@ -5082,18 +5094,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (!lightingEditorDirty && !checkingLaptopConnection)
         {
-            LoadLightingEditor(SelectedLighting);
-            if (keyboardEffectUnconfirmed && LightingBrightnessEditor == 0)
-            {
-                // PID 02E0 reports brightness independently but cannot report
-                // its current matrix effect. Zero in this state means unknown,
-                // not that the lit keyboard is actually at zero percent. Start
-                // a newly selected visible effect at a neutral, visible level.
-                SetField(
-                    ref lightingBrightnessEditor,
-                    (int)DefaultLightingBrightness,
-                    nameof(LightingBrightnessEditor));
-            }
+            LoadLightingEditor(
+                SelectedLighting,
+                startUnconfirmedEffectAtDefaultBrightness: true);
         }
         if (!chargeLimitEditorDirty)
         {
@@ -5451,10 +5454,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             AvailableLogoLightingModeOptions = logoLightingModeOptions;
             Notify(nameof(SelectedLogoLightingModeOption));
         }
-        Notify(nameof(IsLogoLightingVisible));
+        NotifyComputed(nameof(IsLogoLightingVisible), IsLogoLightingVisible);
         IsPerformanceVisible = AvailablePerformancePresets.Count > 0;
         IsFanControlVisible = AvailableFanModes.Count > 0;
-        Notify(nameof(IsProfileControlVisible));
+        NotifyComputed(nameof(IsProfileControlVisible), IsProfileControlVisible);
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
@@ -5870,7 +5873,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         lastLiveReadingsRefreshAt = timeProvider.GetUtcNow();
         if (publishPresentation)
         {
-            Notify(nameof(LiveReadingsRefreshToolTip));
+            NotifyComputed(nameof(LiveReadingsRefreshToolTip), LiveReadingsRefreshToolTip);
         }
     }
 
@@ -5884,7 +5887,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         lastLiveReadingsRefreshAt = null;
         if (publishPresentation)
         {
-            Notify(nameof(LiveReadingsRefreshToolTip));
+            NotifyComputed(nameof(LiveReadingsRefreshToolTip), LiveReadingsRefreshToolTip);
         }
     }
 
@@ -7457,7 +7460,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private void LoadLightingEditor(LightingSettings value)
+    private void LoadLightingEditor(
+        LightingSettings value,
+        bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
         EnsureImportedSequenceOption(value);
         if (value.Parameters is SequenceLightingParameters sequence)
@@ -7469,6 +7474,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : value.Brightness == 0
                 ? DefaultLightingBrightness
                 : value.Brightness;
+        if (startUnconfirmedEffectAtDefaultBrightness
+            && keyboardEffectUnconfirmed
+            && brightness == 0)
+        {
+            // PID 02E0 reports brightness independently but cannot report
+            // its current matrix effect. Zero in this state means unknown,
+            // not that the lit keyboard is actually at zero percent. Start
+            // a newly selected visible effect at a neutral, visible level.
+            brightness = (int)DefaultLightingBrightness;
+        }
         SetField(ref lightingEffectEditor, value.Effect, nameof(LightingEffectEditor));
         SetField(ref lightingBrightnessEditor, brightness, nameof(LightingBrightnessEditor));
         SetField(ref lightingRedEditor, (int)value.Color.Red, nameof(LightingRedEditor));
@@ -7493,8 +7508,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingSecondaryBlueEditor,
             (int)secondaryColor.Blue,
             nameof(LightingSecondaryBlueEditor));
-        Notify(nameof(LightingPrimaryColorEditor));
-        Notify(nameof(LightingSecondaryColorEditor));
+        NotifyComputed(nameof(LightingPrimaryColorEditor), LightingPrimaryColorEditor);
+        NotifyComputed(nameof(LightingSecondaryColorEditor), LightingSecondaryColorEditor);
         BreathingColorMode breathingColorMode =
             value.Parameters is BreathingLightingParameters breathing
                 ? breathing.ColorMode
@@ -7577,16 +7592,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingAudioMeterDecayMillisecondsEditor,
             audioMeterDecayMilliseconds,
             nameof(LightingAudioMeterDecayMillisecondsEditor));
-        Notify(nameof(LightingAudioMeterDecayValue));
+        NotifyComputed(nameof(LightingAudioMeterDecayValue), LightingAudioMeterDecayValue);
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
             nameof(LogoLightingModeEditor));
         NotifyLightingParameterPresentation();
-        Notify(nameof(SelectedLightingEffectOption));
-        Notify(nameof(SelectedLogoLightingModeOption));
-        Notify(nameof(SelectedAmbientAwarenessRegionOption));
-        Notify(nameof(LightingDraft));
+        NotifyComputed(nameof(SelectedLightingEffectOption), SelectedLightingEffectOption);
+        NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);
+        NotifyComputed(nameof(SelectedAmbientAwarenessRegionOption), SelectedAmbientAwarenessRegionOption);
+        NotifyComputed(nameof(LightingDraft), LightingDraft);
     }
 
     private void SetKeyboardEffectUnconfirmed(bool value)
@@ -7617,8 +7632,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             policy.IdleTimeoutMinutes ?? 30,
             nameof(LightingIdleTimeoutMinutesEditor));
         lightingPowerPolicyEditorDirty = false;
-        Notify(nameof(HasUnsavedLightingPowerPolicy));
-        Notify(nameof(LightingPowerPolicyDraft));
+        NotifyComputed(nameof(HasUnsavedLightingPowerPolicy), HasUnsavedLightingPowerPolicy);
+        NotifyComputed(nameof(LightingPowerPolicyDraft), LightingPowerPolicyDraft);
         NotifyCommands();
     }
 
@@ -7664,8 +7679,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref batteryPerformanceEditor,
             value.Battery.Performance,
             nameof(BatteryPerformanceEditor));
-        Notify(nameof(PluggedInPerformanceOption));
-        Notify(nameof(BatteryPerformanceOption));
+        NotifyComputed(nameof(PluggedInPerformanceOption), PluggedInPerformanceOption);
+        NotifyComputed(nameof(BatteryPerformanceOption), BatteryPerformanceOption);
         SetField(
             ref batteryFanModeEditor,
             value.Battery.Fans,
@@ -7686,7 +7701,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref usbCLightingEditor,
             value.UsbC.Lighting,
             nameof(UsbCLightingEditor));
-        Notify(nameof(UsbCPerformanceOption));
+        NotifyComputed(nameof(UsbCPerformanceOption), UsbCPerformanceOption);
         SetField(
             ref profileChargeLimitEditor,
             value.BatteryPolicy.ChargeLimitPercent,
@@ -8322,33 +8337,33 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyActiveProfileDraft()
     {
-        Notify(nameof(HasActiveProfileDraft));
-        Notify(nameof(HasThermalProfileDraft));
-        Notify(nameof(HasLightingProfileDraft));
-        Notify(nameof(HasLightingProfileSaveOpportunity));
-        Notify(nameof(HasLightingProfileActionOpportunity));
-        Notify(nameof(HasDisplayProfileDraft));
-        Notify(nameof(HasLaptopProfileDraft));
-        Notify(nameof(HasLaptopPageProfileDraft));
-        Notify(nameof(HasLaptopPageProfileSaveOpportunity));
-        Notify(nameof(HasLaptopPageProfileActionOpportunity));
-        Notify(nameof(HasBatteryProtectionProfileDraft));
-        Notify(nameof(HasDashboardProfileDraft));
-        Notify(nameof(HasDashboardProfileSaveOpportunity));
-        Notify(nameof(HasDashboardProfileActionOpportunity));
-        Notify(nameof(HasDashboardProfileRestoreOpportunity));
-        Notify(nameof(DashboardProfileSaveLabel));
-        Notify(nameof(ThermalProfileRelationshipStatus));
-        Notify(nameof(LightingProfileRelationshipStatus));
-        Notify(nameof(IsPluggedInProfileDraft));
-        Notify(nameof(IsBatteryProfileDraft));
-        Notify(nameof(IsUsbCProfileDraft));
-        Notify(nameof(HasUnsavedProfileChanges));
-        Notify(nameof(ActiveProfileDraftName));
-        Notify(nameof(SavedActiveProfileSummary));
-        Notify(nameof(PendingActiveProfileSummary));
-        Notify(nameof(SelectedWindowsPowerModeOption));
-        Notify(nameof(SelectedWindowsPowerModeDescription));
+        NotifyComputed(nameof(HasActiveProfileDraft), HasActiveProfileDraft);
+        NotifyComputed(nameof(HasThermalProfileDraft), HasThermalProfileDraft);
+        NotifyComputed(nameof(HasLightingProfileDraft), HasLightingProfileDraft);
+        NotifyComputed(nameof(HasLightingProfileSaveOpportunity), HasLightingProfileSaveOpportunity);
+        NotifyComputed(nameof(HasLightingProfileActionOpportunity), HasLightingProfileActionOpportunity);
+        NotifyComputed(nameof(HasDisplayProfileDraft), HasDisplayProfileDraft);
+        NotifyComputed(nameof(HasLaptopProfileDraft), HasLaptopProfileDraft);
+        NotifyComputed(nameof(HasLaptopPageProfileDraft), HasLaptopPageProfileDraft);
+        NotifyComputed(nameof(HasLaptopPageProfileSaveOpportunity), HasLaptopPageProfileSaveOpportunity);
+        NotifyComputed(nameof(HasLaptopPageProfileActionOpportunity), HasLaptopPageProfileActionOpportunity);
+        NotifyComputed(nameof(HasBatteryProtectionProfileDraft), HasBatteryProtectionProfileDraft);
+        NotifyComputed(nameof(HasDashboardProfileDraft), HasDashboardProfileDraft);
+        NotifyComputed(nameof(HasDashboardProfileSaveOpportunity), HasDashboardProfileSaveOpportunity);
+        NotifyComputed(nameof(HasDashboardProfileActionOpportunity), HasDashboardProfileActionOpportunity);
+        NotifyComputed(nameof(HasDashboardProfileRestoreOpportunity), HasDashboardProfileRestoreOpportunity);
+        NotifyComputed(nameof(DashboardProfileSaveLabel), DashboardProfileSaveLabel);
+        NotifyComputed(nameof(ThermalProfileRelationshipStatus), ThermalProfileRelationshipStatus);
+        NotifyComputed(nameof(LightingProfileRelationshipStatus), LightingProfileRelationshipStatus);
+        NotifyComputed(nameof(IsPluggedInProfileDraft), IsPluggedInProfileDraft);
+        NotifyComputed(nameof(IsBatteryProfileDraft), IsBatteryProfileDraft);
+        NotifyComputed(nameof(IsUsbCProfileDraft), IsUsbCProfileDraft);
+        NotifyComputed(nameof(HasUnsavedProfileChanges), HasUnsavedProfileChanges);
+        NotifyComputed(nameof(ActiveProfileDraftName), ActiveProfileDraftName);
+        NotifyComputed(nameof(SavedActiveProfileSummary), SavedActiveProfileSummary);
+        NotifyComputed(nameof(PendingActiveProfileSummary), PendingActiveProfileSummary);
+        NotifyComputed(nameof(SelectedWindowsPowerModeOption), SelectedWindowsPowerModeOption);
+        NotifyComputed(nameof(SelectedWindowsPowerModeDescription), SelectedWindowsPowerModeDescription);
         NotifyGamingModeKeyPolicy();
         NotifyProfileSummaries();
         NotifyCommands();
@@ -8367,64 +8382,64 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyBatteryProfileDraft()
     {
-        Notify(nameof(HasGlobalBatteryPolicyDraft));
-        Notify(nameof(HasDashboardProfileDraft));
-        Notify(nameof(HasDashboardProfileSaveOpportunity));
-        Notify(nameof(HasDashboardProfileActionOpportunity));
-        Notify(nameof(HasDashboardProfileRestoreOpportunity));
-        Notify(nameof(DashboardProfileSaveLabel));
-        Notify(nameof(HasUnsavedProfileChanges));
-        Notify(nameof(BatteryPolicyPresentation));
+        NotifyComputed(nameof(HasGlobalBatteryPolicyDraft), HasGlobalBatteryPolicyDraft);
+        NotifyComputed(nameof(HasDashboardProfileDraft), HasDashboardProfileDraft);
+        NotifyComputed(nameof(HasDashboardProfileSaveOpportunity), HasDashboardProfileSaveOpportunity);
+        NotifyComputed(nameof(HasDashboardProfileActionOpportunity), HasDashboardProfileActionOpportunity);
+        NotifyComputed(nameof(HasDashboardProfileRestoreOpportunity), HasDashboardProfileRestoreOpportunity);
+        NotifyComputed(nameof(DashboardProfileSaveLabel), DashboardProfileSaveLabel);
+        NotifyComputed(nameof(HasUnsavedProfileChanges), HasUnsavedProfileChanges);
+        NotifyComputed(nameof(BatteryPolicyPresentation), BatteryPolicyPresentation);
         NotifyProfileSummaries();
         NotifyCommands();
     }
 
     private void NotifyGamingModeKeyPolicy()
     {
-        Notify(nameof(BlockWindowsKeyInGamingMode));
-        Notify(nameof(BlockAltTabInGamingMode));
-        Notify(nameof(CanEditGamingModeKeyPolicy));
+        NotifyComputed(nameof(BlockWindowsKeyInGamingMode), BlockWindowsKeyInGamingMode);
+        NotifyComputed(nameof(BlockAltTabInGamingMode), BlockAltTabInGamingMode);
+        NotifyComputed(nameof(CanEditGamingModeKeyPolicy), CanEditGamingModeKeyPolicy);
     }
 
     private void NotifyProfileSummaries()
     {
-        Notify(nameof(PluggedInProfileThermalSummary));
-        Notify(nameof(PluggedInProfileLightingSummary));
-        Notify(nameof(BatteryProfileThermalSummary));
-        Notify(nameof(BatteryProfileLightingSummary));
-        Notify(nameof(UsbCProfileThermalSummary));
-        Notify(nameof(UsbCProfileLightingSummary));
-        Notify(nameof(PluggedInProfileDisplaySummary));
-        Notify(nameof(BatteryProfileDisplaySummary));
-        Notify(nameof(UsbCProfileDisplaySummary));
-        Notify(nameof(ActiveSavedDisplayProfile));
-        Notify(nameof(SavedActiveProfileSummary));
-        Notify(nameof(PendingActiveProfileSummary));
-        Notify(nameof(PluggedInProfilePresentation));
-        Notify(nameof(UsbCProfilePresentation));
-        Notify(nameof(BatteryProfilePresentation));
-        Notify(nameof(BatteryPolicyPresentation));
-        Notify(nameof(LightingDisplayOffPolicyPresentation));
-        Notify(nameof(LightingIdlePolicyPresentation));
-        Notify(nameof(HasLightingProfileSaveOpportunity));
-        Notify(nameof(HasLaptopPageProfileSaveOpportunity));
+        NotifyComputed(nameof(PluggedInProfileThermalSummary), PluggedInProfileThermalSummary);
+        NotifyComputed(nameof(PluggedInProfileLightingSummary), PluggedInProfileLightingSummary);
+        NotifyComputed(nameof(BatteryProfileThermalSummary), BatteryProfileThermalSummary);
+        NotifyComputed(nameof(BatteryProfileLightingSummary), BatteryProfileLightingSummary);
+        NotifyComputed(nameof(UsbCProfileThermalSummary), UsbCProfileThermalSummary);
+        NotifyComputed(nameof(UsbCProfileLightingSummary), UsbCProfileLightingSummary);
+        NotifyComputed(nameof(PluggedInProfileDisplaySummary), PluggedInProfileDisplaySummary);
+        NotifyComputed(nameof(BatteryProfileDisplaySummary), BatteryProfileDisplaySummary);
+        NotifyComputed(nameof(UsbCProfileDisplaySummary), UsbCProfileDisplaySummary);
+        NotifyComputed(nameof(ActiveSavedDisplayProfile), ActiveSavedDisplayProfile);
+        NotifyComputed(nameof(SavedActiveProfileSummary), SavedActiveProfileSummary);
+        NotifyComputed(nameof(PendingActiveProfileSummary), PendingActiveProfileSummary);
+        NotifyComputed(nameof(PluggedInProfilePresentation), PluggedInProfilePresentation);
+        NotifyComputed(nameof(UsbCProfilePresentation), UsbCProfilePresentation);
+        NotifyComputed(nameof(BatteryProfilePresentation), BatteryProfilePresentation);
+        NotifyComputed(nameof(BatteryPolicyPresentation), BatteryPolicyPresentation);
+        NotifyComputed(nameof(LightingDisplayOffPolicyPresentation), LightingDisplayOffPolicyPresentation);
+        NotifyComputed(nameof(LightingIdlePolicyPresentation), LightingIdlePolicyPresentation);
+        NotifyComputed(nameof(HasLightingProfileSaveOpportunity), HasLightingProfileSaveOpportunity);
+        NotifyComputed(nameof(HasLaptopPageProfileSaveOpportunity), HasLaptopPageProfileSaveOpportunity);
         NotifyProfileDifferenceState();
         NotifySelectedProfilePresentation();
     }
 
     private void NotifySelectedProfilePresentation()
     {
-        Notify(nameof(SelectedProfilePresentation));
-        Notify(nameof(IsSelectedProfileActive));
-        Notify(nameof(IsSelectedProfileDraft));
+        NotifyComputed(nameof(SelectedProfilePresentation), SelectedProfilePresentation);
+        NotifyComputed(nameof(IsSelectedProfileActive), IsSelectedProfileActive);
+        NotifyComputed(nameof(IsSelectedProfileDraft), IsSelectedProfileDraft);
     }
 
     private void NotifyLaptopBehaviorProfilePresentations()
     {
-        Notify(nameof(PluggedInProfilePresentation));
-        Notify(nameof(UsbCProfilePresentation));
-        Notify(nameof(BatteryProfilePresentation));
-        Notify(nameof(SelectedProfilePresentation));
+        NotifyComputed(nameof(PluggedInProfilePresentation), PluggedInProfilePresentation);
+        NotifyComputed(nameof(UsbCProfilePresentation), UsbCProfilePresentation);
+        NotifyComputed(nameof(BatteryProfilePresentation), BatteryProfilePresentation);
+        NotifyComputed(nameof(SelectedProfilePresentation), SelectedProfilePresentation);
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
@@ -9229,8 +9244,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             command.NotifyCanExecuteChanged();
         }
 
-        Notify(nameof(CanAdjustChargeLimit));
-        Notify(nameof(CanChangeBatteryProtection));
+        NotifyComputed(nameof(CanAdjustChargeLimit), CanAdjustChargeLimit);
+        NotifyComputed(nameof(CanChangeBatteryProtection), CanChangeBatteryProtection);
         if (!suppressProfileDifferenceNotifications)
         {
             NotifyProfileDifferenceState();
@@ -9239,17 +9254,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyProfileDifferenceState()
     {
-        Notify(nameof(HasThermalProfileDifference));
-        Notify(nameof(HasLaptopBehaviorProfileDifference));
-        Notify(nameof(HasLaptopPageProfileDifference));
-        Notify(nameof(HasLaptopPageProfileActionOpportunity));
-        Notify(nameof(HasLightingProfileDifference));
-        Notify(nameof(HasLightingProfileActionOpportunity));
-        Notify(nameof(HasBatteryProtectionProfileDifference));
-        Notify(nameof(HasGlobalBatteryPolicyDifference));
-        Notify(nameof(HasDashboardProfileDifference));
-        Notify(nameof(HasDashboardProfileActionOpportunity));
-        Notify(nameof(HasDashboardProfileRestoreOpportunity));
+        NotifyComputed(nameof(HasThermalProfileDifference), HasThermalProfileDifference);
+        NotifyComputed(nameof(HasLaptopBehaviorProfileDifference), HasLaptopBehaviorProfileDifference);
+        NotifyComputed(nameof(HasLaptopPageProfileDifference), HasLaptopPageProfileDifference);
+        NotifyComputed(nameof(HasLaptopPageProfileActionOpportunity), HasLaptopPageProfileActionOpportunity);
+        NotifyComputed(nameof(HasLightingProfileDifference), HasLightingProfileDifference);
+        NotifyComputed(nameof(HasLightingProfileActionOpportunity), HasLightingProfileActionOpportunity);
+        NotifyComputed(nameof(HasBatteryProtectionProfileDifference), HasBatteryProtectionProfileDifference);
+        NotifyComputed(nameof(HasGlobalBatteryPolicyDifference), HasGlobalBatteryPolicyDifference);
+        NotifyComputed(nameof(HasDashboardProfileDifference), HasDashboardProfileDifference);
+        NotifyComputed(nameof(HasDashboardProfileActionOpportunity), HasDashboardProfileActionOpportunity);
+        NotifyComputed(nameof(HasDashboardProfileRestoreOpportunity), HasDashboardProfileRestoreOpportunity);
     }
 
     private string SourceLabel(
@@ -9829,86 +9844,86 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyPresentationState()
     {
-        Notify(nameof(IsServiceUnavailable));
-        Notify(nameof(ControlAccessStatus));
-        Notify(nameof(CanRequestHardwareControl));
-        Notify(nameof(CanReapplyChangedSettings));
-        Notify(nameof(CanRecoverHyperBoostRestore));
-        Notify(nameof(CanCheckCurrentState));
-        Notify(nameof(ShowReapplyChangedSettings));
-        Notify(nameof(CanChangeThermalControlPolicy));
-        Notify(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure));
-        Notify(nameof(CanEditPerformance));
-        Notify(nameof(CanSelectLaptopPerformance));
-        Notify(nameof(CanEditWindowsPowerMode));
-        Notify(nameof(CanToggleGpuClockTuning));
-        Notify(nameof(CanEditGpuClockTuning));
-        Notify(nameof(IsHyperBoostVisible));
-        Notify(nameof(IsHyperBoostWritable));
-        Notify(nameof(CanToggleHyperBoost));
-        Notify(nameof(HyperBoostDescription));
-        Notify(nameof(AvailableLaptopPerformanceOptions));
-        Notify(nameof(SelectedLaptopPerformanceOption));
-        Notify(nameof(CanEditFanControl));
-        Notify(nameof(CanChangeFanMode));
+        NotifyComputed(nameof(IsServiceUnavailable), IsServiceUnavailable);
+        NotifyComputed(nameof(ControlAccessStatus), ControlAccessStatus);
+        NotifyComputed(nameof(CanRequestHardwareControl), CanRequestHardwareControl);
+        NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
+        NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
+        NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
+        NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);
+        NotifyComputed(nameof(CanChangeThermalControlPolicy), CanChangeThermalControlPolicy);
+        NotifyComputed(nameof(CanAcknowledgeThermalPolicyUpgradeDisclosure), CanAcknowledgeThermalPolicyUpgradeDisclosure);
+        NotifyComputed(nameof(CanEditPerformance), CanEditPerformance);
+        NotifyComputed(nameof(CanSelectLaptopPerformance), CanSelectLaptopPerformance);
+        NotifyComputed(nameof(CanEditWindowsPowerMode), CanEditWindowsPowerMode);
+        NotifyComputed(nameof(CanToggleGpuClockTuning), CanToggleGpuClockTuning);
+        NotifyComputed(nameof(CanEditGpuClockTuning), CanEditGpuClockTuning);
+        NotifyComputed(nameof(IsHyperBoostVisible), IsHyperBoostVisible);
+        NotifyComputed(nameof(IsHyperBoostWritable), IsHyperBoostWritable);
+        NotifyComputed(nameof(CanToggleHyperBoost), CanToggleHyperBoost);
+        NotifyComputed(nameof(HyperBoostDescription), HyperBoostDescription);
+        NotifyComputed(nameof(AvailableLaptopPerformanceOptions), AvailableLaptopPerformanceOptions);
+        NotifyComputed(nameof(SelectedLaptopPerformanceOption), SelectedLaptopPerformanceOption);
+        NotifyComputed(nameof(CanEditFanControl), CanEditFanControl);
+        NotifyComputed(nameof(CanChangeFanMode), CanChangeFanMode);
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
-        Notify(nameof(LiveReadingsRefreshToolTip));
-        Notify(nameof(ActivePerformanceLabel));
-        Notify(nameof(ActiveFanModeLabel));
-        Notify(nameof(TrayDashboardPowerSourceLabel));
-        Notify(nameof(ProfileStateLabel));
-        Notify(nameof(IsReadinessReady));
-        Notify(nameof(IsReadinessChecking));
-        Notify(nameof(IsReadinessWarning));
-        Notify(nameof(IsReadinessError));
-        Notify(nameof(HasLightingCapability));
-        Notify(nameof(CanControlLighting));
-        Notify(nameof(CanSetLightingRefreshRate));
-        Notify(nameof(IsLightingControlUnavailable));
-        Notify(nameof(IsLightingControlUnavailableNoticeVisible));
-        Notify(nameof(LightingControlUnavailableMessage));
-        Notify(nameof(ShowOpenBladeKeyboardLightingControls));
-        Notify(nameof(BatteryPolicyOverride));
-        Notify(nameof(BatteryProtectionOverride));
-        Notify(nameof(ManualOverrideStatus));
-        Notify(nameof(HasActiveChanges));
-        Notify(nameof(ActiveChangesText));
-        Notify(nameof(HasAttention));
-        Notify(nameof(AttentionSummary));
-        Notify(nameof(AttentionBadgeLabel));
-        Notify(nameof(AttentionDetails));
-        Notify(nameof(TroubleshootingServiceStatus));
-        Notify(nameof(TroubleshootingPowerSourceStatus));
-        Notify(nameof(TroubleshootingControlsStatus));
-        Notify(nameof(TroubleshootingKeyboardDriverModeStatus));
-        Notify(nameof(TroubleshootingUsbDeviceStatus));
-        Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
-        Notify(nameof(AboutServiceVersionStatus));
-        Notify(nameof(AboutDetectedLaptopStatus));
-        Notify(nameof(DetectedFirmware));
-        Notify(nameof(AboutBiosVersionStatus));
-        Notify(nameof(AboutEcVersionStatus));
-        Notify(nameof(AboutMcuVersionStatus));
-        Notify(nameof(AboutVbiosVersionStatus));
-        Notify(nameof(AboutBatteryHealthStatus));
-        Notify(nameof(AboutDisplayBrightnessDriverStatus));
-        Notify(nameof(AboutDisplayBrightnessDriverToolTip));
-        Notify(nameof(HasUntestedPlatformVersion));
-        Notify(nameof(HasIncompatibleFirmware));
-        Notify(nameof(PlatformCompatibilityWarningTitle));
-        Notify(nameof(DashboardTestedPlatformWarningMessage));
-        Notify(nameof(AboutTestedPlatformWarningMessage));
+        NotifyComputed(nameof(LiveReadingsRefreshToolTip), LiveReadingsRefreshToolTip);
+        NotifyComputed(nameof(ActivePerformanceLabel), ActivePerformanceLabel);
+        NotifyComputed(nameof(ActiveFanModeLabel), ActiveFanModeLabel);
+        NotifyComputed(nameof(TrayDashboardPowerSourceLabel), TrayDashboardPowerSourceLabel);
+        NotifyComputed(nameof(ProfileStateLabel), ProfileStateLabel);
+        NotifyComputed(nameof(IsReadinessReady), IsReadinessReady);
+        NotifyComputed(nameof(IsReadinessChecking), IsReadinessChecking);
+        NotifyComputed(nameof(IsReadinessWarning), IsReadinessWarning);
+        NotifyComputed(nameof(IsReadinessError), IsReadinessError);
+        NotifyComputed(nameof(HasLightingCapability), HasLightingCapability);
+        NotifyComputed(nameof(CanControlLighting), CanControlLighting);
+        NotifyComputed(nameof(CanSetLightingRefreshRate), CanSetLightingRefreshRate);
+        NotifyComputed(nameof(IsLightingControlUnavailable), IsLightingControlUnavailable);
+        NotifyComputed(nameof(IsLightingControlUnavailableNoticeVisible), IsLightingControlUnavailableNoticeVisible);
+        NotifyComputed(nameof(LightingControlUnavailableMessage), LightingControlUnavailableMessage);
+        NotifyComputed(nameof(ShowOpenBladeKeyboardLightingControls), ShowOpenBladeKeyboardLightingControls);
+        NotifyComputed(nameof(BatteryPolicyOverride), BatteryPolicyOverride);
+        NotifyComputed(nameof(BatteryProtectionOverride), BatteryProtectionOverride);
+        NotifyComputed(nameof(ManualOverrideStatus), ManualOverrideStatus);
+        NotifyComputed(nameof(HasActiveChanges), HasActiveChanges);
+        NotifyComputed(nameof(ActiveChangesText), ActiveChangesText);
+        NotifyComputed(nameof(HasAttention), HasAttention);
+        NotifyComputed(nameof(AttentionSummary), AttentionSummary);
+        NotifyComputed(nameof(AttentionBadgeLabel), AttentionBadgeLabel);
+        NotifyComputed(nameof(AttentionDetails), AttentionDetails);
+        NotifyComputed(nameof(TroubleshootingServiceStatus), TroubleshootingServiceStatus);
+        NotifyComputed(nameof(TroubleshootingPowerSourceStatus), TroubleshootingPowerSourceStatus);
+        NotifyComputed(nameof(TroubleshootingControlsStatus), TroubleshootingControlsStatus);
+        NotifyComputed(nameof(TroubleshootingKeyboardDriverModeStatus), TroubleshootingKeyboardDriverModeStatus);
+        NotifyComputed(nameof(TroubleshootingUsbDeviceStatus), TroubleshootingUsbDeviceStatus);
+        NotifyComputed(nameof(TroubleshootingOtherRazerSoftwareStatus), TroubleshootingOtherRazerSoftwareStatus);
+        NotifyComputed(nameof(AboutServiceVersionStatus), AboutServiceVersionStatus);
+        NotifyComputed(nameof(AboutDetectedLaptopStatus), AboutDetectedLaptopStatus);
+        NotifyComputed(nameof(DetectedFirmware), DetectedFirmware);
+        NotifyComputed(nameof(AboutBiosVersionStatus), AboutBiosVersionStatus);
+        NotifyComputed(nameof(AboutEcVersionStatus), AboutEcVersionStatus);
+        NotifyComputed(nameof(AboutMcuVersionStatus), AboutMcuVersionStatus);
+        NotifyComputed(nameof(AboutVbiosVersionStatus), AboutVbiosVersionStatus);
+        NotifyComputed(nameof(AboutBatteryHealthStatus), AboutBatteryHealthStatus);
+        NotifyComputed(nameof(AboutDisplayBrightnessDriverStatus), AboutDisplayBrightnessDriverStatus);
+        NotifyComputed(nameof(AboutDisplayBrightnessDriverToolTip), AboutDisplayBrightnessDriverToolTip);
+        NotifyComputed(nameof(HasUntestedPlatformVersion), HasUntestedPlatformVersion);
+        NotifyComputed(nameof(HasIncompatibleFirmware), HasIncompatibleFirmware);
+        NotifyComputed(nameof(PlatformCompatibilityWarningTitle), PlatformCompatibilityWarningTitle);
+        NotifyComputed(nameof(DashboardTestedPlatformWarningMessage), DashboardTestedPlatformWarningMessage);
+        NotifyComputed(nameof(AboutTestedPlatformWarningMessage), AboutTestedPlatformWarningMessage);
     }
 
     private void NotifyFirmwareFieldLoadingState()
     {
-        Notify(nameof(IsStartupAnimationFieldLoading));
-        Notify(nameof(CanEditStartupAnimation));
-        Notify(nameof(IsFunctionKeyFieldLoading));
-        Notify(nameof(CanEditFunctionKeyPrimary));
-        Notify(nameof(IsGamingModeFieldLoading));
-        Notify(nameof(CanEditGamingMode));
+        NotifyComputed(nameof(IsStartupAnimationFieldLoading), IsStartupAnimationFieldLoading);
+        NotifyComputed(nameof(CanEditStartupAnimation), CanEditStartupAnimation);
+        NotifyComputed(nameof(IsFunctionKeyFieldLoading), IsFunctionKeyFieldLoading);
+        NotifyComputed(nameof(CanEditFunctionKeyPrimary), CanEditFunctionKeyPrimary);
+        NotifyComputed(nameof(IsGamingModeFieldLoading), IsGamingModeFieldLoading);
+        NotifyComputed(nameof(CanEditGamingMode), CanEditGamingMode);
     }
 
     private TrayHoverLabelFormatResult BuildTrayHoverLabel() =>
@@ -9928,13 +9943,41 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyTrayHoverLabel()
     {
-        Notify(nameof(TrayHoverLabelText));
-        Notify(nameof(HasTrayHoverLabelOverflow));
-        Notify(nameof(TrayHoverLabelOverflowMessage));
+        NotifyComputed(nameof(TrayHoverLabelText), TrayHoverLabelText);
+        NotifyComputed(nameof(HasTrayHoverLabelOverflow), HasTrayHoverLabelOverflow);
+        NotifyComputed(nameof(TrayHoverLabelOverflowMessage), TrayHoverLabelOverflowMessage);
     }
 
-    private void Notify(string? propertyName) =>
+    private void Notify(string? propertyName)
+    {
+        // A direct notification forgets the last published value so a later
+        // NotifyComputed for the same property can never suppress a real change.
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            publishedComputedValues.Clear();
+        }
+        else
+        {
+            publishedComputedValues.Remove(propertyName);
+        }
+
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    // Every PropertyChanged reaches each native XAML {Binding} subscriber through
+    // a CsWinRT marshal of the sender, so the batch Notify* methods publish a
+    // computed property only when its value differs from the last one published.
+    private void NotifyComputed<T>(string propertyName, T value)
+    {
+        if (publishedComputedValues.TryGetValue(propertyName, out object? published)
+            && Equals(published, value))
+        {
+            return;
+        }
+
+        publishedComputedValues[propertyName] = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 
     private void SetField<T>(
         ref T field,
@@ -10089,27 +10132,63 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void LoadFanControlEditor(FanControlSettings value)
     {
         FanSpeedRange range = ActiveFanSpeedRange;
-        SetField(
-            ref fixedFanSpeedRpm,
-            range.Quantize(value.FixedSpeedRpm),
-            nameof(FixedFanSpeedRpm));
+        int fixedSpeedRpm = range.Quantize(value.FixedSpeedRpm);
+        bool changed = fixedFanSpeedRpm != fixedSpeedRpm
+            || useHigherFanTemperature != value.ManualCurve.UseHigherTemperatureForBoth;
+        SetField(ref fixedFanSpeedRpm, fixedSpeedRpm, nameof(FixedFanSpeedRpm));
         SetField(
             ref useHigherFanTemperature,
             value.ManualCurve.UseHigherTemperatureForBoth,
             nameof(UseHigherFanTemperature));
-        cpuFanCurveEditorPoints = value.ManualCurve.Cpu
+        // Keep the bound editor points when the curve is unchanged so a status
+        // refresh neither re-templates the sliders nor republishes the editor.
+        if (!FanCurveEditorPointsMatch(cpuFanCurveEditorPoints, value.ManualCurve.Cpu, range))
+        {
+            cpuFanCurveEditorPoints = CreateFanCurveEditorPoints(value.ManualCurve.Cpu, range);
+            Notify(nameof(CpuFanCurveEditorPoints));
+            changed = true;
+        }
+        if (!FanCurveEditorPointsMatch(gpuFanCurveEditorPoints, value.ManualCurve.Gpu, range))
+        {
+            gpuFanCurveEditorPoints = CreateFanCurveEditorPoints(value.ManualCurve.Gpu, range);
+            Notify(nameof(GpuFanCurveEditorPoints));
+            changed = true;
+        }
+        if (changed)
+        {
+            Notify(nameof(CurrentFanControlSettings));
+        }
+    }
+
+    private static FanCurveEditorPoint[] CreateFanCurveEditorPoints(
+        IReadOnlyList<FanCurvePoint> points,
+        FanSpeedRange range) =>
+        points
             .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
                 point.TemperatureCelsius,
                 range.Quantize(point.SpeedRpm))))
             .ToArray();
-        gpuFanCurveEditorPoints = value.ManualCurve.Gpu
-            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
-                point.TemperatureCelsius,
-                range.Quantize(point.SpeedRpm))))
-            .ToArray();
-        Notify(nameof(CpuFanCurveEditorPoints));
-        Notify(nameof(GpuFanCurveEditorPoints));
-        Notify(nameof(CurrentFanControlSettings));
+
+    private static bool FanCurveEditorPointsMatch(
+        IReadOnlyList<FanCurveEditorPoint> current,
+        IReadOnlyList<FanCurvePoint> incoming,
+        FanSpeedRange range)
+    {
+        if (current.Count != incoming.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < current.Count; index++)
+        {
+            if (current[index].TemperatureCelsius != incoming[index].TemperatureCelsius
+                || current[index].SpeedRpm != range.Quantize(incoming[index].SpeedRpm))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void SetEditorField<T>(
@@ -10225,22 +10304,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyLightingParameterPresentation()
     {
-        Notify(nameof(LightingShowsBrightness));
-        Notify(nameof(LightingShowsBreathingColorMode));
-        Notify(nameof(LightingShowsStarlightColorMode));
-        Notify(nameof(LightingShowsPrimaryColor));
-        Notify(nameof(LightingShowsSecondaryColor));
-        Notify(nameof(LightingPrimaryColorLabel));
-        Notify(nameof(LightingPrimaryColorDescription));
-        Notify(nameof(LightingShowsReactiveDuration));
-        Notify(nameof(LightingShowsStarlightDuration));
-        Notify(nameof(LightingShowsRandomColors));
-        Notify(nameof(LightingShowsDirection));
-        Notify(nameof(LightingDirectionOptions));
-        Notify(nameof(SelectedLightingDirectionOption));
-        Notify(nameof(LightingShowsRotationDirection));
-        Notify(nameof(LightingShowsAmbientAwarenessRegion));
-        Notify(nameof(LightingShowsAudioMeterControls));
+        NotifyComputed(nameof(LightingShowsBrightness), LightingShowsBrightness);
+        NotifyComputed(nameof(LightingShowsBreathingColorMode), LightingShowsBreathingColorMode);
+        NotifyComputed(nameof(LightingShowsStarlightColorMode), LightingShowsStarlightColorMode);
+        NotifyComputed(nameof(LightingShowsPrimaryColor), LightingShowsPrimaryColor);
+        NotifyComputed(nameof(LightingShowsSecondaryColor), LightingShowsSecondaryColor);
+        NotifyComputed(nameof(LightingPrimaryColorLabel), LightingPrimaryColorLabel);
+        NotifyComputed(nameof(LightingPrimaryColorDescription), LightingPrimaryColorDescription);
+        NotifyComputed(nameof(LightingShowsReactiveDuration), LightingShowsReactiveDuration);
+        NotifyComputed(nameof(LightingShowsStarlightDuration), LightingShowsStarlightDuration);
+        NotifyComputed(nameof(LightingShowsRandomColors), LightingShowsRandomColors);
+        NotifyComputed(nameof(LightingShowsDirection), LightingShowsDirection);
+        NotifyComputed(nameof(LightingDirectionOptions), LightingDirectionOptions);
+        NotifyComputed(nameof(SelectedLightingDirectionOption), SelectedLightingDirectionOption);
+        NotifyComputed(nameof(LightingShowsRotationDirection), LightingShowsRotationDirection);
+        NotifyComputed(nameof(LightingShowsAmbientAwarenessRegion), LightingShowsAmbientAwarenessRegion);
+        NotifyComputed(nameof(LightingShowsAudioMeterControls), LightingShowsAudioMeterControls);
     }
 
 }

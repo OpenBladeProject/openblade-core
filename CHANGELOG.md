@@ -5,6 +5,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced the CPU the tray spends reacting to service updates. Each property
+  change on the main view model was delivered to about 135 native XAML
+  `{Binding}` subscribers, and every service update re-announced roughly a
+  hundred settings whose values had not changed, so a hidden tray spent
+  minutes of CPU per day repainting nothing. The tray now announces a computed
+  setting only when its value differs from the last one announced, skips the
+  profile-difference replay when a refresh changes nothing, keeps the fan-curve
+  editor and dashboard readings lists stable while their contents are equal,
+  and binds 107 of the main and quick-controls window controls through
+  compiled bindings that stay in managed code. Measured per service update on
+  an unchanged snapshot: 11 or 12 announcements became 0 or 1; a single
+  changed status field went from 137 announcements to 1.
+
 ### Fixed
 
 - Stopped the tray's memory from growing for as long as it runs. The .NET 10

@@ -7,7 +7,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class MainViewModelTests
+public sealed partial class MainViewModelTests
 {
     [Fact]
     public async Task LocalizedInstanceDefaultsFollowTheCurrentCulture()
@@ -96,15 +96,15 @@ public sealed class MainViewModelTests
     public async Task WindowsPowerMode_ServiceProfileUpdateNotifiesDashboardSelection()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
-        client.Publish(initial);
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await PushAsync(client, dispatcher, initial);
         var changedProperties = new ConcurrentQueue<string?>();
         viewModel.PropertyChanged += (_, args) => changedProperties.Enqueue(args.PropertyName);
 
-        client.Publish(initial with
+        await PushAsync(client, dispatcher, initial with
         {
             Revision = 2,
             Profiles = initial.Profiles with
@@ -115,8 +115,9 @@ public sealed class MainViewModelTests
                         WindowsPowerMode.Balanced),
             },
         });
-        await WaitUntilAsync(() =>
-            viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text == "Balanced");
+        Assert.Equal(
+            "Balanced",
+            viewModel.PluggedInProfilePresentation.WindowsPowerMode.Text);
 
         Assert.Equal(WindowsPowerMode.Balanced, viewModel.SelectedWindowsPowerModeOption.Value);
         Assert.Contains(nameof(MainViewModel.SelectedWindowsPowerModeOption), changedProperties);
@@ -207,7 +208,8 @@ public sealed class MainViewModelTests
     public async Task WindowsPowerMode_DraftSurvivesPowerSourceTransition()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
         client.Publish(initial);
@@ -231,7 +233,9 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.True(viewModel.HasThermalProfileDraft);
-        Assert.NotEmpty(draftNotifications);
+        Assert.True(viewModel.HasActiveProfileDraft);
+        // The draft value did not change across the transition, so it is not
+        // re-announced; any announcement must still observe the coherent state.
         Assert.All(
             draftNotifications,
             notification =>
@@ -2490,9 +2494,10 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(
             new DateTimeOffset(2026, 8, 3, 9, 30, 0, TimeSpan.Zero));
+        var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(
             client,
-            new RecordingDispatcher(),
+            dispatcher,
             time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(true, false) with
@@ -2500,19 +2505,7 @@ public sealed class MainViewModelTests
             Revision = 4,
             LiveReadings = new LiveReadings(-18_000, 2200, 2100, 46, 51),
         };
-        var baselineApplied = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnBaselinePropertyChanged(object? sender, PropertyChangedEventArgs args)
-        {
-            if (args.PropertyName == nameof(viewModel.HasLightingProfileActionOpportunity))
-            {
-                baselineApplied.TrySetResult();
-            }
-        }
-        viewModel.PropertyChanged += OnBaselinePropertyChanged;
-        client.Publish(baseline);
-        await baselineApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        viewModel.PropertyChanged -= OnBaselinePropertyChanged;
+        await PushAsync(client, dispatcher, baseline);
         Assert.Equal(baseline.LiveReadings, viewModel.LiveReadings);
 
         viewModel.SetDashboardTelemetryPresentationActive(false);
@@ -2554,26 +2547,15 @@ public sealed class MainViewModelTests
     public async Task HiddenTrayObservationWithMetadataChangePublishesFullPresentation()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(true, false) with
         {
             Revision = 4,
             LiveReadings = new LiveReadings(-18_000, 2200, 2100, 46, 51),
         };
-        var baselineApplied = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnBaselinePropertyChanged(object? sender, PropertyChangedEventArgs args)
-        {
-            if (args.PropertyName == nameof(viewModel.HasLightingProfileActionOpportunity))
-            {
-                baselineApplied.TrySetResult();
-            }
-        }
-        viewModel.PropertyChanged += OnBaselinePropertyChanged;
-        client.Publish(baseline);
-        await baselineApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        viewModel.PropertyChanged -= OnBaselinePropertyChanged;
+        await PushAsync(client, dispatcher, baseline);
 
         viewModel.SetDashboardTelemetryPresentationActive(false);
         var changed = new ConcurrentPropertySet();
@@ -2592,10 +2574,11 @@ public sealed class MainViewModelTests
         await observation;
 
         Assert.Null(viewModel.LiveReadings);
+        Assert.True(viewModel.IsReadOnly);
         Assert.Contains(nameof(viewModel.LiveReadings), changed);
-        Assert.Contains(nameof(viewModel.IsServiceUnavailable), changed);
+        Assert.Contains(nameof(viewModel.IsReadOnly), changed);
+        Assert.Contains(nameof(viewModel.CanControlHardware), changed);
         Assert.Contains(nameof(viewModel.ControlAccessStatus), changed);
-        Assert.Contains(nameof(viewModel.LiveReadingsRefreshToolTip), changed);
     }
 
     [Fact]
@@ -7571,9 +7554,10 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(
             new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(
             client,
-            new RecordingDispatcher(),
+            dispatcher,
             time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
@@ -7614,6 +7598,7 @@ public sealed class MainViewModelTests
             ManualFanCurve.Default);
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             baseline with
             {
@@ -7644,6 +7629,7 @@ public sealed class MainViewModelTests
 
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             baseline with
             {
@@ -7672,6 +7658,7 @@ public sealed class MainViewModelTests
 
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             baseline with
             {
@@ -7699,6 +7686,7 @@ public sealed class MainViewModelTests
 
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             baseline with
             {
@@ -7731,9 +7719,10 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient { BlockMutations = true };
         var time = new MutableTimeProvider(
             new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(
             client,
-            new RecordingDispatcher(),
+            dispatcher,
             time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
@@ -7752,6 +7741,7 @@ public sealed class MainViewModelTests
 
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             baseline with
             {
@@ -7784,9 +7774,10 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         var time = new MutableTimeProvider(
             new DateTimeOffset(2026, 8, 21, 12, 0, 0, TimeSpan.Zero));
+        var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(
             client,
-            new RecordingDispatcher(),
+            dispatcher,
             time);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
@@ -7815,6 +7806,7 @@ public sealed class MainViewModelTests
         };
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             lagging);
         Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
@@ -7825,6 +7817,7 @@ public sealed class MainViewModelTests
         time.Advance(TimeSpan.FromSeconds(3));
         await PublishAndWaitForFanControlPresentationAsync(
             client,
+            dispatcher,
             viewModel,
             lagging with
             {
@@ -9543,31 +9536,16 @@ public sealed class MainViewModelTests
 
     private static async Task PublishAndWaitForFanControlPresentationAsync(
         FakeServiceClient client,
+        RecordingDispatcher dispatcher,
         MainViewModel viewModel,
         ServiceStatusSnapshot status)
     {
-        var presentationApplied = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        PropertyChangedEventHandler handler = (_, args) =>
-        {
-            if (args.PropertyName == nameof(MainViewModel.CurrentFanControlSettings)
-                && viewModel.ConnectionStatus == status.Message)
-            {
-                presentationApplied.TrySetResult();
-            }
-        };
-        viewModel.PropertyChanged += handler;
-        try
-        {
-            client.Publish(status);
-            await presentationApplied.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        }
-        finally
-        {
-            viewModel.PropertyChanged -= handler;
-        }
+        // Unchanged presentation is no longer re-announced, so no single
+        // notification marks the end of an apply; the synchronous dispatcher
+        // completes its call only after the whole snapshot was applied.
+        await PushAsync(client, dispatcher, status);
+        Assert.Equal(status.Message, viewModel.ConnectionStatus);
     }
-
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,
         bool blocked,
