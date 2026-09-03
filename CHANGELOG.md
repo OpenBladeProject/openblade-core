@@ -15,7 +15,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   setting only when its value differs from the last one announced, skips the
   profile-difference replay when a refresh changes nothing, keeps the fan-curve
   editor and dashboard readings lists stable while their contents are equal,
-  and binds 107 of the main and quick-controls window controls through
+  and binds 101 of the main and quick-controls window controls through
   compiled bindings that stay in managed code. Measured per service update on
   an unchanged snapshot: 11 or 12 announcements became 0 or 1; a single
   changed status field went from 137 announcements to 1.

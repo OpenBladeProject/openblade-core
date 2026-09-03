@@ -219,7 +219,7 @@ public sealed partial class MainViewModelTests
         var draftNotifications = new ConcurrentQueue<(PowerSource Source, bool HasDraft)>();
         viewModel.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(MainViewModel.HasActiveProfileDraft))
+            if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
             {
                 draftNotifications.Enqueue(
                     (viewModel.ActivePowerSource, viewModel.HasActiveProfileDraft));
@@ -234,8 +234,10 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.HasThermalProfileDraft);
         Assert.True(viewModel.HasActiveProfileDraft);
-        // The draft value did not change across the transition, so it is not
-        // re-announced; any announcement must still observe the coherent state.
+        // HasActiveProfileDraft stays true, so it is no longer re-announced.
+        // The power-source announcement that does fire must already observe the
+        // draft re-keyed to the new source.
+        Assert.NotEmpty(draftNotifications);
         Assert.All(
             draftNotifications,
             notification =>

@@ -206,7 +206,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockFans" Text="Fans" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{x:Bind ViewModel.SelectedFanModeOption.Label, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.SelectedFanModeOption.Label, Mode=OneWay, FallbackValue=''}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>
@@ -245,7 +245,7 @@
                         </Border>
                         <StackPanel Grid.Row="1" Margin="2,6,2,0" Spacing="0">
                             <TextBlock x:Uid="TrayDashboardWindow_TextBlockLighting" Text="Lighting" Style="{StaticResource QuickTileTitleStyle}" />
-                            <TextBlock Text="{x:Bind ViewModel.SelectedLightingEffectOption.Label, Mode=OneWay}"
+                            <TextBlock Text="{x:Bind ViewModel.SelectedLightingEffectOption.Label, Mode=OneWay, FallbackValue=''}"
                                        Style="{StaticResource QuickTileValueStyle}" />
                         </StackPanel>
                     </Grid>

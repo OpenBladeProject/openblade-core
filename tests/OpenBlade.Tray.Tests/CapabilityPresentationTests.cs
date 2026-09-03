@@ -44,7 +44,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}",
             Attribute(selector, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind SelectedLaptopPerformanceOption, Mode=OneWay}",
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(selector, "SelectedItem"));
         Assert.Equal(
             "{x:Bind CanSelectLaptopPerformance, Mode=OneWay}",
@@ -874,7 +874,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}",
             Attribute(performance, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind SelectedLaptopPerformanceOption, Mode=OneWay}",
+            "{Binding SelectedLaptopPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
             "{x:Bind CanSelectLaptopPerformance, Mode=OneWay}",
@@ -900,7 +900,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind AvailableActiveFanModeOptions, Mode=OneWay}",
             Attribute(fans, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind SelectedFanModeOption, Mode=OneWay}",
+            "{Binding SelectedFanModeOption, Mode=OneWay}",
             Attribute(fans, "SelectedItem"));
         Assert.Equal("{x:Bind CanChangeFanMode, Mode=OneWay}", Attribute(fans, "IsEnabled"));
         Assert.Equal(
@@ -1064,12 +1064,18 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(usage, "SelectedIndex"));
         });
 
-        // Every selector binds through compiled bindings; a runtime {Binding}
-        // would marshal the view model natively on each property change.
-        Assert.DoesNotContain(usages, usage =>
-            Attribute(usage, "SelectedItem")?.StartsWith(
+        // Selectors whose handler rejects a pick must keep a runtime OneWay
+        // {Binding} on SelectedItem: ResponsiveChoiceSelector.PublishSelection
+        // leaves the property untouched only for that binding kind, which is
+        // what RestoreAuthoritativeSelection needs to put the authoritative
+        // value back. A compiled binding takes the direct-write path instead,
+        // and the rejected pick would stay on screen.
+        XElement[] runtimeBoundUsages = usages
+            .Where(usage => Attribute(usage, "SelectedItem")?.StartsWith(
                 "{Binding ",
-                StringComparison.Ordinal) == true);
+                StringComparison.Ordinal) == true)
+            .ToArray();
+        Assert.Equal(5, runtimeBoundUsages.Length);
         XElement[] immediateUsages = new[]
             {
                 "DashboardPerformanceSelector",
@@ -1080,8 +1086,15 @@ public sealed class CapabilityPresentationTests
             }
             .Select(name => NamedElement(mainWindow, "ResponsiveChoiceSelector", name))
             .ToArray();
+        Assert.Equal(
+            runtimeBoundUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
+            immediateUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal));
         Assert.All(immediateUsages, usage =>
         {
+            Assert.StartsWith(
+                "{Binding ",
+                Assert.IsType<string>(Attribute(usage, "SelectedItem")),
+                StringComparison.Ordinal);
             string selectedItemBinding = Assert.IsType<string>(
                 Attribute(usage, "SelectedItem"));
             Assert.Contains(

@@ -2479,6 +2479,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref selectedFanMode, value);
+            // The mode is an input to CurrentFanControlSettings, and the editor
+            // load announces that property only when a curve or speed changed.
+            Notify(nameof(CurrentFanControlSettings));
             Notify(nameof(ActiveFanModeLabel));
             Notify(nameof(SelectedFanModeOption));
             Notify(nameof(CanChangeFanMode));

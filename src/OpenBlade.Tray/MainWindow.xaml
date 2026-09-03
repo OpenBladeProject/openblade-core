@@ -600,7 +600,7 @@
                                                                         IsEnabled="{x:Bind CanSelectLaptopPerformance, Mode=OneWay}"
                                                                         ItemsSource="{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}"
                                                                         DisplayMemberPath="Label"
-                                                                        SelectedItem="{x:Bind SelectedLaptopPerformanceOption, Mode=OneWay}"
+                                                                        SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
                                                                         SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -628,7 +628,7 @@
                                                                     IsEnabled="{x:Bind CanEditWindowsPowerMode, Mode=OneWay}"
                                                                     ItemsSource="{x:Bind AvailableWindowsPowerModeOptions, Mode=OneWay}"
                                                                     DisplayMemberPath="Label"
-                                                                    SelectedItem="{x:Bind SelectedWindowsPowerModeOption, Mode=OneWay}"
+                                                                    SelectedItem="{Binding SelectedWindowsPowerModeOption, Mode=OneWay}"
                                                                     Loaded="OnWindowsPowerModeSelectorLoaded"
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
@@ -765,7 +765,7 @@
                                                                     AccessibleName="Custom CPU level"
                                                                     IsEnabled="{x:Bind CanEditPerformance, Mode=OneWay}"
                                                                     ItemsSource="{x:Bind AvailableCustomCpuLevels, Mode=OneWay}"
-                                                                    SelectedItem="{x:Bind SelectedCustomCpuLevel, Mode=OneWay}"
+                                                                    SelectedItem="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
@@ -791,7 +791,7 @@
                                                                     AccessibleName="Custom GPU level"
                                                                     IsEnabled="{x:Bind CanEditPerformance, Mode=OneWay}"
                                                                     ItemsSource="{x:Bind AvailableCustomGpuLevels, Mode=OneWay}"
-                                                                    SelectedItem="{x:Bind SelectedCustomGpuLevel, Mode=OneWay}"
+                                                                    SelectedItem="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
                                                                     SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
@@ -860,7 +860,7 @@
                                                                         AccessibleName="Fan mode"
                                                                         IsEnabled="{x:Bind CanChangeFanMode, Mode=OneWay}"
                                                                         ItemsSource="{x:Bind AvailableActiveFanModeOptions, Mode=OneWay}"
-                                                                        SelectedItem="{x:Bind SelectedFanModeOption, Mode=OneWay}"
+                                                                        SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
                                                                         SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -925,7 +925,7 @@
                                         <ToggleSwitch Grid.Column="1"
                                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{x:Bind CanEditFanControl, Mode=OneWay}"
-                                                      IsOn="{x:Bind UseHigherFanTemperature, Mode=TwoWay}"
+                                                      IsOn="{Binding UseHigherFanTemperature, Mode=TwoWay}"
                                                       Toggled="OnManualFanCurveSettingChanged" />
                                     </Grid>
                                     <Grid ColumnSpacing="20">
