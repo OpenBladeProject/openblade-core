@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.20.7-nightly.41] - 2026-09-03
+
 ### Changed
 
 - Reduced the CPU the tray spends reacting to service updates. Each property
@@ -1758,7 +1760,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.5-nightly.40...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.7-nightly.41...HEAD
+[0.20.7-nightly.41]: https://github.com/OSSBlade/openblade-core/compare/v0.20.5-nightly.40...v0.20.7-nightly.41
 [0.20.5-nightly.40]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...v0.20.5-nightly.40
 [0.19.37-nightly.39]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...v0.19.37-nightly.39
 [0.19.15-nightly.34]: https://github.com/OSSBlade/openblade-core/compare/v0.8.4-nightly.20...v0.19.15-nightly.34
