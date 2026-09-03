@@ -12,6 +12,13 @@
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>x64</Platforms>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- .NET 10 ComWrappers appends the wrapper of every managed object marshaled to
+         native into a debugger-only list that is never trimmed. Native XAML {Binding}
+         subscribers receive MainViewModel as the sender of each PropertyChanged, so the
+         list reached 43 million entries (512 MB, live) in one tray session. The switch
+         emits System.Diagnostics.Debugger.IsSupported=false into runtimeconfig.json,
+         which is the only runtime consumer of that switch in an untrimmed app. -->
+    <DebuggerSupport>false</DebuggerSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DefaultLanguage>en-US</DefaultLanguage>
     <!-- The developer smoke and localization-snapshot harnesses compile only into

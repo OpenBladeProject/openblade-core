@@ -499,6 +499,23 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayDisablesRuntimeComWrapperDiagnosticsBookkeeping()
+    {
+        // .NET 10 ComWrappers appends every marshaled wrapper to a debugger-only list
+        // that is never trimmed; each PropertyChanged delivered to a native {Binding}
+        // re-registers MainViewModel, so the list reached 512 MB in one tray session.
+        // The Tray therefore ships System.Diagnostics.Debugger.IsSupported=false.
+        XDocument project = XDocument.Load(ProjectPath);
+        XElement debuggerSupport = Assert.Single(
+            project.Descendants(),
+            element => element.Name.LocalName == "DebuggerSupport");
+
+        Assert.Equal("false", debuggerSupport.Value.Trim());
+        Assert.Null(Attribute(debuggerSupport, "Condition"));
+        Assert.Null(Attribute(debuggerSupport.Parent!, "Condition"));
+    }
+
+    [Fact]
     public void TrayStartsOnlyItsExactSiblingSessionAgent()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
