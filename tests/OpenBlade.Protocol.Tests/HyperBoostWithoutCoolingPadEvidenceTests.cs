@@ -13,7 +13,8 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
 
         Assert.Equal("Blade 16 - RZ09-0581", manifest.Host.Model);
         Assert.Equal("RZ09-05819EN4", manifest.Host.Sku);
-        Assert.Equal("4.00", manifest.Host.BiosVersion);
+        Assert.Equal("ModelScoped", manifest.Host.FirmwareAdmission);
+        Assert.Equal("4.00", manifest.Evidence.CaptureBiosVersion);
         Assert.Equal(0x1532, manifest.Host.VendorId);
         Assert.Equal(0x02E0, manifest.Host.ProductId);
         Assert.Equal("Balanced", manifest.Transition.BaselineMode);
@@ -42,7 +43,7 @@ public sealed class HyperBoostWithoutCoolingPadEvidenceTests
         Assert.Equal(
             "95E2333A19118480E6D8193933B7548587BF5C40D151C99BFE81E06D421C7537",
             manifest.Evidence.AdapterTransitionPlanSha256);
-        Assert.Equal(3, manifest.SchemaVersion);
+        Assert.Equal(4, manifest.SchemaVersion);
         Assert.True(manifest.Gates.ExactDeviceAndFirmwareReviewed.Validated);
         Assert.NotNull(manifest.Gates.ExactDeviceAndFirmwareReviewed.Evidence);
         Assert.True(

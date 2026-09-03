@@ -24,7 +24,8 @@ OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture can admit more Blade models, but a hardware capability is enabled
 only for an exact model and SKU backed by sanitized, reviewed capture evidence.
 Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule.
+exact firmware restriction only through an explicit reviewed admission rule,
+and no shipped capability imposes one today.
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 

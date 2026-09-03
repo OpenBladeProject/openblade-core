@@ -461,12 +461,11 @@ public static class FirmwareSmokeAssessment
         FirmwareSmokeCapabilityExpectation expected = ExpectedCapabilities(
             snapshot.TargetModel);
         string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
-            snapshot.TargetModel,
-            snapshot.Firmware.Bios);
+            snapshot.TargetModel);
         string expectedHyperBoostWithoutCoolingPadAccess =
             ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
         HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
-            ExpectedHyperBoostBaseModes(snapshot.TargetModel, snapshot.Firmware.Bios);
+            ExpectedHyperBoostBaseModes(snapshot.TargetModel);
         var checks = new List<FirmwareSmokeCheck>
         {
             Check(
@@ -874,12 +873,10 @@ public static class FirmwareSmokeAssessment
         };
 
     private static string ExpectedHyperBoostAccess(
-        string modelNumber,
-        string biosVersion) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
                 DeviceFeatureAccess.ReadWrite.ToString(),
-            RazerBladeModelCatalog.OpenBladeTargetModelNumber or
             RazerBladeModelCatalog.Rz090528ModelNumber =>
                 DeviceFeatureAccess.ObservedOnly.ToString(),
             _ => "Unavailable",
@@ -892,8 +889,7 @@ public static class FirmwareSmokeAssessment
                 : "Unavailable";
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
-        string modelNumber,
-        string biosVersion) =>
+        string modelNumber) =>
         RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
             == RazerBladeModelCatalog.OpenBladeTargetModelNumber
                 ? new HyperBoostBaseModeCapabilities(

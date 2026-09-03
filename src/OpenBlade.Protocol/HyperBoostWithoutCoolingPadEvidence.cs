@@ -17,7 +17,7 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionHost(
     string Manufacturer,
     string Model,
     string Sku,
-    string BiosVersion,
+    string FirmwareAdmission,
     int VendorId,
     int ProductId);
 
@@ -37,6 +37,7 @@ internal sealed record HyperBoostWithoutCoolingPadAdmissionTransition(
     bool PhysicalPadVidPidPresenceVetoRequired);
 
 internal sealed record HyperBoostWithoutCoolingPadAdmissionEvidence(
+    string CaptureBiosVersion,
     string ImmediateAnnotation,
     string ImmediateAnnotationSha256,
     string SustainedNoLoadPlan,
@@ -113,7 +114,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "15435DACEA62A51F55119D560FC2FCFC0A363AF0CB419698A47D658E4914C475";
+        "DC682506D90170637281858AAB400CB48708CFBD0FC75F36EEB64E3E15E2F43F";
 
     internal static string TrustedManifestSha256 => ExpectedSha256;
     private const string ImmediateAnnotationSha256 =
@@ -205,14 +206,14 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
     {
         if (manifest is not
             {
-                SchemaVersion: 3,
+                SchemaVersion: 4,
                 EvidenceKind: "hyperBoostWithoutCoolingPadSemanticAdmission",
                 Host:
                 {
                     Manufacturer: "Razer",
                     Model: "Blade 16 - RZ09-0581",
                     Sku: "RZ09-05819EN4",
-                    BiosVersion: "4.00",
+                    FirmwareAdmission: "ModelScoped",
                     VendorId: 0x1532,
                     ProductId: 0x02E0,
                 },
@@ -235,6 +236,7 @@ internal static class HyperBoostWithoutCoolingPadAdmissionSource
                 },
                 Evidence:
                 {
+                    CaptureBiosVersion: "4.00",
                     ImmediateAnnotation:
                         "2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
                     ImmediateAnnotationSha256: ImmediateAnnotationSha256,

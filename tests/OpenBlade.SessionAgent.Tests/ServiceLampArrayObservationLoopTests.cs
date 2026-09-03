@@ -10,7 +10,7 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ServiceLampArrayObservationLoopTests
 {
     [Fact]
-    public void EligibilityRequiresVerifiedExactTestedModelAndAdvertisedAccess()
+    public void EligibilityRequiresVerifiedExactModelAndAdvertisedAccess()
     {
         ServiceStatusSnapshot eligible = Status(DeviceFeatureAccess.ObservedOnly);
 
@@ -45,7 +45,8 @@ public sealed class ServiceLampArrayObservationLoopTests
                     ModelNumber = RazerBladeModelCatalog.OpenBladeTargetModelNumber,
                 },
             }));
-        Assert.Null(LampArraySessionEligibility.FromStatus(
+        // Admission is model-scoped: an untested BIOS stays eligible.
+        Assert.NotNull(LampArraySessionEligibility.FromStatus(
             eligible with
             {
                 Firmware = eligible.Firmware! with { BiosVersion = "2.03" },
