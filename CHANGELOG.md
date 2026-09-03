@@ -5,6 +5,19 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Recorded the admission scope for HyperBoost without the Razer cooling pad as
+  model-scoped. The reviewed admission manifest listed BIOS 4.00 as part of the
+  host identity, which read as a firmware-scoped admission even though the
+  running gate admits every BIOS on the exact model and SKU. The manifest now
+  records model-scoped admission and keeps 4.00 as the capture provenance it
+  always was.
+- Read-only Windows LampArray observation on the Razer Blade 16 RZ09-0528 no
+  longer requires the exact tested BIOS, EC, and MCU tuple. It now follows the
+  same model-scoped admission as every other capability, and the captured
+  85-lamp geometry fingerprint remains the exact-device check.
+
 ## [0.20.7-nightly.41] - 2026-09-03
 
 ### Changed

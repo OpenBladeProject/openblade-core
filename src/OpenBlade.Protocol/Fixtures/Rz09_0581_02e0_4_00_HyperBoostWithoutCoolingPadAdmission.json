@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "evidenceKind": "hyperBoostWithoutCoolingPadSemanticAdmission",
   "host": {
     "manufacturer": "Razer",
     "model": "Blade 16 - RZ09-0581",
     "sku": "RZ09-05819EN4",
-    "biosVersion": "4.00",
+    "firmwareAdmission": "ModelScoped",
     "vendorId": 5426,
     "productId": 736
   },
@@ -25,6 +25,7 @@
     "physicalPadVidPidPresenceVetoRequired": true
   },
   "evidence": {
+    "captureBiosVersion": "4.00",
     "immediateAnnotation": "2026-08-09-rz09-0581-hyperboost-pad-absent-validation.json",
     "immediateAnnotationSha256": "B1673380EC86030642D0E5F007E55EE12594B89C035C6A216C4503B5010026AB",
     "sustainedNoLoadPlan": "Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json",

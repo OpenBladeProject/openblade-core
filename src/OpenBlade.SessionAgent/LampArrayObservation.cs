@@ -65,10 +65,7 @@ internal sealed record LampArraySessionEligibility(DeviceFeatureAccess Access)
             || status.Capabilities?.LampArrayLightingAccess is not
                 (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
             || RazerBladeModelCatalog.Find(status.Firmware?.ModelNumber)?.ModelNumber
-                != RazerBladeModelCatalog.Rz090528ModelNumber
-            || !TestedPlatformCatalog
-                .Assess(status.Firmware?.ModelNumber, status.Firmware)
-                .MatchesTestedConfiguration)
+                != RazerBladeModelCatalog.Rz090528ModelNumber)
         {
             return null;
         }
@@ -79,7 +76,7 @@ internal sealed record LampArraySessionEligibility(DeviceFeatureAccess Access)
 
 /// <summary>
 /// Activates read-only Windows LampArray observation only while the service has
-/// verified the exact tested model and explicitly advertises the OS-native
+/// verified the exact admitted model and explicitly advertises the OS-native
 /// interface. This loop has no mutation dependency by design.
 /// </summary>
 internal sealed class ServiceLampArrayObservationLoop

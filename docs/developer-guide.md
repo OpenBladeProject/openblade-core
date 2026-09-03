@@ -62,9 +62,12 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   bounded SCM policy, observes fresh exact-device state, and resumes only
   eligible OpenBlade-owned producers.
 
-BIOS versions remain evidence provenance unless a capability has an explicit
-firmware-specific restriction. Capture tools are kept outside the installed
-product, and raw captures are never production admission artifacts.
+Production admission is scoped to the exact model and SKU. BIOS, EC, and MCU
+versions remain evidence provenance: no shipped capability is restricted to a
+firmware version, so an untested BIOS is admitted and reported as model-scoped.
+Capture tools are kept outside the installed product, may pin an exact BIOS
+version for reproducibility, and raw captures are never production admission
+artifacts.
 
 When the exact admitted RZ09-0581 Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. WMI remains the
