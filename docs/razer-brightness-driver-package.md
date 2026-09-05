@@ -46,9 +46,9 @@ The exported RZ09-0581 archive, its sanitized manifest, and the release record
 that binds the two live in the separate
 [`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog),
 together with read-only export instructions for other Razer devices. The
-catalog publishes the archive as a private prerelease for repository
-collaborators, so the link returns 404 without access, and clean installation
-is still pending. An entry in that catalog is evidence, not OpenBlade support.
+catalog publishes the archive as a prerelease; clean installation is still
+pending. Running Synapse once installs the same stack. An entry in that
+catalog is evidence, not OpenBlade support.
 Each model still needs independent runtime and hardware validation before core
 admits it.
 

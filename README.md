@@ -46,11 +46,11 @@ after a Windows update.
 The one exception is the native Windows brightness flyout on the Blade 16
 (2026). It relies on the signed brightness driver stack that Razer ships for
 that laptop. OpenBlade does not write, modify, or re-sign that driver, and the
-OpenBlade installer does not install it. OpenBlade exports the exact package
-from a laptop that already has it and keeps it in
-[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog),
-which is private for now. If the driver is not present, the brightness keys
-still work through Windows and the OpenBlade flyout.
+OpenBlade installer does not install it. Running Synapse once installs it, and
+OpenBlade also keeps the exact package in
+[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog).
+If the driver is not present, the brightness keys still work through Windows
+and the OpenBlade flyout.
 
 You set up a profile for plugged in, for USB-C power, and for battery, and
 OpenBlade switches between them as soon as you plug in or unplug. Closing the
