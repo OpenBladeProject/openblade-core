@@ -28,7 +28,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   OpenBlade: Lighting", released the keyboard renderer, and kept yielding until
   the user touched lighting. Effects that this laptop cannot read back are now
   reported as applied without readback after such a failure, the same way a
-  single lighting apply already was. ([#419](https://github.com/OSSBlade/openblade-core/pull/419))
+  single lighting apply already was. The same correction applies to Fixed and
+  manual-curve fan writes, which accept setter completion the same way.
+  ([#419](https://github.com/OSSBlade/openblade-core/pull/419))
 
 ## [0.20.7-nightly.41] - 2026-09-03
 
