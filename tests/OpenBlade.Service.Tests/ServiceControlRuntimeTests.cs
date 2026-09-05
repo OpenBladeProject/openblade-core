@@ -2647,6 +2647,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.DoesNotContain(DeviceSubsystem.Lighting, status.ExternalChanges);
         Assert.DoesNotContain(DeviceSubsystem.Lighting, status.UnconfirmedWrites);
+        Assert.Contains(DeviceSubsystem.Performance, status.UnconfirmedWrites);
         Assert.Equal(1, context.Device.LightingSetCalls);
     }
 
