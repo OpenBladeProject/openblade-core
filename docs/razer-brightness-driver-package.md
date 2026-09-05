@@ -42,11 +42,15 @@ Razer support pages:
 - [Razer Blade 16 (2026), RZ09-0581x](https://mysupport.razer.com/app/answers/detail/a_id/20585/)
 - [Razer Blade 16 (2025), RZ09-0528x BIOS support](https://mysupport.razer.com/app/answers/detail/a_id/15235/)
 
-Package manifests and read-only export instructions for other Razer devices
-belong in the separate
-[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog).
-An entry in that catalog is evidence, not OpenBlade support. Each model still
-needs independent runtime and hardware validation before core admits it.
+The exported RZ09-0581 archive, its sanitized manifest, and the release record
+that binds the two live in the separate
+[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog),
+together with read-only export instructions for other Razer devices. The
+catalog publishes the archive as a prerelease; clean installation is still
+pending. Running Synapse once installs the same stack. An entry in that
+catalog is evidence, not OpenBlade support.
+Each model still needs independent runtime and hardware validation before core
+admits it.
 
 ## Export the admitted package
 

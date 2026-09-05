@@ -38,9 +38,19 @@ You do not need to install or sign in to Razer Synapse. If Razer software is
 already running, OpenBlade warns you that the two may conflict and offers to
 stop it for you.
 
-OpenBlade talks to the laptop over the same USB channel Razer uses, and it does
-not install a driver to read sensors or set fans. That means one less thing
-that can crash your system or stop working after a Windows update.
+OpenBlade talks to the laptop over the same USB channel Razer uses. Performance
+modes, fans, sensors, lighting, and battery settings need no driver of their
+own, so that is one less thing that can crash your system or stop working
+after a Windows update.
+
+The one exception is the native Windows brightness flyout on the Blade 16
+(2026). It relies on the signed brightness driver stack that Razer ships for
+that laptop. OpenBlade does not write, modify, or re-sign that driver, and the
+OpenBlade installer does not install it. Running Synapse once installs it, and
+OpenBlade also keeps the exact package in
+[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog).
+If the driver is not present, the brightness keys still work through Windows
+and the OpenBlade flyout.
 
 You set up a profile for plugged in, for USB-C power, and for battery, and
 OpenBlade switches between them as soon as you plug in or unplug. Closing the
@@ -89,7 +99,7 @@ that touches your laptop.
 ### Display and keys
 
 - Display profiles and brightness behavior, including the native Windows
-  brightness flyout
+  brightness flyout when the Razer brightness driver is installed
 - Choose whether the function row acts as F-keys or media keys by default
 - Bind the M1 to M5 keys on the Fn layer to the actions you want, including
   Gaming mode, mute, and charge-limit toggles
