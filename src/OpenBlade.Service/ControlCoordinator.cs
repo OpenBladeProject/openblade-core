@@ -947,8 +947,19 @@ public sealed class ControlCoordinator
             {
                 foreach (DeviceSubsystem subsystem in transition.Attempted)
                 {
+                    // A setter whose completion is the only confirmation this laptop
+                    // offers (host-rendered keyboard effects, manual fan curves) was
+                    // already validated by the setter itself; a later aggregate read
+                    // failure is a device-access fault, not evidence the write was
+                    // undone, so report it the same way as the scoped path and the
+                    // success path do.
                     transition.Provisional[subsystem] =
-                        Indeterminate(states[subsystem].Name, exception);
+                        HasAcceptedSetterCompletionWithoutReadback(
+                            subsystem,
+                            states[subsystem],
+                            transition)
+                            ? AppliedWithoutReadback(states[subsystem].Name)
+                            : Indeterminate(states[subsystem].Name, exception);
                 }
 
                 transition.Matched.Clear();
