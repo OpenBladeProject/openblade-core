@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.20.8-nightly.44] - 2026-09-06
+
 ### Changed
 
 - Recorded the admission scope for HyperBoost without the Razer cooling pad as
@@ -1787,7 +1789,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.7-nightly.41...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.8-nightly.44...HEAD
+[0.20.8-nightly.44]: https://github.com/OSSBlade/openblade-core/compare/v0.20.7-nightly.41...v0.20.8-nightly.44
 [0.20.7-nightly.41]: https://github.com/OSSBlade/openblade-core/compare/v0.20.5-nightly.40...v0.20.7-nightly.41
 [0.20.5-nightly.40]: https://github.com/OSSBlade/openblade-core/compare/v0.19.37-nightly.39...v0.20.5-nightly.40
 [0.19.37-nightly.39]: https://github.com/OSSBlade/openblade-core/compare/v0.19.15-nightly.34...v0.19.37-nightly.39
