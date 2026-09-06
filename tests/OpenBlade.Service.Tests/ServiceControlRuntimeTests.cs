@@ -2602,6 +2602,56 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerSourceChange_FinalReadFailureAfterLightingWriteDoesNotMarkLightingExternal()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+            ChargeLimits = new HashSet<int> { 80 },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        BatteryConfiguration loaded = await context.Store.LoadAsync(
+            CancellationToken.None);
+        LightingSettings batteryLighting = LightingSettingsFactory.Static(
+            new RgbColor(0, 96, 255),
+            brightness: 40);
+        ProfileSet profiles = loaded.Profiles with
+        {
+            Battery = loaded.Profiles.Battery with
+            {
+                Lighting = batteryLighting,
+            },
+        };
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            new ConfirmedBatteryState(true, 80, false),
+            LightingSettingsFactory.Off());
+        context.Runtime.Initialize(loaded with { Profiles = profiles }, PowerSource.PluggedIn);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Device.ReadStateFailureAfterLightingSet =
+            new IOException("Battery state query failed");
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, status.ExternalChanges);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, status.UnconfirmedWrites);
+        Assert.Contains(DeviceSubsystem.Performance, status.UnconfirmedWrites);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
     public async Task FirstVerifiedObservation_RetriesUnavailableBatteryHealthOnce()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -25078,6 +25128,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? ReadStateFailureOnCallException { get; set; }
 
+        // Arms a one-shot ReadStateAsync failure the moment SetLightingAsync
+        // completes, so a scripted final-readback failure lands right after
+        // the lighting write regardless of how many other reads the runtime
+        // performs during the transition.
+        public Exception? ReadStateFailureAfterLightingSet { get; set; }
+
+        private bool pendingReadStateFailureAfterLightingSet;
+
         public bool UseScopedPerformanceFanRead { get; set; }
 
         public int PerformanceFanStateReadCalls { get; private set; }
@@ -25125,6 +25183,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TotalCalls++;
             StateReadCalls++;
             PowerTransitionReadCalls.Add("State");
+            if (pendingReadStateFailureAfterLightingSet)
+            {
+                pendingReadStateFailureAfterLightingSet = false;
+                throw ReadStateFailureAfterLightingSet
+                    ?? new IOException("readback failed");
+            }
             if (ReadStateFailure is not null
                 || ReadStateFailureOnCall == StateReadCalls)
             {
@@ -25726,6 +25790,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     LightingRendererOwnershipState.AmbientAwareness,
                 _ => throw new ArgumentOutOfRangeException(),
             };
+
+            if (ReadStateFailureAfterLightingSet is not null)
+            {
+                pendingReadStateFailureAfterLightingSet = true;
+            }
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);
             return Task.CompletedTask;

@@ -17607,6 +17607,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(subsystem, matched: true);
                 RemovePendingWriteConfirmation(subsystem);
             }
+            else if (result.Status == ControlResultStatus.Applied)
+            {
+                RemovePendingWriteConfirmation(subsystem);
+                driftTracker.AcknowledgeIntentionalWithoutReadback(subsystem);
+            }
             else if (outcome.WriteAttempted.Contains(subsystem)
                 && !unavailable.Contains(subsystem))
             {

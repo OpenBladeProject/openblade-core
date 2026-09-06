@@ -18,6 +18,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
   same model-scoped admission as every other capability, and the captured
   85-lamp geometry fingerprint remains the exact-device check. ([#414](https://github.com/OSSBlade/openblade-core/pull/414))
 
+### Fixed
+
+- Stopped a failed device read from being reported as a keyboard lighting
+  change made outside OpenBlade. When a profile transition wrote a keyboard
+  effect and the aggregate readback that followed failed on another port, the
+  transition marked the lighting write indeterminate but left it outside the
+  set of writes awaiting confirmation, so the service latched "Changed outside
+  OpenBlade: Lighting", released the keyboard renderer, and kept yielding until
+  the user touched lighting. Effects that this laptop cannot read back are now
+  reported as applied without readback after such a failure, the same way a
+  single lighting apply already was. The same correction applies to Fixed and
+  manual-curve fan writes, which accept setter completion the same way.
+  ([#419](https://github.com/OSSBlade/openblade-core/pull/419))
+
 ## [0.20.7-nightly.41] - 2026-09-03
 
 ### Changed

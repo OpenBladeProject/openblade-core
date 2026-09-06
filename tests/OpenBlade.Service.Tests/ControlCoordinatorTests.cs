@@ -1040,6 +1040,106 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task FullReconcile_FinalReadFailureKeepsAcceptedLightingSetterApplied()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                CreateDesiredState(),
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.Equal(
+            "Lighting command completed, but this laptop does not report the resulting state.",
+            outcome.Results.Lighting.Message);
+        Assert.True(outcome.DeviceAccessFailed);
+        Assert.Contains(DeviceSubsystem.Lighting, outcome.WriteAttempted);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, outcome.ReadbackMatched);
+        IReadOnlySet<DeviceSubsystem> confirmationUnavailable =
+            Assert.IsAssignableFrom<IReadOnlySet<DeviceSubsystem>>(
+                outcome.ConfirmationUnavailable);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, confirmationUnavailable);
+        Assert.Contains(DeviceSubsystem.Performance, confirmationUnavailable);
+        Assert.Contains(DeviceSubsystem.Fans, confirmationUnavailable);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Performance.Status);
+        Assert.Contains(
+            "indeterminate",
+            outcome.Results.Performance.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalReadFailureKeepsAcceptedManualFanSetterApplied()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Fans = new ResolvedSetting<FanMode>(
+                FanMode.Fixed,
+                SettingValueSource.PowerProfile),
+        };
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                desired,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Fans.Status);
+        Assert.Equal(
+            "Fans command completed, but this laptop does not report the resulting state.",
+            outcome.Results.Fans.Message);
+        Assert.True(outcome.DeviceAccessFailed);
+        Assert.Contains(DeviceSubsystem.Fans, outcome.WriteAttempted);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, outcome.ReadbackMatched);
+        IReadOnlySet<DeviceSubsystem> confirmationUnavailable =
+            Assert.IsAssignableFrom<IReadOnlySet<DeviceSubsystem>>(
+                outcome.ConfirmationUnavailable);
+        Assert.DoesNotContain(DeviceSubsystem.Fans, confirmationUnavailable);
+        Assert.Contains(DeviceSubsystem.Performance, confirmationUnavailable);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Performance.Status);
+        Assert.Contains(
+            "indeterminate",
+            outcome.Results.Performance.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task FullReconcile_FinalReadFailureKeepsOffLightingIndeterminate()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Lighting = new ResolvedSetting<LightingSettings>(
+                new LightingSettings(LightingEffect.Off, default, 0),
+                SettingValueSource.PowerProfile),
+        };
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(
+                desired,
+                CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Results.Lighting.Status);
+        Assert.Contains(
+            "indeterminate",
+            outcome.Results.Lighting.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            Assert.IsAssignableFrom<IReadOnlySet<DeviceSubsystem>>(
+                outcome.ConfirmationUnavailable));
+    }
+
+    [Fact]
     public async Task FullReconcile_FinalLightingConfirmationUnavailableDoesNotUndoOtherWrites()
     {
         RecordingBladeDevice device = CreateMatchingDevice();
