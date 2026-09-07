@@ -3822,6 +3822,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ScopedLightingOwnershipLostAfterWriteWithoutController_IsNotExternal()
+    {
+        // Mirror the RZ09-0581 lighting port: a non-Off write can only ever
+        // read back as null (brightness confirmed non-zero, effect unknown).
+        // With no competing controller detected, a renderer that stops owning
+        // the keyboard on that ambiguous readback is a renderer fault, not
+        // evidence of an external change; it must not latch.
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 50),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Contains("did not remain active", result.Message);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        // The bounded recovery retries the effect that was just requested,
+        // not the effect owned before it. The owned-context helper already
+        // spent one write claiming the renderer, the override was the second.
+        context.Device.SuppressConfirmationFor = null;
+        context.Device.LightingOwnershipAfterSet = null;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(3, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 50),
+            context.Device.ConfirmedState.Lighting);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ScopedLightingOwnershipLostAfterWriteWithControllerPresent_IsExternal(
+        bool controllerRunning,
+        bool detectionWarning)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            controllerRunning ? ["RazerAppEngine"] : [],
+            detectionWarning ? "Controller detection was incomplete." : null);
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 50),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Contains("did not remain active", result.Message);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task SavedReactiveProfile_DoesNotClaimRendererOwnershipAtStartup()
     {
         ProfileSetValidator validator = ProfileSetValidator.CreateForLightingCapabilities(
@@ -6573,7 +6644,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task UnexpectedRestart_LatchesExternalChangesWithoutRecoveryWrites()
+    public async Task UnexpectedRestart_LatchesGenuineExternalChangeAndRecoversUnattributedLighting()
     {
         DeviceCapabilities recoveryCapabilities =
             DeviceCapabilities.SafeTargetDefaults() with
@@ -6647,9 +6718,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
 
-        Assert.Equal(0, context.Device.TotalSetterCalls);
+        // Fans (Automatic confirmed vs. the remembered ManualCurve override) is
+        // a genuine external change and stays latched without a recovery write.
+        // Lighting reading firmware Off with no competing controller detected
+        // is not evidence of an external change; the remembered override is
+        // restored through the bounded lighting-renderer recovery path instead
+        // of staying latched and dark.
+        Assert.Equal(1, context.Device.TotalSetterCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
         Assert.Equal(
-            [DeviceSubsystem.Fans, DeviceSubsystem.Lighting],
+            [DeviceSubsystem.Fans],
             context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(overrides.FanControl, context.Runtime.GetStatus().FanControlOverride);
         Assert.Equal(overrides.Lighting, context.Runtime.GetStatus().LightingOverride!.Value);
@@ -7294,6 +7372,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task PowerTransitionReportsFailureWhenLightingRendererDoesNotRemainOwned()
     {
+        // A renderer that never took ownership after the claiming write, with
+        // no competing controller detected, is a renderer fault, not evidence
+        // of an external change; it is reported as a failure but must not
+        // latch.
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.None);
         context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
@@ -7309,7 +7391,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "did not remain active",
             context.Runtime.GetStatus().Message,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
+        Assert.DoesNotContain(
             DeviceSubsystem.Lighting,
             context.Runtime.GetStatus().ExternalChanges);
     }
@@ -7412,13 +7494,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
     [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
-    public async Task PowerTransition_StableOwnedLightingOff_RemainsExternal(
+    public async Task PowerTransition_StableOwnedLightingOffWithoutController_ReappliesProfileLighting(
         PowerSource source,
         PowerSource destination)
     {
+        // A firmware Off reading with no competing controller detected is
+        // hardware behavior, not evidence of an external change; the profile
+        // effect is reapplied instead of latching and releasing the renderer.
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static,
             source);
+        PowerProfile destinationProfile = destination == PowerSource.PluggedIn
+            ? context.Runtime.GetStatus().Profiles.PluggedIn
+            : context.Runtime.GetStatus().Profiles.Battery;
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Lighting = LightingSettingsFactory.Off(),
@@ -7431,21 +7519,52 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
         Assert.Equal(2, context.Device.PowerTransitionStateReadCalls);
-        Assert.Equal(0, context.Device.LightingSetCalls);
-        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
-        Assert.Contains(
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(destinationProfile.Lighting, context.Device.ConfirmedState.Lighting);
+        Assert.DoesNotContain(
             DeviceSubsystem.Lighting,
             context.Runtime.GetStatus().ExternalChanges);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "paused",
             context.Runtime.GetStatus().Message,
             StringComparison.OrdinalIgnoreCase);
-
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
         Assert.Equal(
-            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Static,
             context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery, true, false)]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery, false, true)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn, true, false)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn, false, true)]
+    public async Task PowerTransition_StableOwnedLightingOffWithControllerPresent_RemainsExternal(
+        PowerSource source,
+        PowerSource destination,
+        bool controllerRunning,
+        bool detectionWarning)
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static,
+            source);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            controllerRunning ? ["RazerAppEngine"] : [],
+            detectionWarning ? "Controller detection was incomplete." : null);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        context.Device.PowerTransitionStateReads.Enqueue(new(
+            context.Device.ConfirmedState,
+            LightingOffConfirmationUnavailable: false));
+        context.Telemetry.Current = CreateTelemetry(destination);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Theory]
@@ -7500,12 +7619,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PowerTransition_StableOwnedLightingOffAfterDisplayOn_RemainsExternal()
+    public async Task PowerTransition_StableOwnedLightingOffAfterDisplayOn_ReappliesProfileLighting()
     {
-        // Once the display is back on, a stable owned Off is again a real
-        // external change; the display-off exemption must not outlive it.
+        // Once the display is back on, the display-off exemption no longer
+        // explains a dark keyboard, but without a competing controller a
+        // stable owned Off is still just hardware behavior, not positive
+        // evidence of an external change, so the profile effect is reapplied.
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static);
+        PowerProfile destinationProfile = context.Runtime.GetStatus().Profiles.Battery;
         context.Runtime.ReportConsoleDisplayState(displayOn: false);
         ControlOperationResult displayOff = await context.Runtime
             .SetLightingSuppressionAsync(
@@ -7531,8 +7653,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal(0, context.Device.LightingSetCalls);
-        Assert.Contains(
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(destinationProfile.Lighting, context.Device.ConfirmedState.Lighting);
+        Assert.DoesNotContain(
             DeviceSubsystem.Lighting,
             context.Runtime.GetStatus().ExternalChanges);
     }
@@ -7724,6 +7847,118 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains(
             DeviceSubsystem.Lighting,
             context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(LightingRendererOwnershipState.None)]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    public async Task PowerTransition_OwnershipLostAfterWriteWithoutController_IsNotExternalAndRecoversOnce(
+        LightingRendererOwnershipState ownershipAfterWrite)
+    {
+        // Mirror the RZ09-0581: a non-Off write reads back as null (brightness
+        // non-zero, effect unknown), so Lighting is never readback-matched. A
+        // renderer that then stops owning the keyboard, with no competing
+        // controller detected, is a renderer fault: reported as a failure, not
+        // latched, and reapplied exactly once by the bounded recovery.
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static);
+        LightingSettings batteryLighting =
+            context.Runtime.GetStatus().Profiles.Battery.Lighting;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        context.Device.LightingOwnershipAfterSet = ownershipAfterWrite;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Contains(
+            "did not remain active",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        context.Device.SuppressConfirmationFor = null;
+        context.Device.LightingOwnershipAfterSet = null;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(batteryLighting, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_OwnershipLostAfterWriteWithoutController_RecoveryIsBounded()
+    {
+        // When the recovery write also fails to keep ownership, nothing retries
+        // on later observations; a user lighting action re-arms it.
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task PowerTransition_WithControllerPresent_NeverAttemptsLightingWrite(
+        bool controllerRunning,
+        bool detectionWarning)
+    {
+        // A detected competing controller excludes Lighting from the
+        // automatic transition write before it is ever attempted, so a
+        // post-write ownership-loss failure can never occur here; that
+        // scenario is exercised by the scoped path instead (see
+        // ScopedLightingOwnershipLostAfterWriteWithControllerPresent_IsExternal),
+        // which always attempts its write regardless of a competing
+        // controller.
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            controllerRunning ? ["RazerAppEngine"] : [],
+            detectionWarning ? "Controller detection was incomplete." : null);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(
+            "did not remain active",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
