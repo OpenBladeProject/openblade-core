@@ -240,6 +240,14 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Lighting power policy is unavailable."));
 
+    /// <summary>
+    /// Records the console display state reported by the Windows lifecycle
+    /// source, independent of whether any lighting power policy is enabled.
+    /// </summary>
+    void ReportConsoleDisplayState(bool displayOn)
+    {
+    }
+
     Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken token) => Task.FromResult(
@@ -503,6 +511,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
     private bool lightingSuppressionWritePending;
+    // The last console display state reported by the Windows lifecycle source,
+    // kept even when the active profile does not enable the display-off policy.
+    // A closed lid or Modern Standby leaves the keyboard dark whether or not
+    // OpenBlade asked for it, so a power-source transition that samples firmware
+    // Off while the display is off must not classify it as an external change,
+    // and a destination profile that enables the policy must adopt the
+    // suppression instead of relighting a keyboard under a closed lid.
+    private bool displayReportedOff;
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
@@ -13823,8 +13839,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceSubsystem.Lighting);
         if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
-            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value))
+            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value)
+            && !(outcome.Readback is { } readback
+                && IsLightingOffExplainedByDisplayOff(readback)))
         {
+            // With the display off, a renderer that stopped because the firmware
+            // reported the keyboard dark again after the write is the laptop's
+            // own lid or standby behavior, not a contradiction of the write.
             lightingResult = new ControlResult(
                 ControlResultStatus.Failed,
                 "Keyboard lighting did not remain active after the profile change.");
@@ -15132,6 +15153,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             InvalidatePendingWriteConfirmations(markExternal: true);
             explicitLightingOwnershipActive = false;
             lightingRecoveryPauseMessage = null;
+            AdoptDisplayOffSuppressionForPowerSource();
         }
         if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)
         {
@@ -15366,6 +15388,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
+        bool lightingExternalBeforeObservation =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
 
         if (alternateExpected is not null)
@@ -15379,11 +15403,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 confirmed.Fans,
                 desired.Fans.Value,
                 alternateExpected.Fans.Value);
-            CompareTransitionAutomaticValue(
-                DeviceSubsystem.Lighting,
-                confirmed.Lighting,
-                desired.Lighting.Value,
-                alternateExpected.Lighting.Value);
+            if (IsLightingOffExplainedByDisplayOff(confirmed))
+            {
+                // A dark keyboard under a closed lid or in Modern Standby is what
+                // the laptop does on its own; it is not evidence that another
+                // controller replaced the profile effect. It is equally not
+                // evidence that an earlier confirmed external change was undone,
+                // so an existing latch is left in place.
+                initialAutomaticComparisons.Add(DeviceSubsystem.Lighting);
+                if (!lightingExternalBeforeObservation)
+                {
+                    driftTracker.ConfirmIntentional(
+                        DeviceSubsystem.Lighting,
+                        matched: true);
+                }
+            }
+            else
+            {
+                CompareTransitionAutomaticValue(
+                    DeviceSubsystem.Lighting,
+                    confirmed.Lighting,
+                    desired.Lighting.Value,
+                    alternateExpected.Lighting.Value);
+            }
             if (confirmed.Battery is { } transitionBattery)
             {
                 initialAutomaticComparisons.Add(DeviceSubsystem.Battery);
@@ -16272,6 +16314,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private LightingSuppressionReason[] CurrentLightingSuppressions() =>
         [.. lightingSuppressions.Order()];
+
+    public void ReportConsoleDisplayState(bool displayOn)
+    {
+        // Only the Windows console display source reports here. The Session
+        // Agent's suppression requests are policy decisions and say "off" only
+        // while the active profile enables the display-off policy, so they
+        // cannot be trusted as a display-state signal.
+        Volatile.Write(ref displayReportedOff, !displayOn);
+    }
+
+    private bool IsLightingOffExplainedByDisplayOff(ConfirmedDeviceState confirmed) =>
+        Volatile.Read(ref displayReportedOff)
+        && confirmed.Lighting is { Effect: LightingEffect.Off };
+
+    private void AdoptDisplayOffSuppressionForPowerSource()
+    {
+        // A display-off report that arrived while the previous profile kept the
+        // keyboard lit was refused as "not enabled". When the destination
+        // profile does enable the policy, the display is still off, so the
+        // transition must target Off rather than relight the keyboard and wait
+        // for the Session Agent to switch it off again.
+        if (!Volatile.Read(ref displayReportedOff)
+            || lightingSuppressions.Contains(LightingSuppressionReason.DisplayOff)
+            || !IsLightingSuppressionConfigured(LightingSuppressionReason.DisplayOff))
+        {
+            return;
+        }
+
+        UpdateLightingSuppressionState(LightingSuppressionReason.DisplayOff, suppressed: true);
+    }
 
     private void UpdateLightingSuppressionState(
         LightingSuppressionReason reason,
@@ -18528,8 +18600,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        if (lightingSuppressions.Count > 0)
+        if (lightingSuppressions.Count > 0 || Volatile.Read(ref displayReportedOff))
         {
+            // A renderer that stopped while the display is off most likely
+            // stopped because the lid or standby darkened the keyboard; a
+            // restart now would be undone the same way and its readback would
+            // read as a contradiction. The candidate is kept for display-on.
             return;
         }
 
