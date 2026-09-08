@@ -15,7 +15,7 @@ public interface ISpecialKeyBindingSource
 /// preferences file. Changes arrive through a file-system watcher so the
 /// Session Agent does not wake every second; bounded polling is used only
 /// while a watcher cannot be armed, for example before the preferences
-/// directory exists.
+/// directory exists, or while a failed preference read needs retrying.
 /// </summary>
 public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
 {
@@ -107,33 +107,41 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             // A write that landed while the watcher was being armed produced
             // no event, so compare the on-disk signature once before waiting.
             DrainSignals();
-            await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
-            if (!await WatchUntilFailureAsync(cancellationToken).ConfigureAwait(false))
+            bool loaded = await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
+            if (!await WatchUntilFailureAsync(!loaded, cancellationToken).ConfigureAwait(false))
             {
                 await delay(WatcherRearmDelay, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<bool> WatchUntilFailureAsync(CancellationToken cancellationToken)
+    private async Task<bool> WatchUntilFailureAsync(bool retryPending, CancellationToken cancellationToken)
     {
         while (true)
         {
-            WatchSignal signal = await signals.Reader.ReadAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (signal == WatchSignal.Failed)
+            if (retryPending)
             {
-                return false;
+                // Releasing a file lock produces no change event. Keep one
+                // bounded retry pending until the read succeeds or we stop.
+                await delay(FallbackRefreshInterval, cancellationToken).ConfigureAwait(false);
             }
+            else
+            {
+                WatchSignal signal = await signals.Reader.ReadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (signal == WatchSignal.Failed)
+                {
+                    return false;
+                }
 
-            // The tray replaces the file atomically, but coalesce the burst of
-            // create, rename, and attribute events into one signature compare.
-            await delay(ChangeSettleDelay, cancellationToken).ConfigureAwait(false);
+                // Coalesce an atomic replacement's burst into one signature compare.
+                await delay(ChangeSettleDelay, cancellationToken).ConfigureAwait(false);
+            }
             if (DrainSignals() == WatchSignal.Failed)
             {
                 return false;
             }
-            await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
+            retryPending = !await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -167,7 +175,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         return drained;
     }
 
-    internal async Task ReloadIfChangedAsync(
+    internal async Task<bool> ReloadIfChangedAsync(
         bool force,
         CancellationToken cancellationToken)
     {
@@ -180,7 +188,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 file.Exists ? file.LastWriteTimeUtc : default);
             if (!force && signatureInitialized && signature == observedSignature)
             {
-                return;
+                return true;
             }
 
             UiPreferences preferences = await loadPreferences(cancellationToken)
@@ -190,6 +198,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 preferences.EffectiveSpecialKeyBindings.ToArray());
             observedSignature = signature;
             signatureInitialized = true;
+            return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -198,6 +207,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         catch (Exception exception)
         {
             ReportFailure(exception);
+            return false;
         }
     }
 

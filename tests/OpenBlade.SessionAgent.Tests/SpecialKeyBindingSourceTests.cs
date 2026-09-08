@@ -230,6 +230,87 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
             SpecialKeyBindingSource.IsPreferencesFileEvent("preferences.json", name, oldName));
     }
 
+    [Fact]
+    public async Task RunAsync_RetriesFailedReadWithoutAnotherWatcherEventAndStopsRetryingAfterSuccess()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        Action? changed = null;
+        int loads = 0;
+        int retries = 0;
+        var retryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRetry = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => ++loads switch
+            {
+                1 => Task.FromResult(PreferencesWith(SpecialKeyActionKind.Disabled)),
+                2 => Task.FromException<UiPreferences>(new IOException("temporarily locked")),
+                _ => Task.FromResult(PreferencesWith(SpecialKeyActionKind.CyclePowerMode)),
+            },
+            createWatcher: (_, onChanged, _) =>
+            {
+                changed = onChanged;
+                return new FakeWatcher();
+            },
+            delay: (interval, token) =>
+            {
+                if (interval != SpecialKeyBindingSource.FallbackRefreshInterval)
+                {
+                    return Task.CompletedTask;
+                }
+                Interlocked.Increment(ref retries);
+                retryStarted.TrySetResult();
+                return releaseRetry.Task.WaitAsync(token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(() => changed is not null, cancellation.Token);
+            await File.WriteAllTextAsync(path, "updated and longer");
+            changed!();
+            await retryStarted.Task.WaitAsync(cancellation.Token);
+            Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+            Assert.Equal(2, loads);
+            releaseRetry.TrySetResult();
+            await WaitUntilAsync(() => loads == 3, cancellation.Token);
+            await WaitUntilAsync(
+                () => source.GetAction(SpecialKeySlot.M1).Kind == SpecialKeyActionKind.CyclePowerMode,
+                cancellation.Token);
+            Assert.Equal(1, retries);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelsPendingReadRetry()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        var retryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => Task.FromException<UiPreferences>(new IOException("locked")),
+            createWatcher: (_, _, _) => new FakeWatcher(),
+            delay: (interval, token) =>
+            {
+                Assert.Equal(SpecialKeyBindingSource.FallbackRefreshInterval, interval);
+                retryStarted.TrySetResult();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        await retryStarted.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
     private sealed class FakeWatcher : IDisposable
     {
         public bool Disposed { get; private set; }
