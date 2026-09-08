@@ -165,6 +165,57 @@ public sealed class StatusSubscriptionHubTests
         Assert.False(await reader.MoveNextAsync());
     }
 
+    [Fact]
+    public async Task ConcurrentPublish_CannotReplaceNewerPendingSnapshotWithOlderRevision()
+    {
+        using ManualResetEventSlim firstAccepted = new();
+        using ManualResetEventSlim releaseFirst = new();
+        using ManualResetEventSlim secondStarted = new();
+        var hub = new StatusSubscriptionHub(new FakeTimeProvider(), revision =>
+        {
+            if (revision == 1)
+            {
+                firstAccepted.Set();
+                Assert.True(releaseFirst.Wait(TimeSpan.FromSeconds(10)));
+            }
+        });
+        await using StatusSubscriptionLease lease = hub.Subscribe(CancellationToken.None);
+        Task first = Task.Run(() => hub.Publish(CreateStatus(1)));
+        Task? second = null;
+        Thread? secondThread = null;
+        try
+        {
+            Assert.True(firstAccepted.Wait(TimeSpan.FromSeconds(10)));
+            second = Task.Factory.StartNew(() =>
+            {
+                secondThread = Thread.CurrentThread;
+                secondStarted.Set();
+                hub.Publish(CreateStatus(2));
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(10)));
+            // The second publisher either blocks on ordered delivery, or (with
+            // the original unlocked delivery) completes while revision 1 waits.
+            Assert.True(SpinWait.SpinUntil(
+                () => second.IsCompleted
+                    || (secondThread!.ThreadState & ThreadState.WaitSleepJoin) != 0,
+                TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            releaseFirst.Set();
+            await first.WaitAsync(TimeSpan.FromSeconds(10));
+            if (second is not null)
+            {
+                await second.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+
+        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+            lease.ReadAllAsync().GetAsyncEnumerator();
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(2, reader.Current.Revision);
+    }
+
     private static ServiceStatusSnapshot CreateStatus(long revision)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
