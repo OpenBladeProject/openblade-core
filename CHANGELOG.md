@@ -13,6 +13,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   while keeping file parsing off the UI thread.
 - Retried temporary special-key preference read failures without requiring
   another save, and synchronized ambient screen samples with GDI drawing.
+- Preserved special-key watcher failures during startup and coalesced events,
+  and backed off persistent preference-read failures without repeated warnings.
 - Prevented canceled display preparations from submitting changes and retained
   ownership through readback and recovery after a native change starts.
 - Bounded Windows Service Control subprocess execution and cleanup during
