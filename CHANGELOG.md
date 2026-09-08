@@ -5,6 +5,24 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept service status subscriptions ordered during concurrent updates so a
+  newer pending snapshot cannot be replaced by an older one.
+- Released superseded tray observation waits and bounded profile-file imports
+  while keeping file parsing off the UI thread.
+- Retried temporary special-key preference read failures without requiring
+  another save, and synchronized ambient screen samples with GDI drawing.
+- Prevented canceled display preparations from submitting changes and retained
+  ownership through readback and recovery after a native change starts.
+- Bounded Windows Service Control subprocess execution and cleanup during
+  installation, repair, and removal.
+
+### Changed
+
+- Isolated profile import and fan-restoration policies from their callers, and
+  made fan reconciliation depend on typed outcomes instead of diagnostic text.
+
 ## [0.20.8-nightly.44] - 2026-09-06
 
 ### Changed
