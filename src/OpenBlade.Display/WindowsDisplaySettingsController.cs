@@ -16,7 +16,25 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     ];
 
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly Func<string, CancellationToken, PreparedDisplayMutation> prepareRefresh;
+    private readonly Func<bool, CancellationToken, PreparedDisplayMutation> prepareHdr;
+    private readonly Func<string, CancellationToken, PreparedDisplayMutation> prepareColorProfile;
     private bool disposed;
+
+    public WindowsDisplaySettingsController()
+        : this(PrepareRefresh, PrepareHdr, PrepareColorProfile)
+    {
+    }
+
+    internal WindowsDisplaySettingsController(
+        Func<string, CancellationToken, PreparedDisplayMutation> prepareRefresh,
+        Func<bool, CancellationToken, PreparedDisplayMutation> prepareHdr,
+        Func<string, CancellationToken, PreparedDisplayMutation> prepareColorProfile)
+    {
+        this.prepareRefresh = prepareRefresh ?? throw new ArgumentNullException(nameof(prepareRefresh));
+        this.prepareHdr = prepareHdr ?? throw new ArgumentNullException(nameof(prepareHdr));
+        this.prepareColorProfile = prepareColorProfile ?? throw new ArgumentNullException(nameof(prepareColorProfile));
+    }
 
     public async Task<DisplaySettingsSnapshot> QueryAsync(CancellationToken cancellationToken = default)
     {
@@ -38,55 +56,43 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
     }
 
-    public async Task<DisplayOperationResult> SetRefreshAsync(
+    public Task<DisplayOperationResult> SetRefreshAsync(
         string key,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return RunMutationAsync(token => prepareRefresh(key, token), cancellationToken);
+    }
+
+    public Task<DisplayOperationResult> SetHdrAsync(
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
+        RunMutationAsync(token => prepareHdr(enabled, token), cancellationToken);
+
+    public Task<DisplayOperationResult> SetColorProfileAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        return RunMutationAsync(token => prepareColorProfile(id, token), cancellationToken);
+    }
+
+    private async Task<DisplayOperationResult> RunMutationAsync(
+        Func<CancellationToken, PreparedDisplayMutation> prepare,
+        CancellationToken cancellationToken)
+    {
         ObjectDisposedException.ThrowIf(disposed, this);
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await RunNativeAsync(() =>
             {
-                DisplayTopology original = QueryTopology();
-                DisplayTarget target = GetSingleInternalTarget(original);
-                DisplaySettingsSnapshot before = BuildSnapshot(original, target, cancellationToken);
-                DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
-                if (requested is null)
-                {
-                    return DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before);
-                }
-
-                if (string.Equals(before.CurrentRefreshKey, key, StringComparison.Ordinal))
-                {
-                    return DisplayOperationResult.Success(before);
-                }
-
-                try
-                {
-                    DisplayTopology requestedTopology = original.Copy();
-                    DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
-                    ApplyBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
-
-                    DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-                    if (!string.Equals(after.CurrentRefreshKey, key, StringComparison.Ordinal))
-                    {
-                        TryRestoreTopology(original);
-                        return DisplayOperationResult.Failure(
-                            "Windows did not confirm the requested refresh-rate mode, so the previous display configuration was restored.",
-                            QueryCore(cancellationToken));
-                    }
-
-                    return DisplayOperationResult.Success(after);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    TryRestoreTopology(original);
-                    return DisplayOperationResult.Failure(
-                        $"The refresh-rate change failed and OpenBlade attempted to restore the previous display configuration: {exception.Message}",
-                        TryQuerySnapshot(cancellationToken));
-                }
+                PreparedDisplayMutation mutation = prepare(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                // Native submission is not interruptible. Once it starts, retain
+                // ownership through readback and any restoration, even if the
+                // caller's deadline or power transition has been canceled.
+                return mutation.Execute();
             }, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -95,65 +101,123 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
     }
 
-    public async Task<DisplayOperationResult> SetHdrAsync(
-        bool enabled,
-        CancellationToken cancellationToken = default)
+    private static PreparedDisplayMutation PrepareRefresh(string key, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        DisplayTopology original = QueryTopology();
+        DisplayTarget target = GetSingleInternalTarget(original);
+        DisplaySettingsSnapshot before = BuildSnapshot(original, target, cancellationToken);
+        DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
+        if (requested is null)
+        {
+            return new(() => DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before));
+        }
+        if (string.Equals(before.CurrentRefreshKey, key, StringComparison.Ordinal))
+        {
+            return new(() => DisplayOperationResult.Success(before));
+        }
+        return PrepareRefreshAfterSnapshot(before, () =>
+        {
+            DisplayTopology requestedTopology = original.Copy();
+            DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
+            PrepareBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
+            return new(() =>
+            {
+                try
+                {
+                    ApplyTopology(requestedTopology);
+                    DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
+                    if (!string.Equals(after.CurrentRefreshKey, key, StringComparison.Ordinal))
+                    {
+                        TryRestoreTopology(original);
+                        return DisplayOperationResult.Failure(
+                            "Windows did not confirm the requested refresh-rate mode, so OpenBlade attempted to restore the previous display configuration.",
+                            QueryCore(CancellationToken.None));
+                    }
+                    return DisplayOperationResult.Success(after);
+                }
+                catch (Exception exception)
+                {
+                    TryRestoreTopology(original);
+                    return DisplayOperationResult.Failure(
+                        $"The refresh-rate change failed and OpenBlade attempted to restore the previous display configuration: {exception.Message}",
+                        TryQuerySnapshot(CancellationToken.None));
+                }
+            });
+        });
+    }
+
+    internal static PreparedDisplayMutation PrepareRefreshAfterSnapshot(
+        DisplaySettingsSnapshot before,
+        Func<PreparedDisplayMutation> prepare)
+    {
         try
         {
-            return await RunNativeAsync(() =>
-            {
-                DisplayTopology topology = QueryTopology();
-                DisplayTarget target = GetSingleInternalTarget(topology);
-                AdvancedColorState current = QueryAdvancedColor(target);
-                DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
-                if (!current.HdrSupported)
-                {
-                    return DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before);
-                }
-
-                if (current.HdrEnabled == enabled)
-                {
-                    return DisplayOperationResult.Success(before);
-                }
-
-                DisplayConfigSetHdrState request = new()
-                {
-                    Header = CreateHeader(
-                        WindowsDisplayNative.DisplayConfigDeviceInfoSetHdrState,
-                        target.Path.TargetInfo.AdapterId,
-                        target.Path.TargetInfo.Id,
-                        Marshal.SizeOf<DisplayConfigSetHdrState>()),
-                    Value = enabled ? 1u : 0u,
-                };
-
-                int result = WindowsDisplayNative.DisplayConfigSetHdrState(ref request);
-                ThrowIfWin32Error(result, "Windows could not change HDR");
-
-                DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-                if (after.HdrEnabled != enabled)
-                {
-                    return DisplayOperationResult.Failure("Windows did not confirm the requested HDR state.", after);
-                }
-
-                return DisplayOperationResult.Success(after);
-            }, cancellationToken).ConfigureAwait(false);
+            return prepare();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return await RunNativeAsync(
-                () => ResolveHdrMutationResult(
-                    enabled,
-                    exception.Message,
-                    TryQuerySnapshot(CancellationToken.None)),
-                CancellationToken.None).ConfigureAwait(false);
+            // Validation is read-only. Preserve the typed failure and known
+            // snapshot without submitting a restoration for an unapplied change.
+            return new(() => DisplayOperationResult.Failure(
+                $"The refresh-rate configuration could not be prepared: {exception.Message}",
+                before));
         }
-        finally
+    }
+
+    private static PreparedDisplayMutation PrepareHdr(bool enabled, CancellationToken cancellationToken)
+    {
+        try
         {
-            operationGate.Release();
+            return PrepareHdrCore(enabled, cancellationToken);
         }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Preserve the controller's typed HDR failure/reconciliation contract
+            // when native preparation fails before a mutation is submitted.
+            return new(() => ResolveHdrMutationResult(
+                enabled, exception.Message, TryQuerySnapshot(CancellationToken.None)));
+        }
+    }
+
+    private static PreparedDisplayMutation PrepareHdrCore(bool enabled, CancellationToken cancellationToken)
+    {
+        DisplayTopology topology = QueryTopology();
+        DisplayTarget target = GetSingleInternalTarget(topology);
+        AdvancedColorState current = QueryAdvancedColor(target);
+        DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
+        if (!current.HdrSupported)
+        {
+            return new(() => DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before));
+        }
+        if (current.HdrEnabled == enabled)
+        {
+            return new(() => DisplayOperationResult.Success(before));
+        }
+        DisplayConfigSetHdrState request = new()
+        {
+            Header = CreateHeader(
+                WindowsDisplayNative.DisplayConfigDeviceInfoSetHdrState,
+                target.Path.TargetInfo.AdapterId,
+                target.Path.TargetInfo.Id,
+                Marshal.SizeOf<DisplayConfigSetHdrState>()),
+            Value = enabled ? 1u : 0u,
+        };
+        return new(() =>
+        {
+            try
+            {
+                int result = WindowsDisplayNative.DisplayConfigSetHdrState(ref request);
+                ThrowIfWin32Error(result, "Windows could not change HDR");
+                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
+                return after.HdrEnabled == enabled
+                    ? DisplayOperationResult.Success(after)
+                    : DisplayOperationResult.Failure("Windows did not confirm the requested HDR state.", after);
+            }
+            catch (Exception exception)
+            {
+                return ResolveHdrMutationResult(enabled, exception.Message, TryQuerySnapshot(CancellationToken.None));
+            }
+        });
     }
 
     internal static DisplayOperationResult ResolveHdrMutationResult(
@@ -170,71 +234,55 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             ? DisplayOperationResult.Success(observedState)
             : DisplayOperationResult.Failure(failure, observedState);
 
-    public async Task<DisplayOperationResult> SetColorProfileAsync(
-        string id,
-        CancellationToken cancellationToken = default)
+    private static PreparedDisplayMutation PrepareColorProfile(string id, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
-        ObjectDisposedException.ThrowIf(disposed, this);
-        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        DisplayTopology topology = QueryTopology();
+        DisplayTarget target = GetSingleInternalTarget(topology);
+        DisplaySettingsSnapshot state = BuildSnapshot(topology, target, cancellationToken);
+        if (!state.ColorProfilesEnabled)
         {
-            return await RunNativeAsync(() =>
+            return new(() => DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state));
+        }
+        DisplayColorProfile? requested = state.ColorProfiles.FirstOrDefault(profile => ProfilesMatch(profile.Id, id));
+        if (requested is null)
+        {
+            return new(() => DisplayOperationResult.Failure("That color profile is not available for the internal display.", state));
+        }
+        if (ProfilesMatch(requested.Id, state.ActiveColorProfileId))
+        {
+            return new(() => DisplayOperationResult.Success(state));
+        }
+        uint originalScope = GetSelectedColorProfileScope(target);
+        string? previous = state.ActiveColorProfileId;
+        return new(() =>
+        {
+            try
             {
-                DisplayTopology topology = QueryTopology();
-                DisplayTarget target = GetSingleInternalTarget(topology);
-                DisplaySettingsSnapshot state = BuildSnapshot(topology, target, cancellationToken);
-                if (!state.ColorProfilesEnabled)
+                if (originalScope != WindowsDisplayNative.CurrentUserScope)
                 {
-                    return DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state);
+                    SetUsePerUserProfiles(target, true);
                 }
-
-                DisplayColorProfile? requested = state.ColorProfiles.FirstOrDefault(
-                    profile => ProfilesMatch(profile.Id, id));
-                if (requested is null)
-                {
-                    return DisplayOperationResult.Failure("That color profile is not available for the internal display.", state);
-                }
-
-                if (ProfilesMatch(requested.Id, state.ActiveColorProfileId))
-                {
-                    return DisplayOperationResult.Success(state);
-                }
-
-                uint originalScope = GetSelectedColorProfileScope(target);
-                string? previous = state.ActiveColorProfileId;
-                try
-                {
-                    if (originalScope != WindowsDisplayNative.CurrentUserScope)
-                    {
-                        SetUsePerUserProfiles(target, true);
-                    }
-
-                    SetDefaultStandardColorProfile(target, requested.Id);
-                    DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-                    if (!ProfilesMatch(after.ActiveColorProfileId ?? string.Empty, requested.Id))
-                    {
-                        TryRestoreColorProfile(target, previous, originalScope);
-                        return DisplayOperationResult.Failure(
-                            "Windows did not confirm the requested color profile, so OpenBlade restored the previous profile.",
-                            QueryCore(cancellationToken));
-                    }
-
-                    return DisplayOperationResult.Success(after);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                // Scope and default-profile writes form one transaction. Do not
+                // leave a changed scope behind when cancellation arrives between them.
+                SetDefaultStandardColorProfile(target, requested.Id);
+                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
+                if (!ProfilesMatch(after.ActiveColorProfileId ?? string.Empty, requested.Id))
                 {
                     TryRestoreColorProfile(target, previous, originalScope);
                     return DisplayOperationResult.Failure(
-                        $"The color-profile change failed and OpenBlade attempted to restore the previous profile: {exception.Message}",
-                        TryQuerySnapshot(cancellationToken));
+                        "Windows did not confirm the requested color profile, so OpenBlade attempted to restore the previous profile.",
+                        QueryCore(CancellationToken.None));
                 }
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            operationGate.Release();
-        }
+                return DisplayOperationResult.Success(after);
+            }
+            catch (Exception exception)
+            {
+                TryRestoreColorProfile(target, previous, originalScope);
+                return DisplayOperationResult.Failure(
+                    $"The color-profile change failed and OpenBlade attempted to restore the previous profile: {exception.Message}",
+                    TryQuerySnapshot(CancellationToken.None));
+            }
+        });
     }
 
     public void Dispose()
@@ -750,7 +798,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return index;
     }
 
-    private static void ApplyBoostState(
+    private static void PrepareBoostState(
         DisplayTopology topology,
         DisplayTarget target,
         bool enabled,
@@ -779,10 +827,10 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
 
         topology.Paths[pathIndex] = path;
-        ValidateAndApplyTopology(topology);
+        ValidateTopology(topology);
     }
 
-    private static void ValidateAndApplyTopology(DisplayTopology topology)
+    private static void ValidateTopology(DisplayTopology topology)
     {
         const uint commonFlags = WindowsDisplayNative.SdcUseSuppliedDisplayConfig |
             WindowsDisplayNative.SdcVirtualModeAware |
@@ -794,7 +842,13 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             topology.Modes,
             commonFlags | WindowsDisplayNative.SdcValidate);
         ThrowIfWin32Error(validationResult, "Windows rejected the requested display configuration");
+    }
 
+    private static void ApplyTopology(DisplayTopology topology)
+    {
+        const uint commonFlags = WindowsDisplayNative.SdcUseSuppliedDisplayConfig |
+            WindowsDisplayNative.SdcVirtualModeAware |
+            WindowsDisplayNative.SdcVirtualRefreshRateAware;
         int applyResult = WindowsDisplayNative.SetDisplayConfig(
             checked((uint)topology.Paths.Length),
             topology.Paths,
@@ -808,7 +862,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     {
         try
         {
-            ValidateAndApplyTopology(original);
+            ValidateTopology(original);
+            ApplyTopology(original);
         }
         catch
         {
@@ -959,3 +1014,10 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         bool HdrEnabled,
         int? BitsPerColorChannel);
 }
+
+/// <summary>
+/// Read-only native preparation produces one submission/readback transaction.
+/// Execute deliberately takes no cancellation token: ownership must continue
+/// until native completion and reconciliation after submission has begun.
+/// </summary>
+internal sealed record PreparedDisplayMutation(Func<DisplayOperationResult> Execute);

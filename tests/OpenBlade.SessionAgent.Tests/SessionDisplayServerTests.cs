@@ -177,6 +177,36 @@ public sealed class SessionDisplayServerTests
         Assert.True(applier.CancellationObserved);
     }
 
+    [Fact]
+    public async Task ServeConnection_DeadlineRetainsNoninterruptibleDispatchUntilItQuiesces()
+    {
+        var time = new ManualTimeProvider();
+        var applier = new BlockingQueryApplier(waitForRelease: true);
+        var dispatcher = new SessionDisplayRequestDispatcher(applier);
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher, time);
+        var request = new QueryDisplayRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid());
+        await using var requestBytes = new MemoryStream();
+        await SessionDisplayIpcCodec.WriteRequestAsync(requestBytes, request);
+        await using var connection = new TestDuplexStream(requestBytes.ToArray());
+
+        Task serving = server.ServeConnectionAsync(connection, CancellationToken.None);
+        try
+        {
+            await applier.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            time.Advance(TimeSpan.FromSeconds(5));
+            await applier.CancellationRequested.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.False(serving.IsCompleted);
+        }
+        finally
+        {
+            applier.Release.TrySetResult();
+        }
+        await serving.WaitAsync(TimeSpan.FromSeconds(2));
+        // Dispatch deliberately returns successfully after its deadline. The
+        // server must still close the expired request without publishing a reply.
+        Assert.Equal(0, connection.OutputLength);
+    }
     private static SessionAgentPipeOwner AcquireOwner()
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
@@ -284,16 +314,30 @@ public sealed class SessionDisplayServerTests
                     null)));
     }
 
-    private sealed class BlockingQueryApplier : IDisplayProfileApplier
+    private sealed class BlockingQueryApplier(bool waitForRelease = false) : IDisplayProfileApplier
     {
         public TaskCompletionSource QueryStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool CancellationObserved { get; private set; }
+        public TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationRequested { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<SessionDisplayExecutionResult> QueryAsync(
             CancellationToken cancellationToken = default)
         {
+            using CancellationTokenRegistration registration = cancellationToken.Register(
+                () => CancellationRequested.TrySetResult());
             QueryStarted.TrySetResult();
+            if (waitForRelease)
+            {
+                await Release.Task;
+                return new SessionDisplayExecutionResult(
+                    SessionDisplayOperationStatus.Succeeded, null,
+                    new DisplaySettingsSnapshot(true, "Internal", 2560, 1600,
+                        "fixed-60", [], false, false, true, null, [], null));
+            }
             try
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -338,6 +382,7 @@ public sealed class SessionDisplayServerTests
         private readonly MemoryStream reader = new(input, writable: false);
         private readonly MemoryStream writer = new();
         private bool readOutput;
+        public long OutputLength => writer.Length;
 
         public void RewindOutput()
         {

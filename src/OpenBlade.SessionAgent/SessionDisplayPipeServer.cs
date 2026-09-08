@@ -25,8 +25,8 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
             new SessionAgentPipeServerPolicy<SessionDisplayRequest, SessionDisplayResponse>(
                 FrameReadTimeout,
                 FrameWriteTimeout,
-                // Queries answer from cached display state; mutations drive
-                // native display reconfiguration and may legitimately take longer.
+                // Both paths call native display APIs. Mutations include readback
+                // and possible restoration, so allow a longer cancellation deadline.
                 static request => request is QueryDisplayRequest
                     ? QueryDispatchTimeout
                     : MutationDispatchTimeout,
