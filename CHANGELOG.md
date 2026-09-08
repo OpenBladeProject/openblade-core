@@ -19,7 +19,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   after the transition write), keeps any change that was already confirmed
   external, adopts the destination profile's display-off policy on the
   transition instead of relighting the keyboard under a closed lid, and defers
-  renderer-fault recovery until the display is back on.
+  renderer-fault recovery until the display is back on. A transition whose
+  renderer stops under the closed lid retains the destination effect for one
+  display-on recovery attempt; a newer successful lighting action cancels it.
 
 ## [0.20.8-nightly.44] - 2026-09-06
 
