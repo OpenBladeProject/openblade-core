@@ -136,10 +136,23 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
             _ = ReleaseDC(IntPtr.Zero, screenDc);
         }
 
-        Marshal.Copy(bits, bgra, 0, bgra.Length);
-        return AmbientFrameMapper.FromBgra32(bgra);
+        return ReadCompletedFrame(bits, bgra, GdiFlush);
     }
 
+    internal static AmbientLightingFrame ReadCompletedFrame(
+        IntPtr source,
+        byte[] buffer,
+        Func<bool> flush)
+    {
+        // CreateDIBSection requires synchronization before direct pixel access.
+        // A failed batch must not publish stale pixels as a successful frame.
+        if (!flush())
+        {
+            throw new InvalidOperationException("Unable to complete the Ambient Awareness capture batch.");
+        }
+        Marshal.Copy(source, buffer, 0, buffer.Length);
+        return AmbientFrameMapper.FromBgra32(buffer);
+    }
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)
@@ -222,6 +235,9 @@ public sealed class WindowsAmbientScreenSampler : IAmbientScreenSampler
 
     [DllImport("gdi32.dll", SetLastError = true)]
     private static extern bool DeleteObject(IntPtr value);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool GdiFlush();
 
     [DllImport("gdi32.dll")]
     private static extern int SetStretchBltMode(IntPtr dc, int mode);
