@@ -3821,6 +3821,58 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(observedOwnership, context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task FailedLightingRecoveryYieldsToNewerSuccessfulLightingAction(
+        bool powerTransition,
+        bool turnOff)
+    {
+        TestContext context = powerTransition
+            ? await CreateLightingTransitionContextAsync(LightingRendererOwnershipState.Static)
+            : await CreateOwnedStaticLightingContextAsync();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+
+        if (powerTransition)
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+            Assert.Contains("did not remain active", context.Runtime.GetStatus().Message);
+        }
+        else
+        {
+            ControlOperationResult failed = await context.Runtime.SetLightingOverrideAsync(
+                new ManualOverride<LightingSettings>(
+                    LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 50),
+                    OverrideLifetime.UntilPowerSourceChange),
+                CancellationToken.None);
+            Assert.NotEqual(ControlOperationStatus.Applied, failed.Status);
+        }
+
+        context.Device.SuppressConfirmationFor = null;
+        context.Device.LightingOwnershipAfterSet = null;
+        LightingSettings latest = turnOff
+            ? LightingSettingsFactory.Off()
+            : LightingSettingsFactory.Static(new RgbColor(90, 80, 70), 80);
+        ControlOperationResult succeeded = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(latest, OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, succeeded.Status);
+        Assert.Equal(latest, context.Device.ConfirmedState.Lighting);
+        int writesBeforeRefresh = context.Device.LightingSetCalls;
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        Assert.Equal(latest, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(writesBeforeRefresh, context.Device.LightingSetCalls);
+    }
     [Fact]
     public async Task ScopedLightingOwnershipLostAfterWriteWithoutController_IsNotExternal()
     {
