@@ -13879,13 +13879,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceSubsystem.Lighting);
         if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
-            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value)
-            && !(outcome.Readback is { } readback
-                && IsLightingOffExplainedByDisplayOff(readback)))
+            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value))
         {
-            // With the display off, a renderer that stopped because the firmware
-            // reported the keyboard dark again after the write is the laptop's
-            // own lid or standby behavior, not a contradiction of the write.
+            if (outcome.Readback is { } readback
+                && IsLightingOffExplainedByDisplayOff(readback))
+            {
+                // The lid can stop the renderer immediately after our write.
+                // Retain the destination effect for the bounded display-on retry
+                // even though no current renderer ownership remains.
+                if (desired.Lighting.Value.Effect != LightingEffect.Off)
+                {
+                    faultedLightingRecoveryCandidate = desired.Lighting.Value;
+                }
+                return (outcome, observedLightingOwnership);
+            }
+
             lightingResult = new ControlResult(
                 ControlResultStatus.Failed,
                 "Keyboard lighting did not remain active after the profile change.");
@@ -18970,6 +18978,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState ownership,
         LightingSettings? appliedSettings)
     {
+        if (appliedSettings is not null && OwnershipMatches(ownership, appliedSettings))
+        {
+            // A successful newer effect or explicit Off supersedes any queued
+            // recovery. Observation alone must not consume a deferred retry.
+            faultedLightingRecoveryCandidate = null;
+        }
+
         if (appliedSettings is not null
             && IsExplicitLightingOwnership(ownership))
         {
