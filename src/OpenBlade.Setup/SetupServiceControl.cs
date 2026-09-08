@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace OpenBlade.Setup;
 
 public enum SetupServiceState
@@ -30,13 +28,26 @@ public interface ISetupServiceControl
 internal sealed class ScSetupServiceControl : ISetupServiceControl
 {
     private const int ServiceDoesNotExist = 1060;
+    private readonly Func<IReadOnlyList<string>, CancellationToken, Task<ScProcessResult>> runProcess;
+
+    public ScSetupServiceControl()
+        : this(new ScCommandRunner().RunAsync)
+    {
+    }
+
+    internal ScSetupServiceControl(
+        Func<IReadOnlyList<string>, CancellationToken, Task<ScProcessResult>> runProcess)
+    {
+        this.runProcess = runProcess;
+    }
+
     internal static string ExecutablePath { get; } = Path.Combine(
         Environment.SystemDirectory,
         "sc.exe");
 
     public async Task<bool> ExistsAsync(string serviceName, CancellationToken cancellationToken)
     {
-        ProcessResult result = await RunProcessAsync(["query", serviceName], cancellationToken);
+        ScProcessResult result = await runProcess(["query", serviceName], cancellationToken);
         return result.ExitCode switch
         {
             0 => true,
@@ -49,7 +60,7 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
         string serviceName,
         CancellationToken cancellationToken)
     {
-        ProcessResult result = await RunProcessAsync(["query", serviceName], cancellationToken);
+        ScProcessResult result = await runProcess(["query", serviceName], cancellationToken);
         if (result.ExitCode == ServiceDoesNotExist)
         {
             return null;
@@ -79,7 +90,7 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
         IReadOnlyCollection<int> toleratedExitCodes,
         CancellationToken cancellationToken)
     {
-        ProcessResult result = await RunProcessAsync(arguments, cancellationToken);
+        ScProcessResult result = await runProcess(arguments, cancellationToken);
         if (result.ExitCode != 0 && !toleratedExitCodes.Contains(result.ExitCode))
         {
             throw CreateFailure(result);
@@ -93,26 +104,15 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
-        long started = Stopwatch.GetTimestamp();
         string expected = state == SetupServiceState.Running ? "RUNNING" : "STOPPED";
-        while (Stopwatch.GetElapsedTime(started) < timeout)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ProcessResult result = await RunProcessAsync(["query", serviceName], cancellationToken);
-            if (result.ExitCode != 0)
-            {
-                throw CreateFailure(result);
-            }
-
-            if (result.Output.Contains(expected, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
-        }
-
-        throw new TimeoutException($"Service '{serviceName}' did not reach {state} within {timeout}.");
+        await PollAsync(
+            serviceName,
+            result => result.ExitCode == 0
+                ? result.Output.Contains(expected, StringComparison.OrdinalIgnoreCase)
+                : throw CreateFailure(result),
+            timeout,
+            $"Service '{serviceName}' did not reach {state} within {timeout}.",
+            cancellationToken);
     }
 
     public async Task WaitForDeletionAsync(
@@ -121,53 +121,49 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
-        long started = Stopwatch.GetTimestamp();
-        while (Stopwatch.GetElapsedTime(started) < timeout)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ProcessResult result = await RunProcessAsync(["query", serviceName], cancellationToken);
-            if (result.ExitCode == ServiceDoesNotExist)
+        await PollAsync(
+            serviceName,
+            result => result.ExitCode switch
             {
-                return;
-            }
-
-            if (result.ExitCode != 0)
-            {
-                throw CreateFailure(result);
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
-        }
-
-        throw new TimeoutException($"Service '{serviceName}' was not deleted within {timeout}.");
+                ServiceDoesNotExist => true,
+                0 => false,
+                _ => throw CreateFailure(result),
+            },
+            timeout,
+            $"Service '{serviceName}' was not deleted within {timeout}.",
+            cancellationToken);
     }
 
-    private static async Task<ProcessResult> RunProcessAsync(
-        IReadOnlyList<string> arguments,
+    private async Task PollAsync(
+        string serviceName,
+        Func<ScProcessResult, bool> isComplete,
+        TimeSpan timeout,
+        string timeoutMessage,
         CancellationToken cancellationToken)
     {
-        ProcessStartInfo startInfo = new(ExecutablePath)
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+        try
         {
-            UseShellExecute = false,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            CreateNoWindow = true,
-        };
-        foreach (string argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+            while (true)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                ScProcessResult result = await runProcess(["query", serviceName], deadline.Token);
+                deadline.Token.ThrowIfCancellationRequested();
+                if (isComplete(result))
+                {
+                    return;
+                }
 
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Could not start Windows Service Control.");
-        Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
-        Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        return new(process.ExitCode, await output, await error);
+                await Task.Delay(TimeSpan.FromMilliseconds(200), deadline.Token);
+            }
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException(timeoutMessage, exception);
+        }
     }
 
-    private static InvalidOperationException CreateFailure(ProcessResult result) =>
+    private static InvalidOperationException CreateFailure(ScProcessResult result) =>
         new($"Service Control failed ({result.ExitCode}): {result.Error}{result.Output}".Trim());
-
-    private sealed record ProcessResult(int ExitCode, string Output, string Error);
 }
