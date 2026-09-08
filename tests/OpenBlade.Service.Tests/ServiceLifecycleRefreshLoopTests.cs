@@ -174,6 +174,42 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
         Assert.Equal(0, runtime.LightingSuppressionCount);
         Assert.Equal(0, runtime.TotalOperationCount);
+        // The display state itself is a fact about the laptop and is recorded
+        // even while the gate defers the suppression write.
+        Assert.Equal(
+            [trigger == ServiceLifecycleTrigger.DisplayOn],
+            runtime.DisplayStateReports);
+    }
+
+    [Fact]
+    public async Task DisplayTransition_ReportsConsoleDisplayStateBeforeSuppression()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(ServiceLifecycleTrigger.DisplayOff);
+        source.Publish(ServiceLifecycleTrigger.DisplayOn);
+        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal([false, true], runtime.DisplayStateReports);
+        Assert.Equal(2, runtime.LightingSuppressionCount);
+        Assert.Equal(
+            [
+                RecordingRuntime.Operation.DisplayStateReport,
+                RecordingRuntime.Operation.LightingSuppression,
+                RecordingRuntime.Operation.DisplayStateReport,
+                RecordingRuntime.Operation.LightingSuppression,
+            ],
+            runtime.Operations);
     }
 
     [Fact]
@@ -411,6 +447,19 @@ public sealed class ServiceLifecycleRefreshLoopTests
             return new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
         }
 
+        public List<bool> DisplayStateReports { get; } = [];
+
+        public void ReportConsoleDisplayState(bool displayOn)
+        {
+            // A synchronous state report, not a refresh: it is ordered with the
+            // refreshes but never counted as one.
+            lock (Operations)
+            {
+                Operations.Add(Operation.DisplayStateReport);
+                DisplayStateReports.Add(displayOn);
+            }
+        }
+
         private async Task RecordRefreshAsync(Operation operation)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);
@@ -474,6 +523,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
             RestoreLighting,
             LightingSuppression,
             PrepareLowPower,
+            DisplayStateReport,
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
