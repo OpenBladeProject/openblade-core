@@ -16,9 +16,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   effect that was being applied is retried once by the renderer recovery on a
   later observation. This applies to profile transitions, explicit lighting
   changes, periodic observation, and unconfirmed lighting writes abandoned at
-  a power-source change. On laptops that can only report brightness and never
-  a full effect readback, a firmware Off was the only remaining way the flag
-  could latch without another controller present.
+  a power-source change. Every supported laptop reports brightness but never a
+  full effect readback, so in practice the evidence is a detected controller or
+  a logo mismatch; a firmware Off was the only remaining way the flag could
+  latch without another controller present.
 
 ### Fixed
 

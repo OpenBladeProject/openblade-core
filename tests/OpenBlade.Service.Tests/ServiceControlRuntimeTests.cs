@@ -3866,6 +3866,72 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Fact]
+    public async Task ScopedLightingOwnershipLostAfterWriteWhileLatched_KeepsExistingLatch()
+    {
+        // A confirmed third effect latched Lighting external. A later explicit
+        // lighting write that fails to keep renderer ownership has corrected
+        // nothing, so the latch must survive it; only the successful recovery
+        // write clears it.
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.Static);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Static(
+                new RgbColor(4, 5, 6),
+                brightness: 30),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+        LightingSettings requested =
+            LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 50);
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                requested,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        // While latched, automatic recovery yields as before; nothing is
+        // written behind the user's back.
+        context.Device.SuppressConfirmationFor = null;
+        context.Device.LightingOwnershipAfterSet = null;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        // A user write that does take ownership clears the latch.
+        ControlOperationResult retried = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                requested,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, retried.Status);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(requested, context.Device.ConfirmedState.Lighting);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -7901,6 +7967,36 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(2, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_FinalReadFailureWithLostOwnership_DoesNotTreatStaleStateAsEvidence()
+    {
+        // The final read fails after the lighting write (the #419 shape) and
+        // the renderer does not keep ownership. With no readback, the cached
+        // pre-write effect of the previous profile stands in for the confirmed
+        // state; it differs from the destination effect but describes what the
+        // write replaced, not what another controller did.
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.None);
+        Assert.NotEqual(
+            context.Runtime.GetStatus().Profiles.Battery.Lighting,
+            context.Device.ConfirmedState.Lighting);
+        context.Device.ReadStateFailureAfterLightingSet =
+            new IOException("Battery state query failed");
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, status.ExternalChanges);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, status.UnconfirmedWrites);
+        Assert.Contains(
+            "did not remain active",
+            status.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

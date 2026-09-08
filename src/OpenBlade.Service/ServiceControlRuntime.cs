@@ -12195,6 +12195,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             stillControlsSession,
             thermalExecutionOptions);
         ScopedApplyOutcome outcome = execution.Outcome;
+        bool lightingExternalBeforeReadback =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
                 subsystem,
@@ -12244,17 +12246,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool skipUnattributedLightingLatch =
                 subsystem == DeviceSubsystem.Lighting
                 && !IsLightingReadbackEvidenceOfExternalChange(
-                    confirmed,
+                    outcome.Readback is null ? null : confirmed,
                     desired.Lighting.Value);
             if (skipUnattributedLightingLatch)
             {
-                // The confirmed value itself did not change relative to the
-                // drift tracker's baseline for any reason other than our own
-                // write, so this must be confirmed as intentional rather than
-                // left unresolved: Observe() above may have already flagged it
-                // as changed, and nothing else downstream re-confirms a
-                // subsystem whose result was reported Failed.
-                driftTracker.ConfirmIntentional(subsystem, matched: true);
+                // Observe() above may have flagged the Off delta of our own
+                // write, and nothing downstream re-confirms a subsystem whose
+                // result was reported Failed, so resolve it here. A latch that
+                // predates this write is kept: a write that did not take has
+                // not corrected anything.
+                if (!lightingExternalBeforeReadback)
+                {
+                    driftTracker.ConfirmIntentional(subsystem, matched: true);
+                }
             }
             else
             {
@@ -13964,9 +13968,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && !confirmationUnavailable.Contains(subsystem))
             {
                 RemovePendingWriteConfirmation(subsystem);
+                // Only the final readback of this transition can be evidence;
+                // the cached pre-write state that stands in for it when the
+                // final read failed describes what the write replaced, not what
+                // another controller did.
                 if (subsystem == DeviceSubsystem.Lighting
                     && !IsLightingReadbackEvidenceOfExternalChange(
-                        confirmed,
+                        outcome.Readback,
                         desired.Lighting.Value))
                 {
                     // An attempted write that ends here without a contradicting
@@ -15729,13 +15737,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // ObserveAutomaticState has already compared the old baseline with this
             // observation. Clear both latches on a causal match; retain the drift
             // latch on a mismatch. No write is scheduled from this path. A lighting
-            // mismatch that is only a firmware Off with no competing controller is
-            // not evidence of an external change and resolves as matched.
+            // mismatch that rests only on a firmware Off or unknown reading (the
+            // cross-power-source case reads nothing at all) with no competing
+            // controller is not evidence of an external change and resolves as
+            // matched.
             driftTracker.ConfirmIntentional(
                 subsystem,
                 matched: result == PendingConfirmationResult.Match
                     || (subsystem == DeviceSubsystem.Lighting
-                        && IsUnattributedLightingOff(confirmed)));
+                        && confirmed.Lighting is null or { Effect: LightingEffect.Off }
+                        && !ControllerMayOwnLighting(GetStatus())));
             RemovePendingWriteConfirmation(subsystem);
         }
     }
