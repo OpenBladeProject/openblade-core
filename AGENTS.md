@@ -232,7 +232,12 @@ unrelated worktrees and checkout changes.
    change: regenerate with `Write-OpenBladeNightlyChangelogSnapshot` from
    `build/NightlyChangelog.ps1` and confirm with
    `build/Validate-ChangelogReleases.ps1`, which fails when a published release
-   has no dated section or no comparison link.
+   has no dated section or no comparison link. Nightly preparation now leaves
+   a draft: review and merge the generated changelog PR before dispatching
+   `finalize-nightly.yml` on `main` with its exact tag. Both hosted and local
+   publication must use `build/Complete-NightlyRelease.ps1`, which validates
+   live release history and the source snapshot against current `main` before
+   making the draft public. A draft PR alone does not complete the changelog.
 9. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
 10. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.

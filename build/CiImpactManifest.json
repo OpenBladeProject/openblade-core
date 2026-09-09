@@ -205,7 +205,11 @@
     },
     {
       "test": "tests/Build.Tests/NightlyWorkflow.Tests.ps1",
-      "patterns": [".github/workflows/ci.yml", ".github/workflows/build.yml", ".github/workflows/nightly.yml"]
+      "patterns": [".github/workflows/ci.yml", ".github/workflows/build.yml", ".github/workflows/nightly.yml", ".github/workflows/finalize-nightly.yml", "build/Complete-NightlyRelease.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/NightlyReleaseFinalization.Tests.ps1",
+      "patterns": ["build/Complete-NightlyRelease.ps1", "build/NightlyChangelog.ps1", "build/Validate-ChangelogReleases.ps1", ".github/workflows/finalize-nightly.yml"]
     },
     {
       "test": "tests/Build.Tests/LocalNightlySkill.Tests.ps1",

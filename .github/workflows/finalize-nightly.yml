@@ -1,0 +1,37 @@
+name: Finalize Nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact prepared nightly draft tag (merge its changelog PR first)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openblade-nightly
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+      - name: Verify merged changelog and publish draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENBLADE_NIGHTLY_TAG: ${{ inputs.tag }}
+        run: |
+          ./build/Complete-NightlyRelease.ps1 -Tag $env:OPENBLADE_NIGHTLY_TAG

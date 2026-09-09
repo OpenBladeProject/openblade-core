@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: openblade-nightly
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-publish:
@@ -74,7 +74,7 @@ jobs:
             "- Workflow: [run ${{ github.run_id }}]($runUrl)",
             "- Authenticode: ``$($metadata.installer.authenticodeStatus)``",
             '',
-            'Changelog processing runs independently after publication.',
+            'Draft: merge the generated changelog PR, then run Finalize Nightly.',
             '',
             'This is a prerelease and is available only to users who select the Nightly update channel.',
             'Verify `OpenBlade-Setup.exe` with the attached SHA-256 file before installing.'
@@ -84,7 +84,7 @@ jobs:
             $notes,
             [Text.UTF8Encoding]::new($false))
 
-      - name: Publish nightly prerelease
+      - name: Prepare nightly draft
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -98,10 +98,10 @@ jobs:
           --title '${{ steps.release.outputs.title }}'
           --notes-file artifacts/OpenBlade-Nightly-Release.md
           --prerelease
+          --draft
           --latest=false
 
       - name: Attach nightly changelog
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
@@ -114,72 +114,61 @@ jobs:
           $tag = '${{ steps.release.outputs.tag }}'
           $changelogPath = 'artifacts/OpenBlade-Nightly-CHANGELOG.md'
           $changelogSection = $null
-          try {
-            $releasePagesJson = gh api --paginate --slurp `
-              "repos/${{ github.repository }}/releases?per_page=100"
-            if ($LASTEXITCODE -ne 0) {
-              throw 'Unable to read the published release history.'
-            }
-            $releasePages = $releasePagesJson | ConvertFrom-Json
-            $publishedReleases = @(
-              foreach ($page in @($releasePages)) {
-                foreach ($release in @($page)) {
-                  if ($release.prerelease -and -not $release.draft) {
-                    [ordered]@{
-                      tagName = $release.tag_name
-                      publishedAt = $release.published_at
-                    }
+          $releasePagesJson = gh api --paginate --slurp `
+            "repos/${{ github.repository }}/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read the published release history.'
+          }
+          $releasePages = $releasePagesJson | ConvertFrom-Json
+          $publishedReleases = @(
+            foreach ($page in @($releasePages)) {
+              foreach ($release in @($page)) {
+                if ($release.prerelease -and -not $release.draft) {
+                  [ordered]@{
+                    tagName = $release.tag_name
+                    publishedAt = $release.published_at
                   }
                 }
               }
-            )
-            $currentReleaseJson = gh release view $tag `
-              --repo '${{ github.repository }}' `
-              --json publishedAt
-            if ($LASTEXITCODE -ne 0) {
-              throw "Unable to read publication metadata for '$tag'."
             }
-            $currentPublishedAt = [DateTimeOffset](
-              $currentReleaseJson | ConvertFrom-Json).publishedAt
-            $publishedReleasesPath = Join-Path `
-              $env:RUNNER_TEMP `
-              'OpenBlade-Published-Releases.json'
-            $publishedReleasesJson = if ($publishedReleases.Count -eq 0) {
-              '[]'
-            }
-            else {
-              $publishedReleases | ConvertTo-Json -Depth 3
-            }
-            [IO.File]::WriteAllText(
-              $publishedReleasesPath,
-              $publishedReleasesJson,
-              [Text.UTF8Encoding]::new($false))
+          )
+          $currentReleaseJson = gh release view $tag `
+            --repo '${{ github.repository }}' `
+            --json createdAt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read publication metadata for '$tag'."
+          }
+          $currentPublishedAt = [DateTimeOffset](
+            $currentReleaseJson | ConvertFrom-Json).createdAt
+          $publishedReleasesPath = Join-Path `
+            $env:RUNNER_TEMP `
+            'OpenBlade-Published-Releases.json'
+          $publishedReleasesJson = if ($publishedReleases.Count -eq 0) {
+            '[]'
+          }
+          else {
+            $publishedReleases | ConvertTo-Json -Depth 3
+          }
+          [IO.File]::WriteAllText(
+            $publishedReleasesPath,
+            $publishedReleasesJson,
+            [Text.UTF8Encoding]::new($false))
 
-            . ./build/NightlyChangelog.ps1
-            $changelog = Write-OpenBladeNightlyChangelogSnapshot `
-              -RepositoryRoot (Get-Location).Path `
-              -ChangelogPath 'CHANGELOG.md' `
-              -OutputPath $changelogPath `
-              -PublishedReleasesPath $publishedReleasesPath `
-              -BaseVersion $metadata.baseVersion `
-              -BuildRevision $metadata.buildRevision `
-              -CurrentTag $tag `
-              -CurrentSourceRevision $metadata.sourceRevision `
-              -CurrentPublishedAt $currentPublishedAt
-            if ([string]::IsNullOrWhiteSpace($changelog.CurrentSection)) {
-              throw 'The generated changelog is missing the current nightly section.'
-            }
-            $changelogSection = $changelog.CurrentSection
+          . ./build/NightlyChangelog.ps1
+          $changelog = Write-OpenBladeNightlyChangelogSnapshot `
+            -RepositoryRoot (Get-Location).Path `
+            -ChangelogPath 'CHANGELOG.md' `
+            -OutputPath $changelogPath `
+            -PublishedReleasesPath $publishedReleasesPath `
+            -BaseVersion $metadata.baseVersion `
+            -BuildRevision $metadata.buildRevision `
+            -CurrentTag $tag `
+            -CurrentSourceRevision $metadata.sourceRevision `
+            -CurrentPublishedAt $currentPublishedAt
+          if ([string]::IsNullOrWhiteSpace($changelog.CurrentSection)) {
+            throw 'The generated changelog is missing the current nightly section.'
           }
-          catch {
-            Write-Warning (
-              'Nightly changelog tally failed without blocking publication: ' +
-              $_.Exception.Message)
-            [IO.File]::Copy(
-              (Resolve-Path -LiteralPath 'CHANGELOG.md'),
-              (Join-Path (Get-Location).Path $changelogPath),
-              $true)
-          }
+          $changelogSection = $changelog.CurrentSection
 
           gh release upload $tag $changelogPath `
             --repo '${{ github.repository }}' `
@@ -189,16 +178,7 @@ jobs:
           }
 
           $runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
-          $changelogNotes = if ($null -ne $changelogSection) {
-            @('', $changelogSection)
-          }
-          else {
-            @(
-              '',
-              '> [!WARNING]',
-              '> The automatic nightly changelog tally failed. The attached changelog is the exact source snapshot.'
-            )
-          }
+          $changelogNotes = @('', $changelogSection)
           $notes = @(
             'Automated test build from the latest committed `main`.',
             '',
@@ -302,12 +282,12 @@ jobs:
             [Text.UTF8Encoding]::new($false))
           $currentReleaseJson = gh release view $tag `
             --repo '${{ github.repository }}' `
-            --json publishedAt
+            --json createdAt
           if ($LASTEXITCODE -ne 0) {
             throw "Unable to read publication metadata for '$tag'."
           }
           $currentPublishedAt = [DateTimeOffset](
-            $currentReleaseJson | ConvertFrom-Json).publishedAt
+            $currentReleaseJson | ConvertFrom-Json).createdAt
 
           . ./build/NightlyChangelog.ps1
           git switch --force-create `

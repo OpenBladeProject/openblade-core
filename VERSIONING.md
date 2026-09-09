@@ -133,13 +133,26 @@ supplied only by `build/Publish.ps1`, and revision zero remains reserved for
 stable builds. The full Git revision, installer hash, and generated identity
 must accompany every retained nightly artifact.
 
-Every published nightly includes `OpenBlade-Nightly-CHANGELOG.md`, generated
-from the exact tagged source history. A separate workflow job reconstructs any
-nightly sections not yet recorded in the repository, rebases the result on the
-current `main` changelog, leaves post-build entries under `Unreleased`, and
-opens or updates the workflow-owned draft documentation pull request. The job
-may replace only its dedicated branch with a force-with-lease guard; it never
-pushes directly to `main`.
+Nightly prepares a draft with `OpenBlade-Nightly-CHANGELOG.md`, generated from
+the exact source history. A separate job reconstructs missing nightly sections
+on current `main`, leaves post-build entries under `Unreleased`, and opens or
+updates the workflow-owned draft documentation pull request. It may replace
+only its dedicated branch with a force-with-lease guard; it never pushes to
+`main`. Changelog failure leaves the release unpublished.
+
+Review and merge that PR, then dispatch **Finalize Nightly** on `main` with the
+exact draft tag. Its shared `build/Complete-NightlyRelease.ps1` gate verifies
+downloaded assets, regenerates the source snapshot, and requires its section
+and comparison link on current `main` before publishing. The local outage
+fallback calls the same script. `-VerifyOnly` checks without publishing.
+The new section date is the draft's immutable `createdAt` date in UTC, so a
+review across midnight does not require rewriting either changelog copy.
+Existing published sections retain their original dates.
+
+If finalization fails, preserve the draft and correct the reported problem;
+dispatch finalization again with the same tag after review. Do not rerun the
+build to finalize an existing draft. Direct publication through GitHub UI or
+an unrestricted CLI can bypass repository scripts and is outside this process.
 
 After changing the base version, inspect the first hosted nightly's binary
 identity, generated changelog section, and comparison link. Confirm that it

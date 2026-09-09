@@ -17,7 +17,7 @@ Keep these boundaries throughout the run:
 - Do not edit source, change `OpenBladeVersion`, patch a failed gate, install artifacts, request UAC, launch OpenBlade, touch hardware, pass signing credentials, or claim an attestation.
 - Treat a source or test failure as a release blocker, not as CI unavailability. Hosted jobs with zero executed steps and an infrastructure or billing annotation are unavailable, not green.
 - Keep local artifact creation separate from GitHub publication. Stop at the user's authorized boundary.
-- Reproduce the guarded `docs/nightly-changelog-automation` draft-PR update after publication. Never push directly to `main` or replace that branch without the current remote SHA as a force-with-lease guard.
+- Reproduce the guarded `docs/nightly-changelog-automation` draft-PR update before publication. Review and merge the generated changelog, then use `build/Complete-NightlyRelease.ps1`; opening a draft PR alone is not completion. Never push directly to `main` or replace that branch without the current remote SHA as a force-with-lease guard.
 
 ## Use the exact release operator
 
