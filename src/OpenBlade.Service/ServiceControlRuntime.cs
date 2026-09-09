@@ -240,6 +240,14 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Lighting power policy is unavailable."));
 
+    /// <summary>
+    /// Records the console display state reported by the Windows lifecycle
+    /// source, independent of whether any lighting power policy is enabled.
+    /// </summary>
+    void ReportConsoleDisplayState(bool displayOn)
+    {
+    }
+
     Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken token) => Task.FromResult(
@@ -501,6 +509,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
     private bool lightingSuppressionWritePending;
+    // The last console display state reported by the Windows lifecycle source,
+    // kept even when the active profile does not enable the display-off policy.
+    // A closed lid or Modern Standby leaves the keyboard dark whether or not
+    // OpenBlade asked for it, so a power-source transition that samples firmware
+    // Off while the display is off must not classify it as an external change,
+    // and a destination profile that enables the policy must adopt the
+    // suppression instead of relighting a keyboard under a closed lid.
+    private bool displayReportedOff;
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
@@ -12103,6 +12119,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             stillControlsSession,
             thermalExecutionOptions);
         ScopedApplyOutcome outcome = execution.Outcome;
+        bool lightingExternalBeforeReadback =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         (outcome, ConfirmedDeviceState? confirmed) =
             await ReconcileScopedIntentReadbackAsync(
                 subsystem,
@@ -12142,7 +12160,34 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && !outcome.ConfirmationUnavailable)
         {
             RemovePendingWriteConfirmation(subsystem);
-            driftTracker.ConfirmIntentional(subsystem, matched: false);
+
+            // A scoped lighting write whose readback mismatch is only a lost
+            // renderer ownership or a firmware Off/unknown reading, with no
+            // competing controller detected, is a renderer fault or hardware
+            // behavior rather than an external change; it must not latch. A
+            // full readback of a different, non-Off effect is still positive
+            // evidence and must still latch.
+            bool skipUnattributedLightingLatch =
+                subsystem == DeviceSubsystem.Lighting
+                && !IsLightingReadbackEvidenceOfExternalChange(
+                    outcome.Readback is null ? null : confirmed,
+                    desired.Lighting.Value);
+            if (skipUnattributedLightingLatch)
+            {
+                // Observe() above may have flagged the Off delta of our own
+                // write, and nothing downstream re-confirms a subsystem whose
+                // result was reported Failed, so resolve it here. A latch that
+                // predates this write is kept: a write that did not take has
+                // not corrected anything.
+                if (!lightingExternalBeforeReadback)
+                {
+                    driftTracker.ConfirmIntentional(subsystem, matched: true);
+                }
+            }
+            else
+            {
+                driftTracker.ConfirmIntentional(subsystem, matched: false);
+            }
         }
 
         if (subsystem == DeviceSubsystem.Fans)
@@ -12690,6 +12735,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "Keyboard lighting did not remain active after the change."),
                 ReadbackMatched = false,
             };
+            if (requested.Effect != LightingEffect.Off
+                && !ControllerMayOwnLighting(GetStatus()))
+            {
+                // A renderer fault with no competing controller: let the bounded
+                // recovery retry the effect that was just requested, not the
+                // effect owned before it.
+                faultedLightingRecoveryCandidate = requested;
+            }
         }
         UpdateOwnedLightingSnapshot(
             observed,
@@ -13540,6 +13593,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         ConfirmedDeviceState? confirmed = cachedConfirmed;
+        bool lightingExternalBeforeReadback =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         if (outcome.Readback is not null)
         {
             driftTracker.Observe(outcome.Readback);
@@ -13571,6 +13626,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             current.Capabilities,
             laptopBehaviorMessage,
             preserveLiveReadings,
+            lightingExternalBeforeReadback,
             token).ConfigureAwait(false);
     }
 
@@ -13749,15 +13805,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 or ControlResultStatus.Unchanged
             && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value))
         {
+            if (outcome.Readback is { } readback
+                && IsLightingOffExplainedByDisplayOff(readback))
+            {
+                // The lid can stop the renderer immediately after our write.
+                // Retain the destination effect for the bounded display-on retry
+                // even though no current renderer ownership remains.
+                if (desired.Lighting.Value.Effect != LightingEffect.Off)
+                {
+                    faultedLightingRecoveryCandidate = desired.Lighting.Value;
+                }
+                return (outcome, observedLightingOwnership);
+            }
+
             lightingResult = new ControlResult(
                 ControlResultStatus.Failed,
                 "Keyboard lighting did not remain active after the profile change.");
             var matched = new HashSet<DeviceSubsystem>(outcome.ReadbackMatched);
             matched.Remove(DeviceSubsystem.Lighting);
-            var contradicted = new HashSet<DeviceSubsystem>(outcome.ReadbackContradicted)
+            var contradicted = new HashSet<DeviceSubsystem>(outcome.ReadbackContradicted);
+            if (ControllerMayOwnLighting(GetStatus()))
             {
-                DeviceSubsystem.Lighting,
-            };
+                // A competing controller may genuinely have taken the renderer;
+                // that is positive evidence of an external change.
+                contradicted.Add(DeviceSubsystem.Lighting);
+            }
+            else if (desired.Lighting.Value.Effect != LightingEffect.Off)
+            {
+                // Without a controller this is a renderer fault or hardware
+                // behavior, not evidence of an external change.
+                // PublishFullTransitionOutcomeAsync leaves the drift latch
+                // alone for it, and the bounded renderer recovery reapplies the
+                // destination effect once on a later observation. The candidate
+                // is set explicitly because a Faulted observation clears the
+                // owned snapshot that recovery would otherwise start from.
+                faultedLightingRecoveryCandidate = desired.Lighting.Value;
+            }
             outcome = outcome with
             {
                 Results = outcome.Results with { Lighting = lightingResult },
@@ -13778,6 +13861,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities? cachedCapabilities,
         string? laptopBehaviorMessage,
         bool preserveLiveReadings,
+        bool lightingExternalBeforeReadback,
         CancellationToken token)
     {
         bool hyperBoostJournalRetired = true;
@@ -13816,7 +13900,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && !confirmationUnavailable.Contains(subsystem))
             {
                 RemovePendingWriteConfirmation(subsystem);
-                driftTracker.ConfirmIntentional(subsystem, matched: false);
+                // Only the final readback of this transition can be evidence;
+                // the cached pre-write state that stands in for it when the
+                // final read failed describes what the write replaced, not what
+                // another controller did.
+                if (subsystem == DeviceSubsystem.Lighting
+                    && !IsLightingReadbackEvidenceOfExternalChange(
+                        outcome.Readback,
+                        desired.Lighting.Value))
+                {
+                    // An attempted write that ends here without a contradicting
+                    // readback (a stopped renderer, a lost ownership check, an
+                    // Off or unreadable final state) carries no evidence of
+                    // another controller. Leave the latch as it was before this
+                    // transition; do not add one, and do not clear one that
+                    // predates it.
+                    if (!lightingExternalBeforeReadback)
+                    {
+                        driftTracker.ConfirmIntentional(subsystem, matched: true);
+                    }
+                }
+                else
+                {
+                    driftTracker.ConfirmIntentional(subsystem, matched: false);
+                }
             }
             else if (outcome.ReadbackContradicted.Contains(subsystem))
             {
@@ -15056,6 +15163,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             InvalidatePendingWriteConfirmations(markExternal: true);
             explicitLightingOwnershipActive = false;
             lightingRecoveryPauseMessage = null;
+            AdoptDisplayOffSuppressionForPowerSource();
         }
         if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)
         {
@@ -15290,7 +15398,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
+        bool lightingExternalBeforeObservation =
+            driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
+
+        // Neither branch below re-examines Lighting once the initial comparison
+        // has run (CompareInitialAutomaticValue/CompareTransitionAutomaticValue
+        // only ever compare once), so a later periodic observation that reads an
+        // unattributed Off must be un-latched here, since driftTracker.Observe
+        // above may just have added it for the Off delta on full-readback
+        // laptops.
+        if (!lightingExternalBeforeObservation
+            && driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            && IsUnattributedLightingOff(confirmed))
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: true);
+        }
 
         if (alternateExpected is not null)
         {
@@ -15303,11 +15426,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 confirmed.Fans,
                 desired.Fans.Value,
                 alternateExpected.Fans.Value);
-            CompareTransitionAutomaticValue(
-                DeviceSubsystem.Lighting,
-                confirmed.Lighting,
-                desired.Lighting.Value,
-                alternateExpected.Lighting.Value);
+            if (IsUnattributedLightingOff(confirmed))
+            {
+                // A dark keyboard under a closed lid, in Modern Standby, or after
+                // a renderer fault is what can happen without any outside actor;
+                // firmware brightness zero with no competing controller detected
+                // is not evidence that another controller replaced the profile
+                // effect. It is equally not evidence that an earlier confirmed
+                // external change was undone, so an existing latch is left in
+                // place.
+                initialAutomaticComparisons.Add(DeviceSubsystem.Lighting);
+                if (!lightingExternalBeforeObservation)
+                {
+                    driftTracker.ConfirmIntentional(
+                        DeviceSubsystem.Lighting,
+                        matched: true);
+                }
+            }
+            else
+            {
+                CompareTransitionAutomaticValue(
+                    DeviceSubsystem.Lighting,
+                    confirmed.Lighting,
+                    desired.Lighting.Value,
+                    alternateExpected.Lighting.Value);
+            }
             if (confirmed.Battery is { } transitionBattery)
             {
                 initialAutomaticComparisons.Add(DeviceSubsystem.Battery);
@@ -15324,10 +15467,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         CompareInitialAutomaticPerformance(confirmed, desired);
         CompareInitialAutomaticFans(confirmed.Fans, desired.Fans.Value);
-        CompareInitialAutomaticValue(
-            DeviceSubsystem.Lighting,
-            confirmed.Lighting,
-            desired.Lighting.Value);
+        if (IsUnattributedLightingOff(confirmed))
+        {
+            // Same reasoning as the transition branch: an unattributed Off is
+            // not evidence of an external change, so it never enters the
+            // comparison as a mismatch.
+            initialAutomaticComparisons.Add(DeviceSubsystem.Lighting);
+            if (!lightingExternalBeforeObservation)
+            {
+                driftTracker.ConfirmIntentional(
+                    DeviceSubsystem.Lighting,
+                    matched: true);
+            }
+        }
+        else
+        {
+            CompareInitialAutomaticValue(
+                DeviceSubsystem.Lighting,
+                confirmed.Lighting,
+                desired.Lighting.Value);
+        }
 
         if (confirmed.Battery is { } battery
             && initialAutomaticComparisons.Add(DeviceSubsystem.Battery))
@@ -15477,6 +15636,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             foreach ((DeviceSubsystem subsystem, _) in pending)
             {
+                if (subsystem == DeviceSubsystem.Lighting
+                    && !ControllerMayOwnLighting(GetStatus()))
+                {
+                    // An unconfirmed lighting write abandoned at a power-source
+                    // change is not evidence that another controller acted; the
+                    // transition that follows writes the destination effect.
+                    continue;
+                }
+
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
@@ -15500,10 +15668,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             // ObserveAutomaticState has already compared the old baseline with this
             // observation. Clear both latches on a causal match; retain the drift
-            // latch on a mismatch. No write is scheduled from this path.
+            // latch on a mismatch. No write is scheduled from this path. A lighting
+            // mismatch that rests only on a firmware Off or unknown reading (the
+            // cross-power-source case reads nothing at all) with no competing
+            // controller is not evidence of an external change and resolves as
+            // matched.
             driftTracker.ConfirmIntentional(
                 subsystem,
-                matched: result == PendingConfirmationResult.Match);
+                matched: result == PendingConfirmationResult.Match
+                    || (subsystem == DeviceSubsystem.Lighting
+                        && confirmed.Lighting is null or { Effect: LightingEffect.Off }
+                        && !ControllerMayOwnLighting(GetStatus())));
             RemovePendingWriteConfirmation(subsystem);
         }
     }
@@ -16196,6 +16371,69 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private LightingSuppressionReason[] CurrentLightingSuppressions() =>
         [.. lightingSuppressions.Order()];
+
+    public void ReportConsoleDisplayState(bool displayOn)
+    {
+        // Only the Windows console display source reports here. The Session
+        // Agent's suppression requests are policy decisions and say "off" only
+        // while the active profile enables the display-off policy, so they
+        // cannot be trusted as a display-state signal.
+        Volatile.Write(ref displayReportedOff, !displayOn);
+    }
+
+    private bool IsLightingOffExplainedByDisplayOff(ConfirmedDeviceState confirmed) =>
+        Volatile.Read(ref displayReportedOff)
+        && confirmed.Lighting is { Effect: LightingEffect.Off };
+
+    // Firmware Off is the only non-null lighting reading some laptops can produce
+    // and it has many benign causes (lid, standby, a stopped renderer, a
+    // transient brightness zero). Without a detected competing controller it is
+    // not evidence that anything outside OpenBlade changed the lighting.
+    private bool IsUnattributedLightingOff(ConfirmedDeviceState confirmed) =>
+        confirmed.Lighting is { Effect: LightingEffect.Off }
+        && !ControllerMayOwnLighting(GetStatus());
+
+    // After an attempted lighting write, only a readback that positively
+    // contradicts it counts as evidence of another controller: a different
+    // non-Off keyboard effect, a logo mode other than the one requested, or a
+    // competing controller detected. Off, unknown, or matching content with a
+    // lost renderer ownership is a fault, not an external change.
+    private bool IsLightingReadbackEvidenceOfExternalChange(
+        ConfirmedDeviceState? confirmed,
+        LightingSettings desired)
+    {
+        if (ControllerMayOwnLighting(GetStatus()))
+        {
+            return true;
+        }
+
+        if (confirmed?.Lighting is { Effect: not LightingEffect.Off } observed
+            && (observed with { LogoMode = null }) != (desired with { LogoMode = null }))
+        {
+            return true;
+        }
+
+        return desired.LogoMode is { } logo
+            && confirmed?.LogoLighting is { } observedLogo
+            && observedLogo != logo;
+    }
+
+    private void AdoptDisplayOffSuppressionForPowerSource()
+    {
+        // A display-off report that arrived while the previous profile kept the
+        // keyboard lit was refused as "not enabled". When the destination
+        // profile does enable the policy, the display is still off, so the
+        // transition must target Off rather than relight the keyboard and wait
+        // for the Session Agent to switch it off again.
+        if (!Volatile.Read(ref displayReportedOff)
+            || lightingSuppressions.Contains(LightingSuppressionReason.DisplayOff)
+            || !IsLightingSuppressionConfigured(LightingSuppressionReason.DisplayOff))
+        {
+            return;
+        }
+
+        UpdateLightingSuppressionState(LightingSuppressionReason.DisplayOff, suppressed: true);
+    }
 
     private void UpdateLightingSuppressionState(
         LightingSuppressionReason reason,
@@ -18452,8 +18690,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        if (lightingSuppressions.Count > 0)
+        if (lightingSuppressions.Count > 0 || Volatile.Read(ref displayReportedOff))
         {
+            // A renderer that stopped while the display is off most likely
+            // stopped because the lid or standby darkened the keyboard; a
+            // restart now would be undone the same way and its readback would
+            // read as a contradiction. The candidate is kept for display-on.
             return;
         }
 
@@ -18660,6 +18902,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState ownership,
         LightingSettings? appliedSettings)
     {
+        if (appliedSettings is not null && OwnershipMatches(ownership, appliedSettings))
+        {
+            // A successful newer effect or explicit Off supersedes any queued
+            // recovery. Observation alone must not consume a deferred retry.
+            faultedLightingRecoveryCandidate = null;
+        }
+
         if (appliedSettings is not null
             && IsExplicitLightingOwnership(ownership))
         {

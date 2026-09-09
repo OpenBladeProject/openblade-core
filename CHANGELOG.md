@@ -5,6 +5,26 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Keyboard lighting is now reported as changed outside OpenBlade only on
+  positive evidence: a confirmed readback of a different, non-Off effect, or
+  Razer Synapse-type software detected as a potential competing controller. A
+  keyboard that reads firmware Off, or a renderer that stops owning the
+  keyboard, with no such software present is treated as a fault: the failure
+  is still reported, an existing external latch is left as it was, and the
+  effect that was being applied is retried once by the renderer recovery on a
+  later observation. A newer successful lighting choice, including Off,
+  cancels that retry so a stale effect cannot overwrite it. This applies to
+  profile transitions, explicit lighting
+  changes, periodic observation, and unconfirmed lighting writes abandoned at
+  a power-source change. Every supported laptop reports brightness but never a
+  full effect readback, so in practice the evidence is a detected controller or
+  a logo mismatch; a firmware Off was the only remaining way the flag could
+  latch without another controller present.
+- Isolated profile import and fan-restoration policies from their callers, and
+  made fan reconciliation depend on typed outcomes instead of diagnostic text.
+
 ### Fixed
 
 - Kept service status subscriptions ordered during concurrent updates so a
@@ -19,11 +39,21 @@ All notable changes to OpenBlade are documented in this file. The project follow
   ownership through readback and recovery after a native change starts.
 - Bounded Windows Service Control subprocess execution and cleanup during
   installation, repair, and removal.
-
-### Changed
-
-- Isolated profile import and fan-restoration policies from their callers, and
-  made fan reconciliation depend on typed outcomes instead of diagnostic text.
+- Stopped a keyboard left dark by a closed lid or Modern Standby from being
+  reported as a lighting change made outside OpenBlade. The display-off report
+  was discarded whenever the active profile did not enable "turn off keyboard
+  lighting when the display turns off", so a power-source change made with the
+  lid shut compared the firmware Off reading against the profile effect,
+  latched "Changed outside OpenBlade: Lighting", and released the keyboard
+  renderer until the next lighting action. The service now records the console
+  display state from the Windows lifecycle source regardless of the policy,
+  treats an Off reading taken while the display is off as expected (before and
+  after the transition write), keeps any change that was already confirmed
+  external, adopts the destination profile's display-off policy on the
+  transition instead of relighting the keyboard under a closed lid, and defers
+  renderer-fault recovery until the display is back on. A transition whose
+  renderer stops under the closed lid retains the destination effect for one
+  display-on recovery attempt; a newer successful lighting action cancels it.
 
 ## [0.20.8-nightly.44] - 2026-09-06
 
