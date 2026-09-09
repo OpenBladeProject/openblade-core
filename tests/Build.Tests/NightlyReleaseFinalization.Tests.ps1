@@ -51,7 +51,7 @@ function New-FinalizationFixture {
 [Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
 '@
-    $baseline = $source.Replace("### Fixed`n`n- Correct the nightly gate.", '### Fixed')
+    $baseline = $source.Replace('- Correct the nightly gate.', '')
     [IO.File]::WriteAllText((Join-Path $root 'CHANGELOG.md'), $baseline, [Text.UTF8Encoding]::new($false))
     & $gitApplication -C $root init -q
     & $gitApplication -C $root config user.email test@example.invalid
