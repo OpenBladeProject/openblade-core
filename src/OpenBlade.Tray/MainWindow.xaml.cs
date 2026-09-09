@@ -5420,8 +5420,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 return;
             }
 
-            ProfileSet profiles = ProfileExportSerializer.Deserialize(
-                await File.ReadAllTextAsync(result.Path));
+            ProfileSet profiles = await ProfileImportReader.ReadAsync(result.Path);
             var confirmation = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot,

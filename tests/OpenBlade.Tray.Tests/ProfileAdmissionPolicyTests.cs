@@ -1,0 +1,81 @@
+using OpenBlade.Contracts;
+using OpenBlade.Tray;
+
+namespace OpenBlade.Tray.Tests;
+
+public sealed class ProfileAdmissionPolicyTests
+{
+    [Fact]
+    public void RequiresConfirmedCapabilities()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, null));
+        Assert.True(ProfileAdmissionPolicy.Supports(
+            profiles, profiles, SupportedCapabilities()));
+    }
+
+    [Fact]
+    public void PreservesUnsupportedUnchangedLightingButRejectsNewLighting()
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            LightingEffects = new HashSet<LightingEffect>(),
+        };
+        Assert.True(ProfileAdmissionPolicy.Supports(current, current, capabilities));
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73),
+            },
+        };
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Fact]
+    public void PreservesBatteryThermalSettingsButNeverBypassesUsbCRestriction()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        PowerProfile retained = profiles.Battery with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+        };
+        ProfileSet battery = profiles with { Battery = retained };
+        Assert.True(ProfileAdmissionPolicy.Supports(
+            battery, battery, SupportedCapabilities()));
+        ProfileSet usbC = profiles with { UsbC = retained };
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            usbC, usbC, SupportedCapabilities()));
+    }
+
+    [Fact]
+    public void UnchangedInvalidEnumsAreStillRejected()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Fans = (FanMode)int.MaxValue },
+        };
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            profiles, profiles, SupportedCapabilities()));
+    }
+
+    [Fact]
+    public void UnsupportedChargeLimitCannotBePreservedAsUnchanged()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            ChargeLimits = new HashSet<int> { 50 },
+        };
+        Assert.False(ProfileAdmissionPolicy.Supports(profiles, profiles, capabilities));
+    }
+
+    private static DeviceCapabilities SupportedCapabilities() =>
+        DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
+        };
+}

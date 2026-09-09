@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -228,6 +229,242 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
         Assert.Equal(
             expected,
             SpecialKeyBindingSource.IsPreferencesFileEvent("preferences.json", name, oldName));
+    }
+
+    [Fact]
+    public async Task RunAsync_RetriesFailedReadWithoutAnotherWatcherEventAndStopsRetryingAfterSuccess()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        Action? changed = null;
+        int loads = 0;
+        int retries = 0;
+        var retryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRetry = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => ++loads switch
+            {
+                1 => Task.FromResult(PreferencesWith(SpecialKeyActionKind.Disabled)),
+                2 => Task.FromException<UiPreferences>(new IOException("temporarily locked")),
+                _ => Task.FromResult(PreferencesWith(SpecialKeyActionKind.CyclePowerMode)),
+            },
+            createWatcher: (_, onChanged, _) =>
+            {
+                changed = onChanged;
+                return new FakeWatcher();
+            },
+            delay: (interval, token) =>
+            {
+                if (interval != SpecialKeyBindingSource.FallbackRefreshInterval)
+                {
+                    return Task.CompletedTask;
+                }
+                Interlocked.Increment(ref retries);
+                retryStarted.TrySetResult();
+                return releaseRetry.Task.WaitAsync(token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(() => changed is not null, cancellation.Token);
+            await File.WriteAllTextAsync(path, "updated and longer");
+            changed!();
+            await retryStarted.Task.WaitAsync(cancellation.Token);
+            Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+            Assert.Equal(2, loads);
+            releaseRetry.TrySetResult();
+            await WaitUntilAsync(() => loads == 3, cancellation.Token);
+            await WaitUntilAsync(
+                () => source.GetAction(SpecialKeySlot.M1).Kind == SpecialKeyActionKind.CyclePowerMode,
+                cancellation.Token);
+            Assert.Equal(1, retries);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelsPendingReadRetry()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        var retryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => Task.FromException<UiPreferences>(new IOException("locked")),
+            createWatcher: (_, _, _) => new FakeWatcher(),
+            delay: (interval, token) =>
+            {
+                Assert.Equal(SpecialKeyBindingSource.FallbackRefreshInterval, interval);
+                retryStarted.TrySetResult();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        await retryStarted.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_RearmsAfterFailureWhileArmingEvenIfChangeOverwritesSignal(bool changeAfterFailure)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        var firstWatcher = new FakeWatcher();
+        int attempts = 0;
+        int loads = 0;
+        Action? changed = null;
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => Task.FromResult(PreferencesWith(++loads == 1
+                ? SpecialKeyActionKind.Disabled : SpecialKeyActionKind.CyclePowerMode)),
+            createWatcher: (_, onChanged, onFailed) =>
+            {
+                if (++attempts == 1)
+                {
+                    onFailed();
+                    if (changeAfterFailure)
+                    {
+                        onChanged();
+                    }
+                    return firstWatcher;
+                }
+                changed = onChanged;
+                return new FakeWatcher();
+            },
+            delay: (_, _) => Task.CompletedTask);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(() => changed is not null, cancellation.Token);
+            Assert.Equal(2, attempts);
+            Assert.True(firstWatcher.Disposed);
+            await File.WriteAllTextAsync(path, "updated and longer");
+            changed!();
+            await WaitUntilAsync(
+                () => source.GetAction(SpecialKeySlot.M1).Kind == SpecialKeyActionKind.CyclePowerMode,
+                cancellation.Token);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_PersistentReadFailureBacksOffAndReportsOnce(bool hasWatcher)
+    {
+        var waits = Channel.CreateUnbounded<(TimeSpan Interval, TaskCompletionSource Release)>();
+        int errors = 0;
+        var source = new SpecialKeyBindingSource(
+            Path.Combine(directory, "preferences.json"),
+            _ => Task.FromException<UiPreferences>(new IOException("locked")),
+            _ => Interlocked.Increment(ref errors),
+            createWatcher: (_, _, _) => hasWatcher ? new FakeWatcher() : null,
+            delay: (interval, token) =>
+            {
+                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                waits.Writer.TryWrite((interval, release));
+                return release.Task.WaitAsync(token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        try
+        {
+            int[] expectedSeconds = [1, 2, 4, 8, 16, 30, 30];
+            for (int index = 0; index < expectedSeconds.Length; index++)
+            {
+                var wait = await waits.Reader.ReadAsync(cancellation.Token);
+                Assert.Equal(TimeSpan.FromSeconds(expectedSeconds[index]), wait.Interval);
+                Assert.Equal(1, Volatile.Read(ref errors));
+                if (index < expectedSeconds.Length - 1)
+                {
+                    wait.Release.SetResult();
+                }
+            }
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_SuccessResetsReadBackoffAndWarningSuppression()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, "initial");
+        var waits = Channel.CreateUnbounded<(TimeSpan Interval, TaskCompletionSource Release)>();
+        int failRead = 1;
+        int errors = 0;
+        Action? changed = null;
+        var source = new SpecialKeyBindingSource(
+            path,
+            _ => Volatile.Read(ref failRead) != 0
+                ? Task.FromException<UiPreferences>(new IOException("locked"))
+                : Task.FromResult(PreferencesWith(SpecialKeyActionKind.Disabled)),
+            _ => Interlocked.Increment(ref errors),
+            createWatcher: (_, onChanged, _) =>
+            {
+                changed = onChanged;
+                return new FakeWatcher();
+            },
+            delay: (interval, token) =>
+            {
+                if (interval == SpecialKeyBindingSource.ChangeSettleDelay)
+                {
+                    return Task.CompletedTask;
+                }
+                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                waits.Writer.TryWrite((interval, release));
+                return release.Task.WaitAsync(token);
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task running = source.RunAsync(cancellation.Token);
+        try
+        {
+            var first = await waits.Reader.ReadAsync(cancellation.Token);
+            Assert.Equal(TimeSpan.FromSeconds(1), first.Interval);
+            first.Release.SetResult();
+            var second = await waits.Reader.ReadAsync(cancellation.Token);
+            Assert.Equal(TimeSpan.FromSeconds(2), second.Interval);
+            Volatile.Write(ref failRead, 0);
+            second.Release.SetResult();
+            await WaitUntilAsync(
+                () => source.GetAction(SpecialKeySlot.M1).Kind == SpecialKeyActionKind.Disabled,
+                cancellation.Token);
+            Assert.Equal(1, Volatile.Read(ref errors));
+            Assert.False(waits.Reader.TryRead(out _));
+
+            Volatile.Write(ref failRead, 1);
+            await File.WriteAllTextAsync(path, "updated and longer");
+            changed!();
+            var restarted = await waits.Reader.ReadAsync(cancellation.Token);
+            Assert.Equal(TimeSpan.FromSeconds(1), restarted.Interval);
+            Assert.Equal(2, Volatile.Read(ref errors));
+            Assert.Equal(SpecialKeyActionKind.Disabled, source.GetAction(SpecialKeySlot.M1).Kind);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
     }
 
     private sealed class FakeWatcher : IDisposable

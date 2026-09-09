@@ -8219,8 +8219,10 @@ public sealed partial class MainViewModelTests
     public async Task StreamCompletion_RetainsLastSnapshotButDisablesCommands()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
+        int beforePublication = dispatcher.CompletedCalls;
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             DesiredState = CreateStatus(true, false).DesiredState with
@@ -8230,10 +8232,15 @@ public sealed partial class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         });
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Performance);
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforePublication
+            && viewModel.SelectedPerformance == PerformancePreset.Performance);
 
+        int beforeDisconnect = dispatcher.CompletedCalls;
         client.CompleteWatch();
-        await WaitUntilAsync(() => !viewModel.IsConnected);
+        // IsConnected changes before the rest of the dispatcher-owned state.
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforeDisconnect && !viewModel.IsConnected);
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
         Assert.Equal("Service disconnected", viewModel.ConnectionStatus);

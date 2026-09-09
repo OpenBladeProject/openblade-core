@@ -154,7 +154,6 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
                 return;
             }
 
-            Task delay;
             try
             {
                 TimeSpan interval = observationIntervalProvider();
@@ -162,9 +161,27 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
                 {
                     interval = DefaultObservationInterval;
                 }
-                delay = delayAsync(interval, token);
+                if (interval == Timeout.InfiniteTimeSpan)
+                {
+                    await wake.Task.WaitAsync(token).ConfigureAwait(false);
+                    continue;
+                }
+
+                using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+                Task delay = delayAsync(interval, waitCancellation.Token);
                 Task completed = await Task.WhenAny(delay, wake.Task).ConfigureAwait(false);
                 await completed.ConfigureAwait(false);
+                if (completed != delay)
+                {
+                    await waitCancellation.CancelAsync().ConfigureAwait(false);
+                    try
+                    {
+                        await delay.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (waitCancellation.IsCancellationRequested)
+                    {
+                    }
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {

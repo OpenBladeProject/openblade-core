@@ -15,13 +15,15 @@ public interface ISpecialKeyBindingSource
 /// preferences file. Changes arrive through a file-system watcher so the
 /// Session Agent does not wake every second; bounded polling is used only
 /// while a watcher cannot be armed, for example before the preferences
-/// directory exists.
+/// directory exists. Failed reads back off to a capped retry interval and
+/// report only the first failure until a read succeeds.
 /// </summary>
 public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
 {
     internal static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(1);
     internal static readonly TimeSpan ChangeSettleDelay = TimeSpan.FromMilliseconds(100);
     internal static readonly TimeSpan WatcherRearmDelay = TimeSpan.FromSeconds(1);
+    internal static readonly TimeSpan MaximumReadRetryInterval = TimeSpan.FromSeconds(30);
 
     private readonly string preferencesPath;
     private readonly Func<CancellationToken, Task<UiPreferences>> loadPreferences;
@@ -37,6 +39,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         });
     private FileSignature observedSignature;
     private bool signatureInitialized;
+    private TimeSpan readRetryInterval;
     private SpecialKeyBindingPreference[] current =
         SpecialKeyBindingDefaults.Bindings.ToArray();
 
@@ -95,10 +98,14 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using IDisposable? watcher = TryCreateWatcher();
+            // Failure is sticky for this watcher: a later Changed signal must
+            // not overwrite it in the capacity-one notification channel.
+            int watcherFailed = 0;
+            using IDisposable? watcher = TryCreateWatcher(() => Volatile.Write(ref watcherFailed, 1));
             if (watcher is null)
             {
-                await delay(FallbackRefreshInterval, cancellationToken).ConfigureAwait(false);
+                await delay(readRetryInterval == TimeSpan.Zero ? FallbackRefreshInterval : readRetryInterval,
+                    cancellationToken).ConfigureAwait(false);
                 await ReloadIfChangedAsync(force: false, cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -107,44 +114,70 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
             // A write that landed while the watcher was being armed produced
             // no event, so compare the on-disk signature once before waiting.
             DrainSignals();
-            await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
-            if (!await WatchUntilFailureAsync(cancellationToken).ConfigureAwait(false))
+            if (Volatile.Read(ref watcherFailed) != 0)
+            {
+                await delay(WatcherRearmDelay, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            bool loaded = readRetryInterval == TimeSpan.Zero
+                && await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
+            if (!await WatchUntilFailureAsync(!loaded, () => Volatile.Read(ref watcherFailed) != 0,
+                cancellationToken).ConfigureAwait(false))
             {
                 await delay(WatcherRearmDelay, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<bool> WatchUntilFailureAsync(CancellationToken cancellationToken)
+    private async Task<bool> WatchUntilFailureAsync(
+        bool retryPending,
+        Func<bool> watcherHasFailed,
+        CancellationToken cancellationToken)
     {
         while (true)
         {
-            WatchSignal signal = await signals.Reader.ReadAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (signal == WatchSignal.Failed)
+            if (watcherHasFailed())
             {
                 return false;
             }
+            if (retryPending)
+            {
+                // Releasing a file lock produces no change event. Keep one
+                // bounded retry pending until the read succeeds or we stop.
+                await delay(readRetryInterval, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                WatchSignal signal = await signals.Reader.ReadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (signal == WatchSignal.Failed)
+                {
+                    return false;
+                }
 
-            // The tray replaces the file atomically, but coalesce the burst of
-            // create, rename, and attribute events into one signature compare.
-            await delay(ChangeSettleDelay, cancellationToken).ConfigureAwait(false);
-            if (DrainSignals() == WatchSignal.Failed)
+                // Coalesce an atomic replacement's burst into one signature compare.
+                await delay(ChangeSettleDelay, cancellationToken).ConfigureAwait(false);
+            }
+            if (DrainSignals() == WatchSignal.Failed || watcherHasFailed())
             {
                 return false;
             }
-            await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
+            retryPending = !await ReloadIfChangedAsync(force: false, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private IDisposable? TryCreateWatcher()
+    private IDisposable? TryCreateWatcher(Action markFailed)
     {
         try
         {
             return createWatcher(
                 preferencesPath,
                 () => signals.Writer.TryWrite(WatchSignal.Changed),
-                () => signals.Writer.TryWrite(WatchSignal.Failed));
+                () =>
+                {
+                    markFailed();
+                    signals.Writer.TryWrite(WatchSignal.Failed);
+                });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -167,7 +200,7 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         return drained;
     }
 
-    internal async Task ReloadIfChangedAsync(
+    internal async Task<bool> ReloadIfChangedAsync(
         bool force,
         CancellationToken cancellationToken)
     {
@@ -180,7 +213,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 file.Exists ? file.LastWriteTimeUtc : default);
             if (!force && signatureInitialized && signature == observedSignature)
             {
-                return;
+                readRetryInterval = TimeSpan.Zero;
+                return true;
             }
 
             UiPreferences preferences = await loadPreferences(cancellationToken)
@@ -190,6 +224,8 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
                 preferences.EffectiveSpecialKeyBindings.ToArray());
             observedSignature = signature;
             signatureInitialized = true;
+            readRetryInterval = TimeSpan.Zero;
+            return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -197,7 +233,17 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         }
         catch (Exception exception)
         {
-            ReportFailure(exception);
+            if (readRetryInterval == TimeSpan.Zero)
+            {
+                readRetryInterval = FallbackRefreshInterval;
+                ReportFailure(exception);
+            }
+            else
+            {
+                readRetryInterval = TimeSpan.FromSeconds(Math.Min(
+                    readRetryInterval.TotalSeconds * 2, MaximumReadRetryInterval.TotalSeconds));
+            }
+            return false;
         }
     }
 

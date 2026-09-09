@@ -13,6 +13,7 @@ public sealed record ProfileExportDocument(
 public static class ProfileExportSerializer
 {
     public const int CurrentSchemaVersion = 10;
+    public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -55,6 +56,11 @@ public static class ProfileExportSerializer
 
     public static ProfileSet Deserialize(string json)
     {
+        if (json is not null && (json.Length > MaximumFileSizeBytes
+            || System.Text.Encoding.UTF8.GetByteCount(json) > MaximumFileSizeBytes))
+        {
+            throw new InvalidDataException("Profile files cannot exceed 1 MiB.");
+        }
         if (string.IsNullOrWhiteSpace(json))
         {
             throw new InvalidDataException("The profile file is empty.");

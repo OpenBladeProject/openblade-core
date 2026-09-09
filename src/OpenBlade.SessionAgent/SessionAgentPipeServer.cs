@@ -114,14 +114,18 @@ internal sealed class SessionAgentPipeServer<TRequest, TResponse> : IAsyncDispos
         {
             try
             {
+                // Deadlines request cooperative cancellation. Retain this connection
+                // and operation ownership until a noninterruptible native call and
+                // its reconciliation finish; abandoning it could overlap mutations.
                 response = await dispatch(request, dispatchToken.Token).ConfigureAwait(false);
+                dispatchToken.Token.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) when (
                 dispatchDeadline.IsCancellationRequested
                 && !cancellationToken.IsCancellationRequested)
             {
-                // A stalled native operation ends this request without
-                // terminating the session agent or blocking later clients.
+                // Once dispatch has quiesced, close the expired request. A token
+                // deadline cannot forcibly interrupt an in-process native call.
                 return;
             }
             catch (Exception exception) when (

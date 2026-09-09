@@ -17,6 +17,7 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
     private readonly object sync = new();
     private readonly Dictionary<long, SubscriptionState> subscriptions = [];
     private readonly TimeProvider timeProvider;
+    private readonly Action<long>? beforeDelivery;
     private ServiceStatusSnapshot? latest;
     private int subscriberCount;
     private long nextSubscriptionId;
@@ -34,6 +35,13 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
+    // Allows deterministic observation immediately before a subscriber delivery in tests.
+    internal StatusSubscriptionHub(TimeProvider timeProvider, Action<long> beforeDelivery)
+        : this(timeProvider)
+    {
+        this.beforeDelivery = beforeDelivery;
+    }
+
     public StatusSubscriptionLease Subscribe(CancellationToken cancellationToken)
     {
         ReserveSlot();
@@ -47,7 +55,7 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
                     SingleReader = true,
                     SingleWriter = false,
                 });
-            var state = new SubscriptionState(id, channel, Release);
+            var state = new SubscriptionState(id, channel, Release, beforeDelivery);
             state.AttachLifetime(timeProvider, MaximumConnectionLifetime);
             state.AttachCallerCancellation(cancellationToken);
             lock (sync)
@@ -71,7 +79,6 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
     public void Publish(ServiceStatusSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        SubscriptionState[] targets;
         lock (sync)
         {
             if (latest is not null && snapshot.Revision <= latest.Revision)
@@ -80,12 +87,12 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
             }
 
             latest = snapshot;
-            targets = subscriptions.Values.ToArray();
-        }
-
-        foreach (SubscriptionState target in targets)
-        {
-            target.TryPublish(snapshot);
+            // TryWrite is nonblocking. Keep delivery in the revision-order lock so
+            // an older publication cannot overwrite a newer unread snapshot.
+            foreach (SubscriptionState target in subscriptions.Values)
+            {
+                target.TryPublish(snapshot);
+            }
         }
     }
 
@@ -126,7 +133,8 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
     internal sealed class SubscriptionState(
         long id,
         Channel<ServiceStatusSnapshot> channel,
-        Action<long> release)
+        Action<long> release,
+        Action<long>? beforeDelivery)
     {
         private CancellationTokenRegistration callerCancellation;
         private CancellationToken callerToken;
@@ -157,8 +165,11 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
                 Timeout.InfiniteTimeSpan);
         }
 
-        public void TryPublish(ServiceStatusSnapshot snapshot) =>
+        public void TryPublish(ServiceStatusSnapshot snapshot)
+        {
+            beforeDelivery?.Invoke(snapshot.Revision);
             channel.Writer.TryWrite(snapshot);
+        }
 
         public void Dispose()
         {
