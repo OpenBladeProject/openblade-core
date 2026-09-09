@@ -96,6 +96,9 @@ Assert-ContainsAll `
         'docs/nightly-changelog-automation',
         '--force-with-lease=refs/heads/docs/nightly-changelog-automation:<observed-remote-sha>',
         'exactly four assets',
+        'build/Complete-NightlyRelease.ps1 -Tag <exact-tag>',
+        'Never publish before the changelog is merged.',
+        'Changelog generation or attachment failure blocks publication.',
         'GitHub artifact attestations were unavailable',
         'Leave the exact build worktree') `
     -Source 'references/workflow.md'

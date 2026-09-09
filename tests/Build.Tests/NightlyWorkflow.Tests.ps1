@@ -32,6 +32,8 @@ function Get-WorkflowJobBlock {
 $ci = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\ci.yml') -Raw
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw
 $nightly = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\nightly.yml') -Raw
+$finalizeNightly = Get-Content -LiteralPath (
+    Join-Path $repository '.github\workflows\finalize-nightly.yml') -Raw
 
 Assert-True ($ci.Contains('uses: ./.github/workflows/build.yml')) `
     'CI must call the shared build workflow.'
@@ -150,7 +152,7 @@ Assert-True ($nightly.Contains('id-token: write')) `
     'Nightly provenance attestation requires OIDC permission.'
 Assert-True ($nightly.Contains('attestations: write')) `
     'Nightly provenance attestation requires attestation permission.'
-$publishJob = Get-WorkflowJobBlock `
+$draftJob = Get-WorkflowJobBlock `
     -Workflow $nightly `
     -Job 'publish-nightly-release'
 $changelogJob = Get-WorkflowJobBlock `
@@ -162,8 +164,10 @@ foreach ($requiredReleaseContract in @(
         'fetch-depth: 0',
         './build/NightlyChangelog.ps1',
         'OpenBlade-Nightly-CHANGELOG.md',
+        'Prepare nightly draft',
         'gh release create',
         '--prerelease',
+        '--draft',
         '--latest=false',
         'artifacts/OpenBlade-Setup.exe.sha256',
         'artifacts/OpenBlade-Nightly.json',
@@ -179,36 +183,28 @@ foreach ($requiredReleaseContract in @(
     Assert-True ($nightly.Contains($requiredReleaseContract)) `
         "Nightly release publishing is missing '$requiredReleaseContract'."
 }
-Assert-True ($publishJob.Contains('contents: write')) `
-    'Only the release job needs permission to publish repository contents.'
-Assert-True (-not $publishJob.Contains('pull-requests: write')) `
-    'The release job must not receive pull-request write permission.'
+Assert-True ($draftJob.Contains('contents: write')) `
+    'The draft job needs permission to create and attach release assets.'
+Assert-True (-not $draftJob.Contains('pull-requests: write')) `
+    'The draft job must not receive pull-request write permission.'
 Assert-True ($changelogJob.Contains('contents: write')) `
     'The changelog job needs permission to update its bot branch.'
 Assert-True ($changelogJob.Contains('pull-requests: write')) `
     'The changelog job needs permission to open or update its draft pull request.'
-Assert-True ($publishJob.Contains(
-        'Nightly changelog tally failed without blocking publication')) `
-    'Changelog tally failures must not prevent nightly publication.'
-Assert-True ($publishJob.Contains(
-        'The attached changelog is the exact source snapshot.')) `
-    'A failed tally must attach and identify the exact source changelog.'
-Assert-True ($publishJob.Contains(
-        'Changelog processing runs independently after publication.')) `
-    'Initial release notes must describe processing without promising an attachment.'
-Assert-True (-not $publishJob.Contains(
-        'changelog tally is attached after publication')) `
-    'Initial release notes must not promise an attachment before upload succeeds.'
-Assert-True ($publishJob.Contains('continue-on-error: true')) `
-    'Attaching the changelog must remain nonfatal after release publication.'
-$publishIndex = $publishJob.IndexOf(
+Assert-True (-not $draftJob.Contains('continue-on-error: true')) `
+    'Generating and attaching the draft changelog must be a strict release gate.'
+Assert-True (-not $draftJob.Contains('Nightly changelog tally failed')) `
+    'The nightly workflow must not attach a source-copy fallback changelog.'
+$draftIndex = $draftJob.IndexOf(
     'gh release create',
     [StringComparison]::Ordinal)
-$tallyIndex = $publishJob.IndexOf(
+$tallyIndex = $draftJob.IndexOf(
     'Write-OpenBladeNightlyChangelogSnapshot',
     [StringComparison]::Ordinal)
-Assert-True ($publishIndex -ge 0 -and $publishIndex -lt $tallyIndex) `
-    'The nightly release must be published before changelog generation begins.'
+Assert-True ($draftIndex -ge 0 -and $draftIndex -lt $tallyIndex) `
+    'The changelog snapshot must be generated only after its draft exists.'
+Assert-True ($draftJob.Contains('gh release upload')) `
+    'The strict generated changelog must be attached to the draft.'
 Assert-True (-not $nightly.Contains('[DateTimeOffset]::UtcNow')) `
     'Nightly changelog dates must not depend on a second wall-clock reading.'
 Assert-True (-not $nightly.Contains('metadata.createdAtUtc')) `
@@ -216,7 +212,21 @@ Assert-True (-not $nightly.Contains('metadata.createdAtUtc')) `
 Assert-True ([Regex]::Matches(
         $nightly,
         '-CurrentPublishedAt \$currentPublishedAt').Count -eq 2) `
-    'Both changelog paths must use the canonical release publication timestamp.'
+    'Both changelog paths must use the draft creation timestamp.'
+Assert-True ($nightly.Contains('--json createdAt')) `
+    'Both generated changelog paths must read the immutable draft creation timestamp.'
+Assert-True (-not $nightly.Contains('--draft=false')) `
+    'The scheduled workflow must never turn a nightly draft public.'
+Assert-True ($finalizeNightly.Contains('workflow_dispatch:')) `
+    'Finalization must require explicit dispatch after the changelog PR merges.'
+Assert-True ($finalizeNightly.Contains('ref: main')) `
+    'Finalization must inspect current main, not the original nightly checkout.'
+Assert-True ($finalizeNightly.Contains('./build/Complete-NightlyRelease.ps1')) `
+    'Finalization must use the shared release gate rather than inline publication.'
+Assert-True ($finalizeNightly.Contains('OPENBLADE_NIGHTLY_TAG: ${{ inputs.tag }}')) `
+    'Finalization must require the exact prepared draft tag.'
+Assert-True (-not $finalizeNightly.Contains('gh release create')) `
+    'Finalization must only publish an existing prepared draft.'
 Assert-True (-not $nightly.Contains('git push origin main')) `
     'Nightly changelog automation must never push directly to main.'
 $pwshBlockPattern =
