@@ -35,6 +35,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   readback resolves the exact requested state, without replaying the command.
   Delayed confirmation preserves the original battery intent, and an unknown
   adapter defers external-change attribution while control writes remain blocked.
+  Power-source transitions retain steps that were never submitted after an
+  uncertain write, allowing fresh confirmed recovery to finish battery,
+  fan, and lighting changes without replaying earlier commands.
   ([#444](https://github.com/OSSBlade/openblade-core/pull/444))
 - Kept service status subscriptions ordered during concurrent updates so a
   newer pending snapshot cannot be replaced by an older one.

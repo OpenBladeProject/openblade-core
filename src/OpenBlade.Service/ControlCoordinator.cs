@@ -30,7 +30,8 @@ internal sealed record FullTransitionApplyOutcome(
     bool DeviceAccessFailed,
     IReadOnlySet<DeviceSubsystem>? ConfirmationUnavailable = null,
     ConfirmedDeviceState? PreWriteState = null,
-    DesiredDeviceState? EffectiveDesired = null);
+    DesiredDeviceState? EffectiveDesired = null,
+    IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -822,20 +823,23 @@ public sealed class ControlCoordinator
         Func<CancellationToken, Task<PowerTransitionDeviceStateReadResult>>?
             stateReader = null,
         Func<IBladeDevice, CancellationToken,
-            Task<PowerTransitionDeviceStateReadResult>>? deviceStateReader = null)
+            Task<PowerTransitionDeviceStateReadResult>>? deviceStateReader = null,
+        Func<IBladeDevice, ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
+            continuationScopeResolver = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var transition = new FullTransitionApplyState();
         DeviceCapabilities capabilities;
         ConfirmedDeviceState initial;
         bool lightingReadUnavailable = false;
+        IReadOnlySet<DeviceSubsystem>? continuationScope = null;
         try
         {
             IBladeDevice initialDevice = thermalStepRunner?.CurrentDevice ?? device;
             capabilities = await initialDevice.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
             desired = DropUnsupportedGpuClockTuning(desired, capabilities);
-            if (desired.GpuClockTuning is null)
+            if (desired.GpuClockTuning is null && continuationScopeResolver is null)
             {
                 // Null means OpenBlade no longer manages or reports NVIDIA
                 // offsets; it does not mean reset them. A reset would require
@@ -859,6 +863,7 @@ public sealed class ControlCoordinator
             lightingReadUnavailable =
                 initialRead.LightingOffConfirmationUnavailable;
             cancellationToken.ThrowIfCancellationRequested();
+            continuationScope = continuationScopeResolver?.Invoke(initialDevice, initial);
             if (automaticWriteExclusionResolver is not null)
             {
                 automaticWriteExclusions = automaticWriteExclusionResolver(initial);
@@ -903,7 +908,8 @@ public sealed class ControlCoordinator
                 automaticWriteExclusions,
                 lightingReadUnavailable,
                 transition,
-                cancellationToken);
+                cancellationToken,
+                continuationScope);
 
             if (transition.Attempted.Count == 0)
             {
@@ -915,7 +921,8 @@ public sealed class ControlCoordinator
                     transition.Contradicted,
                     capabilities,
                     DeviceAccessFailed: false,
-                    effectiveDesired: desired);
+                    effectiveDesired: desired,
+                    deferredNotSubmitted: transition.DeferredNotSubmitted);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -984,7 +991,8 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: true,
                     confirmationUnavailable: confirmationUnavailable,
                     preWriteState: initial,
-                    effectiveDesired: desired);
+                    effectiveDesired: desired,
+                    deferredNotSubmitted: transition.DeferredNotSubmitted);
             }
 
             IReadOnlySet<DeviceSubsystem> finalReadUnavailable =
@@ -1027,9 +1035,11 @@ public sealed class ControlCoordinator
                     ? attemptedWithoutConfirmation
                     : null,
                 preWriteState: attemptedWithoutConfirmation.Count > 0
+                    || transition.DeferredNotSubmitted.Count > 0
                     ? initial
                     : null,
-                effectiveDesired: desired);
+                effectiveDesired: desired,
+                deferredNotSubmitted: transition.DeferredNotSubmitted);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested
@@ -1174,7 +1184,8 @@ public sealed class ControlCoordinator
         IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions,
         bool lightingReadUnavailable,
         FullTransitionApplyState transition,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<DeviceSubsystem>? continuationScope = null)
     {
         bool stopFurtherWrites = false;
         string? stopReason = null;
@@ -1186,6 +1197,14 @@ public sealed class ControlCoordinator
         foreach (DeviceSubsystem subsystem in orderedSubsystems)
         {
             PendingSubsystem pending = states[subsystem];
+            if (continuationScope is not null && !continuationScope.Contains(subsystem))
+            {
+                transition.ContinuationExcluded.Add(subsystem);
+                transition.Provisional[subsystem] = new(
+                    ControlResultStatus.Blocked,
+                    $"{pending.Name} is not part of the remaining transition work.");
+                continue;
+            }
             if (automaticWriteExclusions?.Contains(subsystem) == true)
             {
                 transition.Provisional[subsystem] =
@@ -1218,6 +1237,7 @@ public sealed class ControlCoordinator
 
             if (stopFurtherWrites)
             {
+                transition.DeferredNotSubmitted.Add(subsystem);
                 transition.Provisional[subsystem] = SubsequentWritesBlocked(stopReason!);
                 continue;
             }
@@ -1343,6 +1363,7 @@ public sealed class ControlCoordinator
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
             {
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
+                transition.ConfirmationUnavailable.Add(subsystem);
                 stopFurtherWrites = true;
                 stopReason = transition.Provisional[subsystem].Message;
                 transition.DeviceAccessFailed = true;
@@ -1518,6 +1539,10 @@ public sealed class ControlCoordinator
         transition.Matched.Clear();
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
+            if (transition.ContinuationExcluded.Contains(subsystem))
+            {
+                continue;
+            }
             PendingSubsystem pending = states[subsystem];
             if (transition.ConfirmationUnavailable.Contains(subsystem))
             {
@@ -2205,7 +2230,8 @@ public sealed class ControlCoordinator
         bool DeviceAccessFailed,
         IReadOnlySet<DeviceSubsystem>? confirmationUnavailable = null,
         ConfirmedDeviceState? preWriteState = null,
-        DesiredDeviceState? effectiveDesired = null) => new(
+        DesiredDeviceState? effectiveDesired = null,
+        IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -2219,7 +2245,8 @@ public sealed class ControlCoordinator
             DeviceAccessFailed,
             confirmationUnavailable,
             preWriteState,
-            effectiveDesired);
+            effectiveDesired,
+            deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted));
 
     private BatteryOperationPlan CreateBatteryPlan(
         DesiredBatteryState desired,
@@ -2778,6 +2805,8 @@ public sealed class ControlCoordinator
         public HashSet<DeviceSubsystem> Matched { get; } = [];
         public HashSet<DeviceSubsystem> Contradicted { get; } = [];
         public HashSet<DeviceSubsystem> ConfirmationUnavailable { get; } = [];
+        public HashSet<DeviceSubsystem> DeferredNotSubmitted { get; } = [];
+        public HashSet<DeviceSubsystem> ContinuationExcluded { get; } = [];
         public bool DeviceAccessFailed { get; set; }
     }
 
