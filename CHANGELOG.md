@@ -5,6 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Nightly releases remain drafts until their generated changelog is merged
+  into `main` and the shared publication gate verifies the release assets,
+  changelog snapshot, and comparison link.
+  ([#446](https://github.com/OSSBlade/openblade-core/pull/446))
+
 ## [0.20.11-nightly.47] - 2026-09-09
 
 ### Changed
