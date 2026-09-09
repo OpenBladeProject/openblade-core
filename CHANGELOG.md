@@ -29,6 +29,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed false external-change warnings after uncertain battery command responses
+  and missing battery or custom-performance reads. Charge limits, protection
+  toggles, and temporary full charge now retain pending confirmation until fresh
+  readback resolves the exact requested state, without replaying the command.
+  ([#444](https://github.com/OSSBlade/openblade-core/pull/444))
 - Kept service status subscriptions ordered during concurrent updates so a
   newer pending snapshot cannot be replaced by an older one.
   ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
