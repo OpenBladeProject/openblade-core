@@ -165,6 +165,110 @@ public sealed class ConfirmedStateDriftTrackerTests
             updated);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingBatteryRead_PreservesBaselineAndRealDrift(bool changed)
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: Battery(80)));
+
+        tracker.Observe(State());
+        Assert.Empty(tracker.ExternalChanges);
+        tracker.Observe(State(battery: Battery(changed ? 75 : 80)));
+
+        Assert.Equal(changed ? [DeviceSubsystem.Battery] : [], tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void FirstBatteryAfterUnavailable_EstablishesBaseline()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State());
+        tracker.Observe(State(battery: Battery(80)));
+
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingTemporaryChargeRead_PreservesBaselineAndRealDrift(bool changed)
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: Battery(80)));
+
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        Assert.Empty(tracker.ExternalChanges);
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, changed)));
+
+        Assert.Equal(changed ? [DeviceSubsystem.Battery] : [], tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void PartialBatteryRead_StillDetectsConfirmedLimitChange()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: Battery(80)));
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 75, null)));
+
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
+        tracker.Observe(State());
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 75, false)));
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void FirstTemporaryChargeRead_EstablishesIndependentBaseline()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: new ConfirmedBatteryState(true, 80, null)));
+        tracker.Observe(State(battery: Battery(80)));
+
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void MissingCustomPerformanceRead_PreservesBaselineAndRealDrift(
+        bool missingPreset,
+        bool changed)
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        ConfirmedDeviceState baseline = State(performance: PerformancePreset.Custom) with
+        {
+            CustomPerformance = CustomPerformanceSettings.Default,
+        };
+        tracker.Observe(baseline);
+        tracker.Observe(State(performance: missingPreset ? null : PerformancePreset.Custom));
+        Assert.Empty(tracker.ExternalChanges);
+
+        tracker.Observe(baseline with
+        {
+            CustomPerformance = changed
+                ? new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low)
+                : baseline.CustomPerformance,
+        });
+
+        Assert.Equal(changed ? [DeviceSubsystem.Performance] : [], tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void FirstCustomLevelsAfterUnavailable_EstablishBaseline()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(performance: PerformancePreset.Custom));
+        tracker.Observe(State(performance: PerformancePreset.Custom) with
+        {
+            CustomPerformance = CustomPerformanceSettings.Default,
+        });
+
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
     private static ConfirmedDeviceState State(
         PerformancePreset? performance = null,
         FanMode? fans = null,

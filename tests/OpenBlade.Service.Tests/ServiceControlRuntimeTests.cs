@@ -11247,6 +11247,376 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullChargeOverride_TransientBatteryObservationDoesNotLatchExternalChange(
+        bool partialRead)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            enabled: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        ConfirmedDeviceState confirmed = context.Device.ConfirmedState;
+        Assert.True(confirmed.Battery!.TemporaryFullCharge);
+        context.Device.ConfirmedState = confirmed with
+        {
+            Battery = partialRead
+                ? new ConfirmedBatteryState(true, 80, null)
+                : null,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
+        context.Device.ConfirmedState = confirmed;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Theory]
+    [InlineData("full-charge", false)]
+    [InlineData("full-charge", true)]
+    [InlineData("limit", false)]
+    [InlineData("limit", true)]
+    [InlineData("protection", false)]
+    [InlineData("protection", true)]
+    public async Task BatteryResponseFailure_ReconcilesLaterWithoutExternalChangeOrReplay(
+        string operation,
+        bool postSetterReadFailure)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (postSetterReadFailure)
+        {
+            context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        }
+        else
+        {
+            context.Device.AfterSetter = subsystem =>
+            {
+                if (subsystem == DeviceSubsystem.Battery)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        "Battery command response lost after submission.");
+                }
+            };
+        }
+
+        ControlOperationResult result = operation switch
+        {
+            "full-charge" => await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None),
+            "limit" => await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None),
+            _ => await context.Runtime.SetBatteryProtectionAsync(false, CancellationToken.None),
+        };
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        int setters = context.Device.TotalSetterCalls;
+        ConfirmedDeviceState applied = context.Device.ConfirmedState;
+        context.Device.ConfirmedState = applied with { Battery = null };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
+        context.Device.ConfirmedState = applied;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(applied.Battery, context.Runtime.GetStatus().ConfirmedState!.Battery);
+        DesiredBatteryState committed = context.Runtime.GetStatus().DesiredState.Battery;
+        Assert.Equal(applied.Battery!.ProtectionEnabled, committed.ProtectionEnabled);
+        Assert.Equal(applied.Battery.TemporaryFullCharge, committed.TemporaryFullCharge);
+        if (applied.Battery.ProtectionEnabled)
+        {
+            Assert.Equal(applied.Battery.ChargeLimitPercent, committed.ConfiguredPolicy.ChargeLimitPercent);
+        }
+        Assert.Equal(BatteryPolicy.Create(80), (await context.Store.LoadAsync(CancellationToken.None)).Profiles.BatteryPolicy);
+        Assert.Equal(operation == "limit" ? BatteryPolicy.Create(75) : null, context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Equal(operation == "protection" ? false : (bool?)null, context.Runtime.GetStatus().BatteryProtectionOverride);
+    }
+
+    [Fact]
+    public async Task DelayedFullChargeCancellation_CommitsOnlyTemporaryIntent()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetFullChargeOverrideAsync(false, CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        int batterySetters = context.Device.BatterySetCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Null(context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.Equal(batterySetters, context.Device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task DelayedChargeLimit_PreservesExplicitOverrideAcrossProfileUpdate()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(70),
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        int batterySetters = context.Device.BatterySetCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(profiles, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(batterySetters, context.Device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task DelayedFullCharge_DoesNotRecommitUnrelatedProfilePolicy()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(BatteryPolicy.Create(75), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.Null(context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingBattery_DoesNotCommitAcrossUserActivation(bool fullCharge)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var firstSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [firstSid.Value] = profiles,
+            [secondSid.Value] = profiles,
+        }, directory);
+        TestContext context = CreateWritableContext(userConfigurationRepository: repository);
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        if (fullCharge)
+        {
+            await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        }
+        else
+        {
+            await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None);
+        }
+        int batterySetters = context.Device.BatterySetCalls;
+
+        await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Null(context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(context.Runtime.GetStatus().BatteryProtectionOverride);
+        Assert.Equal(batterySetters, context.Device.BatterySetCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingBattery_DoesNotCommitAcrossPowerBoundary(bool fullCharge)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        if (fullCharge)
+        {
+            await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        }
+        else
+        {
+            await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None);
+        }
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.Null(context.Runtime.GetStatus().BatteryPolicyOverride);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DelayedBatteryIntent_SurvivesItsSupportedPowerTransition(bool fullCharge)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        if (fullCharge)
+        {
+            await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        }
+        else
+        {
+            await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None);
+        }
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int batterySetters = context.Device.BatterySetCalls;
+
+        context.Telemetry.Current = CreateTelemetry(fullCharge ? PowerSource.UsbC : PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(batterySetters, context.Device.BatterySetCalls);
+        Assert.Equal(fullCharge, context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(fullCharge ? 80 : 75, context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        if (fullCharge)
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+            Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+            Assert.False(context.Runtime.GetStatus().ConfirmedState!.Battery!.TemporaryFullCharge);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task PendingBattery_UnknownAdapterDefersOnlyNewBatteryDrift(
+        bool fullCharge,
+        bool existingBatteryDrift)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (existingBatteryDrift)
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Battery = new ConfirmedBatteryState(true, 75, false),
+            };
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Battery = new ConfirmedBatteryState(true, 80, false),
+            };
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        if (fullCharge)
+        {
+            await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        }
+        else
+        {
+            await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(70), CancellationToken.None);
+        }
+        ConfirmedDeviceState applied = context.Device.ConfirmedState;
+        DesiredBatteryState beforeRecovery = context.Runtime.GetStatus().DesiredState.Battery;
+        int setters = context.Device.TotalSetterCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException("Adapter classification unavailable.");
+        context.Device.ConfirmedState = applied with { Battery = null };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = applied with
+        {
+            Lighting = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 25),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot unknown = context.Runtime.GetStatus();
+        Assert.Equal(existingBatteryDrift, unknown.ExternalChanges.Contains(DeviceSubsystem.Battery));
+        Assert.Contains(DeviceSubsystem.Lighting, unknown.ExternalChanges);
+        Assert.Equal([DeviceSubsystem.Battery], unknown.UnconfirmedWrites);
+        Assert.True(unknown.WritesBlocked);
+        Assert.Equal(applied.Battery, unknown.ConfirmedState!.Battery);
+        Assert.Equal(beforeRecovery, unknown.DesiredState.Battery);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+
+        context.Device.AdapterPowerFailure = null;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Contains(DeviceSubsystem.Lighting, context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(fullCharge, context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task PendingFullCharge_RequiresExactTemporaryFlagBeforeClearing()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, null),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
     [Fact]
     public async Task ScopedReadbackFailure_DisabledGpuResetClearsAfterReadOnlyConfirmation()
     {
@@ -12053,6 +12423,230 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.BatterySetCalls);
         Assert.Equal(0, context.Device.LightingSetCalls);
         Assert.Equal(2, context.Device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_AcknowledgedPerformanceScopedReadFailureResumesOnlyDeferredWrites()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(context.Runtime.ShouldRunPendingTransitionObservation());
+        int settersBeforeObservation = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.True(settersBeforeObservation + 3 == context.Device.TotalSetterCalls,
+            $"Setters: {context.Device.PerformanceSetCalls}/{context.Device.FanSetCalls}/{context.Device.BatterySetCalls}/{context.Device.LightingSetCalls}; {context.Runtime.GetStatus().Message}; external: {string.Join(',', context.Runtime.GetStatus().ExternalChanges)}");
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredProtectionOffResumesAfterFullChargeCancellation()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync(
+            enableFullChargeBeforeTransition: true);
+
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            ["SetTemporaryFullCharge", "SetTemporaryFullCharge", "SetProtectionOff"],
+            context.Device.BatterySetterCalls);
+        Assert.False(context.Runtime.GetStatus().DesiredState!.Battery.ProtectionEnabled);
+        Assert.False(context.Runtime.GetStatus().ConfirmedState!.Battery!.TemporaryFullCharge);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredFullChargeCancellationRestoresEnabledEightyPolicy()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync(
+            enableFullChargeBeforeTransition: true,
+            destinationProtectionEnabled: true);
+
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            ["SetTemporaryFullCharge", "SetTemporaryFullCharge"],
+            context.Device.BatterySetterCalls);
+        Assert.Equal(ConfirmedBattery(80), context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.True(context.Runtime.GetStatus().DesiredState!.Battery.ProtectionEnabled);
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredWritesDoNotResumeAfterDependencyMismatch()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredWritesDoNotResumeWhenProfileIntentChanges()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+        ProfileSet changed = context.Runtime.GetStatus().Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        Assert.Equal(
+            ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(changed, CancellationToken.None)).Status);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredWritesWaitForKnownPowerClassification()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredWritesAreDiscardedAcrossUserActivation()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var firstSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-2201");
+        var secondSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-2202");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [firstSid.Value] = profiles,
+            [secondSid.Value] = profiles,
+        }, directory);
+        TestContext context = await CreateDeferredPowerTransitionContextAsync(
+            userConfigurationRepository: repository,
+            activeUser: firstSid,
+            changeLighting: false);
+
+        await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+        int setters = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
+        Assert.True(context.Runtime.GetStatus().DesiredState.Battery.ProtectionEnabled);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredDestinationWritesAreDiscardedAcrossPowerBoundary()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+        LightingSettings deferredLighting = LightingSettingsFactory.Static(
+            new RgbColor(1, 2, 3), 40);
+        var lightingWrites = new List<LightingSettings?>();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                lightingWrites.Add(context.Device.ConfirmedState.Lighting);
+            }
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.DoesNotContain("SetProtectionOff", context.Device.BatterySetterCalls);
+        Assert.DoesNotContain(deferredLighting, lightingWrites);
+    }
+
+    [Fact]
+    public async Task PowerTransition_DeferredResumeAmbiguityDoesNotReplayPerformance()
+    {
+        TestContext context = await CreateDeferredPowerTransitionContextAsync();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Injected deferred battery submission ambiguity.");
+            }
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.AfterSetter = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
+    }
+
+    [Fact]
+    public async Task PowerTransition_ExpiredDeferredWritesDoNotResume()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = await CreateDeferredPowerTransitionContextAsync(timeProvider: time);
+        time.Advance(TimeSpan.FromMinutes(2).Add(TimeSpan.FromMilliseconds(1)));
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
     }
 
     [Fact]
@@ -16404,7 +16998,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             transactionBoundary = null,
         Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
         PowerSource initialPowerSource = PowerSource.PluggedIn,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IUserConfigurationRepository? userConfigurationRepository = null,
+        ProfileSetValidator? profileValidator = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -16413,7 +17009,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             initialPowerSource,
             transactionBoundary: transactionBoundary,
             transitionRetryDelay: transitionRetryDelay,
-            timeProvider: timeProvider);
+            timeProvider: timeProvider,
+            userConfigurationRepository: userConfigurationRepository,
+            profileValidator: profileValidator);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -16432,6 +17030,96 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             active.Fans,
             ConfirmedBattery(80),
             active.Lighting);
+        return context;
+    }
+
+    private async Task<TestContext> CreateDeferredPowerTransitionContextAsync(
+        bool enableFullChargeBeforeTransition = false,
+        TimeProvider? timeProvider = null,
+        bool destinationProtectionEnabled = false,
+        IUserConfigurationRepository? userConfigurationRepository = null,
+        System.Security.Principal.SecurityIdentifier? activeUser = null,
+        bool changeLighting = true)
+    {
+        PowerSource initialPowerSource = enableFullChargeBeforeTransition
+            ? PowerSource.PluggedIn
+            : PowerSource.Battery;
+        PowerSource destinationPowerSource = enableFullChargeBeforeTransition
+            ? PowerSource.Battery
+            : PowerSource.PluggedIn;
+        DeviceCapabilities lightingCapabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateWritableContext(
+            initialPowerSource: initialPowerSource,
+            timeProvider: timeProvider,
+            userConfigurationRepository: userConfigurationRepository,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                lightingCapabilities));
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            LightingEffects = lightingCapabilities.LightingEffects,
+        };
+        if (activeUser is not null)
+        {
+            await context.Runtime.ActivateUserAsync(activeUser, CancellationToken.None);
+        }
+        PowerProfile destination = (destinationPowerSource == PowerSource.Battery
+            ? context.Runtime.GetStatus().Profiles.Battery
+            : context.Runtime.GetStatus().Profiles.PluggedIn) with
+        {
+            Fans = destinationPowerSource == PowerSource.Battery
+                ? FanMode.Automatic
+                : FanMode.Maximum,
+            FanControl = FanControlSettings.FromLegacy(
+                destinationPowerSource == PowerSource.Battery
+                    ? FanMode.Automatic
+                    : FanMode.Maximum),
+            BatteryProtectionEnabled = destinationProtectionEnabled,
+            Lighting = changeLighting
+                ? LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 40)
+                : (destinationPowerSource == PowerSource.Battery
+                    ? context.Runtime.GetStatus().Profiles.Battery
+                    : context.Runtime.GetStatus().Profiles.PluggedIn).Lighting,
+        };
+        ProfileSet profiles = destinationPowerSource == PowerSource.Battery
+            ? context.Runtime.GetStatus().Profiles with { Battery = destination }
+            : context.Runtime.GetStatus().Profiles with { PluggedIn = destination };
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.True(stored.Status == ControlOperationStatus.Stored, stored.Message);
+        if (enableFullChargeBeforeTransition)
+        {
+            Assert.Equal(
+                ControlOperationStatus.Applied,
+                (await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None)).Status);
+        }
+
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                // The fake has committed Performance first. Production then
+                // loses the combined thermal final-confirmation read inside
+                // ProductionBatteryPort, before the aggregate state read.
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+                    "Injected acknowledged performance final-read failure.");
+            }
+        };
+        context.Telemetry.Current = CreateTelemetry(destinationPowerSource);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        context.Device.AfterSetter = null;
         return context;
     }
 

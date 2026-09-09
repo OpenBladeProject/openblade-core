@@ -300,6 +300,8 @@ public interface IServiceControlRuntime
 
     bool ShouldRunThermalConvergenceObservation() => false;
 
+    bool ShouldRunPendingTransitionObservation() => false;
+
     Task RunThermalConvergenceAsync(CancellationToken cancellationToken) =>
         Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 
@@ -459,6 +461,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     // baseline before startup reconciliation can apply saved intent.
     private readonly Dictionary<DeviceSubsystem, PendingWriteConfirmation>
         pendingWriteConfirmations = [];
+    private volatile PendingTransitionContinuation? pendingTransitionContinuation;
     private ServiceStatusSnapshot? status;
     private int rz090581CapabilityDiagnosticsReadAttempts;
     private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
@@ -6942,6 +6945,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? baseline.ActivePowerSource
                 : powerSource,
             DesiredState = Automation.Resolve(reconciliation.Confirmed),
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             Message = reconciliation.Message,
         });
         return new ControlOperationResult(
@@ -8901,7 +8906,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
 
                     return Task.CompletedTask;
-                });
+                },
+                pendingBatteryIntentCommit: new(Automation, FullChargeOnly: true));
         }
         finally
         {
@@ -9027,6 +9033,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public bool ShouldRunThermalConvergenceObservation() =>
         ThermalConvergencePolicyAdmitted();
+
+    public bool ShouldRunPendingTransitionObservation() =>
+        pendingTransitionContinuation is not null;
 
     public Task RunThermalConvergenceAsync(CancellationToken cancellationToken) =>
         thermalConvergenceArbiter.RunAsync(
@@ -12003,7 +12012,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     Automation.CommitBatteryState(staged);
                     return Task.CompletedTask;
-                });
+                },
+                pendingBatteryIntentCommit: new(Automation, FullChargeOnly: false));
         }
         finally
         {
@@ -12024,7 +12034,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Action<
             ScopedApplyOutcome,
             ConfirmedDeviceState?,
-            ThermalTransitionTrace?>? observeScopedOutcome = null)
+            ThermalTransitionTrace?>? observeScopedOutcome = null,
+        PendingBatteryIntentCommit? pendingBatteryIntentCommit = null)
     {
         if (subsystem == DeviceSubsystem.Performance)
         {
@@ -12231,7 +12242,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                 powerSource,
                 outcome.EffectiveDesired ?? desired,
-                preWriteState));
+                preWriteState,
+                BatteryIntentCommit: pendingBatteryIntentCommit));
         }
 
         if (outcome.Result.Status is
@@ -13457,8 +13469,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         bool preserveLiveReadings = false,
         bool preserveObservedExternalChanges = true,
-        Func<bool>? stillControlsSession = null)
+        Func<bool>? stillControlsSession = null,
+        PendingTransitionContinuation? continuation = null)
     {
+        pendingTransitionContinuation = null;
         ServiceStatusSnapshot current = GetStatus();
         if (hyperBoostJournalSafetyBlock && !ownsHyperBoost)
         {
@@ -13490,7 +13504,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             pendingOwnedHyperBoostPowerBoundaryExit = true;
         }
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
-        DesiredDeviceState? priorDesired = current.DesiredState;
+        DesiredDeviceState? priorDesired = continuation?.PriorDesired ?? current.DesiredState;
         IBladeDevice device;
         try
         {
@@ -13576,9 +13590,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 cachedConfirmed,
                 preserveObservedExternalChanges,
                 token,
-                stillControlsSession);
+                stillControlsSession,
+                continuation);
         FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
         device = transitionExecution.Device;
+
+        if (outcome.DeferredNotSubmitted is { Count: > 0 } deferred
+            && outcome.PreWriteState is { } deferredBaseline)
+        {
+            pendingTransitionContinuation = new(
+                Automation,
+                powerSourceGeneration,
+                powerSource,
+                desired,
+                continuation?.PriorDesired ?? priorDesired ?? desired,
+                outcome.EffectiveDesired ?? desired,
+                deferredBaseline,
+                new HashSet<DeviceSubsystem>(deferred),
+                new HashSet<DeviceSubsystem>(outcome.WriteAttempted.Concat(
+                    continuation?.Dependencies ?? new HashSet<DeviceSubsystem>())),
+                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2));
+        }
 
         if (outcome.PreWriteState is { } preWriteState)
         {
@@ -13601,7 +13633,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = outcome.Readback;
         }
 
-        string? laptopBehaviorMessage = current.WritesBlocked
+        string? laptopBehaviorMessage = continuation is not null
+            || current.WritesBlocked
             || outcome.ConfirmationUnavailable?.Count > 0
             ? null
             : await ApplyProfileLaptopBehaviorAsync(
@@ -13610,12 +13643,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 outcome.Capabilities ?? current.Capabilities,
                 token).ConfigureAwait(false);
 
-        (outcome, LightingRendererOwnershipState observedLightingOwnership) =
-            await ReconcileFullTransitionLightingAsync(
-                device,
-                desired,
-                outcome,
-                token).ConfigureAwait(false);
+        LightingRendererOwnershipState observedLightingOwnership = current.LightingRendererOwnership;
+        if (continuation is null || continuation.Subsystems.Contains(DeviceSubsystem.Lighting))
+        {
+            (outcome, observedLightingOwnership) = await ReconcileFullTransitionLightingAsync(
+                    device,
+                    desired,
+                    outcome,
+                    token).ConfigureAwait(false);
+        }
 
         await PublishFullTransitionOutcomeAsync(
             desired,
@@ -13627,7 +13663,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             laptopBehaviorMessage,
             preserveLiveReadings,
             lightingExternalBeforeReadback,
-            token).ConfigureAwait(false);
+            token,
+            continuation?.Subsystems).ConfigureAwait(false);
     }
 
     private bool ShouldRetryPendingOwnedHyperBoostPowerBoundaryExit(
@@ -13646,7 +13683,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState? cachedConfirmed,
         bool preserveObservedExternalChanges,
         CancellationToken token,
-        Func<bool>? stillControlsSession = null)
+        Func<bool>? stillControlsSession = null,
+        PendingTransitionContinuation? continuation = null)
     {
         bool ShouldConfirmTransientLightingOff() =>
             preserveObservedExternalChanges
@@ -13744,7 +13782,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             cancellationToken,
                             automaticWriteExclusionResolver:
                                 ResolveAutomaticWriteExclusions,
-                            deviceStateReader: transitionStateReader),
+                            deviceStateReader: transitionStateReader,
+                            continuationScopeResolver: continuation is null
+                                ? null
+                                : (attemptDevice, confirmed) =>
+                                    IsCurrentTransitionContinuation(continuation, confirmed)
+                                    && TransitionDependenciesMatch(continuation, confirmed, attemptDevice)
+                                        ? continuation.Subsystems
+                                        : new HashSet<DeviceSubsystem>()),
                     (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
                         powerSource,
                          desired,
@@ -13862,7 +13907,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string? laptopBehaviorMessage,
         bool preserveLiveReadings,
         bool lightingExternalBeforeReadback,
-        CancellationToken token)
+        CancellationToken token,
+        IReadOnlySet<DeviceSubsystem>? continuationScope = null)
     {
         bool hyperBoostJournalRetired = true;
         if (confirmed is { HyperBoostActive: false })
@@ -13886,6 +13932,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             outcome.ConfirmationUnavailable ?? new HashSet<DeviceSubsystem>();
         foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
+            if (continuationScope is not null && !continuationScope.Contains(subsystem))
+            {
+                continue;
+            }
             if (outcome.ReadbackMatched.Contains(subsystem))
             {
                 RemovePendingWriteConfirmation(subsystem);
@@ -13932,31 +13982,37 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
         }
 
-        UpdateOwnedFanControlSettings(
-            desired.FanControl
-                ?? FanControlSettings.FromLegacy(desired.Fans.Value),
-            ResultFor(outcome.Results, DeviceSubsystem.Fans),
-            outcome.WriteAttempted.Contains(DeviceSubsystem.Fans),
-            outcome.ReadbackMatched.Contains(DeviceSubsystem.Fans),
-            confirmationUnavailable: confirmationUnavailable.Contains(
-                DeviceSubsystem.Fans));
+        if (continuationScope is null || continuationScope.Contains(DeviceSubsystem.Fans))
+        {
+            UpdateOwnedFanControlSettings(
+                desired.FanControl
+                    ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                ResultFor(outcome.Results, DeviceSubsystem.Fans),
+                outcome.WriteAttempted.Contains(DeviceSubsystem.Fans),
+                outcome.ReadbackMatched.Contains(DeviceSubsystem.Fans),
+                confirmationUnavailable: confirmationUnavailable.Contains(
+                    DeviceSubsystem.Fans));
+        }
 
         ControlResult lightingResult = ResultFor(
             outcome.Results,
             DeviceSubsystem.Lighting);
-        UpdateOwnedLightingSnapshot(
-            observedLightingOwnership,
-            lightingResult.Status is ControlResultStatus.Applied
-                or ControlResultStatus.Unchanged
-                ? desired.Lighting.Value
-                : null);
-        if (lightingResult.Status is ControlResultStatus.Applied
-            or ControlResultStatus.Unchanged)
+        if (continuationScope is null || continuationScope.Contains(DeviceSubsystem.Lighting))
         {
-            await TryPersistRememberedLightingIntentAsync(
-                confirmed,
-                token)
-                .ConfigureAwait(false);
+            UpdateOwnedLightingSnapshot(
+                observedLightingOwnership,
+                lightingResult.Status is ControlResultStatus.Applied
+                    or ControlResultStatus.Unchanged
+                    ? desired.Lighting.Value
+                    : null);
+            if (lightingResult.Status is ControlResultStatus.Applied
+                or ControlResultStatus.Unchanged)
+            {
+                await TryPersistRememberedLightingIntentAsync(
+                    confirmed,
+                    token)
+                    .ConfigureAwait(false);
+            }
         }
 
         history.RecordSubsystemResults(outcome.Results);
@@ -14364,6 +14420,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            // An unclassified adapter cannot resolve a pending submission. Defer
+            // only its battery drift comparison; publish the actual readback and
+            // keep the pending write block, existing latches, and other drift.
+            ConfirmedDeviceState driftObservation = !powerSourceConfirmed
+                && IsWritePendingFor(DeviceSubsystem.Battery)
+                    ? observation.Confirmed with { Battery = null }
+                    : observation.Confirmed;
             if (startupProfileReconciliationPending
                 && (!unexpectedExitRecoveryPending
                     || unexpectedExitRecoveryDeferredForUserConfiguration))
@@ -14371,11 +14434,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // A first sample has no preceding OpenBlade observation, so it
                 // cannot prove an external change. Establish a baseline; the
                 // startup reconciliation path will then apply saved intent.
-                driftTracker.Observe(observation.Confirmed);
+                driftTracker.Observe(driftObservation);
             }
             else
             {
-                ObserveAutomaticState(observation.Confirmed);
+                ObserveAutomaticState(driftObservation);
                 ServiceStatusSnapshot current = GetStatus();
                 if (pendingLightingRestoreFromLifecycle
                     && pendingLightingRestore is { Effect: not LightingEffect.Off }
@@ -14534,6 +14597,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     observation.Confirmed,
                     cancellationToken)
                 .ConfigureAwait(false);
+            await ContinueDeferredTransitionAsync(
+                    powerSource,
+                    powerSourceConfirmed,
+                    observation.Confirmed,
+                    device,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -14548,6 +14618,112 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 exception,
                 cancellationToken);
         }
+    }
+
+    private bool IsCurrentTransitionContinuation(
+        PendingTransitionContinuation pending,
+        ConfirmedDeviceState confirmed) =>
+        ReferenceEquals(pending.Owner, Automation)
+        && pending.PowerGeneration == powerSourceGeneration
+        && pending.PowerSource == Automation.PowerSource
+        && timeProvider.GetUtcNow() < pending.ExpiresAt
+        && pending.RequestedDesired == ResolveHardwareDesired(confirmed);
+
+    private static bool TransitionDependenciesMatch(
+        PendingTransitionContinuation pending,
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device) => TransitionDependencyResult(pending, confirmed, device)
+            == PendingConfirmationResult.Match;
+
+    private static PendingConfirmationResult TransitionDependencyResult(
+        PendingTransitionContinuation pending,
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device)
+    {
+        bool unavailable = false;
+        foreach (DeviceSubsystem subsystem in pending.Dependencies)
+        {
+            PendingConfirmationResult result = MatchPendingWrite(
+                subsystem,
+                new PendingWriteConfirmation(
+                    pending.PowerSource,
+                    pending.EffectiveDesired,
+                    pending.PreWriteState),
+                confirmed,
+                device);
+            if (result == PendingConfirmationResult.Mismatch)
+            {
+                return result;
+            }
+            unavailable |= result == PendingConfirmationResult.Unavailable;
+        }
+        return unavailable ? PendingConfirmationResult.Unavailable : PendingConfirmationResult.Match;
+    }
+
+    private async Task ContinueDeferredTransitionAsync(
+        PowerSource powerSource,
+        bool powerSourceConfirmed,
+        ConfirmedDeviceState confirmed,
+        IBladeDevice device,
+        CancellationToken cancellationToken)
+    {
+        if (pendingTransitionContinuation is not { } pending)
+        {
+            return;
+        }
+        if (!IsCurrentTransitionContinuation(pending, confirmed))
+        {
+            pendingTransitionContinuation = null;
+            return;
+        }
+        if (TransitionDependencyResult(pending, confirmed, device)
+            == PendingConfirmationResult.Mismatch)
+        {
+            pendingTransitionContinuation = null;
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (!powerSourceConfirmed
+            || powerSource != pending.PowerSource
+            || lowPowerGate.IsActive
+            || !ConfigurationIsAdmitted
+            || !current.DeviceVerified
+            || current.WritesBlocked
+            || current.ControlAccess != SessionControlAccess.Active
+            || current.PotentialControllers.Count > 0
+            || current.ControllerDetectionWarning is not null
+            || HasPendingWriteConfirmations()
+            || !TransitionDependenciesMatch(pending, confirmed, device))
+        {
+            return;
+        }
+
+        await RefreshControllerPresenceAndRelinquishLightingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        PowerSource freshPower = await ResolveCurrentPowerSourceAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (freshPower != pending.PowerSource
+            || GetStatus().WritesBlocked
+            || GetStatus().PotentialControllers.Count > 0
+            || GetStatus().ControllerDetectionWarning is not null)
+        {
+            return;
+        }
+
+        // Consume before execution. Only steps proven never submitted are eligible;
+        // the coordinator rechecks dependencies on its fresh pre-write read. Any
+        // new ambiguity follows ordinary pending confirmation, never setter replay.
+        pendingTransitionContinuation = null;
+        await ApplyFullTransitionAsync(
+                freshPower,
+                cancellationToken,
+                preserveLiveReadings: true,
+                stillControlsSession: () => ReferenceEquals(pending.Owner, Automation)
+                    && pending.PowerGeneration == powerSourceGeneration
+                    && !lowPowerGate.IsActive,
+                continuation: pending)
+            .ConfigureAwait(false);
     }
 
     private void CaptureResumeStateBaselineCore()
@@ -14990,6 +15166,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(observation.Confirmed),
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             Firmware = observation.Firmware,
             LightingRendererOwnership = observation.LightingOwnership,
             StartupAnimationEnabled = observation.StartupAnimation,
@@ -15658,12 +15836,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation pending) in
             SnapshotPendingWriteConfirmations())
         {
+            bool sameIntentOwner = pending.BatteryIntentCommit is not { } intent
+                || ReferenceEquals(intent.Owner, Automation);
             PendingConfirmationResult result = pending.PowerSource == powerSource
+                && sameIntentOwner
                 ? MatchPendingWrite(subsystem, pending, confirmed, device)
                 : PendingConfirmationResult.Mismatch;
             if (result == PendingConfirmationResult.Unavailable)
             {
                 continue;
+            }
+
+            if (result == PendingConfirmationResult.Mismatch
+                && pendingTransitionContinuation?.Dependencies.Contains(subsystem) == true)
+            {
+                pendingTransitionContinuation = null;
+            }
+
+            if (result == PendingConfirmationResult.Match
+                && pending.BatteryIntentCommit is { } batteryIntent)
+            {
+                // Only an explicit request carries this metadata. Restore its
+                // in-memory intent before releasing the pending block; automatic
+                // transitions must not create new overrides or replay setters.
+                if (!batteryIntent.FullChargeOnly)
+                {
+                    Automation.CommitBatteryState(pending.Target.Battery);
+                }
+                else if (pending.Target.Battery.TemporaryFullCharge)
+                {
+                    Automation.EnableTemporaryFullCharge();
+                }
+                else
+                {
+                    Automation.CancelTemporaryFullCharge();
+                }
             }
 
             // ObserveAutomaticState has already compared the old baseline with this
@@ -15710,6 +15917,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 confirmed.Battery is not { TemporaryFullCharge: not null } battery
                 ? PendingConfirmationResult.Unavailable
                 : BatteryMatchesDesired(battery, pending.Target.Battery)
+                    && battery.TemporaryFullCharge == pending.Target.Battery.TemporaryFullCharge
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch,
             DeviceSubsystem.Lighting => confirmed.Lighting is null
@@ -18346,7 +18554,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState Target,
         ConfirmedDeviceState PreWriteState,
         bool? HyperBoostActive = null,
-        PerformancePreset? HyperBoostBaseMode = null);
+        PerformancePreset? HyperBoostBaseMode = null,
+        PendingBatteryIntentCommit? BatteryIntentCommit = null);
+
+    private sealed record PendingBatteryIntentCommit(
+        ProfileAutomationState Owner,
+        bool FullChargeOnly);
+
+    private sealed record PendingTransitionContinuation(
+        ProfileAutomationState Owner,
+        long PowerGeneration,
+        PowerSource PowerSource,
+        DesiredDeviceState RequestedDesired,
+        DesiredDeviceState PriorDesired,
+        DesiredDeviceState EffectiveDesired,
+        ConfirmedDeviceState PreWriteState,
+        IReadOnlySet<DeviceSubsystem> Subsystems,
+        IReadOnlySet<DeviceSubsystem> Dependencies,
+        DateTimeOffset ExpiresAt);
 
     private readonly record struct ExactFanControlOwnership(
         ExactFanControlOwnershipDisposition Disposition,

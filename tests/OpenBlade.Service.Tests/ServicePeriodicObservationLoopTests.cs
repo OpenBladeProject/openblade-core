@@ -29,13 +29,16 @@ public sealed class ServicePeriodicObservationLoopTests
         Assert.Equal(1, runtime.RestoreCalls);
     }
 
-    [Fact]
-    public async Task RunAsync_MaintainPolicyAddsOneTrayIndependentFullObservation()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RunAsync_PendingWorkAddsOneTrayIndependentFullObservation(bool thermalPolicy)
     {
         using var cancellation = new CancellationTokenSource();
         var runtime = new RecordingRuntime(cancellation)
         {
-            ThermalObservationEnabled = true,
+            ThermalObservationEnabled = thermalPolicy,
+            PendingTransitionObservationEnabled = !thermalPolicy,
         };
         var loop = new ServicePeriodicObservationLoop(
             runtime,
@@ -156,6 +159,7 @@ public sealed class ServicePeriodicObservationLoopTests
         public int ThermalObservationCalls { get; private set; }
         public bool LastThermalObservationIncludedLiveReadings { get; private set; }
         public bool ThermalObservationEnabled { get; init; }
+        public bool PendingTransitionObservationEnabled { get; init; }
         public Exception? RefreshFailure { get; init; }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
@@ -197,6 +201,9 @@ public sealed class ServicePeriodicObservationLoopTests
         public bool ShouldRunThermalConvergenceObservation() =>
             ThermalObservationEnabled;
 
+        public bool ShouldRunPendingTransitionObservation() =>
+            PendingTransitionObservationEnabled;
+
         public Task RefreshPowerSourceClassificationAsync(
             CancellationToken cancellationToken)
         {
@@ -209,7 +216,7 @@ public sealed class ServicePeriodicObservationLoopTests
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)
         {
             RestoreCalls++;
-            if (!ThermalObservationEnabled)
+            if (!ThermalObservationEnabled && !PendingTransitionObservationEnabled)
             {
                 cancellation.Cancel();
             }

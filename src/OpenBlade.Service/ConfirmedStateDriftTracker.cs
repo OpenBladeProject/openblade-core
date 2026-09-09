@@ -9,11 +9,10 @@ public sealed class ConfirmedStateDriftTracker
     private IReadOnlyList<DeviceSubsystem>? externalChangesSnapshot;
     private PerformancePreset? performance;
     private CustomPerformanceSettings? customPerformance;
-    private bool customPerformanceObserved;
     private GpuClockOffsetSettings? gpuClockOffsets;
     private FanMode? fans;
     private ConfirmedBatteryState? battery;
-    private bool batteryObserved;
+    private bool? temporaryFullCharge;
     private LightingSettings? lighting;
 
     public IReadOnlyList<DeviceSubsystem> ExternalChanges =>
@@ -97,34 +96,45 @@ public sealed class ConfirmedStateDriftTracker
 
     private void ObserveBattery(ConfirmedBatteryState? observed)
     {
-        if (batteryObserved && !EqualityComparer<ConfirmedBatteryState?>.Default.Equals(
-                battery,
-                observed))
+        if (observed is null)
+        {
+            return;
+        }
+
+        // Missing fields are unavailable evidence, not a new firmware value.
+        // Track the optional temporary override independently so a partial read
+        // neither invents drift nor erases the last comparable observation.
+        if (battery is not null
+            && (battery.ProtectionEnabled != observed.ProtectionEnabled
+                || battery.ChargeLimitPercent != observed.ChargeLimitPercent))
         {
             AddExternalChange(DeviceSubsystem.Battery);
         }
 
+        ObserveValue(
+            observed.TemporaryFullCharge,
+            ref temporaryFullCharge,
+            DeviceSubsystem.Battery);
         battery = observed;
-        batteryObserved = true;
     }
 
     private void ObserveCustomPerformance(ConfirmedDeviceState state)
     {
-        if (state.Performance != PerformancePreset.Custom)
+        if (state.Performance is null)
         {
-            customPerformance = null;
-            customPerformanceObserved = false;
             return;
         }
 
-        if (customPerformanceObserved
-            && customPerformance != state.CustomPerformance)
+        if (state.Performance != PerformancePreset.Custom)
         {
-            AddExternalChange(DeviceSubsystem.Performance);
+            customPerformance = null;
+            return;
         }
 
-        customPerformance = state.CustomPerformance;
-        customPerformanceObserved = true;
+        ObserveValue(
+            state.CustomPerformance,
+            ref customPerformance,
+            DeviceSubsystem.Performance);
     }
 
     private void AddExternalChange(DeviceSubsystem subsystem)
