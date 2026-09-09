@@ -298,6 +298,35 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
         Assert.True(outcome.WriteAttempted);
         Assert.Equal(1, device.StateReadCalls);
+        Assert.True(outcome.ConfirmationUnavailable);
+        Assert.Equal(device.State, outcome.PreWriteState);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChargeLimit_PartialFinalRead_RemainsUnconfirmed(bool missingBattery)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        ConfirmedDeviceState initial = device.State;
+        device.AfterSetter = _ => device.State = device.State with
+        {
+            Battery = missingBattery ? null : new ConfirmedBatteryState(true, 75, null),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.True(outcome.ConfirmationUnavailable);
+        Assert.Equal(initial, outcome.PreWriteState);
+        Assert.Equal(2, device.StateReadCalls);
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
     }
 
     [Fact]

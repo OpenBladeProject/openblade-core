@@ -15710,6 +15710,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 confirmed.Battery is not { TemporaryFullCharge: not null } battery
                 ? PendingConfirmationResult.Unavailable
                 : BatteryMatchesDesired(battery, pending.Target.Battery)
+                    && battery.TemporaryFullCharge == pending.Target.Battery.TemporaryFullCharge
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch,
             DeviceSubsystem.Lighting => confirmed.Lighting is null

@@ -11247,6 +11247,128 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullChargeOverride_TransientBatteryObservationDoesNotLatchExternalChange(
+        bool partialRead)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            enabled: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        ConfirmedDeviceState confirmed = context.Device.ConfirmedState;
+        Assert.True(confirmed.Battery!.TemporaryFullCharge);
+        context.Device.ConfirmedState = confirmed with
+        {
+            Battery = partialRead
+                ? new ConfirmedBatteryState(true, 80, null)
+                : null,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
+        context.Device.ConfirmedState = confirmed;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Theory]
+    [InlineData("full-charge", false)]
+    [InlineData("full-charge", true)]
+    [InlineData("limit", false)]
+    [InlineData("limit", true)]
+    [InlineData("protection", false)]
+    [InlineData("protection", true)]
+    public async Task BatteryResponseFailure_ReconcilesLaterWithoutExternalChangeOrReplay(
+        string operation,
+        bool postSetterReadFailure)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        if (postSetterReadFailure)
+        {
+            context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        }
+        else
+        {
+            context.Device.AfterSetter = subsystem =>
+            {
+                if (subsystem == DeviceSubsystem.Battery)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        "Battery command response lost after submission.");
+                }
+            };
+        }
+
+        ControlOperationResult result = operation switch
+        {
+            "full-charge" => await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None),
+            "limit" => await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(75), CancellationToken.None),
+            _ => await context.Runtime.SetBatteryProtectionAsync(false, CancellationToken.None),
+        };
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        int setters = context.Device.TotalSetterCalls;
+        ConfirmedDeviceState applied = context.Device.ConfirmedState;
+        context.Device.ConfirmedState = applied with { Battery = null };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+
+        context.Device.ConfirmedState = applied;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(applied.Battery, context.Runtime.GetStatus().ConfirmedState!.Battery);
+    }
+
+    [Fact]
+    public async Task PendingFullCharge_RequiresExactTemporaryFlagBeforeClearing()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, null),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
     [Fact]
     public async Task ScopedReadbackFailure_DisabledGpuResetClearsAfterReadOnlyConfirmation()
     {

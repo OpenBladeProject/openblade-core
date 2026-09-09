@@ -1694,13 +1694,20 @@ public sealed class ControlCoordinator
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
             {
                 submissionIndeterminate = true;
+                // A lost command response is not evidence of an external write.
+                // Retain causal intent for a later read-only confirmation; never
+                // replay a command that may already have reached the device.
                 return new ScopedApplyOutcome(
                     Indeterminate(plan.Name, exception),
                     null,
                     WriteAttempted: true,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: true);
+                    DeviceAccessFailed: true,
+                    ConfirmationUnavailable: true,
+                    PreWriteState: initial,
+                    WriteSubmissionState: exception.SubmissionState,
+                    WriteFailurePhase: exception.FailurePhase);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -1723,7 +1730,9 @@ public sealed class ControlCoordinator
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 capabilities,
-                DeviceAccessFailed: false);
+                DeviceAccessFailed: false,
+                ConfirmationUnavailable: final.Battery?.TemporaryFullCharge is null,
+                PreWriteState: initial);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && submissionIndeterminate)
