@@ -22,23 +22,31 @@ All notable changes to OpenBlade are documented in this file. The project follow
   full effect readback, so in practice the evidence is a detected controller or
   a logo mismatch; a firmware Off was the only remaining way the flag could
   latch without another controller present.
+  ([#424](https://github.com/OSSBlade/openblade-core/pull/424))
 - Isolated profile import and fan-restoration policies from their callers, and
   made fan reconciliation depend on typed outcomes instead of diagnostic text.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 
 ### Fixed
 
 - Kept service status subscriptions ordered during concurrent updates so a
   newer pending snapshot cannot be replaced by an older one.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Released superseded tray observation waits and bounded profile-file imports
   while keeping file parsing off the UI thread.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Retried temporary special-key preference read failures without requiring
   another save, and synchronized ambient screen samples with GDI drawing.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Preserved special-key watcher failures during startup and coalesced events,
   and backed off persistent preference-read failures without repeated warnings.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Prevented canceled display preparations from submitting changes and retained
   ownership through readback and recovery after a native change starts.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Bounded Windows Service Control subprocess execution and cleanup during
   installation, repair, and removal.
+  ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
 - Stopped a keyboard left dark by a closed lid or Modern Standby from being
   reported as a lighting change made outside OpenBlade. The display-off report
   was discarded whenever the active profile did not enable "turn off keyboard
@@ -54,6 +62,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   renderer-fault recovery until the display is back on. A transition whose
   renderer stops under the closed lid retains the destination effect for one
   display-on recovery attempt; a newer successful lighting action cancels it.
+  ([#423](https://github.com/OSSBlade/openblade-core/pull/423))
 
 ## [0.20.8-nightly.44] - 2026-09-06
 

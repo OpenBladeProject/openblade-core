@@ -209,8 +209,16 @@ unrelated worktrees and checkout changes.
    marking support production-ready. Unattended portions are allowed only
    within the explicit limits under Hardware and capture safety; lifecycle
    steps that require a present user remain attended.
-8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. The
-   Nightly workflow treats each published tag as a release boundary, attaches
+8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
+   new or materially changed changelog bullet must include a Markdown link to
+   its implementing pull request, using
+   `([#123](https://github.com/OSSBlade/openblade-core/pull/123))`. Reference
+   pull requests, not tracking issues; include each implementing PR when a
+   bullet combines changes. If the PR number is not yet available, open the
+   draft PR first, then add the verified reference before marking it ready or
+   merging. Preserve existing references and published release snapshots;
+   reference-only corrections to `Unreleased` must link the original PR.
+   The Nightly workflow treats each published tag as a release boundary, attaches
    an exact-source changelog snapshot, and opens or updates a draft pull request
    that moves included entries into dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD`
    sections while retaining post-build entries under `Unreleased`. Review that
