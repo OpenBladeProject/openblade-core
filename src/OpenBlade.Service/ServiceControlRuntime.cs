@@ -6942,6 +6942,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ? baseline.ActivePowerSource
                 : powerSource,
             DesiredState = Automation.Resolve(reconciliation.Confirmed),
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             Message = reconciliation.Message,
         });
         return new ControlOperationResult(
@@ -8901,7 +8903,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
 
                     return Task.CompletedTask;
-                });
+                },
+                pendingBatteryIntentCommit: new(Automation, FullChargeOnly: true));
         }
         finally
         {
@@ -12003,7 +12006,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     Automation.CommitBatteryState(staged);
                     return Task.CompletedTask;
-                });
+                },
+                pendingBatteryIntentCommit: new(Automation, FullChargeOnly: false));
         }
         finally
         {
@@ -12024,7 +12028,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Action<
             ScopedApplyOutcome,
             ConfirmedDeviceState?,
-            ThermalTransitionTrace?>? observeScopedOutcome = null)
+            ThermalTransitionTrace?>? observeScopedOutcome = null,
+        PendingBatteryIntentCommit? pendingBatteryIntentCommit = null)
     {
         if (subsystem == DeviceSubsystem.Performance)
         {
@@ -12231,7 +12236,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                 powerSource,
                 outcome.EffectiveDesired ?? desired,
-                preWriteState));
+                preWriteState,
+                BatteryIntentCommit: pendingBatteryIntentCommit));
         }
 
         if (outcome.Result.Status is
@@ -14364,6 +14370,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            // An unclassified adapter cannot resolve a pending submission. Defer
+            // only its battery drift comparison; publish the actual readback and
+            // keep the pending write block, existing latches, and other drift.
+            ConfirmedDeviceState driftObservation = !powerSourceConfirmed
+                && IsWritePendingFor(DeviceSubsystem.Battery)
+                    ? observation.Confirmed with { Battery = null }
+                    : observation.Confirmed;
             if (startupProfileReconciliationPending
                 && (!unexpectedExitRecoveryPending
                     || unexpectedExitRecoveryDeferredForUserConfiguration))
@@ -14371,11 +14384,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // A first sample has no preceding OpenBlade observation, so it
                 // cannot prove an external change. Establish a baseline; the
                 // startup reconciliation path will then apply saved intent.
-                driftTracker.Observe(observation.Confirmed);
+                driftTracker.Observe(driftObservation);
             }
             else
             {
-                ObserveAutomaticState(observation.Confirmed);
+                ObserveAutomaticState(driftObservation);
                 ServiceStatusSnapshot current = GetStatus();
                 if (pendingLightingRestoreFromLifecycle
                     && pendingLightingRestore is { Effect: not LightingEffect.Off }
@@ -14990,6 +15003,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(observation.Confirmed),
+            BatteryPolicyOverride = Automation.BatteryPolicyOverride,
+            BatteryProtectionOverride = Automation.BatteryProtectionOverride,
             Firmware = observation.Firmware,
             LightingRendererOwnership = observation.LightingOwnership,
             StartupAnimationEnabled = observation.StartupAnimation,
@@ -15658,12 +15673,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation pending) in
             SnapshotPendingWriteConfirmations())
         {
+            bool sameIntentOwner = pending.BatteryIntentCommit is not { } intent
+                || ReferenceEquals(intent.Owner, Automation);
             PendingConfirmationResult result = pending.PowerSource == powerSource
+                && sameIntentOwner
                 ? MatchPendingWrite(subsystem, pending, confirmed, device)
                 : PendingConfirmationResult.Mismatch;
             if (result == PendingConfirmationResult.Unavailable)
             {
                 continue;
+            }
+
+            if (result == PendingConfirmationResult.Match
+                && pending.BatteryIntentCommit is { } batteryIntent)
+            {
+                // Only an explicit request carries this metadata. Restore its
+                // in-memory intent before releasing the pending block; automatic
+                // transitions must not create new overrides or replay setters.
+                if (!batteryIntent.FullChargeOnly)
+                {
+                    Automation.CommitBatteryState(pending.Target.Battery);
+                }
+                else if (pending.Target.Battery.TemporaryFullCharge)
+                {
+                    Automation.EnableTemporaryFullCharge();
+                }
+                else
+                {
+                    Automation.CancelTemporaryFullCharge();
+                }
             }
 
             // ObserveAutomaticState has already compared the old baseline with this
@@ -18347,7 +18385,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState Target,
         ConfirmedDeviceState PreWriteState,
         bool? HyperBoostActive = null,
-        PerformancePreset? HyperBoostBaseMode = null);
+        PerformancePreset? HyperBoostBaseMode = null,
+        PendingBatteryIntentCommit? BatteryIntentCommit = null);
+
+    private sealed record PendingBatteryIntentCommit(
+        ProfileAutomationState Owner,
+        bool FullChargeOnly);
 
     private readonly record struct ExactFanControlOwnership(
         ExactFanControlOwnershipDisposition Disposition,
