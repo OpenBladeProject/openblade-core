@@ -32,6 +32,8 @@ function Get-WorkflowJobBlock {
 $ci = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\ci.yml') -Raw
 $build = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\build.yml') -Raw
 $nightly = Get-Content -LiteralPath (Join-Path $repository '.github\workflows\nightly.yml') -Raw
+$developerIdentity = Get-Content -LiteralPath (
+    Join-Path $repository '.github\workflows\developer-identity.yml') -Raw
 $finalizeNightly = Get-Content -LiteralPath (
     Join-Path $repository '.github\workflows\finalize-nightly.yml') -Raw
 
@@ -125,6 +127,34 @@ foreach ($requiredGateContract in @(
 }
 Assert-True (-not $gateJob.Contains('!cancelled()')) `
     'Cancellation must reach the final gate and fail its required check.'
+Assert-True (-not $build.Contains('tests\Developer.Tests')) `
+    'Production build validation must not run SDK-dependent developer contracts.'
+
+foreach ($requiredDeveloperIdentityContract in @(
+        'name: Developer identity validation',
+        'workflow_dispatch:',
+        'Validate developer identity tooling',
+        'Require Windows SDK identity tools',
+        'Resolve-OpenBladeMakeAppx',
+        '.\tests\Developer.Tests\SparsePackageIdentity.Tests.ps1')) {
+    Assert-True ($developerIdentity.Contains($requiredDeveloperIdentityContract)) `
+        "Developer identity workflow is missing '$requiredDeveloperIdentityContract'."
+}
+foreach ($pathScopedDeveloperIdentityInput in @(
+        'Directory.Build.props',
+        'Directory.Packages.props',
+        'src/Directory.Build.targets',
+        'build/SparsePackageIdentity.ps1',
+        'build/PublishPayloadValidation.ps1',
+        'build/identity/**',
+        'src/OpenBlade.SessionAgent/**',
+        'tests/Developer.Tests/SparsePackageIdentity.Tests.ps1')) {
+    Assert-True (
+        [Regex]::Matches(
+            $developerIdentity,
+            [Regex]::Escape("- '$pathScopedDeveloperIdentityInput'")).Count -eq 2) `
+        "Developer identity input '$pathScopedDeveloperIdentityInput' must select both pull-request and main-push validation."
+}
 
 Assert-True ($nightly.Contains("cron: '17 9 * * *'")) `
     'Nightly builds must run away from the top-of-hour Actions peak.'
