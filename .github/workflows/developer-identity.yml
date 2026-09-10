@@ -1,0 +1,81 @@
+name: Developer identity validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/developer-identity.yml'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'src/Directory.Build.targets'
+      - 'build/SparsePackageIdentity.ps1'
+      - 'build/PublishPayloadValidation.ps1'
+      - 'build/identity/**'
+      - 'src/OpenBlade.SessionAgent/**'
+      - 'tests/Developer.Tests/SparsePackageIdentity.Tests.ps1'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/developer-identity.yml'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'src/Directory.Build.targets'
+      - 'build/SparsePackageIdentity.ps1'
+      - 'build/PublishPayloadValidation.ps1'
+      - 'build/identity/**'
+      - 'src/OpenBlade.SessionAgent/**'
+      - 'tests/Developer.Tests/SparsePackageIdentity.Tests.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: developer-identity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-developer-identity:
+    name: Validate developer identity tooling
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore Session Agent
+        run: >-
+          dotnet restore
+          .\src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj
+          --runtime win-x64
+          -p:NuGetAudit=false
+
+      - name: Require Windows SDK identity tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . .\build\SparsePackageIdentity.ps1
+          $makeAppx = Resolve-OpenBladeMakeAppx
+          $manifestTool = Join-Path (Split-Path -Parent $makeAppx) 'mt.exe'
+          if (-not (Test-Path -LiteralPath $manifestTool -PathType Leaf)) {
+            throw "The Windows SDK manifest extraction tool is missing: $manifestTool"
+          }
+          Write-Host "Using MakeAppx: $makeAppx"
+          Write-Host "Using manifest tool: $manifestTool"
+
+      - name: Validate retained developer identity tooling
+        shell: powershell
+        run: .\tests\Developer.Tests\SparsePackageIdentity.Tests.ps1
