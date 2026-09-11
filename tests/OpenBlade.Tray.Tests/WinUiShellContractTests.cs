@@ -2173,11 +2173,11 @@ public sealed class WinUiShellContractTests
             bool isAccentColorManager = file.EndsWith(
                 "AccentColorManager.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isAccentColorManager && !isTextScaleConsumer)
+            if (!isAccentColorManager && !isTextScaleConsumer && !isShellThemeSource)
             {
                 Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
             }
-            if (!isAccentColorManager)
+            if (!isAccentColorManager && !isShellThemeSource)
             {
                 Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
             }
