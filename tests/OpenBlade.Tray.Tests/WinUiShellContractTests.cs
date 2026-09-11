@@ -1855,6 +1855,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemUsesLightTheme", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("ShellThemeSelectionPolicy.ShouldUseLightTrayIconGlyphs", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("SystemEvents.UserPreferenceChanged +=", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("private readonly UISettings uiSettings = new()", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("uiSettings.ColorValuesChanged += OnColorValuesChanged", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("OnColorValuesChanged(UISettings sender, object args) => QueueThemeRefresh()", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("uiSettings.ColorValuesChanged -= OnColorValuesChanged", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("dispatcherQueue.TryEnqueue(RefreshTheme)", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("TrayIconThemeChanged?.Invoke", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("SystemEvents.UserPreferenceChanged -=", shellThemeSource, StringComparison.Ordinal);
@@ -2169,11 +2173,11 @@ public sealed class WinUiShellContractTests
             bool isAccentColorManager = file.EndsWith(
                 "AccentColorManager.cs",
                 StringComparison.OrdinalIgnoreCase);
-            if (!isAccentColorManager && !isTextScaleConsumer)
+            if (!isAccentColorManager && !isTextScaleConsumer && !isShellThemeSource)
             {
                 Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
             }
-            if (!isAccentColorManager)
+            if (!isAccentColorManager && !isShellThemeSource)
             {
                 Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
             }

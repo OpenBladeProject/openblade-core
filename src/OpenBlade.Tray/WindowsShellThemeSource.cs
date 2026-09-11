@@ -1,5 +1,6 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.Win32;
+using Windows.UI.ViewManagement;
 
 namespace OpenBlade.Tray;
 
@@ -9,6 +10,7 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const string SystemUsesLightThemeValueName = "SystemUsesLightTheme";
     private readonly DispatcherQueue dispatcherQueue;
+    private readonly UISettings uiSettings = new();
     private bool useLightTrayIconGlyphs;
     private int disposed;
 
@@ -19,6 +21,7 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
         this.dispatcherQueue = dispatcherQueue;
         useLightTrayIconGlyphs = ReadUseLightTrayIconGlyphs();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        uiSettings.ColorValuesChanged += OnColorValuesChanged;
     }
 
     public event EventHandler? TrayIconThemeChanged;
@@ -33,9 +36,17 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
         }
 
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        uiSettings.ColorValuesChanged -= OnColorValuesChanged;
     }
 
-    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs args)
+    // Windows theme switches also arrive through UISettings, independently of
+    // the legacy preference event. Both callbacks may run off the UI thread.
+    private void OnColorValuesChanged(UISettings sender, object args) => QueueThemeRefresh();
+
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) =>
+        QueueThemeRefresh();
+
+    private void QueueThemeRefresh()
     {
         if (Volatile.Read(ref disposed) != 0)
         {
