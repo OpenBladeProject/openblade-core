@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Refresh the notification-area icon when the Windows theme changes, and use a darker green profile line and source badge on light taskbars. ([#454](https://github.com/OSSBlade/openblade-core/pull/454))
+
 ## [0.20.12-nightly.49] - 2026-09-10
 
 ### Changed
