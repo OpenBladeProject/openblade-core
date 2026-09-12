@@ -29,30 +29,44 @@ public sealed class WindowsAudioMeterLightingSamplerFactory
 
 public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSampler
 {
-    private const uint ClsctxInprocServer = 0x1;
+    private readonly IAudioMeterNativeApi nativeApi;
     private readonly object enumeratorObject;
     private readonly object deviceObject;
     private readonly object meterObject;
-    private readonly IAudioMeterInformation meter;
     private int disposed;
 
     public WindowsAudioMeterLightingSampler()
+        : this(WindowsAudioMeterNativeApi.Instance)
     {
-        enumeratorObject = CoreAudioDeviceEnumerator.Create();
-        var enumerator = (IMMDeviceEnumerator)enumeratorObject;
-        Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(
-            dataFlow: 0,
-            role: 1,
-            out IMMDevice device));
-        deviceObject = device;
-        Guid iid = typeof(IAudioMeterInformation).GUID;
-        Marshal.ThrowExceptionForHR(device.Activate(
-            ref iid,
-            ClsctxInprocServer,
-            nint.Zero,
-            out object activated));
-        meterObject = activated;
-        meter = (IAudioMeterInformation)activated;
+    }
+
+    internal WindowsAudioMeterLightingSampler(IAudioMeterNativeApi nativeApi)
+    {
+        this.nativeApi = nativeApi
+            ?? throw new ArgumentNullException(nameof(nativeApi));
+        object? acquiredEnumerator = null;
+        object? acquiredDevice = null;
+        object? acquiredMeter = null;
+        try
+        {
+            acquiredEnumerator = nativeApi.CreateEnumerator();
+            acquiredDevice = nativeApi.GetDefaultAudioEndpoint(acquiredEnumerator);
+            acquiredMeter = nativeApi.ActivateMeter(acquiredDevice);
+            nativeApi.ValidateMeter(acquiredMeter);
+
+            enumeratorObject = acquiredEnumerator;
+            deviceObject = acquiredDevice;
+            meterObject = acquiredMeter;
+            acquiredEnumerator = null;
+            acquiredDevice = null;
+            acquiredMeter = null;
+        }
+        finally
+        {
+            ReleaseIfAcquired(nativeApi, acquiredMeter);
+            ReleaseIfAcquired(nativeApi, acquiredDevice);
+            ReleaseIfAcquired(nativeApi, acquiredEnumerator);
+        }
     }
 
     public AmbientLightingFrame Capture(double colorBoost)
@@ -65,7 +79,7 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
             throw new ArgumentOutOfRangeException(nameof(colorBoost));
         }
 
-        Marshal.ThrowExceptionForHR(meter.GetPeakValue(out float peak));
+        float peak = nativeApi.GetPeakValue(meterObject);
         return RenderFrame(peak, colorBoost);
     }
 
@@ -128,10 +142,82 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         {
             return;
         }
-        _ = Marshal.ReleaseComObject(meterObject);
-        _ = Marshal.ReleaseComObject(deviceObject);
-        _ = Marshal.ReleaseComObject(enumeratorObject);
+        nativeApi.Release(meterObject);
+        nativeApi.Release(deviceObject);
+        nativeApi.Release(enumeratorObject);
     }
+
+    private static void ReleaseIfAcquired(
+        IAudioMeterNativeApi nativeApi,
+        object? value)
+    {
+        if (value is not null)
+        {
+            nativeApi.Release(value);
+        }
+    }
+}
+
+internal interface IAudioMeterNativeApi
+{
+    object CreateEnumerator();
+
+    object GetDefaultAudioEndpoint(object enumeratorObject);
+
+    object ActivateMeter(object deviceObject);
+
+    void ValidateMeter(object meterObject);
+
+    float GetPeakValue(object meterObject);
+
+    void Release(object value);
+}
+
+internal sealed class WindowsAudioMeterNativeApi : IAudioMeterNativeApi
+{
+    private const uint ClsctxInprocServer = 0x1;
+
+    internal static WindowsAudioMeterNativeApi Instance { get; } = new();
+
+    private WindowsAudioMeterNativeApi()
+    {
+    }
+
+    public object CreateEnumerator() => CoreAudioDeviceEnumerator.Create();
+
+    public object GetDefaultAudioEndpoint(object enumeratorObject)
+    {
+        var enumerator = (IMMDeviceEnumerator)enumeratorObject;
+        Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(
+            dataFlow: 0,
+            role: 1,
+            out IMMDevice device));
+        return device;
+    }
+
+    public object ActivateMeter(object deviceObject)
+    {
+        var device = (IMMDevice)deviceObject;
+        Guid iid = typeof(IAudioMeterInformation).GUID;
+        Marshal.ThrowExceptionForHR(device.Activate(
+            ref iid,
+            ClsctxInprocServer,
+            nint.Zero,
+            out object activated));
+        return activated;
+    }
+
+    public void ValidateMeter(object meterObject) =>
+        _ = (IAudioMeterInformation)meterObject;
+
+    public float GetPeakValue(object meterObject)
+    {
+        var meter = (IAudioMeterInformation)meterObject;
+        Marshal.ThrowExceptionForHR(meter.GetPeakValue(out float peak));
+        return peak;
+    }
+
+    public void Release(object value) => _ = Marshal.ReleaseComObject(value);
 
     [ComImport]
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
