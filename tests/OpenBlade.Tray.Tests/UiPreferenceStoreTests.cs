@@ -10,8 +10,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
         "OpenBlade.Tray.Tests",
         Guid.NewGuid().ToString("N"));
 
-    [Fact]
-    public async Task SaveAsync_PreservesAFileWithAFutureDashboardSchema()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveAsync_PreservesAFileWithAFutureDashboardSchema(bool includeBom)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "preferences.json");
@@ -28,7 +30,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
               }
             }
             """;
-        await File.WriteAllTextAsync(path, original);
+        await File.WriteAllTextAsync(
+            path,
+            original,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: includeBom));
         var store = new UiPreferenceStore(path);
         using JsonDocument originalDocument = JsonDocument.Parse(original);
         string originalDashboard = originalDocument.RootElement
@@ -47,6 +52,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             originalDashboard,
             saved.RootElement.GetProperty("trayDashboard").GetRawText());
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.oversized.bak"));
         Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
     }
 
@@ -75,17 +81,22 @@ public sealed class UiPreferenceStoreTests : IDisposable
 
         Assert.IsType<InvalidDataException>(exception.InnerException);
         Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.oversized.bak"));
         Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
     }
 
-    [Fact]
-    public async Task LoadAsync_FutureDashboardWithUnknownKind_LoadsOtherPreferences()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadAsync_FutureDashboardWithUnknownKind_LoadsOtherPreferences(
+        bool includeBom)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "preferences.json");
         await File.WriteAllTextAsync(path, $$"""
             {
               "theme": "Dark",
+              "language": "Russian",
               "startMinimized": true,
               "trayDashboard": {
                 "schemaVersion": {{TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1}},
@@ -94,11 +105,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 ]
               }
             }
-            """);
+            """, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: includeBom));
 
-        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+        var store = new UiPreferenceStore(path);
+        UiPreferences loaded = await store.LoadAsync();
 
         Assert.Equal(ThemePreference.Dark, loaded.Theme);
+        Assert.Equal(UiLanguagePreference.Russian, loaded.EffectiveLanguage);
+        Assert.Equal(UiLanguagePreference.Russian, store.LoadLanguagePreference());
         Assert.True(loaded.StartMinimized);
         Assert.False(loaded.LabFeaturesEnabled);
         Assert.Equal(
@@ -138,7 +152,29 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAsync_RefusesToOverwriteAnOversizedExistingFile()
+    public async Task SaveAsync_PreservesAnOversizedExistingFileInABackup()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        oversized[0] = (byte)'{';
+        oversized[^1] = (byte)'}';
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path);
+
+        await store.SaveAsync(UiPreferences.Default with
+        {
+            Theme = ThemePreference.Light,
+        });
+
+        Assert.Equal(ThemePreference.Light, (await store.LoadAsync()).Theme);
+        string backup = Assert.Single(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(backup));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OversizedReplacementLeavesOriginalUntouchedWithoutABackup()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "preferences.json");
@@ -152,11 +188,89 @@ public sealed class UiPreferenceStoreTests : IDisposable
             await Assert.ThrowsAsync<UiPreferenceSaveException>(() =>
                 store.SaveAsync(UiPreferences.Default with
                 {
-                    Theme = ThemePreference.Light,
+                    UpdateCheckEntityTag = new string('x', UiPreferenceStore.MaximumFileSizeBytes),
                 }));
 
         Assert.IsType<InvalidDataException>(exception.InnerException);
         Assert.Equal(oversized, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OversizedRecoveryFailureLeavesOriginalUntouched()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path);
+        await using FileStream locked = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        UiPreferenceSaveException exception =
+            await Assert.ThrowsAsync<UiPreferenceSaveException>(() =>
+                store.SaveAsync(UiPreferences.Default with { Theme = ThemePreference.Light }));
+
+        Assert.IsAssignableFrom<IOException>(exception.InnerException);
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OversizedRecoveryDoesNotRecreateAMissingDestination()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        string movedPath = Path.Combine(directory, "moved-preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path);
+
+        UiPreferenceSaveException exception =
+            await Assert.ThrowsAsync<UiPreferenceSaveException>(() =>
+                store.SaveAsync(UiPreferences.Default with
+                {
+                    DashboardTelemetryItems = new CallbackReadOnlyList<LiveReadingItemKind>(
+                        TelemetryPreferenceDefaults.DashboardItems,
+                        () => File.Move(path, movedPath)),
+                }));
+
+        Assert.IsAssignableFrom<IOException>(exception.InnerException);
+        Assert.False(File.Exists(path));
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(movedPath));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OversizedRecoveryBacksUpTheCurrentDestination()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        string movedPath = Path.Combine(directory, "moved-preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        byte[] replacement = System.Text.Encoding.UTF8.GetBytes(
+            """{"theme":"Dark","futureData":"preserve-this-write"}""");
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path);
+
+        await store.SaveAsync(UiPreferences.Default with
+        {
+            Theme = ThemePreference.Light,
+            DashboardTelemetryItems = new CallbackReadOnlyList<LiveReadingItemKind>(
+                TelemetryPreferenceDefaults.DashboardItems,
+                () =>
+                {
+                    File.Move(path, movedPath);
+                    File.WriteAllBytes(path, replacement);
+                }),
+        });
+
+        Assert.Equal(ThemePreference.Light, (await store.LoadAsync()).Theme);
+        string backup = Assert.Single(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Equal(replacement, await File.ReadAllBytesAsync(backup));
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(movedPath));
         Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
     }
 
@@ -982,6 +1096,29 @@ public sealed class UiPreferenceStoreTests : IDisposable
 
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private sealed class CallbackReadOnlyList<T>(IReadOnlyList<T> items, Action beforeEnumeration)
+        : IReadOnlyList<T>
+    {
+        private bool invoked;
+
+        public int Count => items.Count;
+
+        public T this[int index] => items[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            if (!invoked)
+            {
+                invoked = true;
+                beforeEnumeration();
+            }
+
+            return items.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class ThrowingReadOnlyList<T>(Func<Exception> createFailure)

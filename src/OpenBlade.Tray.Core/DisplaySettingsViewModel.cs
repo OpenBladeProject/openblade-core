@@ -146,7 +146,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool hasPendingProfileChange;
     private bool profilePersistenceAvailable;
     private string statusMessage = TrayText.Get("Checking the built-in display...");
-    private DateTimeOffset? nextRefreshFailureDiagnosticAt;
+    private long? lastRefreshFailureDiagnosticTimestamp;
     private int disposed;
 
     public DisplaySettingsViewModel(IDisplaySettingsAdapter adapter)
@@ -610,11 +610,11 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             await operationGate.WaitAsync(linkedCancellation.Token);
             enteredGate = true;
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
-            Apply(state, isRefresh: !showBusy);
+            Apply(state, isRefresh: operationKind == DisplayOperation.Refresh);
             applied?.Invoke(state);
             if (operationKind == DisplayOperation.Refresh)
             {
-                nextRefreshFailureDiagnosticAt = null;
+                lastRefreshFailureDiagnosticTimestamp = null;
             }
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
@@ -644,15 +644,15 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         DisplayOperation operationKind,
         Exception exception)
     {
-        if (operationKind == DisplayOperation.Refresh)
+        long? refreshFailureTimestamp = operationKind == DisplayOperation.Refresh
+            ? timeProvider.GetTimestamp()
+            : null;
+        if (refreshFailureTimestamp is { } timestamp
+            && lastRefreshFailureDiagnosticTimestamp is { } previousTimestamp
+            && timeProvider.GetElapsedTime(previousTimestamp, timestamp)
+                < RefreshFailureDiagnosticInterval)
         {
-            DateTimeOffset now = timeProvider.GetUtcNow();
-            if (nextRefreshFailureDiagnosticAt is { } next && now < next)
-            {
-                return;
-            }
-
-            nextRefreshFailureDiagnosticAt = now + RefreshFailureDiagnosticInterval;
+            return;
         }
 
         string operation = operationKind switch
@@ -669,6 +669,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         try
         {
             diagnosticSink(message);
+            if (refreshFailureTimestamp is { } reportedTimestamp)
+            {
+                lastRefreshFailureDiagnosticTimestamp = reportedTimestamp;
+            }
         }
         catch (Exception)
         {

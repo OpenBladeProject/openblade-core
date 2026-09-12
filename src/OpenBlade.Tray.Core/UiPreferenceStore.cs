@@ -218,7 +218,7 @@ public sealed class UiPreferenceStore
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
             using MemoryStream content = ReadBounded(file);
-            using JsonDocument document = JsonDocument.Parse(content);
+            using JsonDocument document = ParseContent(content);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return UiLanguagePreference.FollowSystem;
@@ -279,9 +279,8 @@ public sealed class UiPreferenceStore
             using MemoryStream content = await ReadBoundedAsync(
                 file,
                 cancellationToken).ConfigureAwait(false);
-            using JsonDocument document = await JsonDocument.ParseAsync(
-                content,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            using JsonDocument document = ParseContent(content);
             UiPreferences? preferences = TryGetFutureDashboard(
                     document.RootElement,
                     out _,
@@ -312,9 +311,20 @@ public sealed class UiPreferenceStore
 
         try
         {
-            string? futureDashboardJson =
-                await ReadFutureDashboardJsonAsync(cancellationToken)
-                    .ConfigureAwait(false);
+            string? futureDashboardJson;
+            bool preserveOversizedFile = false;
+            try
+            {
+                futureDashboardJson =
+                    await ReadFutureDashboardJsonAsync(cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            catch (InvalidDataException)
+            {
+                // Retain unparsed oversized data when replacing the preferences.
+                futureDashboardJson = null;
+                preserveOversizedFile = true;
+            }
             Directory.CreateDirectory(directory);
             try
             {
@@ -349,7 +359,17 @@ public sealed class UiPreferenceStore
                     }
                 }
 
-                File.Move(temporaryPath, path, overwrite: true);
+                if (preserveOversizedFile)
+                {
+                    string backupPath = Path.Combine(
+                        directory,
+                        $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.oversized.bak");
+                    File.Replace(temporaryPath, path, backupPath);
+                }
+                else
+                {
+                    File.Move(temporaryPath, path, overwrite: true);
+                }
             }
             finally
             {
@@ -388,9 +408,8 @@ public sealed class UiPreferenceStore
             using MemoryStream content = await ReadBoundedAsync(
                 file,
                 cancellationToken).ConfigureAwait(false);
-            using JsonDocument document = await JsonDocument.ParseAsync(
-                content,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            using JsonDocument document = ParseContent(content);
             return TryGetFutureDashboard(
                     document.RootElement,
                     out JsonElement dashboard,
@@ -403,6 +422,19 @@ public sealed class UiPreferenceStore
             // LoadAsync already treats malformed JSON as defaults.
             return null;
         }
+    }
+
+    private static JsonDocument ParseContent(MemoryStream content)
+    {
+        ReadOnlyMemory<byte> utf8Json = content.GetBuffer()
+            .AsMemory(0, checked((int)content.Length));
+        if (utf8Json.Span.StartsWith("\uFEFF"u8))
+        {
+            utf8Json = utf8Json[3..];
+        }
+
+        // The caller keeps content alive until the document has been disposed.
+        return JsonDocument.Parse(utf8Json);
     }
 
     private static MemoryStream ReadBounded(FileStream stream)

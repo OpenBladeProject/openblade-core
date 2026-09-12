@@ -6,15 +6,31 @@ namespace OpenBlade.Tray.Tests;
 internal sealed class PumpingSynchronizationContext : SynchronizationContext, IDisposable
 {
     private static readonly TimeSpan WorkTimeout = TimeSpan.FromSeconds(5);
+    private readonly object lifecycleGate = new();
     private readonly ConcurrentQueue<(SendOrPostCallback Callback, object? State)> work = new();
     private readonly AutoResetEvent workAvailable = new(initialState: false);
     private readonly int ownerThreadId = Environment.CurrentManagedThreadId;
+    private readonly TimeSpan workTimeout;
+    private bool disposed;
+
+    internal PumpingSynchronizationContext(TimeSpan? workTimeout = null)
+    {
+        this.workTimeout = workTimeout ?? WorkTimeout;
+    }
 
     public override void Post(SendOrPostCallback callback, object? state)
     {
         ArgumentNullException.ThrowIfNull(callback);
-        work.Enqueue((callback, state));
-        workAvailable.Set();
+        lock (lifecycleGate)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            work.Enqueue((callback, state));
+            workAvailable.Set();
+        }
     }
 
     public override void Send(SendOrPostCallback callback, object? state)
@@ -26,7 +42,8 @@ internal sealed class PumpingSynchronizationContext : SynchronizationContext, ID
             return;
         }
 
-        using var completed = new ManualResetEventSlim();
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         ExceptionDispatchInfo? failure = null;
         Post(
             queuedState =>
@@ -41,27 +58,29 @@ internal sealed class PumpingSynchronizationContext : SynchronizationContext, ID
                 }
                 finally
                 {
-                    completed.Set();
+                    completed.TrySetResult();
                 }
             },
             state);
         Assert.True(
-            completed.Wait(WorkTimeout),
+            completed.Task.Wait(workTimeout),
             "Timed out waiting for synchronous context work to complete.");
         failure?.Throw();
     }
 
-    internal static void Run(Func<PumpingSynchronizationContext, Task> action)
+    internal static void Run(
+        Func<PumpingSynchronizationContext, Task> action,
+        TimeSpan? workTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(action);
         SynchronizationContext? previous = Current;
-        using var context = new PumpingSynchronizationContext();
+        using var context = new PumpingSynchronizationContext(workTimeout);
         try
         {
             SetSynchronizationContext(context);
             Task task = action(context);
             Task completionSignal = task.ContinueWith(
-                _ => context.workAvailable.Set(),
+                _ => context.SignalWork(),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
@@ -70,7 +89,7 @@ internal sealed class PumpingSynchronizationContext : SynchronizationContext, ID
                 if (!context.TryRunOne())
                 {
                     Assert.True(
-                        context.workAvailable.WaitOne(WorkTimeout),
+                        context.workAvailable.WaitOne(context.workTimeout),
                         "Timed out waiting for work posted to the synchronization context.");
                 }
             }
@@ -87,9 +106,32 @@ internal sealed class PumpingSynchronizationContext : SynchronizationContext, ID
         }
     }
 
-    public void Dispose() => workAvailable.Dispose();
+    public void Dispose()
+    {
+        lock (lifecycleGate)
+        {
+            if (disposed)
+            {
+                return;
+            }
 
-    private bool TryRunOne()
+            disposed = true;
+            workAvailable.Dispose();
+        }
+    }
+
+    internal void SignalWork()
+    {
+        lock (lifecycleGate)
+        {
+            if (!disposed)
+            {
+                workAvailable.Set();
+            }
+        }
+    }
+
+    internal bool TryRunOne()
     {
         if (!work.TryDequeue(out var item))
         {

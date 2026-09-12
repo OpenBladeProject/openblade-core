@@ -491,7 +491,38 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Single(diagnostics);
         Assert.Contains("display refresh", diagnostics[0], StringComparison.Ordinal);
 
-        time.Advance(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
+        time.AdvanceTimestamp(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(2, diagnostics.Count);
+    }
+
+    [Theory]
+    [InlineData(-24)]
+    [InlineData(24)]
+    public async Task UnexpectedRefreshFailure_ThrottleIgnoresWallClockChanges(
+        int wallClockHours)
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("Read failed."),
+        };
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 9, 13, 0, 0, 0, TimeSpan.Zero));
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            time,
+            diagnostics.Add);
+
+        await viewModel.RefreshAsync();
+        time.AdjustUtcNow(TimeSpan.FromHours(wallClockHours));
+        await viewModel.RefreshAsync();
+
+        Assert.Single(diagnostics);
+
+        time.AdvanceTimestamp(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
         await viewModel.RefreshAsync();
 
         Assert.Equal(2, diagnostics.Count);
@@ -512,6 +543,40 @@ public sealed class DisplaySettingsViewModelTests
 
         await viewModel.RefreshAsync();
 
+        Assert.Equal("Display setting failed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task DiagnosticSinkFailure_RetriesUntilTheRefreshDiagnosticIsRecorded()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("Read failed."),
+        };
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 9, 13, 0, 0, 0, TimeSpan.Zero));
+        int attempts = 0;
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            time,
+            message =>
+            {
+                if (++attempts == 1)
+                {
+                    throw new IOException("Diagnostic sink failed.");
+                }
+
+                diagnostics.Add(message);
+            });
+
+        await viewModel.RefreshAsync();
+        await viewModel.RefreshAsync();
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(2, attempts);
+        Assert.Single(diagnostics);
         Assert.Equal("Display setting failed.", viewModel.StatusMessage);
     }
 
@@ -930,8 +995,16 @@ public sealed class DisplaySettingsViewModelTests
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
         public override DateTimeOffset GetUtcNow() => now;
 
-        internal void Advance(TimeSpan elapsed) => now += elapsed;
+        internal void AdvanceTimestamp(TimeSpan elapsed) => timestamp += elapsed.Ticks;
+
+        internal void AdjustUtcNow(TimeSpan offset) => now += offset;
     }
 }
