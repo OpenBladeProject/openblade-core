@@ -329,6 +329,7 @@ public sealed class BrokerInFlightStore
 {
     private readonly BrokerPaths paths;
     private readonly Action<BrokerInFlightDeployment>? afterReplacement;
+    private readonly Action<BrokerInFlightDeployment>? beforeReplacement;
 
     public BrokerInFlightStore(BrokerPaths paths)
         : this(paths, afterReplacement: null)
@@ -337,10 +338,12 @@ public sealed class BrokerInFlightStore
 
     internal BrokerInFlightStore(
         BrokerPaths paths,
-        Action<BrokerInFlightDeployment>? afterReplacement)
+        Action<BrokerInFlightDeployment>? afterReplacement,
+        Action<BrokerInFlightDeployment>? beforeReplacement = null)
     {
         this.paths = paths ?? throw new ArgumentNullException(nameof(paths));
         this.afterReplacement = afterReplacement;
+        this.beforeReplacement = beforeReplacement;
     }
 
     public async Task<BrokerInFlightDeployment?> LoadAsync(
@@ -353,7 +356,8 @@ public sealed class BrokerInFlightStore
 
         ProtectedBrokerStorage.RejectReparsePoint(paths.InFlightPath);
         paths.VerifyFile(paths.InFlightPath);
-        byte[] bytes = await File.ReadAllBytesAsync(paths.InFlightPath, cancellationToken)
+        byte[] bytes = await BrokerStateFile.ReadAsync(
+            paths.InFlightPath, BrokerInFlightDeploymentCodec.MaximumBytes, cancellationToken)
             .ConfigureAwait(false);
         return BrokerInFlightDeploymentCodec.ParseCanonical(bytes);
     }
@@ -517,6 +521,7 @@ public sealed class BrokerInFlightStore
             WriteProtectedAsync(temporary, state, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
+            beforeReplacement?.Invoke(state);
             File.Replace(temporary, paths.InFlightPath, destinationBackupFileName: null);
             afterReplacement?.Invoke(state);
             paths.VerifyFile(paths.InFlightPath);

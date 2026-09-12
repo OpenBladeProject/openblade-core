@@ -41,7 +41,10 @@ public interface IBrokerInstalledStateVerifier
 public sealed record BrokerInstallerExecutionResult(
     bool ExitObserved,
     int? ExitCode,
-    bool TimedOut);
+    bool TimedOut)
+{
+    internal Exception? ProcessBindingFailure { get; init; }
+}
 
 public interface IBrokerInstallerProcessRunner
 {
@@ -54,6 +57,21 @@ public interface IBrokerInstallerProcessRunner
 public sealed class WindowsBrokerInstallerProcessRunner : IBrokerInstallerProcessRunner
 {
     internal static readonly TimeSpan InstallerTimeout = TimeSpan.FromMinutes(30);
+    private readonly Func<ProcessStartInfo, Process?> startProcess;
+    private readonly TimeSpan installerTimeout;
+
+    public WindowsBrokerInstallerProcessRunner()
+        : this(Process.Start, InstallerTimeout)
+    {
+    }
+
+    internal WindowsBrokerInstallerProcessRunner(
+        Func<ProcessStartInfo, Process?> startProcess,
+        TimeSpan installerTimeout)
+    {
+        this.startProcess = startProcess;
+        this.installerTimeout = installerTimeout;
+    }
 
     public async Task<BrokerInstallerExecutionResult> RunAsync(
         ProcessStartInfo startInfo,
@@ -62,19 +80,33 @@ public sealed class WindowsBrokerInstallerProcessRunner : IBrokerInstallerProces
     {
         ArgumentNullException.ThrowIfNull(startInfo);
         ArgumentNullException.ThrowIfNull(processStarted);
-        using Process process = Process.Start(startInfo)
+        using Process process = startProcess(startInfo)
             ?? throw new InvalidOperationException("The verified OpenBlade installer did not start.");
-        processStarted(process.Id);
         using CancellationTokenSource deadline = CancellationTokenSource
             .CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(InstallerTimeout);
+        deadline.CancelAfter(installerTimeout);
+        Exception? processBindingFailure = null;
+        try
+        {
+            processStarted(process.Id);
+        }
+        catch (Exception exception)
+        {
+            // The child already exists. Even a failed durable identity binding must
+            // retain its live monitor until exit, cancellation, or the deadline.
+            processBindingFailure = exception;
+        }
+
         try
         {
             await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
             return new BrokerInstallerExecutionResult(
                 ExitObserved: true,
                 ExitCode: process.ExitCode,
-                TimedOut: false);
+                TimedOut: false)
+            {
+                ProcessBindingFailure = processBindingFailure,
+            };
         }
         catch (OperationCanceledException)
         {
@@ -83,7 +115,10 @@ public sealed class WindowsBrokerInstallerProcessRunner : IBrokerInstallerProces
             return new BrokerInstallerExecutionResult(
                 ExitObserved: false,
                 ExitCode: null,
-                TimedOut: !cancellationToken.IsCancellationRequested);
+                TimedOut: !cancellationToken.IsCancellationRequested)
+            {
+                ProcessBindingFailure = processBindingFailure,
+            };
         }
     }
 }
@@ -623,6 +658,14 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             execution = new BrokerInstallerExecutionResult(false, null, false);
         }
 
+        bool installerProcessBindingFailed = execution.ProcessBindingFailure is not null;
+        if (installerProcessBindingFailed)
+        {
+            logger.LogCritical(
+                execution.ProcessBindingFailure,
+                "The running installer was monitored but its process binding became indeterminate.");
+        }
+
         bool installerResultBindingFailed = false;
         if (execution.ExitObserved && execution.ExitCode.HasValue)
         {
@@ -658,13 +701,15 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             execution.ExitObserved ? "installer-exit-observed" : "installer-result-unknown",
             CancellationToken.None).ConfigureAwait(false);
 
-        if (installerResultBindingFailed)
+        if (installerResultBindingFailed || installerProcessBindingFailed)
         {
             return new BrokerResponse(
                 BrokerRequestCodec.ProtocolVersion,
                 request.RequestId,
                 BrokerResponseStatus.Indeterminate,
-                "installer-result-unresolved");
+                installerProcessBindingFailed
+                    ? "installer-process-unresolved"
+                    : "installer-result-unresolved");
         }
 
         BrokerPostInstallVerification postInstall;
