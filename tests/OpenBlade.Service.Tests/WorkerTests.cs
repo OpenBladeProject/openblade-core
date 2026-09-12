@@ -19,6 +19,9 @@ public sealed class WorkerTests
                 throw new PipeListenerEstablishmentException(new IOException("busy"));
             },
             Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            new Worker.PipeListenerErrorReporter(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                TimeProvider.System),
             cancellation.Token,
             (delay, token) =>
             {
@@ -45,6 +48,9 @@ public sealed class WorkerTests
                 token => Worker.RunPipeListenerAsync(
                     _ => throw new PipeListenerEstablishmentException(new IOException("busy")),
                     Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                    new Worker.PipeListenerErrorReporter(
+                        Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                        TimeProvider.System),
                     token,
                     Task.Delay),
                 _ =>
@@ -59,6 +65,64 @@ public sealed class WorkerTests
             () => running.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Same(expected, failure);
         Assert.True(siblingStarted);
+    }
+
+    [Fact]
+    public void ListenerFailureReportingUsesMonotonicWindowAndSummarizesSuppressedFailures()
+    {
+        var logger = new RecordingLogger();
+        var time = new ManualTimestampProvider();
+        var reporter = new Worker.PipeListenerErrorReporter(logger, time);
+        var failure = new PipeListenerEstablishmentException(new IOException("busy"));
+        TimeSpan retryDelay = TimeSpan.FromSeconds(2);
+
+        reporter.Report(failure, retryDelay);
+        Assert.Single(logger.Entries);
+        time.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+        reporter.Report(failure, retryDelay);
+        reporter.Report(failure, retryDelay);
+        Assert.Single(logger.Entries);
+
+        time.Advance(TimeSpan.FromTicks(1));
+        reporter.Report(failure, retryDelay);
+        Assert.Equal(2, logger.Entries.Count);
+        Assert.Equal(2L, logger.Entries[1].Properties["SuppressedFailures"]);
+        time.Advance(TimeSpan.FromSeconds(30));
+        reporter.Report(failure, retryDelay);
+        Assert.Equal(3, logger.Entries.Count);
+        Assert.Equal(0L, logger.Entries[2].Properties["SuppressedFailures"]);
+        Assert.All(logger.Entries, entry => Assert.Equal(LogLevel.Error, entry.Level));
+    }
+
+    [Fact]
+    public async Task SuccessfulConnectionResetsRetryDelayWithoutDelayingHealthyClients()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var delays = new List<double>();
+        int attempts = 0;
+        ILogger logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Worker.RunPipeListenerAsync(
+            _ => ++attempts is 3 or 4
+                ? Task.CompletedTask
+                : throw new PipeListenerEstablishmentException(new IOException("busy")),
+            logger,
+            new Worker.PipeListenerErrorReporter(logger, TimeProvider.System),
+            cancellation.Token,
+            (delay, token) =>
+            {
+                delays.Add(delay.TotalMilliseconds);
+                if (delays.Count == 3)
+                {
+                    cancellation.Cancel();
+                    return Task.FromCanceled(token);
+                }
+
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal([100d, 200d, 100d], delays);
+        Assert.Equal(5, attempts);
     }
 
     [Fact]
@@ -234,6 +298,20 @@ public sealed class WorkerTests
         Assert.Equal(
             expected,
             clearRunMarker);
+    }
+
+    private sealed class ManualTimestampProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        public override DateTimeOffset GetUtcNow() => throw new InvalidOperationException(
+            "Listener error reporting must use monotonic time.");
+
+        public void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
     }
 
     private sealed class RecordingLogger : ILogger

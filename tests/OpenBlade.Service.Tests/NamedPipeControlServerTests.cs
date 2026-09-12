@@ -1,8 +1,10 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -492,6 +494,56 @@ public sealed class NamedPipeControlServerTests
                 () => context.Server.ServeOnceAsync(timeout.Token));
 
         Assert.True(failure.InnerException is IOException or UnauthorizedAccessException);
+    }
+
+    [Fact]
+    public async Task FirstInstanceCollision_SharesErrorReportingAcrossAllListenerLoops()
+    {
+        TestServer context = CreateServer();
+        await using var owner = new NamedPipeServerStream(
+            context.PipeName, PipeDirection.InOut,
+            NamedPipeControlServer.MaximumServerInstances,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var logger = new ListenerErrorLogger();
+        var reporter = new Worker.PipeListenerErrorReporter(logger, TimeProvider.System);
+        var ready = Enumerable.Range(0, NamedPipeControlServer.MaximumServerInstances)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+        var delays = ready.Select(_ => new List<double>()).ToArray();
+        Task[] listeners = ready.Select((signal, index) => Worker.RunPipeListenerAsync(
+            context.Server.ServeOnceAsync,
+            logger,
+            reporter,
+            timeout.Token,
+            (delay, token) =>
+            {
+                delays[index].Add(delay.TotalMilliseconds);
+                if (delays[index].Count == 8)
+                {
+                    signal.SetResult();
+                    return Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+
+                return Task.CompletedTask;
+            })).ToArray();
+
+        try
+        {
+            await Task.WhenAll(ready.Select(signal => signal.Task)).WaitAsync(timeout.Token);
+            Assert.Equal(14, listeners.Length);
+            Assert.All(delays, listenerDelays => Assert.Equal(
+                [100d, 200d, 400d, 800d, 1600d, 2000d, 2000d, 2000d], listenerDelays));
+            Exception failure = Assert.Single(logger.Errors);
+            var establishmentFailure = Assert.IsType<PipeListenerEstablishmentException>(failure);
+            Assert.True(establishmentFailure.InnerException is IOException or UnauthorizedAccessException);
+        }
+        finally
+        {
+            timeout.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => Task.WhenAll(listeners).WaitAsync(TimeSpan.FromSeconds(5)));
+        }
     }
 
     [Fact]
@@ -1143,6 +1195,28 @@ public sealed class NamedPipeControlServerTests
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class ListenerErrorLogger : ILogger
+    {
+        public ConcurrentQueue<Exception> Errors { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Error && exception is not null)
+            {
+                Errors.Enqueue(exception);
+            }
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

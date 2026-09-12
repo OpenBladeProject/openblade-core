@@ -84,6 +84,7 @@ public sealed class Worker(
             handler,
             subscriptionHub,
             clientContextResolver);
+        var listenerErrors = new PipeListenerErrorReporter(logger, TimeProvider.System);
         List<Func<CancellationToken, Task>> operations =
         [
             token => new ServiceLifecycleRefreshLoop(
@@ -98,7 +99,8 @@ public sealed class Worker(
             token => new ServiceFanCurveLoop(runtime, logger).RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(
-                    token => RunPipeListenerAsync(server, token))),
+                    token => RunPipeListenerAsync(
+                        server.ServeOnceAsync, logger, listenerErrors, token, Task.Delay))),
         ];
         await ServiceBackgroundTaskGroup.RunAsync(operations, stoppingToken);
     }
@@ -205,17 +207,10 @@ public sealed class Worker(
         }
     }
 
-    private Task RunPipeListenerAsync(
-        NamedPipeControlServer server,
-        CancellationToken stoppingToken) => RunPipeListenerAsync(
-            server.ServeOnceAsync,
-            logger,
-            stoppingToken,
-            Task.Delay);
-
     internal static async Task RunPipeListenerAsync(
         Func<CancellationToken, Task> serveOnceAsync,
         ILogger logger,
+        PipeListenerErrorReporter listenerErrors,
         CancellationToken stoppingToken,
         Func<TimeSpan, CancellationToken, Task> delay)
     {
@@ -236,8 +231,7 @@ public sealed class Worker(
             }
             catch (PipeListenerEstablishmentException exception)
             {
-                logger.LogError(exception,
-                    "Named-pipe listener establishment failed; retrying in {RetryDelay}.", retryDelay);
+                listenerErrors.Report(exception, retryDelay);
                 await delay(retryDelay, stoppingToken).ConfigureAwait(false);
                 retryDelay = TimeSpan.FromMilliseconds(
                     Math.Min(retryDelay.TotalMilliseconds * 2, 2000));
@@ -247,6 +241,41 @@ public sealed class Worker(
             {
                 logger.LogError(exception, "Named-pipe connection failed.");
             }
+        }
+    }
+
+    internal sealed class PipeListenerErrorReporter(ILogger logger, TimeProvider timeProvider)
+    {
+        private static readonly TimeSpan ReportInterval = TimeSpan.FromSeconds(30);
+        private readonly object sync = new();
+        private long? lastReportTimestamp;
+        private long suppressedFailures;
+
+        internal void Report(PipeListenerEstablishmentException exception, TimeSpan retryDelay)
+        {
+            long suppressed;
+            lock (sync)
+            {
+                long now = timeProvider.GetTimestamp();
+                if (lastReportTimestamp is long last
+                    && timeProvider.GetElapsedTime(last, now) < ReportInterval)
+                {
+                    suppressedFailures++;
+                    return;
+                }
+
+                lastReportTimestamp = now;
+                suppressed = suppressedFailures;
+                suppressedFailures = 0;
+            }
+
+            // All listeners share this reporting window; their independent,
+            // cancellable retries and successful client handling remain unblocked.
+            logger.LogError(exception,
+                "Named-pipe listener establishment failed; retrying in {RetryDelay}. "
+                    + "Suppressed {SuppressedFailures} additional listener failures since the previous report.",
+                retryDelay,
+                suppressed);
         }
     }
 
