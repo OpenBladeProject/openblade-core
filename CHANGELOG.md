@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Avoid redundant capability and fan-editor notifications after service updates, bound preference files while preserving future dashboard data, and retain sanitized display failure diagnostics. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
 - Refresh the notification-area icon when the Windows theme changes, and use a darker green profile line and source badge on light taskbars. ([#454](https://github.com/OSSBlade/openblade-core/pull/454))
 
 ## [0.20.12-nightly.49] - 2026-09-10
