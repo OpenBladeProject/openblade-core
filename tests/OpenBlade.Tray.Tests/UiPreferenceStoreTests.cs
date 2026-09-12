@@ -146,9 +146,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
             path,
             new byte[UiPreferenceStore.MaximumFileSizeBytes + 1]);
 
-        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+        var diagnostics = new List<string>();
+        UiPreferences loaded = await new UiPreferenceStore(path, diagnostics.Add).LoadAsync();
 
         Assert.Same(UiPreferences.Default, loaded);
+        string diagnostic = Assert.Single(diagnostics);
+        Assert.Contains("using default preferences", diagnostic);
+        Assert.DoesNotContain(path, diagnostic, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(UiPreferenceStore.MaximumFileSizeBytes + 1, new FileInfo(path).Length);
     }
 
     [Fact]
@@ -160,12 +165,35 @@ public sealed class UiPreferenceStoreTests : IDisposable
         oversized[0] = (byte)'{';
         oversized[^1] = (byte)'}';
         await File.WriteAllBytesAsync(path, oversized);
-        var store = new UiPreferenceStore(path);
+        var diagnostics = new List<string>();
+        var store = new UiPreferenceStore(path, diagnostics.Add);
 
         await store.SaveAsync(UiPreferences.Default with
         {
             Theme = ThemePreference.Light,
         });
+
+        Assert.Equal(ThemePreference.Light, (await store.LoadAsync()).Theme);
+        string backup = Assert.Single(Directory.EnumerateFiles(directory, "*.oversized.bak"));
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(backup));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+        string diagnostic = Assert.Single(diagnostics);
+        Assert.Contains(".oversized.bak", diagnostic);
+        Assert.DoesNotContain(path, diagnostic, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OversizedPreferenceRecovery_ContainsDiagnosticSinkFailures()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path, _ => throw new IOException("Sink failed."));
+
+        Assert.Equal(UiLanguagePreference.FollowSystem, store.LoadLanguagePreference());
+        Assert.Same(UiPreferences.Default, await store.LoadAsync());
+        await store.SaveAsync(UiPreferences.Default with { Theme = ThemePreference.Light });
 
         Assert.Equal(ThemePreference.Light, (await store.LoadAsync()).Theme);
         string backup = Assert.Single(Directory.EnumerateFiles(directory, "*.oversized.bak"));
@@ -387,10 +415,14 @@ public sealed class UiPreferenceStoreTests : IDisposable
             path,
             new byte[UiPreferenceStore.MaximumFileSizeBytes + 1]);
 
+        var diagnostics = new List<string>();
         UiLanguagePreference language =
-            new UiPreferenceStore(path).LoadLanguagePreference();
+            new UiPreferenceStore(path, diagnostics.Add).LoadLanguagePreference();
 
         Assert.Equal(UiLanguagePreference.FollowSystem, language);
+        string diagnostic = Assert.Single(diagnostics);
+        Assert.Contains("following the system language", diagnostic);
+        Assert.DoesNotContain(path, diagnostic, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

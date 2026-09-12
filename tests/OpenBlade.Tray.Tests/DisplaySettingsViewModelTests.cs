@@ -441,7 +441,7 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
-    public async Task UnexpectedWriteFailure_RecordsSanitizedOperationDiagnostic()
+    public async Task UnexpectedWriteFailure_RecordsEverySanitizedOperationDiagnostic()
     {
         const string sensitiveDetail = @"Sensitive path C:\Users\Example\secret.txt";
         var adapter = new FakeDisplaySettingsAdapter(
@@ -467,6 +467,45 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Contains("HRESULT 0x", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain(sensitiveDetail, diagnostic, StringComparison.Ordinal);
         Assert.Equal("Display setting failed.", viewModel.StatusMessage);
+
+        await viewModel.SelectRefreshRateAsync(Dynamic);
+
+        Assert.Equal([diagnostic, diagnostic], diagnostics);
+    }
+
+    [Fact]
+    public void DisposeDuringWriteNotification_DoesNotReportAPreEntryFailure()
+    {
+        PumpingSynchronizationContext.Run(async _ =>
+        {
+            var adapter = new FakeDisplaySettingsAdapter(
+                Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+            var diagnostics = new List<string>();
+            await using var viewModel = new DisplaySettingsViewModel(
+                adapter,
+                TimeProvider.System,
+                diagnostics.Add)
+            {
+                ActivePowerSource = PowerSource.PluggedIn,
+            };
+            bool hasStartedDisposal = false;
+            viewModel.PropertyChanged += (sender, args) =>
+            {
+                if (args.PropertyName == nameof(DisplaySettingsViewModel.IsBusy)
+                    && !hasStartedDisposal)
+                {
+                    hasStartedDisposal = true;
+                    PumpingSynchronizationContext.Run(context => viewModel.DisposeAsync().AsTask());
+                }
+            };
+
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                viewModel.SelectRefreshRateAsync(Dynamic));
+
+            Assert.True(hasStartedDisposal);
+            Assert.Empty(adapter.RefreshRequests);
+            Assert.Empty(diagnostics);
+        });
     }
 
     [Fact]
@@ -495,6 +534,70 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.RefreshAsync();
 
         Assert.Equal(2, diagnostics.Count);
+    }
+
+    [Fact]
+    public async Task UnexpectedRefreshFailure_RecordsDistinctExceptionTypesAndHResults()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("Sensitive first failure.", 1),
+        };
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            new MutableTimeProvider(DateTimeOffset.UnixEpoch),
+            diagnostics.Add);
+
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new IOException("Sensitive second failure.", 2);
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new System.Runtime.InteropServices.ExternalException(
+            "Sensitive third failure.",
+            2);
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(3, diagnostics.Count);
+        Assert.Contains("IOException, HRESULT 0x00000001", diagnostics[0], StringComparison.Ordinal);
+        Assert.Contains("IOException, HRESULT 0x00000002", diagnostics[1], StringComparison.Ordinal);
+        Assert.Contains("ExternalException, HRESULT 0x00000002", diagnostics[2], StringComparison.Ordinal);
+        Assert.All(diagnostics, diagnostic =>
+            Assert.DoesNotContain("Sensitive", diagnostic, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnexpectedRefreshFailure_SuppressesDuplicatesAndCapsTheFixedWindow()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(adapter, time, diagnostics.Add);
+
+        for (int hResult = 1; hResult <= 8; hResult++)
+        {
+            adapter.UnexpectedStateReadFailure = new IOException("Read failed.", hResult);
+            await viewModel.RefreshAsync();
+            adapter.UnexpectedStateReadFailure = new IOException("Same signature, different message.", hResult);
+            await viewModel.RefreshAsync();
+            time.AdvanceTimestamp(TimeSpan.FromSeconds(30));
+        }
+
+        adapter.UnexpectedStateReadFailure = new IOException("Window is full.", 9);
+        await viewModel.RefreshAsync();
+        Assert.Equal(8, diagnostics.Count);
+
+        time.AdvanceTimestamp(
+            DisplaySettingsViewModel.RefreshFailureDiagnosticInterval - TimeSpan.FromMinutes(4));
+        adapter.UnexpectedStateReadFailure = new IOException("First signature in the next window.", 1);
+        await viewModel.RefreshAsync();
+        await viewModel.RefreshAsync();
+        Assert.Equal(9, diagnostics.Count);
+
+        adapter.UnexpectedStateReadFailure = new IOException("Previously suppressed signature.", 9);
+        await viewModel.RefreshAsync();
+        Assert.Equal(10, diagnostics.Count);
     }
 
     [Theory]
@@ -572,7 +675,10 @@ public sealed class DisplaySettingsViewModelTests
             });
 
         await viewModel.RefreshAsync();
+        time.AdvanceTimestamp(TimeSpan.FromMinutes(1));
         await viewModel.RefreshAsync();
+        time.AdvanceTimestamp(
+            DisplaySettingsViewModel.RefreshFailureDiagnosticInterval - TimeSpan.FromMinutes(1));
         await viewModel.RefreshAsync();
 
         Assert.Equal(2, attempts);
@@ -581,7 +687,62 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
-    public async Task SuccessfulRefresh_ResetsUnexpectedFailureThrottle()
+    public async Task DiagnosticSinkFailure_DistinctSignatureAndExpiredWindowRemainRetryable()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("First failure.", 1),
+        };
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        int attempts = 0;
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            time,
+            message =>
+            {
+                if (++attempts is 2 or 4)
+                {
+                    throw new IOException("Diagnostic sink failed.");
+                }
+
+                diagnostics.Add(message);
+            });
+
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new IOException("Distinct failure.", 2);
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new IOException("Already recorded.", 1);
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new IOException("Retry the distinct failure.", 2);
+        await viewModel.RefreshAsync();
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(3, attempts);
+        Assert.Equal(2, diagnostics.Count);
+
+        time.AdvanceTimestamp(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
+        adapter.UnexpectedStateReadFailure = new IOException("The next window's failure.", 3);
+        await viewModel.RefreshAsync();
+        time.AdvanceTimestamp(TimeSpan.FromMinutes(1));
+        await viewModel.RefreshAsync();
+        time.AdvanceTimestamp(
+            DisplaySettingsViewModel.RefreshFailureDiagnosticInterval - TimeSpan.FromMinutes(1));
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(5, attempts);
+        Assert.Equal(3, diagnostics.Count);
+
+        time.AdvanceTimestamp(TimeSpan.FromMinutes(1));
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(6, attempts);
+        Assert.Equal(4, diagnostics.Count);
+    }
+
+    [Fact]
+    public async Task SuccessfulRefresh_DoesNotResetTheUnexpectedFailureWindow()
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
@@ -589,15 +750,24 @@ public sealed class DisplaySettingsViewModelTests
             UnexpectedStateReadFailure = new IOException("First failure."),
         };
         var diagnostics = new List<string>();
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
         await using var viewModel = new DisplaySettingsViewModel(
             adapter,
-            TimeProvider.System,
+            time,
             diagnostics.Add);
 
         await viewModel.RefreshAsync();
-        adapter.UnexpectedStateReadFailure = null;
-        await viewModel.RefreshAsync();
-        adapter.UnexpectedStateReadFailure = new IOException("Second failure.");
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            adapter.UnexpectedStateReadFailure = null;
+            await viewModel.RefreshAsync();
+            adapter.UnexpectedStateReadFailure = new IOException("Another failure of the same type.");
+            await viewModel.RefreshAsync();
+        }
+
+        Assert.Single(diagnostics);
+
+        time.AdvanceTimestamp(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
         await viewModel.RefreshAsync();
 
         Assert.Equal(2, diagnostics.Count);

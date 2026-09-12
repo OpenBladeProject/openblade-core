@@ -119,6 +119,8 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 
 public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private const int MaximumRefreshFailureDiagnosticsPerWindow = 8;
+
     internal static readonly TimeSpan RefreshFailureDiagnosticInterval =
         TimeSpan.FromMinutes(5);
 
@@ -130,6 +132,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private readonly IDisplaySettingsAdapter adapter;
     private readonly TimeProvider timeProvider;
     private readonly Action<string> diagnosticSink;
+    private readonly HashSet<(Type ExceptionType, int HResult)> refreshFailureDiagnosticSignatures = [];
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private IReadOnlyList<DisplayRefreshRateOption> refreshRateOptions = [];
@@ -146,7 +149,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool hasPendingProfileChange;
     private bool profilePersistenceAvailable;
     private string statusMessage = TrayText.Get("Checking the built-in display...");
-    private long? lastRefreshFailureDiagnosticTimestamp;
+    private long? refreshFailureDiagnosticWindowTimestamp;
     private int disposed;
 
     public DisplaySettingsViewModel(IDisplaySettingsAdapter adapter)
@@ -612,16 +615,12 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
             Apply(state, isRefresh: operationKind == DisplayOperation.Refresh);
             applied?.Invoke(state);
-            if (operationKind == DisplayOperation.Refresh)
-            {
-                lastRefreshFailureDiagnosticTimestamp = null;
-            }
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (enteredGate)
         {
             ReportUnexpectedFailure(operationKind, exception);
             StatusMessage = TrayText.Get("Display setting failed.");
@@ -647,10 +646,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         long? refreshFailureTimestamp = operationKind == DisplayOperation.Refresh
             ? timeProvider.GetTimestamp()
             : null;
-        if (refreshFailureTimestamp is { } timestamp
-            && lastRefreshFailureDiagnosticTimestamp is { } previousTimestamp
-            && timeProvider.GetElapsedTime(previousTimestamp, timestamp)
-                < RefreshFailureDiagnosticInterval)
+        var signature = (exception.GetType(), exception.HResult);
+        bool startsNewRefreshWindow = refreshFailureTimestamp is { } currentTimestamp
+            && (refreshFailureDiagnosticWindowTimestamp is not { } windowTimestamp
+                || timeProvider.GetElapsedTime(windowTimestamp, currentTimestamp)
+                    >= RefreshFailureDiagnosticInterval);
+        if (refreshFailureTimestamp.HasValue
+            && !startsNewRefreshWindow
+            && (refreshFailureDiagnosticSignatures.Contains(signature)
+                || refreshFailureDiagnosticSignatures.Count
+                    >= MaximumRefreshFailureDiagnosticsPerWindow))
         {
             return;
         }
@@ -671,7 +676,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             diagnosticSink(message);
             if (refreshFailureTimestamp is { } reportedTimestamp)
             {
-                lastRefreshFailureDiagnosticTimestamp = reportedTimestamp;
+                if (startsNewRefreshWindow)
+                {
+                    refreshFailureDiagnosticSignatures.Clear();
+                    refreshFailureDiagnosticWindowTimestamp = reportedTimestamp;
+                }
+
+                refreshFailureDiagnosticSignatures.Add(signature);
             }
         }
         catch (Exception)

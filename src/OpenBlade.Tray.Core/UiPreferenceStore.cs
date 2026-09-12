@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using System.Security;
 using System.Text.Json;
@@ -189,6 +190,7 @@ public sealed class UiPreferenceStore
     };
 
     private readonly string path;
+    private readonly Action<string> diagnosticSink;
 
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -198,9 +200,16 @@ public sealed class UiPreferenceStore
     public static UiPreferenceStore CreateDefault() => new(DefaultPath);
 
     public UiPreferenceStore(string path)
+        : this(path, message => Trace.TraceWarning("{0}", message))
+    {
+    }
+
+    internal UiPreferenceStore(string path, Action<string> diagnosticSink)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         this.path = Path.GetFullPath(path);
+        this.diagnosticSink = diagnosticSink
+            ?? throw new ArgumentNullException(nameof(diagnosticSink));
     }
 
     public UiLanguagePreference LoadLanguagePreference()
@@ -255,6 +264,12 @@ public sealed class UiPreferenceStore
                 or UnauthorizedAccessException
                 or SecurityException)
         {
+            if (exception is InvalidDataException)
+            {
+                ReportDiagnostic(
+                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                    + "following the system language. The file has not been changed.");
+            }
         }
 
         return UiLanguagePreference.FollowSystem;
@@ -294,6 +309,13 @@ public sealed class UiPreferenceStore
         catch (Exception exception) when (
             exception is JsonException or InvalidDataException)
         {
+            if (exception is InvalidDataException)
+            {
+                ReportDiagnostic(
+                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                    + "using default preferences. The file has not been changed.");
+            }
+
             return UiPreferences.Default;
         }
     }
@@ -365,6 +387,9 @@ public sealed class UiPreferenceStore
                         directory,
                         $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.oversized.bak");
                     File.Replace(temporaryPath, path, backupPath);
+                    ReportDiagnostic(
+                        "Oversized preferences were preserved in an .oversized.bak file "
+                        + "beside the preferences file before saving new preferences.");
                 }
                 else
                 {
@@ -421,6 +446,18 @@ public sealed class UiPreferenceStore
         {
             // LoadAsync already treats malformed JSON as defaults.
             return null;
+        }
+    }
+
+    private void ReportDiagnostic(string message)
+    {
+        try
+        {
+            diagnosticSink(message);
+        }
+        catch (Exception)
+        {
+            // Diagnostic failures must not change preference recovery or save outcomes.
         }
     }
 
