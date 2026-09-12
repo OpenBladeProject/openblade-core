@@ -51,6 +51,34 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_RefusesFutureDashboardExpansionBeyondMaximumSize()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        string prefix = "{\"trayDashboard\":{\"schemaVersion\":"
+            + (TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1).ToString(
+                System.Globalization.CultureInfo.InvariantCulture)
+            + ",\"futureOnly\":\"";
+        const string suffix = "\"}}";
+        int fillerLength = UiPreferenceStore.MaximumFileSizeBytes
+            - 1
+            - System.Text.Encoding.UTF8.GetByteCount(prefix + suffix);
+        byte[] original = System.Text.Encoding.UTF8.GetBytes(
+            prefix + new string('x', fillerLength) + suffix);
+        Assert.Equal(UiPreferenceStore.MaximumFileSizeBytes - 1, original.Length);
+        await File.WriteAllBytesAsync(path, original);
+        var store = new UiPreferenceStore(path);
+
+        UiPreferenceSaveException exception =
+            await Assert.ThrowsAsync<UiPreferenceSaveException>(() =>
+                store.SaveAsync(UiPreferences.Default));
+
+        Assert.IsType<InvalidDataException>(exception.InnerException);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
+    [Fact]
     public async Task LoadAsync_FutureDashboardWithUnknownKind_LoadsOtherPreferences()
     {
         Directory.CreateDirectory(directory);
@@ -77,6 +105,59 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
             loaded.TrayDashboard?.SchemaVersion);
         Assert.Throws<InvalidDataException>(() => loaded.EffectiveTrayDashboard);
+    }
+
+    [Fact]
+    public async Task LoadAsync_AcceptsAFileAtTheMaximumSize()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        const string json = "{\"theme\":\"Dark\"}";
+        byte[] content = new byte[UiPreferenceStore.MaximumFileSizeBytes];
+        System.Text.Encoding.UTF8.GetBytes(json, content);
+        content.AsSpan(json.Length).Fill((byte)' ');
+        await File.WriteAllBytesAsync(path, content);
+
+        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(ThemePreference.Dark, loaded.Theme);
+    }
+
+    [Fact]
+    public async Task LoadAsync_OversizedFileFallsBackToDefaults()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllBytesAsync(
+            path,
+            new byte[UiPreferenceStore.MaximumFileSizeBytes + 1]);
+
+        UiPreferences loaded = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Same(UiPreferences.Default, loaded);
+    }
+
+    [Fact]
+    public async Task SaveAsync_RefusesToOverwriteAnOversizedExistingFile()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        byte[] oversized = new byte[UiPreferenceStore.MaximumFileSizeBytes + 1];
+        oversized[0] = (byte)'{';
+        oversized[^1] = (byte)'}';
+        await File.WriteAllBytesAsync(path, oversized);
+        var store = new UiPreferenceStore(path);
+
+        UiPreferenceSaveException exception =
+            await Assert.ThrowsAsync<UiPreferenceSaveException>(() =>
+                store.SaveAsync(UiPreferences.Default with
+                {
+                    Theme = ThemePreference.Light,
+                }));
+
+        Assert.IsType<InvalidDataException>(exception.InnerException);
+        Assert.Equal(oversized, await File.ReadAllBytesAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
     }
 
     [Fact]
@@ -181,6 +262,21 @@ public sealed class UiPreferenceStoreTests : IDisposable
         await File.WriteAllTextAsync(path, "{ definitely not json }");
 
         Assert.Equal(UiLanguagePreference.FollowSystem, store.LoadLanguagePreference());
+    }
+
+    [Fact]
+    public async Task LoadLanguagePreference_OversizedFileFallsBackWithoutParsing()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllBytesAsync(
+            path,
+            new byte[UiPreferenceStore.MaximumFileSizeBytes + 1]);
+
+        UiLanguagePreference language =
+            new UiPreferenceStore(path).LoadLanguagePreference();
+
+        Assert.Equal(UiLanguagePreference.FollowSystem, language);
     }
 
     [Fact]

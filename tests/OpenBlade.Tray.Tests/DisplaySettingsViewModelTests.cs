@@ -441,6 +441,104 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task UnexpectedWriteFailure_RecordsSanitizedOperationDiagnostic()
+    {
+        const string sensitiveDetail = @"Sensitive path C:\Users\Example\secret.txt";
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedRefreshChangeFailure =
+                new InvalidOperationException(sensitiveDetail),
+        };
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            TimeProvider.System,
+            diagnostics.Add)
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+        };
+
+        await viewModel.SelectRefreshRateAsync(Dynamic);
+
+        string diagnostic = Assert.Single(diagnostics);
+        Assert.Contains("refresh-rate change", diagnostic, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidOperationException), diagnostic, StringComparison.Ordinal);
+        Assert.Contains("HRESULT 0x", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain(sensitiveDetail, diagnostic, StringComparison.Ordinal);
+        Assert.Equal("Display setting failed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task RecurringUnexpectedRefreshFailure_IsThrottledUntilIntervalExpires()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("Read failed."),
+        };
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 9, 13, 0, 0, 0, TimeSpan.Zero));
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            time,
+            diagnostics.Add);
+
+        await viewModel.RefreshAsync();
+        await viewModel.RefreshAsync();
+
+        Assert.Single(diagnostics);
+        Assert.Contains("display refresh", diagnostics[0], StringComparison.Ordinal);
+
+        time.Advance(DisplaySettingsViewModel.RefreshFailureDiagnosticInterval);
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(2, diagnostics.Count);
+    }
+
+    [Fact]
+    public async Task DiagnosticSinkFailure_DoesNotReplaceTheDisplayErrorState()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("Read failed."),
+        };
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            TimeProvider.System,
+            _ => throw new InvalidOperationException("Diagnostic sink failed."));
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal("Display setting failed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SuccessfulRefresh_ResetsUnexpectedFailureThrottle()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            UnexpectedStateReadFailure = new IOException("First failure."),
+        };
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter,
+            TimeProvider.System,
+            diagnostics.Add);
+
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = null;
+        await viewModel.RefreshAsync();
+        adapter.UnexpectedStateReadFailure = new IOException("Second failure.");
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(2, diagnostics.Count);
+    }
+
+    [Fact]
     public async Task FailedAvailableRefresh_AppliesReadbackWithoutReportingExternalChange()
     {
         var adapter = new FakeDisplaySettingsAdapter(
@@ -646,6 +744,8 @@ public sealed class DisplaySettingsViewModelTests
         public bool BlockSecondRefreshChange { get; init; }
         public bool FailNextRefreshChange { get; init; }
         public bool BlockNextStateRead { get; set; }
+        public Exception? UnexpectedStateReadFailure { get; set; }
+        public Exception? UnexpectedRefreshChangeFailure { get; init; }
         public TaskCompletionSource FirstRefreshChangeStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
@@ -674,6 +774,11 @@ public sealed class DisplaySettingsViewModelTests
             await EnterAsync(token);
             try
             {
+                if (UnexpectedStateReadFailure is not null)
+                {
+                    throw UnexpectedStateReadFailure;
+                }
+
                 if (BlockNextStateRead)
                 {
                     BlockNextStateRead = false;
@@ -699,6 +804,11 @@ public sealed class DisplaySettingsViewModelTests
             {
                 RefreshRequests.Add(refreshRateKey);
                 RefreshRequestSources.Add(expectedPowerSource);
+                if (UnexpectedRefreshChangeFailure is not null)
+                {
+                    throw UnexpectedRefreshChangeFailure;
+                }
+
                 int refreshChangeNumber = Interlocked.Increment(ref refreshChanges);
                 if (FailNextRefreshChange)
                 {
@@ -816,5 +926,12 @@ public sealed class DisplaySettingsViewModelTests
         }
 
         private void Exit() => Interlocked.Decrement(ref activeOperations);
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+
+        internal void Advance(TimeSpan elapsed) => now += elapsed;
     }
 }

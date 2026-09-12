@@ -22,11 +22,15 @@ public sealed partial class MainViewModelTests
         var time = new MutableTimeProvider(NotificationTestTime);
         await using var viewModel = new MainViewModel(client, dispatcher, time);
         ServiceStatusSnapshot status = CreateLiveStatus();
+        ServiceStatusSnapshot initial = await RoundTripStatusAsync(status);
+        Assert.NotSame(
+            status.Capabilities!.ChargeLimits,
+            initial.Capabilities!.ChargeLimits);
         ConcurrentQueue<string> notifications = await ConnectAsync(
             viewModel,
             client,
             dispatcher,
-            status);
+            initial);
         viewModel.SetDashboardTelemetryPresentationActive(true);
         viewModel.SetTrayDashboardTelemetryPresentationActive(true);
         Drain(notifications);
@@ -108,6 +112,42 @@ public sealed partial class MainViewModelTests
         Assert.Equal(
             [nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus)],
             Drain(notifications));
+    }
+
+    [Fact]
+    public async Task CapabilityChangeAfterRoundTrip_NotifiesAffectedPresentation()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        ServiceStatusSnapshot status = CreateLiveStatus();
+        ConcurrentQueue<string> notifications = await ConnectAsync(
+            viewModel,
+            client,
+            dispatcher,
+            status);
+        Drain(notifications);
+        DeviceCapabilities capabilities = status.Capabilities!;
+        HashSet<int> reducedChargeLimits = capabilities.ChargeLimits
+            .Where(value => value != 50)
+            .ToHashSet();
+
+        await PushAsync(
+            client,
+            dispatcher,
+            status with
+            {
+                Revision = 2,
+                Capabilities = capabilities with
+                {
+                    ChargeLimits = reducedChargeLimits,
+                },
+            });
+
+        List<string> changed = Drain(notifications);
+        Assert.Contains(nameof(MainViewModel.Capabilities), changed);
+        Assert.Contains(nameof(MainViewModel.ChargeLimitOptions), changed);
+        Assert.DoesNotContain(50, viewModel.ChargeLimitOptions);
     }
 
     [Fact]
@@ -352,7 +392,7 @@ public sealed partial class MainViewModelTests
         client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         Task cycle = observe();
-        client.PendingObservation.SetResult(status);
+        client.PendingObservation.SetResult(await RoundTripStatusAsync(status));
         await cycle;
     }
 
@@ -362,7 +402,22 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot status)
     {
         int completed = dispatcher.CompletedCalls;
-        client.Publish(status);
+        client.Publish(await RoundTripStatusAsync(status));
         await WaitUntilAsync(() => dispatcher.CompletedCalls > completed);
+    }
+
+    private static async Task<ServiceStatusSnapshot> RoundTripStatusAsync(
+        ServiceStatusSnapshot status)
+    {
+        using var stream = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(
+            stream,
+            CancellationToken.None);
+        return Assert.IsType<ServiceStatusEvent>(frame).Status;
     }
 }

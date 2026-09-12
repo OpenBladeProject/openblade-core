@@ -6657,24 +6657,23 @@ public sealed partial class MainViewModelTests
     public async Task Status_FormatsZeroBatteryFlowForCurrentPowerSource()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
 
-        client.Publish(CreateStatus(verified: true, blocked: false) with
+        await PushAsync(client, dispatcher, CreateStatus(verified: true, blocked: false) with
         {
             ActivePowerSource = PowerSource.PluggedIn,
             LiveReadings = new LiveReadings(0, null, null),
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
         Assert.Equal("Not charging", viewModel.BatteryPowerFlowLabel);
 
-        client.Publish(CreateStatus(verified: true, blocked: false) with
+        await PushAsync(client, dispatcher, CreateStatus(verified: true, blocked: false) with
         {
             Revision = 2,
             ActivePowerSource = PowerSource.Battery,
             LiveReadings = new LiveReadings(0, null, null),
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
         Assert.Equal("Battery power unavailable", viewModel.BatteryPowerFlowLabel);
     }
 

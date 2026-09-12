@@ -180,6 +180,8 @@ public sealed record UiPreferences(
 
 public sealed class UiPreferenceStore
 {
+    internal const int MaximumFileSizeBytes = 1024 * 1024;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -210,12 +212,13 @@ public sealed class UiPreferenceStore
 
         try
         {
-            using FileStream stream = new(
+            using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
-            using JsonDocument document = JsonDocument.Parse(stream);
+            using MemoryStream content = ReadBounded(file);
+            using JsonDocument document = JsonDocument.Parse(content);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return UiLanguagePreference.FollowSystem;
@@ -246,7 +249,11 @@ public sealed class UiPreferenceStore
             }
         }
         catch (Exception exception) when (
-            exception is JsonException or IOException or UnauthorizedAccessException or SecurityException)
+            exception is JsonException
+                or InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or SecurityException)
         {
         }
 
@@ -262,15 +269,18 @@ public sealed class UiPreferenceStore
 
         try
         {
-            await using FileStream stream = new(
+            await using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using MemoryStream content = await ReadBoundedAsync(
+                file,
+                cancellationToken).ConfigureAwait(false);
             using JsonDocument document = await JsonDocument.ParseAsync(
-                stream,
+                content,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             UiPreferences? preferences = TryGetFutureDashboard(
                     document.RootElement,
@@ -282,7 +292,8 @@ public sealed class UiPreferenceStore
                 : document.RootElement.Deserialize<UiPreferences>(SerializerOptions);
             return preferences ?? UiPreferences.Default;
         }
-        catch (JsonException)
+        catch (Exception exception) when (
+            exception is JsonException or InvalidDataException)
         {
             return UiPreferences.Default;
         }
@@ -331,7 +342,11 @@ public sealed class UiPreferenceStore
                             futureDashboardJson,
                             cancellationToken).ConfigureAwait(false);
                     }
-                    await stream.FlushAsync(cancellationToken);
+                    await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    if (stream.Length > MaximumFileSizeBytes)
+                    {
+                        throw OversizedPreferences();
+                    }
                 }
 
                 File.Move(temporaryPath, path, overwrite: true);
@@ -342,7 +357,10 @@ public sealed class UiPreferenceStore
             }
         }
         catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or SecurityException)
+            exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or SecurityException)
         {
             throw new UiPreferenceSaveException(
                 $"Preferences could not be written to '{path}'.",
@@ -360,15 +378,18 @@ public sealed class UiPreferenceStore
 
         try
         {
-            await using FileStream stream = new(
+            await using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using MemoryStream content = await ReadBoundedAsync(
+                file,
+                cancellationToken).ConfigureAwait(false);
             using JsonDocument document = await JsonDocument.ParseAsync(
-                stream,
+                content,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             return TryGetFutureDashboard(
                     document.RootElement,
@@ -383,6 +404,97 @@ public sealed class UiPreferenceStore
             return null;
         }
     }
+
+    private static MemoryStream ReadBounded(FileStream stream)
+    {
+        EnsureDeclaredLengthIsBounded(stream);
+        var content = new MemoryStream(InitialCapacity(stream));
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            while (true)
+            {
+                int remaining = MaximumFileSizeBytes - checked((int)content.Length);
+                int count = stream.Read(
+                    buffer,
+                    0,
+                    Math.Min(buffer.Length, remaining + 1));
+                if (count == 0)
+                {
+                    content.Position = 0;
+                    return content;
+                }
+                if (count > remaining)
+                {
+                    throw OversizedPreferences();
+                }
+
+                content.Write(buffer, 0, count);
+            }
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static async Task<MemoryStream> ReadBoundedAsync(
+        FileStream stream,
+        CancellationToken cancellationToken)
+    {
+        EnsureDeclaredLengthIsBounded(stream);
+        var content = new MemoryStream(InitialCapacity(stream));
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            while (true)
+            {
+                int remaining = MaximumFileSizeBytes - checked((int)content.Length);
+                int count = await stream.ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, remaining + 1)),
+                    cancellationToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    content.Position = 0;
+                    return content;
+                }
+                if (count > remaining)
+                {
+                    throw OversizedPreferences();
+                }
+
+                content.Write(buffer, 0, count);
+            }
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static void EnsureDeclaredLengthIsBounded(FileStream stream)
+    {
+        if (stream.Length > MaximumFileSizeBytes)
+        {
+            throw OversizedPreferences();
+        }
+    }
+
+    private static int InitialCapacity(FileStream stream) =>
+        checked((int)Math.Min(stream.Length, MaximumFileSizeBytes));
+
+    private static InvalidDataException OversizedPreferences() => new(
+        $"Preference files cannot exceed {MaximumFileSizeBytes / 1024} KiB.");
 
     private static UiPreferences? DeserializeWithFutureDashboardPlaceholder(
         JsonElement root,
