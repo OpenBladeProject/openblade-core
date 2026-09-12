@@ -478,6 +478,23 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task ServeOnceAsync_ClassifiesFirstInstanceCollisionAsEstablishmentFailure()
+    {
+        TestServer context = CreateServer();
+        await using var owner = new NamedPipeServerStream(
+            context.PipeName, PipeDirection.InOut,
+            NamedPipeControlServer.MaximumServerInstances,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        PipeListenerEstablishmentException failure =
+            await Assert.ThrowsAsync<PipeListenerEstablishmentException>(
+                () => context.Server.ServeOnceAsync(timeout.Token));
+
+        Assert.True(failure.InnerException is IOException or UnauthorizedAccessException);
+    }
+
+    [Fact]
     public async Task ServeOnceAsync_RoundTripsBoundedDiagnosticArchiveOverAclProtectedPipe()
     {
         TestServer context = CreateServer();

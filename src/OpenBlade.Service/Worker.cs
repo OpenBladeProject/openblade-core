@@ -205,19 +205,42 @@ public sealed class Worker(
         }
     }
 
-    private async Task RunPipeListenerAsync(
+    private Task RunPipeListenerAsync(
         NamedPipeControlServer server,
-        CancellationToken stoppingToken)
+        CancellationToken stoppingToken) => RunPipeListenerAsync(
+            server.ServeOnceAsync,
+            logger,
+            stoppingToken,
+            Task.Delay);
+
+    internal static async Task RunPipeListenerAsync(
+        Func<CancellationToken, Task> serveOnceAsync,
+        ILogger logger,
+        CancellationToken stoppingToken,
+        Func<TimeSpan, CancellationToken, Task> delay)
     {
+        // A synchronously failing listener must not trap task-group construction
+        // before its siblings and failure supervision have started.
+        await Task.Yield();
+        TimeSpan retryDelay = TimeSpan.FromMilliseconds(100);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await server.ServeOnceAsync(stoppingToken);
+                await serveOnceAsync(stoppingToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromMilliseconds(100);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
+            }
+            catch (PipeListenerEstablishmentException exception)
+            {
+                logger.LogError(exception,
+                    "Named-pipe listener establishment failed; retrying in {RetryDelay}.", retryDelay);
+                await delay(retryDelay, stoppingToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromMilliseconds(
+                    Math.Min(retryDelay.TotalMilliseconds * 2, 2000));
             }
             catch (Exception exception) when (exception is
                 IOException or TimeoutException or UnauthorizedAccessException)

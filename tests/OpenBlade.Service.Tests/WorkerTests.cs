@@ -7,6 +7,61 @@ namespace OpenBlade.Service.Tests;
 public sealed class WorkerTests
 {
     [Fact]
+    public async Task ListenerEstablishmentFailuresUseCappedCancellableBackoff()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var delays = new List<double>();
+        int attempts = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Worker.RunPipeListenerAsync(
+            _ =>
+            {
+                attempts++;
+                throw new PipeListenerEstablishmentException(new IOException("busy"));
+            },
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            cancellation.Token,
+            (delay, token) =>
+            {
+                delays.Add(delay.TotalMilliseconds);
+                if (delays.Count == 8)
+                {
+                    cancellation.Cancel();
+                    return Task.FromCanceled(token);
+                }
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal([100d, 200d, 400d, 800d, 1600d, 2000d, 2000d, 2000d], delays);
+        Assert.Equal(8, attempts);
+    }
+
+    [Fact]
+    public async Task ListenerFailureDoesNotPreventSiblingStartupAndSupervision()
+    {
+        bool siblingStarted = false;
+        var expected = new InvalidOperationException("sibling failed");
+        Task running = ServiceBackgroundTaskGroup.RunAsync(
+            [
+                token => Worker.RunPipeListenerAsync(
+                    _ => throw new PipeListenerEstablishmentException(new IOException("busy")),
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                    token,
+                    Task.Delay),
+                _ =>
+                {
+                    siblingStarted = true;
+                    return Task.FromException(expected);
+                },
+            ],
+            CancellationToken.None);
+
+        Exception failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => running.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Same(expected, failure);
+        Assert.True(siblingStarted);
+    }
+
+    [Fact]
     public async Task StartupGate_AwaitsConfigurationBeforeBackgroundLoops()
     {
         var configurationLoaded = new TaskCompletionSource<bool>(
