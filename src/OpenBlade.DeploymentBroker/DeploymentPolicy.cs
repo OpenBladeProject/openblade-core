@@ -612,12 +612,13 @@ public sealed class BrokerDurableRecordStore
         ProtectedBrokerStorage.RejectReparsePoint(reportPath);
         paths.VerifyDirectory(paths.ReportDirectory);
         paths.VerifyFile(reportPath);
-        // Only completedAt may differ, and canonical UTC timestamps have fixed width.
-        byte[] existing = await BrokerStateFile.ReadAsync(
-            reportPath, SerializeCanonicalReport(report).Length, cancellationToken)
-            .ConfigureAwait(false);
         try
         {
+            // Only completedAt may differ, and canonical UTC timestamps have fixed width.
+            // A larger record cannot match, including a valid conflicting report.
+            byte[] existing = await BrokerStateFile.ReadAsync(
+                reportPath, SerializeCanonicalReport(report).Length, cancellationToken)
+                .ConfigureAwait(false);
             using JsonDocument document = JsonDocument.Parse(existing);
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("completedAt", out JsonElement completedAt)
@@ -637,6 +638,10 @@ public sealed class BrokerDurableRecordStore
                 SerializeCanonicalReport(report with { CompletedAt = recordedAt }));
         }
         catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidDataException)
         {
             return false;
         }

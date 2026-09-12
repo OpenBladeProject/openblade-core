@@ -667,6 +667,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         }
 
         bool installerResultBindingFailed = false;
+        bool installerExitWasObserved = execution.ExitObserved && execution.ExitCode.HasValue;
         if (execution.ExitObserved && execution.ExitCode.HasValue)
         {
             try
@@ -693,12 +694,22 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             installerResultBindingFailed = true;
         }
 
+        string installerResultDetail = execution.ExitObserved
+            ? "installer-exit-observed"
+            : "installer-result-unknown";
+        if (installerExitWasObserved && installerResultBindingFailed)
+        {
+            installerResultDetail = installerProcessBindingFailed
+                ? "installer-exit-observed-process-binding-unresolved"
+                : "installer-exit-observed-result-binding-unresolved";
+        }
+
         await RecordTransitionAsync(
             request.RequestId,
             execution.ExitObserved
                 ? BrokerTransitionKind.InstallerExited
                 : BrokerTransitionKind.Ambiguous,
-            execution.ExitObserved ? "installer-exit-observed" : "installer-result-unknown",
+            installerResultDetail,
             CancellationToken.None).ConfigureAwait(false);
 
         if (installerResultBindingFailed || installerProcessBindingFailed)

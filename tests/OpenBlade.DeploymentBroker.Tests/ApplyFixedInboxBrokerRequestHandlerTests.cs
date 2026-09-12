@@ -224,6 +224,17 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         Assert.Equal(afterCommit ? 4242 : null, unresolved.InstallerProcessId);
         Assert.Equal(afterCommit ? 0 : null, unresolved.InstallerExitCode);
         Assert.False(Directory.Exists(fixture.Paths.ReportDirectory));
+        IReadOnlyList<BrokerTransition> transitions = await new BrokerDurableRecordStore(fixture.Paths)
+            .ReadTransitionsAsync(Path.Combine(
+                fixture.Paths.JournalDirectory, fixture.Request.RequestId.ToString("N") + ".jsonl"));
+        Assert.Equal(
+            afterCommit ? BrokerTransitionKind.InstallerExited : BrokerTransitionKind.Ambiguous,
+            transitions[^1].Transition);
+        Assert.Equal(
+            afterCommit
+                ? "installer-exit-observed"
+                : "installer-exit-observed-process-binding-unresolved",
+            transitions[^1].Detail);
 
         BrokerResponse repeated = await fixture.Handler.HandleAsync(
             fixture.Request with { RequestId = Guid.NewGuid() },

@@ -176,6 +176,23 @@ public sealed class DeploymentPolicyTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ConsumeAsync(long.MaxValue));
     }
 
+    [Theory]
+    [InlineData(0xff)]
+    [InlineData(0xc3)]
+    public async Task AcceptedSequenceStore_RejectsMalformedUtf8WithoutReplacingIt(int invalidByte)
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        byte[] original = [(byte)'7', (byte)invalidByte];
+        await File.WriteAllBytesAsync(paths.AcceptedSequencePath, original);
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BrokerAcceptedSequenceStore(paths).ConsumeAsync(8));
+
+        Assert.Contains("malformed", failure.Message);
+        Assert.Equal(original, await File.ReadAllBytesAsync(paths.AcceptedSequencePath));
+    }
+
     [Fact]
     public async Task TerminalReport_InterruptionBeforePublishLeavesNoPartialFinalOrTemp()
     {
@@ -283,7 +300,7 @@ public sealed class DeploymentPolicyTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_RejectsOversizedJournalAndReportBeforeParsing()
+    public async Task Recovery_BoundsJournalAndReportReads()
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);
         BrokerDurableRecordStore store = new(paths);
@@ -299,9 +316,24 @@ public sealed class DeploymentPolicyTests : IDisposable
         Assert.True(await store.MatchesExistingTerminalReportAsync(report));
         string reportPath = Path.Combine(paths.ReportDirectory, report.RequestId.ToString("N") + ".json");
         await File.AppendAllTextAsync(reportPath, " ");
-        InvalidDataException reportFailure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            store.MatchesExistingTerminalReportAsync(report));
-        Assert.Contains("size bound", reportFailure.Message);
+        Assert.False(await store.MatchesExistingTerminalReportAsync(report));
+    }
+
+    [Fact]
+    public async Task TerminalReport_LongerConflictingReportDoesNotMatch()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        BrokerDurableRecordStore store = new(paths);
+        BrokerTerminalReport candidate = CreateReport();
+        BrokerTerminalReport recorded = candidate with
+        {
+            Disposition = BrokerDeploymentDisposition.RolledBack,
+            ServiceHealthy = false,
+        };
+        await store.CreateTerminalReportOnceAsync(recorded);
+
+        Assert.False(await store.MatchesExistingTerminalReportAsync(candidate));
+        Assert.True(await store.MatchesExistingTerminalReportAsync(recorded));
     }
 
     public void Dispose()
