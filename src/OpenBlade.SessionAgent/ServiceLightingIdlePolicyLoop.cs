@@ -242,7 +242,8 @@ public sealed class ServiceLightingIdlePolicyLoop
                 int displayOn = Volatile.Read(ref displayOnState);
                 if (displayOn >= 0)
                 {
-                    bool shouldSuppressForDisplay = displayOn == 0;
+                    bool shouldSuppressForDisplay =
+                        policy.TurnOffWhenDisplayTurnsOff && displayOn == 0;
                     int requestedDisplayState = shouldSuppressForDisplay ? 1 : 0;
                     if (Volatile.Read(ref lastSentDisplayState) != requestedDisplayState)
                     {

@@ -2960,10 +2960,10 @@ public sealed class CapabilityPresentationTests
             "StackPanel",
             "LightingPowerSavingSection");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
-        XElement displayOffPolicy = NamedElement(
+        XElement displayOffToggle = NamedElement(
             document,
-            "StackPanel",
-            "LightingDisplayOffPolicy");
+            "ToggleSwitch",
+            "LightingDisplayOffToggle");
         XElement idleTimeoutToggle = NamedElement(
             document,
             "ToggleSwitch",
@@ -2999,11 +2999,12 @@ public sealed class CapabilityPresentationTests
                 "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}",
                 Attribute(section, "Visibility"));
         });
-        Assert.Contains(powerSavingSection, displayOffPolicy.Ancestors());
-        Assert.DoesNotContain("LightingTurnOffWithDisplayEditor", xaml, StringComparison.Ordinal);
-        Assert.Equal(
-            "{StaticResource CompactCardToggleSwitchStyle}",
-            Attribute(idleTimeoutToggle, "Style"));
+        Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
+        {
+            Assert.Equal(
+                "{StaticResource CompactCardToggleSwitchStyle}",
+                Attribute(toggle, "Style"));
+        });
         Assert.Equal("Right", Attribute(idleTimeoutNumberBox, "HorizontalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalContentAlignment"));

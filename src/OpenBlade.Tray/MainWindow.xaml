@@ -1857,12 +1857,23 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <StackPanel x:Name="LightingDisplayOffPolicy" Spacing="3">
-                                        <TextBlock x:Uid="MainWindow_TextBlockWhenTheDisplayTurnsOff" Text="When the display turns off"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock x:Uid="MainWindow_TextBlockSwitchOffKeyboardLightingUntilTheDisplay" Text="Switch off keyboard lighting until the display turns on again."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_TextBlockWhenTheDisplayTurnsOff" Text="When the display turns off"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock x:Uid="MainWindow_TextBlockSwitchOffKeyboardLightingUntilTheDisplay" Text="Switch off keyboard lighting until the display turns on again."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Uid="MainWindow_LightingDisplayOffToggleText" x:Name="LightingDisplayOffToggle"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      Grid.Column="1"
+                                                      AutomationProperties.Name="Turn off keyboard lighting with the display"
+                                                      IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
+                                    </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
