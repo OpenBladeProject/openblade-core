@@ -414,10 +414,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     // path, including the read-before-write paths used by control commands.
     private const int MaximumAdapterPowerClassificationSamples = 5;
     private const int RequiredAgreeingAdapterPowerSamples = 2;
-    // Allow slow HID re-enumeration without carrying resume attribution into a
-    // later, unrelated device or power lifecycle.
-    internal static readonly TimeSpan ResumeValidationObservationWindow =
-        TimeSpan.FromMinutes(1);
     private const int ObservationFailureThreshold = 3;
     private const int Rz090581CapabilityDiagnosticsReadAttemptLimit = 3;
     private const int MaximumMcuVersionReadAttempts = 3;
@@ -556,7 +552,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool thermalConvergenceShutdown;
     private int activeConfigurationDisposition =
         (int)ConfigurationLoadDisposition.Quarantined;
-    private ResumeStateBaseline? pendingResumeStateBaseline;
+    private readonly ResumeStateValidationTracker resumeStateValidation;
     private DisplayBrightnessHidUsage assertedDisplayBrightnessUsage;
     private bool displayBrightnessReleaseRequired;
     private bool displayBrightnessNeutralizationPending = true;
@@ -786,6 +782,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        resumeStateValidation = new ResumeStateValidationTracker(this.timeProvider);
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
@@ -2784,10 +2781,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : ControlOperationStatus.Blocked;
             string remainingReasons = FormatRemainingReasons(remaining, results);
             string message = remaining.Length == 0
-                ? $"OpenBlade reapplied {FormatSubsystemList(reapplied)} from the current settings."
+                ? $"OpenBlade reapplied {DeviceSubsystemFormatter.FormatList(reapplied)} from the current settings."
                 : reapplied.Length == 0
-                    ? $"OpenBlade could not reapply the changed settings. Still changed: {FormatSubsystemList(remaining)}.{remainingReasons}"
-                    : $"OpenBlade reapplied {FormatSubsystemList(reapplied)}. Still changed: {FormatSubsystemList(remaining)}.{remainingReasons}";
+                    ? $"OpenBlade could not reapply the changed settings. Still changed: {DeviceSubsystemFormatter.FormatList(remaining)}.{remainingReasons}"
+                    : $"OpenBlade reapplied {DeviceSubsystemFormatter.FormatList(reapplied)}. Still changed: {DeviceSubsystemFormatter.FormatList(remaining)}.{remainingReasons}";
             history.RecordSummary(status, message);
             PublishIfChanged(GetStatus() with
             {
@@ -3332,18 +3329,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 token),
             _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
         };
-
-    private static string FormatSubsystemList(IEnumerable<DeviceSubsystem> subsystems) =>
-        string.Join(
-            ", ",
-            subsystems.Select(subsystem => subsystem switch
-            {
-                DeviceSubsystem.Performance => "Power mode",
-                DeviceSubsystem.Fans => "Fans",
-                DeviceSubsystem.Battery => "Battery",
-                DeviceSubsystem.Lighting => "Lighting",
-                _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
-            }));
 
     private static string FormatRemainingReasons(
         IEnumerable<DeviceSubsystem> remaining,
@@ -8950,7 +8935,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            DiscardExpiredResumeBaselineCore();
+            resumeStateValidation.DiscardExpired();
             bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
@@ -8963,7 +8948,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null;
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
-            bool canUseReadOnlyFastPath = pendingResumeStateBaseline?.ResumeStarted != true
+            bool canUseReadOnlyFastPath = !resumeStateValidation.ResumeStarted
                 && !sourceChanged
                 && CanUseObservationFastPath(
                     includeLiveReadings,
@@ -8988,7 +8973,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && ChangePowerSourceCore(powerSource);
             if (changed)
             {
-                RecordResumePowerSourceTransitionCore(powerSource);
+                RecordResumeValidationResult(
+                    resumeStateValidation.RecordPowerSourceTransition(powerSource));
             }
             if (startupProfileReconciliationPending
                 && startupProfileReconciliationRequested
@@ -10329,8 +10315,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         try
         {
-            DiscardExpiredResumeBaselineCore();
-            DiscardUnstartedResumeBaselineCore();
+            resumeStateValidation.DiscardExpired();
+            resumeStateValidation.DiscardUnstarted();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
@@ -10351,7 +10337,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 if (changed)
                 {
-                    RecordResumePowerSourceTransitionCore(powerSource);
+                    RecordResumeValidationResult(
+                        resumeStateValidation.RecordPowerSourceTransition(powerSource));
                 }
                 // The destination profile supersedes any renderer snapshot captured
                 // before the power-source transition.
@@ -10921,15 +10908,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken).ConfigureAwait(false);
             }
 
-            if (pendingResumeStateBaseline is { } baseline)
-            {
-                pendingResumeStateBaseline = baseline with
-                {
-                    ResumeStarted = true,
-                    GpuClockOffsetConfirmationInvalidated =
-                        gpuClockOffsetConfirmationInvalidated,
-                };
-            }
+            resumeStateValidation.Begin(gpuClockOffsetConfirmationInvalidated);
         }
         finally
         {
@@ -10943,7 +10922,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            pendingResumeStateBaseline = null;
+            resumeStateValidation.Cancel();
         }
         finally
         {
@@ -10957,21 +10936,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
-            {
-                return;
-            }
-
-            ResumeStateBaseline completed = baseline with
-            {
-                ResumeLifecycleCompleted = true,
-                ObservationWindowStartedAt = timeProvider.GetTimestamp(),
-            };
-            pendingResumeStateBaseline = completed;
-            if (completed.Observed is { } observed)
-            {
-                RecordResumeStateValidationCore(completed, observed);
-            }
+            RecordResumeValidationResult(resumeStateValidation.Complete());
         }
         finally
         {
@@ -10993,7 +10958,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && pendingLightingRestoreFromLifecycle;
         if (preserveLightingIntent)
         {
-            CaptureResumeStateBaselineCore();
+            ServiceStatusSnapshot current = GetStatus();
+            resumeStateValidation.Capture(
+                current.ActivePowerSource,
+                current.DeviceVerified ? current.ConfirmedState : null);
         }
         try
         {
@@ -11732,15 +11700,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
-        if (pendingResumeStateBaseline is { ResumeStarted: true } baseline)
-        {
-            pendingResumeStateBaseline = baseline with
-            {
-                LightingRestoredDuringResume = true,
-                LightingWriteApplied =
-                    outcome.Result.Status == ControlResultStatus.Applied,
-            };
-        }
+        resumeStateValidation.RecordLightingRestore(
+            outcome.Result.Status == ControlResultStatus.Applied);
 
         await TryPersistLastKnownLightingAsync(requested, cancellationToken)
             .ConfigureAwait(false);
@@ -14609,9 +14570,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
             }
 
-            CompletePendingResumeStateValidationCore(
+            RecordResumeValidationResult(resumeStateValidation.Observe(
                 powerSource,
-                observation.Confirmed);
+                observation.Confirmed));
             await EvaluateThermalConvergenceObservationAsync(
                     powerSource,
                     powerSourceConfirmed,
@@ -14664,10 +14625,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool unavailable = false;
         foreach (DeviceSubsystem subsystem in pending.Dependencies)
         {
-            PendingConfirmationResult result = MatchPendingWrite(
+            PendingConfirmationResult result = MatchWriteConfirmation(
                 subsystem,
-                new PendingWriteConfirmation(
-                    pending.PowerSource,
+                new WriteConfirmationExpectation(
                     pending.EffectiveDesired,
                     pending.PreWriteState),
                 confirmed,
@@ -14747,250 +14707,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             .ConfigureAwait(false);
     }
 
-    private void CaptureResumeStateBaselineCore()
+    private void RecordResumeValidationResult(ResumeStateValidationResult? result)
     {
-        ServiceStatusSnapshot current = GetStatus();
-        pendingResumeStateBaseline = current.DeviceVerified
-            && current.ConfirmedState is { } confirmed
-                ? new ResumeStateBaseline(
-                    current.ActivePowerSource,
-                    confirmed,
-                    ResumeStarted: false,
-                    ResumeLifecycleCompleted: false,
-                    LightingRestoredDuringResume: false,
-                    LightingWriteApplied: false,
-                    Observed: null,
-                    ObservationWindowStartedAt: null)
-                : null;
-    }
-
-    private void DiscardUnstartedResumeBaselineCore()
-    {
-        if (pendingResumeStateBaseline is { ResumeStarted: false })
+        if (result is not null)
         {
-            pendingResumeStateBaseline = null;
+            history.RecordResumeValidation(result.Status, result.Message);
         }
     }
-
-    private void DiscardExpiredResumeBaselineCore()
-    {
-        if (pendingResumeStateBaseline is
-            {
-                ResumeLifecycleCompleted: true,
-                ObservationWindowStartedAt: { } startedAt,
-            }
-            && timeProvider.GetElapsedTime(startedAt)
-                >= ResumeValidationObservationWindow)
-        {
-            pendingResumeStateBaseline = null;
-        }
-    }
-
-    private void RecordResumePowerSourceTransitionCore(PowerSource powerSource)
-    {
-        if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
-        {
-            return;
-        }
-
-        pendingResumeStateBaseline = null;
-        if (baseline.ResumeLifecycleCompleted)
-        {
-            return;
-        }
-
-        history.RecordResumeValidation(
-            ControlOperationStatus.Stored,
-            $"Resume changed the power source from {baseline.PowerSource} to {powerSource}; the existing destination-profile transition was used instead of comparing the two power profiles.");
-    }
-
-    private void CompletePendingResumeStateValidationCore(
-        PowerSource powerSource,
-        ConfirmedDeviceState observed)
-    {
-        if (pendingResumeStateBaseline is not { ResumeStarted: true } baseline)
-        {
-            return;
-        }
-
-        if (baseline.PowerSource != powerSource)
-        {
-            RecordResumePowerSourceTransitionCore(powerSource);
-            return;
-        }
-
-        if (!baseline.ResumeLifecycleCompleted)
-        {
-            pendingResumeStateBaseline = baseline with { Observed = observed };
-            return;
-        }
-
-        RecordResumeStateValidationCore(baseline, observed);
-    }
-
-    private void RecordResumeStateValidationCore(
-        ResumeStateBaseline baseline,
-        ConfirmedDeviceState observed)
-    {
-        if (pendingResumeStateBaseline != baseline)
-        {
-            return;
-        }
-
-        pendingResumeStateBaseline = null;
-        IReadOnlyList<DeviceSubsystem> compared = GetComparableResumeSubsystems(
-            baseline,
-            observed);
-        IReadOnlyList<DeviceSubsystem> changed = GetChangedResumeSubsystems(
-            baseline.Confirmed,
-            observed,
-            compared);
-        if (changed.Count > 0)
-        {
-            history.RecordResumeValidation(
-                ControlOperationStatus.Blocked,
-                BuildResumeValidationSummary(
-                    $"Resume validation observed changed control state for {FormatSubsystemList(changed)}. The changes remain externally classified; no validation-driven recovery writes were attempted.",
-                    baseline,
-                    observed,
-                    compared));
-            return;
-        }
-
-        history.RecordResumeValidation(
-            baseline.LightingWriteApplied
-                ? ControlOperationStatus.Applied
-                : ControlOperationStatus.Stored,
-            BuildResumeValidationSummary(
-                compared.Count > 0
-                    ? $"Resume validation confirmed retained control state for {FormatSubsystemList(compared)}. No validation-driven recovery writes were needed."
-                    : "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No validation-driven recovery writes were attempted.",
-                baseline,
-                observed,
-                compared));
-    }
-
-    private static string BuildResumeValidationSummary(
-        string result,
-        ResumeStateBaseline baseline,
-        ConfirmedDeviceState observed,
-        IReadOnlyList<DeviceSubsystem> compared)
-    {
-        var details = new List<string> { result };
-        if (baseline.LightingRestoredDuringResume)
-        {
-            details.Add(baseline.LightingWriteApplied
-                ? "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; that restoration applied a lighting control write."
-                : "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; no new lighting control write was required.");
-        }
-        else if (!compared.Contains(DeviceSubsystem.Lighting))
-        {
-            details.Add("Lighting was unavailable in at least one sample and was not compared.");
-        }
-
-        IReadOnlyList<DeviceSubsystem> unavailable = GetUnavailableResumeSubsystems(
-            compared,
-            excludeLighting: baseline.LightingRestoredDuringResume);
-        if (unavailable.Count > 0)
-        {
-            details.Add($"Unavailable for comparison: {FormatSubsystemList(unavailable)}.");
-        }
-        return string.Join(" ", details);
-    }
-
-    private static IReadOnlyList<DeviceSubsystem> GetComparableResumeSubsystems(
-        ResumeStateBaseline baseline,
-        ConfirmedDeviceState observed)
-    {
-        var compared = new List<DeviceSubsystem>(4);
-        if ((baseline.Confirmed.Performance is not null
-                || baseline.Confirmed.HyperBoostActive)
-            && (observed.Performance is not null
-                || observed.HyperBoostActive)
-            && !baseline.GpuClockOffsetConfirmationInvalidated
-            && (baseline.Confirmed.GpuClockOffsets is null
-                || observed.GpuClockOffsets is not null))
-        {
-            compared.Add(DeviceSubsystem.Performance);
-        }
-        if (baseline.Confirmed.Fans is not null && observed.Fans is not null)
-        {
-            compared.Add(DeviceSubsystem.Fans);
-        }
-        if (baseline.Confirmed.Battery is not null && observed.Battery is not null)
-        {
-            compared.Add(DeviceSubsystem.Battery);
-        }
-        if (!baseline.LightingRestoredDuringResume
-            && baseline.Confirmed.Lighting is not null
-            && observed.Lighting is not null)
-        {
-            compared.Add(DeviceSubsystem.Lighting);
-        }
-        return compared;
-    }
-
-    private static IReadOnlyList<DeviceSubsystem> GetUnavailableResumeSubsystems(
-        IReadOnlyList<DeviceSubsystem> compared,
-        bool excludeLighting)
-    {
-        var unavailable = new List<DeviceSubsystem>(4);
-        foreach (DeviceSubsystem subsystem in ResumeComparedSubsystems)
-        {
-            if ((!excludeLighting || subsystem != DeviceSubsystem.Lighting)
-                && !compared.Contains(subsystem))
-            {
-                unavailable.Add(subsystem);
-            }
-        }
-        return unavailable;
-    }
-
-    private static IReadOnlyList<DeviceSubsystem> GetChangedResumeSubsystems(
-        ConfirmedDeviceState baseline,
-        ConfirmedDeviceState observed,
-        IReadOnlyList<DeviceSubsystem> compared)
-    {
-        var changed = new List<DeviceSubsystem>(4);
-        foreach (DeviceSubsystem subsystem in compared)
-        {
-            bool matches = subsystem switch
-            {
-                DeviceSubsystem.Performance =>
-                    baseline.Performance == observed.Performance
-                    && baseline.HyperBoostActive == observed.HyperBoostActive
-                    && CompareWhenBothKnown(
-                        baseline.CustomPerformance,
-                        observed.CustomPerformance)
-                    && CompareWhenBothKnown(
-                        baseline.GpuClockOffsets,
-                        observed.GpuClockOffsets),
-                DeviceSubsystem.Fans => baseline.Fans == observed.Fans,
-                DeviceSubsystem.Battery => baseline.Battery == observed.Battery,
-                DeviceSubsystem.Lighting =>
-                    baseline.Lighting == observed.Lighting
-                    && CompareWhenBothKnown(
-                        baseline.LogoLighting,
-                        observed.LogoLighting),
-                _ => true,
-            };
-            if (!matches)
-            {
-                changed.Add(subsystem);
-            }
-        }
-        return changed;
-    }
-
-    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
-        where T : class => baseline is null
-            || observed is null
-            || EqualityComparer<T>.Default.Equals(baseline, observed);
-
-    private static bool CompareWhenBothKnown<T>(T? baseline, T? observed)
-        where T : struct => baseline is null
-            || observed is null
-            || EqualityComparer<T>.Default.Equals(baseline.Value, observed.Value);
 
     private void PublishUnavailableDeviceObservation(
         PowerSource powerSource,
@@ -15628,8 +15351,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 initialAutomaticComparisons.Add(DeviceSubsystem.Battery);
                 bool matches = transitionBattery.TemporaryFullCharge is true
-                    || BatteryMatchesDesired(transitionBattery, desired.Battery)
-                    || BatteryMatchesDesired(
+                    || WriteConfirmationPolicy.BatteryMatchesDesired(transitionBattery, desired.Battery)
+                    || WriteConfirmationPolicy.BatteryMatchesDesired(
                         transitionBattery,
                         alternateExpected.Battery);
                 driftTracker.ConfirmIntentional(DeviceSubsystem.Battery, matches);
@@ -15665,7 +15388,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && initialAutomaticComparisons.Add(DeviceSubsystem.Battery))
         {
             bool matches = battery.TemporaryFullCharge is true
-                || BatteryMatchesDesired(battery, desired.Battery);
+                || WriteConfirmationPolicy.BatteryMatchesDesired(battery, desired.Battery);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Battery, matches);
         }
     }
@@ -15835,7 +15558,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || ReferenceEquals(intent.Owner, Automation);
             PendingConfirmationResult result = pending.PowerSource == powerSource
                 && sameIntentOwner
-                ? MatchPendingWrite(subsystem, pending, confirmed, device)
+                ? MatchWriteConfirmation(
+                    subsystem,
+                    new WriteConfirmationExpectation(
+                        pending.Target,
+                        pending.PreWriteState,
+                        pending.HyperBoostActive,
+                        pending.HyperBoostBaseMode),
+                    confirmed,
+                    device)
                 : PendingConfirmationResult.Mismatch;
             if (result == PendingConfirmationResult.Unavailable)
             {
@@ -15885,140 +15616,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private static PendingConfirmationResult MatchPendingWrite(
+    private static PendingConfirmationResult MatchWriteConfirmation(
         DeviceSubsystem subsystem,
-        PendingWriteConfirmation pending,
-        ConfirmedDeviceState confirmed,
-        IBladeDevice device) => subsystem switch
-        {
-            DeviceSubsystem.Performance => MatchPendingHyperBoost(
-                pending,
-                confirmed) ?? MatchPendingPerformance(
-                    pending,
-                    confirmed,
-                    device),
-            DeviceSubsystem.Fans => MatchPendingHyperBoost(
-                pending,
-                confirmed) ?? (confirmed.Fans is null
-                    ? PendingConfirmationResult.Unavailable
-                    : confirmed.Fans == (pending.Target.FanControl?.Mode
-                        ?? pending.Target.Fans.Value)
-                        ? PendingConfirmationResult.Match
-                        : PendingConfirmationResult.Mismatch),
-            DeviceSubsystem.Battery =>
-                // Temporary full charge changes the meaning of the other battery
-                // fields. A null value is insufficient evidence, so keep the write
-                // pending rather than guessing or retrying it.
-                confirmed.Battery is not { TemporaryFullCharge: not null } battery
-                ? PendingConfirmationResult.Unavailable
-                : BatteryMatchesDesired(battery, pending.Target.Battery)
-                    && battery.TemporaryFullCharge == pending.Target.Battery.TemporaryFullCharge
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
-            DeviceSubsystem.Lighting => confirmed.Lighting is null
-                ? PendingConfirmationResult.Unavailable
-                : confirmed.Lighting == pending.Target.Lighting.Value
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
-            _ => PendingConfirmationResult.Unavailable,
-        };
-
-    private static PendingConfirmationResult? MatchPendingHyperBoost(
-        PendingWriteConfirmation pending,
-        ConfirmedDeviceState confirmed)
-    {
-        if (pending.HyperBoostActive is not bool expected)
-        {
-            return null;
-        }
-
-        if (confirmed.HyperBoostActive != expected)
-        {
-            return PendingConfirmationResult.Mismatch;
-        }
-
-        return expected
-            ? confirmed.Fans == FanMode.Automatic
-                ? PendingConfirmationResult.Match
-                : confirmed.Fans is not null
-                    ? PendingConfirmationResult.Mismatch
-                    : PendingConfirmationResult.Unavailable
-            : confirmed is
-            {
-                Performance: var restoredPerformance,
-                Fans: FanMode.Automatic,
-            } && restoredPerformance == pending.HyperBoostBaseMode
-                ? PendingConfirmationResult.Match
-                : confirmed.Performance is not null
-                    && confirmed.Fans is not null
-                    ? PendingConfirmationResult.Mismatch
-                    : PendingConfirmationResult.Unavailable;
-    }
-
-    private static PendingConfirmationResult MatchPendingPerformance(
-        PendingWriteConfirmation pending,
+        WriteConfirmationExpectation expectation,
         ConfirmedDeviceState confirmed,
         IBladeDevice device)
     {
-        FanMode desiredFans = pending.Target.FanControl?.Mode
-            ?? pending.Target.Fans.Value;
-        if (DeviceSubsystemOrder.IsManualFanMode(desiredFans)
-            && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans))
-        {
-            // Manual thermal modes do not expose a separate performance preset.
-            // This is the same semantic match used by ControlCoordinator.
-            return PendingConfirmationResult.Match;
-        }
-
-        if (confirmed.Performance is null)
-        {
-            return PendingConfirmationResult.Unavailable;
-        }
-        if (confirmed.Performance != pending.Target.Performance.Value
-            || confirmed.Performance == PerformancePreset.Custom
-                && confirmed.CustomPerformance != pending.Target.CustomPerformance)
-        {
-            return PendingConfirmationResult.Mismatch;
-        }
-
-        if (pending.Target.GpuClockTuning is { } tuning)
-        {
-            if (!tuning.Enabled)
-            {
-                if (confirmed.GpuClockOffsets is not null)
-                {
-                    return PendingConfirmationResult.Mismatch;
-                }
-
-                return device is IGpuClockOffsetManagementDevice managedDevice
-                    ? managedDevice.GpuClockOffsetManagementState is
-                        GpuClockOffsetManagementState.ResetConfirmed
-                        or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed
-                        ? PendingConfirmationResult.Match
-                        : PendingConfirmationResult.Mismatch
-                    : PendingConfirmationResult.Unavailable;
-            }
-
-            return confirmed.GpuClockOffsets is null
-                ? PendingConfirmationResult.Unavailable
-                : confirmed.GpuClockOffsets.Current == tuning.EffectiveOffsets
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch;
-        }
-
-        GpuClockOffsetCapabilities? before = pending.PreWriteState.GpuClockOffsets;
-        GpuClockOffsetCapabilities? after = confirmed.GpuClockOffsets;
-        if (before is null)
-        {
-            return after is null
-                ? PendingConfirmationResult.Match
-                : PendingConfirmationResult.Mismatch;
-        }
-        return after is null
-            ? PendingConfirmationResult.Unavailable
-            : before.Current == after.Current
-                ? PendingConfirmationResult.Match
-                : PendingConfirmationResult.Mismatch;
+        GpuClockOffsetManagementState? managementState =
+            WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+                subsystem,
+                expectation,
+                confirmed)
+            && device is IGpuClockOffsetManagementDevice managedDevice
+                ? managedDevice.GpuClockOffsetManagementState
+                : null;
+        return WriteConfirmationPolicy.Match(
+            subsystem,
+            expectation,
+            confirmed,
+            managementState);
     }
 
     private IReadOnlySet<DeviceSubsystem> GetCoupledAutomaticWriteExclusions()
@@ -16207,13 +15823,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             EqualityComparer<T>.Default.Equals(confirmed, priorDesired)
             || EqualityComparer<T>.Default.Equals(confirmed, newDesired));
     }
-
-    private static bool BatteryMatchesDesired(
-        ConfirmedBatteryState confirmed,
-        DesiredBatteryState desired) =>
-        confirmed.ProtectionEnabled == desired.ProtectionEnabled
-        && (!desired.ProtectionEnabled
-            || confirmed.ChargeLimitPercent == desired.ConfiguredPolicy.ChargeLimitPercent);
 
     private static bool HasAnyControlCapability(DeviceCapabilities capabilities) =>
         capabilities.PerformancePresets.Count > 0
@@ -18624,13 +18233,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         SubmissionUnresolved,
     }
 
-    private enum PendingConfirmationResult
-    {
-        Unavailable,
-        Match,
-        Mismatch,
-    }
-
     private enum DeferredManualFanSafetyState
     {
         PendingUnowned,
@@ -19236,38 +18838,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool? StartupAnimation,
         FunctionKeyPrimaryMode? FunctionKeyPrimary,
         bool? GamingMode);
-
-    internal static IReadOnlySet<string> ResumeComparedStatePropertyNames { get; } =
-        new HashSet<string>(StringComparer.Ordinal)
-        {
-            nameof(ConfirmedDeviceState.Performance),
-            nameof(ConfirmedDeviceState.CustomPerformance),
-            nameof(ConfirmedDeviceState.GpuClockOffsets),
-            nameof(ConfirmedDeviceState.HyperBoostActive),
-            nameof(ConfirmedDeviceState.Fans),
-            nameof(ConfirmedDeviceState.Battery),
-            nameof(ConfirmedDeviceState.Lighting),
-            nameof(ConfirmedDeviceState.LogoLighting),
-        };
-
-    private static IReadOnlyList<DeviceSubsystem> ResumeComparedSubsystems { get; } =
-    [
-        DeviceSubsystem.Performance,
-        DeviceSubsystem.Fans,
-        DeviceSubsystem.Battery,
-        DeviceSubsystem.Lighting,
-    ];
-
-    private sealed record ResumeStateBaseline(
-        PowerSource PowerSource,
-        ConfirmedDeviceState Confirmed,
-        bool ResumeStarted,
-        bool ResumeLifecycleCompleted,
-        bool LightingRestoredDuringResume,
-        bool LightingWriteApplied,
-        ConfirmedDeviceState? Observed,
-        long? ObservationWindowStartedAt,
-        bool GpuClockOffsetConfirmationInvalidated = false);
 
     private enum IndeterminateHyperBoostResolution
     {
