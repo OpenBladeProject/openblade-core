@@ -132,10 +132,17 @@ internal sealed class WindowNotificationCoordinator
         if (propertyName == nameof(MainViewModel.ActivePowerSource))
         {
             PowerSource current = observation.PowerSource;
-            bool changed = current != lastObservedPowerSource;
+            if (current == PowerSource.ExternalUnknown)
+            {
+                return;
+            }
+
+            // An unclassified startup sample has no baseline yet. Later unknown
+            // samples must preserve a previously classified source.
+            bool changed = lastObservedPowerSource != PowerSource.ExternalUnknown
+                && current != lastObservedPowerSource;
             lastObservedPowerSource = current;
             if (changed
-                && current != PowerSource.ExternalUnknown
                 && preferences.IsEnabled(
                     NotificationCategory.ProfileAndPowerSourceChanges))
             {

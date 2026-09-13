@@ -2890,6 +2890,12 @@ public sealed partial class MainViewModelTests
         Assert.All(advisoryChanges, change => Assert.Equal(
             !string.IsNullOrWhiteSpace(change.Advisory),
             change.HasAdvisory));
+
+        client.CompleteWatch();
+        await WaitForStatusAppliedAsync("Service disconnected");
+        Assert.False(viewModel.IsConnected);
+        Assert.True(viewModel.HasAppliedServiceState);
+        Assert.Equal(1, Volatile.Read(ref readyNotifications));
     }
 
     [Theory]
