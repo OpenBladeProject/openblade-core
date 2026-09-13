@@ -1431,8 +1431,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private WindowNotificationObservation CaptureNotificationObservation() => new(
         ViewModel.ActivePowerSource,
-        ViewModel.HasControllerAdvisory,
-        ViewModel.ControllerAdvisoryText,
+        ViewModel.HasControllerAdvisory ? ViewModel.ControllerAdvisoryText : string.Empty,
         ViewModel.TroubleshootingRecentErrorStatus);
 
     private void PrimeNotificationObservation() =>

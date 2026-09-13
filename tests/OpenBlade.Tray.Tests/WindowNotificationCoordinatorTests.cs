@@ -8,7 +8,7 @@ public sealed class WindowNotificationCoordinatorTests
         ProfileAndPowerSourceChangesEnabled: true);
     private static readonly Uri UpdateUri = new("https://example.invalid/update");
     private static readonly WindowNotificationObservation Initial = new(
-        PowerSource.PluggedIn, false, string.Empty, string.Empty);
+        PowerSource.PluggedIn, string.Empty, string.Empty);
 
     [Theory]
     [InlineData(false, false)]
@@ -123,7 +123,6 @@ public sealed class WindowNotificationCoordinatorTests
         WindowNotificationObservation current = Initial with
         {
             PowerSource = PowerSource.Battery,
-            HasControllerAdvisory = true,
             ControllerAdvisoryText = "Existing controller",
             OperationFailure = "Existing failure",
         };
@@ -148,7 +147,6 @@ public sealed class WindowNotificationCoordinatorTests
         WindowNotificationObservation first = Initial with
         {
             PowerSource = PowerSource.Battery,
-            HasControllerAdvisory = true,
             ControllerAdvisoryText = "Controller one",
             OperationFailure = "Failure one",
         };
@@ -202,7 +200,6 @@ public sealed class WindowNotificationCoordinatorTests
         });
         WindowNotificationObservation active = Initial with
         {
-            HasControllerAdvisory = true,
             ControllerAdvisoryText = "Controller",
             OperationFailure = "Failure",
         };
@@ -225,6 +222,34 @@ public sealed class WindowNotificationCoordinatorTests
         Assert.Equal(0, deliveries);
         coordinator.Observe(nameof(MainViewModel.ActivePowerSource), battery, AllEnabled);
         Assert.Equal(1, deliveries);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedObservationDeliveryAdvancesBaselinesWithoutEscaping(bool throws)
+    {
+        int deliveries = 0;
+        var coordinator = new WindowNotificationCoordinator(_ =>
+        {
+            deliveries++;
+            if (throws)
+            {
+                throw new InvalidOperationException("Delivery failed.");
+            }
+            return false;
+        });
+        coordinator.Prime(Initial);
+        WindowNotificationObservation changed = Initial with
+        {
+            PowerSource = PowerSource.Battery,
+            ControllerAdvisoryText = "Controller",
+            OperationFailure = "Failure",
+        };
+        ObserveAll(coordinator, changed, AllEnabled);
+        Assert.Equal(3, deliveries);
+        ObserveAll(coordinator, changed, AllEnabled);
+        Assert.Equal(3, deliveries);
     }
 
     private static bool DeliverUpdate(

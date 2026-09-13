@@ -5,7 +5,6 @@ namespace OpenBlade.Tray;
 
 internal readonly record struct WindowNotificationObservation(
     PowerSource PowerSource,
-    bool HasControllerAdvisory,
     string ControllerAdvisoryText,
     string OperationFailure);
 
@@ -115,9 +114,7 @@ internal sealed class WindowNotificationCoordinator
     internal void Prime(WindowNotificationObservation observation)
     {
         lastObservedPowerSource = observation.PowerSource;
-        lastObservedControllerAdvisory = observation.HasControllerAdvisory
-            ? observation.ControllerAdvisoryText
-            : string.Empty;
+        lastObservedControllerAdvisory = observation.ControllerAdvisoryText;
         lastObservedOperationFailure = observation.OperationFailure;
         notificationObservationReady = true;
     }
@@ -164,9 +161,7 @@ internal sealed class WindowNotificationCoordinator
         }
         else if (propertyName == nameof(MainViewModel.ControllerAdvisoryText))
         {
-            string current = observation.HasControllerAdvisory
-                ? observation.ControllerAdvisoryText
-                : string.Empty;
+            string current = observation.ControllerAdvisoryText;
             bool changed = !string.Equals(
                 current,
                 lastObservedControllerAdvisory,
