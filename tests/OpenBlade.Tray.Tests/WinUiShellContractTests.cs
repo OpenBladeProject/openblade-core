@@ -1913,6 +1913,45 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void NotificationObservationWaitsForAppliedServiceStateAfterPreferencesLoad()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string initialization = SliceMethod(
+            window,
+            "private async Task InitializeCoreAsync()",
+            "private void OnViewModelPropertyChanged(");
+        int preferences = initialization.IndexOf(
+            "ApplyNotificationPreferences(initialNotifications)",
+            StringComparison.Ordinal);
+        int subscription = initialization.IndexOf(
+            "ViewModel.PropertyChanged += OnViewModelPropertyChanged",
+            StringComparison.Ordinal);
+        int start = initialization.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
+        Assert.True(preferences >= 0 && subscription > preferences && start > subscription);
+
+        string compactInitialization = string.Concat(
+            initialization.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "if(ViewModel.HasAppliedServiceState&&!notificationObservationReady){PrimeNotificationObservation();}",
+            compactInitialization,
+            StringComparison.Ordinal);
+
+        string propertyHandler = SliceMethod(
+            window,
+            "private void OnViewModelPropertyChanged(",
+            "private void ApplyThemeAndQueueSave(");
+        string compactHandler = string.Concat(
+            propertyHandler.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "if(args.PropertyName==nameof(MainViewModel.HasAppliedServiceState)"
+                + "&&ViewModel.HasAppliedServiceState&&!notificationObservationReady){PrimeNotificationObservation();}",
+            compactHandler,
+            StringComparison.Ordinal);
+        Assert.True(propertyHandler.IndexOf("PrimeNotificationObservation()", StringComparison.Ordinal)
+            < propertyHandler.IndexOf("ObserveNotificationState(args.PropertyName)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void FailedUpdateNotificationDeliveryDoesNotConsumeThePersistedKey()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

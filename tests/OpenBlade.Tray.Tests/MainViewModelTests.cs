@@ -2767,6 +2767,158 @@ public sealed partial class MainViewModelTests
             viewModel.ControllerDetectionWarningText);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirstServiceState_IsReadyAfterFullSnapshotRegardlessOfStartupTiming(
+        bool statusBeforeStartupRegistration)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        var startupRead = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = new FakeStartupRegistration(false)
+        {
+            PendingRead = startupRead,
+        };
+        await using var viewModel = new MainViewModel(
+            client,
+            dispatcher,
+            new FakeDiagnosticArchiveSaver(),
+            registration);
+        var appliedStatuses = Channel.CreateUnbounded<string>();
+        dispatcher.AfterInvoke = () => appliedStatuses.Writer.TryWrite(viewModel.ConnectionStatus);
+
+        async Task WaitForStatusAppliedAsync(string message)
+        {
+            string appliedMessage;
+            do
+            {
+                appliedMessage = await appliedStatuses.Reader.ReadAsync().AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            while (appliedMessage != message);
+        }
+
+        var ready = new TaskCompletionSource<(
+            bool Connected,
+            bool HasAdvisory,
+            string Advisory,
+            PowerSource PowerSource,
+            string BatterySource)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var advisoryChanges = new ConcurrentQueue<(bool Ready, string Advisory)>();
+        int readyNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.ControllerAdvisoryText))
+            {
+                advisoryChanges.Enqueue((
+                    viewModel.HasAppliedServiceState,
+                    viewModel.ControllerAdvisoryText));
+            }
+            if (args.PropertyName == nameof(MainViewModel.HasAppliedServiceState))
+            {
+                Interlocked.Increment(ref readyNotifications);
+                ready.TrySetResult((
+                    viewModel.IsConnected,
+                    viewModel.HasControllerAdvisory,
+                    viewModel.ControllerAdvisoryText,
+                    viewModel.ActivePowerSource,
+                    viewModel.BatterySourceLabel));
+            }
+        };
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["Razer Synapse Service"],
+            message: "Initial notification snapshot") with
+        {
+            ActivePowerSource = PowerSource.Battery,
+        };
+        Assert.False(viewModel.HasAppliedServiceState);
+        if (statusBeforeStartupRegistration)
+        {
+            client.Publish(initial);
+        }
+
+        Task startup = viewModel.StartAsync();
+        Assert.False(startup.IsCompleted);
+        if (!statusBeforeStartupRegistration)
+        {
+            startupRead.SetResult(false);
+            await startup;
+            Assert.False(viewModel.HasAppliedServiceState);
+            client.Publish(initial);
+        }
+
+        var applied = await ready.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForStatusAppliedAsync(initial.Message);
+        Assert.True(applied.Connected);
+        Assert.True(applied.HasAdvisory);
+        Assert.Contains("Razer Synapse Service", applied.Advisory, StringComparison.Ordinal);
+        Assert.Equal(PowerSource.Battery, applied.PowerSource);
+        Assert.Equal(viewModel.BatterySourceLabel, applied.BatterySource);
+        Assert.False(Assert.Single(advisoryChanges).Ready);
+        if (statusBeforeStartupRegistration)
+        {
+            Assert.False(startup.IsCompleted);
+            startupRead.SetResult(false);
+            await startup;
+        }
+
+        client.Publish(initial with
+        {
+            Revision = 2,
+            PotentialControllers = ["Razer Central Service"],
+            Message = "Controller changed after startup",
+        });
+        await WaitForStatusAppliedAsync("Controller changed after startup");
+        client.PublishReconnecting();
+        await WaitForStatusAppliedAsync("Reconnecting to service");
+        client.Publish(initial with
+        {
+            Revision = 3,
+            Message = "Controller observed after reconnect",
+        });
+        await WaitForStatusAppliedAsync("Controller observed after reconnect");
+
+        Assert.True(viewModel.HasAppliedServiceState);
+        Assert.Equal(1, Volatile.Read(ref readyNotifications));
+        Assert.Equal(3, advisoryChanges.Count);
+        Assert.All(advisoryChanges.Skip(1), change => Assert.True(change.Ready));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WatchWithoutSnapshot_DoesNotSignalFirstServiceState(bool fails)
+    {
+        var client = new FakeServiceClient
+        {
+            WatchFailure = fails ? new IOException("Service unavailable") : null,
+        };
+        if (!fails)
+        {
+            client.PublishReconnecting();
+            client.CompleteWatch();
+        }
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        int readyNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasAppliedServiceState))
+            {
+                Interlocked.Increment(ref readyNotifications);
+            }
+        };
+
+        await viewModel.StartAsync();
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Service disconnected");
+
+        Assert.False(viewModel.HasAppliedServiceState);
+        Assert.Equal(0, Volatile.Read(ref readyNotifications));
+    }
+
     [Fact]
     public async Task StartAsync_ConsumesWatchOnceAndMarshalsExactConflictStatus()
     {
@@ -9665,12 +9817,15 @@ public sealed partial class MainViewModelTests
 
         public int CompletedCalls => Volatile.Read(ref completedCalls);
 
+        public Action? AfterInvoke { get; set; }
+
         public Task InvokeAsync(Action action, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Calls++;
             action();
             Interlocked.Increment(ref completedCalls);
+            AfterInvoke?.Invoke();
             return Task.CompletedTask;
         }
     }
@@ -10081,12 +10236,14 @@ public sealed partial class MainViewModelTests
     {
         public bool Enabled { get; private set; } = enabled;
         public Exception? Failure { get; init; }
+        public TaskCompletionSource<bool>? PendingRead { get; init; }
         public List<bool> Requests { get; } = [];
 
         public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(Enabled);
+            return PendingRead?.Task.WaitAsync(cancellationToken)
+                ?? Task.FromResult(Enabled);
         }
 
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
