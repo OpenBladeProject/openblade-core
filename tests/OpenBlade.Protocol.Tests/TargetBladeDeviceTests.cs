@@ -18,14 +18,15 @@ public sealed class TargetBladeDeviceTests
     {
         Assert.Equal("RZ09-0581", TargetBladeDevice.Model);
         Assert.Equal("3.01", TargetBladeDevice.BiosVersion);
-        Assert.Equal(["3.01", "4.00"], TargetBladeDevice.ValidatedBiosVersions);
+        Assert.Equal(["3.01", "4.00", "4.01"], TargetBladeDevice.ValidatedBiosVersions);
     }
 
     [Theory]
     [InlineData("3.01", true)]
     [InlineData("4.00", true)]
     [InlineData("3.02", false)]
-    [InlineData("4.01", false)]
+    [InlineData("4.01", true)]
+    [InlineData("4.02", false)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void IsValidatedBiosVersion_RequiresAReviewedVersion(

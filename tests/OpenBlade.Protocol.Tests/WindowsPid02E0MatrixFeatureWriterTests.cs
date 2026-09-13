@@ -52,7 +52,8 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     [Theory]
     [InlineData("3.01", true)]
     [InlineData("4.00", true)]
-    [InlineData("4.01", false)]
+    [InlineData("4.01", true)]
+    [InlineData("4.02", false)]
     public async Task Opener_RequiresSupportedFirmwareWhenIdentityIsMarkedTested(
         string biosVersion,
         bool expectedToOpen)
@@ -96,7 +97,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         var allowed = new WindowsPid02E0MatrixFeatureOpener(
             new ScriptedHost(ExactHost with
             {
-                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.01" },
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.02" },
                 FirmwareCompatibility = HostFirmwareCompatibility.UntestedAllowed,
             }),
             new ScriptedGuard(),
@@ -115,7 +116,7 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
         var blocked = new WindowsPid02E0MatrixFeatureOpener(
             new ScriptedHost(ExactHost with
             {
-                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.01" },
+                Evidence = ExactHost.Evidence!.Value with { BiosVersion = "4.02" },
                 FirmwareCompatibility = HostFirmwareCompatibility.UntestedBlocked,
             }),
             new ScriptedGuard(),
