@@ -2853,7 +2853,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => capabilities;
         private set
         {
-            if (EqualityComparer<DeviceCapabilities>.Default.Equals(capabilities, value))
+            if (CapabilitiesEqual(capabilities, value))
             {
                 return;
             }

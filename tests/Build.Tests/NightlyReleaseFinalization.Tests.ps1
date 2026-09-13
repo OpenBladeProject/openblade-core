@@ -26,6 +26,8 @@ function Assert-ThrowsLike {
 . (Join-Path $repository 'build\NightlyChangelog.ps1')
 . (Join-Path $repository 'build\Complete-NightlyRelease.ps1')
 $gitApplication = (Get-Command git -CommandType Application | Select-Object -First 1).Path
+$productionReleaseGh = (Get-Command Invoke-OpenBladeReleaseGh).ScriptBlock
+$originalGitCommand = Get-Command git
 
 function New-FinalizationFixture {
     param([switch]$MergeSnapshot, [switch]$MismatchedSnapshot, [switch]$ChecksumMismatch,
@@ -115,42 +117,48 @@ function New-FinalizationFixture {
 
 function Invoke-FinalizationWithFixture {
     param([Parameter(Mandatory)]$Fixture, [switch]$VerifyOnly)
-    $global:OpenBladeFinalizationFixture = $Fixture
-    function global:Invoke-OpenBladeReleaseGh {
+
+    # Keep the guard and mocks in the caller scope of the production function.
+    # Global mocks lose to its script-scoped adapter when this test runs with &.
+    function Stop-ExternalFinalizationGh {
+        throw 'The offline finalization fixture blocked an external gh call.'
+    }
+    Set-Alias -Name gh -Value Stop-ExternalFinalizationGh -Scope Local
+    Assert-ThrowsLike { & $productionReleaseGh -Arguments @('release', 'view', $Fixture.Tag) } `
+        '*offline finalization fixture blocked an external gh call*' `
+        'The production adapter must fail closed if the fixture mock is bypassed.'
+
+    function Invoke-OpenBladeReleaseGh {
         param([Parameter(Mandatory)][string[]]$Arguments)
         $command = $Arguments -join ' '
         if ($command -like 'release view*') {
-            if ($global:OpenBladeFinalizationFixture.ReleaseEditCalls -gt 0) {
-                $global:OpenBladeFinalizationFixture.Release.isDraft = $false
+            if ($Fixture.ReleaseEditCalls -gt 0) {
+                $Fixture.Release.isDraft = $false
             }
-            return ($global:OpenBladeFinalizationFixture.Release | ConvertTo-Json -Depth 6)
+            return ($Fixture.Release | ConvertTo-Json -Depth 6)
         }
         if ($command -like 'release download*') {
             $directory = $Arguments[[Array]::IndexOf($Arguments, '--dir') + 1]
-            foreach ($file in $global:OpenBladeFinalizationFixture.Files.GetEnumerator()) {
+            foreach ($file in $Fixture.Files.GetEnumerator()) {
                 [IO.File]::WriteAllBytes((Join-Path $directory $file.Key), $file.Value)
             }
             return
         }
-        if ($command -like 'api *') { return (@($global:OpenBladeFinalizationFixture.ApiHistory) | ConvertTo-Json -Depth 6) }
-        if ($command -like 'release edit*') { $global:OpenBladeFinalizationFixture.ReleaseEditCalls++; return }
+        if ($command -like 'api *') { return (@($Fixture.ApiHistory) | ConvertTo-Json -Depth 6) }
+        if ($command -like 'release edit*') { $Fixture.ReleaseEditCalls++; return }
         throw "Unexpected mocked gh call: $command"
     }
-    function global:git {
+    function git {
         param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
         if ($Arguments -contains 'fetch') { $global:LASTEXITCODE = 0; return }
-        if ($Arguments -contains 'FETCH_HEAD') { $global:LASTEXITCODE = 0; return $global:OpenBladeFinalizationFixture.MainSha }
+        if ($Arguments -contains 'FETCH_HEAD') { $global:LASTEXITCODE = 0; return $Fixture.MainSha }
         if ($Arguments -contains 'merge-base') { $global:LASTEXITCODE = 0; return }
         & $gitApplication @Arguments
     }
-    try {
-        Complete-OpenBladeNightlyRelease -Tag $Fixture.Tag -RepositoryRoot $Fixture.Root -VerifyOnly:$VerifyOnly
-    }
-    finally {
-        Remove-Item Function:global:Invoke-OpenBladeReleaseGh -ErrorAction SilentlyContinue
-        Remove-Item Function:global:git -ErrorAction SilentlyContinue
-        Remove-Variable OpenBladeFinalizationFixture -Scope Global -ErrorAction SilentlyContinue
-    }
+
+    # Function/alias scope unwinds on both success and failure without changing
+    # caller commands, including when the entire test has been dot-sourced.
+    Complete-OpenBladeNightlyRelease -Tag $Fixture.Tag -RepositoryRoot $Fixture.Root -VerifyOnly:$VerifyOnly
 }
 
 function Update-MainFixtureChangelog {
@@ -206,5 +214,11 @@ Invoke-FinalizationWithFixture -Fixture $success -VerifyOnly
 Assert-True ($success.ReleaseEditCalls -eq 0) 'VerifyOnly must retain the validated draft.'
 Invoke-FinalizationWithFixture -Fixture $success
 Assert-True ($success.ReleaseEditCalls -eq 1) 'A valid merged snapshot must publish exactly once.'
+
+Assert-True ([Object]::ReferenceEquals((Get-Command Invoke-OpenBladeReleaseGh).ScriptBlock, $productionReleaseGh)) `
+    'The fixture must preserve the imported production adapter after failed and successful calls.'
+Assert-True ((Get-Command git).CommandType -eq $originalGitCommand.CommandType -and
+    (Get-Command git).Definition -ceq $originalGitCommand.Definition) `
+    'The fixture must preserve the caller git command after failed and successful calls.'
 
 Write-Host 'Nightly release finalization tests passed.'
