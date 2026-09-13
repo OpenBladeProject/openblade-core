@@ -982,6 +982,13 @@ public partial class App
             string DescribeRows() => FormattableString.Invariant(
                 $"host={laptopCardsHost.ActualWidth:F1}, performance={performanceRow.ActualHeight:F1}/{performanceRow.Padding}, fan={fanRow.ActualHeight:F1}/{fanRow.Padding}, titles={performanceTitle.ActualHeight:F1}/{fanTitle.ActualHeight:F1}, description={hyperBoostDescription.Visibility}/{hyperBoostDescription.ActualHeight:F1}");
 
+            if (captureSnapshots)
+            {
+                var snapshotBackground = new SolidColorBrush(Microsoft.UI.Colors.White);
+                performanceRow.Background = snapshotBackground;
+                fanRow.Background = snapshotBackground;
+            }
+
             AnimatedVisibility.SetIsVisible(performanceRow, true);
             AnimatedVisibility.SetIsVisible(fanRow, true);
             AnimatedVisibility.SetIsVisible(hyperBoostDescription, false);
