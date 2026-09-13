@@ -205,6 +205,41 @@ public sealed class ResumeStateValidationTrackerTests
     }
 
     [Fact]
+    public void GpuInvalidation_ExcludesPowerEvenWhenVisibleStateMatches()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState confirmed = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, confirmed);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: true);
+        Assert.Null(tracker.Observe(PowerSource.PluggedIn, confirmed));
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(
+            "Resume validation confirmed retained control state for Fans, Battery, Lighting. No validation-driven recovery writes were needed. Unavailable for comparison: Power mode.",
+            result.Message);
+    }
+
+    [Fact]
+    public void UnavailableBaseline_ReportsNoComparableSubsystems()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        tracker.Capture(PowerSource.PluggedIn, new ConfirmedDeviceState(null, null, null, null));
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        Assert.Null(tracker.Observe(PowerSource.PluggedIn, Confirmed()));
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(
+            "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No validation-driven recovery writes were attempted. Lighting was unavailable in at least one sample and was not compared. Unavailable for comparison: Power mode, Fans, Battery, Lighting.",
+            result.Message);
+    }
+
+    [Fact]
     public void ComparatorAllowlist_CoversConfirmedState()
     {
         string[] expected = typeof(ConfirmedDeviceState)

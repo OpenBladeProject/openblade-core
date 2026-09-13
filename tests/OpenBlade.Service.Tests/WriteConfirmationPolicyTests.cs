@@ -125,6 +125,68 @@ public sealed class WriteConfirmationPolicyTests
     }
 
     [Fact]
+    public void EnabledGpuTuning_RequiresExactObservedOffsets()
+    {
+        var expectation = new WriteConfirmationExpectation(
+            Desired() with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(100, 200)),
+            },
+            Confirmed());
+
+        Assert.Equal(
+            PendingConfirmationResult.Unavailable,
+            Match(DeviceSubsystem.Performance, expectation, Confirmed()));
+        Assert.Equal(
+            PendingConfirmationResult.Match,
+            Match(DeviceSubsystem.Performance, expectation, Confirmed() with { GpuClockOffsets = Offsets(100, 200) }));
+        Assert.Equal(
+            PendingConfirmationResult.Mismatch,
+            Match(DeviceSubsystem.Performance, expectation, Confirmed() with { GpuClockOffsets = Offsets(100, 300) }));
+    }
+
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance)]
+    [InlineData(DeviceSubsystem.Fans)]
+    public void HyperBoostEntry_RequiresActiveBoostAndConfirmedAutomaticFans(DeviceSubsystem subsystem)
+    {
+        var expectation = new WriteConfirmationExpectation(Desired(), Confirmed(), HyperBoostActive: true);
+        ConfirmedDeviceState active = Confirmed() with { HyperBoostActive = true, Performance = null };
+
+        Assert.Equal(PendingConfirmationResult.Match, Match(subsystem, expectation, active));
+        Assert.Equal(
+            PendingConfirmationResult.Mismatch,
+            Match(subsystem, expectation, active with { Fans = FanMode.Maximum }));
+        Assert.Equal(
+            PendingConfirmationResult.Unavailable,
+            Match(subsystem, expectation, active with { Fans = null }));
+        Assert.Equal(
+            PendingConfirmationResult.Mismatch,
+            Match(subsystem, expectation, active with { HyperBoostActive = false, Fans = null }));
+    }
+
+    [Fact]
+    public void FansAndLighting_RequireReadbackBeforeComparingIntent()
+    {
+        var expectation = new WriteConfirmationExpectation(Desired(), Confirmed());
+
+        Assert.Equal(
+            PendingConfirmationResult.Unavailable,
+            Match(DeviceSubsystem.Fans, expectation, Confirmed() with { Fans = null }));
+        Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Fans, expectation, Confirmed()));
+        Assert.Equal(
+            PendingConfirmationResult.Unavailable,
+            Match(DeviceSubsystem.Lighting, expectation, Confirmed() with { Lighting = null }));
+        Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Lighting, expectation, Confirmed()));
+        Assert.Equal(
+            PendingConfirmationResult.Mismatch,
+            Match(DeviceSubsystem.Lighting, expectation, Confirmed() with
+            {
+                Lighting = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 25),
+            }));
+    }
+
+    [Fact]
     public void HyperBoostExit_RequiresRestoredPerformanceAndAutomaticFansInBothSubsystems()
     {
         var expectation = new WriteConfirmationExpectation(
