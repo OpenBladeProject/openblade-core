@@ -226,6 +226,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private Task? watchTask;
     private Task? startupInitializationTask;
     private bool isConnected;
+    private bool hasAppliedServiceState;
     private bool isReadOnly = true;
     private bool canControlHardware;
     private string connectionStatus = TrayText.Get("Service unavailable");
@@ -661,6 +662,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsServiceUnavailable => !IsConnected;
+
+    public bool HasAppliedServiceState
+    {
+        get => hasAppliedServiceState;
+        private set => SetField(ref hasAppliedServiceState, value);
+    }
 
     public bool IsReadOnly
     {
@@ -4962,6 +4969,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             NotifyProfileDifferenceState();
         }
+
+        if (presentationApplied)
+        {
+            // Connection state changes before the rest of the snapshot. Consumers
+            // may seed observation only after every presentation field is applied.
+            HasAppliedServiceState = true;
+        }
     }
 
     private bool ApplyStatusCore(ServiceStatusSnapshot status)
@@ -5069,7 +5083,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedCustomGpuLevel = customPerformance.Gpu;
         GpuClockTuningSettings? gpuClockTuning = pendingPerformance?.Requested.GpuClockTuning
             ?? status.DesiredState.GpuClockTuning;
-        if (gpuClockTuning is null
+        PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
+            ?? status.DesiredState.Performance.Value;
+        if (status.ActivePowerSource == PowerSource.PluggedIn
+            && gpuTuningPerformance == PerformancePreset.Custom
+            && gpuClockTuning is null
             && customPerformance.GpuClockOffsets is { } legacyOffsets)
         {
             gpuClockTuning = new GpuClockTuningSettings(
@@ -5079,8 +5097,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         GpuClockOffsetCapabilities = confirmed?.GpuClockOffsets;
         gpuClockTuningConfigured = gpuClockTuning is not null;
         IsGpuClockTuningEnabled = gpuClockTuning?.Enabled == true;
+        // Keep dormant legacy offsets available to the editor without treating
+        // remembered Custom settings as active GPU tuning.
         GpuClockOffsetSettings presentedGpuOffsets =
             gpuClockTuning?.Offsets
+            ?? customPerformance.GpuClockOffsets
             ?? GpuClockOffsetCapabilities?.Current
             ?? GpuClockOffsetSettings.Default;
         GpuCoreClockOffsetMegahertz = presentedGpuOffsets.CoreMegahertz;

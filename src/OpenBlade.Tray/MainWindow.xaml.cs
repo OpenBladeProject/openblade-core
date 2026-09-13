@@ -874,7 +874,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         FirmwareUpdateViewModel.UpdateInstalledFirmware(ViewModel.DetectedFirmware);
         FirmwareUpdateViewModel.StartAutomaticCheck();
 
-        PrimeNotificationObservation();
+        if (ViewModel.HasAppliedServiceState && !notificationCoordinator.ObservationReady)
+        {
+            PrimeNotificationObservation();
+        }
 
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
@@ -888,6 +891,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (Volatile.Read(ref disposed) != 0)
         {
             return;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.HasAppliedServiceState)
+            && ViewModel.HasAppliedServiceState
+            && !notificationCoordinator.ObservationReady)
+        {
+            PrimeNotificationObservation();
         }
 
         if (args.PropertyName == nameof(MainViewModel.SelectedWindowsPowerModeOption))
