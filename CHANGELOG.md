@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recognize BIOS 4.01 as an admitted firmware version for RZ09-0581. ([#475](https://github.com/OSSBlade/openblade-core/pull/475))
+
 - Bound pipe-establishment retries and lifecycle event backlogs, retain idle GPU cleanup during CPU-only sampling, and keep committed lighting preferences consistent through delegation and renderer recovery. ([#467](https://github.com/OSSBlade/openblade-core/pull/467))
 - Release partially acquired audio resources immediately when Audio Meter sampler creation or mute-notification initialization fails. ([#466](https://github.com/OSSBlade/openblade-core/pull/466))
 - Refresh the notification-area icon when the Windows theme changes, and use a darker green profile line and source badge on light taskbars. ([#454](https://github.com/OSSBlade/openblade-core/pull/454))

@@ -111,6 +111,7 @@ public sealed class WindowsHostIdentitySourceTests
     [Theory]
     [InlineData("3.01")]
     [InlineData("4.00")]
+    [InlineData("4.01")]
     public void ReadExactIdentity_AcceptsEachSupportedProductionBios(string biosVersion)
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
@@ -176,7 +177,7 @@ public sealed class WindowsHostIdentitySourceTests
             "Razer",
             "Blade 16 - RZ09-0581",
             "RZ09-05819EN4",
-            ["3.01", "4.00"]);
+            ["3.01", "4.00", "4.01"]);
         var source = new WindowsHostIdentitySource(
             registry,
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
