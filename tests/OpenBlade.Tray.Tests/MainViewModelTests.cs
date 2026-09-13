@@ -3550,17 +3550,154 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.HasThermalProfileDraft);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.Battery)]
+    public async Task GpuClockTuning_DormantLegacyOffsetsDoNotCreateIdleProfileDifference(
+        PowerSource source)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot baseline, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning is idle");
+        PowerProfile activeProfile = source == PowerSource.PluggedIn
+            ? baseline.Profiles.PluggedIn
+            : baseline.Profiles.Battery;
+        ServiceStatusSnapshot status = baseline with
+        {
+            ActivePowerSource = source,
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    activeProfile.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+
+        Assert.False(viewModel.IsGpuClockTuningEnabled);
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+        Assert.False(viewModel.HasThermalProfileDifference);
+        Assert.False(viewModel.DiscardThermalProfileDraftCommand.CanExecute(null));
+        Assert.False(viewModel.HasDashboardProfileRestoreOpportunity);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning.Text);
+        Assert.Equal(
+            source == PowerSource.PluggedIn ? "Off" : "Unavailable",
+            viewModel.TrayDashboardGpuTuningLabel);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Fact]
+    public async Task GpuClockTuning_ShortcutPreviewDoesNotActivateDormantLegacyOffsets()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot baseline, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Custom shortcut preview");
+
+        ServiceStatusSnapshot status = baseline with
+        {
+            PerformanceShortcutPreview = new PerformanceShortcutPreview(
+                Guid.NewGuid(),
+                1,
+                PerformancePreset.Custom),
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+
+        Assert.Equal(PerformancePreset.Custom, viewModel.SelectedPerformance);
+        Assert.False(viewModel.IsGpuClockTuningEnabled);
+        Assert.Equal("Off", viewModel.TrayDashboardGpuTuningLabel);
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Fact]
+    public async Task GpuClockTuning_UsesDesiredCustomIntentForLegacyOffsets()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot baseline, GpuClockOffsetSettings legacyOffsets) =
+            CreateLegacyGpuTuningStatus("Legacy Custom GPU tuning is active");
+        PowerProfile customProfile = baseline.Profiles.PluggedIn with
+        {
+            Performance = PerformancePreset.Custom,
+        };
+
+        ServiceStatusSnapshot status = baseline with
+        {
+            Profiles = baseline.Profiles with { PluggedIn = customProfile },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = customProfile.CustomPerformance,
+            },
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+
+        Assert.True(viewModel.IsGpuClockTuningEnabled);
+        Assert.Equal("On", viewModel.TrayDashboardGpuTuningLabel);
+        Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
+        Assert.False(viewModel.HasThermalProfileDifference);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GpuClockTuning_ExplicitOverrideWinsOverDormantLegacyOffsets(bool enabled)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        (ServiceStatusSnapshot baseline, _) =
+            CreateLegacyGpuTuningStatus("Explicit Balanced GPU tuning");
+        var explicitOffsets = new GpuClockOffsetSettings(50, 75);
+        var explicitTuning = new GpuClockTuningSettings(enabled, explicitOffsets);
+
+        ServiceStatusSnapshot status = baseline with
+        {
+            PerformanceOverride = new PerformanceOverride(
+                PerformancePreset.Balanced,
+                OverrideLifetime.UntilPowerSourceChange)
+            {
+                GpuClockTuning = explicitTuning,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                GpuClockTuning = explicitTuning,
+            },
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+
+        Assert.Equal(enabled, viewModel.IsGpuClockTuningEnabled);
+        Assert.Equal(enabled ? "On" : "Off", viewModel.TrayDashboardGpuTuningLabel);
+        Assert.Equal(explicitOffsets, viewModel.CurrentGpuClockOffsets);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
     [Fact]
     public async Task PerformanceSelection_NormalizesLegacyGpuTuningAfterDraft()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Legacy GPU tuning profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
         Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
@@ -3594,13 +3731,12 @@ public sealed partial class MainViewModelTests
     public async Task PerformanceSelection_PromotesDormantLegacyGpuTuningForCustom()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Dormant legacy GPU tuning profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Custom);
@@ -3619,13 +3755,12 @@ public sealed partial class MainViewModelTests
     public async Task ThermalProfileSave_NormalizesLegacyGpuTuningAfterDraft()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning save profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Legacy GPU tuning save profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
             enabled: false,
@@ -9767,6 +9902,31 @@ public sealed partial class MainViewModelTests
             false,
             Firmware: null,
             ServiceVersion: "0.1.0-test");
+    }
+
+    private static async Task PublishGpuTuningStatusAsync(
+        FakeServiceClient client,
+        RecordingDispatcher dispatcher,
+        MainViewModel viewModel,
+        ServiceStatusSnapshot status)
+    {
+        var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.AfterInvoke = () =>
+        {
+            if (viewModel.ConnectionStatus == status.Message)
+            {
+                applied.TrySetResult();
+            }
+        };
+        try
+        {
+            client.Publish(status);
+            await applied.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            dispatcher.AfterInvoke = null;
+        }
     }
 
     private static (

@@ -5083,7 +5083,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedCustomGpuLevel = customPerformance.Gpu;
         GpuClockTuningSettings? gpuClockTuning = pendingPerformance?.Requested.GpuClockTuning
             ?? status.DesiredState.GpuClockTuning;
-        if (gpuClockTuning is null
+        PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
+            ?? status.DesiredState.Performance.Value;
+        if (status.ActivePowerSource == PowerSource.PluggedIn
+            && gpuTuningPerformance == PerformancePreset.Custom
+            && gpuClockTuning is null
             && customPerformance.GpuClockOffsets is { } legacyOffsets)
         {
             gpuClockTuning = new GpuClockTuningSettings(
@@ -5093,8 +5097,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         GpuClockOffsetCapabilities = confirmed?.GpuClockOffsets;
         gpuClockTuningConfigured = gpuClockTuning is not null;
         IsGpuClockTuningEnabled = gpuClockTuning?.Enabled == true;
+        // Keep dormant legacy offsets available to the editor without treating
+        // remembered Custom settings as active GPU tuning.
         GpuClockOffsetSettings presentedGpuOffsets =
             gpuClockTuning?.Offsets
+            ?? customPerformance.GpuClockOffsets
             ?? GpuClockOffsetCapabilities?.Current
             ?? GpuClockOffsetSettings.Default;
         GpuCoreClockOffsetMegahertz = presentedGpuOffsets.CoreMegahertz;
