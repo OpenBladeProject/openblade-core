@@ -3413,10 +3413,8 @@ public sealed partial class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         };
-        int dispatchesBeforeStatus = dispatcher.CompletedCalls;
 
-        client.Publish(status);
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeStatus);
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         Assert.False(viewModel.IsGpuClockTuningEnabled);
         Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
@@ -3439,16 +3437,16 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         (ServiceStatusSnapshot baseline, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Custom shortcut preview");
-        int dispatchesBeforeStatus = dispatcher.CompletedCalls;
 
-        client.Publish(baseline with
+        ServiceStatusSnapshot status = baseline with
         {
             PerformanceShortcutPreview = new PerformanceShortcutPreview(
                 Guid.NewGuid(),
                 1,
                 PerformancePreset.Custom),
-        });
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeStatus);
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         Assert.Equal(PerformancePreset.Custom, viewModel.SelectedPerformance);
         Assert.False(viewModel.IsGpuClockTuningEnabled);
@@ -3470,9 +3468,8 @@ public sealed partial class MainViewModelTests
         {
             Performance = PerformancePreset.Custom,
         };
-        int dispatchesBeforeStatus = dispatcher.CompletedCalls;
 
-        client.Publish(baseline with
+        ServiceStatusSnapshot status = baseline with
         {
             Profiles = baseline.Profiles with { PluggedIn = customProfile },
             DesiredState = baseline.DesiredState with
@@ -3482,8 +3479,9 @@ public sealed partial class MainViewModelTests
                     SettingValueSource.PowerProfile),
                 CustomPerformance = customProfile.CustomPerformance,
             },
-        });
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeStatus);
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         Assert.True(viewModel.IsGpuClockTuningEnabled);
         Assert.Equal("On", viewModel.TrayDashboardGpuTuningLabel);
@@ -3505,9 +3503,8 @@ public sealed partial class MainViewModelTests
             CreateLegacyGpuTuningStatus("Explicit Balanced GPU tuning");
         var explicitOffsets = new GpuClockOffsetSettings(50, 75);
         var explicitTuning = new GpuClockTuningSettings(enabled, explicitOffsets);
-        int dispatchesBeforeStatus = dispatcher.CompletedCalls;
 
-        client.Publish(baseline with
+        ServiceStatusSnapshot status = baseline with
         {
             PerformanceOverride = new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -3519,8 +3516,9 @@ public sealed partial class MainViewModelTests
             {
                 GpuClockTuning = explicitTuning,
             },
-        });
-        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeStatus);
+        };
+
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         Assert.Equal(enabled, viewModel.IsGpuClockTuningEnabled);
         Assert.Equal(enabled ? "On" : "Off", viewModel.TrayDashboardGpuTuningLabel);
@@ -9747,6 +9745,31 @@ public sealed partial class MainViewModelTests
             ServiceVersion: "0.1.0-test");
     }
 
+    private static async Task PublishGpuTuningStatusAsync(
+        FakeServiceClient client,
+        RecordingDispatcher dispatcher,
+        MainViewModel viewModel,
+        ServiceStatusSnapshot status)
+    {
+        var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.AfterInvoke = () =>
+        {
+            if (viewModel.ConnectionStatus == status.Message)
+            {
+                applied.TrySetResult();
+            }
+        };
+        try
+        {
+            client.Publish(status);
+            await applied.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            dispatcher.AfterInvoke = null;
+        }
+    }
+
     private static (
         ServiceStatusSnapshot Status,
         GpuClockOffsetSettings LegacyOffsets) CreateLegacyGpuTuningStatus(string message)
@@ -9805,12 +9828,15 @@ public sealed partial class MainViewModelTests
 
         public int CompletedCalls => Volatile.Read(ref completedCalls);
 
+        public Action? AfterInvoke { get; set; }
+
         public Task InvokeAsync(Action action, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Calls++;
             action();
             Interlocked.Increment(ref completedCalls);
+            AfterInvoke?.Invoke();
             return Task.CompletedTask;
         }
     }
