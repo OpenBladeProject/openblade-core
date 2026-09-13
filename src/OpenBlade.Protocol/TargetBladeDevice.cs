@@ -8,6 +8,7 @@ public static class TargetBladeDevice
     [
         BiosVersion,
         "4.00",
+        "4.01",
     ];
 
     public const string Model = RazerBladeModelCatalog.OpenBladeTargetModelNumber;

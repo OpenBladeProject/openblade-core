@@ -12,7 +12,7 @@ public sealed class TestedPlatformCatalogTests
         TestedPlatformVersionSet target = TestedPlatformCatalog.Entries[0];
 
         Assert.Equal("RZ09-0581", target.ModelNumber);
-        Assert.Equal(["3.01", "4.00"], target.BiosVersions);
+        Assert.Equal(["3.01", "4.00", "4.01"], target.BiosVersions);
         Assert.Equal(["1.04"], target.EcVersions);
         Assert.Equal(["1.5.0.0", "1.6.0.0"], target.McuVersions);
 
@@ -38,6 +38,7 @@ public sealed class TestedPlatformCatalogTests
     [Theory]
     [InlineData("3.01")]
     [InlineData("4.00")]
+    [InlineData("4.01")]
     public void Assess_AcceptsEachTestedTargetBiosVersion(string biosVersion)
     {
         TestedPlatformAssessment assessment = TestedPlatformCatalog.Assess(
@@ -77,7 +78,7 @@ public sealed class TestedPlatformCatalogTests
             {
                 Assert.Equal("BIOS", mismatch.Component);
                 Assert.Equal("3.02", mismatch.CurrentValue);
-                Assert.Equal(["3.01", "4.00"], mismatch.TestedValues);
+                Assert.Equal(["3.01", "4.00", "4.01"], mismatch.TestedValues);
             },
             mismatch =>
             {
