@@ -28,10 +28,16 @@ internal sealed class DeploymentClientCoordinator(
     IInstalledProcessShutdown shutdown,
     IDeploymentProcessLauncher processes,
     IRequestIdSource requestIds,
-    Action<string>? diagnostic = null)
+    Action<string>? diagnostic = null,
+    TimeProvider? timeProvider = null,
+    Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
     private static readonly TimeSpan SessionAgentSurvivalWindow = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FinalInventoryTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan FinalInventoryPollInterval = TimeSpan.FromMilliseconds(100);
     private const string ExactRollbackCode = "install-rolled-back";
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly Func<TimeSpan, CancellationToken, Task> delay = delay ?? Task.Delay;
 
     internal async Task<bool> ApplyFixedInboxAsync(CancellationToken cancellationToken)
     {
@@ -233,8 +239,53 @@ internal sealed class DeploymentClientCoordinator(
         bool launched = tray is not null
             && await tray.RemainsAliveAsync(SessionAgentSurvivalWindow)
                 .ConfigureAwait(false)
-            && inventory.Inspect(paths).HasExactFinalState;
+            && await WaitForFinalInventoryAsync(paths, sessionAgent, tray, cancellationToken)
+                .ConfigureAwait(false);
         return launched || Fail("tray-relaunch-failed");
+    }
+
+    private async Task<bool> WaitForFinalInventoryAsync(
+        InstalledPayloadPaths paths,
+        ILaunchedDeploymentProcess sessionAgent,
+        ILaunchedDeploymentProcess tray,
+        CancellationToken cancellationToken)
+    {
+        long started = timeProvider.GetTimestamp();
+        bool previousInventoryExact = false;
+        while (timeProvider.GetElapsedTime(started) < FinalInventoryTimeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!HasRequiredContext() || sessionAgent.HasExited || tray.HasExited)
+            {
+                return false;
+            }
+
+            // Tray startup can briefly create a duplicate Session Agent. Only
+            // observations are retried; no launch or broker request is repeated.
+            bool inventoryExact = inventory.Inspect(paths).HasExactFinalState;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!HasRequiredContext() || sessionAgent.HasExited || tray.HasExited
+                || timeProvider.GetElapsedTime(started) >= FinalInventoryTimeout)
+            {
+                return false;
+            }
+
+            if (inventoryExact && previousInventoryExact)
+            {
+                return true;
+            }
+            previousInventoryExact = inventoryExact;
+
+            TimeSpan remaining = FinalInventoryTimeout - timeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                return false;
+            }
+            await delay(
+                remaining < FinalInventoryPollInterval ? remaining : FinalInventoryPollInterval,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return false;
     }
 
     private bool HasRequiredContext() =>

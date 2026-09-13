@@ -662,6 +662,8 @@ internal static class InstalledProcessLaunchPolicy
 
 internal interface ILaunchedDeploymentProcess : IDisposable
 {
+    bool HasExited { get; }
+
     Task<bool> RemainsAliveAsync(TimeSpan duration);
 }
 
@@ -696,6 +698,8 @@ internal sealed class WindowsDeploymentProcessLauncher : IDeploymentProcessLaunc
 
 internal sealed class WindowsLaunchedDeploymentProcess(Process process) : ILaunchedDeploymentProcess
 {
+    public bool HasExited => process.HasExited;
+
     public async Task<bool> RemainsAliveAsync(TimeSpan duration)
     {
         if (duration <= TimeSpan.Zero)
