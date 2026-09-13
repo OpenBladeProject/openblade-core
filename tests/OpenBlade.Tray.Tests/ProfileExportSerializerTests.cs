@@ -304,6 +304,42 @@ public sealed class ProfileExportSerializerTests
             imported.PluggedIn.GpuClockTuning);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, false)]
+    [InlineData(PerformancePreset.Balanced, true)]
+    [InlineData(PerformancePreset.Custom, true)]
+    public void Deserialize_PreservesDormantLegacyOffsetsAndExplicitGpuTuning(
+        PerformancePreset performance,
+        bool hasExplicitTuning)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var legacyOffsets = new GpuClockOffsetSettings(125, 500);
+        GpuClockTuningSettings? explicitTuning = hasExplicitTuning
+            ? new GpuClockTuningSettings(false, new GpuClockOffsetSettings(50, 100))
+            : null;
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = performance,
+                CustomPerformance = CustomPerformanceSettings.Default with
+                {
+                    GpuClockOffsets = legacyOffsets,
+                },
+                GpuClockTuning = explicitTuning,
+            },
+        };
+        string json = ProfileExportSerializer.Serialize(
+            profiles,
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Equal(explicitTuning, imported.PluggedIn.GpuClockTuning);
+        Assert.Equal(legacyOffsets, imported.PluggedIn.CustomPerformance?.GpuClockOffsets);
+    }
+
     [Fact]
     public void Deserialize_VersionFiveDoesNotMigrateGpuTuningOutsidePluggedIn()
     {
