@@ -121,6 +121,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     // all (manual curve off, Tray hidden), this bound releases it so the
     // service never holds the driver session across an idle GPU.
     internal static readonly TimeSpan GpuSessionIdleTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan GpuSessionIdleRetry = TimeSpan.FromMilliseconds(100);
 
     private readonly IGpuActivitySource gpuActivitySource;
     private readonly Func<int?> cpuTemperatureReader;
@@ -128,6 +129,9 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     private readonly IGpuTemperatureSession gpuTemperature;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly ITimer gpuSessionIdleRelease;
+    private readonly TimeProvider timeProvider;
+    private long lastGpuReadTimestamp;
+    private bool gpuIdleReleasePending;
     private bool disposed;
 
     public SafeWindowsFanTemperatureSource()
@@ -179,6 +183,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         this.gpuTemperature = gpuTemperature
             ?? throw new ArgumentNullException(nameof(gpuTemperature));
         ArgumentNullException.ThrowIfNull(timeProvider);
+        this.timeProvider = timeProvider;
         this.cpuTemperatureOwner = cpuTemperatureOwner;
         gpuSessionIdleRelease = timeProvider.CreateTimer(
             static state => ((SafeWindowsFanTemperatureSource)state!).ReleaseIdleGpuSession(),
@@ -211,6 +216,8 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             if (gpuActive is true)
             {
                 gpuCelsius = gpuTemperature.TryRead();
+                lastGpuReadTimestamp = timeProvider.GetTimestamp();
+                gpuIdleReleasePending = true;
                 gpuSessionIdleRelease.Change(GpuSessionIdleTimeout, Timeout.InfiniteTimeSpan);
             }
             else if (includeGpu)
@@ -218,6 +225,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
                 // Inactive or unknown: never hold the driver session across a
                 // GPU that may be asleep.
                 gpuSessionIdleRelease.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                gpuIdleReleasePending = false;
                 gpuTemperature.Release();
             }
 
@@ -234,18 +242,38 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
     private void ReleaseIdleGpuSession()
     {
-        // A read in progress will either re-arm this timer or release the
-        // session itself, so contention here needs no retry.
+        // CPU-only reads do not touch the GPU session. Retain the expiry when
+        // they hold the gate, without blocking a timer thread on native reads.
         if (!gate.Wait(0))
         {
+            try
+            {
+                gpuSessionIdleRelease.Change(GpuSessionIdleRetry, Timeout.InfiniteTimeSpan);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposal may own the gate and has already released the session.
+            }
             return;
         }
 
         try
         {
-            if (!disposed)
+            if (!disposed && gpuIdleReleasePending)
             {
-                gpuTemperature.Release();
+                TimeSpan remaining = GpuSessionIdleTimeout
+                    - timeProvider.GetElapsedTime(lastGpuReadTimestamp);
+                if (remaining > TimeSpan.Zero)
+                {
+                    // A queued callback from an earlier timer generation must
+                    // not close a session refreshed by a newer GPU sample.
+                    gpuSessionIdleRelease.Change(remaining, Timeout.InfiniteTimeSpan);
+                }
+                else
+                {
+                    gpuIdleReleasePending = false;
+                    gpuTemperature.Release();
+                }
             }
         }
         finally

@@ -77,7 +77,7 @@ public sealed class NamedPipeControlServer
                 ownsFirstListenerGate = true;
                 if (Volatile.Read(ref firstListenerEstablished) == 0)
                 {
-                    pipe = CreatePipe(firstInstance: true);
+                    pipe = CreateListener(firstInstance: true);
                 }
                 else
                 {
@@ -86,7 +86,7 @@ public sealed class NamedPipeControlServer
                 }
             }
 
-            pipe ??= CreatePipe(firstInstance: false);
+            pipe ??= CreateListener(firstInstance: false);
             await pipe.WaitForConnectionAsync(cancellationToken);
             if (ownsFirstListenerGate)
             {
@@ -122,7 +122,8 @@ public sealed class NamedPipeControlServer
         {
             throw;
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (exception is not PipeListenerEstablishmentException
+            && exception is IOException or TimeoutException)
         {
             // A disconnect or stalled initial request affects only this connection.
         }
@@ -136,6 +137,18 @@ public sealed class NamedPipeControlServer
             {
                 await pipe.DisposeAsync();
             }
+        }
+    }
+
+    private NamedPipeServerStream CreateListener(bool firstInstance)
+    {
+        try
+        {
+            return CreatePipe(firstInstance);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PipeListenerEstablishmentException(exception);
         }
     }
 

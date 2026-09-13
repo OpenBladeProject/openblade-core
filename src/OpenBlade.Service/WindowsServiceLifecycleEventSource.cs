@@ -144,10 +144,16 @@ public sealed class WindowsServiceLifecycleEventSource
     private const int SuspendingBit = 1 << 1;
     private const int ResumedBit = 1 << 2;
     internal const long DuplicateResumeWindowMilliseconds = 5_000;
+    internal const int MaximumOrderedTriggers = 64;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
     private readonly object pendingOrderedSync = new();
     private readonly List<ServiceLifecycleTrigger> pendingOrderedTriggers = [];
+    private bool orderedOverflow;
+    private bool overflowDeviceRemoved;
+    private bool overflowDisplayOff;
+    private ServiceLifecycleTrigger? overflowLastDevice;
+    private ServiceLifecycleTrigger? overflowLastDisplay;
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
     private readonly Func<long> getTickCount;
     private readonly LowPowerGate lowPowerGate;
@@ -420,6 +426,11 @@ public sealed class WindowsServiceLifecycleEventSource
     {
         lock (pendingOrderedSync)
         {
+            if (orderedOverflow)
+            {
+                AccumulateOverflowTrigger(trigger);
+                return;
+            }
             // Display and HID notifications are state transitions. Consecutive
             // duplicates need only one action, while alternating transitions must
             // retain callback order so the final hardware state is correct.
@@ -429,7 +440,42 @@ public sealed class WindowsServiceLifecycleEventSource
                 return;
             }
 
+            if (pendingOrderedTriggers.Count == MaximumOrderedTriggers)
+            {
+                // Preserve safety boundaries and final levels during a storm.
+                // Replaying an unlimited historical sequence can otherwise keep
+                // current lifecycle work behind stale hardware observations.
+                orderedOverflow = true;
+                foreach (ServiceLifecycleTrigger pending in pendingOrderedTriggers)
+                {
+                    AccumulateOverflowTrigger(pending);
+                }
+                pendingOrderedTriggers.Clear();
+                AccumulateOverflowTrigger(trigger);
+                return;
+            }
             pendingOrderedTriggers.Add(trigger);
+        }
+    }
+
+    private void AccumulateOverflowTrigger(ServiceLifecycleTrigger trigger)
+    {
+        switch (trigger)
+        {
+            case ServiceLifecycleTrigger.DeviceRemoved:
+                overflowDeviceRemoved = true;
+                overflowLastDevice = trigger;
+                break;
+            case ServiceLifecycleTrigger.DeviceArrived:
+                overflowLastDevice = trigger;
+                break;
+            case ServiceLifecycleTrigger.DisplayOff:
+                overflowDisplayOff = true;
+                overflowLastDisplay = trigger;
+                break;
+            case ServiceLifecycleTrigger.DisplayOn:
+                overflowLastDisplay = trigger;
+                break;
         }
     }
 
@@ -437,6 +483,35 @@ public sealed class WindowsServiceLifecycleEventSource
     {
         lock (pendingOrderedSync)
         {
+            if (orderedOverflow)
+            {
+                // Invalidate before recovery; apply Off before any final On.
+                // Neither an arrival nor a display-on can erase a required
+                // removal/Off cleanup that occurred while the consumer waited.
+                var summary = new List<ServiceLifecycleTrigger>(4);
+                if (overflowDeviceRemoved)
+                {
+                    summary.Add(ServiceLifecycleTrigger.DeviceRemoved);
+                }
+                if (overflowDisplayOff)
+                {
+                    summary.Add(ServiceLifecycleTrigger.DisplayOff);
+                }
+                if (overflowLastDevice == ServiceLifecycleTrigger.DeviceArrived)
+                {
+                    summary.Add(ServiceLifecycleTrigger.DeviceArrived);
+                }
+                if (overflowLastDisplay == ServiceLifecycleTrigger.DisplayOn)
+                {
+                    summary.Add(ServiceLifecycleTrigger.DisplayOn);
+                }
+                orderedOverflow = false;
+                overflowDeviceRemoved = false;
+                overflowDisplayOff = false;
+                overflowLastDevice = null;
+                overflowLastDisplay = null;
+                return [.. summary];
+            }
             ServiceLifecycleTrigger[] drained = [.. pendingOrderedTriggers];
             pendingOrderedTriggers.Clear();
             return drained;
