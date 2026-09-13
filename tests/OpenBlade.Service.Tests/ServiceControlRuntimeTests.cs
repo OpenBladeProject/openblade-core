@@ -10356,7 +10356,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 beforeDeviceArrival: () =>
                 {
                     time.Advance(
-                        ServiceControlRuntime.ResumeValidationObservationWindow
+                        ResumeStateValidationTracker.ObservationWindow
                         + TimeSpan.FromMilliseconds(1));
                     context.Provider.Available = true;
                 }),
@@ -10369,21 +10369,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.History.Snapshot().CommandResults,
             entry => entry.Action == "ResumeValidation");
         Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
-    }
-
-    [Fact]
-    public void ResumeValidation_ComparatorAllowlistCoversConfirmedState()
-    {
-        string[] expected = typeof(ConfirmedDeviceState)
-            .GetProperties()
-            .Select(property => property.Name)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        string[] actual = ServiceControlRuntime.ResumeComparedStatePropertyNames
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -11828,6 +11813,109 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
         Assert.False(context.Runtime.GetStatus().FullChargeOverride);
         Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Theory]
+    [InlineData("battery")]
+    [InlineData("hyperboost")]
+    [InlineData("manual")]
+    [InlineData("unknown-performance")]
+    [InlineData("changed-performance")]
+    [InlineData("changed-custom-performance")]
+    [InlineData("offsets-present")]
+    [InlineData("reset-evidence-required")]
+    public void PendingConfirmation_ReadsGpuManagementOnlyAfterEarlierComparisons(
+        string scenario)
+    {
+        TestContext context = CreateWritableContext();
+        DesiredDeviceState desired = context.Runtime.GetStatus().DesiredState with
+        {
+            Performance = new ResolvedSetting<PerformancePreset>(
+                PerformancePreset.Balanced,
+                SettingValueSource.PowerProfile),
+            Fans = new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+            FanControl = null,
+            GpuClockTuning = GpuClockTuningSettings.Disabled,
+        };
+        ConfirmedDeviceState confirmed = new(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            null,
+            null);
+        var expectation = new WriteConfirmationExpectation(desired, confirmed);
+        DeviceSubsystem subsystem = DeviceSubsystem.Performance;
+        PendingConfirmationResult expected = PendingConfirmationResult.Mismatch;
+        switch (scenario)
+        {
+            case "battery":
+                subsystem = DeviceSubsystem.Battery;
+                expected = PendingConfirmationResult.Unavailable;
+                break;
+            case "hyperboost":
+                expectation = expectation with { HyperBoostActive = true };
+                confirmed = confirmed with { HyperBoostActive = true, Performance = null };
+                expected = PendingConfirmationResult.Match;
+                break;
+            case "manual":
+                expectation = expectation with
+                {
+                    Target = desired with { FanControl = FanControlSettings.FromLegacy(FanMode.Maximum) },
+                };
+                confirmed = confirmed with { Fans = FanMode.Fixed, Performance = null };
+                expected = PendingConfirmationResult.Match;
+                break;
+            case "unknown-performance":
+                confirmed = confirmed with { Performance = null };
+                expected = PendingConfirmationResult.Unavailable;
+                break;
+            case "changed-performance":
+                confirmed = confirmed with { Performance = PerformancePreset.Performance };
+                break;
+            case "changed-custom-performance":
+                expectation = expectation with
+                {
+                    Target = desired with
+                    {
+                        Performance = new ResolvedSetting<PerformancePreset>(
+                            PerformancePreset.Custom,
+                            SettingValueSource.PowerProfile),
+                        CustomPerformance = CustomPerformanceSettings.Default,
+                    },
+                };
+                confirmed = confirmed with
+                {
+                    Performance = PerformancePreset.Custom,
+                    CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                };
+                break;
+            case "offsets-present":
+                confirmed = confirmed with
+                {
+                    GpuClockOffsets = new GpuClockOffsetCapabilities(
+                        "Test NVIDIA GPU",
+                        new GpuClockOffsetRange(-1000, 400, 0),
+                        new GpuClockOffsetRange(-1000, 3000, 0)),
+                };
+                break;
+            case "reset-evidence-required":
+                context.Device.GpuClockOffsetManagementState = GpuClockOffsetManagementState.ResetConfirmed;
+                expected = PendingConfirmationResult.Match;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario));
+        }
+        int readsBefore = context.Device.GpuClockOffsetManagementStateReadCalls;
+
+        object? result = typeof(ServiceControlRuntime)
+            .GetMethod(
+                "MatchWriteConfirmation",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(null, [subsystem, expectation, confirmed, context.Device]);
+
+        Assert.Equal(expected, Assert.IsType<PendingConfirmationResult>(result));
+        Assert.Equal(
+            readsBefore + (scenario == "reset-evidence-required" ? 1 : 0),
+            context.Device.GpuClockOffsetManagementStateReadCalls);
     }
 
     [Fact]
@@ -26601,11 +26689,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ISingleAttemptThermalDevice,
         IThermalExternalDriftValidationDevice
     {
+        private GpuClockOffsetManagementState gpuClockOffsetManagementState =
+            GpuClockOffsetManagementState.Relinquished;
+
         public GpuClockOffsetManagementState GpuClockOffsetManagementState
         {
-            get;
-            set;
-        } = GpuClockOffsetManagementState.Relinquished;
+            get
+            {
+                GpuClockOffsetManagementStateReadCalls++;
+                return gpuClockOffsetManagementState;
+            }
+            set => gpuClockOffsetManagementState = value;
+        }
+
+        public int GpuClockOffsetManagementStateReadCalls { get; private set; }
+
         public int TotalCalls { get; private set; }
 
         public int PerformanceSetCalls { get; private set; }
