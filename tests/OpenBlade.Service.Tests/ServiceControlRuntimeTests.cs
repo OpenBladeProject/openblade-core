@@ -14,6 +14,219 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         "OpenBlade.Runtime.Tests",
         Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LifecycleOverflowInvalidatesAndKeepsArrivalRecoveryUnderFinalDisplayPolicy(
+        bool finalDisplayOn)
+    {
+        var lowPowerGate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(lowPowerGate: lowPowerGate);
+        LightingSettings expected = context.Runtime.GetStatus().DesiredState.Lighting.Value;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true, idleTimeoutMinutes: null),
+            },
+        }, CancellationToken.None);
+        int invalidationsBefore = context.Provider.InvalidationCount;
+        var appliedEffects = new List<LightingEffect>();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Lighting && context.Device.ConfirmedState.Lighting is { } lighting)
+            {
+                appliedEffects.Add(lighting.Effect);
+            }
+        };
+        var backend = new TestLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend, lowPowerGate);
+        for (int index = 0; index < 256; index++)
+        {
+            backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+            backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+            backend.Publish(ServiceLifecycleTrigger.DisplayOff);
+            backend.Publish(ServiceLifecycleTrigger.DisplayOn);
+        }
+        backend.Publish(finalDisplayOn ? ServiceLifecycleTrigger.DisplayOn : ServiceLifecycleTrigger.DisplayOff);
+        source.Dispose();
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime, source, lowPowerGate, NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(context.Provider.InvalidationCount > invalidationsBefore);
+        Assert.Contains(LightingEffect.Off, appliedEffects);
+        Assert.Equal(!finalDisplayOn,
+            context.Runtime.GetStatus().LightingSuppressions!.Contains(LightingSuppressionReason.DisplayOff));
+        Assert.Equal(finalDisplayOn ? expected.Effect : LightingEffect.Off,
+            context.Device.ConfirmedState.Lighting!.Effect);
+        if (!finalDisplayOn)
+        {
+            Assert.All(appliedEffects.Skip(appliedEffects.IndexOf(LightingEffect.Off)),
+                effect => Assert.Equal(LightingEffect.Off, effect));
+        }
+    }
+
+    [Fact]
+    public async Task LightingPolicyRechecksDelegationAfterWaitingForTheOperationGate()
+    {
+        var saveEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool holdSave = false;
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            transactionBoundary: async (boundary, token) =>
+            {
+                if (holdSave && boundary == BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    saveEntered.TrySetResult();
+                    await releaseSave.Task.WaitAsync(token);
+                }
+            });
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        holdSave = true;
+        Task<ControlOperationResult> delegation = context.Runtime.SetKeyboardLightingControlModeAsync(
+            KeyboardLightingControlMode.WindowsDynamicLighting, CancellationToken.None);
+        try
+        {
+            await saveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Task<ControlOperationResult> policy = context.Runtime.SetExternalLightingOverridePolicyAsync(
+                true, CancellationToken.None);
+            Assert.False(policy.IsCompleted);
+            releaseSave.TrySetResult();
+
+            Assert.Equal(ControlOperationStatus.Stored, (await delegation).Status);
+            Assert.Equal(ControlOperationStatus.Blocked, (await policy).Status);
+            BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+            Assert.Equal(KeyboardLightingControlMode.WindowsDynamicLighting,
+                saved.Preferences.KeyboardLightingControlMode);
+            Assert.False(saved.Preferences.AlwaysOverrideExternalLightingChanges);
+            Assert.False(context.Runtime.GetStatus().AlwaysOverrideExternalLightingChanges);
+        }
+        finally
+        {
+            releaseSave.TrySetResult();
+            await delegation;
+        }
+    }
+
+    [Fact]
+    public async Task LightingRefreshRateStoredForReconnectPublishesTheCommittedSelection()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = false;
+
+        ControlOperationResult result = await context.Runtime.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Empty(context.Device.LightingRefreshRates);
+        Assert.Equal(LightingRefreshRate.SixtyHz, context.Runtime.GetStatus().LightingRefreshRate);
+        Assert.Equal(LightingRefreshRate.SixtyHz, context.Hub.Published[^1].LightingRefreshRate);
+        Assert.Contains("reconnects", context.Runtime.GetStatus().Message);
+        Assert.Equal(LightingRefreshRate.SixtyHz,
+            (await context.Store.LoadAsync(CancellationToken.None)).Preferences.LightingRefreshRate);
+    }
+
+    [Fact]
+    public async Task LightingRefreshRateRollbackFailureRetainsTheCommittedSelectionInStatus()
+    {
+        bool failSave = false;
+        TestContext context = CreateContext(providerAvailable: true,
+            transactionBoundary: (boundary, _) =>
+            {
+                if (failSave && boundary == BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    throw new IOException("rollback unavailable");
+                }
+                return Task.CompletedTask;
+            });
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.BeforeLightingRefreshRateSet = () => failSave = true;
+        context.Device.LightingRefreshRateFailure = new IOException("renderer unavailable");
+
+        ControlOperationResult result = await context.Runtime.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("could not be rolled back", result.Message);
+        Assert.Equal(result.Message, context.Runtime.GetStatus().Message);
+        Assert.Equal(LightingRefreshRate.SixtyHz, context.Runtime.GetStatus().LightingRefreshRate);
+        Assert.Equal(LightingRefreshRate.SixtyHz,
+            (await context.Store.LoadAsync(CancellationToken.None)).Preferences.LightingRefreshRate);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OptionalSensorsPreserveFanDataWhenSelectedTemperatureFails(bool warmCache)
+    {
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(47, 52));
+        TestContext context = CreateContext(providerAvailable: true, fanTemperatureSource: temperatures);
+        context.Device.FanRpm = 2700;
+        if (warmCache)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+        int capabilitiesBefore = context.Device.CapabilitiesReadCalls;
+        temperatures.BeforeRead = _ => throw new IOException("temperature unavailable");
+
+        await context.Runtime.ObserveAsync(
+            LiveReadingSensors.FanSpeeds | LiveReadingSensors.CpuTemperature,
+            CancellationToken.None);
+
+        Assert.Equal([(true, false)], temperatures.Requests);
+        Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings!.CpuTemperatureCelsius);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Equal(warmCache, context.Device.CapabilitiesReadCalls == capabilitiesBefore);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OptionalSensorsPropagateCancellationFromTemperatureRead(bool warmCache)
+    {
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(47, 52));
+        TestContext context = CreateContext(providerAvailable: true, fanTemperatureSource: temperatures);
+        if (warmCache)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+        }
+        using var cancellation = new CancellationTokenSource();
+        temperatures.BeforeRead = token =>
+        {
+            cancellation.Cancel();
+            token.ThrowIfCancellationRequested();
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.Runtime.ObserveAsync(
+            LiveReadingSensors.CpuTemperature, cancellation.Token));
+        Assert.Equal([(true, false)], temperatures.Requests);
+    }
+
     [Fact]
     public async Task QuarantinedConfiguration_OrdinaryThermalTransitionsStayReadOnly()
     {
@@ -26034,9 +26247,25 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public FirmwareVersions Capture() => versions;
     }
 
+    private sealed class TestLifecycleNotificationBackend : IWindowsLifecycleNotificationBackend, IDisposable
+    {
+        private Action<ServiceLifecycleTrigger>? publish;
+
+        public IDisposable Subscribe(Action<ServiceLifecycleTrigger> callback)
+        {
+            publish = callback;
+            return this;
+        }
+
+        public void Publish(ServiceLifecycleTrigger trigger) => publish?.Invoke(trigger);
+
+        public void Dispose() => publish = null;
+    }
+
     private sealed class FixedFanTemperatureSource(FanTemperatureReadings readings)
         : IFanTemperatureSource
     {
+        public Action<CancellationToken>? BeforeRead { get; set; }
         public int ReadCount { get; private set; }
 
         public List<(bool IncludeCpu, bool IncludeGpu)> Requests { get; } = [];
@@ -26057,6 +26286,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             ReadCount++;
             Requests.Add((includeCpu, includeGpu));
+            BeforeRead?.Invoke(cancellationToken);
             return ValueTask.FromResult(new FanTemperatureReadings(
                 includeCpu ? readings.CpuCelsius : null,
                 includeGpu ? readings.GpuCelsius : null));
