@@ -36,6 +36,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly Func<bool>? driverModeWriteAllowed;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly object effectSync = new();
@@ -71,7 +72,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry pendingDisposals)
+        PendingDisposalRegistry pendingDisposals,
+        Func<bool>? driverModeWriteAllowed = null)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = actor.Session;
@@ -83,6 +85,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));
+        this.driverModeWriteAllowed = driverModeWriteAllowed;
         Capabilities = CreateCapabilities(admitted && matrixWriter is not null);
     }
 
@@ -234,6 +237,89 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         finally
         {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<LightingLowPowerOffResult> TurnOffForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stillSuspending);
+        LightingRendererOwnershipState before = OwnershipState;
+        if (!stillSuspending() || cancellationToken.IsCancellationRequested
+            || !Capabilities.LightingEffects.Contains(LightingEffect.Off))
+        {
+            return new(before, LightingLowPowerOffOutcome.KnownNotApplied,
+                "The suspend boundary or admitted Off operation is unavailable.");
+        }
+        try
+        {
+            await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            return new(before, LightingLowPowerOffOutcome.KnownNotApplied, exception.Message);
+        }
+        bool retired = false;
+        bool submissionStarted = false;
+        bool confirmedOff = false;
+        try
+        {
+            if (!stillSuspending())
+            {
+                return new(before, LightingLowPowerOffOutcome.KnownNotApplied,
+                    "The suspend boundary ended before renderer retirement.");
+            }
+            // Drain before querying: an old frame must never overtake Off.
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            before = OwnershipState;
+            retired = true;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!stillSuspending())
+            {
+                return new(before, LightingLowPowerOffOutcome.KnownNotApplied,
+                    "The suspend boundary ended while the renderer drained.");
+            }
+            byte baselineRaw = await QueryBrightnessRawCoreAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!stillSuspending())
+            {
+                return new(before, LightingLowPowerOffOutcome.KnownNotApplied,
+                    "The suspend boundary ended before keyboard Off was submitted.");
+            }
+            if (baselineRaw != 0)
+            {
+                submissionStarted = true;
+                await SetBrightnessAndVerifyCoreAsync(0, cancellationToken).ConfigureAwait(false);
+            }
+            confirmedOff = true;
+            return new(before, LightingLowPowerOffOutcome.ConfirmedOff);
+        }
+        catch (Exception exception)
+        {
+            LightingLowPowerOffOutcome outcome = submissionStarted
+                && exception is not BladeWriteException
+                { SubmissionState: WriteSubmissionState.KnownNotApplied }
+                ? LightingLowPowerOffOutcome.Indeterminate
+                : LightingLowPowerOffOutcome.KnownNotApplied;
+            return new(before, outcome, exception.Message);
+        }
+        finally
+        {
+            if (retired)
+            {
+                lock (effectSync)
+                {
+                    activeEffect = null;
+                    activeKeyTriggeredEffect = null;
+                    activeUsesSelectableCadence = false;
+                    pendingKeyTriggeredPulses.Clear();
+                    lastDeliveredState = confirmedOff ? LightingSettingsFactory.Off() : null;
+                    lastKnownBrightnessRaw = confirmedOff ? (byte)0 : null;
+                }
+                SetOwnership(LightingRendererOwnershipState.None);
+            }
             operationGate.Release();
         }
     }
@@ -712,20 +798,38 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    public async Task<bool?> ReleaseDriverModeAsync(
+    public Task<bool?> ReleaseDriverModeAsync(CancellationToken cancellationToken) =>
+        ReleaseDriverModeCoreAsync(null, cancellationToken);
+
+    public Task<bool?> ReleaseDriverModeForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken) =>
+        ReleaseDriverModeCoreAsync(stillSuspending, cancellationToken);
+
+    private async Task<bool?> ReleaseDriverModeCoreAsync(
+        Func<bool>? stillSuspending,
         CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (stillSuspending?.Invoke() == false)
+            {
+                return null;
+            }
             await StopStreamCoreAsync().ConfigureAwait(false);
             RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
+            if (stillSuspending?.Invoke() == false)
+            {
+                return null;
+            }
             if (current == RazerDeviceMode.Driver)
             {
                 await SetDeviceModeCoreAsync(
                     RazerDeviceMode.Normal,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    stillSuspending).ConfigureAwait(false);
             }
 
             RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
@@ -760,16 +864,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    private Task<LightingRendererOwnershipState> CloseAsync()
+    public Task<LightingRendererOwnershipState> InvalidateForLowPowerAsync() =>
+        CloseAsync(restoreDriverMode: false);
+
+    private Task<LightingRendererOwnershipState> CloseAsync(bool restoreDriverMode = true)
     {
         lock (lifecycleSync)
         {
             closing = true;
-            return closeTask ??= CloseCoreAsync();
+            return closeTask ??= CloseCoreAsync(restoreDriverMode);
         }
     }
 
-    private async Task<LightingRendererOwnershipState> CloseCoreAsync()
+    private async Task<LightingRendererOwnershipState> CloseCoreAsync(bool restoreDriverMode)
     {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
@@ -777,7 +884,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             await StopStreamCoreAsync().ConfigureAwait(false);
             LightingRendererOwnershipState observed = OwnershipState;
             SetOwnership(LightingRendererOwnershipState.None);
-            await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
+            if (restoreDriverMode)
+            {
+                await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                // Only this retiring port relinquishes mode ownership. The shared
+                // close task keeps subsequent disposal write-free as well.
+                ownsDriverMode = false;
+            }
             if (matrixWriter is not null)
             {
                 await matrixWriter.DisposeAsync().ConfigureAwait(false);
@@ -967,7 +1083,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
     private async Task SetDeviceModeCoreAsync(
         RazerDeviceMode mode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? writeAllowed = null)
     {
         byte[] arguments = DeviceModeProtocol.CreateSetArguments(mode);
         await ExecuteWriteCoreAsync(
@@ -976,7 +1093,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 DeviceModeProtocol.SetOperationId,
                 arguments,
                 arguments.Length,
-                payload => DeviceModeProtocol.TryDecodeSet(payload.Span, mode)),
+                payload => DeviceModeProtocol.TryDecodeSet(payload.Span, mode))
+            {
+                SubmissionAllowed = writeAllowed ?? driverModeWriteAllowed,
+            },
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1077,6 +1197,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
+            if (command.SubmissionAllowed?.Invoke() == false)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The device-mode write was blocked by a changed power boundary.");
+            }
             result = await session.ExecuteAsync(
                 command,
                 () => TransactionIdAssignment.Valid(AllocateCommandTransaction()),

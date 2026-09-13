@@ -351,16 +351,28 @@ public sealed class WindowsServiceLifecycleEventSource
             return;
         }
 
+        if (trigger is ServiceLifecycleTrigger.Suspending or ServiceLifecycleTrigger.Resumed
+            or ServiceLifecycleTrigger.DisplayOn)
+        {
+            bool wasSuspending = lowPowerGate.IsActive;
+            if (!lowPowerGate.TryApply(trigger == ServiceLifecycleTrigger.Suspending,
+                lowPowerGate.GetTimestamp(), out _, newResume: trigger == ServiceLifecycleTrigger.Resumed))
+            {
+                return;
+            }
+            if (trigger == ServiceLifecycleTrigger.DisplayOn && wasSuspending)
+            {
+                // DisplayOn is the existing active-state recovery signal when
+                // this process missed resume. Run the same deduplicated path.
+                Interlocked.Or(ref pendingTriggers, ResumedBit);
+            }
+        }
+
         if (trigger == ServiceLifecycleTrigger.DisplayOn)
         {
             // Deliberately asymmetric: display-off is not a reliable sleep signal,
             // while display-on proves the system is active and is safe to clear.
-            if (lowPowerGate.Exit())
-            {
-                logger.LogInformation(
-                    "Low-power gate exited after Windows lifecycle notification {Trigger}.",
-                    trigger);
-            }
+            logger.LogInformation("Windows display activity cleared the low-power gate.");
         }
 
         if (trigger is ServiceLifecycleTrigger.DisplayOff
@@ -375,12 +387,7 @@ public sealed class WindowsServiceLifecycleEventSource
 
         if (trigger == ServiceLifecycleTrigger.Suspending)
         {
-            if (lowPowerGate.Enter())
-            {
-                logger.LogInformation(
-                    "Low-power gate entered after Windows lifecycle notification {Trigger}.",
-                    trigger);
-            }
+            logger.LogInformation("Windows suspend notification entered the low-power gate.");
             lock (resumeDeduplicationSync)
             {
                 hasPublishedResume = false;
@@ -390,12 +397,7 @@ public sealed class WindowsServiceLifecycleEventSource
         {
             // Clear before resume deduplication so a suppressed duplicate cannot
             // leave the level latched after Windows is active again.
-            if (lowPowerGate.Exit())
-            {
-                logger.LogInformation(
-                    "Low-power gate exited after Windows lifecycle notification {Trigger}.",
-                    trigger);
-            }
+            logger.LogInformation("Windows resume notification cleared the low-power gate.");
             lock (resumeDeduplicationSync)
             {
                 long now = getTickCount();

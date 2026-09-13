@@ -201,6 +201,10 @@ public sealed class IpcMessageCodecTests
             new ApplyOneShotLaptopControl(
                 OneShotLaptopControl.FunctionKeyPrimary,
                 FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
+        new ReportSessionPowerTransitionRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 10, 1, 20, true),
+        new ReportSessionPowerTransitionRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 10, 2, 30, false),
         new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
     };
 
@@ -514,7 +518,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(54, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1101,7 +1105,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(53, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(54, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

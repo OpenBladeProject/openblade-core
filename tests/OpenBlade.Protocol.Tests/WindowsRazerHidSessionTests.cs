@@ -922,6 +922,47 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task ModeSubmissionAdmission_IsRecheckedAfterQueuedWorkFinishes()
+    {
+        bool active = true;
+        var release = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo((_, _, _, _, _) => release.Task, GetSuccess(1, 1, 1, []));
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> first = actor.ExecuteAsync(
+            new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default);
+        await io.WaitForCallsAsync(1);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> driver = actor.ExecuteAsync(
+            new RazerCommandSpec(0, 4, [3, 0], 2) { SubmissionAllowed = () => active },
+            () => TransactionIdAssignment.Valid(2), Timeout, default);
+
+        active = false;
+        release.TrySetResult(SetSuccessResult());
+        Assert.Null((await first).Failure);
+        HidSessionResult<ReadOnlyMemory<byte>> result = await driver;
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.Guard, result.Diagnostic?.Phase);
+        Assert.Equal(2, io.Calls.Count);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Fact]
+    public async Task ModeSubmissionAdmission_IsRecheckedAfterNativeSafetyGuard()
+    {
+        bool active = true;
+        var io = new ScriptedIo();
+        await using WindowsRazerHidSession actor = CreateActor(io, new CallbackGuard(() => active = false));
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new RazerCommandSpec(0, 4, [3, 0], 2) { SubmissionAllowed = () => active },
+            () => TransactionIdAssignment.Valid(1), Timeout, default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.Empty(io.Calls);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+    }
+
+    [Fact]
     public async Task SetAndGetReuseOneDeadlineTokenWithOnlyRemainingTime()
     {
         var time = new ManualTimeProvider();

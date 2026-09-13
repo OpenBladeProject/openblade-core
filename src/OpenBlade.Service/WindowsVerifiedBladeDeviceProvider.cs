@@ -60,7 +60,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         Action? onClosing = null,
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
         IGpuActivitySource? gpuActivitySource = null,
-        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null,
+        LowPowerGate? lowPowerGate = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -81,7 +82,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             logger,
             effectiveShutdownBudget,
             onClosing,
-            preWriteRetryDelay ?? Task.Delay);
+            preWriteRetryDelay ?? Task.Delay,
+            lowPowerGate);
     }
 
     public void SetAllowUntestedFirmware(bool enabled)
@@ -292,6 +294,49 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 DriverModeRestoreOutcome.NotOwned))
             : device.InvalidateLightingRendererAsync(cancellationToken);
 
+    public Task<LightingRendererInvalidationResult> InvalidateLightingRendererForLowPowerAsync(
+        CancellationToken cancellationToken) =>
+        device.InvalidateLightingRendererAsync(cancellationToken, lowPower: true);
+
+    public Task<LightingRendererInvalidationResult> InvalidateLightingRendererForLowPowerAsync(
+        Func<bool> stillRetiring,
+        CancellationToken cancellationToken) =>
+        device.InvalidateLightingRendererAsync(cancellationToken, lowPower: true, stillRetiring);
+
+    public Task<LightingLowPowerOffResult?> TurnOffRetainedLightingForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken) =>
+        device.TurnOffRetainedLightingForLowPowerAsync(
+            () => Volatile.Read(ref disposed) == 0 && stillSuspending()
+                && FreshLightingCleanupAdmission(),
+            stillSuspending,
+            cancellationToken);
+
+    public Task<bool?> ReleaseRetainedDriverModeForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken) =>
+        device.ReleaseRetainedDriverModeForLowPowerAsync(
+            () => Volatile.Read(ref disposed) == 0 && stillSuspending()
+                && FreshLightingCleanupAdmission(),
+            stillSuspending,
+            cancellationToken);
+
+    private bool FreshLightingCleanupAdmission()
+    {
+        try
+        {
+            BatteryValidationProbeResult result = probe();
+            UpdateFirmwareCompatibility(MapFirmwareCompatibility(result.FirmwareCompatibility));
+            // Presentation grace does not authorize a new lifecycle write.
+            return IsReadyClassification(result.Classification)
+                && IsOwnedRendererFirmwareAccessAllowed();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public Task<LightingRendererOwnershipState> RelinquishLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
@@ -344,6 +389,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly TimeSpan shutdownBudget;
         private readonly Action? onClosing;
         private readonly Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay;
+        private readonly LowPowerGate? lowPowerGate;
         private readonly object lifecycleSync = new();
         private readonly object gpuClockOffsetManagementSync = new();
         private readonly object lightingPortOpenDiagnosticSync = new();
@@ -360,6 +406,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private GpuClockOffsetManagementState gpuClockOffsetManagementState;
         private GpuClockOffsetCapabilities? confirmedManagedGpuClockOffsets;
         private IProductionLightingPort? lightingPort;
+        private Task<LightingRendererOwnershipState>? lightingPortRetirement;
         private IProductionLightingPort? lightingRefreshRateReconciledPort;
         private int reconciledLightingRefreshRate = -1;
         // Desired Windows playback state, retained independently of any one
@@ -423,7 +470,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
             TimeSpan shutdownBudget,
             Action? onClosing,
-            Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay)
+            Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay,
+            LowPowerGate? lowPowerGate)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
@@ -434,6 +482,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             this.shutdownBudget = shutdownBudget;
             this.onClosing = onClosing;
             this.preWriteRetryDelay = preWriteRetryDelay;
+            this.lowPowerGate = lowPowerGate;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -1931,6 +1980,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 IProductionLightingPort port = await GetLightingPortForWriteCoreAsync(
                     LightingPortOperation.LightingChange,
                     cancellationToken).ConfigureAwait(false);
+                ThrowIfOrdinaryLightingWriteBlocked();
                 await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
                     .ConfigureAwait(false);
                 SetDesiredLightingRefreshRate(refreshRate);
@@ -2024,6 +2074,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         cancellationToken).ConfigureAwait(false);
                 if (port is not null)
                 {
+                    ThrowIfOrdinaryLightingWriteBlocked();
                     await port.EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -2062,10 +2113,63 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await GetLightingPortCoreAsync(
                         LightingPortOperation.KeyboardDriverModeMaintenance,
                         cancellationToken).ConfigureAwait(false);
+                ThrowIfOrdinaryLightingWriteBlocked();
                 return port is null
                     ? null
                     : await port.MaintainDriverModeAsync(cancellationToken)
                         .ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        internal async Task<LightingLowPowerOffResult?> TurnOffRetainedLightingForLowPowerAsync(
+            Func<bool> freshAdmission,
+            Func<bool> stillSuspending,
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort? port = lightingPort;
+                if (port is null)
+                {
+                    return null;
+                }
+                if (!freshAdmission() || !stillSuspending())
+                {
+                    return new(port.OwnershipState,
+                        LightingLowPowerOffOutcome.KnownNotApplied,
+                        "Fresh exact-device admission or the suspend boundary is unavailable.");
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                return await port.TurnOffForLowPowerAsync(stillSuspending, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        internal async Task<bool?> ReleaseRetainedDriverModeForLowPowerAsync(
+            Func<bool> freshAdmission,
+            Func<bool> stillSuspending,
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort? port = lightingPort;
+                if (port is null || !freshAdmission() || !stillSuspending())
+                {
+                    return null;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                return await port.ReleaseDriverModeForLowPowerAsync(stillSuspending, cancellationToken)
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -2096,11 +2200,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         internal async Task<LightingRendererInvalidationResult>
             InvalidateLightingRendererAsync(
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool lowPower = false,
+            Func<bool>? stillRetiring = null)
         {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (stillRetiring?.Invoke() == false)
+                {
+                    return new(LightingRendererOwnershipState.None, DriverModeRestoreOutcome.NotOwned);
+                }
                 IProductionLightingPort? current = lightingPort;
                 if (current is null)
                 {
@@ -2109,12 +2219,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         DriverModeRestoreOutcome.NotOwned);
                 }
 
-                lightingPort = null;
                 ClearLightingRefreshRateReconciliation(current);
                 LightingRendererOwnershipState ownership;
                 try
                 {
-                    ownership = await current.InvalidateAsync().ConfigureAwait(false);
+                    lightingPortRetirement ??= lowPower
+                        ? current.InvalidateForLowPowerAsync()
+                        : current.InvalidateAsync();
+                    ownership = await lightingPortRetirement.WaitAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    lightingPortRetirement = null;
+                    lightingPort = null;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // The close owns its own lifetime. Retain both its task and
+                    // the port so cancellation neither invents a renderer fault
+                    // nor admits another hardware owner before it finishes.
+                    throw;
                 }
                 catch
                 {
@@ -2505,6 +2627,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         "The exact-device lighting session does not support the requested keyboard layout.");
                 }
 
+                ThrowIfOrdinaryLightingWriteBlocked();
+
                 await port.SetLightingAsync(value, cancellationToken).ConfigureAwait(false);
             }
             catch (CapabilityUnavailableException)
@@ -2578,6 +2702,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         "The exact-device lighting session does not support keyboard brightness.");
                 }
 
+                ThrowIfOrdinaryLightingWriteBlocked();
                 return await port.StepBrightnessAsync(direction, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -2636,6 +2761,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         "The key-triggered lighting renderer is not active.");
                 }
 
+                ThrowIfOrdinaryLightingWriteBlocked();
+
                 await port.PulseReactiveKeyAsync(pulse, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -2676,6 +2803,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     // The exact-device port is already admitted and owns its
                     // own writer gate. Avoid re-entering the provider-wide HID
                     // gate on every 20 Hz frame.
+                    ThrowIfOrdinaryLightingWriteBlocked();
                     await ownedPort.PushAmbientLightingFrameAsync(frame, cancellationToken)
                         .ConfigureAwait(false);
                     return;
@@ -2737,6 +2865,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         WriteSubmissionState.KnownNotApplied,
                         "The exact-device lighting session does not support ambient lighting frames.");
                 }
+
+                ThrowIfOrdinaryLightingWriteBlocked();
 
                 await port.PushAmbientLightingFrameAsync(frame, cancellationToken)
                     .ConfigureAwait(false);
@@ -2809,6 +2939,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         WriteSubmissionState.KnownNotApplied,
                         "The exact-device lighting session does not support playback mute indication.");
                 }
+
+                ThrowIfOrdinaryLightingWriteBlocked();
 
                 await port.SetPlaybackMuteIndicatorAsync(muted, cancellationToken)
                     .ConfigureAwait(false);
@@ -2904,6 +3036,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingPortOperation operation,
             CancellationToken cancellationToken)
         {
+            await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (lowPowerGate?.IsActive == true)
+            {
+                // A read during suspend may inspect a retained session, but must
+                // not open one or reconcile cadence/playback state as a side effect.
+                return lightingPort;
+            }
             if (lightingPort is { } retainedPort)
             {
                 try
@@ -2927,7 +3066,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             HidSessionResult<IProductionLightingPort> opened;
             try
             {
-                opened = await lightingFactory.OpenAsync(cancellationToken)
+                opened = await (lowPowerGate is null
+                    ? lightingFactory.OpenAsync(cancellationToken)
+                    : lightingFactory.OpenAsync(() => !lowPowerGate.IsActive, cancellationToken))
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2980,6 +3121,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 try
                 {
+                    ThrowIfOrdinaryLightingWriteBlocked();
                     await port.SetPlaybackMuteIndicatorAsync(
                         muted != 0,
                         cancellationToken).ConfigureAwait(false);
@@ -3011,6 +3153,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
             if (port.Capabilities.SupportedLightingRefreshRates.Contains(refreshRate))
             {
+                ThrowIfOrdinaryLightingWriteBlocked();
                 await port.SetLightingRefreshRateAsync(refreshRate, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -3035,9 +3178,20 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingPortOperation operation,
             CancellationToken cancellationToken)
         {
+            ThrowIfOrdinaryLightingWriteBlocked();
+            try
+            {
+                await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The lighting write was canceled while the previous port was still closing.");
+            }
             IProductionLightingPort? port = await GetLightingPortCoreAsync(
                 operation,
                 cancellationToken).ConfigureAwait(false);
+            ThrowIfOrdinaryLightingWriteBlocked();
             if (port is not null)
             {
                 return port;
@@ -3046,6 +3200,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             throw new BladeWriteException(
                 WriteSubmissionState.KnownNotApplied,
                 GetLightingPortOpenFailureMessage(operation));
+        }
+
+        private async Task AwaitLightingPortRetirementCoreAsync(CancellationToken cancellationToken)
+        {
+            if (lightingPortRetirement is { } retirement)
+            {
+                await retirement.WaitAsync(cancellationToken).ConfigureAwait(false);
+                lightingPortRetirement = null;
+                lightingPort = null;
+            }
         }
 
         private void ReportLightingPortOpenDiagnostic(
@@ -3305,6 +3469,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
             catch
             {
+            }
+        }
+
+        private void ThrowIfOrdinaryLightingWriteBlocked()
+        {
+            if (lowPowerGate?.IsActive == true)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Ordinary keyboard lighting writes are deferred during a low-power transition.");
             }
         }
 

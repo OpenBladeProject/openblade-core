@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 53;
+    public const int ProtocolVersion = 54;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -280,6 +280,11 @@ public static class IpcMessageCodec
             SetFullChargeOverrideRequest => true,
             ApplyOneShotLaptopControlRequest apply =>
                 apply.Value is not null && apply.Value.IsWellFormed(),
+            ReportSessionPowerTransitionRequest report =>
+                report.InstanceId != Guid.Empty
+                && report.InstanceStartedQpc > 0
+                && report.Sequence > 0
+                && report.TimestampQpc >= report.InstanceStartedQpc,
             ShutdownOpenBladeRequest => true,
             _ => false,
         };

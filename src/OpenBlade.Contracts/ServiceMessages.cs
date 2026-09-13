@@ -51,6 +51,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
 [JsonDerivedType(typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl")]
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
+[JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)

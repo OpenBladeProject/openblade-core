@@ -106,6 +106,14 @@ public static class ServiceRequestAccessPolicy
                         : null);
         }
 
+        if (request is ReportSessionPowerTransitionRequest)
+        {
+            return new ServiceRequestAccessDecision(GetAccess(client, authority),
+                IsActiveLocalInteractiveClient(client, authority)
+                    ? null
+                    : "Session power notifications require the active local interactive Windows session.");
+        }
+
         if (request is SetThermalControlPolicyRequest
             or AcknowledgeThermalPolicyUpgradeDisclosureRequest)
         {

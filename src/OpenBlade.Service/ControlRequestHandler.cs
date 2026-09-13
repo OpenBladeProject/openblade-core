@@ -11,6 +11,7 @@ public sealed class ControlRequestHandler
     private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
     private readonly IServiceShutdownSignal shutdownSignal;
     private readonly IInteractiveSessionAuthority sessionAuthority;
+    private readonly ServiceSessionPowerTransitionCoordinator? powerTransitions;
 
     internal ControlRequestHandler(
         IServiceControlRuntime runtime,
@@ -39,7 +40,8 @@ public sealed class ControlRequestHandler
         IServiceControlRuntime runtime,
         IDiagnosticArchiveProvider diagnosticArchiveProvider,
         IServiceShutdownSignal shutdownSignal,
-        IInteractiveSessionAuthority sessionAuthority)
+        IInteractiveSessionAuthority sessionAuthority,
+        ServiceSessionPowerTransitionCoordinator? powerTransitions = null)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.diagnosticArchiveProvider = diagnosticArchiveProvider
@@ -48,6 +50,7 @@ public sealed class ControlRequestHandler
             ?? throw new ArgumentNullException(nameof(shutdownSignal));
         this.sessionAuthority = sessionAuthority
             ?? throw new ArgumentNullException(nameof(sessionAuthority));
+        this.powerTransitions = powerTransitions;
     }
 
     internal async Task<ServiceResponse> HandleAsync(
@@ -114,6 +117,19 @@ public sealed class ControlRequestHandler
         if (accessDecision.Rejection is not null)
         {
             return Failure(request.RequestId, accessDecision.Rejection);
+        }
+
+        if (request is ReportSessionPowerTransitionRequest transition)
+        {
+            // Lifecycle ingress must latch admission before activation can load
+            // a profile and perform unrelated hardware work.
+            return powerTransitions is null
+                ? Failure(request.RequestId, "Session power notification handling is unavailable.")
+                : Result(request.RequestId, await powerTransitions.ReportAsync(
+                    transition, client,
+                    () => ServiceRequestAccessPolicy.IsActiveLocalInteractiveClient(
+                        client, sessionAuthority),
+                    cancellationToken).ConfigureAwait(false));
         }
 
         if (activateUserConfiguration

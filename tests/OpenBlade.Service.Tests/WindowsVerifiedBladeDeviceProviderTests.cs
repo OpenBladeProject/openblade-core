@@ -843,6 +843,278 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task LowPowerCleanup_WithoutRetainedPortDoesNotProbeOrAcquireHardware()
+    {
+        int probeCount = 0;
+        var port = new FakeLightingPort();
+        var queryFactory = new FakeQueryFactory();
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeCount++;
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(queryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+
+        Assert.Null(await provider.TurnOffRetainedLightingForLowPowerAsync(
+            () => true, default));
+        Assert.Null(await provider.ReleaseRetainedDriverModeForLowPowerAsync(
+            () => true, default));
+
+        Assert.Equal(1, probeCount);
+        Assert.Equal(0, lightingFactory.OpenCount);
+        Assert.Equal(0, queryFactory.OpenCount);
+        Assert.Equal(0, port.DriverModeEnsureCount);
+        Assert.Equal(0, port.DriverModeReleaseCount);
+        Assert.Equal(0, port.LowPowerOffCount);
+    }
+
+    [Fact]
+    public async Task LowPowerCleanup_FreshlyAdmitsRetainedPortWithoutReplayingOtherWrites()
+    {
+        int probeCount = 0;
+        var port = new FakeLightingPort(
+            supportedLightingRefreshRates: new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            });
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeCount++;
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings intent = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        await device.SetLightingAsync(intent, default);
+        int probesBeforeCleanup = probeCount;
+        int readsBeforeCleanup = port.ReadStateCalls;
+        int muteWritesBeforeCleanup = port.PlaybackMuteIndicatorStates.Count;
+        LightingRefreshRate[] appliedRefreshRates = port.LightingRefreshRates.ToArray();
+        provider.SetLightingRefreshRate(LightingRefreshRate.SixtyHz);
+
+        LightingLowPowerOffResult result = Assert.IsType<LightingLowPowerOffResult>(
+            await provider.TurnOffRetainedLightingForLowPowerAsync(() => true, default));
+        Assert.False(await provider.ReleaseRetainedDriverModeForLowPowerAsync(
+            () => true, default));
+
+        Assert.Equal(LightingLowPowerOffOutcome.ConfirmedOff, result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.Static, result.OwnershipBefore);
+        Assert.Equal(probesBeforeCleanup + 2, probeCount);
+        Assert.Equal(1, port.LowPowerOffCount);
+        Assert.Equal(1, port.DriverModeReleaseCount);
+        Assert.Equal(0, port.DriverModeEnsureCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Equal(0, port.DisposeCount);
+        Assert.Equal([intent], port.Writes);
+        Assert.Equal(readsBeforeCleanup, port.ReadStateCalls);
+        Assert.Equal(muteWritesBeforeCleanup, port.PlaybackMuteIndicatorStates.Count);
+        Assert.Equal(appliedRefreshRates, port.LightingRefreshRates);
+    }
+
+    [Theory]
+    [InlineData(BatteryValidationProbeClassification.EnumerationFailed, false)]
+    [InlineData(BatteryValidationProbeClassification.ConflictBlocked, false)]
+    [InlineData(BatteryValidationProbeClassification.Ready, true)]
+    public async Task LowPowerCleanup_FreshProbeFailureCannotUseRecentReadyFallback(
+        BatteryValidationProbeClassification failure,
+        bool probeThrows)
+    {
+        bool rejectProbe = false;
+        int rejectedProbeCount = 0;
+        var port = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                if (!rejectProbe)
+                {
+                    return Probe(BatteryValidationProbeClassification.Ready);
+                }
+
+                rejectedProbeCount++;
+                return probeThrows
+                    ? throw new IOException("Synthetic probe failure.")
+                    : Probe(failure);
+            },
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings intent = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        await device.SetLightingAsync(intent, default);
+        rejectProbe = true;
+
+        LightingLowPowerOffResult result = Assert.IsType<LightingLowPowerOffResult>(
+            await provider.TurnOffRetainedLightingForLowPowerAsync(() => true, default));
+        Assert.Null(await provider.ReleaseRetainedDriverModeForLowPowerAsync(
+            () => true, default));
+
+        Assert.Equal(LightingLowPowerOffOutcome.KnownNotApplied, result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.Static, result.OwnershipBefore);
+        Assert.Equal(2, rejectedProbeCount);
+        Assert.Equal(0, port.LowPowerOffCount);
+        Assert.Equal(0, port.DriverModeReleaseCount);
+        Assert.Equal(0, port.DriverModeEnsureCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Equal([intent], port.Writes);
+    }
+
+    [Fact]
+    public async Task LowPowerCleanup_BoundaryClearingDuringFreshProbePreventsSubmission()
+    {
+        bool expireBoundary = false;
+        bool stillSuspending = true;
+        var port = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                if (expireBoundary)
+                {
+                    stillSuspending = false;
+                }
+
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50), default);
+        expireBoundary = true;
+
+        LightingLowPowerOffResult result = Assert.IsType<LightingLowPowerOffResult>(
+            await provider.TurnOffRetainedLightingForLowPowerAsync(
+                () => stillSuspending, default));
+        stillSuspending = true;
+        Assert.Null(await provider.ReleaseRetainedDriverModeForLowPowerAsync(
+            () => stillSuspending, default));
+
+        Assert.Equal(LightingLowPowerOffOutcome.KnownNotApplied, result.Outcome);
+        Assert.Equal(0, port.LowPowerOffCount);
+        Assert.Equal(0, port.DriverModeReleaseCount);
+        Assert.Equal(0, port.DriverModeEnsureCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingWriteQueuedBeforeLowPower_DoesNotOpenOrWriteAfterBoundaryEnters(
+        bool retainPort)
+    {
+        var lowPowerGate = new LowPowerGate();
+        var port = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory,
+            lowPowerGate: lowPowerGate);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings intent = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        if (retainPort)
+        {
+            await device.SetLightingAsync(intent, default);
+        }
+
+        var hardwareGate = Assert.IsType<SemaphoreSlim>(device.GetType()
+            .GetField(
+                "hardwareOperationGate",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(device));
+        await hardwareGate.WaitAsync();
+        Task queued;
+        try
+        {
+            queued = device.SetLightingAsync(intent, default);
+            Assert.False(queued.IsCompleted);
+            lowPowerGate.Enter();
+        }
+        finally
+        {
+            hardwareGate.Release();
+        }
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => queued.WaitAsync(TestDeadlockGuard));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(retainPort ? 1 : 0, lightingFactory.OpenCount);
+        Assert.Equal(retainPort ? 1 : 0, port.Writes.Count);
+        Assert.Equal(0, port.DriverModeEnsureCount);
+    }
+
+    [Fact]
+    public async Task LightingFactory_ReceivesTheSharedPowerGateForRetainedModeWrites()
+    {
+        var gate = new LowPowerGate();
+        var factory = new FakeLightingFactory(new FakeLightingPort());
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready), Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(), factory, lowPowerGate: gate);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.ReadDriverModeAsync(default);
+
+        Assert.NotNull(factory.DriverModeWriteAllowed);
+        Assert.True(factory.DriverModeWriteAllowed());
+        gate.Enter();
+        Assert.False(factory.DriverModeWriteAllowed());
+    }
+
+    [Fact]
+    public async Task CanceledLowPowerClose_BlocksReplacementUntilRetainedCloseCompletes()
+    {
+        var gate = new LowPowerGate();
+        var first = new FakeLightingPort { BlockLowPowerClose = true };
+        var second = new FakeLightingPort();
+        var factory = new FakeLightingFactory(first, second);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready), Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(), factory, lowPowerGate: gate);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings intent = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        await device.SetLightingAsync(intent, default);
+        gate.Enter();
+        using var cancellation = new CancellationTokenSource();
+        Task<LightingRendererInvalidationResult> closing =
+            provider.InvalidateLightingRendererForLowPowerAsync(cancellation.Token);
+        await first.LowPowerCloseStarted.Task.WaitAsync(TestDeadlockGuard);
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => closing);
+        Assert.Equal(LightingRendererOwnershipState.Static, first.OwnershipState);
+        gate.Exit();
+
+        using var retryCancellation = new CancellationTokenSource();
+        Task write = device.SetLightingAsync(intent, retryCancellation.Token);
+        Assert.False(write.IsCompleted);
+        Assert.Equal(1, factory.OpenCount);
+        await retryCancellation.CancelAsync();
+        BladeWriteException canceledWrite = await Assert.ThrowsAsync<BladeWriteException>(() => write);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, canceledWrite.SubmissionState);
+        Assert.Equal(1, factory.OpenCount);
+        first.LowPowerCloseRelease.TrySetResult();
+        await device.SetLightingAsync(intent, default).WaitAsync(TestDeadlockGuard);
+
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Single(second.Writes);
+    }
+
+    [Fact]
     public async Task RetainedLightingPort_ReconcilesChangedRefreshRateBeforeReuse()
     {
         var port = new FakeLightingPort(
@@ -2172,6 +2444,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int OpenCount { get; private set; }
 
+        public Func<bool>? DriverModeWriteAllowed { get; private set; }
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+            Func<bool> driverModeWriteAllowed, CancellationToken cancellationToken)
+        {
+            DriverModeWriteAllowed = driverModeWriteAllowed;
+            return OpenAsync(cancellationToken);
+        }
+
         public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
             CancellationToken cancellationToken)
         {
@@ -2271,6 +2552,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int RelinquishCount { get; private set; }
 
+        public bool BlockLowPowerClose { get; init; }
+        public TaskCompletionSource LowPowerCloseStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource LowPowerCloseRelease { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int LowPowerOffCount { get; private set; }
+
         public int DrainCount { get; private set; }
 
         public bool DrainResult { get; init; } = true;
@@ -2320,6 +2609,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             return Task.FromResult<bool?>(false);
         }
 
+        public Task<bool?> ReleaseDriverModeForLowPowerAsync(
+            Func<bool> stillSuspending,
+            CancellationToken cancellationToken) => stillSuspending()
+                ? ReleaseDriverModeAsync(cancellationToken)
+                : Task.FromResult<bool?>(null);
+
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
         {
             ReadStateCalls++;
@@ -2355,6 +2650,24 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 _ => throw new ArgumentOutOfRangeException(),
             };
             return Task.CompletedTask;
+        }
+
+        public Task<LightingLowPowerOffResult> TurnOffForLowPowerAsync(
+            Func<bool> stillSuspending,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LowPowerOffCount++;
+            LightingRendererOwnershipState observed = OwnershipState;
+            if (!stillSuspending())
+            {
+                return Task.FromResult(new LightingLowPowerOffResult(
+                    observed, LightingLowPowerOffOutcome.KnownNotApplied));
+            }
+
+            OwnershipState = LightingRendererOwnershipState.None;
+            return Task.FromResult(new LightingLowPowerOffResult(
+                observed, LightingLowPowerOffOutcome.ConfirmedOff));
         }
 
         public void BlockNextLightingRefreshRate()
@@ -2428,6 +2741,18 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public async Task<LightingRendererOwnershipState> InvalidateAsync()
         {
             LightingRendererOwnershipState observed = OwnershipState;
+            await DisposeAsync();
+            return observed;
+        }
+
+        public async Task<LightingRendererOwnershipState> InvalidateForLowPowerAsync()
+        {
+            LightingRendererOwnershipState observed = OwnershipState;
+            LowPowerCloseStarted.TrySetResult();
+            if (BlockLowPowerClose)
+            {
+                await LowPowerCloseRelease.Task;
+            }
             await DisposeAsync();
             return observed;
         }

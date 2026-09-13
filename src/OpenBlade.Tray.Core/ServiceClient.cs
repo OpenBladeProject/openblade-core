@@ -42,6 +42,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
+    public Task<ControlOperationResult> ReportSessionPowerTransitionAsync(
+        ReportSessionPowerTransitionRequest request,
+        CancellationToken token) => SendMutationAsync(request, token);
+
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
