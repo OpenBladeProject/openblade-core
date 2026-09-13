@@ -3530,13 +3530,12 @@ public sealed partial class MainViewModelTests
     public async Task PerformanceSelection_NormalizesLegacyGpuTuningAfterDraft()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Legacy GPU tuning profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
         Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
@@ -3570,13 +3569,12 @@ public sealed partial class MainViewModelTests
     public async Task PerformanceSelection_PromotesDormantLegacyGpuTuningForCustom()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Dormant legacy GPU tuning profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Custom);
@@ -3595,13 +3593,12 @@ public sealed partial class MainViewModelTests
     public async Task ThermalProfileSave_NormalizesLegacyGpuTuningAfterDraft()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning save profile ready");
-        client.Publish(status);
-        await WaitUntilAsync(() =>
-            viewModel.ConnectionStatus == "Legacy GPU tuning save profile ready");
+        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
             enabled: false,
