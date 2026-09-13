@@ -26,7 +26,7 @@ public static class TestedPlatformCatalog
     [
         new(
             RazerBladeModelCatalog.OpenBladeTargetModelNumber,
-            Array.AsReadOnly(new[] { "3.01", "4.00" }),
+            Array.AsReadOnly(new[] { "3.01", "4.00", "4.01" }),
             Array.AsReadOnly(new[] { "1.04" }),
             Array.AsReadOnly(new[] { "1.5.0.0", "1.6.0.0" })),
         new(
