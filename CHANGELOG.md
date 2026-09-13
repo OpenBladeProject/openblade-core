@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Always turn keyboard lighting off while the display is off, including during Modern Standby entry, and restore the current lighting intent after the display returns and other suppression reasons clear. The previous display-off opt-out is retired; existing saved profiles remain readable. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
+
 ### Fixed
 
 - Preserve resume comparison baselines through unclassified power readings and retain GPU invalidation evidence across repeated resume events, avoiding incorrect transition or retained-state diagnostics. ([#490](https://github.com/OSSBlade/openblade-core/pull/490))
