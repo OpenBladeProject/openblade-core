@@ -136,6 +136,12 @@ public partial class App
             return true;
         }
         if (commandLineArguments is
+            [_, PerformanceRowLayoutSmokeArgument, string performanceRowCapturePath, "--capture"])
+        {
+            _ = RunPerformanceRowLayoutSmokeAsync(performanceRowCapturePath, captureSnapshots: true);
+            return true;
+        }
+        if (commandLineArguments is
             [_, LiveLocalizationSmokeArgument, string localizationSmokeReportPath])
         {
             _ = RunLiveLocalizationSmokeAsync(
@@ -913,7 +919,9 @@ public partial class App
         int Height,
         byte[] Pixels);
 
-    private static async Task RunPerformanceRowLayoutSmokeAsync(string smokeReportPath)
+    private static async Task RunPerformanceRowLayoutSmokeAsync(
+        string smokeReportPath,
+        bool captureSnapshots = false)
     {
         try
         {
@@ -930,10 +938,29 @@ public partial class App
             smokeWindow.SelectLocalizationSnapshotPage("laptop");
             await WaitForSnapshotLayoutAsync();
 
-            (XamlBorder performanceRow, XamlStackPanel performanceText) =
+            (XamlBorder performanceRow, XamlStackPanel performanceText,
+                ResponsiveChoiceSelector performanceSelector) =
                 FindPerformanceSmokeRow(root, "DashboardPerformanceSelector", 2);
-            (XamlBorder fanRow, XamlStackPanel fanText) =
+            (XamlBorder fanRow, XamlStackPanel fanText,
+                ResponsiveChoiceSelector fanSelector) =
                 FindPerformanceSmokeRow(root, "DashboardFanModeSelector", 1);
+            LaptopPerformanceOption[] performanceOptions =
+            [
+                new(PerformancePreset.Balanced, "Balanced"),
+                new(PerformancePreset.Silent, "Silent"),
+                new(PerformancePreset.Custom, "Custom"),
+            ];
+            FanModeOption[] fanOptions =
+            [
+                new(FanMode.Automatic, "Automatic"),
+                new(FanMode.ManualCurve, "Manual curve"),
+                new(FanMode.Maximum, "Maximum"),
+            ];
+            // Programmatic authoritative selection does not raise the user command event.
+            performanceSelector.ItemsSource = performanceOptions;
+            performanceSelector.SelectedItem = performanceOptions[0];
+            fanSelector.ItemsSource = fanOptions;
+            fanSelector.SelectedItem = fanOptions[0];
             XamlTextBlock performanceTitle = performanceText.Children
                 .OfType<XamlTextBlock>().First();
             XamlTextBlock hyperBoostDescription = performanceText.Children
@@ -947,6 +974,11 @@ public partial class App
                 "DashboardSingleLineRowPadding"];
             Thickness wrappedPadding = (Thickness)root.Resources[
                 "DashboardWrappedTitleRowPadding"];
+            double borderHeightDifference = Math.Abs(
+                performanceRow.BorderThickness.Top + performanceRow.BorderThickness.Bottom
+                    - fanRow.BorderThickness.Top - fanRow.BorderThickness.Bottom);
+            double rowHeightTolerance = borderHeightDifference
+                + 1 / (root.XamlRoot?.RasterizationScale ?? 1);
             string DescribeRows() => FormattableString.Invariant(
                 $"host={laptopCardsHost.ActualWidth:F1}, performance={performanceRow.ActualHeight:F1}/{performanceRow.Padding}, fan={fanRow.ActualHeight:F1}/{fanRow.Padding}, titles={performanceTitle.ActualHeight:F1}/{fanTitle.ActualHeight:F1}, description={hyperBoostDescription.Visibility}/{hyperBoostDescription.ActualHeight:F1}");
 
@@ -959,9 +991,14 @@ public partial class App
             RequireResponsiveSelector(
                 performanceRow.Padding.Equals(compactPadding)
                     && fanRow.Padding.Equals(compactPadding)
-                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= 1.1,
+                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= rowHeightTolerance,
                 "The wide single-line performance row did not match the fan row: "
                     + DescribeRows());
+            if (captureSnapshots)
+            {
+                await SaveSnapshotAsync(performanceRow, smokeReportPath + ".compact.png");
+                await SaveSnapshotAsync(fanRow, smokeReportPath + ".fans.png");
+            }
 
             File.WriteAllText(smokeReportPath, "show HyperBoost supporting copy");
             AnimatedVisibility.SetIsVisible(hyperBoostDescription, true);
@@ -972,6 +1009,10 @@ public partial class App
                     && performanceRow.ActualHeight > fanRow.ActualHeight + 1,
                 "The HyperBoost description did not expand the performance row: "
                     + DescribeRows());
+            if (captureSnapshots)
+            {
+                await SaveSnapshotAsync(performanceRow, smokeReportPath + ".description.png");
+            }
 
             File.WriteAllText(smokeReportPath, "hide HyperBoost supporting copy");
             AnimatedVisibility.SetIsVisible(hyperBoostDescription, false);
@@ -979,13 +1020,13 @@ public partial class App
             RequireResponsiveSelector(
                 hyperBoostDescription.Visibility == Visibility.Collapsed
                     && performanceRow.Padding.Equals(compactPadding)
-                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= 1.1,
+                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= rowHeightTolerance,
                 "The performance row did not return to its compact height: "
                     + DescribeRows());
 
             File.WriteAllText(smokeReportPath, "constrain laptop cards");
             laptopCardsHost.Width = 310;
-            laptopCardsHost.HorizontalAlignment = HorizontalAlignment.Left;
+            laptopCardsHost.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
             await WaitForSnapshotLayoutAsync();
             RequireResponsiveSelector(
                 performanceTitle.ActualHeight > fanTitle.ActualHeight + 1
@@ -993,6 +1034,10 @@ public partial class App
                     && fanRow.Padding.Equals(compactPadding),
                 "The constrained performance title did not use wrapped-row padding: "
                     + DescribeRows());
+            if (captureSnapshots)
+            {
+                await SaveSnapshotAsync(performanceRow, smokeReportPath + ".wrapped.png");
+            }
 
             smokeWindow.Close();
             File.WriteAllText(smokeReportPath, "completed");
@@ -1005,7 +1050,8 @@ public partial class App
         }
     }
 
-    private static (XamlBorder Row, XamlStackPanel Text) FindPerformanceSmokeRow(
+    private static (XamlBorder Row, XamlStackPanel Text, ResponsiveChoiceSelector Selector)
+        FindPerformanceSmokeRow(
         DependencyObject root,
         string selectorName,
         int expectedTextBlocks)
@@ -1022,7 +1068,7 @@ public partial class App
                 XamlGrid.GetColumn(candidate) == 0
                 && candidate.Children.OfType<XamlTextBlock>().Count() == expectedTextBlocks);
         return (row, text ?? throw new InvalidOperationException(
-            $"The rendered '{selectorName}' did not have its expected text stack."));
+            $"The rendered '{selectorName}' did not have its expected text stack."), selector);
     }
 
     private static T? FindPerformanceSmokeDescendant<T>(DependencyObject root, string name)
