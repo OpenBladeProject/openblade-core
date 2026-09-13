@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve resume comparison baselines through unclassified power readings and retain GPU invalidation evidence across repeated resume events, avoiding incorrect transition or retained-state diagnostics. ([#490](https://github.com/OSSBlade/openblade-core/pull/490))
+
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
