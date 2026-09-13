@@ -523,9 +523,6 @@ Répórtéd fáílúrés:
   <data name="MainWindow_LaptopNavigationItemText.Content" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>
   </data>
-  <data name="MainWindow_LightingDisplayOffToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Túrn óff kéýbóárd líghtíng wíth thé díspláý ~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_LightingEffectPickerText.AccessibleName" xml:space="preserve">
     <value>[!! Kéýbóárd líghtíng éfféct ~~~~~~~~ !!]</value>
   </data>

@@ -657,9 +657,6 @@
   <data name="Inward" xml:space="preserve">
     <value>向内</value>
   </data>
-  <data name="Keep lighting on" xml:space="preserve">
-    <value>保持灯光开启</value>
-  </data>
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>保留当前 Windows 设置。</value>
   </data>

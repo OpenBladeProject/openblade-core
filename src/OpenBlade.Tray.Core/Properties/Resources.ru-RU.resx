@@ -657,9 +657,6 @@
   <data name="Inward" xml:space="preserve">
     <value>Внутрь</value>
   </data>
-  <data name="Keep lighting on" xml:space="preserve">
-    <value>Не выключать подсветку</value>
-  </data>
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>Сохраняет текущий параметр Windows.</value>
   </data>

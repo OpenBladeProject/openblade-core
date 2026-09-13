@@ -123,8 +123,8 @@ public sealed class ServiceLifecycleRefreshLoop
                         case ServiceLifecycleTrigger.DisplayOff:
                             // The console display state is recorded unconditionally: it
                             // is a fact about the laptop, not a lighting policy decision,
-                            // and the transition classifier needs it even when the
-                            // active profile keeps the keyboard lit or the gate is active.
+                            // and the transition classifier needs it even while the
+                            // low-power gate defers lighting policy writes.
                             runtime.ReportConsoleDisplayState(displayOn: false);
                             if (lowPowerGate.IsActive)
                             {

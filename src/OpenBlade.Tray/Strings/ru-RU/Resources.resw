@@ -523,9 +523,6 @@
   <data name="MainWindow_LaptopNavigationItemText.Content" xml:space="preserve">
     <value>Ноутбук</value>
   </data>
-  <data name="MainWindow_LightingDisplayOffToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Выключать подсветку клавиатуры вместе с дисплеем</value>
-  </data>
   <data name="MainWindow_LightingEffectPickerText.AccessibleName" xml:space="preserve">
     <value>Эффект подсветки клавиатуры</value>
   </data>

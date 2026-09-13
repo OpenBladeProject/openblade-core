@@ -657,9 +657,6 @@
   <data name="Inward" xml:space="preserve">
     <value>[!! Ínwárd ~~~ !!]</value>
   </data>
-  <data name="Keep lighting on" xml:space="preserve">
-    <value>[!! Kéép líghtíng ón ~~~~~ !!]</value>
-  </data>
   <data name="Keeps the current Windows setting." xml:space="preserve">
     <value>[!! Kééps thé cúrrént Windows séttíng. ~~~~~~~~ !!]</value>
   </data>
