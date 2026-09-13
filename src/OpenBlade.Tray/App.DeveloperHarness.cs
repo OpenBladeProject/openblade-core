@@ -3,6 +3,7 @@ using System.Security.Principal;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Windows.Globalization;
 using OpenBlade.Contracts;
@@ -12,6 +13,7 @@ using Windows.Graphics;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using WinRT.Interop;
+using XamlBorder = Microsoft.UI.Xaml.Controls.Border;
 using XamlButton = Microsoft.UI.Xaml.Controls.Button;
 using XamlColumnDefinition = Microsoft.UI.Xaml.Controls.ColumnDefinition;
 using XamlGrid = Microsoft.UI.Xaml.Controls.Grid;
@@ -81,6 +83,8 @@ public partial class App
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
         "--responsive-choice-selector-smoke";
+    private const string PerformanceRowLayoutSmokeArgument =
+        "--performance-row-layout-smoke";
     private const string LiveLocalizationSmokeArgument =
         "--live-localization-smoke";
     private const string LiveLocalizationSmokePreferencePathVariable =
@@ -123,6 +127,12 @@ public partial class App
             [_, ResponsiveChoiceSelectorSmokeArgument, string selectorSmokeReportPath])
         {
             _ = RunResponsiveChoiceSelectorSmokeAsync(selectorSmokeReportPath);
+            return true;
+        }
+        if (commandLineArguments is
+            [_, PerformanceRowLayoutSmokeArgument, string performanceRowSmokeReportPath])
+        {
+            _ = RunPerformanceRowLayoutSmokeAsync(performanceRowSmokeReportPath);
             return true;
         }
         if (commandLineArguments is
@@ -902,6 +912,158 @@ public partial class App
         int Width,
         int Height,
         byte[] Pixels);
+
+    private static async Task RunPerformanceRowLayoutSmokeAsync(string smokeReportPath)
+    {
+        try
+        {
+            File.WriteAllText(smokeReportPath, "construct laptop performance rows");
+            MainWindow smokeWindow = MainWindow.CreateLocalizationSnapshot();
+            FrameworkElement root = smokeWindow.Content as FrameworkElement
+                ?? throw new InvalidOperationException("The main window root was not created.");
+            var loaded = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            root.Loaded += (_, _) => loaded.TrySetResult(true);
+            smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
+            smokeWindow.Activate();
+            await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            smokeWindow.SelectLocalizationSnapshotPage("laptop");
+            await WaitForSnapshotLayoutAsync();
+
+            (XamlBorder performanceRow, XamlStackPanel performanceText) =
+                FindPerformanceSmokeRow(root, "DashboardPerformanceSelector", 2);
+            (XamlBorder fanRow, XamlStackPanel fanText) =
+                FindPerformanceSmokeRow(root, "DashboardFanModeSelector", 1);
+            XamlTextBlock performanceTitle = performanceText.Children
+                .OfType<XamlTextBlock>().First();
+            XamlTextBlock hyperBoostDescription = performanceText.Children
+                .OfType<XamlTextBlock>().Skip(1).First();
+            XamlTextBlock fanTitle = fanText.Children.OfType<XamlTextBlock>().Single();
+            XamlStackPanel laptopCardsHost = root.FindName("LaptopCardsHost")
+                as XamlStackPanel
+                ?? throw new InvalidOperationException(
+                    "The rendered MainWindow did not contain the Laptop cards host.");
+            Thickness compactPadding = (Thickness)root.Resources[
+                "DashboardSingleLineRowPadding"];
+            Thickness wrappedPadding = (Thickness)root.Resources[
+                "DashboardWrappedTitleRowPadding"];
+            string DescribeRows() => FormattableString.Invariant(
+                $"host={laptopCardsHost.ActualWidth:F1}, performance={performanceRow.ActualHeight:F1}/{performanceRow.Padding}, fan={fanRow.ActualHeight:F1}/{fanRow.Padding}, titles={performanceTitle.ActualHeight:F1}/{fanTitle.ActualHeight:F1}, description={hyperBoostDescription.Visibility}/{hyperBoostDescription.ActualHeight:F1}");
+
+            AnimatedVisibility.SetIsVisible(performanceRow, true);
+            AnimatedVisibility.SetIsVisible(fanRow, true);
+            AnimatedVisibility.SetIsVisible(hyperBoostDescription, false);
+            await WaitForSnapshotLayoutAsync();
+
+            File.WriteAllText(smokeReportPath, "verify wide single-line row parity");
+            RequireResponsiveSelector(
+                performanceRow.Padding.Equals(compactPadding)
+                    && fanRow.Padding.Equals(compactPadding)
+                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= 1.1,
+                "The wide single-line performance row did not match the fan row: "
+                    + DescribeRows());
+
+            File.WriteAllText(smokeReportPath, "show HyperBoost supporting copy");
+            AnimatedVisibility.SetIsVisible(hyperBoostDescription, true);
+            await WaitForSnapshotLayoutAsync();
+            RequireResponsiveSelector(
+                hyperBoostDescription.Visibility == Visibility.Visible
+                    && performanceRow.Padding.Equals(wrappedPadding)
+                    && performanceRow.ActualHeight > fanRow.ActualHeight + 1,
+                "The HyperBoost description did not expand the performance row: "
+                    + DescribeRows());
+
+            File.WriteAllText(smokeReportPath, "hide HyperBoost supporting copy");
+            AnimatedVisibility.SetIsVisible(hyperBoostDescription, false);
+            await WaitForSnapshotLayoutAsync();
+            RequireResponsiveSelector(
+                hyperBoostDescription.Visibility == Visibility.Collapsed
+                    && performanceRow.Padding.Equals(compactPadding)
+                    && Math.Abs(performanceRow.ActualHeight - fanRow.ActualHeight) <= 1.1,
+                "The performance row did not return to its compact height: "
+                    + DescribeRows());
+
+            File.WriteAllText(smokeReportPath, "constrain laptop cards");
+            laptopCardsHost.Width = 310;
+            laptopCardsHost.HorizontalAlignment = HorizontalAlignment.Left;
+            await WaitForSnapshotLayoutAsync();
+            RequireResponsiveSelector(
+                performanceTitle.ActualHeight > fanTitle.ActualHeight + 1
+                    && performanceRow.Padding.Equals(wrappedPadding)
+                    && fanRow.Padding.Equals(compactPadding),
+                "The constrained performance title did not use wrapped-row padding: "
+                    + DescribeRows());
+
+            smokeWindow.Close();
+            File.WriteAllText(smokeReportPath, "completed");
+            Environment.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            File.WriteAllText(smokeReportPath, exception.ToString());
+            Environment.Exit(1);
+        }
+    }
+
+    private static (XamlBorder Row, XamlStackPanel Text) FindPerformanceSmokeRow(
+        DependencyObject root,
+        string selectorName,
+        int expectedTextBlocks)
+    {
+        ResponsiveChoiceSelector selector =
+            FindPerformanceSmokeDescendant<ResponsiveChoiceSelector>(root, selectorName)
+            ?? throw new InvalidOperationException($"Missing '{selectorName}'.");
+        XamlGrid grid = FindPerformanceSmokeAncestor<XamlGrid>(selector)
+            ?? throw new InvalidOperationException($"Missing '{selectorName}' row grid.");
+        XamlBorder row = FindPerformanceSmokeAncestor<XamlBorder>(grid)
+            ?? throw new InvalidOperationException($"Missing '{selectorName}' row border.");
+        XamlStackPanel? text = grid.Children.OfType<XamlStackPanel>()
+            .SingleOrDefault(candidate =>
+                XamlGrid.GetColumn(candidate) == 0
+                && candidate.Children.OfType<XamlTextBlock>().Count() == expectedTextBlocks);
+        return (row, text ?? throw new InvalidOperationException(
+            $"The rendered '{selectorName}' did not have its expected text stack."));
+    }
+
+    private static T? FindPerformanceSmokeDescendant<T>(DependencyObject root, string name)
+        where T : FrameworkElement
+    {
+        int childCount = VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < childCount; index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match
+                && string.Equals(match.Name, name, StringComparison.Ordinal))
+            {
+                return match;
+            }
+
+            T? descendant = FindPerformanceSmokeDescendant<T>(child, name);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
+
+    private static T? FindPerformanceSmokeAncestor<T>(DependencyObject child)
+        where T : DependencyObject
+    {
+        DependencyObject current = child;
+        while (VisualTreeHelper.GetParent(current) is DependencyObject parent)
+        {
+            if (parent is T match)
+            {
+                return match;
+            }
+
+            current = parent;
+        }
+
+        return null;
+    }
 
     private static async Task RunResponsivePageHeaderSmokeAsync(string smokeReportPath)
     {
