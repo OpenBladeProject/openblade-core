@@ -819,6 +819,7 @@ public sealed class DeploymentClientCoordinatorTests
         Assert.True(await context.RunAsync());
         Assert.Equal(8, context.Inventory.Calls);
         Assert.Equal(TimeSpan.FromMilliseconds(300), context.Clock.Elapsed);
+        Assert.Empty(context.Diagnostics);
         context.AssertNoReplay();
     }
 
@@ -836,7 +837,7 @@ public sealed class DeploymentClientCoordinatorTests
         Assert.False(await context.RunAsync());
         Assert.Equal(TimeSpan.FromSeconds(10), context.Clock.Elapsed);
         Assert.Equal(104, context.Inventory.Calls);
-        Assert.Equal(["tray-relaunch-failed"], context.Diagnostics);
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
         context.AssertNoReplay();
     }
 
@@ -851,25 +852,40 @@ public sealed class DeploymentClientCoordinatorTests
         Assert.False(await context.RunAsync());
         Assert.Equal(TimeSpan.FromSeconds(10), context.Clock.Elapsed);
         Assert.Equal(104, context.Inventory.Calls);
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
         context.AssertNoReplay();
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task FinalInventory_OriginalChildExitCannotBeSatisfiedByAReplacement(bool sessionAgent)
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task FinalInventory_OriginalChildExitCannotBeSatisfiedByAReplacement(
+        bool sessionAgent, bool duringObservation)
     {
         var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
-        context.Inventory.BeforeInspect = call =>
+        void ExitOriginalChild() =>
+            context.Processes.StartedProcesses[sessionAgent ? 0 : 1].HasExited = true;
+        if (duringObservation)
         {
-            if (call == 6)
+            context.Inventory.BeforeInspect = call =>
             {
-                context.Processes.StartedProcesses[sessionAgent ? 0 : 1].HasExited = true;
-            }
-        };
+                if (call == 6)
+                {
+                    ExitOriginalChild();
+                }
+            };
+        }
+        else
+        {
+            context.Clock.AfterDelay = ExitOriginalChild;
+        }
 
         Assert.False(await context.RunAsync());
-        Assert.Equal(["tray-relaunch-failed"], context.Diagnostics);
+        Assert.Equal(duringObservation ? 6 : 5, context.Inventory.Calls);
+        Assert.Equal([sessionAgent ? "session-agent-relaunch-failed" : "tray-relaunch-failed"],
+            context.Diagnostics);
         context.AssertNoReplay();
     }
 
@@ -904,6 +920,7 @@ public sealed class DeploymentClientCoordinatorTests
 
         Assert.False(await context.RunAsync());
         Assert.Equal(duringObservation ? 6 : 5, context.Inventory.Calls);
+        Assert.Equal(["client-context-changed"], context.Diagnostics);
         context.AssertNoReplay();
     }
 
@@ -933,7 +950,7 @@ public sealed class DeploymentClientCoordinatorTests
         };
 
         Assert.False(await context.RunAsync());
-        Assert.Equal(["tray-relaunch-failed"], context.Diagnostics);
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
         context.AssertNoReplay();
     }
 

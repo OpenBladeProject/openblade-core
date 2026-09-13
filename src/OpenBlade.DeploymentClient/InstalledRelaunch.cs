@@ -20,11 +20,21 @@ internal interface IClientSessionSource
 
 internal sealed class WindowsClientSessionSource : IClientSessionSource
 {
+    private static readonly Lazy<int> CachedCurrentProcessSessionId = new(ReadCurrentProcessSessionId);
+
+    internal static int CurrentProcessSessionId => CachedCurrentProcessSessionId.Value;
+
     public bool IsActiveLocalConsoleSession()
     {
         uint active = WTSGetActiveConsoleSessionId();
         return active != uint.MaxValue
-            && Process.GetCurrentProcess().SessionId == unchecked((int)active);
+            && CurrentProcessSessionId == unchecked((int)active);
+    }
+
+    private static int ReadCurrentProcessSessionId()
+    {
+        using Process process = Process.GetCurrentProcess();
+        return process.SessionId;
     }
 
     [DllImport("kernel32.dll")]
@@ -361,7 +371,7 @@ internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInvent
     public InstalledProcessInventory Inspect(InstalledPayloadPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
-        int currentSession = Process.GetCurrentProcess().SessionId;
+        int currentSession = WindowsClientSessionSource.CurrentProcessSessionId;
         ProcessCount sessionAgent = CountExactNormalProcess(
             paths.SessionAgentExecutable,
             currentSession);
