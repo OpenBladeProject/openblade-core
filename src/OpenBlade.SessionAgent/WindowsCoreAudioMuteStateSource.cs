@@ -18,6 +18,109 @@ internal enum CoreAudioRole
     Communications,
 }
 
+internal sealed class CoreAudioNotificationRegistration : IDisposable
+{
+    private readonly object nativeObject;
+    private readonly object enumerator;
+    private readonly Action<object> unregister;
+    private readonly Action<object> release;
+    private int registered;
+    private int disposed;
+
+    private CoreAudioNotificationRegistration(
+        object nativeObject,
+        object enumerator,
+        Action<object> unregister,
+        Action<object> release)
+    {
+        this.nativeObject = nativeObject;
+        this.enumerator = enumerator;
+        this.unregister = unregister;
+        this.release = release;
+    }
+
+    internal object Enumerator => enumerator;
+
+    internal static CoreAudioNotificationRegistration Acquire(
+        Func<object> create,
+        Func<object, object> validate,
+        Action<object> register,
+        Action<object> unregister,
+        Action<object> initialize,
+        Action releaseBindings,
+        Action releaseManagedState,
+        Action<object> release)
+    {
+        object? nativeObject = null;
+        CoreAudioNotificationRegistration? ownership = null;
+        bool initializationStarted = false;
+        try
+        {
+            nativeObject = create();
+            object enumerator = validate(nativeObject);
+            ownership = new CoreAudioNotificationRegistration(
+                nativeObject,
+                enumerator,
+                unregister,
+                release);
+            register(enumerator);
+            Volatile.Write(ref ownership.registered, 1);
+            initializationStarted = true;
+            initialize(enumerator);
+            return ownership;
+        }
+        catch
+        {
+            try
+            {
+                if (initializationStarted)
+                {
+                    releaseBindings();
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (ownership is not null)
+                    {
+                        ownership.Dispose();
+                    }
+                    else if (nativeObject is not null)
+                    {
+                        release(nativeObject);
+                    }
+                }
+                finally
+                {
+                    releaseManagedState();
+                }
+            }
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (Interlocked.Exchange(ref registered, 0) != 0)
+            {
+                unregister(enumerator);
+            }
+        }
+        finally
+        {
+            release(nativeObject);
+        }
+    }
+}
+
 internal static class WindowsCoreAudioMuteStateSource
 {
     private static readonly TimeSpan RebindFailureRetryInterval =
@@ -79,7 +182,7 @@ internal static class WindowsCoreAudioMuteStateSource
         private readonly HashSet<CoreAudioRole> roles;
         private readonly Func<IReadOnlyCollection<bool>, bool?> aggregate;
         private readonly Action<bool?> publish;
-        private readonly object enumeratorObject;
+        private readonly CoreAudioNotificationRegistration registration;
         private readonly IMMDeviceEnumerator enumerator;
         private readonly DeviceNotificationClient deviceNotification;
         private readonly Channel<byte> rebindRequests = Channel.CreateBounded<byte>(
@@ -104,24 +207,21 @@ internal static class WindowsCoreAudioMuteStateSource
             this.roles = roles.ToHashSet();
             this.aggregate = aggregate;
             this.publish = publish;
-            enumeratorObject = CoreAudioDeviceEnumerator.Create();
-            enumerator = (IMMDeviceEnumerator)enumeratorObject;
             deviceNotification = new DeviceNotificationClient(this);
-            Marshal.ThrowExceptionForHR(
-                enumerator.RegisterEndpointNotificationCallback(deviceNotification));
-            try
-            {
-                BindDefaultEndpoints();
-                rebindTask = RebindAsync(rebindCancellation.Token);
-            }
-            catch
-            {
-                _ = enumerator.UnregisterEndpointNotificationCallback(
-                    deviceNotification);
-                ReleaseCom(enumeratorObject);
-                rebindCancellation.Dispose();
-                throw;
-            }
+            registration = CoreAudioNotificationRegistration.Acquire(
+                static () => CoreAudioDeviceEnumerator.Create(),
+                static instance => (IMMDeviceEnumerator)instance,
+                instance => Marshal.ThrowExceptionForHR(
+                    ((IMMDeviceEnumerator)instance)
+                        .RegisterEndpointNotificationCallback(deviceNotification)),
+                instance => _ = ((IMMDeviceEnumerator)instance)
+                    .UnregisterEndpointNotificationCallback(deviceNotification),
+                instance => BindDefaultEndpoints((IMMDeviceEnumerator)instance),
+                () => ReleaseEndpoints(Interlocked.Exchange(ref endpoints, [])),
+                rebindCancellation.Dispose,
+                ReleaseCom);
+            enumerator = (IMMDeviceEnumerator)registration.Enumerator;
+            rebindTask = RebindAsync(rebindCancellation.Token);
         }
 
         public void Dispose()
@@ -144,10 +244,21 @@ internal static class WindowsCoreAudioMuteStateSource
             EndpointBinding[] oldEndpoints = Interlocked.Exchange(
                 ref endpoints,
                 []);
-            ReleaseEndpoints(oldEndpoints);
-            _ = enumerator.UnregisterEndpointNotificationCallback(deviceNotification);
-            ReleaseCom(enumeratorObject);
-            rebindCancellation.Dispose();
+            try
+            {
+                ReleaseEndpoints(oldEndpoints);
+            }
+            finally
+            {
+                try
+                {
+                    registration.Dispose();
+                }
+                finally
+                {
+                    rebindCancellation.Dispose();
+                }
+            }
         }
 
         private async Task RebindAsync(CancellationToken cancellationToken)
@@ -175,7 +286,9 @@ internal static class WindowsCoreAudioMuteStateSource
             }
         }
 
-        private void BindDefaultEndpoints()
+        private void BindDefaultEndpoints() => BindDefaultEndpoints(enumerator);
+
+        private void BindDefaultEndpoints(IMMDeviceEnumerator source)
         {
             var nextEndpoints = new List<EndpointBinding>();
             var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -183,7 +296,7 @@ internal static class WindowsCoreAudioMuteStateSource
             {
                 foreach (CoreAudioRole role in roles)
                 {
-                    TryBindEndpoint(role, deviceIds, nextEndpoints);
+                    TryBindEndpoint(source, role, deviceIds, nextEndpoints);
                 }
 
                 EndpointBinding[] next = nextEndpoints.ToArray();
@@ -201,6 +314,7 @@ internal static class WindowsCoreAudioMuteStateSource
         }
 
         private void TryBindEndpoint(
+            IMMDeviceEnumerator source,
             CoreAudioRole role,
             HashSet<string> deviceIds,
             List<EndpointBinding> bindings)
@@ -211,7 +325,7 @@ internal static class WindowsCoreAudioMuteStateSource
             EndpointBinding? binding = null;
             try
             {
-                int result = enumerator.GetDefaultAudioEndpoint(
+                int result = source.GetDefaultAudioEndpoint(
                     flow,
                     role,
                     out IMMDevice device);

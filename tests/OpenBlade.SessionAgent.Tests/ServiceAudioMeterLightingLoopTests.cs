@@ -9,6 +9,68 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ServiceAudioMeterLightingLoopTests
 {
     [Fact]
+    public void SamplerConstruction_EndpointFailureReleasesEnumerator()
+    {
+        var nativeApi = new FakeAudioMeterNativeApi
+        {
+            EndpointFailure = new InvalidOperationException("Endpoint failed."),
+        };
+
+        _ = Assert.Throws<InvalidOperationException>(() =>
+            new WindowsAudioMeterLightingSampler(nativeApi));
+
+        Assert.Equal([nativeApi.Enumerator], nativeApi.Released);
+    }
+
+    [Fact]
+    public void SamplerConstruction_ActivationFailureReleasesEndpointThenEnumerator()
+    {
+        var nativeApi = new FakeAudioMeterNativeApi
+        {
+            ActivationFailure = new InvalidOperationException("Activation failed."),
+        };
+
+        _ = Assert.Throws<InvalidOperationException>(() =>
+            new WindowsAudioMeterLightingSampler(nativeApi));
+
+        Assert.Equal(
+            [nativeApi.Device, nativeApi.Enumerator],
+            nativeApi.Released);
+    }
+
+    [Fact]
+    public void SamplerConstruction_MeterCastFailureReleasesAllInReverseOrder()
+    {
+        var nativeApi = new FakeAudioMeterNativeApi
+        {
+            ValidationFailure = new InvalidCastException("Meter cast failed."),
+        };
+
+        _ = Assert.Throws<InvalidCastException>(() =>
+            new WindowsAudioMeterLightingSampler(nativeApi));
+
+        Assert.Equal(
+            [nativeApi.Meter, nativeApi.Device, nativeApi.Enumerator],
+            nativeApi.Released);
+    }
+
+    [Fact]
+    public void SamplerConstruction_SuccessTransfersOwnershipUntilDispose()
+    {
+        var nativeApi = new FakeAudioMeterNativeApi();
+        var sampler = new WindowsAudioMeterLightingSampler(nativeApi);
+
+        Assert.Empty(nativeApi.Released);
+
+        sampler.Dispose();
+        sampler.Dispose();
+
+        Assert.Equal(
+            [nativeApi.Meter, nativeApi.Device, nativeApi.Enumerator],
+            nativeApi.Released);
+    }
+
+    [Fact]
     public void RenderFrame_MapsPeakAcrossColumnsAndPreservesHoles()
     {
         AmbientLightingFrame frame =
@@ -501,6 +563,58 @@ public sealed class ServiceAudioMeterLightingLoopTests
                 ? next()
                 : throw new InvalidOperationException("No sampler was configured.");
         }
+    }
+
+    private sealed class FakeAudioMeterNativeApi : IAudioMeterNativeApi
+    {
+        internal object Enumerator { get; } = new();
+
+        internal object Device { get; } = new();
+
+        internal object Meter { get; } = new();
+
+        internal Exception? EndpointFailure { get; init; }
+
+        internal Exception? ActivationFailure { get; init; }
+
+        internal Exception? ValidationFailure { get; init; }
+
+        internal List<object> Released { get; } = [];
+
+        public object CreateEnumerator() => Enumerator;
+
+        public object GetDefaultAudioEndpoint(object enumeratorObject)
+        {
+            Assert.Same(Enumerator, enumeratorObject);
+            return EndpointFailure is null
+                ? Device
+                : throw EndpointFailure;
+        }
+
+        public object ActivateMeter(object deviceObject)
+        {
+            Assert.Same(Device, deviceObject);
+            return ActivationFailure is null
+                ? Meter
+                : throw ActivationFailure;
+        }
+
+        public void ValidateMeter(object meterObject)
+        {
+            Assert.Same(Meter, meterObject);
+            if (ValidationFailure is not null)
+            {
+                throw ValidationFailure;
+            }
+        }
+
+        public float GetPeakValue(object meterObject)
+        {
+            Assert.Same(Meter, meterObject);
+            return 0;
+        }
+
+        public void Release(object value) => Released.Add(value);
     }
 
     private sealed class ConstantSampler(AmbientLightingFrame frame)
