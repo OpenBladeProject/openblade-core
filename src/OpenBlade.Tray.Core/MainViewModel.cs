@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using OpenBlade.Contracts;
@@ -48,48 +47,6 @@ public sealed record FunctionKeyPrimaryOption(
 public sealed record LightingDirectionOption(
     LightingDirection Value,
     string Label);
-
-public sealed record ProfileValuePresentation(
-    string Text,
-    string SettingName,
-    string ProfileName,
-    bool IsPending = false,
-    string PendingText = "")
-{
-    public string? PendingDescription => IsPending
-        ? TrayText.Format("Pending: {0}", PendingText)
-        : null;
-
-    public string AccessibilityDescription => IsPending
-        ? TrayText.Format(
-            "{0} {1}: {2}. Pending: {3}",
-            ProfileName,
-            SettingName,
-            Text,
-            PendingText)
-        : TrayText.Format("{0} {1}: {2}", ProfileName, SettingName, Text);
-}
-
-public sealed record ProfilePresentation(
-    ProfileValuePresentation PowerMode,
-    ProfileValuePresentation WindowsPowerMode,
-    ProfileValuePresentation GpuTuning,
-    ProfileValuePresentation Fans,
-    ProfileValuePresentation BatteryProtection,
-    ProfileValuePresentation LightingEffect,
-    ProfileValuePresentation LightingBrightness,
-    ProfileValuePresentation LightingColor,
-    ProfileValuePresentation LogoLighting,
-    ProfileValuePresentation LightingDisplayOff,
-    ProfileValuePresentation LightingIdle,
-    ProfileValuePresentation DisplayRefreshRate,
-    ProfileValuePresentation DisplayHdr,
-    ProfileValuePresentation DisplayColorProfile,
-    ProfileValuePresentation FunctionKeyBehavior,
-    ProfileValuePresentation GamingMode,
-    ProfileValuePresentation GamingModeWindowsKey,
-    ProfileValuePresentation GamingModeAltTab,
-    ProfileValuePresentation StartupAnimation);
 
 public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
@@ -203,19 +160,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         [
             new(
                 null,
-                TrayText.Get("Leave unchanged"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(null),
                 TrayText.Get("Keeps the current Windows setting.")),
             new(
                 WindowsPowerMode.BestPowerEfficiency,
-                TrayText.Get("Best power efficiency"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency),
                 TrayText.Get("Favors lower energy use.")),
             new(
                 WindowsPowerMode.Balanced,
-                TrayText.Get("Balanced"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.Balanced),
                 TrayText.Get("Balances performance and energy use.")),
             new(
                 WindowsPowerMode.BestPerformance,
-                TrayText.Get("Best performance"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.BestPerformance),
                 TrayText.Get("Favors responsiveness over energy use.")),
         ],
         FunctionKeyPrimaryModes:
@@ -240,7 +197,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LogoLightingModes: KnownLogoLightingModes
             .Select(mode => new LogoLightingModeOption(
                 mode,
-                LogoLightingModeLabel(mode)))
+                LightingPresentation.LogoLightingModeLabel(mode)))
             .ToArray(),
         StandardLightingDirections:
         [
@@ -3261,7 +3218,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 active,
                 TrayText.Get("Lighting"),
                 LightingOverride,
-                FormatLightingProfile);
+                LightingPresentation.FormatLightingProfile);
             AddBatteryOverrideStatus(active);
             return active.Count == 0
                 ? TrayText.Get("No manual overrides active.")
@@ -3292,7 +3249,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     active,
                     TrayText.Get("Keyboard lighting"),
                     LightingOverride,
-                    FormatLightingProfile);
+                    LightingPresentation.FormatLightingProfile);
             }
             AddBatteryOverrideStatus(active);
             return string.Join(TrayText.Get(" · "), active);
@@ -3584,31 +3541,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         activeProfileDraftSource == PowerSource.UsbC;
 
     public string PluggedInProfileThermalSummary =>
-        FormatThermalProfile(GetPresentedProfile(PowerSource.PluggedIn));
+        ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.PluggedIn));
 
     public string PluggedInProfileLightingSummary =>
-        FormatLightingProfile(GetPresentedProfile(PowerSource.PluggedIn).Lighting);
+        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.PluggedIn).Lighting);
 
     public string PluggedInProfileDisplaySummary =>
-        FormatDisplayProfile(GetPresentedProfile(PowerSource.PluggedIn).Display);
+        ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.PluggedIn).Display);
 
     public string BatteryProfileThermalSummary =>
-        FormatThermalProfile(GetPresentedProfile(PowerSource.Battery));
+        ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.Battery));
 
     public string BatteryProfileLightingSummary =>
-        FormatLightingProfile(GetPresentedProfile(PowerSource.Battery).Lighting);
+        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.Battery).Lighting);
 
     public string BatteryProfileDisplaySummary =>
-        FormatDisplayProfile(GetPresentedProfile(PowerSource.Battery).Display);
+        ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.Battery).Display);
 
     public string UsbCProfileThermalSummary =>
-        FormatThermalProfile(GetPresentedProfile(PowerSource.UsbC));
+        ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.UsbC));
 
     public string UsbCProfileLightingSummary =>
-        FormatLightingProfile(GetPresentedProfile(PowerSource.UsbC).Lighting);
+        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.UsbC).Lighting);
 
     public string UsbCProfileDisplaySummary =>
-        FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
+        ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
 
     public ProfilePresentation PluggedInProfilePresentation =>
         CreateProfilePresentation(PowerSource.PluggedIn);
@@ -3631,24 +3588,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 TrayText.Get("Charge limit"),
                 TrayText.Get("All profiles"));
             return pendingBatteryPolicy is { } pending
-                ? MarkPending(
+                ? ProfilePresentationFactory.MarkPending(
                     saved,
                     saved with { Text = TrayText.Format("{0}%", pending.ChargeLimitPercent) })
                 : saved;
         }
     }
-
-    public string LightingDisplayOffPolicyPresentation =>
-        GetProfile(SelectedProfileComparisonOption.Source)
-            .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-            ? TrayText.Get("Turn lighting off")
-            : TrayText.Get("Keep lighting on");
-
-    public string LightingIdlePolicyPresentation =>
-        GetProfile(SelectedProfileComparisonOption.Source)
-            .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-            ? TrayText.Format("{0} minutes", minutes)
-            : TrayText.Get("Never");
 
     public bool IsSelectedProfileActive =>
         SelectedProfileComparisonOption.Source == ActivePowerSource;
@@ -3675,11 +3620,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     };
 
     public string SavedActiveProfileSummary => activeProfileDraftSource is { } source
-        ? FormatPowerProfile(GetProfile(source), Profiles.WindowsPowerModes)
+        ? ProfilePresentationFactory.FormatPowerProfile(GetProfile(source), Profiles.WindowsPowerModes)
         : string.Empty;
 
     public string PendingActiveProfileSummary => GetActiveProfileDraft() is { } draft
-        ? FormatPowerProfile(draft, PresentedWindowsPowerModes)
+        ? ProfilePresentationFactory.FormatPowerProfile(draft, PresentedWindowsPowerModes)
         : string.Empty;
 
     public void RecordDisplayProfileChange(
@@ -4028,7 +3973,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Enum.GetValues<AmbientAwarenessRegion>()
             .Select(region => new AmbientAwarenessRegionOption(
                 region,
-                AmbientAwarenessRegionLabel(region)))
+                LightingPresentation.AmbientAwarenessRegionLabel(region)))
             .ToArray();
 
     public AmbientAwarenessRegion LightingAmbientAwarenessRegionEditor
@@ -4085,7 +4030,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public string LightingAudioMeterDecayValue => FormatAudioMeterDecay(
+    public string LightingAudioMeterDecayValue => LightingPresentation.FormatAudioMeterDecay(
         lightingAudioMeterDecayMillisecondsEditor);
 
     public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
@@ -5464,7 +5409,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 presentedLogoLightingModes
                     .Select(mode => new LogoLightingModeOption(
                         mode,
-                        LogoLightingModeLabel(mode)))
+                        LightingPresentation.LogoLightingModeLabel(mode)))
                     .ToArray());
         if (!ReferenceEquals(AvailableLogoLightingModeOptions, logoLightingModeOptions))
         {
@@ -5478,7 +5423,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
-        new(effect, LightingEffectLabel(effect));
+        new(effect, LightingPresentation.LightingEffectLabel(effect));
 
     // Keep Off first, then follow the en-US label order so translations never reorder the picker.
     private static int LightingEffectDisplayOrder(LightingEffect effect) => effect switch
@@ -5499,116 +5444,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingEffect.Wheel => 13,
         _ => int.MaxValue,
     };
-
-    private static string LightingEffectLabel(LightingEffect effect) => effect switch
-    {
-        LightingEffect.Off => TrayText.Get("Off"),
-        LightingEffect.Static => TrayText.Get("Static"),
-        LightingEffect.Spectrum => TrayText.Get("Spectrum Cycling"),
-        LightingEffect.Breathing => TrayText.Get("Breathing"),
-        LightingEffect.Reactive => TrayText.Get("Reactive"),
-        LightingEffect.Tidal => TrayText.Get("Tidal"),
-        LightingEffect.Starlight => TrayText.Get("Starlight"),
-        LightingEffect.Wave => TrayText.Get("Wave"),
-        LightingEffect.Wheel => TrayText.Get("Wheel"),
-        LightingEffect.Ripple => TrayText.Get("Ripple"),
-        LightingEffect.AmbientAwareness => TrayText.Get("Ambient Awareness"),
-        LightingEffect.AudioMeter => TrayText.Get("Audio Meter"),
-        LightingEffect.Fire => TrayText.Get("Fire"),
-        LightingEffect.Sequence => TrayText.Get("Imported animation"),
-        _ => effect.ToString(),
-    };
-
-    private static string LogoLightingModeLabel(LogoLightingMode mode) => mode switch
-    {
-        LogoLightingMode.Static => TrayText.Get("Static"),
-        LogoLightingMode.Breathing => TrayText.Get("Breathing"),
-        LogoLightingMode.Off => TrayText.Get("Off"),
-        _ => mode.ToString(),
-    };
-
-    private static string AmbientAwarenessRegionLabel(
-        AmbientAwarenessRegion region) => region switch
-        {
-            AmbientAwarenessRegion.Full => TrayText.Get("Full screen"),
-            AmbientAwarenessRegion.Left => TrayText.Get("Left"),
-            AmbientAwarenessRegion.Top => TrayText.Get("Top"),
-            AmbientAwarenessRegion.Right => TrayText.Get("Right"),
-            AmbientAwarenessRegion.Bottom => TrayText.Get("Bottom"),
-            _ => region.ToString(),
-        };
-
-    private static string AmbientAwarenessRegionFragment(
-        AmbientAwarenessRegion region) => region switch
-        {
-            AmbientAwarenessRegion.Full => TrayText.Get("Fragment.FullScreen", "full screen"),
-            AmbientAwarenessRegion.Left => TrayText.Get("Fragment.Left", "left"),
-            AmbientAwarenessRegion.Top => TrayText.Get("Fragment.Top", "top"),
-            AmbientAwarenessRegion.Right => TrayText.Get("Fragment.Right", "right"),
-            AmbientAwarenessRegion.Bottom => TrayText.Get("Fragment.Bottom", "bottom"),
-            _ => region.ToString(),
-        };
-
-    private static string LightingDirectionLabel(LightingDirection direction) =>
-        direction switch
-        {
-            LightingDirection.Leftward => TrayText.Get("Leftward"),
-            LightingDirection.Rightward => TrayText.Get("Rightward"),
-            _ => direction.ToString(),
-        };
-
-    private static string LightingDirectionFragment(LightingDirection direction) =>
-        direction switch
-        {
-            LightingDirection.Leftward => TrayText.Get("Fragment.Leftward", "leftward"),
-            LightingDirection.Rightward => TrayText.Get("Fragment.Rightward", "rightward"),
-            _ => direction.ToString(),
-        };
-
-    private static string ReactiveLightingDurationLabel(
-        ReactiveLightingDuration duration) => duration switch
-        {
-            ReactiveLightingDuration.Short => TrayText.Get("Short"),
-            ReactiveLightingDuration.Medium => TrayText.Get("Medium"),
-            ReactiveLightingDuration.Long => TrayText.Get("Long"),
-            _ => duration.ToString(),
-        };
-
-    private static string ReactiveLightingDurationFragment(
-        ReactiveLightingDuration duration) => duration switch
-        {
-            ReactiveLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
-            ReactiveLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
-            ReactiveLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
-            _ => duration.ToString(),
-        };
-
-    private static string StarlightLightingDurationLabel(
-        StarlightLightingDuration duration) => duration switch
-        {
-            StarlightLightingDuration.Short => TrayText.Get("Short"),
-            StarlightLightingDuration.Medium => TrayText.Get("Medium"),
-            StarlightLightingDuration.Long => TrayText.Get("Long"),
-            _ => duration.ToString(),
-        };
-
-    private static string StarlightLightingDurationFragment(
-        StarlightLightingDuration duration) => duration switch
-        {
-            StarlightLightingDuration.Short => TrayText.Get("Fragment.Short", "short"),
-            StarlightLightingDuration.Medium => TrayText.Get("Fragment.Medium", "medium"),
-            StarlightLightingDuration.Long => TrayText.Get("Fragment.Long", "long"),
-            _ => duration.ToString(),
-        };
-
-    private static string CustomPerformanceLevelLabel(
-        CustomPerformanceLevel level) => level switch
-        {
-            CustomPerformanceLevel.Low => TrayText.Get("Low"),
-            CustomPerformanceLevel.Medium => TrayText.Get("Medium"),
-            CustomPerformanceLevel.High => TrayText.Get("High"),
-            _ => level.ToString(),
-        };
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -7662,16 +7497,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return null;
         }
 
-        PowerProfile profile = GetPresentedProfile(ActivePowerSource);
-        if (profile.GpuClockTuning is not null)
-        {
-            return profile.GpuClockTuning;
-        }
-
-        return profile.Performance == PerformancePreset.Custom
-            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
-                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
-                : null;
+        return ProfileGpuClockTuning.Resolve(GetPresentedProfile(ActivePowerSource));
     }
 
     private PowerProfile GetPresentedProfile(PowerSource source) =>
@@ -8078,15 +7904,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 }
             }
 
-            GpuClockTuningSettings? savedGpuClockTuning = saved.GpuClockTuning;
-            if (savedGpuClockTuning is null
-                && saved.Performance == PerformancePreset.Custom
-                && saved.CustomPerformance?.GpuClockOffsets is { } legacyOffsets)
-            {
-                savedGpuClockTuning = new GpuClockTuningSettings(
-                    Enabled: true,
-                    legacyOffsets);
-            }
+            GpuClockTuningSettings? savedGpuClockTuning = ProfileGpuClockTuning.Resolve(saved);
             GpuClockTuningSettings? currentGpuClockTuning =
                 activeProfileDraftGpuClockTuning
                 ?? (gpuClockTuningConfigured
@@ -8350,8 +8168,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(UsbCProfilePresentation), UsbCProfilePresentation);
         NotifyComputed(nameof(BatteryProfilePresentation), BatteryProfilePresentation);
         NotifyComputed(nameof(BatteryPolicyPresentation), BatteryPolicyPresentation);
-        NotifyComputed(nameof(LightingDisplayOffPolicyPresentation), LightingDisplayOffPolicyPresentation);
-        NotifyComputed(nameof(LightingIdlePolicyPresentation), LightingIdlePolicyPresentation);
         NotifyComputed(nameof(HasLightingProfileSaveOpportunity), HasLightingProfileSaveOpportunity);
         NotifyComputed(nameof(HasLaptopPageProfileSaveOpportunity), HasLaptopPageProfileSaveOpportunity);
         NotifyProfileDifferenceState();
@@ -8373,33 +8189,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(SelectedProfilePresentation), SelectedProfilePresentation);
     }
 
-    private static string FormatThermalProfile(PowerProfile profile) =>
-        TrayText.Format(
-            "{0} | {1} fans",
-            FormatPerformanceProfile(profile),
-            FanModePresentation.Label(profile.Fans));
-
-    private static string FormatPowerProfile(
-        PowerProfile profile,
-        WindowsPowerModeAssociations windowsPowerModes) =>
-        TrayText.Format(
-            "Laptop performance: {0}{5}Windows power mode: {1}{5}Fans: {2}{5}Lighting: {3}{5}Display: {4}",
-            FormatPerformanceProfile(profile),
-            FormatWindowsPowerMode(windowsPowerModes.ForPerformance(profile.Performance)),
-            FanModePresentation.Label(profile.Fans),
-            FormatLightingProfile(profile.Lighting),
-            FormatDisplayProfile(profile.Display),
-            Environment.NewLine);
-
-    private static string FormatWindowsPowerMode(WindowsPowerMode? mode) => mode switch
-    {
-        WindowsPowerMode.BestPowerEfficiency => TrayText.Get("Best power efficiency"),
-        WindowsPowerMode.Balanced => TrayText.Get("Balanced"),
-        WindowsPowerMode.BestPerformance => TrayText.Get("Best performance"),
-        null => TrayText.Get("Leave unchanged"),
-        _ => TrayText.Get("Unknown"),
-    };
-
     private static string SubsystemLabel(DeviceSubsystem subsystem) => subsystem switch
     {
         DeviceSubsystem.Performance => TrayText.Get("Power mode"),
@@ -8420,118 +8209,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         ? TrayText.Get("Changed outside OpenBlade")
                         : TrayText.Get("Matches saved profile");
 
-    private static string FormatLightingProfile(LightingSettings lighting)
-    {
-        if (lighting.Effect == LightingEffect.Off)
-        {
-            return TrayText.Get("Off");
-        }
-
-        string effect = LightingEffectLabel(lighting.Effect);
-        string details = lighting.Parameters switch
-        {
-            BreathingLightingParameters
-            {
-                ColorMode: BreathingColorMode.Dual,
-                SecondaryColor: { } secondary,
-            } =>
-                TrayText.Format(
-                    "two colors, {0} and {1}",
-                    FormatColor(lighting.Color),
-                    FormatColor(secondary)),
-            BreathingLightingParameters { ColorMode: BreathingColorMode.Random } =>
-                TrayText.Get("random colors"),
-            BreathingLightingParameters => FormatColor(lighting.Color),
-            ReactiveLightingParameters reactive =>
-                TrayText.Format(
-                    "{0}, {1}",
-                    ReactiveLightingDurationFragment(reactive.Duration),
-                    FormatColor(lighting.Color)),
-            RippleLightingParameters => FormatColor(lighting.Color),
-            TidalLightingParameters { RandomColors: true } tidal =>
-                TrayText.Format(
-                    "random colors, {0}",
-                    LightingDirectionFragment(tidal.Direction)),
-            TidalLightingParameters tidal =>
-                TrayText.Format(
-                    "{0} and {1}, {2}",
-                    FormatColor(tidal.PrimaryColor),
-                    FormatColor(tidal.SecondaryColor),
-                    LightingDirectionFragment(tidal.Direction)),
-            StarlightLightingParameters
-            {
-                ColorMode: StarlightColorMode.Random,
-            } starlight =>
-                TrayText.Format(
-                    "random colors, {0}",
-                    StarlightLightingDurationFragment(starlight.Duration)),
-            StarlightLightingParameters
-            {
-                ColorMode: StarlightColorMode.Dual,
-                SecondaryColor: { } secondary,
-            } starlight =>
-                TrayText.Format(
-                    "{0} and {1}, {2}",
-                    FormatColor(lighting.Color),
-                    FormatColor(secondary),
-                    StarlightLightingDurationFragment(starlight.Duration)),
-            StarlightLightingParameters starlight =>
-                TrayText.Format(
-                    "{0}, {1}",
-                    FormatColor(lighting.Color),
-                    StarlightLightingDurationFragment(starlight.Duration)),
-            WaveLightingParameters wave =>
-                LightingDirectionFragment(wave.Direction),
-            WheelLightingParameters wheel =>
-                FormatRotationDirection(wheel.Direction),
-            AmbientAwarenessLightingParameters ambient =>
-                ambient.Region == AmbientAwarenessRegion.Full
-                    ? TrayText.Get("Fragment.FullScreen", "full screen")
-                    : AmbientAwarenessRegionFragment(ambient.Region),
-            AudioMeterLightingParameters audioMeter =>
-                TrayText.Format(
-                    "color boost {0}, smoothing: {1}",
-                    audioMeter.ColorBoost,
-                    FormatAudioMeterDecay(audioMeter.DecayMilliseconds)),
-            _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
-            _ => string.Empty,
-        };
-        return string.IsNullOrEmpty(details)
-            ? TrayText.Format("{0} | {1}%", effect, lighting.Brightness)
-            : TrayText.Format("{0} | {1}% | {2}", effect, lighting.Brightness, details);
-    }
-
-    private static string FormatColor(RgbColor color) =>
-        $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}";
-
-    private static string FormatAudioMeterDecay(int milliseconds) => milliseconds switch
-    {
-        0 => TrayText.Get("Off"),
-        1000 => TrayText.Get("Up to 1 second"),
-        _ => TrayText.Format("Up to {0:0.##} seconds", milliseconds / 1000d),
-    };
-
-    private static string FormatDisplayProfile(DisplayProfileSettings? display)
-    {
-        DisplayProfileSettings value = display ?? DisplayProfileSettings.Unconfigured();
-        List<string> settings = [];
-        if (!string.IsNullOrWhiteSpace(value.RefreshRateKey))
-        {
-            settings.Add(value.RefreshRateKey);
-        }
-        if (value.HdrEnabled is bool hdrEnabled)
-        {
-            settings.Add(hdrEnabled ? TrayText.Get("HDR on") : TrayText.Get("HDR off"));
-        }
-        if (!string.IsNullOrWhiteSpace(value.ColorProfileKey))
-        {
-            settings.Add(value.ColorProfileKey);
-        }
-        return settings.Count == 0
-            ? TrayText.Get("Not set")
-            : string.Join(TrayText.Get(" | "), settings);
-    }
-
     private ProfilePresentation CreateProfilePresentation(PowerSource source)
     {
         string profileName = ComparisonOptions
@@ -8546,7 +8223,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             activeProfileDraftSource == source
                 ? activeProfileOriginalLaptopBehavior ?? confirmedLaptopBehavior
                 : confirmedLaptopBehavior;
-        ProfilePresentation saved = CreateProfilePresentation(
+        ProfilePresentation saved = ProfilePresentationFactory.Create(
             savedProfile,
             Profiles.WindowsPowerModes,
             profileName,
@@ -8560,363 +8237,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return saved;
         }
 
-        ProfilePresentation pending = CreateProfilePresentation(
+        ProfilePresentation pending = ProfilePresentationFactory.Create(
             draft,
             PresentedWindowsPowerModes,
             profileName,
             confirmedLaptopBehavior);
-        return new ProfilePresentation(
-            MarkPending(saved.PowerMode, pending.PowerMode),
-            MarkPending(saved.WindowsPowerMode, pending.WindowsPowerMode),
-            MarkPending(saved.GpuTuning, pending.GpuTuning),
-            MarkPending(
-                saved.Fans,
-                pending.Fans,
-                !FanControlSettingsMatch(
-                    savedProfile.FanControl
-                        ?? FanControlSettings.FromLegacy(savedProfile.Fans),
-                    draft.FanControl ?? FanControlSettings.FromLegacy(draft.Fans))),
-            MarkPending(saved.BatteryProtection, pending.BatteryProtection),
-            MarkPending(saved.LightingEffect, pending.LightingEffect),
-            MarkPending(saved.LightingBrightness, pending.LightingBrightness),
-            MarkPending(saved.LightingColor, pending.LightingColor),
-            MarkPending(saved.LogoLighting, pending.LogoLighting),
-            MarkPending(saved.LightingDisplayOff, pending.LightingDisplayOff),
-            MarkPending(saved.LightingIdle, pending.LightingIdle),
-            MarkPending(saved.DisplayRefreshRate, pending.DisplayRefreshRate),
-            MarkPending(saved.DisplayHdr, pending.DisplayHdr),
-            MarkPending(saved.DisplayColorProfile, pending.DisplayColorProfile),
-            MarkPending(saved.FunctionKeyBehavior, pending.FunctionKeyBehavior),
-            MarkPending(saved.GamingMode, pending.GamingMode),
-            MarkPending(saved.GamingModeWindowsKey, pending.GamingModeWindowsKey),
-            MarkPending(saved.GamingModeAltTab, pending.GamingModeAltTab),
-            MarkPending(saved.StartupAnimation, pending.StartupAnimation));
-    }
-
-    private static ProfileValuePresentation MarkPending(
-        ProfileValuePresentation saved,
-        ProfileValuePresentation pending,
-        bool isPending = false) =>
-        saved with
-        {
-            IsPending = isPending
-                || !string.Equals(saved.Text, pending.Text, StringComparison.Ordinal),
-            PendingText = pending.Text,
-        };
-
-    private static ProfilePresentation CreateProfilePresentation(
-        PowerProfile profile,
-        WindowsPowerModeAssociations windowsPowerModes,
-        string profileName,
-        LaptopBehaviorProfileSettings laptopBehaviorFallback)
-    {
-        ProfileValuePresentation Value(string settingName, string text) =>
-            new(text, settingName, profileName);
-
-        DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
-        LaptopBehaviorProfileSettings savedLaptopBehavior =
-            profile.EffectiveLaptopBehavior;
-        bool? presentedStartupAnimation = savedLaptopBehavior.StartupAnimationEnabled
-            ?? laptopBehaviorFallback.StartupAnimationEnabled;
-        FunctionKeyPrimaryMode? presentedFunctionKeyPrimary =
-            savedLaptopBehavior.FunctionKeyPrimary
-            ?? laptopBehaviorFallback.FunctionKeyPrimary;
-        bool? presentedGamingMode = savedLaptopBehavior.GamingModeEnabled
-            ?? laptopBehaviorFallback.GamingModeEnabled;
-        return new ProfilePresentation(
-            Value(TrayText.Get("Laptop performance"), FormatPerformanceProfile(profile)),
-            Value(
-                TrayText.Get("Windows power mode"),
-                FormatWindowsPowerMode(windowsPowerModes.ForPerformance(profile.Performance))),
-            Value(TrayText.Get("GPU tuning"), FormatGpuClockOffsets(profile)),
-            Value(TrayText.Get("Fans"), FormatFanControl(profile)),
-            Value(
-                TrayText.Get("Battery protection"),
-                FormatOptionalToggle(profile.BatteryProtectionEnabled)),
-            Value(TrayText.Get("Lighting effect"), FormatLightingEffect(profile.Lighting)),
-            Value(TrayText.Get("Lighting brightness"), profile.Lighting.Effect == LightingEffect.Off
-                ? TrayText.Get("Not applicable")
-                : TrayText.Format("{0}%", profile.Lighting.Brightness)),
-            Value(TrayText.Get("Lighting color"), FormatLightingColor(profile.Lighting)),
-            Value(TrayText.Get("Laptop lid logo"), profile.Lighting.LogoMode switch
-            {
-                LogoLightingMode.Static => TrayText.Get("Static"),
-                LogoLightingMode.Breathing => TrayText.Get("Breathing"),
-                LogoLightingMode.Off => TrayText.Get("Off"),
-                null => TrayText.Get("Not set"),
-                _ => TrayText.Get("Not set"),
-            }),
-            Value(TrayText.Get("Display turns off"), profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-                ? TrayText.Get("Turn lighting off")
-                : TrayText.Get("Keep lighting on")),
-            Value(TrayText.Get("Inactivity timeout"), profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-                ? TrayText.Format("{0} minutes", minutes)
-                : TrayText.Get("Never")),
-            Value(TrayText.Get("Refresh rate"), FormatDisplayRefreshRate(display.RefreshRateKey)),
-            Value(TrayText.Get("HDR"), display.HdrEnabled switch
-            {
-                true => TrayText.Get("On"),
-                false => TrayText.Get("Off"),
-                null => TrayText.Get("Not set"),
-            }),
-            Value(TrayText.Get("Color profile"), FormatDisplayColorProfile(display.ColorProfileKey)),
-            Value(TrayText.Get("Function keys"), presentedFunctionKeyPrimary switch
-            {
-                FunctionKeyPrimaryMode.FunctionKeys => TrayText.Get("Function keys"),
-                FunctionKeyPrimaryMode.MultimediaKeys => TrayText.Get("Media keys"),
-                _ => TrayText.Get("Not set"),
-            }),
-            Value(TrayText.Get("Gaming mode"), FormatOptionalToggle(presentedGamingMode)),
-            Value(TrayText.Get("Block Windows key"), FormatOptionalToggle(
-                profile.EffectiveLaptopBehavior
-                    .EffectiveGamingModeKeyPolicy
-                    .BlockWindowsKey)),
-            Value(TrayText.Get("Block Alt+Tab"), FormatOptionalToggle(
-                profile.EffectiveLaptopBehavior
-                    .EffectiveGamingModeKeyPolicy
-                    .BlockAltTab)),
-            Value(
-                TrayText.Get("Startup animation"),
-                FormatOptionalToggle(presentedStartupAnimation)));
-    }
-
-    private static string FormatOptionalToggle(bool? value) => value switch
-    {
-        true => TrayText.Get("On"),
-        false => TrayText.Get("Off"),
-        null => TrayText.Get("Not set"),
-    };
-
-    private static string FormatFanControl(PowerProfile profile)
-    {
-        FanControlSettings settings = profile.FanControl
-            ?? FanControlSettings.FromLegacy(profile.Fans);
-        return settings.Mode switch
-        {
-            FanMode.Automatic => TrayText.Get("Automatic"),
-            FanMode.Fixed =>
-                TrayText.Format("Fixed, {0:N0} RPM", settings.FixedSpeedRpm),
-            FanMode.ManualCurve => TrayText.Get("Manual fan curve"),
-            FanMode.Maximum => TrayText.Get("Maximum"),
-            _ => TrayText.Get(settings.Mode.ToString()),
-        };
-    }
-
-    private static string FormatPerformanceProfile(PowerProfile profile) =>
-        profile is
-        {
-            Performance: PerformancePreset.Custom,
-            CustomPerformance: { } custom,
-        }
-            ? TrayText.Format(
-                "Custom, CPU {0}, GPU {1}",
-                CustomPerformanceLevelLabel(custom.Cpu),
-                CustomPerformanceLevelLabel(custom.Gpu))
-            : PerformancePresetPresentation.Label(profile.Performance);
-
-    private static string FormatGpuClockOffsets(PowerProfile profile) =>
-        ResolveProfileGpuClockTuning(profile) switch
-        {
-            { Enabled: true, Offsets: { } offsets } =>
-                TrayText.Format(
-                    "Core {0}, memory {1}",
-                    FormatSignedMegahertz(offsets.CoreMegahertz),
-                    FormatSignedMegahertz(offsets.MemoryMegahertz)),
-            { Enabled: false } => TrayText.Get("Off"),
-            _ => TrayText.Get("Not set"),
-        };
-
-    private static GpuClockTuningSettings? ResolveProfileGpuClockTuning(
-        PowerProfile profile) => profile.GpuClockTuning
-        ?? (profile.Performance == PerformancePreset.Custom
-            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
-                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
-                : null);
-
-    private static string FormatSignedMegahertz(int value) =>
-        TrayText.Format("{0} MHz", value.ToString("+0;-0;0", CultureInfo.CurrentCulture));
-
-    private static string FormatLightingEffect(LightingSettings lighting) => lighting switch
-    {
-        { Effect: LightingEffect.Off } => TrayText.Get("Off"),
-        { Effect: LightingEffect.Spectrum } => TrayText.Get("Spectrum Cycling"),
-        {
-            Effect: LightingEffect.AudioMeter,
-            Parameters: AudioMeterLightingParameters audioMeter,
-        } => TrayText.Format(
-            "Audio Meter, color boost {0}, smoothing: {1}",
-            audioMeter.ColorBoost,
-            FormatAudioMeterDecay(audioMeter.DecayMilliseconds)),
-        {
-            Effect: LightingEffect.AmbientAwareness,
-            Parameters: AmbientAwarenessLightingParameters ambient,
-        } => ambient.Region == AmbientAwarenessRegion.Full
-            ? TrayText.Get("Ambient Awareness, full screen")
-            : TrayText.Format(
-                "Ambient Awareness, {0}",
-                AmbientAwarenessRegionFragment(ambient.Region)),
-        {
-            Effect: LightingEffect.Breathing,
-            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Dual },
-        } => TrayText.Get("Breathing, two colors"),
-        {
-            Effect: LightingEffect.Breathing,
-            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
-        } => TrayText.Get("Breathing, random colors"),
-        { Effect: LightingEffect.Breathing } => TrayText.Get("Breathing, one color"),
-        {
-            Effect: LightingEffect.Reactive,
-            Parameters: ReactiveLightingParameters reactive,
-        } => TrayText.Format(
-            "Reactive, {0}",
-            ReactiveLightingDurationFragment(reactive.Duration)),
-        { Effect: LightingEffect.Ripple } => TrayText.Get("Ripple"),
-        {
-            Effect: LightingEffect.Tidal,
-            Parameters: TidalLightingParameters tidal,
-        } => tidal.Direction == LightingDirection.Leftward
-            ? TrayText.Get("Tidal, outward")
-            : TrayText.Get("Tidal, inward"),
-        {
-            Effect: LightingEffect.Starlight,
-            Parameters: StarlightLightingParameters
-            {
-                ColorMode: StarlightColorMode.Dual,
-            } starlight,
-        } => TrayText.Format(
-            "Starlight, two colors, {0}",
-            StarlightLightingDurationFragment(starlight.Duration)),
-        {
-            Effect: LightingEffect.Starlight,
-            Parameters: StarlightLightingParameters
-            {
-                ColorMode: StarlightColorMode.Random,
-            } starlight,
-        } => TrayText.Format(
-            "Starlight, random colors, {0}",
-            StarlightLightingDurationFragment(starlight.Duration)),
-        {
-            Effect: LightingEffect.Starlight,
-            Parameters: StarlightLightingParameters starlight,
-        } => TrayText.Format(
-            "Starlight, one color, {0}",
-            StarlightLightingDurationFragment(starlight.Duration)),
-        {
-            Effect: LightingEffect.Wave,
-            Parameters: WaveLightingParameters wave,
-        } => TrayText.Format(
-            "Wave, {0}",
-            LightingDirectionFragment(wave.Direction)),
-        {
-            Effect: LightingEffect.Wheel,
-            Parameters: WheelLightingParameters wheel,
-        } => TrayText.Format("Wheel, {0}", FormatRotationDirection(wheel.Direction)),
-        _ => LightingEffectLabel(lighting.Effect),
-    };
-
-    private static string FormatLightingColor(LightingSettings lighting) => lighting switch
-    {
-        { Effect: LightingEffect.Off } => TrayText.Get("Not applicable"),
-        { Effect: LightingEffect.Spectrum } => TrayText.Get("Automatic"),
-        {
-            Effect: LightingEffect.Wave or LightingEffect.Wheel
-                or LightingEffect.AmbientAwareness
-                or LightingEffect.AudioMeter
-                or LightingEffect.Fire
-                or LightingEffect.Sequence,
-        } => TrayText.Get("Automatic"),
-        {
-            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
-        } => TrayText.Get("Random"),
-        {
-            Parameters: TidalLightingParameters { RandomColors: true },
-        } => TrayText.Get("Random"),
-        {
-            Parameters: TidalLightingParameters tidal,
-        } => TrayText.Format(
-            "{0} and {1}",
-            FormatColor(tidal.PrimaryColor),
-            FormatColor(tidal.SecondaryColor)),
-        {
-            Parameters: StarlightLightingParameters { ColorMode: StarlightColorMode.Random },
-        } => TrayText.Get("Random"),
-        {
-            Parameters: StarlightLightingParameters
-            {
-                ColorMode: StarlightColorMode.Dual,
-                SecondaryColor: { } secondary,
-            },
-        } => TrayText.Format(
-            "{0} and {1}",
-            FormatColor(lighting.Color),
-            FormatColor(secondary)),
-        {
-            Parameters: BreathingLightingParameters
-            {
-                ColorMode: BreathingColorMode.Dual,
-                SecondaryColor: { } secondary,
-            },
-        } => TrayText.Format(
-            "{0} and {1}",
-            FormatColor(lighting.Color),
-            FormatColor(secondary)),
-        _ => FormatColor(lighting.Color),
-    };
-
-    private static string FormatRotationDirection(LightingRotationDirection direction) =>
-        direction == LightingRotationDirection.Counterclockwise
-            ? TrayText.Get("counterclockwise")
-            : TrayText.Get("clockwise");
-
-    private static string FormatDisplayRefreshRate(string? key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return TrayText.Get("Not set");
-        }
-
-        string[] parts = key.Split('-', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 2
-            && string.Equals(parts[0], "fixed", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int fixedHertz))
-        {
-            return TrayText.Format("{0} Hz", fixedHertz);
-        }
-        if (parts.Length == 3
-            && (string.Equals(parts[0], "dynamic", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(parts[0], "drr", StringComparison.OrdinalIgnoreCase))
-            && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int minimumHertz)
-            && int.TryParse(parts[2], CultureInfo.InvariantCulture, out int maximumHertz))
-        {
-            return TrayText.Format(
-                "Dynamic {0}–{1} Hz",
-                minimumHertz,
-                maximumHertz);
-        }
-
-        return key;
-    }
-
-    private static string FormatDisplayColorProfile(string? key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return TrayText.Get("Not set");
-        }
-
-        string fileName = Path.GetFileNameWithoutExtension(key);
-        string normalized = fileName.Replace("_", " ", StringComparison.Ordinal)
-            .Replace("-", " ", StringComparison.Ordinal)
-            .Trim();
-        return normalized.ToLowerInvariant() switch
-        {
-            "srgb" => "sRGB",
-            "dci p3" or "dcip3" => "DCI-P3",
-            "adobe rgb" or "adobergb" => "Adobe RGB",
-            "rec 709" or "rec709" => "Rec. 709",
-            "native" => TrayText.Get("Native"),
-            _ => string.IsNullOrWhiteSpace(normalized) ? key : normalized,
-        };
+        return ProfilePresentationFactory.WithPending(
+            saved,
+            pending,
+            !FanControlSettingsMatch(
+                savedProfile.FanControl
+                    ?? FanControlSettings.FromLegacy(savedProfile.Fans),
+                draft.FanControl ?? FanControlSettings.FromLegacy(draft.Fans)));
     }
 
     private LightingSettings CreateLightingDraft()
@@ -9999,8 +9331,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             displayValue += TrayText.Format(
                 " (CPU {0}, GPU {1})",
-                CustomPerformanceLevelLabel(custom.Cpu),
-                CustomPerformanceLevelLabel(custom.Gpu));
+                ProfilePresentationFactory.CustomPerformanceLevelLabel(custom.Cpu),
+                ProfilePresentationFactory.CustomPerformanceLevelLabel(custom.Gpu));
         }
         status.Add(TrayText.Format("{0}: {1} {2}", subsystem, displayValue, lifetime));
     }

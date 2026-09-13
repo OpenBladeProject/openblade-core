@@ -290,21 +290,19 @@ public static class ProfileExportSerializer
     private static PowerProfile NormalizeLegacyGpuClockTuning(PowerProfile profile)
     {
         if (profile.GpuClockTuning is not null
-            || profile.Performance != PerformancePreset.Custom
-            || profile.CustomPerformance?.GpuClockOffsets is not { } legacyOffsets)
+            || profile.CustomPerformance is not { } customPerformance
+            || ProfileGpuClockTuning.Resolve(profile) is not { } gpuClockTuning)
         {
             return profile;
         }
 
         return profile with
         {
-            CustomPerformance = profile.CustomPerformance with
+            CustomPerformance = customPerformance with
             {
                 GpuClockOffsets = null,
             },
-            GpuClockTuning = new GpuClockTuningSettings(
-                Enabled: true,
-                legacyOffsets),
+            GpuClockTuning = gpuClockTuning,
         };
     }
 
