@@ -209,17 +209,17 @@ internal static class WindowsCoreAudioMuteStateSource
             this.publish = publish;
             deviceNotification = new DeviceNotificationClient(this);
             registration = CoreAudioNotificationRegistration.Acquire(
-                static () => CoreAudioDeviceEnumerator.Create(),
-                static instance => (IMMDeviceEnumerator)instance,
-                instance => Marshal.ThrowExceptionForHR(
+                create: static () => CoreAudioDeviceEnumerator.Create(),
+                validate: static instance => (IMMDeviceEnumerator)instance,
+                register: instance => Marshal.ThrowExceptionForHR(
                     ((IMMDeviceEnumerator)instance)
                         .RegisterEndpointNotificationCallback(deviceNotification)),
-                instance => _ = ((IMMDeviceEnumerator)instance)
+                unregister: instance => _ = ((IMMDeviceEnumerator)instance)
                     .UnregisterEndpointNotificationCallback(deviceNotification),
-                instance => BindDefaultEndpoints((IMMDeviceEnumerator)instance),
-                () => ReleaseEndpoints(Interlocked.Exchange(ref endpoints, [])),
-                rebindCancellation.Dispose,
-                ReleaseCom);
+                initialize: instance => BindDefaultEndpoints((IMMDeviceEnumerator)instance),
+                releaseBindings: () => ReleaseEndpoints(Interlocked.Exchange(ref endpoints, [])),
+                releaseManagedState: rebindCancellation.Dispose,
+                release: ReleaseCom);
             enumerator = (IMMDeviceEnumerator)registration.Enumerator;
             rebindTask = RebindAsync(rebindCancellation.Token);
         }
