@@ -291,6 +291,56 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
+    public async Task IdleTimeoutDuringCpuOnlyReadRetriesAfterTheGateIsReleased()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        bool expireDuringRead = false;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new SettableGpuActivitySource { Active = true },
+            () =>
+            {
+                if (expireDuringRead)
+                {
+                    time.FireTimers();
+                }
+                return 48;
+            },
+            session,
+            time);
+        await source.ReadAsync(CancellationToken.None);
+        expireDuringRead = true;
+
+        await source.ReadAsync(true, false, CancellationToken.None);
+
+        Assert.Equal(0, session.Releases);
+        Assert.Equal(SafeWindowsFanTemperatureSource.GpuSessionIdleRetry, time.LastDueTime);
+        time.FireTimers();
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(1, session.Reads);
+    }
+
+    [Fact]
+    public async Task StaleIdleCallbackDoesNotReleaseARefreshedGpuSession()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(
+            new SettableGpuActivitySource { Active = true }, () => 48, session, time);
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout);
+        await source.ReadAsync(CancellationToken.None);
+
+        // The original expiry was already queued when the newer sample rearmed it.
+        time.FireTimers(advanceToDueTime: false);
+
+        Assert.Equal(0, session.Releases);
+        Assert.Equal(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout, time.LastDueTime);
+        time.FireTimers();
+        Assert.Equal(1, session.Releases);
+    }
+
+    [Fact]
     public async Task DisposeReleasesTheDriverSessionAndOwnedSensors()
     {
         var activity = new SettableGpuActivitySource { Active = true };
@@ -366,6 +416,13 @@ public sealed class FanCurveCalculatorTests
     private sealed class ManualTimeProvider : TimeProvider
     {
         private readonly List<ManualTimer> timers = [];
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        public void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
 
         public TimeSpan LastDueTime { get; private set; } = Timeout.InfiniteTimeSpan;
 
@@ -381,8 +438,12 @@ public sealed class FanCurveCalculatorTests
             return timer;
         }
 
-        public void FireTimers()
+        public void FireTimers(bool advanceToDueTime = true)
         {
+            if (advanceToDueTime && LastDueTime > TimeSpan.Zero)
+            {
+                Advance(LastDueTime);
+            }
             foreach (ManualTimer timer in timers.ToArray())
             {
                 timer.Fire();

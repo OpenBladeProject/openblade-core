@@ -2535,7 +2535,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             try
             {
-                await ConfigurationStore.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                await SaveCommittedLightingPreferencesAsync(staged, token)
                     .ConfigureAwait(false);
             }
             catch (Exception saveException) when (delegateToWindows)
@@ -2570,8 +2570,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
             }
 
-            preferences = staged;
-
             if (delegateToWindows)
             {
                 pendingLightingRestore = null;
@@ -2585,15 +2583,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string message = delegateToWindows
                 ? "Keyboard lighting was delegated to Windows Dynamic Lighting. OpenBlade will not write keyboard lighting."
                 : "OpenBlade keyboard lighting control is enabled. No lighting change was applied.";
-            PublishIfChanged(GetStatus() with
+            PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
             {
-                KeyboardLightingControlMode = mode,
-                AlwaysOverrideExternalLightingChanges =
-                    staged.AlwaysOverrideExternalLightingChanges,
                 LightingRendererOwnership = LightingRendererOwnershipState.None,
                 LightingSuppressions = CurrentLightingSuppressions(),
                 Message = message,
-            });
+            }));
             history.RecordSummary(ControlOperationStatus.Stored, message);
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
         }
@@ -3370,40 +3365,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
-        if (enabled && IsKeyboardLightingDelegated)
-        {
-            return new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "OpenBlade cannot override external keyboard lighting while control is delegated to Windows.");
-        }
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (enabled && IsKeyboardLightingDelegated)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "OpenBlade cannot override external keyboard lighting while control is delegated to Windows.");
+            }
             BatteryAutomationPreferences staged = preferences with
             {
                 AlwaysOverrideExternalLightingChanges = enabled,
             };
             try
             {
-                await ConfigurationStore.SaveConfigurationAsync(
-                        Automation.Profiles,
-                        staged,
-                        token)
+                await SaveCommittedLightingPreferencesAsync(staged, token)
                     .ConfigureAwait(false);
             }
             catch (ConfigurationQuarantinedException)
             {
                 return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
             }
-            preferences = staged;
             ServiceStatusSnapshot current = GetStatus();
-            PublishIfChanged(current with
+            PublishIfChanged(ProjectCommittedLightingPreferences(current with
             {
-                AlwaysOverrideExternalLightingChanges = enabled,
                 Message = enabled
                     ? "OpenBlade will reapply its last lighting effect after external changes."
                     : "OpenBlade will preserve confirmed external lighting changes.",
-            });
+            }));
 
             if (!enabled)
             {
@@ -3489,28 +3479,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 };
                 try
                 {
-                    await ConfigurationStore.SaveConfigurationAsync(
-                            Automation.Profiles,
-                            staged,
-                            token)
+                    await SaveCommittedLightingPreferencesAsync(staged, token)
                         .ConfigureAwait(false);
                 }
                 catch (ConfigurationQuarantinedException)
                 {
                     return ConfigurationQuarantineBlocked(DeviceSubsystem.Lighting);
                 }
-                preferences = staged;
+                PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
+                {
+                    Message = "The lighting refresh rate was saved; renderer confirmation is pending.",
+                }));
             }
 
             deviceProvider.SetLightingRefreshRate(refreshRate);
 
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
+                string message = preferenceChanged
+                    ? "The lighting refresh rate was saved and will apply when the keyboard reconnects."
+                    : $"Keyboard lighting is already set to {RefreshRateLabel(refreshRate)}.";
+                PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
+                {
+                    Message = message,
+                }));
                 return new ControlOperationResult(
                     ControlOperationStatus.Stored,
-                    preferenceChanged
-                        ? "The lighting refresh rate was saved and will apply when the keyboard reconnects."
-                        : $"Keyboard lighting is already set to {RefreshRateLabel(refreshRate)}.");
+                    message);
             }
 
             async Task<Exception?> TryRollbackPreferenceAsync()
@@ -3522,13 +3517,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 try
                 {
-                    await ConfigurationStore.SaveConfigurationAsync(
-                        Automation.Profiles,
+                    await SaveCommittedLightingPreferencesAsync(
                         previousPreferences,
                         CancellationToken.None).ConfigureAwait(false);
-                    preferences = previousPreferences;
                     deviceProvider.SetLightingRefreshRate(
                         previousPreferences.LightingRefreshRate);
+                    PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
+                    {
+                        Message = current.Message,
+                    }));
                     return null;
                 }
                 catch (Exception rollbackException)
@@ -3541,11 +3538,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 await device.SetLightingRefreshRateAsync(refreshRate, token)
                     .ConfigureAwait(false);
-                PublishIfChanged(current with
+                PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
                 {
-                    LightingRefreshRate = refreshRate,
                     Message = $"Keyboard lighting refresh rate is set to {RefreshRateLabel(refreshRate)}.",
-                });
+                }));
                 return new ControlOperationResult(
                     ControlOperationStatus.Applied,
                     $"Keyboard lighting is running at {RefreshRateLabel(refreshRate)}.");
@@ -3556,8 +3552,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
                 if (rollbackException is not null)
                 {
+                    const string message =
+                        "The lighting refresh-rate change was canceled after persistence, and the saved selection could not be rolled back.";
+                    PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
+                    {
+                        Message = message,
+                    }));
                     throw new InvalidOperationException(
-                        "The lighting refresh-rate change was canceled after persistence, and the saved selection could not be rolled back.",
+                        message,
                         rollbackException);
                 }
 
@@ -3567,20 +3569,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 Exception? rollbackException = await TryRollbackPreferenceAsync()
                     .ConfigureAwait(false);
-                if (rollbackException is not null)
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Failed,
-                        "The active lighting renderer could not be updated, and the saved refresh-rate selection could not be rolled back. Retry the selection. "
+                string message = rollbackException is not null
+                    ? "The active lighting renderer could not be updated, and the saved refresh-rate selection could not be rolled back. Retry the selection. "
                         + exception.Message
                         + " Rollback: "
-                        + rollbackException.Message);
-                }
-
+                        + rollbackException.Message
+                    : "The active lighting renderer could not be updated, so the refresh-rate selection was rolled back. "
+                        + exception.Message;
+                PublishIfChanged(ProjectCommittedLightingPreferences(GetStatus() with
+                {
+                    Message = message,
+                }));
                 return new ControlOperationResult(
                     ControlOperationStatus.Failed,
-                    "The active lighting renderer could not be updated, so the refresh-rate selection was rolled back. "
-                    + exception.Message);
+                    message);
             }
         }
         finally
@@ -3588,6 +3590,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             operationGate.Release();
         }
     }
+
+    // Callers hold operationGate and retain their own renderer stop/apply/rollback
+    // ordering. Only successful persistence advances the committed preference.
+    private async Task SaveCommittedLightingPreferencesAsync(
+        BatteryAutomationPreferences staged,
+        CancellationToken cancellationToken)
+    {
+        await ConfigurationStore.SaveConfigurationAsync(
+            Automation.Profiles, staged, cancellationToken).ConfigureAwait(false);
+        preferences = staged;
+    }
+
+    private ServiceStatusSnapshot ProjectCommittedLightingPreferences(ServiceStatusSnapshot snapshot) =>
+        snapshot with
+        {
+            KeyboardLightingControlMode = preferences.KeyboardLightingControlMode,
+            AlwaysOverrideExternalLightingChanges = preferences.AlwaysOverrideExternalLightingChanges,
+            LightingRefreshRate = EffectiveLightingRefreshRate(snapshot.Capabilities),
+        };
 
     public async Task<ControlOperationResult> SetFirmwareCompatibilityOverrideAsync(
         bool enabled,
@@ -15040,51 +15061,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             device,
             firmware,
             cancellationToken).ConfigureAwait(false);
-        FanRpmReadings? fans = null;
-        FanTemperatureReadings temperatures = default;
-        if (includeLiveReadings)
-        {
-            if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
-            {
-                try
-                {
-                    fans = await device.ReadFanRpmAsync(cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch
-                {
-                    fans = null;
-                }
-            }
-
-            bool includeCpu = Requests(
-                requestedLiveReadings,
-                LiveReadingSensors.CpuTemperature);
-            bool includeGpu = Requests(
-                requestedLiveReadings,
-                LiveReadingSensors.GpuTemperature);
-            if (includeCpu || includeGpu)
-            {
-                try
-                {
-                    temperatures = await fanTemperatureSource.ReadAsync(
-                        includeCpu,
-                        includeGpu,
-                        cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch
-                {
-                    temperatures = default;
-                }
-            }
-        }
+        (FanRpmReadings? fans, FanTemperatureReadings temperatures) =
+            await ReadOptionalLiveSensorsAsync(
+                device,
+                includeLiveReadings ? requestedLiveReadings : LiveReadingSensors.None,
+                cancellationToken)
+                .ConfigureAwait(false);
 
         return new(
             capabilities,
@@ -15261,6 +15243,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         consecutiveDeviceProbeFailures = 0;
+        (FanRpmReadings? fans, FanTemperatureReadings temperatures) =
+            await ReadOptionalLiveSensorsAsync(device, requestedLiveReadings, cancellationToken)
+                .ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        PublishIfChanged(GetStatus() with
+        {
+            ActivePowerSource = powerSource,
+            LiveReadings = new LiveReadings(
+                batteryPowerFlowMilliwatts,
+                fans?.Selector1Rpm,
+                fans?.Selector2Rpm,
+                temperatures.CpuCelsius,
+                temperatures.GpuCelsius),
+        });
+    }
+
+    private async Task<(FanRpmReadings? Fans, FanTemperatureReadings Temperatures)>
+        ReadOptionalLiveSensorsAsync(
+            IBladeDevice device,
+            LiveReadingSensors requestedLiveReadings,
+            CancellationToken cancellationToken)
+    {
         FanRpmReadings? fans = null;
         FanTemperatureReadings temperatures = default;
         if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
@@ -15305,17 +15310,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        PublishIfChanged(GetStatus() with
-        {
-            ActivePowerSource = powerSource,
-            LiveReadings = new LiveReadings(
-                batteryPowerFlowMilliwatts,
-                fans?.Selector1Rpm,
-                fans?.Selector2Rpm,
-                temperatures.CpuCelsius,
-                temperatures.GpuCelsius),
-        });
+        return (fans, temperatures);
     }
 
     private static bool Requests(
