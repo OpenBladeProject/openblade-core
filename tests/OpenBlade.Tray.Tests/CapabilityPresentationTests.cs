@@ -562,7 +562,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Padding") == compactPaddingReference)
             .ToArray();
 
-        Assert.Equal(14, compactRows.Length);
+        Assert.Equal(15, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -575,12 +575,23 @@ public sealed class CapabilityPresentationTests
             XElement title = content.Descendants().First(element =>
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
-            Assert.Equal(
-                "OnDashboardSingleLineTitleSizeChanged",
-                Attribute(title, "SizeChanged"));
+            if (Attribute(title, "Uid") == "MainWindow_TextBlockLaptopPerformance")
+            {
+                Assert.NotNull(title.Parent);
+                Assert.Equal(
+                    "OnDashboardTextStackSizeChanged",
+                    Attribute(title.Parent, "SizeChanged"));
+            }
+            else
+            {
+                Assert.Equal(
+                    "OnDashboardSingleLineTitleSizeChanged",
+                    Attribute(title, "SizeChanged"));
+            }
         });
         Assert.Equal(
             [
+                "Laptop performance",
                 "GPU core clock offset",
                 "GPU memory clock offset",
                 "CPU",
@@ -604,7 +615,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(8, animatedCompactRows.Length);
+        Assert.Equal(9, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));

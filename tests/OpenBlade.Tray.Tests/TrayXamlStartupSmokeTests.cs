@@ -68,6 +68,13 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
+    public Task LaptopPerformanceRowMatchesFansAndRespondsToSupportingCopy() =>
+        RunTraySmokeAsync(
+            "--performance-row-layout-smoke",
+            "OpenBlade-performance-row-layout-smoke");
+
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
     public Task ResponsivePageHeaderStabilizesAndWrapsSaveAndRestoreActions() =>
         RunTraySmokeAsync(
             "--responsive-page-header-smoke",

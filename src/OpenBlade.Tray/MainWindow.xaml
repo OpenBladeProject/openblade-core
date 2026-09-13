@@ -567,6 +567,7 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
@@ -575,7 +576,8 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                    <StackPanel Spacing="3" VerticalAlignment="Center"
+                                                SizeChanged="OnDashboardTextStackSizeChanged">
                                         <TextBlock x:Uid="MainWindow_TextBlockLaptopPerformance" Text="Laptop performance"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="{x:Bind HyperBoostDescription, Mode=OneWay}"
