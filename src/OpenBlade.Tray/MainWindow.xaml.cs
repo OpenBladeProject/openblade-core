@@ -5486,8 +5486,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object sender,
         SizeChangedEventArgs args)
     {
-        if (sender is not TextBlock title
-            || FindVisualAncestor<Border>(title) is not Border row)
+        if (sender is TextBlock title)
+        {
+            UpdateDashboardTextRowPadding(title, args.NewSize.Height);
+        }
+    }
+
+    private void OnDashboardTextStackSizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        if (sender is StackPanel textStack
+            && textStack.Children.OfType<TextBlock>().FirstOrDefault() is TextBlock title)
+        {
+            UpdateDashboardTextRowPadding(title, args.NewSize.Height);
+        }
+    }
+
+    private void UpdateDashboardTextRowPadding(TextBlock title, double textHeight)
+    {
+        if (FindVisualAncestor<Border>(title) is not Border row)
         {
             return;
         }
@@ -5496,7 +5514,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             dashboardTextSettings.TextScaleFactor,
             () => MeasureSingleLineTitleHeight(title));
         Thickness padding = SingleLineTextMeasurementCache.IsWrapped(
-            args.NewSize.Height,
+            textHeight,
             singleLineHeight)
             ? (Thickness)Root.Resources["DashboardWrappedTitleRowPadding"]
             : (Thickness)Root.Resources["DashboardSingleLineRowPadding"];
