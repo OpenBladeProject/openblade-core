@@ -1913,83 +1913,31 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void FailedUpdateNotificationDeliveryDoesNotConsumeThePersistedKey()
+    public void WindowPersistsUpdateKeysOnlyWhenTheNotificationCoordinatorChangesThem()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        int appHandlerStart = window.IndexOf(
-            "private void OnAppUpdateAvailable(",
-            StringComparison.Ordinal);
-        int firmwareHandlerStart = window.IndexOf(
-            "private void OnFirmwareUpdateAvailable(",
-            appHandlerStart,
-            StringComparison.Ordinal);
-        int preferencesStart = window.IndexOf(
-            "private void ApplyNotificationPreferences(",
-            firmwareHandlerStart,
-            StringComparison.Ordinal);
-        Assert.True(
-            appHandlerStart >= 0
-                && firmwareHandlerStart > appHandlerStart
-                && preferencesStart > firmwareHandlerStart,
-            "The update notification handlers must remain discoverable.");
-
-        string appHandler = window[appHandlerStart..firmwareHandlerStart];
-        string firmwareHandler = window[firmwareHandlerStart..preferencesStart];
-        Assert.Contains("if (!TryShowNotification(", appHandler, StringComparison.Ordinal);
-        Assert.Contains("if (!TryShowNotification(", firmwareHandler, StringComparison.Ordinal);
-        Assert.True(
-            appHandler.IndexOf("lastNotifiedReleaseTag =", StringComparison.Ordinal)
-                > appHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
-        Assert.True(
-            firmwareHandler.LastIndexOf(
-                "lastNotifiedFirmwareSignature =",
-                StringComparison.Ordinal)
-                > firmwareHandler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal));
-        Assert.Contains("Func<TrayNotification, bool>", window, StringComparison.Ordinal);
+        int start = window.IndexOf("private void OnAppUpdateAvailable(", StringComparison.Ordinal);
+        int end = window.IndexOf("private void ApplyNotificationPreferences(", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        string handlers = window[start..end];
+        string compact = string.Concat(handlers.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Contains(
+            "if(notificationCoordinator.OnAppUpdateAvailable(args,notificationPreferences)){QueuePreferenceSave();}",
+            compact, StringComparison.Ordinal);
+        Assert.Contains(
+            "if(notificationCoordinator.OnFirmwareUpdateAvailable(args,notificationPreferences)){QueuePreferenceSave();}",
+            compact, StringComparison.Ordinal);
+        Assert.Contains("notificationCoordinator.RestoreDeliveredUpdates(", window, StringComparison.Ordinal);
+        Assert.Contains("LastNotifiedReleaseTag: notificationCoordinator.LastNotifiedReleaseTag", window, StringComparison.Ordinal);
+        Assert.Contains("LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature", window, StringComparison.Ordinal);
+        Assert.Contains("notificationCoordinator.Prime(CaptureNotificationObservation())", window, StringComparison.Ordinal);
+        Assert.Contains("UpdateViewModel.UpdateAvailable -= OnAppUpdateAvailable", window, StringComparison.Ordinal);
+        Assert.Contains("FirmwareUpdateViewModel.UpdateAvailable -= OnFirmwareUpdateAvailable", window, StringComparison.Ordinal);
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains("if (host is null)", app, StringComparison.Ordinal);
         Assert.Contains("return false;", app, StringComparison.Ordinal);
         Assert.Contains("return true;", app, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FirmwareNotificationUsesBehavioralLegacyMigrationGuard()
-    {
-        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        int handlerStart = window.IndexOf(
-            "private void OnFirmwareUpdateAvailable(",
-            StringComparison.Ordinal);
-        int handlerEnd = window.IndexOf(
-            "private void ApplyNotificationPreferences(",
-            handlerStart,
-            StringComparison.Ordinal);
-        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
-
-        string handler = window[handlerStart..handlerEnd];
-        int legacyMatch = handler.IndexOf(
-            "args.CanMigrateLegacySignature(lastNotifiedFirmwareSignature)",
-            StringComparison.Ordinal);
-        int migration = handler.IndexOf(
-            "lastNotifiedFirmwareSignature = args.Signature;",
-            legacyMatch,
-            StringComparison.Ordinal);
-        int migrationSave = handler.IndexOf(
-            "QueuePreferenceSave();",
-            migration,
-            StringComparison.Ordinal);
-        int notification = handler.IndexOf("if (!TryShowNotification(", StringComparison.Ordinal);
-
-        Assert.True(
-            legacyMatch >= 0
-                && migration > legacyMatch
-                && migrationSave > migration
-                && notification > migrationSave,
-            "A legacy signature must migrate and return before notification delivery.");
-        Assert.Contains(
-            "return;",
-            handler[migrationSave..notification],
-            StringComparison.Ordinal);
     }
 
     [Fact]
