@@ -4,6 +4,78 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsServiceLifecycleEventSourceTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task OrderedOverflowPreservesCleanupAndFinalDeviceAndDisplayLevels(
+        bool finalDeviceArrived,
+        bool finalDisplayOn)
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        for (int index = 0; index < 1024; index++)
+        {
+            backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+            backend.Publish(ServiceLifecycleTrigger.DisplayOff);
+            backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+            backend.Publish(ServiceLifecycleTrigger.DisplayOn);
+        }
+        backend.Publish(finalDeviceArrived
+            ? ServiceLifecycleTrigger.DeviceArrived : ServiceLifecycleTrigger.DeviceRemoved);
+        backend.Publish(finalDisplayOn
+            ? ServiceLifecycleTrigger.DisplayOn : ServiceLifecycleTrigger.DisplayOff);
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
+        source.Dispose();
+
+        var observed = new List<ServiceLifecycleTrigger>();
+        await foreach (ServiceLifecycleTrigger trigger in source.WatchAsync(CancellationToken.None))
+        {
+            observed.Add(trigger);
+        }
+
+        var expected = new List<ServiceLifecycleTrigger>
+        {
+            ServiceLifecycleTrigger.PowerChanged,
+            ServiceLifecycleTrigger.DeviceRemoved,
+            ServiceLifecycleTrigger.DisplayOff,
+        };
+        if (finalDeviceArrived)
+        {
+            expected.Add(ServiceLifecycleTrigger.DeviceArrived);
+        }
+        if (finalDisplayOn)
+        {
+            expected.Add(ServiceLifecycleTrigger.DisplayOn);
+        }
+        Assert.Equal(expected, observed);
+    }
+
+    [Fact]
+    public async Task OrderedOverflowReturnsToNormalOrderingAfterItsBatchDrains()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        for (int index = 0; index < WindowsServiceLifecycleEventSource.MaximumOrderedTriggers; index++)
+        {
+            backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+            backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        }
+        await using var reader = source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceRemoved, reader.Current);
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, reader.Current);
+
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, reader.Current);
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceRemoved, reader.Current);
+    }
+
     [Fact]
     public void Dispose_CleanupFailurePropagatesAndRetainsSubscription()
     {
