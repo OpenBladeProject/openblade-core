@@ -3576,7 +3576,7 @@ public sealed partial class MainViewModelTests
             },
         };
 
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         Assert.False(viewModel.IsGpuClockTuningEnabled);
         Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
@@ -3608,7 +3608,7 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Custom),
         };
 
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         Assert.Equal(PerformancePreset.Custom, viewModel.SelectedPerformance);
         Assert.False(viewModel.IsGpuClockTuningEnabled);
@@ -3643,7 +3643,7 @@ public sealed partial class MainViewModelTests
             },
         };
 
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         Assert.True(viewModel.IsGpuClockTuningEnabled);
         Assert.Equal("On", viewModel.TrayDashboardGpuTuningLabel);
@@ -3680,7 +3680,7 @@ public sealed partial class MainViewModelTests
             },
         };
 
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         Assert.Equal(enabled, viewModel.IsGpuClockTuningEnabled);
         Assert.Equal(enabled ? "On" : "Off", viewModel.TrayDashboardGpuTuningLabel);
@@ -3697,7 +3697,7 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning profile ready");
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
         Assert.Equal(legacyOffsets, viewModel.CurrentGpuClockOffsets);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
@@ -3736,7 +3736,7 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Dormant legacy GPU tuning profile ready");
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Custom);
@@ -3760,7 +3760,7 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         (ServiceStatusSnapshot status, GpuClockOffsetSettings legacyOffsets) =
             CreateLegacyGpuTuningStatus("Legacy GPU tuning save profile ready");
-        await PublishGpuTuningStatusAsync(client, dispatcher, viewModel, status);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
 
         await viewModel.SetGpuClockTuningEnabledAsync(
             enabled: false,
@@ -9288,33 +9288,30 @@ public sealed partial class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Silent,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
         {
+            Message = "HyperBoost exit baseline",
             ConfirmedState = baseline.ConfirmedState! with
             {
                 Performance = PerformancePreset.Balanced,
                 HyperBoostActive = true,
             },
         };
-        client.Publish(active);
-        await WaitUntilAsync(() =>
-            viewModel.HyperBoostActive
-            && viewModel.AvailableLaptopPerformanceOptions.Any(
-                option => option.Value == PerformancePreset.Performance));
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, active);
         LaptopPerformanceOption performance = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Performance);
 
         Task operation = viewModel.SetLaptopPerformanceOptionAsync(performance, default);
         await client.MutationStarted.Task;
-        client.Publish(active with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, active with
         {
             Revision = active.Revision + 1,
             Message = "Still active",
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Still active");
         client.CompleteMutation();
 
         await operation;
@@ -9904,7 +9901,7 @@ public sealed partial class MainViewModelTests
             ServiceVersion: "0.1.0-test");
     }
 
-    private static async Task PublishGpuTuningStatusAsync(
+    private static async Task PublishStatusAndWaitAsync(
         FakeServiceClient client,
         RecordingDispatcher dispatcher,
         MainViewModel viewModel,
