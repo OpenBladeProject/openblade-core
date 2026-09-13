@@ -96,6 +96,22 @@ public sealed class BrokerEnrollmentTests : IDisposable
         await Assert.ThrowsAsync<FileNotFoundException>(() => store.LoadAsync());
     }
 
+    [Fact]
+    public async Task Store_RejectsOversizedEnrollmentBeforeCodecParsing()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        await File.WriteAllBytesAsync(paths.EnrollmentPath,
+            new byte[BrokerEnrollmentCodec.MaximumBytes + 1]);
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BrokerEnrollmentStore(paths).LoadAsync());
+
+        Assert.Contains("size bound", exception.Message);
+        Assert.Equal(BrokerEnrollmentCodec.MaximumBytes + 1,
+            new FileInfo(paths.EnrollmentPath).Length);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))

@@ -145,6 +145,55 @@ public sealed class DeploymentPolicyTests : IDisposable
     }
 
     [Fact]
+    public async Task AcceptedSequenceStore_RejectsOversizedRecordWithoutReplacingIt()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        string original = new('0', BrokerAcceptedSequenceStore.MaximumSequenceBytes);
+        original += "7";
+        await File.WriteAllTextAsync(paths.AcceptedSequencePath, original);
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BrokerAcceptedSequenceStore(paths).ConsumeAsync(8));
+
+        Assert.Contains("size bound", failure.Message);
+        Assert.Equal(original, await File.ReadAllTextAsync(paths.AcceptedSequencePath));
+        Assert.Empty(Directory.GetFiles(root, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task AcceptedSequenceStore_PreservesExistingBomEncodingAndMaximumValueReads()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        await File.WriteAllTextAsync(paths.AcceptedSequencePath, "7", System.Text.Encoding.Unicode);
+        BrokerAcceptedSequenceStore store = new(paths);
+
+        await store.ConsumeAsync(long.MaxValue);
+
+        Assert.Equal(long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            await File.ReadAllTextAsync(paths.AcceptedSequencePath));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.ConsumeAsync(long.MaxValue));
+    }
+
+    [Theory]
+    [InlineData(0xff)]
+    [InlineData(0xc3)]
+    public async Task AcceptedSequenceStore_RejectsMalformedUtf8WithoutReplacingIt(int invalidByte)
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        byte[] original = [(byte)'7', (byte)invalidByte];
+        await File.WriteAllBytesAsync(paths.AcceptedSequencePath, original);
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BrokerAcceptedSequenceStore(paths).ConsumeAsync(8));
+
+        Assert.Contains("malformed", failure.Message);
+        Assert.Equal(original, await File.ReadAllBytesAsync(paths.AcceptedSequencePath));
+    }
+
+    [Fact]
     public async Task TerminalReport_InterruptionBeforePublishLeavesNoPartialFinalOrTemp()
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);
@@ -248,6 +297,43 @@ public sealed class DeploymentPolicyTests : IDisposable
 
         Assert.False(Directory.Exists(request));
         Assert.True(File.Exists(Path.Combine(unrelated, "keep.bin")));
+    }
+
+    [Fact]
+    public async Task Recovery_BoundsJournalAndReportReads()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        BrokerDurableRecordStore store = new(paths);
+        paths.EnsureDirectory(paths.JournalDirectory);
+        string journal = Path.Combine(paths.JournalDirectory, Guid.NewGuid().ToString("N") + ".jsonl");
+        await File.WriteAllBytesAsync(journal, new byte[BrokerDurableRecordStore.MaximumJournalBytes + 1]);
+        InvalidDataException journalFailure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.ReadTransitionsAsync(journal));
+        Assert.Contains("size bound", journalFailure.Message);
+
+        BrokerTerminalReport report = CreateReport();
+        await store.CreateTerminalReportOnceAsync(report);
+        Assert.True(await store.MatchesExistingTerminalReportAsync(report));
+        string reportPath = Path.Combine(paths.ReportDirectory, report.RequestId.ToString("N") + ".json");
+        await File.AppendAllTextAsync(reportPath, " ");
+        Assert.False(await store.MatchesExistingTerminalReportAsync(report));
+    }
+
+    [Fact]
+    public async Task TerminalReport_LongerConflictingReportDoesNotMatch()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        BrokerDurableRecordStore store = new(paths);
+        BrokerTerminalReport candidate = CreateReport();
+        BrokerTerminalReport recorded = candidate with
+        {
+            Disposition = BrokerDeploymentDisposition.RolledBack,
+            ServiceHealthy = false,
+        };
+        await store.CreateTerminalReportOnceAsync(recorded);
+
+        Assert.False(await store.MatchesExistingTerminalReportAsync(candidate));
+        Assert.True(await store.MatchesExistingTerminalReportAsync(recorded));
     }
 
     public void Dispose()

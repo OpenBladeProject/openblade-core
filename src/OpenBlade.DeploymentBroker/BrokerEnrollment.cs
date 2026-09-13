@@ -446,7 +446,8 @@ public sealed class BrokerEnrollmentStore(BrokerPaths paths)
             ProtectedBrokerStorage.RejectReparsePoint(paths.EnrollmentPath);
             paths.VerifyDirectory(paths.RootDirectory);
             paths.VerifyFile(paths.EnrollmentPath);
-            byte[] bytes = await File.ReadAllBytesAsync(paths.EnrollmentPath, cancellationToken)
+            byte[] bytes = await BrokerStateFile.ReadAsync(
+                paths.EnrollmentPath, BrokerEnrollmentCodec.MaximumBytes, cancellationToken)
                 .ConfigureAwait(false);
             return BrokerEnrollmentCodec.ParseCanonical(bytes);
         }

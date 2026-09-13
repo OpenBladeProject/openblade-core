@@ -55,6 +55,10 @@ public interface IBrokerAcceptedSequenceStore
 
 public sealed class BrokerAcceptedSequenceStore(BrokerPaths paths) : IBrokerAcceptedSequenceStore
 {
+    // Canonical writes contain at most 19 ASCII digits. Leave room for BOM-based
+    // encodings accepted by the existing reader without permitting unbounded text.
+    internal const int MaximumSequenceBytes = 128;
+
     public async Task ConsumeAsync(long sequence, CancellationToken cancellationToken = default)
     {
         if (sequence <= 0)
@@ -68,8 +72,11 @@ public sealed class BrokerAcceptedSequenceStore(BrokerPaths paths) : IBrokerAcce
         {
             ProtectedBrokerStorage.RejectReparsePoint(paths.AcceptedSequencePath);
             paths.VerifyFile(paths.AcceptedSequencePath);
-            string text = await File.ReadAllTextAsync(paths.AcceptedSequencePath, cancellationToken)
+            byte[] sequenceBytes = await BrokerStateFile.ReadAsync(
+                paths.AcceptedSequencePath, MaximumSequenceBytes, cancellationToken)
                 .ConfigureAwait(false);
+            using StreamReader reader = new(new MemoryStream(sequenceBytes));
+            string text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             if (!long.TryParse(
                     text,
                     System.Globalization.NumberStyles.None,
@@ -504,13 +511,7 @@ public sealed class BrokerDurableRecordStore
     {
         ProtectedBrokerStorage.RejectReparsePoint(journal);
         paths.VerifyFile(journal);
-        FileInfo info = new(journal);
-        if (info.Length <= 0 || info.Length > MaximumJournalBytes)
-        {
-            throw new InvalidDataException("The broker transition journal has an invalid size.");
-        }
-
-        byte[] bytes = await File.ReadAllBytesAsync(journal, cancellationToken)
+        byte[] bytes = await BrokerStateFile.ReadAsync(journal, MaximumJournalBytes, cancellationToken)
             .ConfigureAwait(false);
         if (bytes.Length == 0 || bytes[^1] != (byte)'\n')
         {
@@ -611,10 +612,13 @@ public sealed class BrokerDurableRecordStore
         ProtectedBrokerStorage.RejectReparsePoint(reportPath);
         paths.VerifyDirectory(paths.ReportDirectory);
         paths.VerifyFile(reportPath);
-        byte[] existing = await File.ReadAllBytesAsync(reportPath, cancellationToken)
-            .ConfigureAwait(false);
         try
         {
+            // Only completedAt may differ, and canonical UTC timestamps have fixed width.
+            // A larger record cannot match, including a valid conflicting report.
+            byte[] existing = await BrokerStateFile.ReadAsync(
+                reportPath, SerializeCanonicalReport(report).Length, cancellationToken)
+                .ConfigureAwait(false);
             using JsonDocument document = JsonDocument.Parse(existing);
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("completedAt", out JsonElement completedAt)
@@ -634,6 +638,10 @@ public sealed class BrokerDurableRecordStore
                 SerializeCanonicalReport(report with { CompletedAt = recordedAt }));
         }
         catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidDataException)
         {
             return false;
         }

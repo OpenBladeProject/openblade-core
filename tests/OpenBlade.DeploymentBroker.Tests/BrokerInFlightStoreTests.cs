@@ -122,6 +122,22 @@ public sealed class BrokerInFlightStoreTests : IDisposable
         Assert.True(File.Exists(paths.InFlightPath));
     }
 
+    [Fact]
+    public async Task Store_RejectsOversizedLatchWithoutRemovingIt()
+    {
+        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        paths.EnsureDirectory(paths.RootDirectory);
+        await File.WriteAllBytesAsync(paths.InFlightPath,
+            new byte[BrokerInFlightDeploymentCodec.MaximumBytes + 1]);
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new BrokerInFlightStore(paths).LoadAsync());
+
+        Assert.Contains("size bound", exception.Message);
+        Assert.Equal(BrokerInFlightDeploymentCodec.MaximumBytes + 1,
+            new FileInfo(paths.InFlightPath).Length);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))

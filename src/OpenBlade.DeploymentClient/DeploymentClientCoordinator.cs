@@ -28,10 +28,16 @@ internal sealed class DeploymentClientCoordinator(
     IInstalledProcessShutdown shutdown,
     IDeploymentProcessLauncher processes,
     IRequestIdSource requestIds,
-    Action<string>? diagnostic = null)
+    Action<string>? diagnostic = null,
+    TimeProvider? timeProvider = null,
+    Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
     private static readonly TimeSpan SessionAgentSurvivalWindow = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FinalInventoryTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan FinalInventoryPollInterval = TimeSpan.FromMilliseconds(100);
     private const string ExactRollbackCode = "install-rolled-back";
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly Func<TimeSpan, CancellationToken, Task> delay = delay ?? Task.Delay;
 
     internal async Task<bool> ApplyFixedInboxAsync(CancellationToken cancellationToken)
     {
@@ -230,11 +236,80 @@ internal sealed class DeploymentClientCoordinator(
         cancellationToken.ThrowIfCancellationRequested();
         using ILaunchedDeploymentProcess? tray = processes.Launch(
             InstalledProcessLaunchPlan.Tray(paths));
-        bool launched = tray is not null
-            && await tray.RemainsAliveAsync(SessionAgentSurvivalWindow)
-                .ConfigureAwait(false)
-            && inventory.Inspect(paths).HasExactFinalState;
-        return launched || Fail("tray-relaunch-failed");
+        if (tray is null
+            || !await tray.RemainsAliveAsync(SessionAgentSurvivalWindow)
+                .ConfigureAwait(false))
+        {
+            return Fail("tray-relaunch-failed");
+        }
+
+        string? failure = await WaitForFinalInventoryAsync(
+            paths, sessionAgent, tray, cancellationToken).ConfigureAwait(false);
+        return failure is null || Fail(failure);
+    }
+
+    private async Task<string?> WaitForFinalInventoryAsync(
+        InstalledPayloadPaths paths,
+        ILaunchedDeploymentProcess sessionAgent,
+        ILaunchedDeploymentProcess tray,
+        CancellationToken cancellationToken)
+    {
+        long started = timeProvider.GetTimestamp();
+        bool previousInventoryExact = false;
+        while (timeProvider.GetElapsedTime(started) < FinalInventoryTimeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? failure = GetFinalInventoryAdmissionFailure(sessionAgent, tray);
+            if (failure is not null)
+            {
+                return failure;
+            }
+
+            // Tray startup can briefly create a duplicate Session Agent. Only
+            // observations are retried; no launch or broker request is repeated.
+            bool inventoryExact = inventory.Inspect(paths).HasExactFinalState;
+            cancellationToken.ThrowIfCancellationRequested();
+            failure = GetFinalInventoryAdmissionFailure(sessionAgent, tray);
+            if (failure is not null)
+            {
+                return failure;
+            }
+            if (timeProvider.GetElapsedTime(started) >= FinalInventoryTimeout)
+            {
+                return "final-inventory-timeout";
+            }
+
+            if (inventoryExact && previousInventoryExact)
+            {
+                return null;
+            }
+            previousInventoryExact = inventoryExact;
+
+            TimeSpan remaining = FinalInventoryTimeout - timeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                return "final-inventory-timeout";
+            }
+            await delay(
+                remaining < FinalInventoryPollInterval ? remaining : FinalInventoryPollInterval,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return "final-inventory-timeout";
+    }
+
+    private string? GetFinalInventoryAdmissionFailure(
+        ILaunchedDeploymentProcess sessionAgent,
+        ILaunchedDeploymentProcess tray)
+    {
+        if (!HasRequiredContext())
+        {
+            return "client-context-changed";
+        }
+        if (sessionAgent.HasExited)
+        {
+            return "session-agent-relaunch-failed";
+        }
+        return tray.HasExited ? "tray-relaunch-failed" : null;
     }
 
     private bool HasRequiredContext() =>

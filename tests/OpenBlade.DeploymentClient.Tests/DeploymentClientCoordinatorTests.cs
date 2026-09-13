@@ -98,7 +98,7 @@ public sealed class DeploymentClientCoordinatorTests
 
         Assert.True(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
         Assert.Equal(1, broker.Calls);
-        Assert.Equal(5, inventory.Calls);
+        Assert.Equal(6, inventory.Calls);
         Assert.Equal(
             sessionAgents == 0
                 ? []
@@ -795,29 +795,238 @@ public sealed class DeploymentClientCoordinatorTests
         Assert.Equal(["client-exception:TimeoutException"], diagnostics);
     }
 
-    [Fact]
-    public async Task DuplicateOrElevatedFinalInventory_FailsRelaunchResult()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task FinalInventory_TransientDuplicateOrAmbiguitySettlesWithoutReplay(bool unambiguous)
     {
-        RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
-        DeploymentClientCoordinator coordinator = new(
-            new FixedBrokerChannel(BrokerProtocolTests.Success()),
-            new FixedIntegritySource(elevated: false),
-            new FixedSessionSource(active: true),
-            new RecordingLegacyStartupCleanup(),
-            new FixedInstalledPayloadVerifier(Paths),
-            new SequenceProcessInventory(
-                new InstalledProcessInventory(true, 0, 0),
-                new InstalledProcessInventory(true, 0, 0),
-                new InstalledProcessInventory(true, 0, 0),
-                new InstalledProcessInventory(true, 1, 0),
-                new InstalledProcessInventory(false, 1, 2)),
-            new RecordingProcessShutdown(succeeds: true),
-            processes,
-            new FixedRequestIdSource());
+        var context = new FinalInventoryContext(
+            new(unambiguous, unambiguous ? 2 : 1, 1), new(true, 1, 1));
 
-        Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
-        Assert.Equal(2, processes.Plans.Count);
-        Assert.Equal(1, processes.TrayAliveChecks);
+        Assert.True(await context.RunAsync());
+        Assert.Equal(7, context.Inventory.Calls);
+        Assert.Equal(TimeSpan.FromMilliseconds(200), context.Clock.Elapsed);
+        Assert.Empty(context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Fact]
+    public async Task FinalInventory_AnAmbiguousObservationResetsConsecutiveAcceptance()
+    {
+        var context = new FinalInventoryContext(
+            new(true, 1, 1), new(false, 1, 1), new(true, 1, 1));
+
+        Assert.True(await context.RunAsync());
+        Assert.Equal(8, context.Inventory.Calls);
+        Assert.Equal(TimeSpan.FromMilliseconds(300), context.Clock.Elapsed);
+        Assert.Empty(context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Theory]
+    [InlineData(true, 2, 1)]
+    [InlineData(true, 1, 2)]
+    [InlineData(true, 0, 1)]
+    [InlineData(true, 1, 0)]
+    [InlineData(false, 1, 1)]
+    public async Task FinalInventory_PersistentMismatchOrAmbiguityFailsAtDeadline(
+        bool unambiguous, int agents, int trays)
+    {
+        var context = new FinalInventoryContext(new InstalledProcessInventory(unambiguous, agents, trays));
+
+        Assert.False(await context.RunAsync());
+        Assert.Equal(TimeSpan.FromSeconds(10), context.Clock.Elapsed);
+        Assert.Equal(104, context.Inventory.Calls);
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Fact]
+    public async Task FinalInventory_AlternatingHealthyAndAmbiguousObservationsDoNotExtendDeadline()
+    {
+        InstalledProcessInventory[] observations = Enumerable.Range(0, 100)
+            .Select(index => new InstalledProcessInventory(index % 2 == 0, 1, 1))
+            .Append(new InstalledProcessInventory(true, 1, 1)).ToArray();
+        var context = new FinalInventoryContext(observations);
+
+        Assert.False(await context.RunAsync());
+        Assert.Equal(TimeSpan.FromSeconds(10), context.Clock.Elapsed);
+        Assert.Equal(104, context.Inventory.Calls);
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task FinalInventory_OriginalChildExitCannotBeSatisfiedByAReplacement(
+        bool sessionAgent, bool duringObservation)
+    {
+        var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
+        void ExitOriginalChild() =>
+            context.Processes.StartedProcesses[sessionAgent ? 0 : 1].HasExited = true;
+        if (duringObservation)
+        {
+            context.Inventory.BeforeInspect = call =>
+            {
+                if (call == 6)
+                {
+                    ExitOriginalChild();
+                }
+            };
+        }
+        else
+        {
+            context.Clock.AfterDelay = ExitOriginalChild;
+        }
+
+        Assert.False(await context.RunAsync());
+        Assert.Equal(duringObservation ? 6 : 5, context.Inventory.Calls);
+        Assert.Equal([sessionAgent ? "session-agent-relaunch-failed" : "tray-relaunch-failed"],
+            context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task FinalInventory_ContextLossBeforeOrDuringAcceptanceFailsClosed(
+        bool elevation, bool duringObservation)
+    {
+        var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
+        void ChangeContext()
+        {
+            context.Caller.Elevated = elevation;
+            context.Caller.Active = elevation;
+        }
+        if (duringObservation)
+        {
+            context.Inventory.BeforeInspect = call =>
+            {
+                if (call == 6)
+                {
+                    ChangeContext();
+                }
+            };
+        }
+        else
+        {
+            context.Clock.AfterDelay = ChangeContext;
+        }
+
+        Assert.False(await context.RunAsync());
+        Assert.Equal(duringObservation ? 6 : 5, context.Inventory.Calls);
+        Assert.Equal(["client-context-changed"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Fact]
+    public async Task FinalInventory_CancellationDuringSettlingDoesNotReplay()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
+        context.Clock.AfterDelay = cancellation.Cancel;
+
+        Assert.False(await context.RunAsync(cancellation.Token));
+        Assert.Equal(5, context.Inventory.Calls);
+        Assert.Equal(["client-operation-canceled"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Fact]
+    public async Task FinalInventory_DeadlineReachedDuringHealthyReadCannotSucceed()
+    {
+        var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
+        context.Inventory.BeforeInspect = call =>
+        {
+            if (call == 6)
+            {
+                context.Clock.Advance(TimeSpan.FromSeconds(10));
+            }
+        };
+
+        Assert.False(await context.RunAsync());
+        Assert.Equal(["final-inventory-timeout"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Fact]
+    public async Task FinalInventory_CancellationDuringHealthyReadCannotSucceed()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var context = new FinalInventoryContext(new InstalledProcessInventory(true, 1, 1));
+        context.Inventory.BeforeInspect = call =>
+        {
+            if (call == 6)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        Assert.False(await context.RunAsync(cancellation.Token));
+        Assert.Equal(["client-operation-canceled"], context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    private sealed class FinalInventoryContext(params InstalledProcessInventory[] finalObservations)
+    {
+        internal SequenceProcessInventory Inventory { get; } = new(
+            [new(true, 1, 1), new(true, 0, 0), new(true, 0, 0), new(true, 1, 0), .. finalObservations]);
+        internal SettlingClock Clock { get; } = new();
+        internal MutableClientContext Caller { get; } = new();
+        internal RecordingProcessLauncher Processes { get; } = new(sessionRemainsAlive: true);
+        internal List<string> Diagnostics { get; } = [];
+        private readonly FixedBrokerChannel broker = new(BrokerProtocolTests.Success());
+        private readonly RecordingProcessShutdown shutdown = new(succeeds: true);
+        private readonly RecordingLegacyStartupCleanup cleanup = new();
+
+        internal Task<bool> RunAsync(CancellationToken cancellationToken = default) =>
+            new DeploymentClientCoordinator(
+                broker, Caller, Caller, cleanup, new FixedInstalledPayloadVerifier(Paths),
+                Inventory, shutdown, Processes, new FixedRequestIdSource(), Diagnostics.Add,
+                Clock, Clock.DelayAsync).ApplyFixedInboxAsync(cancellationToken);
+
+        internal void AssertNoReplay()
+        {
+            Assert.Equal(1, broker.Calls);
+            Assert.Equal(1, cleanup.Calls);
+            Assert.Equal([InstalledProcessShape.SessionAgentAndTray], shutdown.Shapes);
+            Assert.Equal([Paths.SessionAgentExecutable, Paths.TrayExecutable],
+                Processes.Plans.Select(plan => plan.FileName));
+            Assert.Equal(1, Processes.SessionAliveChecks);
+            Assert.Equal(1, Processes.TrayAliveChecks);
+        }
+    }
+
+    private sealed class MutableClientContext : IClientIntegritySource, IClientSessionSource
+    {
+        internal bool Elevated { get; set; }
+        internal bool Active { get; set; } = true;
+        public bool IsElevated() => Elevated;
+        public bool IsActiveLocalConsoleSession() => Active;
+    }
+
+    private sealed class SettlingClock : TimeProvider
+    {
+        private long timestamp;
+        internal TimeSpan Elapsed => TimeSpan.FromTicks(timestamp);
+        internal Action? AfterDelay { get; set; }
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => timestamp;
+        internal void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
+        internal Task DelayAsync(TimeSpan duration, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.InRange(duration, TimeSpan.FromTicks(1), TimeSpan.FromMilliseconds(100));
+            Advance(duration);
+            AfterDelay?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 
     private static DeploymentClientCoordinator CreateCoordinator(
@@ -943,15 +1152,13 @@ public sealed class DeploymentClientCoordinatorTests
 
         internal int Calls => next;
 
+        internal Action<int>? BeforeInspect { get; set; }
+
         public InstalledProcessInventory Inspect(InstalledPayloadPaths paths)
         {
             Assert.Equal(Paths, paths);
-            if (next >= sequence.Length)
-            {
-                throw new InvalidOperationException("No synthetic process inventory remains.");
-            }
-
-            return sequence[next++];
+            BeforeInspect?.Invoke(next + 1);
+            return sequence[Math.Min(next++, sequence.Length - 1)];
         }
     }
 
@@ -1032,6 +1239,8 @@ public sealed class DeploymentClientCoordinatorTests
     {
         internal List<InstalledProcessLaunchPlan> Plans { get; } = [];
 
+        internal List<RecordingProcess> StartedProcesses { get; } = [];
+
         internal int SessionAliveChecks { get; private set; }
 
         internal int TrayAliveChecks { get; private set; }
@@ -1044,15 +1253,19 @@ public sealed class DeploymentClientCoordinatorTests
                 plan.FileName,
                 Paths.SessionAgentExecutable,
                 StringComparison.OrdinalIgnoreCase);
-            return new RecordingProcess(
+            var process = new RecordingProcess(
                 isSession ? sessionRemainsAlive : true,
                 isSession ? () => SessionAliveChecks++ : () => TrayAliveChecks++);
+            StartedProcesses.Add(process);
+            return process;
         }
     }
 
     private sealed class RecordingProcess(bool remainsAlive, Action? onCheck)
         : ILaunchedDeploymentProcess
     {
+        public bool HasExited { get; set; } = !remainsAlive;
+
         public Task<bool> RemainsAliveAsync(TimeSpan duration)
         {
             Assert.Equal(TimeSpan.FromSeconds(1), duration);

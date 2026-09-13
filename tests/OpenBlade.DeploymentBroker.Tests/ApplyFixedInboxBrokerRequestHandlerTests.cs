@@ -196,6 +196,64 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandleAsync_ProcessBindingFailureRetainsActualCommitStateAndFailsClosed(bool afterCommit)
+    {
+        static void FailProcessBinding(BrokerInFlightDeployment state)
+        {
+            if (state.InstallerProcessId.HasValue && !state.InstallerExitCode.HasValue)
+            {
+                throw new IOException("Injected PID binding failure.");
+            }
+        }
+
+        using HandlerFixture fixture = CreateFixture(
+            new BrokerInstallerExecutionResult(true, 0, false),
+            new BrokerPostInstallVerification(true, true, false),
+            afterInFlightReplacement: afterCommit ? FailProcessBinding : null,
+            beforeInFlightReplacement: afterCommit ? null : FailProcessBinding);
+
+        BrokerResponse response = await fixture.Handler.HandleAsync(
+            fixture.Request, fixture.Enrollment, CancellationToken.None);
+
+        Assert.Equal(BrokerResponseStatus.Indeterminate, response.Status);
+        Assert.Equal("installer-process-unresolved", response.Code);
+        BrokerInFlightDeployment unresolved = Assert.IsType<BrokerInFlightDeployment>(
+            await new BrokerInFlightStore(fixture.Paths).LoadAsync());
+        Assert.Equal(afterCommit ? 4242 : null, unresolved.InstallerProcessId);
+        Assert.Equal(afterCommit ? 0 : null, unresolved.InstallerExitCode);
+        Assert.False(Directory.Exists(fixture.Paths.ReportDirectory));
+        IReadOnlyList<BrokerTransition> transitions = await new BrokerDurableRecordStore(fixture.Paths)
+            .ReadTransitionsAsync(Path.Combine(
+                fixture.Paths.JournalDirectory, fixture.Request.RequestId.ToString("N") + ".jsonl"));
+        Assert.Equal(
+            afterCommit ? BrokerTransitionKind.InstallerExited : BrokerTransitionKind.Ambiguous,
+            transitions[^1].Transition);
+        Assert.Equal(
+            afterCommit
+                ? "installer-exit-observed"
+                : "installer-exit-observed-process-binding-unresolved",
+            transitions[^1].Detail);
+
+        BrokerResponse repeated = await fixture.Handler.HandleAsync(
+            fixture.Request with { RequestId = Guid.NewGuid() },
+            fixture.Enrollment, CancellationToken.None);
+        Assert.Equal("unresolved-deployment", repeated.Code);
+        Assert.Equal(1, fixture.Runner.CallCount);
+
+        BrokerStartupReconciler reconciler = new(
+            new BrokerInFlightStore(fixture.Paths),
+            new NotRunningProcessInspector(), fixture.State,
+            new BrokerDurableRecordStore(fixture.Paths), fixture.Paths,
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 27, 0, 1, 0, TimeSpan.Zero)),
+            NullLogger<BrokerStartupReconciler>.Instance);
+        Assert.Equal(afterCommit, await reconciler.TryReconcileAsync(
+            fixture.Enrollment, CancellationToken.None));
+        Assert.Equal(!afterCommit, File.Exists(fixture.Paths.InFlightPath));
+    }
+
+    [Theory]
     [InlineData(false, null, false, false, false, BrokerResponseStatus.Indeterminate)]
     [InlineData(true, 1, false, true, true, BrokerResponseStatus.RolledBack)]
     [InlineData(true, 0, true, false, false, BrokerResponseStatus.Indeterminate)]
@@ -288,7 +346,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         bool returnUnauthorizedInstallerPath = false,
         bool corruptDetachedSignature = false,
         Action<BrokerInFlightDeployment>? afterInFlightReplacement = null,
-        BrokerInstalledState? before = null)
+        BrokerInstalledState? before = null,
+        Action<BrokerInFlightDeployment>? beforeInFlightReplacement = null)
     {
         ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         byte[] spki = key.ExportSubjectPublicKeyInfo();
@@ -332,7 +391,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             downloader,
             sequenceStore,
             new BrokerDurableRecordStore(paths),
-            new BrokerInFlightStore(paths, afterInFlightReplacement),
+            new BrokerInFlightStore(paths, afterInFlightReplacement, beforeInFlightReplacement),
             state,
             runner,
             paths,
@@ -418,8 +477,15 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         {
             CallCount++;
             CapturedPlan = startInfo;
-            processStarted(4242);
-            return Task.FromResult(result);
+            try
+            {
+                processStarted(4242);
+                return Task.FromResult(result);
+            }
+            catch (Exception exception)
+            {
+                return Task.FromResult(result with { ProcessBindingFailure = exception });
+            }
         }
     }
 
