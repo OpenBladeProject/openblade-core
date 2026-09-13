@@ -29,11 +29,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private const double MinimumHeightDip = 600;
     private const double DashboardStackThresholdDip = 600;
     private const double ProfilesStackThresholdDip = 900;
-    private const string AppUpdateNotificationTag = "app-update";
-    private const string FirmwareUpdateNotificationTag = "firmware-update";
-    private const string ProfileNotificationTag = "profile-power-source";
-    private const string ControllerAdvisoryNotificationTag = "controller-advisory";
-    private const string OperationFailureNotificationTag = "operation-failure";
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan LightingCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan GpuClockOffsetCommitDelay = TimeSpan.FromMilliseconds(500);
@@ -59,7 +54,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly bool localizationSnapshotMode;
     private readonly UiLanguagePreference? initialLanguageOverride;
     private readonly UpdateCheckInterval? initialUpdateCheckConsentOverride;
-    private readonly Func<TrayNotification, bool> showNotification;
+    private readonly WindowNotificationCoordinator notificationCoordinator;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly SessionGpuAppAdapter gpuAppAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
@@ -98,7 +93,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingSpecialKeyBindings;
     private bool changingAccentColor;
     private bool changingNotificationPreferences;
-    private bool notificationObservationReady;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
@@ -132,11 +126,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private IReadOnlyList<TrayDashboardControlOption> trayDashboardAllControlOptions = [];
     private IReadOnlyList<TrayDashboardSliderOption> trayDashboardAllSliderOptions = [];
     private bool changingTrayDashboardEditor;
-    private string? lastNotifiedReleaseTag;
-    private string? lastNotifiedFirmwareSignature;
-    private PowerSource lastObservedPowerSource = PowerSource.ExternalUnknown;
-    private string lastObservedControllerAdvisory = string.Empty;
-    private string lastObservedOperationFailure = string.Empty;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -165,7 +154,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         this.processorPolicy = processorPolicy
             ?? throw new ArgumentNullException(nameof(processorPolicy));
         ArgumentNullException.ThrowIfNull(startupRegistration);
-        this.showNotification = showNotification ?? (_ => false);
+        notificationCoordinator = new WindowNotificationCoordinator(
+            showNotification ?? (_ => false));
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
@@ -811,8 +801,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
         LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
-        lastNotifiedReleaseTag = initialLastNotifiedReleaseTag;
-        lastNotifiedFirmwareSignature = initialLastNotifiedFirmwareSignature;
+        notificationCoordinator.RestoreDeliveredUpdates(
+            initialLastNotifiedReleaseTag,
+            initialLastNotifiedFirmwareSignature);
         UpdateViewModel.ApplyPreferences(
             initialUpdateChannel,
             initialUpdateCheckInterval,
@@ -1190,8 +1181,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastKnownPublishedTouchpadStatus:
                     FirmwareUpdateViewModel.CachedTouchpadStatus,
                 Notifications: notificationPreferences,
-                LastNotifiedReleaseTag: lastNotifiedReleaseTag,
-                LastNotifiedFirmwareSignature: lastNotifiedFirmwareSignature,
+                LastNotifiedReleaseTag: notificationCoordinator.LastNotifiedReleaseTag,
+                LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
                 LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference));
@@ -1378,70 +1369,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object? sender,
         AppUpdateAvailableEventArgs args)
     {
-        if (!IsNotificationEnabled(NotificationCategory.AppUpdates)
-            || string.Equals(
-                lastNotifiedReleaseTag,
-                args.ReleaseTag,
-                StringComparison.OrdinalIgnoreCase))
+        if (notificationCoordinator.OnAppUpdateAvailable(args, notificationPreferences))
         {
-            return;
+            QueuePreferenceSave();
         }
-
-        if (!TryShowNotification(new TrayNotification(
-            LocalizedResources.Get(
-                "MainWindow_Notification_AppUpdateTitle",
-                "OpenBlade update available"),
-            LocalizedResources.Format(
-                "MainWindow_Notification_AppUpdateBody",
-                "OpenBlade {0} is ready to download.",
-                args.ReleaseTag.TrimStart('v', 'V')),
-            TrayNotificationSeverity.Information,
-            ReplacementTag: AppUpdateNotificationTag,
-            Destination: TrayNotificationDestination.Updates)))
-        {
-            return;
-        }
-        lastNotifiedReleaseTag = args.ReleaseTag;
-        QueuePreferenceSave();
     }
 
     private void OnFirmwareUpdateAvailable(
         object? sender,
         FirmwareUpdateAvailableEventArgs args)
     {
-        if (!IsNotificationEnabled(NotificationCategory.FirmwareUpdates))
+        if (notificationCoordinator.OnFirmwareUpdateAvailable(args, notificationPreferences))
         {
-            return;
-        }
-
-        if (string.Equals(
-                lastNotifiedFirmwareSignature,
-                args.Signature,
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (args.CanMigrateLegacySignature(lastNotifiedFirmwareSignature))
-        {
-            lastNotifiedFirmwareSignature = args.Signature;
             QueuePreferenceSave();
-            return;
         }
-
-        if (!TryShowNotification(new TrayNotification(
-            LocalizedResources.Get(
-                "MainWindow_Notification_FirmwareUpdateTitle",
-                "Razer firmware update available"),
-            args.Summary,
-            TrayNotificationSeverity.Information,
-            ReplacementTag: FirmwareUpdateNotificationTag,
-            Destination: TrayNotificationDestination.Firmware)))
-        {
-            return;
-        }
-        lastNotifiedFirmwareSignature = args.Signature;
-        QueuePreferenceSave();
     }
 
     private void ApplyNotificationPreferences(NotificationPreferences preferences)
@@ -1488,113 +1429,26 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         OnPropertyChanged(nameof(OperationFailureNotificationsEnabled));
     }
 
-    private void PrimeNotificationObservation()
-    {
-        lastObservedPowerSource = ViewModel.ActivePowerSource;
-        lastObservedControllerAdvisory = ViewModel.HasControllerAdvisory
-            ? ViewModel.ControllerAdvisoryText
-            : string.Empty;
-        lastObservedOperationFailure = ViewModel.TroubleshootingRecentErrorStatus;
-        notificationObservationReady = true;
-    }
+    private WindowNotificationObservation CaptureNotificationObservation() => new(
+        ViewModel.ActivePowerSource,
+        ViewModel.HasControllerAdvisory,
+        ViewModel.ControllerAdvisoryText,
+        ViewModel.TroubleshootingRecentErrorStatus);
+
+    private void PrimeNotificationObservation() =>
+        notificationCoordinator.Prime(CaptureNotificationObservation());
 
     private void ObserveNotificationState(string? propertyName)
     {
-        if (!notificationObservationReady)
+        if (notificationCoordinator.ObservationReady
+            && propertyName is nameof(MainViewModel.ActivePowerSource)
+                or nameof(MainViewModel.ControllerAdvisoryText)
+                or nameof(MainViewModel.TroubleshootingRecentErrorStatus))
         {
-            return;
-        }
-
-        if (propertyName == nameof(MainViewModel.ActivePowerSource))
-        {
-            PowerSource current = ViewModel.ActivePowerSource;
-            bool changed = current != lastObservedPowerSource;
-            lastObservedPowerSource = current;
-            if (changed
-                && current != PowerSource.ExternalUnknown
-                && IsNotificationEnabled(
-                    NotificationCategory.ProfileAndPowerSourceChanges))
-            {
-                string profile = current switch
-                {
-                    PowerSource.PluggedIn => LocalizedResources.Get("MainWindow_Notification_ProfileAc", "AC profile"),
-                    PowerSource.UsbC => LocalizedResources.Get("MainWindow_Notification_ProfileUsbC", "USB-C profile"),
-                    PowerSource.Battery => LocalizedResources.Get("MainWindow_Notification_ProfileBattery", "Battery profile"),
-                    _ => LocalizedResources.Get("MainWindow_Notification_ProfileActive", "active power profile"),
-                };
-                TryShowNotification(new TrayNotification(
-                    LocalizedResources.Get(
-                        "MainWindow_Notification_ProfileChangedTitle",
-                        "Power profile changed"),
-                    LocalizedResources.Format(
-                        "MainWindow_Notification_ProfileChangedBody",
-                        "OpenBlade is now using the {0}.",
-                        profile),
-                    TrayNotificationSeverity.Information,
-                    ReplacementTag: ProfileNotificationTag,
-                    Destination: TrayNotificationDestination.Laptop));
-            }
-        }
-        else if (propertyName == nameof(MainViewModel.ControllerAdvisoryText))
-        {
-            string current = ViewModel.HasControllerAdvisory
-                ? ViewModel.ControllerAdvisoryText
-                : string.Empty;
-            bool changed = !string.Equals(
-                current,
-                lastObservedControllerAdvisory,
-                StringComparison.Ordinal);
-            lastObservedControllerAdvisory = current;
-            if (changed
-                && !string.IsNullOrWhiteSpace(current)
-                && IsNotificationEnabled(NotificationCategory.ControllerAdvisories))
-            {
-                TryShowNotification(new TrayNotification(
-                    LocalizedResources.Get(
-                        "MainWindow_Notification_ControllerDetectedTitle",
-                        "Razer controller detected"),
-                    current,
-                    TrayNotificationSeverity.Information,
-                    ReplacementTag: ControllerAdvisoryNotificationTag,
-                    Destination: TrayNotificationDestination.Troubleshooting));
-            }
-        }
-        else if (propertyName == nameof(MainViewModel.TroubleshootingRecentErrorStatus))
-        {
-            string current = ViewModel.TroubleshootingRecentErrorStatus;
-            bool changed = !string.Equals(
-                current,
-                lastObservedOperationFailure,
-                StringComparison.Ordinal);
-            lastObservedOperationFailure = current;
-            if (changed
-                && !string.IsNullOrWhiteSpace(current)
-                && IsNotificationEnabled(NotificationCategory.OperationFailures))
-            {
-                TryShowNotification(new TrayNotification(
-                    LocalizedResources.Get(
-                        "MainWindow_Notification_OperationFailedTitle",
-                        "OpenBlade operation failed"),
-                    current,
-                    TrayNotificationSeverity.Error,
-                    ReplacementTag: OperationFailureNotificationTag,
-                    Destination: TrayNotificationDestination.Troubleshooting));
-            }
-        }
-    }
-
-    private bool TryShowNotification(TrayNotification notification)
-    {
-        try
-        {
-            return showNotification(notification);
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceWarning(
-                "OpenBlade could not show a notification: {0}",
-                exception.Message);
-            return false;
+            notificationCoordinator.Observe(
+                propertyName,
+                CaptureNotificationObservation(),
+                notificationPreferences);
         }
     }
 
