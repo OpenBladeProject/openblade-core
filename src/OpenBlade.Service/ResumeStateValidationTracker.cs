@@ -21,7 +21,8 @@ internal sealed class ResumeStateValidationTracker
 
     internal void Capture(PowerSource powerSource, ConfirmedDeviceState? confirmed)
     {
-        pendingBaseline = confirmed is not null
+        pendingBaseline = powerSource != PowerSource.ExternalUnknown
+            && confirmed is not null
             ? new ResumeStateBaseline(
                 powerSource,
                 confirmed,
@@ -42,7 +43,8 @@ internal sealed class ResumeStateValidationTracker
             {
                 ResumeStarted = true,
                 GpuClockOffsetConfirmationInvalidated =
-                    gpuClockOffsetConfirmationInvalidated,
+                    baseline.GpuClockOffsetConfirmationInvalidated
+                    || gpuClockOffsetConfirmationInvalidated,
             };
         }
     }
