@@ -10210,10 +10210,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "retained control state for Power mode",
             validation.Detail,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "Unavailable for comparison: Power mode.",
-            validation.Detail,
-            StringComparison.Ordinal);
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        // Invalidation also clears the fixture's lighting readback; the delayed
+        // observation completes validation before any later lighting restoration.
+        Assert.Equal(
+            "Resume validation confirmed retained control state for Fans, Battery. No validation-driven recovery writes were needed. Lighting was unavailable in at least one sample and was not compared. Unavailable for comparison: Power mode, Lighting.",
+            validation.Detail);
     }
 
     [Fact]
