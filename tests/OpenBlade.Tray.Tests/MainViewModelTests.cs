@@ -2806,7 +2806,7 @@ public sealed partial class MainViewModelTests
             string Advisory,
             PowerSource PowerSource,
             string BatterySource)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var advisoryChanges = new ConcurrentQueue<(bool Ready, string Advisory)>();
+        var advisoryChanges = new ConcurrentQueue<(bool Ready, bool HasAdvisory, string Advisory)>();
         int readyNotifications = 0;
         viewModel.PropertyChanged += (_, args) =>
         {
@@ -2814,6 +2814,7 @@ public sealed partial class MainViewModelTests
             {
                 advisoryChanges.Enqueue((
                     viewModel.HasAppliedServiceState,
+                    viewModel.HasControllerAdvisory,
                     viewModel.ControllerAdvisoryText));
             }
             if (args.PropertyName == nameof(MainViewModel.HasAppliedServiceState))
@@ -2886,6 +2887,9 @@ public sealed partial class MainViewModelTests
         Assert.Equal(1, Volatile.Read(ref readyNotifications));
         Assert.Equal(3, advisoryChanges.Count);
         Assert.All(advisoryChanges.Skip(1), change => Assert.True(change.Ready));
+        Assert.All(advisoryChanges, change => Assert.Equal(
+            !string.IsNullOrWhiteSpace(change.Advisory),
+            change.HasAdvisory));
     }
 
     [Theory]
