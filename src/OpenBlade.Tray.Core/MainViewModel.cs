@@ -226,6 +226,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private Task? watchTask;
     private Task? startupInitializationTask;
     private bool isConnected;
+    private bool hasAppliedServiceState;
     private bool isReadOnly = true;
     private bool canControlHardware;
     private string connectionStatus = TrayText.Get("Service unavailable");
@@ -661,6 +662,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsServiceUnavailable => !IsConnected;
+
+    public bool HasAppliedServiceState
+    {
+        get => hasAppliedServiceState;
+        private set => SetField(ref hasAppliedServiceState, value);
+    }
 
     public bool IsReadOnly
     {
@@ -4961,6 +4968,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (presentationApplied && !suppressProfileDifferenceNotifications)
         {
             NotifyProfileDifferenceState();
+        }
+
+        if (presentationApplied)
+        {
+            // Connection state changes before the rest of the snapshot. Consumers
+            // may seed observation only after every presentation field is applied.
+            HasAppliedServiceState = true;
         }
     }
 

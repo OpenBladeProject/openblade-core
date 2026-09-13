@@ -189,8 +189,64 @@ public sealed class WindowNotificationCoordinatorTests
             });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitiallyUnknownPowerAdoptsFirstClassificationSilently(bool categoryEnabled)
+    {
+        var notifications = new List<TrayNotification>();
+        var coordinator = new WindowNotificationCoordinator(notification =>
+        {
+            notifications.Add(notification);
+            return true;
+        });
+        WindowNotificationObservation unknown = Initial with
+        {
+            PowerSource = PowerSource.ExternalUnknown,
+        };
+        coordinator.Prime(unknown);
+        coordinator.Observe(nameof(MainViewModel.ActivePowerSource), unknown, AllEnabled);
+        coordinator.Observe(nameof(MainViewModel.ActivePowerSource), Initial, AllEnabled with
+        {
+            ProfileAndPowerSourceChangesEnabled = categoryEnabled,
+        });
+        Assert.Empty(notifications);
+
+        // Classification advances the baseline even when the category is disabled.
+        coordinator.Observe(nameof(MainViewModel.ActivePowerSource), Initial with
+        {
+            PowerSource = PowerSource.Battery,
+        }, AllEnabled);
+
+        TrayNotification notification = Assert.Single(notifications);
+        Assert.Equal("profile-power-source", notification.ReplacementTag);
+        Assert.Contains("Battery profile", notification.Body, StringComparison.Ordinal);
+    }
+
     [Fact]
-    public void UnknownPowerAndClearedDiagnosticsUpdateStateWithoutDelivery()
+    public void KnownPowerChangeAfterUnclassifiedSampleStillNotifies()
+    {
+        var notifications = new List<TrayNotification>();
+        var coordinator = new WindowNotificationCoordinator(notification =>
+        {
+            notifications.Add(notification);
+            return true;
+        });
+        coordinator.Prime(Initial with { PowerSource = PowerSource.Battery });
+        coordinator.Observe(nameof(MainViewModel.ActivePowerSource), Initial with
+        {
+            PowerSource = PowerSource.ExternalUnknown,
+        }, AllEnabled);
+        Assert.Empty(notifications);
+        coordinator.Observe(nameof(MainViewModel.ActivePowerSource), Initial, AllEnabled);
+
+        TrayNotification notification = Assert.Single(notifications);
+        Assert.Equal("profile-power-source", notification.ReplacementTag);
+        Assert.Contains("AC profile", notification.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnknownPowerRetainsKnownBaselineWhileClearedDiagnosticsUpdateState()
     {
         var notifications = new List<TrayNotification>();
         var coordinator = new WindowNotificationCoordinator(notification =>
@@ -207,7 +263,9 @@ public sealed class WindowNotificationCoordinatorTests
         ObserveAll(coordinator, Initial with { PowerSource = PowerSource.ExternalUnknown }, AllEnabled);
         Assert.Empty(notifications);
         ObserveAll(coordinator, active, AllEnabled);
-        Assert.Equal(3, notifications.Count);
+        Assert.Collection(notifications,
+            controller => Assert.Equal("controller-advisory", controller.ReplacementTag),
+            failure => Assert.Equal("operation-failure", failure.ReplacementTag));
     }
 
     [Fact]

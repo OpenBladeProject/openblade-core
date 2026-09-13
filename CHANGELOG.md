@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Seed notification observation from the first complete service snapshot, silently adopt the first classified power source, and retain known power sources through unclassified samples so startup and temporary classification gaps do not produce notifications for unchanged state. ([#488](https://github.com/OSSBlade/openblade-core/pull/488))
+
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
