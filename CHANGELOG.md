@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep dormant legacy GPU offsets inactive outside plugged-in Custom intent, avoiding an incorrect tuning label and idle profile-restore opportunity while retaining the offsets for editing. ([#489](https://github.com/OSSBlade/openblade-core/pull/489))
+
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
