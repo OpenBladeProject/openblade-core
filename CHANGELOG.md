@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Seed notification observation from the first complete service snapshot so startup timing does not produce controller or power-change notifications for the initial state. ([#488](https://github.com/OSSBlade/openblade-core/pull/488))
+
 ## [0.20.18] - 2026-09-13
 
 ### Fixed
