@@ -134,6 +134,8 @@ public sealed class WriteConfirmationPolicyTests
             },
             Confirmed());
 
+        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            DeviceSubsystem.Performance, expectation, Confirmed()));
         Assert.Equal(
             PendingConfirmationResult.Unavailable,
             Match(DeviceSubsystem.Performance, expectation, Confirmed()));
@@ -157,6 +159,8 @@ public sealed class WriteConfirmationPolicyTests
         Assert.Equal(
             PendingConfirmationResult.Mismatch,
             Match(subsystem, expectation, active with { Fans = FanMode.Maximum }));
+        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            subsystem, expectation, active with { Fans = null }));
         Assert.Equal(
             PendingConfirmationResult.Unavailable,
             Match(subsystem, expectation, active with { Fans = null }));
@@ -170,10 +174,14 @@ public sealed class WriteConfirmationPolicyTests
     {
         var expectation = new WriteConfirmationExpectation(Desired(), Confirmed());
 
+        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            DeviceSubsystem.Fans, expectation, Confirmed() with { Fans = null }));
         Assert.Equal(
             PendingConfirmationResult.Unavailable,
             Match(DeviceSubsystem.Fans, expectation, Confirmed() with { Fans = null }));
         Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Fans, expectation, Confirmed()));
+        Assert.False(WriteConfirmationPolicy.RequiresGpuClockOffsetManagementState(
+            DeviceSubsystem.Lighting, expectation, Confirmed() with { Lighting = null }));
         Assert.Equal(
             PendingConfirmationResult.Unavailable,
             Match(DeviceSubsystem.Lighting, expectation, Confirmed() with { Lighting = null }));

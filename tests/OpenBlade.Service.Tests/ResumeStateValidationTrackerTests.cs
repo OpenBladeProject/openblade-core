@@ -204,21 +204,40 @@ public sealed class ResumeStateValidationTrackerTests
             result.Message);
     }
 
-    [Fact]
-    public void GpuInvalidation_ExcludesPowerEvenWhenVisibleStateMatches()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GpuInvalidation_ExcludesOtherwiseDetectablePowerDrift(bool invalidated)
     {
         var tracker = new ResumeStateValidationTracker(TimeProvider.System);
-        ConfirmedDeviceState confirmed = Confirmed();
-        tracker.Capture(PowerSource.PluggedIn, confirmed);
-        tracker.Begin(gpuClockOffsetConfirmationInvalidated: true);
-        Assert.Null(tracker.Observe(PowerSource.PluggedIn, confirmed));
+        ConfirmedDeviceState baseline = Confirmed() with
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 400, 100),
+                new GpuClockOffsetRange(-1000, 3000, 200)),
+        };
+        ConfirmedDeviceState observed = baseline with
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 400, 0),
+                new GpuClockOffsetRange(-1000, 3000, 0)),
+        };
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: invalidated);
+        Assert.Null(tracker.Observe(PowerSource.PluggedIn, observed));
 
         ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
             tracker.Complete());
 
-        Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.Equal(
-            "Resume validation confirmed retained control state for Fans, Battery, Lighting. No validation-driven recovery writes were needed. Unavailable for comparison: Power mode.",
+            invalidated ? ControlOperationStatus.Stored : ControlOperationStatus.Blocked,
+            result.Status);
+        Assert.Equal(
+            invalidated
+                ? "Resume validation confirmed retained control state for Fans, Battery, Lighting. No validation-driven recovery writes were needed. Unavailable for comparison: Power mode."
+                : "Resume validation observed changed control state for Power mode. The changes remain externally classified; no validation-driven recovery writes were attempted.",
             result.Message);
     }
 
