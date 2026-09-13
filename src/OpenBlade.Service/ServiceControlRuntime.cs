@@ -14570,9 +14570,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ConfigureAwait(false);
             }
 
-            RecordResumeValidationResult(resumeStateValidation.Observe(
-                powerSource,
-                observation.Confirmed));
+            // Status can retain the previous source while adapter classification
+            // is unavailable; that presentation is not resume-comparison evidence.
+            if (powerSourceConfirmed)
+            {
+                RecordResumeValidationResult(resumeStateValidation.Observe(
+                    powerSource,
+                    observation.Confirmed));
+            }
             await EvaluateThermalConvergenceObservationAsync(
                     powerSource,
                     powerSourceConfirmed,

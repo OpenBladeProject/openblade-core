@@ -94,6 +94,45 @@ public sealed class ResumeStateValidationTrackerTests
     }
 
     [Fact]
+    public void Capture_UnknownPowerSourceClearsEarlierBaseline()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        tracker.Capture(PowerSource.PluggedIn, Confirmed());
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: true);
+
+        tracker.Capture(PowerSource.ExternalUnknown, Confirmed());
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+
+        Assert.False(tracker.ResumeStarted);
+        Assert.Null(tracker.Complete());
+        Assert.Null(tracker.Observe(PowerSource.Battery, Confirmed()));
+        Assert.Null(tracker.RecordPowerSourceTransition(PowerSource.PluggedIn));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Begin_PreservesGpuInvalidationAcrossRepeatedResume(
+        bool firstInvalidation,
+        bool secondInvalidation)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        tracker.Capture(PowerSource.PluggedIn, Confirmed());
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: firstInvalidation);
+        Assert.Null(tracker.Complete());
+
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: secondInvalidation);
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Observe(PowerSource.PluggedIn, Confirmed()));
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(
+            "Resume validation confirmed retained control state for Fans, Battery, Lighting. No validation-driven recovery writes were needed. Unavailable for comparison: Power mode.",
+            result.Message);
+        Assert.Null(tracker.Complete());
+    }
+
+    [Fact]
     public void DiscardUnstarted_PreservesOnlyStartedBaseline()
     {
         var tracker = new ResumeStateValidationTracker(TimeProvider.System);
