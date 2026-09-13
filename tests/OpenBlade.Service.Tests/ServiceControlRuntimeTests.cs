@@ -10106,6 +10106,116 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.PluggedIn)]
+    public async Task ResumeValidation_UnknownAdapterWaitsForConfirmedPowerWithoutTransition(
+        PowerSource initialPowerSource)
+    {
+        TestContext context = CreateWritableContext(initialPowerSource: initialPowerSource);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        DesiredDeviceState originalDesired = context.Runtime.GetStatus().DesiredState;
+        int settersBeforeUnknownObservation = context.Device.TotalSetterCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException("Adapter classification unavailable.");
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(originalDesired, context.Runtime.GetStatus().DesiredState);
+        Assert.Equal(settersBeforeUnknownObservation, context.Device.TotalSetterCalls);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+
+        context.Telemetry.Current = CreateTelemetry(initialPowerSource);
+        context.Device.AdapterPowerFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("retained control state for Power mode", validation.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("destination-profile transition", validation.Detail, StringComparison.Ordinal);
+        Assert.Equal(originalDesired, context.Runtime.GetStatus().DesiredState);
+        Assert.Equal(settersBeforeUnknownObservation, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_UnknownCaptureDoesNotLabelLaterConfirmedSource()
+    {
+        TestContext context = CreateWritableContext(initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException("Adapter classification unavailable.");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Equal(PowerSource.ExternalUnknown, context.Runtime.GetStatus().ActivePowerSource);
+
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        int settersBeforeConfirmedObservation = context.Device.TotalSetterCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        context.Device.AdapterPowerFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(settersBeforeConfirmedObservation, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_RepeatedResumeRetainsGpuInvalidationBeforeDelayedObservation()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = CreateWritableContext(timeProvider: time);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.AfterGpuClockOffsetInvalidation = () =>
+        {
+            bool firstInvalidation = context.Provider.GpuClockOffsetInvalidationCount == 1;
+            context.Provider.Available = !firstInvalidation;
+            // Models ResetConfirmed -> Unknown in the production provider:
+            // the first invalidation reports true; the second reports false.
+            context.Provider.GpuClockOffsetConfirmationRequiresRevalidation = firstInvalidation;
+            if (!firstInvalidation)
+            {
+                time.Advance(TimeSpan.FromMilliseconds(
+                    WindowsServiceLifecycleEventSource.DuplicateResumeWindowMilliseconds + 1));
+            }
+        };
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SequenceLifecycleEventSource(
+                ServiceLifecycleTrigger.Suspending,
+                ServiceLifecycleTrigger.Resumed,
+                ServiceLifecycleTrigger.Resumed),
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Provider.GpuClockOffsetInvalidationCount);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.DoesNotContain(
+            "retained control state for Power mode",
+            validation.Detail,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Unavailable for comparison: Power mode.",
+            validation.Detail,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ResumeValidation_DoesNotClaimPowerRetainedAfterDefaultResetInvalidates()
     {
