@@ -160,19 +160,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         [
             new(
                 null,
-                TrayText.Get("Leave unchanged"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(null),
                 TrayText.Get("Keeps the current Windows setting.")),
             new(
                 WindowsPowerMode.BestPowerEfficiency,
-                TrayText.Get("Best power efficiency"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency),
                 TrayText.Get("Favors lower energy use.")),
             new(
                 WindowsPowerMode.Balanced,
-                TrayText.Get("Balanced"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.Balanced),
                 TrayText.Get("Balances performance and energy use.")),
             new(
                 WindowsPowerMode.BestPerformance,
-                TrayText.Get("Best performance"),
+                ProfilePresentationFactory.FormatWindowsPowerMode(WindowsPowerMode.BestPerformance),
                 TrayText.Get("Favors responsiveness over energy use.")),
         ],
         FunctionKeyPrimaryModes:
@@ -3587,18 +3587,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 : saved;
         }
     }
-
-    public string LightingDisplayOffPolicyPresentation =>
-        GetProfile(SelectedProfileComparisonOption.Source)
-            .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-            ? TrayText.Get("Turn lighting off")
-            : TrayText.Get("Keep lighting on");
-
-    public string LightingIdlePolicyPresentation =>
-        GetProfile(SelectedProfileComparisonOption.Source)
-            .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-            ? TrayText.Format("{0} minutes", minutes)
-            : TrayText.Get("Never");
 
     public bool IsSelectedProfileActive =>
         SelectedProfileComparisonOption.Source == ActivePowerSource;
@@ -7495,16 +7483,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return null;
         }
 
-        PowerProfile profile = GetPresentedProfile(ActivePowerSource);
-        if (profile.GpuClockTuning is not null)
-        {
-            return profile.GpuClockTuning;
-        }
-
-        return profile.Performance == PerformancePreset.Custom
-            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
-                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
-                : null;
+        return ProfileGpuClockTuning.Resolve(GetPresentedProfile(ActivePowerSource));
     }
 
     private PowerProfile GetPresentedProfile(PowerSource source) =>
@@ -7911,15 +7890,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 }
             }
 
-            GpuClockTuningSettings? savedGpuClockTuning = saved.GpuClockTuning;
-            if (savedGpuClockTuning is null
-                && saved.Performance == PerformancePreset.Custom
-                && saved.CustomPerformance?.GpuClockOffsets is { } legacyOffsets)
-            {
-                savedGpuClockTuning = new GpuClockTuningSettings(
-                    Enabled: true,
-                    legacyOffsets);
-            }
+            GpuClockTuningSettings? savedGpuClockTuning = ProfileGpuClockTuning.Resolve(saved);
             GpuClockTuningSettings? currentGpuClockTuning =
                 activeProfileDraftGpuClockTuning
                 ?? (gpuClockTuningConfigured
@@ -8183,8 +8154,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(UsbCProfilePresentation), UsbCProfilePresentation);
         NotifyComputed(nameof(BatteryProfilePresentation), BatteryProfilePresentation);
         NotifyComputed(nameof(BatteryPolicyPresentation), BatteryPolicyPresentation);
-        NotifyComputed(nameof(LightingDisplayOffPolicyPresentation), LightingDisplayOffPolicyPresentation);
-        NotifyComputed(nameof(LightingIdlePolicyPresentation), LightingIdlePolicyPresentation);
         NotifyComputed(nameof(HasLightingProfileSaveOpportunity), HasLightingProfileSaveOpportunity);
         NotifyComputed(nameof(HasLaptopPageProfileSaveOpportunity), HasLaptopPageProfileSaveOpportunity);
         NotifyProfileDifferenceState();

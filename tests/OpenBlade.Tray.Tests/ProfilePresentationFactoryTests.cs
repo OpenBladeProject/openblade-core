@@ -290,6 +290,33 @@ public sealed class ProfilePresentationFactoryTests : IDisposable
         Assert.Equal(english, Create(profile));
     }
 
+    [Fact]
+    public void Create_PreservesUnknownLogoAndWindowsModeFallbacks()
+    {
+        PowerProfile profile = CreateProfile() with
+        {
+            Lighting = LightingSettingsFactory.Off() with
+            {
+                LogoMode = (LogoLightingMode)999,
+            },
+        };
+        WindowsPowerModeAssociations modes = WindowsPowerModeAssociations.LeaveUnchanged with
+        {
+            Balanced = (WindowsPowerMode)999,
+        };
+
+        ProfilePresentation result = ProfilePresentationFactory.Create(
+            profile,
+            modes,
+            "AC",
+            LaptopBehaviorProfileSettings.Unconfigured());
+
+        Assert.Equal("Not set", result.LogoLighting.Text);
+        Assert.Equal("Unknown", result.WindowsPowerMode.Text);
+        Assert.Equal("Not set", Create(CreateProfile()).LogoLighting.Text);
+        Assert.Equal("Leave unchanged", Create(CreateProfile()).WindowsPowerMode.Text);
+    }
+
     private static PowerProfile CreateProfile() => new(
         PerformancePreset.Balanced,
         FanMode.Automatic,

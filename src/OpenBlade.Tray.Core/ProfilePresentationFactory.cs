@@ -42,10 +42,8 @@ public static class ProfilePresentationFactory
             Value(TrayText.Get("Lighting color"), LightingPresentation.FormatLightingColor(profile.Lighting)),
             Value(TrayText.Get("Laptop lid logo"), profile.Lighting.LogoMode switch
             {
-                LogoLightingMode.Static => TrayText.Get("Static"),
-                LogoLightingMode.Breathing => TrayText.Get("Breathing"),
-                LogoLightingMode.Off => TrayText.Get("Off"),
-                null => TrayText.Get("Not set"),
+                LogoLightingMode.Static or LogoLightingMode.Breathing or LogoLightingMode.Off =>
+                    LightingPresentation.LogoLightingModeLabel(profile.Lighting.LogoMode.Value),
                 _ => TrayText.Get("Not set"),
             }),
             Value(TrayText.Get("Display turns off"), profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
@@ -95,11 +93,10 @@ public static class ProfilePresentationFactory
             ?? FanControlSettings.FromLegacy(profile.Fans);
         return settings.Mode switch
         {
-            FanMode.Automatic => TrayText.Get("Automatic"),
             FanMode.Fixed =>
                 TrayText.Format("Fixed, {0:N0} RPM", settings.FixedSpeedRpm),
-            FanMode.ManualCurve => TrayText.Get("Manual fan curve"),
-            FanMode.Maximum => TrayText.Get("Maximum"),
+            FanMode.Automatic or FanMode.ManualCurve or FanMode.Maximum =>
+                FanModePresentation.Label(settings.Mode),
             _ => TrayText.Get(settings.Mode.ToString()),
         };
     }
@@ -117,7 +114,7 @@ public static class ProfilePresentationFactory
             : PerformancePresetPresentation.Label(profile.Performance);
 
     private static string FormatGpuClockOffsets(PowerProfile profile) =>
-        ResolveProfileGpuClockTuning(profile) switch
+        ProfileGpuClockTuning.Resolve(profile) switch
         {
             { Enabled: true, Offsets: { } offsets } =>
                 TrayText.Format(
@@ -127,13 +124,6 @@ public static class ProfilePresentationFactory
             { Enabled: false } => TrayText.Get("Off"),
             _ => TrayText.Get("Not set"),
         };
-
-    private static GpuClockTuningSettings? ResolveProfileGpuClockTuning(
-        PowerProfile profile) => profile.GpuClockTuning
-        ?? (profile.Performance == PerformancePreset.Custom
-            && profile.CustomPerformance?.GpuClockOffsets is { } legacyOffsets
-                ? new GpuClockTuningSettings(Enabled: true, legacyOffsets)
-                : null);
 
     private static string FormatSignedMegahertz(int value) =>
         TrayText.Format("{0} MHz", value.ToString("+0;-0;0", CultureInfo.CurrentCulture));
@@ -197,7 +187,7 @@ public static class ProfilePresentationFactory
             FormatDisplayProfile(profile.Display),
             Environment.NewLine);
 
-    private static string FormatWindowsPowerMode(WindowsPowerMode? mode) => mode switch
+    public static string FormatWindowsPowerMode(WindowsPowerMode? mode) => mode switch
     {
         WindowsPowerMode.BestPowerEfficiency => TrayText.Get("Best power efficiency"),
         WindowsPowerMode.Balanced => TrayText.Get("Balanced"),
