@@ -508,13 +508,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
     private bool lightingSuppressionWritePending;
-    // The last console display state reported by the Windows lifecycle source,
-    // kept even when the active profile does not enable the display-off policy.
-    // A closed lid or Modern Standby leaves the keyboard dark whether or not
-    // OpenBlade asked for it, so a power-source transition that samples firmware
-    // Off while the display is off must not classify it as an external change,
-    // and a destination profile that enables the policy must adopt the
-    // suppression instead of relighting a keyboard under a closed lid.
+    // The last console display state reported by the Windows lifecycle source.
+    // A power-source transition that samples firmware Off while the display is
+    // off must not classify it as an external change, and must retain display
+    // suppression while adopting the destination profile's lighting intent.
     private bool displayReportedOff;
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
@@ -16180,7 +16177,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Automation.PowerSource);
         return reason switch
         {
-            LightingSuppressionReason.DisplayOff => policy.TurnOffWhenDisplayTurnsOff,
+            // Display Off is a fixed policy, including on Modern Standby hosts
+            // that do not deliver a separate suspend callback. Keep the legacy
+            // profile flag readable without allowing it to relight the keyboard.
+            LightingSuppressionReason.DisplayOff => true,
             LightingSuppressionReason.UserIdle => policy.IdleTimeoutMinutes.HasValue,
             _ => false,
         };
@@ -16192,9 +16192,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public void ReportConsoleDisplayState(bool displayOn)
     {
         // Only the Windows console display source reports here. The Session
-        // Agent's suppression requests are policy decisions and say "off" only
-        // while the active profile enables the display-off policy, so they
-        // cannot be trusted as a display-state signal.
+        // Agent's suppression requests can come from older clients whose
+        // profile policy disables display suppression, so they cannot be
+        // trusted as a display-state signal.
         Volatile.Write(ref displayReportedOff, !displayOn);
     }
 
@@ -16237,14 +16237,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void AdoptDisplayOffSuppressionForPowerSource()
     {
-        // A display-off report that arrived while the previous profile kept the
-        // keyboard lit was refused as "not enabled". When the destination
-        // profile does enable the policy, the display is still off, so the
-        // transition must target Off rather than relight the keyboard and wait
-        // for the Session Agent to switch it off again.
+        // A power transition can precede the queued display suppression request.
+        // Use the console report to target Off immediately, preserving the
+        // destination profile's lighting intent for when the display turns on.
         if (!Volatile.Read(ref displayReportedOff)
-            || lightingSuppressions.Contains(LightingSuppressionReason.DisplayOff)
-            || !IsLightingSuppressionConfigured(LightingSuppressionReason.DisplayOff))
+            || lightingSuppressions.Contains(LightingSuppressionReason.DisplayOff))
         {
             return;
         }

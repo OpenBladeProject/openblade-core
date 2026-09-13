@@ -4363,8 +4363,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
-    [Fact]
-    public async Task LightingPowerPolicy_OverlappingReasonsSwitchOffOnceAndRestoreLatestIntent()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingPowerPolicy_OverlappingReasonsSwitchOffOnceAndRestoreLatestIntent(
+        bool legacyTurnOffWithDisplay)
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
         LightingSettings expected = context.Runtime.GetStatus().DesiredState.Lighting.Value;
@@ -4373,7 +4376,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
             {
                 LightingPowerPolicy = new LightingPowerPolicy(
-                    turnOffWhenDisplayTurnsOff: true,
+                    turnOffWhenDisplayTurnsOff: legacyTurnOffWithDisplay,
                     idleTimeoutMinutes: 5),
             },
         };
@@ -4505,7 +4508,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LightingPowerPolicy_LowPowerGateStagesStateWithoutHardwareWrite()
+    public async Task LightingPowerPolicy_ProfileUpdateWhileDisplayOffPreservesLatestIntentAcrossSuspend()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(lowPowerGate: gate);
+        LightingSettings latest = LightingSettingsFactory.Static(new RgbColor(20, 40, 80), 35);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, true, CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    LightingPowerPolicy = LightingPowerPolicy.Disabled,
+                },
+            },
+            CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(latest, OverrideLifetime.Persistent),
+            CancellationToken.None);
+        int suppressedWrites = context.Device.LightingSetCalls;
+
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Equal(latest, context.Runtime.GetStatus().DesiredState.Lighting.Value);
+        Assert.False(context.Runtime.GetStatus().Profiles.PluggedIn
+            .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(latest, saved.Preferences.LastKnownLighting);
+
+        gate.Enter();
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        Assert.Equal(suppressedWrites, context.Device.LightingSetCalls);
+        gate.Exit();
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        Assert.Equal(suppressedWrites, context.Device.LightingSetCalls);
+        Assert.Equal([LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+
+        ControlOperationResult restored = await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, false, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, false, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, restored.Status);
+        Assert.Equal(suppressedWrites + 1, context.Device.LightingSetCalls);
+        Assert.Equal(latest, context.Device.ConfirmedState.Lighting);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingPowerPolicy_LowPowerGateStagesStateWithoutHardwareWrite(
+        bool legacyTurnOffWithDisplay)
     {
         var gate = new LowPowerGate();
         TestContext context = await CreateOwnedStaticLightingContextAsync(
@@ -4515,7 +4572,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
             {
                 LightingPowerPolicy = new LightingPowerPolicy(
-                    turnOffWhenDisplayTurnsOff: true,
+                    turnOffWhenDisplayTurnsOff: legacyTurnOffWithDisplay,
                     idleTimeoutMinutes: null),
             },
         };
@@ -4682,7 +4739,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ProfileEdit_SynapsePreventsAutomaticSuppressionRestore()
+    public async Task ProfileEdit_LegacyDisabledDisplayPolicyRetainsSuppressionWithSynapse()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
@@ -4715,20 +4772,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
-        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
         Assert.Equal(
             LightingRendererOwnershipState.None,
             context.Runtime.GetStatus().LightingRendererOwnership);
 
-        context.Monitor.Current = new ControllerPresenceObservation([], null);
-        ControlOperationResult repeated = await context.Runtime
+        ControlOperationResult displayOn = await context.Runtime
             .SetLightingSuppressionAsync(
                 LightingSuppressionReason.DisplayOff,
                 suppressed: false,
                 CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Stored, repeated.Status);
+        Assert.Equal(ControlOperationStatus.Stored, displayOn.Status);
         Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
     }
 
     [Fact]
@@ -7992,12 +8051,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PowerTransition_DisplayOffUnderDisabledPolicy_AdoptsDestinationSuppression()
+    public async Task PowerTransition_DisplayOffUnderLegacyDisabledPolicy_RetainsDestinationSuppression()
     {
-        // Plugged in with the policy off, the display-off report is refused.
-        // Unplugging with the lid still closed moves to a profile that does
-        // switch the keyboard off, so the transition targets Off instead of
-        // relighting the keyboard and marking the dark firmware state external.
+        // Legacy profiles cannot opt out of screen-off suppression. Changing
+        // power source preserves Off until display-on restores the destination.
         TestContext context = await CreateLightingTransitionContextAsync(
             LightingRendererOwnershipState.Static);
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
@@ -8020,15 +8077,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
                 CancellationToken.None);
-        Assert.Equal(ControlOperationStatus.Blocked, displayOff.Status);
-        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
-        // The production port stops its renderer and reports no ownership once
-        // a zero brightness sample is confirmed; mirror that here.
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Lighting = LightingSettingsFactory.Off(),
-        };
-        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+        Assert.Equal(ControlOperationStatus.Applied, displayOff.Status);
+        Assert.Equal([LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+        int writesWhileSuppressed = context.Device.LightingSetCalls;
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
@@ -8036,7 +8088,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             [LightingSuppressionReason.DisplayOff],
             context.Runtime.GetStatus().LightingSuppressions);
-        Assert.Equal(0, context.Device.LightingSetCalls);
+        Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
         Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
         Assert.DoesNotContain(
             DeviceSubsystem.Lighting,
@@ -8049,7 +8101,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Applied, displayOn.Status);
-        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(writesWhileSuppressed + 1, context.Device.LightingSetCalls);
         Assert.Equal(batteryLighting, context.Device.ConfirmedState.Lighting);
         Assert.Equal(
             LightingRendererOwnershipState.Static,

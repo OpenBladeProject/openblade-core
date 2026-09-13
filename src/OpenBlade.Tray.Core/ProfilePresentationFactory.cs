@@ -46,9 +46,7 @@ public static class ProfilePresentationFactory
                     LightingPresentation.LogoLightingModeLabel(profile.Lighting.LogoMode.Value),
                 _ => TrayText.Get("Not set"),
             }),
-            Value(TrayText.Get("Display turns off"), profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-                ? TrayText.Get("Turn lighting off")
-                : TrayText.Get("Keep lighting on")),
+            Value(TrayText.Get("Display turns off"), TrayText.Get("Turn lighting off")),
             Value(TrayText.Get("Inactivity timeout"), profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
                 ? TrayText.Format("{0} minutes", minutes)
                 : TrayText.Get("Never")),

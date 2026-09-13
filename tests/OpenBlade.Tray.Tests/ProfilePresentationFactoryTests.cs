@@ -11,6 +11,20 @@ public sealed class ProfilePresentationFactoryTests : IDisposable
     public void Dispose() => culture.Dispose();
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Create_DisplayOffAlwaysShowsEffectivePolicy(bool legacyTurnOffWithDisplay)
+    {
+        PowerProfile profile = CreateProfile() with
+        {
+            LightingPowerPolicy = new LightingPowerPolicy(legacyTurnOffWithDisplay, null),
+        };
+
+        Assert.Equal("Turn lighting off", Create(profile).LightingDisplayOff.Text);
+        Assert.Equal(legacyTurnOffWithDisplay, profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff);
+    }
+
+    [Theory]
     [InlineData(null, null, "Not set", "Not set")]
     [InlineData(" ", " ", "Not set", "Not set")]
     [InlineData("fixed-240", "sRGB.icm", "240 Hz", "sRGB")]

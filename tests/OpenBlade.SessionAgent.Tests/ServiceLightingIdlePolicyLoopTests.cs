@@ -73,24 +73,34 @@ public sealed class ServiceLightingIdlePolicyLoopTests
         await running;
     }
 
-    [Fact]
-    public async Task SessionDisplayOffSuppressesAndDisplayOnRestores()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SessionDisplayOffSuppressesAndDisplayOnRestores(bool legacyTurnOffWithDisplay)
     {
         var client = new WatchClient();
         var display = new FakeDisplayStateSource();
+        var delay = new RecordingDelay();
         var loop = new ServiceLightingIdlePolicyLoop(
             client,
-            new FakeIdleTimeSource(),
+            new FakeIdleTimeSource { Current = TimeSpan.Zero },
+            delay: delay.DelayAsync,
             displayStateSource: display);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
 
-        client.Publish(Status(new LightingPowerPolicy(true, null)));
+        client.Publish(Status(new LightingPowerPolicy(legacyTurnOffWithDisplay, null)));
         display.Publish(displayOn: false);
         await WaitUntilAsync(
             () => client.Requests.Any(request => request ==
                 (LightingSuppressionReason.DisplayOff, true)),
             cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)) with { Revision = 2 });
+        Assert.Equal(TimeSpan.FromMinutes(5), await delay.NextIntervalAsync(cancellation.Token));
+        Assert.Equal(
+            [(LightingSuppressionReason.DisplayOff, true)],
+            client.Requests.Where(request => request.Reason == LightingSuppressionReason.DisplayOff));
 
         display.Publish(displayOn: true);
         await WaitUntilAsync(
