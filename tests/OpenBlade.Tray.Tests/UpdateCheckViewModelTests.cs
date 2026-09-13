@@ -40,6 +40,35 @@ public sealed class UpdateCheckViewModelTests
     }
 
     [Fact]
+    public void AutomaticCheck_RetainsTheCallerSynchronizationContext()
+    {
+        PumpingSynchronizationContext.Run(async context =>
+        {
+            var client = new ControlledReleaseUpdateClient();
+            var observedContexts = new List<SynchronizationContext?>();
+            await using var viewModel = Create(client);
+            Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
+            viewModel.PropertyChanged += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+            viewModel.PreferencesChanged += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+            viewModel.UpdateAvailable += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+
+            viewModel.StartAutomaticCheck();
+            await client.Started.Task;
+            client.Complete(new ReleaseUpdateResult(
+                ReleaseUpdateDisposition.PublishedRelease,
+                NewerRelease,
+                "\"release\""));
+            await WaitUntilAsync(() => !viewModel.IsChecking);
+
+            Assert.NotEmpty(observedContexts);
+            Assert.All(observedContexts, observed => Assert.Same(context, observed));
+        });
+    }
+
+    [Fact]
     public async Task NewerReleaseRaisesAnUpdateAvailableEvent()
     {
         var client = SuccessfulClient(NewerRelease);

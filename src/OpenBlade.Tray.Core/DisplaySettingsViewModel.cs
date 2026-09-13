@@ -119,12 +119,20 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
 
 public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private const int MaximumRefreshFailureDiagnosticsPerWindow = 8;
+
+    internal static readonly TimeSpan RefreshFailureDiagnosticInterval =
+        TimeSpan.FromMinutes(5);
+
     private static string HdrColorProfileMessage =>
         TrayText.Get("Turn off HDR to change color profiles.");
     private static string DefaultColorProfileMessage =>
         TrayText.Get("Choose the color profile used by the built-in display.");
 
     private readonly IDisplaySettingsAdapter adapter;
+    private readonly TimeProvider timeProvider;
+    private readonly Action<string> diagnosticSink;
+    private readonly HashSet<(Type ExceptionType, int HResult)> refreshFailureDiagnosticSignatures = [];
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private IReadOnlyList<DisplayRefreshRateOption> refreshRateOptions = [];
@@ -141,11 +149,27 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool hasPendingProfileChange;
     private bool profilePersistenceAvailable;
     private string statusMessage = TrayText.Get("Checking the built-in display...");
+    private long? refreshFailureDiagnosticWindowTimestamp;
     private int disposed;
 
     public DisplaySettingsViewModel(IDisplaySettingsAdapter adapter)
+        : this(
+            adapter,
+            TimeProvider.System,
+            message => Trace.TraceError("{0}", message))
+    {
+    }
+
+    internal DisplaySettingsViewModel(
+        IDisplaySettingsAdapter adapter,
+        TimeProvider timeProvider,
+        Action<string> diagnosticSink)
     {
         this.adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
+        this.timeProvider = timeProvider
+            ?? throw new ArgumentNullException(nameof(timeProvider));
+        this.diagnosticSink = diagnosticSink
+            ?? throw new ArgumentNullException(nameof(diagnosticSink));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -397,6 +421,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         bool refreshSucceeded = false;
 
         await RunSerializedAsync(
+            DisplayOperation.Refresh,
             adapter.GetStateAsync,
             token,
             state => refreshSucceeded = state.OperationSucceeded,
@@ -439,6 +464,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
+            DisplayOperation.RefreshRateChange,
             operationToken =>
             {
                 previous = CurrentProfileSettings;
@@ -471,6 +497,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
+            DisplayOperation.HdrChange,
             operationToken =>
             {
                 previous = CurrentProfileSettings;
@@ -504,6 +531,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
+            DisplayOperation.ColorProfileChange,
             operationToken =>
             {
                 previous = CurrentProfileSettings;
@@ -538,6 +566,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
         bool succeeded = false;
         await RunSerializedAsync(
+            DisplayOperation.ProfileApply,
             operationToken => adapter.ApplyProfileAsync(
                 expectedPowerSource,
                 settings,
@@ -562,6 +591,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     }
 
     private async Task RunSerializedAsync(
+        DisplayOperation operationKind,
         Func<CancellationToken, Task<DisplaySettingsSnapshot>> operation,
         CancellationToken token,
         Action<DisplaySettingsSnapshot>? applied = null,
@@ -583,15 +613,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             await operationGate.WaitAsync(linkedCancellation.Token);
             enteredGate = true;
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
-            Apply(state, isRefresh: !showBusy);
+            Apply(state, isRefresh: operationKind == DisplayOperation.Refresh);
             applied?.Invoke(state);
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception exception) when (enteredGate)
         {
+            ReportUnexpectedFailure(operationKind, exception);
             StatusMessage = TrayText.Get("Display setting failed.");
         }
         finally
@@ -606,6 +637,67 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 UnregisterPendingWrite();
             }
         }
+    }
+
+    private void ReportUnexpectedFailure(
+        DisplayOperation operationKind,
+        Exception exception)
+    {
+        long? refreshFailureTimestamp = operationKind == DisplayOperation.Refresh
+            ? timeProvider.GetTimestamp()
+            : null;
+        var signature = (exception.GetType(), exception.HResult);
+        bool startsNewRefreshWindow = refreshFailureTimestamp is { } currentTimestamp
+            && (refreshFailureDiagnosticWindowTimestamp is not { } windowTimestamp
+                || timeProvider.GetElapsedTime(windowTimestamp, currentTimestamp)
+                    >= RefreshFailureDiagnosticInterval);
+        if (refreshFailureTimestamp.HasValue
+            && !startsNewRefreshWindow
+            && (refreshFailureDiagnosticSignatures.Contains(signature)
+                || refreshFailureDiagnosticSignatures.Count
+                    >= MaximumRefreshFailureDiagnosticsPerWindow))
+        {
+            return;
+        }
+
+        string operation = operationKind switch
+        {
+            DisplayOperation.Refresh => "refresh",
+            DisplayOperation.RefreshRateChange => "refresh-rate change",
+            DisplayOperation.HdrChange => "HDR change",
+            DisplayOperation.ColorProfileChange => "color-profile change",
+            DisplayOperation.ProfileApply => "profile apply",
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind)),
+        };
+        string message = FormattableString.Invariant(
+            $"OpenBlade display {operation} failed unexpectedly ({exception.GetType().Name}, HRESULT 0x{exception.HResult:X8}).");
+        try
+        {
+            diagnosticSink(message);
+            if (refreshFailureTimestamp is { } reportedTimestamp)
+            {
+                if (startsNewRefreshWindow)
+                {
+                    refreshFailureDiagnosticSignatures.Clear();
+                    refreshFailureDiagnosticWindowTimestamp = reportedTimestamp;
+                }
+
+                refreshFailureDiagnosticSignatures.Add(signature);
+            }
+        }
+        catch (Exception)
+        {
+            // Diagnostics must not replace the user-visible operation result.
+        }
+    }
+
+    private enum DisplayOperation
+    {
+        Refresh,
+        RefreshRateChange,
+        HdrChange,
+        ColorProfileChange,
+        ProfileApply,
     }
 
     private void RegisterPendingWrite()

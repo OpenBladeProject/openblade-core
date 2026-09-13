@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Avoid redundant capability and fan-editor notifications after service updates. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
+- Bound preference reads, preserve future dashboard data, and recover saving from oversized files while retaining the original in an atomic backup and recording sanitized recovery diagnostics. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
+- Retain sanitized display failure diagnostics with bounded reporting of distinct failures, even across intermittent recovery, clock changes, and failed logging attempts. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
 - Recognize BIOS 4.01 as an admitted firmware version for RZ09-0581. ([#475](https://github.com/OSSBlade/openblade-core/pull/475))
 
 - Bound pipe-establishment retries and lifecycle event backlogs, retain idle GPU cleanup during CPU-only sampling, and keep committed lighting preferences consistent through delegation and renderer recovery. ([#467](https://github.com/OSSBlade/openblade-core/pull/467))

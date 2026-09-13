@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using System.Security;
 using System.Text.Json;
@@ -180,6 +181,8 @@ public sealed record UiPreferences(
 
 public sealed class UiPreferenceStore
 {
+    internal const int MaximumFileSizeBytes = 1024 * 1024;
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -187,6 +190,7 @@ public sealed class UiPreferenceStore
     };
 
     private readonly string path;
+    private readonly Action<string> diagnosticSink;
 
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -196,9 +200,16 @@ public sealed class UiPreferenceStore
     public static UiPreferenceStore CreateDefault() => new(DefaultPath);
 
     public UiPreferenceStore(string path)
+        : this(path, message => Trace.TraceWarning("{0}", message))
+    {
+    }
+
+    internal UiPreferenceStore(string path, Action<string> diagnosticSink)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         this.path = Path.GetFullPath(path);
+        this.diagnosticSink = diagnosticSink
+            ?? throw new ArgumentNullException(nameof(diagnosticSink));
     }
 
     public UiLanguagePreference LoadLanguagePreference()
@@ -210,12 +221,13 @@ public sealed class UiPreferenceStore
 
         try
         {
-            using FileStream stream = new(
+            using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
-            using JsonDocument document = JsonDocument.Parse(stream);
+            using MemoryStream content = ReadBounded(file);
+            using JsonDocument document = ParseContent(content);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return UiLanguagePreference.FollowSystem;
@@ -246,8 +258,18 @@ public sealed class UiPreferenceStore
             }
         }
         catch (Exception exception) when (
-            exception is JsonException or IOException or UnauthorizedAccessException or SecurityException)
+            exception is JsonException
+                or InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or SecurityException)
         {
+            if (exception is InvalidDataException)
+            {
+                ReportDiagnostic(
+                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                    + "following the system language. The file has not been changed.");
+            }
         }
 
         return UiLanguagePreference.FollowSystem;
@@ -262,16 +284,18 @@ public sealed class UiPreferenceStore
 
         try
         {
-            await using FileStream stream = new(
+            await using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            using JsonDocument document = await JsonDocument.ParseAsync(
-                stream,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            using MemoryStream content = await ReadBoundedAsync(
+                file,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            using JsonDocument document = ParseContent(content);
             UiPreferences? preferences = TryGetFutureDashboard(
                     document.RootElement,
                     out _,
@@ -282,8 +306,16 @@ public sealed class UiPreferenceStore
                 : document.RootElement.Deserialize<UiPreferences>(SerializerOptions);
             return preferences ?? UiPreferences.Default;
         }
-        catch (JsonException)
+        catch (Exception exception) when (
+            exception is JsonException or InvalidDataException)
         {
+            if (exception is InvalidDataException)
+            {
+                ReportDiagnostic(
+                    $"Preference input exceeds the {MaximumFileSizeBytes / 1024} KiB limit; "
+                    + "using default preferences. The file has not been changed.");
+            }
+
             return UiPreferences.Default;
         }
     }
@@ -301,9 +333,20 @@ public sealed class UiPreferenceStore
 
         try
         {
-            string? futureDashboardJson =
-                await ReadFutureDashboardJsonAsync(cancellationToken)
-                    .ConfigureAwait(false);
+            string? futureDashboardJson;
+            bool preserveOversizedFile = false;
+            try
+            {
+                futureDashboardJson =
+                    await ReadFutureDashboardJsonAsync(cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            catch (InvalidDataException)
+            {
+                // Retain unparsed oversized data when replacing the preferences.
+                futureDashboardJson = null;
+                preserveOversizedFile = true;
+            }
             Directory.CreateDirectory(directory);
             try
             {
@@ -331,10 +374,27 @@ public sealed class UiPreferenceStore
                             futureDashboardJson,
                             cancellationToken).ConfigureAwait(false);
                     }
-                    await stream.FlushAsync(cancellationToken);
+                    await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    if (stream.Length > MaximumFileSizeBytes)
+                    {
+                        throw OversizedPreferences();
+                    }
                 }
 
-                File.Move(temporaryPath, path, overwrite: true);
+                if (preserveOversizedFile)
+                {
+                    string backupPath = Path.Combine(
+                        directory,
+                        $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.oversized.bak");
+                    File.Replace(temporaryPath, path, backupPath);
+                    ReportDiagnostic(
+                        "Oversized preferences were preserved in an .oversized.bak file "
+                        + "beside the preferences file before saving new preferences.");
+                }
+                else
+                {
+                    File.Move(temporaryPath, path, overwrite: true);
+                }
             }
             finally
             {
@@ -342,7 +402,10 @@ public sealed class UiPreferenceStore
             }
         }
         catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException or SecurityException)
+            exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or SecurityException)
         {
             throw new UiPreferenceSaveException(
                 $"Preferences could not be written to '{path}'.",
@@ -360,16 +423,18 @@ public sealed class UiPreferenceStore
 
         try
         {
-            await using FileStream stream = new(
+            await using FileStream file = new(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            using JsonDocument document = await JsonDocument.ParseAsync(
-                stream,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            using MemoryStream content = await ReadBoundedAsync(
+                file,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            using JsonDocument document = ParseContent(content);
             return TryGetFutureDashboard(
                     document.RootElement,
                     out JsonElement dashboard,
@@ -383,6 +448,122 @@ public sealed class UiPreferenceStore
             return null;
         }
     }
+
+    private void ReportDiagnostic(string message)
+    {
+        try
+        {
+            diagnosticSink(message);
+        }
+        catch (Exception)
+        {
+            // Diagnostic failures must not change preference recovery or save outcomes.
+        }
+    }
+
+    private static JsonDocument ParseContent(MemoryStream content)
+    {
+        ReadOnlyMemory<byte> utf8Json = content.GetBuffer()
+            .AsMemory(0, checked((int)content.Length));
+        if (utf8Json.Span.StartsWith("\uFEFF"u8))
+        {
+            utf8Json = utf8Json[3..];
+        }
+
+        // The caller keeps content alive until the document has been disposed.
+        return JsonDocument.Parse(utf8Json);
+    }
+
+    private static MemoryStream ReadBounded(FileStream stream)
+    {
+        EnsureDeclaredLengthIsBounded(stream);
+        var content = new MemoryStream(InitialCapacity(stream));
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            while (true)
+            {
+                int remaining = MaximumFileSizeBytes - checked((int)content.Length);
+                int count = stream.Read(
+                    buffer,
+                    0,
+                    Math.Min(buffer.Length, remaining + 1));
+                if (count == 0)
+                {
+                    content.Position = 0;
+                    return content;
+                }
+                if (count > remaining)
+                {
+                    throw OversizedPreferences();
+                }
+
+                content.Write(buffer, 0, count);
+            }
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static async Task<MemoryStream> ReadBoundedAsync(
+        FileStream stream,
+        CancellationToken cancellationToken)
+    {
+        EnsureDeclaredLengthIsBounded(stream);
+        var content = new MemoryStream(InitialCapacity(stream));
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(8192);
+        try
+        {
+            while (true)
+            {
+                int remaining = MaximumFileSizeBytes - checked((int)content.Length);
+                int count = await stream.ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, remaining + 1)),
+                    cancellationToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    content.Position = 0;
+                    return content;
+                }
+                if (count > remaining)
+                {
+                    throw OversizedPreferences();
+                }
+
+                content.Write(buffer, 0, count);
+            }
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static void EnsureDeclaredLengthIsBounded(FileStream stream)
+    {
+        if (stream.Length > MaximumFileSizeBytes)
+        {
+            throw OversizedPreferences();
+        }
+    }
+
+    private static int InitialCapacity(FileStream stream) =>
+        checked((int)Math.Min(stream.Length, MaximumFileSizeBytes));
+
+    private static InvalidDataException OversizedPreferences() => new(
+        $"Preference files cannot exceed {MaximumFileSizeBytes / 1024} KiB.");
 
     private static UiPreferences? DeserializeWithFutureDashboardPlaceholder(
         JsonElement root,

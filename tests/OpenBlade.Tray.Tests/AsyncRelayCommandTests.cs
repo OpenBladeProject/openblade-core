@@ -5,6 +5,40 @@ namespace OpenBlade.Tray.Tests;
 public sealed class AsyncRelayCommandTests
 {
     [Fact]
+    public void ExecuteAsync_RetainsTheCallerSynchronizationContext()
+    {
+        PumpingSynchronizationContext.Run(async context =>
+        {
+            var executionStarted = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseExecution = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var observedContexts = new List<SynchronizationContext?>();
+            var command = new AsyncRelayCommand(
+                async (_, _) =>
+                {
+                    observedContexts.Add(SynchronizationContext.Current);
+                    executionStarted.TrySetResult();
+                    await releaseExecution.Task;
+                    observedContexts.Add(SynchronizationContext.Current);
+                },
+                _ => true,
+                CancellationToken.None);
+            command.CanExecuteChanged += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+
+            Task running = command.ExecuteAsync(null);
+            await executionStarted.Task;
+            releaseExecution.TrySetResult();
+            await running;
+            await command.DisposeAsync();
+
+            Assert.NotEmpty(observedContexts);
+            Assert.All(observedContexts, observed => Assert.Same(context, observed));
+        });
+    }
+
+    [Fact]
     public async Task DisposeAsync_SerializesWithStartupAndAwaitsCanceledExecution()
     {
         var canExecuteEntered = new TaskCompletionSource(

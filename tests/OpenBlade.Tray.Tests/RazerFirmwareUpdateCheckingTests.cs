@@ -868,6 +868,38 @@ public sealed class RazerFirmwareUpdateCheckingTests
     }
 
     [Fact]
+    public void ViewModel_AutomaticCheckRetainsTheCallerSynchronizationContext()
+    {
+        PumpingSynchronizationContext.Run(async context =>
+        {
+            var client = new ControlledClient();
+            var observedContexts = new List<SynchronizationContext?>();
+            await using var viewModel = CreateScheduledViewModel(client);
+            viewModel.ApplyPreferences(
+                UpdateCheckInterval.Daily,
+                Now.AddDays(-2),
+                selectedRetryAfter: null);
+            viewModel.PropertyChanged += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+            viewModel.PreferencesChanged += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+            viewModel.UpdateAvailable += (_, _) =>
+                observedContexts.Add(SynchronizationContext.Current);
+
+            viewModel.StartAutomaticCheck();
+            await client.Started.Task;
+            client.Complete(new RazerPublishedFirmwareVersions(
+                "3.02",
+                "1.04",
+                "1.06"));
+            await WaitUntilAsync(() => !viewModel.IsChecking);
+
+            Assert.NotEmpty(observedContexts);
+            Assert.All(observedContexts, observed => Assert.Same(context, observed));
+        });
+    }
+
+    [Fact]
     public async Task ViewModel_RestoresModelScopedPublishedVersionsFromPreferences()
     {
         var client = new StubClient(new("9.9", "9.9", "9.9"));
@@ -1160,6 +1192,26 @@ public sealed class RazerFirmwareUpdateCheckingTests
             CancellationToken cancellationToken) =>
             Task.FromException<RazerPublishedFirmwareVersions>(
                 new RazerFirmwareUpdateException("offline"));
+    }
+
+    private sealed class ControlledClient : IRazerFirmwareUpdateClient
+    {
+        private readonly TaskCompletionSource<RazerPublishedFirmwareVersions> result =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<RazerPublishedFirmwareVersions> GetPublishedVersionsAsync(
+            RazerFirmwareSupportPage supportPage,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            return result.Task.WaitAsync(cancellationToken);
+        }
+
+        internal void Complete(RazerPublishedFirmwareVersions versions) =>
+            result.TrySetResult(versions);
     }
 
     private sealed class StubHandler(string responseBody) : HttpMessageHandler
