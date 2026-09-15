@@ -19,7 +19,10 @@ internal sealed class ResumeStateValidationTracker
 
     internal bool ResumeStarted => pendingBaseline?.ResumeStarted == true;
 
-    internal void Capture(PowerSource powerSource, ConfirmedDeviceState? confirmed)
+    internal void Capture(
+        PowerSource powerSource,
+        ConfirmedDeviceState? confirmed,
+        long? lowPowerGeneration = null)
     {
         pendingBaseline = powerSource != PowerSource.ExternalUnknown
             && confirmed is not null
@@ -31,7 +34,35 @@ internal sealed class ResumeStateValidationTracker
                 LightingRestoredDuringResume: false,
                 LightingWriteApplied: false,
                 Observed: null,
-                ObservationWindowStartedAt: null)
+                ObservationWindowStartedAt: null,
+                LowPowerGeneration: lowPowerGeneration)
+            : null;
+    }
+
+    internal void RebaseBeforeResume(
+        long lowPowerGeneration,
+        PowerSource powerSource,
+        ConfirmedDeviceState? confirmed)
+    {
+        if (pendingBaseline is not { ResumeStarted: false } baseline
+            || baseline.LowPowerGeneration != lowPowerGeneration)
+        {
+            return;
+        }
+
+        // Thermal lifecycle cleanup is intentional. Keep the keyboard and logo
+        // sample from before standby Off while adopting its confirmed result.
+        pendingBaseline = powerSource != PowerSource.ExternalUnknown
+            && confirmed is not null
+            ? baseline with
+            {
+                PowerSource = powerSource,
+                Confirmed = confirmed with
+                {
+                    Lighting = baseline.Confirmed.Lighting,
+                    LogoLighting = baseline.Confirmed.LogoLighting,
+                },
+            }
             : null;
     }
 
@@ -333,7 +364,8 @@ internal sealed class ResumeStateValidationTracker
         bool LightingWriteApplied,
         ConfirmedDeviceState? Observed,
         long? ObservationWindowStartedAt,
-        bool GpuClockOffsetConfirmationInvalidated = false);
+        bool GpuClockOffsetConfirmationInvalidated = false,
+        long? LowPowerGeneration = null);
 }
 
 internal sealed record ResumeStateValidationResult(

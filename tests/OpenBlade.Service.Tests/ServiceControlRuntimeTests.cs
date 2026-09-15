@@ -21692,6 +21692,131 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Null(journal.Journal);
     }
 
+    [Fact]
+    public async Task PadlessHyperBoost_SkippedSuspendCleanupDoesNotRebaseResumedObservation()
+    {
+        var gate = new LowPowerGate();
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext? context = null;
+        context = CreateContext(
+            providerAvailable: true,
+            lowPowerGate: gate,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            hyperBoostLifecycleExitBoundary: async _ =>
+            {
+                TestContext resumed = context!;
+                gate.Exit();
+                resumed.Device.ConfirmedState = resumed.Device.ConfirmedState with
+                {
+                    HyperBoostActive = false,
+                    Performance = PerformancePreset.Performance,
+                };
+                await resumed.Runtime.ObserveAsync(CancellationToken.None);
+            });
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        int settersBeforeSuspend = context.Device.TotalSetterCalls;
+        gate.Enter();
+
+        await context.Runtime.PrepareForLowPowerAsync(
+            gate.Generation, static () => true, CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Blocked.ToString(), validation.Status);
+        Assert.Contains("changed control state for Power mode", validation.Detail);
+        Assert.Equal(settersBeforeSuspend, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, false, false)]
+    [InlineData(PowerSource.PluggedIn, true, false)]
+    [InlineData(PowerSource.PluggedIn, false, true)]
+    [InlineData(PowerSource.Battery, false, false)]
+    public async Task PadlessHyperBoost_ActiveSuspendRebasesOnlyIntentionalCleanup(
+        PowerSource suspendPowerSource,
+        bool cancelAfterRestoration,
+        bool driftAfterResume)
+    {
+        var gate = new LowPowerGate();
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            lowPowerGate: gate,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Provider.SupportsLowPowerLightingOff = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        context.Telemetry.Current = CreateTelemetry(suspendPowerSource);
+        using var preparation = new CancellationTokenSource();
+        if (cancelAfterRestoration)
+        {
+            // Retirement happens after successful thermal readback. Resume can
+            // arrive before Driver-mode cleanup acquires the operation gate.
+            journal.BeforeConditionalClear = () =>
+            {
+                Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+                preparation.Cancel();
+                gate.Exit();
+            };
+        }
+
+        gate.Enter();
+        long suspendGeneration = gate.Generation;
+        if (cancelAfterRestoration)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                context.Runtime.PrepareForLowPowerAsync(
+                    suspendGeneration, static () => true, preparation.Token));
+        }
+        else
+        {
+            await context.Runtime.PrepareForLowPowerAsync(
+                suspendGeneration, static () => true, preparation.Token);
+            gate.Exit();
+        }
+        Assert.False(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
+        Assert.Equal(suspendPowerSource, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Null(journal.Journal);
+        Assert.Equal(1, context.Provider.LowPowerOffWrites);
+        int settersAfterRestoration = context.Device.TotalSetterCalls;
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        if (driftAfterResume)
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Performance,
+            };
+        }
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal((driftAfterResume
+            ? ControlOperationStatus.Blocked : ControlOperationStatus.Stored).ToString(), validation.Status);
+        Assert.Contains(driftAfterResume
+            ? "changed control state for Power mode"
+            : "retained control state for Power mode, Fans", validation.Detail);
+        Assert.DoesNotContain("changed the power source", validation.Detail);
+        Assert.Equal(settersAfterRestoration, context.Device.TotalSetterCalls);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]

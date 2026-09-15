@@ -5,6 +5,84 @@ namespace OpenBlade.Service.Tests;
 public sealed class ResumeStateValidationTrackerTests
 {
     [Fact]
+    public void RebaseBeforeResume_KeepsPreOffLightingAndUsesConfirmedThermalCleanup()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState active = Confirmed() with
+        {
+            Performance = null,
+            HyperBoostActive = true,
+            Lighting = LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 80),
+            LogoLighting = LogoLightingMode.Static,
+        };
+        tracker.Capture(PowerSource.PluggedIn, active, lowPowerGeneration: 1);
+        ConfirmedDeviceState cleaned = Confirmed() with { LogoLighting = LogoLightingMode.Off };
+
+        tracker.RebaseBeforeResume(1, PowerSource.Battery, cleaned);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.Battery, cleaned with
+        {
+            Lighting = active.Lighting,
+            LogoLighting = active.LogoLighting,
+        });
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("retained control state for Power mode, Fans, Battery, Lighting", result.Message);
+        Assert.DoesNotContain("changed the power source", result.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RebaseBeforeResume_RejectsNewerOrStartedBaseline(bool resumeStarted)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline, lowPowerGeneration: 1);
+        if (resumeStarted)
+        {
+            tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        }
+        else
+        {
+            tracker.Capture(PowerSource.PluggedIn, baseline, lowPowerGeneration: 3);
+        }
+
+        tracker.RebaseBeforeResume(1, PowerSource.Battery,
+            baseline with { Performance = PerformancePreset.Performance });
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline);
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("retained control state for Power mode", result.Message);
+        Assert.DoesNotContain("changed the power source", result.Message);
+    }
+
+    [Fact]
+    public void RebaseBeforeResume_DoesNotHidePerformanceDriftAfterResumeBegins()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState cleaned = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn,
+            cleaned with { Performance = null, HyperBoostActive = true }, lowPowerGeneration: 1);
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, cleaned);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        ConfirmedDeviceState drifted = cleaned with { Performance = PerformancePreset.Performance };
+
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, drifted);
+        tracker.Observe(PowerSource.PluggedIn, drifted);
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("changed control state for Power mode", result.Message);
+    }
+
+    [Fact]
     public void ObserveBeforeCompletion_UsesLatestSampleAndConsumesOnce()
     {
         var tracker = new ResumeStateValidationTracker(TimeProvider.System);

@@ -5234,7 +5234,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         bool operationGateAlreadyHeld = false,
         Action<bool>? writeAttemptObserver = null,
-        Func<bool>? stillPreparing = null)
+        Func<bool>? stillPreparing = null,
+        long? lowPowerResumeGeneration = null)
     {
         EnsureInitialized();
         ServiceStatusSnapshot? writeBaseline = null;
@@ -6393,6 +6394,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         finally
         {
             writeAttemptObserver?.Invoke(hyperBoostWriteAttempted);
+            if (hyperBoostWriteAttempted)
+            {
+                RebaseLowPowerResumeState(lowPowerResumeGeneration);
+            }
             if (!operationGateAlreadyHeld)
             {
                 operationGate.Release();
@@ -10718,7 +10723,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<ControlOperationResult> RestoreOwnedHyperBoostForLifecycleCoreAsync(
         string reasonLabel,
         CancellationToken cancellationToken,
-        Func<bool>? stillPreparing = null)
+        Func<bool>? stillPreparing = null,
+        long? lowPowerResumeGeneration = null)
     {
         long expectedOwnershipGeneration = 0;
         PowerSource exitPowerSource = PowerSource.ExternalUnknown;
@@ -10782,6 +10788,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         Message =
                             "The power source was refreshed before HyperBoost lifecycle restoration so the destination profile is authoritative.",
                     });
+                    RebaseLowPowerResumeState(lowPowerResumeGeneration);
                 }
 
                 expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
@@ -10813,7 +10820,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     exitPowerSourceOverride: exitPowerSource,
                     expectedExitPowerSourceGeneration,
                     cancellationToken,
-                    stillPreparing: stillPreparing)
+                    stillPreparing: stillPreparing,
+                    lowPowerResumeGeneration: lowPowerResumeGeneration)
                 .ConfigureAwait(false);
             if (result.Status != ControlOperationStatus.Applied)
             {
@@ -10956,7 +10964,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await RestoreOwnedHyperBoostForLifecycleCoreAsync(
                         "low power",
                         cancellationToken,
-                        activeBoundary ? StillPreparing : null)
+                        activeBoundary ? StillPreparing : null,
+                        lowPowerResumeGeneration: activeBoundary ? generation : null)
                     .ConfigureAwait(false);
 
             CancellationToken cleanupToken = stillAuthorized is null && cancellationToken.IsCancellationRequested
@@ -11012,7 +11021,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // Capture the active baseline before a successful Off becomes the
             // confirmed state. Off is temporary hardware state, not user intent.
             resumeStateValidation.Capture(current.ActivePowerSource,
-                current.DeviceVerified ? current.ConfirmedState : null);
+                current.DeviceVerified ? current.ConfirmedState : null,
+                lowPowerGeneration: generation);
             if (IsKeyboardLightingDelegated || IsWritePendingFor(DeviceSubsystem.Lighting))
             {
                 return new(ControlOperationStatus.Stored,
@@ -11136,6 +11146,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private void RebaseLowPowerResumeState(long? generation)
+    {
+        if (generation is { } capturedGeneration)
+        {
+            // Called while thermal cleanup still holds operationGate, including
+            // cancellation after confirmed restoration. The tracker admits only
+            // the matching, unstarted baseline; this performs no device access.
+            ServiceStatusSnapshot current = GetStatus();
+            resumeStateValidation.RebaseBeforeResume(
+                capturedGeneration,
+                current.ActivePowerSource,
+                current.DeviceVerified ? current.ConfirmedState : null);
+        }
+    }
+
     public async Task CancelResumeValidationAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
@@ -11230,7 +11255,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (lastLightingOffSuspendGeneration != generation)
             {
                 resumeStateValidation.Capture(current.ActivePowerSource,
-                    current.DeviceVerified ? current.ConfirmedState : null);
+                    current.DeviceVerified ? current.ConfirmedState : null,
+                    lowPowerGeneration: generation);
             }
             await InvalidateLightingRendererCoreAsync(
                 preserveForLifecycleRestore: true, bounded.Token,

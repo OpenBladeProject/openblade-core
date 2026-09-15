@@ -275,6 +275,7 @@ public sealed class ServiceSessionPowerTransitionCoordinator
                 bounded.CancelAfter(remaining);
             }
         }
+        bool resumeValidationStarted = false;
         try
         {
             if (transition.Suspending)
@@ -294,6 +295,7 @@ public sealed class ServiceSessionPowerTransitionCoordinator
                 return Accepted("Resume processing expired or was superseded during retained-port cleanup.");
             }
             await runtime.BeginResumeValidationAsync(bounded.Token).ConfigureAwait(false);
+            resumeValidationStarted = true;
             if (IsCurrent())
             {
                 await runtime.HandlePowerSourceChangedAsync(bounded.Token).ConfigureAwait(false);
@@ -312,7 +314,7 @@ public sealed class ServiceSessionPowerTransitionCoordinator
         }
         catch (OperationCanceledException) when (bounded.IsCancellationRequested)
         {
-            if (!transition.Suspending)
+            if (resumeValidationStarted)
             {
                 await runtime.CancelResumeValidationAsync(CancellationToken.None).ConfigureAwait(false);
             }

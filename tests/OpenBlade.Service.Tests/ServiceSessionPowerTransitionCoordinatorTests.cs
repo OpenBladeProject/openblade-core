@@ -175,6 +175,71 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
     }
 
     [Fact]
+    public async Task ResumeCanceledBeforeValidation_PreservesBaselineWhenPendingSuspendIsReplaced()
+    {
+        var time = new Clock();
+        var gate = new LowPowerGate(time);
+        var tracker = new ResumeStateValidationTracker(time);
+        var baseline = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            new ConfirmedBatteryState(true, 80, false),
+            LightingSettingsFactory.Off());
+        var runtime = new Runtime
+        {
+            BlockNoWriteInvalidation = true,
+            HoldCanceledNoWriteInvalidation = true,
+            ResumeValidation = tracker,
+            ResumeBaseline = baseline,
+        };
+        var coordinator = new ServiceSessionPowerTransitionCoordinator(runtime, gate);
+        ReportSessionPowerTransitionRequest first = Request(time, true);
+        await Report(coordinator, first).WaitAsync(DeadlockGuard);
+        time.Advance(1);
+        Task<ControlOperationResult> firstResume = Report(coordinator, first with
+        {
+            Sequence = 2,
+            TimestampQpc = time.GetTimestamp(),
+            Suspending = false,
+        });
+        Task<ControlOperationResult> latestResume;
+        try
+        {
+            await runtime.NoWriteInvalidationStarted.Task.WaitAsync(DeadlockGuard);
+            time.Advance(1);
+            Task<ControlOperationResult> pendingSuspend = Report(coordinator, first with
+            {
+                Sequence = 3,
+                TimestampQpc = time.GetTimestamp(),
+            });
+            Assert.True(gate.IsActive);
+            await runtime.NoWriteInvalidationCanceled.Task.WaitAsync(DeadlockGuard);
+            time.Advance(1);
+            latestResume = Report(coordinator, first with
+            {
+                Sequence = 4,
+                TimestampQpc = time.GetTimestamp(),
+                Suspending = false,
+            });
+            Assert.Equal(ControlOperationStatus.Stored,
+                (await pendingSuspend.WaitAsync(DeadlockGuard)).Status);
+        }
+        finally
+        {
+            runtime.NoWriteInvalidationRelease.TrySetResult();
+        }
+        await Task.WhenAll(firstResume, latestResume).WaitAsync(DeadlockGuard);
+
+        Assert.False(gate.IsActive);
+        Assert.Equal(1, runtime.PrepareCalls);
+        Assert.Equal(1, runtime.CompleteResumeCalls);
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Observe(PowerSource.PluggedIn, baseline with { Fans = FanMode.Maximum }));
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("changed control state for Fans", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PendingResume_CoalescesLateNoticesAndRetainsNativeCorroboration()
     {
         var time = new Clock();
@@ -650,7 +715,10 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
         internal bool IgnorePrepareCancellation { get; init; }
         internal bool BlockResume { get; init; }
         internal bool BlockNoWriteInvalidation { get; init; }
+        internal bool HoldCanceledNoWriteInvalidation { get; init; }
         internal bool BlockRestore { get; init; }
+        internal ResumeStateValidationTracker? ResumeValidation { get; init; }
+        internal ConfirmedDeviceState? ResumeBaseline { get; init; }
         internal int ActivationCalls { get; private set; }
         internal int PrepareCalls { get; private set; }
         internal int PreparedWrites { get; private set; }
@@ -668,6 +736,7 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
         internal TaskCompletionSource ResumeRelease { get; } = NewSignal();
         internal TaskCompletionSource ResumeCompleted { get; } = NewSignal();
         internal TaskCompletionSource NoWriteInvalidationStarted { get; } = NewSignal();
+        internal TaskCompletionSource NoWriteInvalidationCanceled { get; } = NewSignal();
         internal TaskCompletionSource NoWriteInvalidationRelease { get; } = NewSignal();
         internal TaskCompletionSource RestoreStarted { get; } = NewSignal();
         internal TaskCompletionSource RestoreRelease { get; } = NewSignal();
@@ -697,6 +766,7 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
                     return new(ControlOperationStatus.Blocked, "Preparation is no longer authorized.");
                 }
                 PreparedWrites++;
+                ResumeValidation?.Capture(PowerSource.PluggedIn, ResumeBaseline);
                 return new(ControlOperationStatus.Applied, "Synthetic Off confirmed.");
             }
             finally
@@ -711,7 +781,17 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
             NoWriteInvalidationStarted.TrySetResult();
             if (BlockNoWriteInvalidation)
             {
-                await NoWriteInvalidationRelease.Task.WaitAsync(cancellationToken);
+                try
+                {
+                    await NoWriteInvalidationRelease.Task.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested
+                    && HoldCanceledNoWriteInvalidation)
+                {
+                    NoWriteInvalidationCanceled.TrySetResult();
+                    await NoWriteInvalidationRelease.Task;
+                    throw;
+                }
             }
         }
 
@@ -752,18 +832,21 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
         public Task BeginResumeValidationAsync(CancellationToken cancellationToken)
         {
             BeginResumeCalls++;
+            ResumeValidation?.Begin(gpuClockOffsetConfirmationInvalidated: false);
             return Task.CompletedTask;
         }
 
         public Task CancelResumeValidationAsync(CancellationToken cancellationToken)
         {
             CancelResumeCalls++;
+            ResumeValidation?.Cancel();
             return Task.CompletedTask;
         }
 
         public Task CompleteResumeValidationAsync(CancellationToken cancellationToken)
         {
             CompleteResumeCalls++;
+            ResumeValidation?.Complete();
             ResumeCompleted.TrySetResult();
             return Task.CompletedTask;
         }
