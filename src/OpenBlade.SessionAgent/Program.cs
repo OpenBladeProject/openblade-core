@@ -124,7 +124,7 @@ internal static class Program
                     Stopwatch.GetTimestamp(),
                     powerTransitionServiceClient.ReportSessionPowerTransitionAsync);
                 using var powerTransitionRegistration =
-                    new WindowsSessionPowerNotificationRegistration(powerTransitionRelay);
+                    WindowsSessionPowerNotificationRegistration.TryCreate(powerTransitionRelay);
                 var powerContext = new DisplayPowerContextState();
                 using var applier = new DisplayProfileApplier(controller, powerContext);
                 var checkpointStore = new DisplayAutomationCheckpointStore(

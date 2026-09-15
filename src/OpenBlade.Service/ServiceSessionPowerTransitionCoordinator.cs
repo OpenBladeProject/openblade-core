@@ -135,13 +135,15 @@ public sealed class ServiceSessionPowerTransitionCoordinator
         {
             gate.TryApply(suspending, gate.GetTimestamp(), out transition);
         }
-        return Queue(transition, static () => true, cancellationToken);
+        return Queue(transition, static () => true, cancellationToken,
+            nativeResume: !suspending);
     }
 
     private Task<ControlOperationResult> Queue(
         LowPowerTransition transition,
         Func<bool> stillAuthorized,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool nativeResume = false)
     {
         Work? start = null;
         Task<ControlOperationResult> result;
@@ -159,13 +161,22 @@ public sealed class ServiceSessionPowerTransitionCoordinator
             }
             if (active?.Transition.Generation == transition.Generation)
             {
+                if (nativeResume)
+                {
+                    active.CorroborateNativeResume();
+                }
                 return active.Completion.Task;
             }
             if (pending?.Transition.Generation == transition.Generation)
             {
+                if (nativeResume)
+                {
+                    pending.CorroborateNativeResume();
+                }
                 return pending.Completion.Task;
             }
-            var work = new Work(transition, stillAuthorized, cancellationToken);
+            var work = new Work(transition, stillAuthorized, cancellationToken, nativeResume);
+            gate.RetainResumeGeneration(transition.Generation);
             result = work.Completion.Task;
             if (active is null)
             {
@@ -175,6 +186,7 @@ public sealed class ServiceSessionPowerTransitionCoordinator
             {
                 if (pending is not null)
                 {
+                    gate.ReleaseResumeGeneration(pending.Transition.Generation);
                     pending.Completion.TrySetResult(Accepted("A newer power transition replaced the pending notification."));
                     pending.Cancellation.Dispose();
                 }
@@ -219,14 +231,15 @@ public sealed class ServiceSessionPowerTransitionCoordinator
                 result = new(ControlOperationStatus.Failed,
                     $"Power notification cancellation failed: {exception.Message}");
             }
-            work.Completion.TrySetResult(result);
             lock (sync)
             {
                 lastCompletedGeneration = work.Transition.Generation;
                 lastCompletedResult = result;
+                gate.ReleaseResumeGeneration(work.Transition.Generation);
                 active = pending;
                 pending = null;
                 work.Cancellation.Dispose();
+                work.Completion.TrySetResult(result);
                 if (active is null)
                 {
                     return;
@@ -240,7 +253,7 @@ public sealed class ServiceSessionPowerTransitionCoordinator
     {
         LowPowerTransition transition = work.Transition;
         bool IsCurrent() => gate.Generation == transition.Generation
-            && (!transition.Suspending || IsTimely(transition.TimestampQpc)) && work.StillAuthorized()
+            && (!transition.Suspending || IsTimely(transition.TimestampQpc)) && work.IsAuthorized()
             && !work.CancellationToken.IsCancellationRequested;
         if (!IsCurrent()
             && !(transition.Suspending && gate.IsActiveForGeneration(transition.Generation)))
@@ -324,18 +337,31 @@ public sealed class ServiceSessionPowerTransitionCoordinator
     private sealed class Work(
         LowPowerTransition transition,
         Func<bool> stillAuthorized,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool nativeResume)
     {
         private bool cancellationRequested;
+        private int nativeResumeCorroborated = nativeResume ? 1 : 0;
 
         internal LowPowerTransition Transition { get; } = transition;
-        internal Func<bool> StillAuthorized { get; } = stillAuthorized;
+        internal bool IsAuthorized() => Volatile.Read(ref nativeResumeCorroborated) != 0
+            || stillAuthorized();
         internal CancellationTokenSource Cancellation { get; } =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         internal CancellationToken CancellationToken => Cancellation.Token;
         internal Task CancellationCompletion { get; private set; } = Task.CompletedTask;
         internal TaskCompletionSource<ControlOperationResult> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal void CorroborateNativeResume()
+        {
+            if (!Transition.Suspending)
+            {
+                // Independent native authority outlives the relay instance
+                // that happened to enqueue this same resume first.
+                Volatile.Write(ref nativeResumeCorroborated, 1);
+            }
+        }
 
         internal void CancelOnce()
         {

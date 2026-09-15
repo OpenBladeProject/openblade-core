@@ -10,6 +10,55 @@ public sealed class SessionPowerTransitionRelayTests
         new(ControlOperationStatus.Applied, "completed");
 
     [Fact]
+    public void NativeRegistrationAcceptsTheDocumentedCallbackFlag()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        // Register and immediately unregister only. The sink never contacts
+        // hardware or the service, and this test does not initiate sleep.
+        using var relay = new SessionPowerTransitionRelay(Guid.NewGuid(), Stopwatch.GetTimestamp(),
+            (_, _) => Task.FromResult(Applied));
+        using var registration = new WindowsSessionPowerNotificationRegistration(relay);
+    }
+
+    [Fact]
+    public void FailedRegistrationLeavesOtherAgentStartupAvailable()
+    {
+        using var relay = new SessionPowerTransitionRelay(Guid.NewGuid(), Stopwatch.GetTimestamp(),
+            (_, _) => Task.FromResult(Applied));
+        var api = new FakeApi { RegisterResult = 87 };
+
+        using var registration = WindowsSessionPowerNotificationRegistration.TryCreate(relay, api);
+
+        Assert.Null(registration);
+        Assert.Equal(1, api.UnregisterCalls);
+    }
+
+    [Fact]
+    public async Task ResumeCallbackReturnsBeforeItsBoundedReportCompletes()
+    {
+        var completion = new TaskCompletionSource<ControlOperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken observed = default;
+        using var relay = new SessionPowerTransitionRelay(Guid.NewGuid(), Stopwatch.GetTimestamp(), (_, token) =>
+        {
+            observed = token;
+            return completion.Task;
+        });
+
+        var stopwatch = Stopwatch.StartNew();
+        relay.OnPowerNotification(18);
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+        Assert.False(completion.Task.IsCompleted);
+        Assert.False(observed.IsCancellationRequested);
+        await WaitUntilAsync(() => observed.IsCancellationRequested);
+        completion.SetResult(Applied);
+    }
+
+    [Fact]
     public void NativeCallbackStartsReportInlineAndDeduplicatesResumeVariants()
     {
         var requests = new List<ReportSessionPowerTransitionRequest>();
@@ -57,18 +106,16 @@ public sealed class SessionPowerTransitionRelayTests
                 return finishFirst.Task;
             }
             return Task.FromResult(Applied);
-        }, () => Volatile.Read(ref now), 1000);
+        }, () => Volatile.Read(ref now), 1000, TimeSpan.FromMilliseconds(40));
         Task suspend = Task.Run(() => relay.OnPowerNotification(4));
         CancellationToken firstCancellation = await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Task resume = Task.Run(() => relay.OnPowerNotification(18));
+        relay.OnPowerNotification(18);
         await WaitUntilAsync(() => firstCancellation.IsCancellationRequested);
-        Task nextSuspend = Task.Run(() => relay.OnPowerNotification(4));
-        // The pending resume callback exits when the subsequent suspend replaces it.
-        await resume.WaitAsync(TimeSpan.FromSeconds(5));
-        Task latestResume = Task.Run(() => relay.OnPowerNotification(7));
-        await nextSuspend.WaitAsync(TimeSpan.FromSeconds(5));
+        relay.OnPowerNotification(4);
+        relay.OnPowerNotification(7);
         finishFirst.SetResult(Applied);
-        await Task.WhenAll(suspend, latestResume).WaitAsync(TimeSpan.FromSeconds(5));
+        await suspend.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => requests.Count == 2);
 
         Assert.Equal(new long[] { 1, 4 }, requests.Select(item => item.Sequence));
         Assert.False(requests.Last().Suspending);
@@ -238,6 +285,7 @@ public sealed class SessionPowerTransitionRelayTests
     private sealed class FakeApi : ISessionPowerNotificationApi
     {
         private WeakReference<SessionPowerNotificationCallback>? callback;
+        internal uint RegisterResult { get; init; }
         internal uint UnregisterResult { get; init; }
         internal int UnregisterCalls { get; private set; }
 
@@ -245,7 +293,7 @@ public sealed class SessionPowerTransitionRelayTests
         {
             this.callback = new WeakReference<SessionPowerNotificationCallback>(callback);
             registration = new IntPtr(42);
-            return 0;
+            return RegisterResult;
         }
 
         public uint Unregister(IntPtr registration)

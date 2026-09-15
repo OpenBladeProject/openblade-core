@@ -6,6 +6,7 @@ public sealed class LowPowerGate
     private readonly TimeProvider timeProvider;
     private long latestTimestamp;
     private long boundaryTimestamp;
+    private long retainedResumeGeneration = -1;
     // The low bit is the latch; the remaining bits distinguish a later suspend
     // after a resume, even if a preparation was waiting on hardware throughout.
     private long state;
@@ -45,6 +46,28 @@ public sealed class LowPowerGate
 
     public bool Exit() => Change(active: false);
 
+    internal void RetainResumeGeneration(long generation)
+    {
+        lock (sync)
+        {
+            if ((generation & 1) == 0 && state == generation)
+            {
+                retainedResumeGeneration = generation;
+            }
+        }
+    }
+
+    internal void ReleaseResumeGeneration(long generation)
+    {
+        lock (sync)
+        {
+            if (retainedResumeGeneration == generation)
+            {
+                retainedResumeGeneration = -1;
+            }
+        }
+    }
+
     private bool Change(bool active)
     {
         return Apply(active, GetTimestamp(), out _, out bool changed, newResume: false) && changed;
@@ -77,11 +100,13 @@ public sealed class LowPowerGate
                 boundaryTimestamp = timestamp;
                 Volatile.Write(ref state, unchecked(state + 1));
             }
-            else if (newResume && !active && boundaryTimestamp > 0
+            else if (newResume && !active && retainedResumeGeneration != state
+                && boundaryTimestamp > 0
                 && timeProvider.GetElapsedTime(boundaryTimestamp, timestamp) > TimeSpan.FromSeconds(2))
             {
                 // A later resume may arrive without a corresponding suspend
-                // in this process. Group only the adjacent duplicate notices.
+                // in this process. While recovery is queued or running, all
+                // active-state notices belong to that unfinished recovery.
                 boundaryTimestamp = timestamp;
                 Volatile.Write(ref state, unchecked(state + 2));
             }

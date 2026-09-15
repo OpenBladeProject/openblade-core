@@ -180,6 +180,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(writes + 1, context.Device.LightingSetCalls);
     }
 
+    [Fact]
+    public async Task StandbyLighting_ExpiredPreparationPreservesDeferredIntentWhenOldRendererFaulted()
+    {
+        var gate = new LowPowerGate();
+        TestContext context = await CreateOwnedStaticLightingContextAsync(lowPowerGate: gate);
+        context.Provider.SupportsLowPowerLightingOff = true;
+        int writes = context.Device.LightingSetCalls;
+        LightingSettings latest = LightingSettingsFactory.Static(new RgbColor(255, 48, 0), 80);
+        LightingSettings? submitted = null;
+        // Nonzero brightness cannot confirm a matrix effect on either model.
+        context.Device.ScopedLightingReadback = context.Device.ConfirmedState with { Lighting = null };
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                submitted = context.Device.ConfirmedState.Lighting;
+                context.Device.ConfirmedState = context.Device.ConfirmedState with { Lighting = null };
+            }
+        };
+        gate.Enter();
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await context.Runtime.SetLightingOverrideAsync(
+                new ManualOverride<LightingSettings>(latest, OverrideLifetime.Persistent),
+                CancellationToken.None)).Status);
+        // The old stream faults after the new intent was accepted. Preparation
+        // expires before firmware access, while its write-free close still runs.
+        context.Device.LightingRendererOwnership = LightingRendererOwnershipState.Faulted;
+
+        await context.Runtime.PrepareForLowPowerAsync(
+            gate.Generation, static () => false, new CancellationToken(canceled: true));
+
+        Assert.Equal(0, context.Provider.LowPowerOffWrites);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+        Assert.Equal(writes, context.Device.LightingSetCalls);
+        Assert.Equal(LightingRendererOwnershipState.None, context.Device.LightingRendererOwnership);
+        gate.Exit();
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(latest, submitted);
+        Assert.Null(context.Device.ConfirmedState.Lighting);
+        Assert.Equal(LightingRendererOwnershipState.Static, context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Equal(writes + 1, context.Device.LightingSetCalls);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

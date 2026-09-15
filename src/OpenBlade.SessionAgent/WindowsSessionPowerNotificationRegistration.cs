@@ -23,6 +23,23 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
     private IntPtr registration;
     private int disposed;
 
+    internal static WindowsSessionPowerNotificationRegistration? TryCreate(
+        SessionPowerTransitionRelay relay,
+        ISessionPowerNotificationApi? api = null)
+    {
+        try
+        {
+            return new WindowsSessionPowerNotificationRegistration(relay, api);
+        }
+        catch (Exception exception) when (exception is Win32Exception
+            or DllNotFoundException or EntryPointNotFoundException)
+        {
+            Trace.TraceWarning("OpenBlade session power notifications are unavailable: {0} (0x{1:X8}).",
+                exception.GetType().Name, exception.HResult);
+            return null;
+        }
+    }
+
     internal WindowsSessionPowerNotificationRegistration(
         SessionPowerTransitionRelay relay,
         ISessionPowerNotificationApi? api = null)
@@ -101,6 +118,7 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
 
     private sealed class NativeApi : ISessionPowerNotificationApi
     {
+        private const uint DeviceNotifyCallbackFlag = 2;
         internal static NativeApi Instance { get; } = new();
 
         public uint Register(SessionPowerNotificationCallback callback, out IntPtr registration)
@@ -110,7 +128,7 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
                 Callback = callback,
                 Context = IntPtr.Zero,
             };
-            return PowerRegisterSuspendResumeNotification(8, ref recipient, out registration);
+            return PowerRegisterSuspendResumeNotification(DeviceNotifyCallbackFlag, ref recipient, out registration);
         }
 
         public uint Unregister(IntPtr registration) => PowerUnregisterSuspendResumeNotification(registration);

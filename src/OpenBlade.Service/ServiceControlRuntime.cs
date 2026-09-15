@@ -11675,11 +11675,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
             }
             else if (preserveForLifecycleRestore
+                && !(lowPower && pendingLightingRestoreFromLifecycle
+                    && pendingLightingRestore is not null)
                 && (liveOwnership == LightingRendererOwnershipState.Faulted
                     || owned is not null))
             {
                 // A live fault, relinquished renderer, or ownership mismatch
                 // disproves the cached status and must cancel any stale restore.
+                // Write-free retirement cannot disprove separately accepted
+                // lifecycle intent; retaining it does not bypass port admission.
                 pendingLightingRestore = null;
                 pendingLightingRestoreFromLifecycle = false;
             }

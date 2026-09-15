@@ -91,6 +91,14 @@ internal sealed class SessionPowerTransitionRelay : IDisposable
             _ = SendAsync(transition);
         }
 
+        if (!transition.Request.Suspending)
+        {
+            // Resume has no preparation deadline for the native callback.
+            // Keep the pipe attempt bounded without delaying Windows' wake work.
+            _ = ObserveResumeDeadlineAsync(transition);
+            return;
+        }
+
         // Windows' suspend budget is shared. This bounded wait gives the
         // service a chance to complete; it cannot guarantee completion.
         TimeSpan remaining = Remaining(transition);
@@ -98,6 +106,28 @@ internal sealed class SessionPowerTransitionRelay : IDisposable
         {
             return;
         }
+        ExpireTransition(transition);
+    }
+
+    private async Task ObserveResumeDeadlineAsync(Transition transition)
+    {
+        TimeSpan remaining = Remaining(transition);
+        if (remaining > TimeSpan.Zero)
+        {
+            try
+            {
+                await transition.Completion.Task.WaitAsync(remaining).ConfigureAwait(false);
+                return;
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+        ExpireTransition(transition);
+    }
+
+    private void ExpireTransition(Transition transition)
+    {
         lock (sync)
         {
             if (ReferenceEquals(pending, transition))
