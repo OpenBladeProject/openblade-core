@@ -4,6 +4,93 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ResumeStateValidationTrackerTests
 {
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance)]
+    [InlineData(DeviceSubsystem.Fans)]
+    public void Capture_UnconfirmedThermalWriteCopiesInputAndRetainsOtherComparisons(
+        DeviceSubsystem subsystem)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        var pending = new HashSet<DeviceSubsystem> { subsystem };
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline, unconfirmedWrites: pending);
+        pending.Clear();
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+        });
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("retained control state for Battery, Lighting", result.Message);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Power mode, Fans", result.Message);
+        Assert.DoesNotContain("Unavailable", result.Message);
+        Assert.DoesNotContain("externally classified", result.Message);
+    }
+
+    [Fact]
+    public void Begin_UnionsPendingWritesAndNewCaptureResetsExclusions()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline,
+            unconfirmedWrites: [DeviceSubsystem.Battery]);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false,
+            unconfirmedWrites: [DeviceSubsystem.Performance]);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.RecordPendingWrite(DeviceSubsystem.Lighting);
+        tracker.Observe(PowerSource.PluggedIn, baseline);
+
+        ResumeStateValidationResult excluded = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, excluded.Status);
+        Assert.Equal(
+            "Resume validation had no eligible control state to compare. No validation-driven recovery writes were attempted. "
+                + "Not compared because OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Power mode, Fans, Battery, Lighting.",
+            excluded.Message);
+
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn,
+            baseline with { Performance = PerformancePreset.Performance });
+        ResumeStateValidationResult changed = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, changed.Status);
+        Assert.Contains("changed control state for Power mode", changed.Message);
+        Assert.DoesNotContain("unconfirmed writes", changed.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecordPendingWrite_PreservesAttributionAndStillReportsOtherDrift(bool resumeStarted)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        if (resumeStarted)
+        {
+            tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        }
+        tracker.RecordPendingWrite(DeviceSubsystem.Battery);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline with
+        {
+            Battery = new ConfirmedBatteryState(true, 75, false),
+            Fans = FanMode.Maximum,
+        });
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("changed control state for Fans.", result.Message);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Battery", result.Message);
+        Assert.DoesNotContain("Unavailable", result.Message);
+    }
+
     [Fact]
     public void RebaseBeforeResume_UnconfirmedThermalCleanupRetainsBatteryAndLightingComparison()
     {
@@ -22,7 +109,7 @@ public sealed class ResumeStateValidationTrackerTests
             LogoLighting = LogoLightingMode.Off,
         };
         tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, cachedAfterOff,
-            thermalCleanupUnconfirmed: true);
+            unconfirmedWrites: [DeviceSubsystem.Performance, DeviceSubsystem.Fans]);
         tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, cachedAfterOff);
         tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
         tracker.Observe(PowerSource.PluggedIn, active with
@@ -36,7 +123,8 @@ public sealed class ResumeStateValidationTrackerTests
             tracker.Complete());
         Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.Contains("retained control state for Battery, Lighting", result.Message);
-        Assert.Contains("Unavailable for comparison: Power mode, Fans", result.Message);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Power mode, Fans", result.Message);
+        Assert.DoesNotContain("Unavailable", result.Message);
         Assert.DoesNotContain("externally classified", result.Message);
     }
 
@@ -110,7 +198,7 @@ public sealed class ResumeStateValidationTrackerTests
         ConfirmedDeviceState drifted = cleaned with { Performance = PerformancePreset.Performance };
 
         tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, drifted,
-            thermalCleanupUnconfirmed: true);
+            unconfirmedWrites: [DeviceSubsystem.Performance, DeviceSubsystem.Fans]);
         tracker.Observe(PowerSource.PluggedIn, drifted);
 
         ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
@@ -408,7 +496,7 @@ public sealed class ResumeStateValidationTrackerTests
 
         Assert.Equal(ControlOperationStatus.Stored, result.Status);
         Assert.Equal(
-            "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No validation-driven recovery writes were attempted. Lighting was unavailable in at least one sample and was not compared. Unavailable for comparison: Power mode, Fans, Battery, Lighting.",
+            "Resume validation had no eligible control state to compare. No validation-driven recovery writes were attempted. Lighting was unavailable in at least one sample and was not compared. Unavailable for comparison: Power mode, Fans, Battery, Lighting.",
             result.Message);
     }
 

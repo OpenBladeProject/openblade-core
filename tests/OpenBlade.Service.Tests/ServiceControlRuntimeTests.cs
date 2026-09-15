@@ -10470,6 +10470,117 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Provider.GpuClockOffsetInvalidationCount);
     }
 
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance, false)]
+    [InlineData(DeviceSubsystem.Battery, false)]
+    [InlineData(DeviceSubsystem.Battery, true)]
+    public async Task ResumeValidation_PendingOrdinaryWriteDoesNotClaimExternalDrift(
+        DeviceSubsystem subsystem,
+        bool writeAfterSuspendCapture)
+    {
+        var gate = new LowPowerGate();
+        TestContext context = CreateWritableContext(lowPowerGate: gate);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+            LogoLighting = LogoLightingMode.Static,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
+
+        async Task SuspendAndInvalidateAsync()
+        {
+            gate.Enter();
+            await context.Runtime.PrepareForLowPowerAsync(
+                gate.Generation, static () => true, CancellationToken.None);
+            gate.Exit();
+            await context.Runtime.InvalidateLightingRendererForLowPowerAsync(CancellationToken.None);
+            // Supply the next real lighting sample after renderer retirement.
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Lighting = before.Lighting,
+                LogoLighting = before.LogoLighting,
+            };
+        }
+
+        if (writeAfterSuspendCapture)
+        {
+            await SuspendAndInvalidateAsync();
+        }
+        ControlOperationResult write;
+        if (subsystem == DeviceSubsystem.Performance)
+        {
+            context.Device.UseScopedPerformanceFanRead = true;
+            context.Device.MutatePerformanceBeforeQueuedFailure = true;
+            context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Performance response lost after submission."));
+            context.Device.PerformanceFanStateReadFailureOnCall =
+                context.Device.PerformanceFanStateReadCalls + 2;
+            write = await context.Runtime.SetPerformanceOverrideAsync(
+                new ManualOverride<PerformancePreset>(
+                    PerformancePreset.Performance, OverrideLifetime.Persistent),
+                CancellationToken.None);
+        }
+        else
+        {
+            context.Device.AfterSetter = written =>
+            {
+                if (written == DeviceSubsystem.Battery)
+                {
+                    throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                        "Battery response lost after submission.");
+                }
+            };
+            write = await context.Runtime.SetBatteryPolicyAsync(
+                BatteryPolicy.Create(75), CancellationToken.None);
+        }
+
+        Assert.Equal(ControlOperationStatus.Failed, write.Status);
+        Assert.Equal([subsystem], context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(before.Performance, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Equal(before.Battery, context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        int setters = context.Device.TotalSetterCalls;
+        if (!writeAfterSuspendCapture)
+        {
+            await SuspendAndInvalidateAsync();
+        }
+
+        // A queued observation can causally resolve the write before Begin takes
+        // operationGate. Its absence from the Begin sample must not erase it.
+        context.Device.PerformanceFanStateReadFailureOnCall = null;
+        context.Device.AfterSetter = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        string retained = subsystem == DeviceSubsystem.Performance
+            ? "Battery, Lighting" : "Power mode, Fans, Lighting";
+        string excluded = subsystem == DeviceSubsystem.Performance
+            ? "Power mode, Fans" : "Battery";
+        Assert.Contains($"retained control state for {retained}", validation.Detail);
+        Assert.Contains($"OpenBlade had unconfirmed writes during the suspend or resume lifecycle: {excluded}", validation.Detail);
+        Assert.DoesNotContain("Unavailable", validation.Detail);
+        Assert.DoesNotContain("externally classified", validation.Detail);
+    }
+
     [Fact]
     public async Task ResumeValidation_LifecyclePathDisclosesLightingRestoreWrite()
     {
@@ -24171,7 +24282,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             entry => entry.Action == "ResumeValidation");
         Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
         Assert.Contains("retained control state for Battery, Lighting", validation.Detail);
-        Assert.Contains("Unavailable for comparison: Power mode, Fans", validation.Detail);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Power mode, Fans", validation.Detail);
+        Assert.DoesNotContain("Unavailable", validation.Detail);
         Assert.DoesNotContain("externally classified", validation.Detail);
     }
 

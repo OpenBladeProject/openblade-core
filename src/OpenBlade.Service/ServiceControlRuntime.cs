@@ -11020,9 +11020,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState before = current.ConfirmedState ?? UnknownConfirmedState;
             // Capture the active baseline before a successful Off becomes the
             // confirmed state. Off is temporary hardware state, not user intent.
-            resumeStateValidation.Capture(current.ActivePowerSource,
-                current.DeviceVerified ? current.ConfirmedState : null,
-                lowPowerGeneration: generation);
+            CaptureResumeState(generation);
             if (IsKeyboardLightingDelegated || IsWritePendingFor(DeviceSubsystem.Lighting))
             {
                 return new(ControlOperationStatus.Stored,
@@ -11138,12 +11136,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken).ConfigureAwait(false);
             }
 
-            resumeStateValidation.Begin(gpuClockOffsetConfirmationInvalidated);
+            resumeStateValidation.Begin(gpuClockOffsetConfirmationInvalidated,
+                unconfirmedWrites: CurrentUnconfirmedWrites());
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private void CaptureResumeState(long? generation = null)
+    {
+        // Every caller holds operationGate so cached state and pending-write
+        // attribution describe the same boundary without another device read.
+        ServiceStatusSnapshot current = GetStatus();
+        resumeStateValidation.Capture(
+            current.ActivePowerSource,
+            current.DeviceVerified ? current.ConfirmedState : null,
+            lowPowerGeneration: generation,
+            unconfirmedWrites: CurrentUnconfirmedWrites());
     }
 
     private void RebaseLowPowerResumeState(long? generation)
@@ -11158,8 +11169,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 capturedGeneration,
                 current.ActivePowerSource,
                 current.DeviceVerified ? current.ConfirmedState : null,
-                thermalCleanupUnconfirmed: IsWritePendingFor(DeviceSubsystem.Performance)
-                    || IsWritePendingFor(DeviceSubsystem.Fans));
+                unconfirmedWrites: CurrentUnconfirmedWrites());
         }
     }
 
@@ -11203,10 +11213,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         if (preserveLightingIntent && captureResumeState)
         {
-            ServiceStatusSnapshot current = GetStatus();
-            resumeStateValidation.Capture(
-                current.ActivePowerSource,
-                current.DeviceVerified ? current.ConfirmedState : null);
+            CaptureResumeState();
         }
         try
         {
@@ -11253,12 +11260,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return;
             }
-            ServiceStatusSnapshot current = GetStatus();
             if (lastLightingOffSuspendGeneration != generation)
             {
-                resumeStateValidation.Capture(current.ActivePowerSource,
-                    current.DeviceVerified ? current.ConfirmedState : null,
-                    lowPowerGeneration: generation);
+                CaptureResumeState(generation);
             }
             await InvalidateLightingRendererCoreAsync(
                 preserveForLifecycleRestore: true, bounded.Token,
@@ -15835,6 +15839,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             pendingWriteConfirmations[subsystem] = pending;
         }
+        // The caller holds operationGate. Retain attribution even if a later
+        // observation resolves this write before resume validation begins.
+        resumeStateValidation.RecordPendingWrite(subsystem);
     }
 
     private void RemovePendingWriteConfirmation(DeviceSubsystem subsystem)
