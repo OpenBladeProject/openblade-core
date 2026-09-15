@@ -24096,6 +24096,86 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_CanceledIndeterminateSuspendCleanupDoesNotClaimExternalResumeDrift()
+    {
+        var gate = new LowPowerGate();
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            lowPowerGate: gate,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+            Lighting = LightingSettingsFactory.Off(),
+            LogoLighting = LogoLightingMode.Static,
+        };
+        context.Provider.SupportsLowPowerLightingOff = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.HyperBoostFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            BladeWriteFailurePhase.ThermalFinalConfirmationRead,
+            "Injected canceled lifecycle final confirmation."));
+        context.Device.AfterHyperBoostFailure = () =>
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = false,
+            };
+            cancellation.Cancel();
+        };
+        gate.Enter();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Runtime.PrepareForLowPowerAsync(
+                gate.Generation, static () => true, cancellation.Token));
+
+        ServiceStatusSnapshot pending = context.Runtime.GetStatus();
+        Assert.True(pending.ConfirmedState!.HyperBoostActive);
+        Assert.True(pending.WritesBlocked);
+        Assert.True(pending.HyperBoostRestorePending);
+        Assert.Equal([DeviceSubsystem.Performance, DeviceSubsystem.Fans], pending.UnconfirmedWrites);
+        Assert.Equal(HyperBoostOwnershipJournalState.RestorePending, journal.Journal?.State);
+        Assert.Equal(2, context.Device.HyperBoostSetCalls);
+        Assert.Equal(1, context.Provider.LowPowerOffWrites);
+        int settersBeforeResume = context.Device.TotalSetterCalls;
+
+        gate.Exit();
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        // Firmware can confirm Off after the retired renderer's unknown sample.
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot resolved = context.Runtime.GetStatus();
+        Assert.False(resolved.ConfirmedState!.HyperBoostActive);
+        Assert.False(resolved.WritesBlocked);
+        Assert.False(resolved.HyperBoostRestorePending);
+        Assert.Empty(resolved.UnconfirmedWrites);
+        Assert.Empty(resolved.ExternalChanges);
+        Assert.Null(journal.Journal);
+        Assert.Equal(settersBeforeResume, context.Device.TotalSetterCalls);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("retained control state for Battery, Lighting", validation.Detail);
+        Assert.Contains("Unavailable for comparison: Power mode, Fans", validation.Detail);
+        Assert.DoesNotContain("externally classified", validation.Detail);
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_CanceledIndeterminateDisableDefersRestorationWrites()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();

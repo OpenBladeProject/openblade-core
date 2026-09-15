@@ -11157,7 +11157,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             resumeStateValidation.RebaseBeforeResume(
                 capturedGeneration,
                 current.ActivePowerSource,
-                current.DeviceVerified ? current.ConfirmedState : null);
+                current.DeviceVerified ? current.ConfirmedState : null,
+                thermalCleanupUnconfirmed: IsWritePendingFor(DeviceSubsystem.Performance)
+                    || IsWritePendingFor(DeviceSubsystem.Fans));
         }
     }
 

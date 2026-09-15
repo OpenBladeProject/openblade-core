@@ -5,6 +5,42 @@ namespace OpenBlade.Service.Tests;
 public sealed class ResumeStateValidationTrackerTests
 {
     [Fact]
+    public void RebaseBeforeResume_UnconfirmedThermalCleanupRetainsBatteryAndLightingComparison()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState active = Confirmed() with
+        {
+            Performance = null,
+            HyperBoostActive = true,
+            Lighting = LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 80),
+            LogoLighting = LogoLightingMode.Static,
+        };
+        tracker.Capture(PowerSource.PluggedIn, active, lowPowerGeneration: 1);
+        ConfirmedDeviceState cachedAfterOff = active with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+            LogoLighting = LogoLightingMode.Off,
+        };
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, cachedAfterOff,
+            thermalCleanupUnconfirmed: true);
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, cachedAfterOff);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, active with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        });
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("retained control state for Battery, Lighting", result.Message);
+        Assert.Contains("Unavailable for comparison: Power mode, Fans", result.Message);
+        Assert.DoesNotContain("externally classified", result.Message);
+    }
+
+    [Fact]
     public void RebaseBeforeResume_KeepsPreOffLightingAndUsesConfirmedThermalCleanup()
     {
         var tracker = new ResumeStateValidationTracker(TimeProvider.System);
@@ -73,7 +109,8 @@ public sealed class ResumeStateValidationTrackerTests
         tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
         ConfirmedDeviceState drifted = cleaned with { Performance = PerformancePreset.Performance };
 
-        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, drifted);
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, drifted,
+            thermalCleanupUnconfirmed: true);
         tracker.Observe(PowerSource.PluggedIn, drifted);
 
         ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(

@@ -42,7 +42,8 @@ internal sealed class ResumeStateValidationTracker
     internal void RebaseBeforeResume(
         long lowPowerGeneration,
         PowerSource powerSource,
-        ConfirmedDeviceState? confirmed)
+        ConfirmedDeviceState? confirmed,
+        bool thermalCleanupUnconfirmed = false)
     {
         if (pendingBaseline is not { ResumeStarted: false } baseline
             || baseline.LowPowerGeneration != lowPowerGeneration)
@@ -52,11 +53,15 @@ internal sealed class ResumeStateValidationTracker
 
         // Thermal lifecycle cleanup is intentional. Keep the keyboard and logo
         // sample from before standby Off while adopting its confirmed result.
+        // Pending thermal writes leave cached readings unsuitable for retention
+        // comparison, even when a later resume observation resolves the write.
         pendingBaseline = powerSource != PowerSource.ExternalUnknown
             && confirmed is not null
             ? baseline with
             {
                 PowerSource = powerSource,
+                ThermalCleanupUnconfirmed = baseline.ThermalCleanupUnconfirmed
+                    || thermalCleanupUnconfirmed,
                 Confirmed = confirmed with
                 {
                     Lighting = baseline.Confirmed.Lighting,
@@ -245,7 +250,8 @@ internal sealed class ResumeStateValidationTracker
         ConfirmedDeviceState observed)
     {
         var compared = new List<DeviceSubsystem>(4);
-        if ((baseline.Confirmed.Performance is not null
+        if (!baseline.ThermalCleanupUnconfirmed
+            && (baseline.Confirmed.Performance is not null
                 || baseline.Confirmed.HyperBoostActive)
             && (observed.Performance is not null
                 || observed.HyperBoostActive)
@@ -255,7 +261,8 @@ internal sealed class ResumeStateValidationTracker
         {
             compared.Add(DeviceSubsystem.Performance);
         }
-        if (baseline.Confirmed.Fans is not null && observed.Fans is not null)
+        if (!baseline.ThermalCleanupUnconfirmed
+            && baseline.Confirmed.Fans is not null && observed.Fans is not null)
         {
             compared.Add(DeviceSubsystem.Fans);
         }
@@ -365,7 +372,8 @@ internal sealed class ResumeStateValidationTracker
         ConfirmedDeviceState? Observed,
         long? ObservationWindowStartedAt,
         bool GpuClockOffsetConfirmationInvalidated = false,
-        long? LowPowerGeneration = null);
+        long? LowPowerGeneration = null,
+        bool ThermalCleanupUnconfirmed = false);
 }
 
 internal sealed record ResumeStateValidationResult(
