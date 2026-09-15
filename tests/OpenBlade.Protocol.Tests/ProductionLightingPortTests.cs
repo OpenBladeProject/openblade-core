@@ -24,6 +24,35 @@ public sealed class ProductionLightingPortTests
             ProductionLightingPort.ReactiveFadeDuration(duration));
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task LowPowerClose_DoesNotAddWritesAfterSeparateGuardedReleaseOrExpiredBoundary(
+        bool rz090528,
+        bool releasePermitted)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        IProductionLightingPort port = CreateDriverModeCleanupPort(session, rz090528).Port;
+        await port.EnsureDriverModeAsync(default);
+        Assert.True(OwnsDriverMode(port));
+
+        bool? released = await port.ReleaseDriverModeForLowPowerAsync(
+            () => releasePermitted, default);
+        int commandsBeforeClose = session.Commands.Count;
+        await port.InvalidateForLowPowerAsync();
+        await port.DisposeAsync();
+
+        Assert.Equal(releasePermitted ? false : (bool?)null, released);
+        Assert.Equal(releasePermitted ? RazerDeviceMode.Normal : RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(commandsBeforeClose, session.Commands.Count);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
+    }
+
     [Fact]
     public void ProductionAdmissionUsesOracleAndReviewedSemanticEvidence()
     {
@@ -967,6 +996,187 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task LowPowerCleanup_DefaultInterfaceCannotCallOrdinaryLightingSetter()
+    {
+        await using IProductionLightingPort port = new LegacyLightingPort();
+
+        LightingLowPowerOffResult result = await port.TurnOffForLowPowerAsync(
+            () => true, default);
+
+        Assert.Equal(LightingLowPowerOffOutcome.KnownNotApplied, result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.Static, result.OwnershipBefore);
+        Assert.Null(await port.ReleaseDriverModeForLowPowerAsync(() => true, default));
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReleaseDriverModeForLowPower_BoundaryClearingDuringQueryPreventsNormalWrite(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port =
+            CreateDriverModeCleanupPort(session, rz090528).Port;
+        bool stillSuspending = true;
+        session.DeviceModeQueried = () => stillSuspending = false;
+
+        Assert.Null(await port.ReleaseDriverModeForLowPowerAsync(
+            () => stillSuspending, default));
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(0, session.DeviceModeSetCalls);
+        RazerCommandSpec query = Assert.Single(session.Commands);
+        Assert.Equal((0x00, 0x84), ((int)query.ClassId, (int)query.CommandId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TurnOffForLowPower_ConfirmsZeroAndRetiresOwnedRendererWithoutChangingDriverMode(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var time = new ManualTimeProvider();
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, time, rz090528, writer);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100), default);
+        int commandCount = session.Commands.Count;
+        int frameCount = writer.Reports.Count;
+        int submittedCount = session.SubmittedCommands.Count;
+
+        LightingLowPowerOffResult result = await port.TurnOffForLowPowerAsync(
+            () => true, default);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, result.OwnershipBefore);
+        Assert.Equal(LightingLowPowerOffOutcome.ConfirmedOff, result.Outcome);
+        Assert.Equal(0, session.Brightness);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [(0x03, 0x83), (0x03, 0x03), (0x03, 0x83)],
+            session.Commands.Skip(commandCount)
+                .Select(command => ((int)command.ClassId, (int)command.CommandId)));
+        Assert.Equal(frameCount, writer.Reports.Count);
+        Assert.Equal(submittedCount, session.SubmittedCommands.Count);
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 2)]
+    public async Task TurnOffForLowPower_FailureNeverRestoresBrightnessOrRestartsRenderer(
+        bool rz090528,
+        int failureStage)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var time = new ManualTimeProvider();
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, time, rz090528, writer);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100), default);
+        int commandCount = session.Commands.Count;
+        int frameCount = writer.Reports.Count;
+        int submittedCount = session.SubmittedCommands.Count;
+        if (failureStage == 1)
+        {
+            session.FailBrightnessSetOnCall = session.BrightnessSetCalls + 1;
+        }
+        else
+        {
+            session.FailBrightnessQueryOnCall = session.BrightnessQueryCalls
+                + (failureStage == 0 ? 1 : 2);
+        }
+
+        LightingLowPowerOffResult result = await port.TurnOffForLowPowerAsync(
+            () => true, default);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, result.OwnershipBefore);
+        Assert.Equal(
+            failureStage == 0
+                ? LightingLowPowerOffOutcome.KnownNotApplied
+                : LightingLowPowerOffOutcome.Indeterminate,
+            result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        RazerCommandSpec[] writes = session.Commands.Skip(commandCount)
+            .Where(command => (command.ClassId, command.CommandId) == (0x03, 0x03))
+            .ToArray();
+        Assert.Equal(failureStage == 0 ? 0 : 1, writes.Length);
+        Assert.All(writes, command => Assert.Equal(0, command.Arguments.Span[2]));
+        Assert.DoesNotContain(session.Commands.Skip(commandCount),
+            command => (command.ClassId, command.CommandId) == (0x00, 0x04));
+        Assert.Equal(frameCount, writer.Reports.Count);
+        Assert.Equal(submittedCount, session.SubmittedCommands.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TurnOffForLowPower_ExpiredBoundaryLeavesActiveRendererUntouched(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, new ManualTimeProvider(), rz090528);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100), default);
+        int commandCount = session.Commands.Count;
+
+        LightingLowPowerOffResult result = await port.TurnOffForLowPowerAsync(
+            () => false, default);
+
+        Assert.Equal(LightingLowPowerOffOutcome.KnownNotApplied, result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, result.OwnershipBefore);
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+        Assert.Equal(commandCount, session.Commands.Count);
+        Assert.Equal(0xFF, session.Brightness);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TurnOffForLowPower_BoundaryClearingDuringReadPreventsSubmission(
+        bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var time = new ManualTimeProvider();
+        var writer = new MatrixWriter();
+        await using IProductionLightingPort port = CreateOwnedRendererReadPort(
+            session, time, rz090528, writer);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100), default);
+        int commandCount = session.Commands.Count;
+        int frameCount = writer.Reports.Count;
+        int submittedCount = session.SubmittedCommands.Count;
+        bool stillSuspending = true;
+        session.BrightnessQueried = () => stillSuspending = false;
+
+        LightingLowPowerOffResult result = await port.TurnOffForLowPowerAsync(
+            () => stillSuspending, default);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50);
+
+        Assert.Equal(LightingLowPowerOffOutcome.KnownNotApplied, result.Outcome);
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, result.OwnershipBefore);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        RazerCommandSpec query = Assert.Single(session.Commands.Skip(commandCount));
+        Assert.Equal((0x03, 0x83), ((int)query.ClassId, (int)query.CommandId));
+        Assert.Equal(0xFF, session.Brightness);
+        Assert.Equal(frameCount, writer.Reports.Count);
+        Assert.Equal(submittedCount, session.SubmittedCommands.Count);
+    }
+
+    [Fact]
     public async Task ReleaseDriverMode_DrainsTheLightingStreamBeforeModeWrite()
     {
         var session = new LightingSession(initialBrightness: 0xFF)
@@ -1027,6 +1237,85 @@ public sealed class ProductionLightingPortTests
             ],
             session.Commands.Select(CommandTuple).ToArray());
         await opened.Value!.DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeMaintenance_SuspendDuringModeQuerySubmitsNoDriverWrite(bool rz090528)
+    {
+        bool active = true;
+        var queried = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var session = new LightingSession(0x80)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+            DeviceModeQueryBoundary = () =>
+            {
+                queried.TrySetResult();
+                return release.Task;
+            },
+        };
+        await using IProductionLightingPort port =
+            CreateDriverModeCleanupPort(session, rz090528, () => active).Port;
+        Task<bool?> maintenance = port.MaintainDriverModeAsync(default);
+        await queried.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        active = false;
+        release.TrySetResult();
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => maintenance);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(0, session.DeviceModeSetCalls);
+        Assert.False(OwnsDriverMode(port));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeCleanup_SuspendDuringModeQuerySubmitsNoNormalWrite(bool rz090528)
+    {
+        bool active = true;
+        var session = new LightingSession(0x80) { DeviceMode = RazerDeviceMode.Normal };
+        IProductionLightingPort port = CreateDriverModeCleanupPort(session, rz090528, () => active).Port;
+        await port.EnsureDriverModeAsync(default);
+        session.DeviceModeQueried = () => active = false;
+
+        await port.DisposeAsync();
+
+        Assert.Equal(1, session.DeviceModeSetCalls);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(DriverModeRestoreOutcome.Failed, port.DriverModeRestoreOutcome);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProductionFactory_GuardsAcquisitionAndFailedOpenCleanup(bool failAfterSubmission)
+    {
+        bool active = true;
+        var session = new LightingSession(0x80)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+            FailDeviceModeQueryOnCall = failAfterSubmission ? 2 : null,
+        };
+        session.DeviceModeQueried = () =>
+        {
+            if (session.DeviceModeQueryCalls == (failAfterSubmission ? 2 : 1))
+            {
+                active = false;
+            }
+        };
+        var factory = new ProductionLightingFactory(true,
+            static () => new ValidationRunContext(), _ => new LightingActorFactory(session),
+            static () => new(new MatrixWriter(), null), TimeProvider.System,
+            TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionLightingPort> opened = await factory.OpenAsync(() => active, default);
+
+        Assert.Null(opened.Value);
+        Assert.NotNull(opened.Failure);
+        Assert.Equal(failAfterSubmission ? 1 : 0, session.DeviceModeSetCalls);
+        Assert.Equal(failAfterSubmission ? RazerDeviceMode.Driver : RazerDeviceMode.Normal, session.DeviceMode);
     }
 
     [Fact]
@@ -2652,19 +2941,22 @@ public sealed class ProductionLightingPortTests
         bool admitted,
         TimeProvider? timeProvider = null,
         TimeSpan? cleanupDrainTimeout = null,
-        PendingDisposalRegistry? pendingDisposals = null) => new(
+        PendingDisposalRegistry? pendingDisposals = null,
+        Func<bool>? driverModeWriteAllowed = null) => new(
             new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
             writer,
             admitted,
             timeProvider ?? TimeProvider.System,
             TimeSpan.FromSeconds(1),
             cleanupDrainTimeout ?? TimeSpan.FromSeconds(1),
-            pendingDisposals ?? new PendingDisposalRegistry());
+            pendingDisposals ?? new PendingDisposalRegistry(),
+            driverModeWriteAllowed);
 
     private static IProductionLightingPort CreateOwnedRendererReadPort(
         LightingSession session,
         TimeProvider timeProvider,
-        bool rz090528) => rz090528
+        bool rz090528,
+        MatrixWriter? writer = null) => rz090528
         ? new Rz090528BrightnessLightingPort(
             new ValidationActor(
                 session,
@@ -2676,7 +2968,7 @@ public sealed class ProductionLightingPortTests
             timeProvider: timeProvider)
         : CreatePort(
             session,
-            new MatrixWriter(),
+            writer ?? new MatrixWriter(),
             admitted: true,
             timeProvider: timeProvider);
 
@@ -2692,7 +2984,8 @@ public sealed class ProductionLightingPortTests
             .GetValue(port));
 
     private static (IProductionLightingPort Port, MatrixWriter? Writer)
-        CreateDriverModeCleanupPort(LightingSession session, bool rz090528)
+        CreateDriverModeCleanupPort(LightingSession session, bool rz090528,
+            Func<bool>? driverModeWriteAllowed = null)
     {
         if (rz090528)
         {
@@ -2702,12 +2995,13 @@ public sealed class ProductionLightingPortTests
                         session,
                         new BatteryCommands(),
                         new TemporaryCommands()),
-                    TimeSpan.FromSeconds(1)),
+                    TimeSpan.FromSeconds(1), driverModeWriteAllowed: driverModeWriteAllowed),
                 null);
         }
 
         var writer = new MatrixWriter();
-        return (CreatePort(session, writer, admitted: true), writer);
+        return (CreatePort(session, writer, admitted: true,
+            driverModeWriteAllowed: driverModeWriteAllowed), writer);
     }
 
     private static bool OwnsDriverMode(IProductionLightingPort port) =>
@@ -2731,6 +3025,44 @@ public sealed class ProductionLightingPortTests
             command.CommandId,
             Convert.ToHexString(command.Arguments.Span));
 
+    private sealed class LegacyLightingPort : IProductionLightingPort
+    {
+        public DeviceCapabilities Capabilities => DeviceCapabilities.Unavailable();
+
+        public LightingRendererOwnershipState OwnershipState =>
+            LightingRendererOwnershipState.Static;
+
+        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("No ordinary read is allowed during cleanup.");
+
+        public Task SetLightingAsync(LightingSettings settings, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("No ordinary setter is allowed during cleanup.");
+
+        public Task<byte> StepBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<LightingRendererOwnershipState> RelinquishRendererAsync(
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<LightingRendererOwnershipState> InvalidateAsync() =>
+            throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class LightingSession(byte initialBrightness) :
         IRazerCommandSession,
         IRazerSetFeatureCommandSession
@@ -2746,6 +3078,8 @@ public sealed class ProductionLightingPortTests
         internal int BrightnessQueryCalls { get; private set; }
 
         internal int? FailBrightnessQueryOnCall { get; set; }
+
+        internal Action? BrightnessQueried { get; set; }
 
         internal byte Brightness { get; set; } = initialBrightness;
 
@@ -2769,6 +3103,10 @@ public sealed class ProductionLightingPortTests
 
         internal int DeviceModeQueryCalls { get; private set; }
 
+        internal Action? DeviceModeQueried { get; set; }
+
+        internal Func<Task>? DeviceModeQueryBoundary { get; set; }
+
         internal int? FailDeviceModeQueryOnCall { get; init; }
 
         internal int DeviceModeSetCalls { get; private set; }
@@ -2782,6 +3120,13 @@ public sealed class ProductionLightingPortTests
             TimeSpan exchangeTimeout,
             CancellationToken cancellationToken)
         {
+            if ((command.ClassId, command.CommandId) == (0x00, 0x84)
+                && DeviceModeQueryBoundary is { } boundary)
+            {
+                DeviceModeQueryBoundary = null;
+                return ExecuteAfterModeQueryBoundaryAsync(boundary, command,
+                    assignTransactionId, exchangeTimeout, cancellationToken);
+            }
             _ = assignTransactionId();
             Commands.Add(command);
             if ((command.ClassId, command.CommandId) == (0x00, 0x86)
@@ -2806,6 +3151,7 @@ public sealed class ProductionLightingPortTests
             if ((command.ClassId, command.CommandId) == (0x03, 0x83))
             {
                 BrightnessQueryCalls++;
+                BrightnessQueried?.Invoke();
                 if (FailBrightnessQueryOnCall == BrightnessQueryCalls)
                 {
                     return Task.FromResult(
@@ -2818,6 +3164,7 @@ public sealed class ProductionLightingPortTests
             if ((command.ClassId, command.CommandId) == (0x00, 0x84))
             {
                 DeviceModeQueryCalls++;
+                DeviceModeQueried?.Invoke();
                 if (FailDeviceModeQueryOnCall == DeviceModeQueryCalls)
                 {
                     return Task.FromResult(
@@ -2872,6 +3219,17 @@ public sealed class ProductionLightingPortTests
             }
             return Task.FromResult(
                 new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
+        }
+
+        private async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAfterModeQueryBoundaryAsync(
+            Func<Task> boundary,
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            await boundary();
+            return await ExecuteAsync(command, assignTransactionId, exchangeTimeout, cancellationToken);
         }
 
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(

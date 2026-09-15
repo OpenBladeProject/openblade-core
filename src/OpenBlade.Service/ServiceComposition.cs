@@ -41,6 +41,7 @@ internal static class ServiceComposition
                     provider.GetRequiredService<IDisplayBrightnessHidController>(),
                 hyperBoostOwnershipJournalStore:
                     provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+        services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }
 
@@ -117,7 +118,8 @@ internal static class ServiceComposition
                 provider.GetRequiredService<IGpuClockOffsetController>(),
                 provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>(),
                 compatibilityPolicy: compatibilityPolicy,
-                gpuActivitySource: new WindowsGpuActivitySource());
+                gpuActivitySource: new WindowsGpuActivitySource(),
+                lowPowerGate: provider.GetRequiredService<LowPowerGate>());
         });
         return services;
     }

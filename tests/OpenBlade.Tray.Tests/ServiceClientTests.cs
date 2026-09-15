@@ -9,6 +9,51 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ServiceClientTests
 {
     [Fact]
+    public async Task ReportSessionPowerTransitionAsync_PreservesIdentityAndCompletionResult()
+    {
+        string pipeName = NewPipeName();
+        var expected = new ReportSessionPowerTransitionRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 10, 2, 30, true);
+        var result = new ControlOperationResult(ControlOperationStatus.Stored, "Accepted but superseded.");
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                Assert.Equal(expected, Assert.IsType<ReportSessionPowerTransitionRequest>(request));
+                return new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion, request.RequestId, true, null, null, result);
+            },
+            timeout.Token);
+        await using var client = new ServiceClient(pipeName);
+
+        ControlOperationResult actual = await client.ReportSessionPowerTransitionAsync(expected, timeout.Token);
+        await server;
+
+        Assert.Equal(result, actual);
+    }
+
+    [Fact]
+    public async Task ReportSessionPowerTransitionAsync_DoesNotReconnectAfterTransportFailure()
+    {
+        int connections = 0;
+        await using var client = new ServiceClient(
+            _ =>
+            {
+                connections++;
+                return ValueTask.FromException<Stream>(new IOException("Unavailable."));
+            },
+            TimeProvider.System);
+        var request = new ReportSessionPowerTransitionRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 10, 1, 20, true);
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            client.ReportSessionPowerTransitionAsync(request, CancellationToken.None));
+
+        Assert.Equal(1, connections);
+    }
+
+    [Fact]
     public void ConnectedUpdate_PreservesSingleStatusRecordShape()
     {
         ServiceStatusSnapshot status = CreateStatus(1);

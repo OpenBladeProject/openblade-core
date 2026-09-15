@@ -1288,7 +1288,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 53
+  field const System.Int32 ProtocolVersion = 54
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1624,6 +1624,34 @@ type sealed class OpenBlade.Contracts.RecoverHyperBoostRestoreRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest left, OpenBlade.Contracts.RecoverHyperBoostRestoreRequest right)
   method virtual OpenBlade.Contracts.RecoverHyperBoostRestoreRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.RecoverHyperBoostRestoreRequest other)
+type sealed class OpenBlade.Contracts.ReportSessionPowerTransitionRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ReportSessionPowerTransitionRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Guid InstanceId, System.Int64 InstanceStartedQpc, System.Int64 Sequence, System.Int64 TimestampQpc, System.Boolean Suspending)
+  method System.Boolean get_Suspending()
+  method System.Guid get_InstanceId()
+  method System.Int64 get_InstanceStartedQpc()
+  method System.Int64 get_Sequence()
+  method System.Int64 get_TimestampQpc()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Guid InstanceId, out System.Int64 InstanceStartedQpc, out System.Int64 Sequence, out System.Int64 TimestampQpc, out System.Boolean Suspending)
+  method System.Void set_InstanceId(System.Guid value)
+  method System.Void set_InstanceStartedQpc(System.Int64 value)
+  method System.Void set_Sequence(System.Int64 value)
+  method System.Void set_Suspending(System.Boolean value)
+  method System.Void set_TimestampQpc(System.Int64 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ReportSessionPowerTransitionRequest left, OpenBlade.Contracts.ReportSessionPowerTransitionRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ReportSessionPowerTransitionRequest left, OpenBlade.Contracts.ReportSessionPowerTransitionRequest right)
+  method virtual OpenBlade.Contracts.ReportSessionPowerTransitionRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ReportSessionPowerTransitionRequest other)
+  property System.Boolean Suspending { get; init; }
+  property System.Guid InstanceId { get; init; }
+  property System.Int64 InstanceStartedQpc { get; init; }
+  property System.Int64 Sequence { get; init; }
+  property System.Int64 TimestampQpc { get; init; }
 type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   interface System.IEquatable<OpenBlade.Contracts.ResolvedSetting<T>>
   ctor (T Value, OpenBlade.Contracts.SettingValueSource Source)
@@ -1941,6 +1969,8 @@ type enum OpenBlade.Contracts.SessionControlAccess
   field const OpenBlade.Contracts.SessionControlAccess Active = 0
   field const OpenBlade.Contracts.SessionControlAccess InactiveSession = 1
   field const OpenBlade.Contracts.SessionControlAccess NotInteractive = 2
+type static class OpenBlade.Contracts.SessionPowerTransition
+  field const System.Int32 MaximumAgeMilliseconds = 1500
 type sealed class OpenBlade.Contracts.SetBatteryPolicyRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetBatteryPolicyRequest>

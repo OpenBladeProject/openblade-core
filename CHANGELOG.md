@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Turn off OpenBlade-controlled keyboard lighting on Windows suspend while preserving the separate display-off preference and eligible lighting settings for resume. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
+- Avoid classifying OpenBlade control writes as external changes during delayed resume validation, including writes that await confirmation, while continuing to compare unaffected settings. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
 - Match the Laptop performance row to other compact dashboard settings when its guidance is hidden, while retaining comfortable spacing for visible guidance and wrapped titles. ([#497](https://github.com/OSSBlade/openblade-core/pull/497))
 - Preserve resume comparison baselines through unclassified power readings and retain GPU invalidation evidence across repeated resume events, avoiding incorrect transition or retained-state diagnostics. ([#490](https://github.com/OSSBlade/openblade-core/pull/490))
 - Keep dormant legacy GPU offsets inactive outside plugged-in Custom intent, avoiding an incorrect tuning label and idle profile-restore opportunity while retaining the offsets for editing. ([#489](https://github.com/OSSBlade/openblade-core/pull/489))

@@ -103,9 +103,25 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             timingSink);
     }
 
-    public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+    public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+        CancellationToken cancellationToken) => OpenCoreAsync(null, cancellationToken);
+
+    public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+        Func<bool> driverModeWriteAllowed,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(driverModeWriteAllowed);
+        return OpenCoreAsync(driverModeWriteAllowed, cancellationToken);
+    }
+
+    private async Task<HidSessionResult<IProductionLightingPort>> OpenCoreAsync(
+        Func<bool>? driverModeWriteAllowed,
+        CancellationToken cancellationToken)
+    {
+        if (driverModeWriteAllowed?.Invoke() == false)
+        {
+            return Failure(HidSessionFailureKind.ConflictBlocked);
+        }
         if (cancellationToken.IsCancellationRequested)
         {
             return Failure(HidSessionFailureKind.Canceled);
@@ -200,7 +216,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             timeProvider,
             exchangeTimeout,
             cleanupDrainTimeout,
-            pendingDisposals);
+            pendingDisposals,
+            driverModeWriteAllowed);
         if (admitted)
         {
             try

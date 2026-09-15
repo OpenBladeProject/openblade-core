@@ -118,6 +118,13 @@ internal static class Program
                 executeOnlyOnce: true);
             try
             {
+                await using var powerTransitionServiceClient = new ServiceClient();
+                using var powerTransitionRelay = new SessionPowerTransitionRelay(
+                    Guid.NewGuid(),
+                    Stopwatch.GetTimestamp(),
+                    powerTransitionServiceClient.ReportSessionPowerTransitionAsync);
+                using var powerTransitionRegistration =
+                    WindowsSessionPowerNotificationRegistration.TryCreate(powerTransitionRelay);
                 var powerContext = new DisplayPowerContextState();
                 using var applier = new DisplayProfileApplier(controller, powerContext);
                 var checkpointStore = new DisplayAutomationCheckpointStore(

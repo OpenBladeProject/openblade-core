@@ -23,6 +23,13 @@ public interface IServiceStatusWatcher
 
 public interface IServiceClient : IServiceStatusWatcher
 {
+    Task<ControlOperationResult> ReportSessionPowerTransitionAsync(
+        ReportSessionPowerTransitionRequest request,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Session power transition reporting is unavailable."));
+
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
     Task<ServiceStatusSnapshot> ObserveStateAsync(

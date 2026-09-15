@@ -57,7 +57,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
     [Theory]
     [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 0, 0, 0, 1)]
     [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0, 0)]
     [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1, 0)]
     [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1, 0)]
@@ -74,17 +74,22 @@ public sealed class ServiceLifecycleRefreshLoopTests
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        if (trigger == ServiceLifecycleTrigger.Suspending)
+        {
+            gate.Enter();
+        }
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
-            new LowPowerGate(),
+            gate,
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         Task running = loop.RunAsync(cancellation.Token);
         source.Publish(trigger);
 
-        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
         await cancellation.CancelAsync();
         await running;
 
@@ -256,37 +261,59 @@ public sealed class ServiceLifecycleRefreshLoopTests
         await cancellation.CancelAsync();
         await running;
 
-        Assert.Equal(1, runtime.LightingInvalidationCount);
-        Assert.Equal(1, runtime.ResumeValidationBeginCount);
-        Assert.Equal(1, runtime.ResumeValidationCancelCount);
+        Assert.Equal(0, runtime.LightingInvalidationCount);
+        Assert.Equal(0, runtime.ResumeValidationBeginCount);
+        Assert.Equal(0, runtime.ResumeValidationCancelCount);
         Assert.Equal(0, runtime.PowerSourceChangeCount);
         Assert.Equal(0, runtime.LightingRestoreCount);
     }
 
     [Fact]
-    public async Task Suspending_ReleasesDriverModeBeforeRendererInvalidation()
+    public async Task Suspending_UsesPreparationOwnedInvalidationWithoutGenericClose()
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
         var loop = new ServiceLifecycleRefreshLoop(
             runtime,
             source,
-            new LowPowerGate(),
+            gate,
             NullLogger<ServiceLifecycleRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         Task running = loop.RunAsync(cancellation.Token);
         source.Publish(ServiceLifecycleTrigger.Suspending);
-        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
         await cancellation.CancelAsync();
         await running;
 
         Assert.Equal(
             [
                 RecordingRuntime.Operation.PrepareLowPower,
-                RecordingRuntime.Operation.InvalidateLighting,
             ],
             runtime.Operations);
+    }
+
+    [Fact]
+    public async Task Suspending_QueuedBeforeResumeDoesNotRunStaleCleanup()
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var gate = new LowPowerGate();
+        gate.Enter();
+        source.Publish(ServiceLifecycleTrigger.Suspending);
+        gate.Exit();
+        var loop = new ServiceLifecycleRefreshLoop(runtime, source, gate,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        await source.FirstTriggerProcessed.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Empty(runtime.Operations);
     }
 
     [Fact]
@@ -409,6 +436,9 @@ public sealed class ServiceLifecycleRefreshLoopTests
             RecordRefreshAsync(Operation.ControllerPresence);
 
         public Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
+            RecordRefreshAsync(Operation.InvalidateLighting);
+
+        public Task InvalidateLightingRendererForLowPowerAsync(CancellationToken cancellationToken) =>
             RecordRefreshAsync(Operation.InvalidateLighting);
 
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken) =>

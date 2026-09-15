@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
@@ -19,7 +20,11 @@ internal sealed class ResumeStateValidationTracker
 
     internal bool ResumeStarted => pendingBaseline?.ResumeStarted == true;
 
-    internal void Capture(PowerSource powerSource, ConfirmedDeviceState? confirmed)
+    internal void Capture(
+        PowerSource powerSource,
+        ConfirmedDeviceState? confirmed,
+        long? lowPowerGeneration = null,
+        IReadOnlyCollection<DeviceSubsystem>? unconfirmedWrites = null)
     {
         pendingBaseline = powerSource != PowerSource.ExternalUnknown
             && confirmed is not null
@@ -31,17 +36,59 @@ internal sealed class ResumeStateValidationTracker
                 LightingRestoredDuringResume: false,
                 LightingWriteApplied: false,
                 Observed: null,
-                ObservationWindowStartedAt: null)
+                ObservationWindowStartedAt: null,
+                UnconfirmedWrites: NormalizeUnconfirmedWrites(unconfirmedWrites),
+                ConfirmedWrites: FrozenSet<DeviceSubsystem>.Empty,
+                LowPowerGeneration: lowPowerGeneration)
             : null;
     }
 
-    internal void Begin(bool gpuClockOffsetConfirmationInvalidated)
+    internal void RebaseBeforeResume(
+        long lowPowerGeneration,
+        PowerSource powerSource,
+        ConfirmedDeviceState? confirmed,
+        IReadOnlyCollection<DeviceSubsystem>? unconfirmedWrites = null)
+    {
+        if (pendingBaseline is not { ResumeStarted: false } baseline
+            || baseline.LowPowerGeneration != lowPowerGeneration)
+        {
+            return;
+        }
+
+        // Thermal lifecycle cleanup is intentional. Keep the keyboard and logo
+        // sample from before standby Off while adopting its confirmed result.
+        // Pending writes leave cached readings unsuitable for retention
+        // comparison, even when a later resume observation resolves the write.
+        pendingBaseline = powerSource != PowerSource.ExternalUnknown
+            && confirmed is not null
+            ? baseline with
+            {
+                PowerSource = powerSource,
+                UnconfirmedWrites = UnionUnconfirmedWrites(baseline, unconfirmedWrites),
+                // These fields now describe the confirmed cleanup result. Only
+                // lighting still uses its original, pre-Off sample.
+                ConfirmedWrites = baseline.ConfirmedWrites
+                    .Where(subsystem => subsystem == DeviceSubsystem.Lighting)
+                    .ToFrozenSet(),
+                Confirmed = confirmed with
+                {
+                    Lighting = baseline.Confirmed.Lighting,
+                    LogoLighting = baseline.Confirmed.LogoLighting,
+                },
+            }
+            : null;
+    }
+
+    internal void Begin(
+        bool gpuClockOffsetConfirmationInvalidated,
+        IReadOnlyCollection<DeviceSubsystem>? unconfirmedWrites = null)
     {
         if (pendingBaseline is { } baseline)
         {
             pendingBaseline = baseline with
             {
                 ResumeStarted = true,
+                UnconfirmedWrites = UnionUnconfirmedWrites(baseline, unconfirmedWrites),
                 GpuClockOffsetConfirmationInvalidated =
                     baseline.GpuClockOffsetConfirmationInvalidated
                     || gpuClockOffsetConfirmationInvalidated,
@@ -50,6 +97,32 @@ internal sealed class ResumeStateValidationTracker
     }
 
     internal void Cancel() => pendingBaseline = null;
+
+    internal void RecordPendingWrite(DeviceSubsystem subsystem)
+    {
+        if (pendingBaseline is { } baseline
+            && ResumeComparedSubsystems.Contains(subsystem)
+            && !baseline.UnconfirmedWrites.Contains(subsystem))
+        {
+            pendingBaseline = baseline with
+            {
+                UnconfirmedWrites = UnionUnconfirmedWrites(baseline, [subsystem]),
+            };
+        }
+    }
+
+    internal void RecordConfirmedWrite(DeviceSubsystem subsystem)
+    {
+        if (pendingBaseline is { } baseline
+            && ResumeComparedSubsystems.Contains(subsystem)
+            && !baseline.ConfirmedWrites.Contains(subsystem))
+        {
+            pendingBaseline = baseline with
+            {
+                ConfirmedWrites = baseline.ConfirmedWrites.Append(subsystem).ToFrozenSet(),
+            };
+        }
+    }
 
     internal ResumeStateValidationResult? Complete()
     {
@@ -175,7 +248,7 @@ internal sealed class ResumeStateValidationTracker
             BuildResumeValidationSummary(
                 compared.Count > 0
                     ? $"Resume validation confirmed retained control state for {DeviceSubsystemFormatter.FormatList(compared)}. No validation-driven recovery writes were needed."
-                    : "Resume validation could not compare control state because no subsystem had confirmed readings in both samples. No validation-driven recovery writes were attempted.",
+                    : "Resume validation had no eligible control state to compare. No validation-driven recovery writes were attempted.",
                 baseline,
                 observed,
                 compared));
@@ -188,19 +261,35 @@ internal sealed class ResumeStateValidationTracker
         IReadOnlyList<DeviceSubsystem> compared)
     {
         var details = new List<string> { result };
+        if (baseline.UnconfirmedWrites.Count > 0)
+        {
+            string unconfirmed = DeviceSubsystemFormatter.FormatList(
+                ResumeComparedSubsystems.Where(baseline.UnconfirmedWrites.Contains));
+            details.Add($"Not compared because OpenBlade had unconfirmed writes during the suspend or resume lifecycle: {unconfirmed}.");
+        }
+        if (baseline.ConfirmedWrites.Count > 0)
+        {
+            string written = DeviceSubsystemFormatter.FormatList(
+                ResumeComparedSubsystems.Where(baseline.ConfirmedWrites.Contains));
+            details.Add($"Not compared because OpenBlade confirmed control writes after the suspend baseline was captured: {written}.");
+        }
         if (baseline.LightingRestoredDuringResume)
         {
             details.Add(baseline.LightingWriteApplied
                 ? "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; that restoration applied a lighting control write."
                 : "Lighting was not compared because OpenBlade restored its owned lighting during the resume lifecycle; no new lighting control write was required.");
         }
-        else if (!compared.Contains(DeviceSubsystem.Lighting))
+        else if (!compared.Contains(DeviceSubsystem.Lighting)
+            && !baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Lighting)
+            && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Lighting))
         {
             details.Add("Lighting was unavailable in at least one sample and was not compared.");
         }
 
         IReadOnlyList<DeviceSubsystem> unavailable = GetUnavailableResumeSubsystems(
             compared,
+            baseline.UnconfirmedWrites,
+            baseline.ConfirmedWrites,
             excludeLighting: baseline.LightingRestoredDuringResume);
         if (unavailable.Count > 0)
         {
@@ -214,7 +303,9 @@ internal sealed class ResumeStateValidationTracker
         ConfirmedDeviceState observed)
     {
         var compared = new List<DeviceSubsystem>(4);
-        if ((baseline.Confirmed.Performance is not null
+        if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
+            && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Performance)
+            && (baseline.Confirmed.Performance is not null
                 || baseline.Confirmed.HyperBoostActive)
             && (observed.Performance is not null
                 || observed.HyperBoostActive)
@@ -224,15 +315,21 @@ internal sealed class ResumeStateValidationTracker
         {
             compared.Add(DeviceSubsystem.Performance);
         }
-        if (baseline.Confirmed.Fans is not null && observed.Fans is not null)
+        if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Fans)
+            && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Fans)
+            && baseline.Confirmed.Fans is not null && observed.Fans is not null)
         {
             compared.Add(DeviceSubsystem.Fans);
         }
-        if (baseline.Confirmed.Battery is not null && observed.Battery is not null)
+        if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Battery)
+            && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Battery)
+            && baseline.Confirmed.Battery is not null && observed.Battery is not null)
         {
             compared.Add(DeviceSubsystem.Battery);
         }
-        if (!baseline.LightingRestoredDuringResume
+        if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Lighting)
+            && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Lighting)
+            && !baseline.LightingRestoredDuringResume
             && baseline.Confirmed.Lighting is not null
             && observed.Lighting is not null)
         {
@@ -243,18 +340,41 @@ internal sealed class ResumeStateValidationTracker
 
     private static IReadOnlyList<DeviceSubsystem> GetUnavailableResumeSubsystems(
         IReadOnlyList<DeviceSubsystem> compared,
+        IReadOnlySet<DeviceSubsystem> unconfirmedWrites,
+        IReadOnlySet<DeviceSubsystem> confirmedWrites,
         bool excludeLighting)
     {
         var unavailable = new List<DeviceSubsystem>(4);
         foreach (DeviceSubsystem subsystem in ResumeComparedSubsystems)
         {
             if ((!excludeLighting || subsystem != DeviceSubsystem.Lighting)
+                && !unconfirmedWrites.Contains(subsystem)
+                && !confirmedWrites.Contains(subsystem)
                 && !compared.Contains(subsystem))
             {
                 unavailable.Add(subsystem);
             }
         }
         return unavailable;
+    }
+
+    private static FrozenSet<DeviceSubsystem> UnionUnconfirmedWrites(
+        ResumeStateBaseline baseline,
+        IReadOnlyCollection<DeviceSubsystem>? unconfirmedWrites) =>
+        NormalizeUnconfirmedWrites(baseline.UnconfirmedWrites.Concat(unconfirmedWrites ?? []));
+
+    private static FrozenSet<DeviceSubsystem> NormalizeUnconfirmedWrites(
+        IEnumerable<DeviceSubsystem>? unconfirmedWrites)
+    {
+        var pending = new HashSet<DeviceSubsystem>(
+            unconfirmedWrites?.Where(ResumeComparedSubsystems.Contains) ?? []);
+        bool thermalPending = pending.Contains(DeviceSubsystem.Performance)
+            || pending.Contains(DeviceSubsystem.Fans);
+        // Only the four compared subsystems can enter the immutable baseline.
+        // Performance and fan writes can change coupled thermal state.
+        return ResumeComparedSubsystems.Where(subsystem => pending.Contains(subsystem)
+                || thermalPending && DeviceSubsystemOrder.IsThermal(subsystem))
+            .ToFrozenSet();
     }
 
     private static IReadOnlyList<DeviceSubsystem> GetChangedResumeSubsystems(
@@ -333,7 +453,10 @@ internal sealed class ResumeStateValidationTracker
         bool LightingWriteApplied,
         ConfirmedDeviceState? Observed,
         long? ObservationWindowStartedAt,
-        bool GpuClockOffsetConfirmationInvalidated = false);
+        FrozenSet<DeviceSubsystem> UnconfirmedWrites,
+        FrozenSet<DeviceSubsystem> ConfirmedWrites,
+        bool GpuClockOffsetConfirmationInvalidated = false,
+        long? LowPowerGeneration = null);
 }
 
 internal sealed record ResumeStateValidationResult(

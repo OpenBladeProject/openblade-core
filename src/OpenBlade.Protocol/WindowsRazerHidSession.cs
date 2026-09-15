@@ -7,6 +7,8 @@ internal readonly record struct RazerCommandSpec(
     int ExpectedPayloadLength,
     Func<ReadOnlyMemory<byte>, bool>? PayloadValidator = null)
 {
+    internal Func<bool>? SubmissionAllowed { get; init; }
+
     internal RazerCommandSpec(
         byte classId,
         byte commandId,
@@ -226,7 +228,10 @@ internal sealed class WindowsRazerHidSession :
             command.CommandId,
             command.Arguments.ToArray(),
             command.ExpectedPayloadLength,
-            command.PayloadValidator);
+            command.PayloadValidator)
+        {
+            SubmissionAllowed = command.SubmissionAllowed,
+        };
         var item = new WorkItem(
             snapshot,
             assignTransactionId,
@@ -281,7 +286,10 @@ internal sealed class WindowsRazerHidSession :
                 command.CommandId,
                 arguments.AsMemory(offset, length),
                 command.ExpectedPayloadLength,
-                command.PayloadValidator);
+                command.PayloadValidator)
+            {
+                SubmissionAllowed = command.SubmissionAllowed,
+            };
             offset += length;
         }
 
@@ -474,6 +482,10 @@ internal sealed class WindowsRazerHidSession :
             return Failure(cancellation.Value);
         }
 
+        if (SubmissionAdmissionFailure(item.Command) is { } admissionFailure)
+        {
+            return DiagnosticFailure(admissionFailure, HidSessionFailurePhase.Guard);
+        }
         HidFeatureIoResult setResult;
         try
         {
@@ -740,6 +752,16 @@ internal sealed class WindowsRazerHidSession :
                 command.Arguments.Span,
                 setBuffer.AsSpan(1, RazerReport.ReportLength));
 
+            if (SubmissionAdmissionFailure(command) is { } admissionFailure)
+            {
+                if (index > 0)
+                {
+                    Poison();
+                    return DiagnosticFailure(HidSessionFailureKind.NativeIoFailure,
+                        HidSessionFailurePhase.SetCompletion);
+                }
+                return DiagnosticFailure(admissionFailure, HidSessionFailurePhase.Guard);
+            }
             HidFeatureIoResult setResult;
             try
             {
@@ -870,6 +892,20 @@ internal sealed class WindowsRazerHidSession :
         }
 
         return deadline.IsCancellationRequested ? HidSessionFailureKind.Timeout : null;
+    }
+
+    private static HidSessionFailureKind? SubmissionAdmissionFailure(RazerCommandSpec command)
+    {
+        try
+        {
+            return command.SubmissionAllowed?.Invoke() == false
+                ? HidSessionFailureKind.ConflictBlocked
+                : null;
+        }
+        catch
+        {
+            return HidSessionFailureKind.ConflictDetectionFailed;
+        }
     }
 
     private void Poison()

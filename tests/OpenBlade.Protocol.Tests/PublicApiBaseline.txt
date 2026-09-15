@@ -389,17 +389,21 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateForLowPowerAsync()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.LightingLowPowerOffResult> TurnOffForLowPowerAsync(System.Func<System.Boolean> stillSuspending, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.LogoLightingMode>> ReadLogoStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> MaintainDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeForLowPowerAsync(System.Func<System.Boolean> stillSuspending, System.Threading.CancellationToken cancellationToken)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
   property OpenBlade.Contracts.LightingRendererOwnershipState OwnershipState { get; }
   property OpenBlade.Protocol.DriverModeRestoreOutcome DriverModeRestoreOutcome { get; }
 type interface OpenBlade.Protocol.IProductionLightingPortFactory
   method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Func<System.Boolean> driverModeWriteAllowed, System.Threading.CancellationToken cancellationToken)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
 type interface OpenBlade.Protocol.IProtectionOffValidationPort
   interface System.IAsyncDisposable
@@ -442,6 +446,31 @@ type sealed class OpenBlade.Protocol.LightingBrightnessReading
   method virtual System.Boolean Equals(OpenBlade.Protocol.LightingBrightnessReading other)
   property System.Int32 Percent { get; }
   property System.Int32 RawValue { get; init; }
+type enum OpenBlade.Protocol.LightingLowPowerOffOutcome
+  field System.Int32 value__
+  field const OpenBlade.Protocol.LightingLowPowerOffOutcome ConfirmedOff = 0
+  field const OpenBlade.Protocol.LightingLowPowerOffOutcome Indeterminate = 2
+  field const OpenBlade.Protocol.LightingLowPowerOffOutcome KnownNotApplied = 1
+type sealed class OpenBlade.Protocol.LightingLowPowerOffResult
+  interface System.IEquatable<OpenBlade.Protocol.LightingLowPowerOffResult>
+  ctor (OpenBlade.Contracts.LightingRendererOwnershipState OwnershipBefore, OpenBlade.Protocol.LightingLowPowerOffOutcome Outcome, System.String Message = null)
+  method OpenBlade.Contracts.LightingRendererOwnershipState get_OwnershipBefore()
+  method OpenBlade.Protocol.LightingLowPowerOffOutcome get_Outcome()
+  method OpenBlade.Protocol.LightingLowPowerOffResult <Clone>$()
+  method System.String get_Message()
+  method System.Void Deconstruct(out OpenBlade.Contracts.LightingRendererOwnershipState OwnershipBefore, out OpenBlade.Protocol.LightingLowPowerOffOutcome Outcome, out System.String Message)
+  method System.Void set_Message(System.String value)
+  method System.Void set_Outcome(OpenBlade.Protocol.LightingLowPowerOffOutcome value)
+  method System.Void set_OwnershipBefore(OpenBlade.Contracts.LightingRendererOwnershipState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.LightingLowPowerOffResult left, OpenBlade.Protocol.LightingLowPowerOffResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.LightingLowPowerOffResult left, OpenBlade.Protocol.LightingLowPowerOffResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.LightingLowPowerOffResult other)
+  property OpenBlade.Contracts.LightingRendererOwnershipState OwnershipBefore { get; init; }
+  property OpenBlade.Protocol.LightingLowPowerOffOutcome Outcome { get; init; }
+  property System.String Message { get; init; }
 type sealed class OpenBlade.Protocol.PerformanceFanDiscriminatorReading
   interface System.IEquatable<OpenBlade.Protocol.PerformanceFanDiscriminatorReading>
   ctor (System.String Operation, System.String RequestPayloadHex, System.String ResponseHex)
@@ -615,6 +644,7 @@ type sealed class OpenBlade.Protocol.ProductionLightingFactory
   method static OpenBlade.Protocol.IProductionLightingPortFactory CreateWindows()
   method static OpenBlade.Protocol.IProductionLightingPortFactory CreateWindowsReadOnly()
   method virtual OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Func<System.Boolean> driverModeWriteAllowed, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
 type struct OpenBlade.Protocol.ProductionPerformanceFanState

@@ -336,6 +336,18 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> PrepareForLowPowerAsync(
         CancellationToken cancellationToken) => PrepareForShutdownAsync(cancellationToken);
 
+    Task<ControlOperationResult> PrepareForLowPowerAsync(
+        long expectedGeneration,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken) =>
+        stillAuthorized()
+            ? PrepareForLowPowerAsync(cancellationToken)
+            : Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
+                "The suspend preparation is no longer authorized."));
+
+    Task InvalidateLightingRendererForLowPowerAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task<ControlOperationResult> PrepareOwnedHyperBoostForDisplayOffAsync(
         CancellationToken cancellationToken) => Task.FromResult(
             new ControlOperationResult(
@@ -463,6 +475,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
     private int mcuVersionReadAttempts;
     private LightingSettings? lastOwnedLightingSettings;
+    private long lastLightingOffSuspendGeneration = -1;
+    private static readonly TimeSpan LowPowerLightingBudget = TimeSpan.FromSeconds(2);
     private ExactFanControlOwnership exactFanControlOwnership =
         ExactFanControlOwnership.Unowned;
     private long fanAuthorityEpoch;
@@ -2102,6 +2116,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (lowPowerGate.IsActive)
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Keyboard brightness input is deferred during a low-power transition.");
+            }
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
                 .ConfigureAwait(false);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
@@ -3827,6 +3846,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return new(ControlOperationStatus.Blocked, "Key-triggered lighting is paused during standby.");
+        }
         if (IsKeyboardLightingDelegated)
         {
             return WindowsDynamicLightingOwnsKeyboard();
@@ -3904,6 +3927,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return new(ControlOperationStatus.Blocked, "Ambient lighting is paused during standby.");
+        }
         if (IsKeyboardLightingDelegated)
         {
             return WindowsDynamicLightingOwnsKeyboard();
@@ -3986,6 +4013,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (lowPowerGate.IsActive)
+        {
+            return new(ControlOperationStatus.Blocked, "Playback lighting is paused during standby.");
+        }
         if (IsKeyboardLightingDelegated)
         {
             return WindowsDynamicLightingOwnsKeyboard();
@@ -4698,7 +4729,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ScopedThermalAuthorityPurpose authorityPurpose =
             ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
         bool allowIntentRebase = false,
-        ThermalTransitionRecoveryState? recoveryState = null)
+        ThermalTransitionRecoveryState? recoveryState = null,
+        Func<bool>? stillPreparing = null)
     {
         Guid attemptId = recoveryState?.AttemptId ?? Guid.NewGuid();
         long expectedPowerAdmissionEpoch =
@@ -4708,6 +4740,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string? expectedActiveUserSid = Volatile.Read(ref activeUserSid);
         string? TransitionWriteBlockReason()
         {
+            if (stillPreparing?.Invoke() == false)
+            {
+                return "The original suspend preparation expired before the thermal command.";
+            }
             if (Volatile.Read(ref pendingPowerAdmissions) > 0
                 || Volatile.Read(ref pendingSessionAdmissions) > 0)
             {
@@ -5197,7 +5233,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long? expectedExitPowerSourceGeneration,
         CancellationToken token,
         bool operationGateAlreadyHeld = false,
-        Action<bool>? writeAttemptObserver = null)
+        Action<bool>? writeAttemptObserver = null,
+        Func<bool>? stillPreparing = null,
+        long? lowPowerResumeGeneration = null)
     {
         EnsureInitialized();
         ServiceStatusSnapshot? writeBaseline = null;
@@ -5543,7 +5581,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 validationOnly: lifecycleValidation is not null,
                 authorityPurpose: ownedLifecycleRestore
                     ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
-                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent);
+                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
+                stillPreparing: stillPreparing);
             if (enabled)
             {
                 ScopedApplyOutcome automaticFans = await transitionRunner
@@ -5563,6 +5602,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         automaticFans,
                         token)
                     .ConfigureAwait(false);
+                RecordConfirmedResumeWrites(DeviceSubsystem.Fans, automaticFans);
                 if (!HyperBoostBaselineStepSucceeded(automaticFans))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -5593,6 +5633,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token)
                     .ConfigureAwait(false);
                 transitionDevice = transitionRunner.CurrentDevice;
+                RecordConfirmedResumeWrites(DeviceSubsystem.Performance, balancedPerformance);
                 if (!HyperBoostBaselineStepSucceeded(balancedPerformance))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -5620,6 +5661,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     {
                         try
                         {
+                            if (stillPreparing?.Invoke() == false)
+                            {
+                                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                                    "The original suspend preparation expired before HyperBoost submission.");
+                            }
                             await ApplyHyperBoostCommandOnceAsync(
                                     attemptDevice,
                                     enabled,
@@ -5834,6 +5880,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return mismatch;
             }
 
+            resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Performance);
+            resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
             if (!enabled && restoreUserIntent && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
@@ -6350,6 +6398,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         finally
         {
             writeAttemptObserver?.Invoke(hyperBoostWriteAttempted);
+            if (hyperBoostWriteAttempted)
+            {
+                RebaseLowPowerResumeState(lowPowerResumeGeneration);
+            }
             if (!operationGateAlreadyHeld)
             {
                 operationGate.Release();
@@ -6665,15 +6717,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool confirmIndeterminateManualRestore = false)
     {
         ControlCoordinator coordinator = transitionRunner.CreateRecipeCoordinator();
-        Task<ScopedApplyOutcome> ApplyStepAsync(
+        async Task<ScopedApplyOutcome> ApplyStepAsync(
             DeviceSubsystem component,
             ThermalTransitionStepPurpose purpose,
-            Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> apply) =>
-            transitionRunner.ApplyStepAsync(
+            Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> apply)
+        {
+            ScopedApplyOutcome outcome = await transitionRunner.ApplyStepAsync(
                 component,
                 purpose,
                 apply,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
+            RecordConfirmedResumeWrites(component, outcome);
+            return outcome;
+        }
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
             ScopedApplyOutcome fans = await coordinator
@@ -6697,6 +6753,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+            RecordConfirmedResumeWrites(DeviceSubsystem.Fans, fans);
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
                 fans.Result,
@@ -10674,7 +10731,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task<ControlOperationResult> RestoreOwnedHyperBoostForLifecycleCoreAsync(
         string reasonLabel,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? stillPreparing = null,
+        long? lowPowerResumeGeneration = null)
     {
         long expectedOwnershipGeneration = 0;
         PowerSource exitPowerSource = PowerSource.ExternalUnknown;
@@ -10685,6 +10744,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (stillPreparing?.Invoke() == false)
+                {
+                    return new(ControlOperationStatus.Blocked,
+                        "The suspend preparation expired before HyperBoost lifecycle admission.");
+                }
                 ServiceStatusSnapshot current = GetStatus();
                 if (!ownsHyperBoost)
                 {
@@ -10716,6 +10780,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 exitPowerSource = await ResolveCurrentPowerSourceAsync(
                         cancellationToken)
                     .ConfigureAwait(false);
+                if (stillPreparing?.Invoke() == false)
+                {
+                    return new(ControlOperationStatus.Blocked,
+                        "The suspend preparation expired during HyperBoost power admission.");
+                }
                 if (exitPowerSource != PowerSource.ExternalUnknown
                     && ChangePowerSourceCore(exitPowerSource))
                 {
@@ -10728,6 +10797,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         Message =
                             "The power source was refreshed before HyperBoost lifecycle restoration so the destination profile is authoritative.",
                     });
+                    RebaseLowPowerResumeState(lowPowerResumeGeneration);
                 }
 
                 expectedOwnershipGeneration = hyperBoostOwnershipGeneration;
@@ -10758,7 +10828,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     restoreUserIntent: true,
                     exitPowerSourceOverride: exitPowerSource,
                     expectedExitPowerSourceGeneration,
-                    cancellationToken)
+                    cancellationToken,
+                    stillPreparing: stillPreparing,
+                    lowPowerResumeGeneration: lowPowerResumeGeneration)
                 .ConfigureAwait(false);
             if (result.Status != ControlOperationStatus.Applied)
             {
@@ -10857,32 +10929,197 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public async Task<ControlOperationResult> PrepareForLowPowerAsync(
+    public Task<ControlOperationResult> PrepareForLowPowerAsync(CancellationToken cancellationToken) =>
+        PrepareForLowPowerCoreAsync(lowPowerGate.Generation, null, cancellationToken);
+
+    public Task<ControlOperationResult> PrepareForLowPowerAsync(
+        long expectedGeneration,
+        Func<bool> stillAuthorized,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stillAuthorized);
+        return PrepareForLowPowerCoreAsync(expectedGeneration, stillAuthorized, cancellationToken);
+    }
+
+    private async Task<ControlOperationResult> PrepareForLowPowerCoreAsync(
+        long generation,
+        Func<bool>? stillAuthorized,
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
             thermalConvergenceShutdown: false);
-        ControlOperationResult hyperBoostResult =
-            await RestoreOwnedHyperBoostForLifecycleCoreAsync(
-                    "low power",
-                    cancellationToken)
-                .ConfigureAwait(false);
+        bool activeBoundary = lowPowerGate.IsActiveForGeneration(generation);
+        bool StillPreparing() => lowPowerGate.IsActiveForGeneration(generation)
+            && stillAuthorized?.Invoke() != false;
+        try
+        {
+            if (stillAuthorized is not null && !StillPreparing())
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "The original suspend preparation is stale or no longer authorized.");
+            }
+            ControlOperationResult? lightingResult = activeBoundary
+                ? await TurnOffLightingForLowPowerAsync(generation, StillPreparing, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+            if (activeBoundary && !StillPreparing())
+            {
+                return lightingResult ?? new(ControlOperationStatus.Stored,
+                    "The suspend boundary ended before low-power cleanup.");
+            }
+            ControlOperationResult hyperBoostResult =
+                await RestoreOwnedHyperBoostForLifecycleCoreAsync(
+                        "low power",
+                        cancellationToken,
+                        activeBoundary ? StillPreparing : null,
+                        lowPowerResumeGeneration: activeBoundary ? generation : null)
+                    .ConfigureAwait(false);
 
-        CancellationToken cleanupToken = cancellationToken.IsCancellationRequested
-            ? CancellationToken.None
-            : cancellationToken;
-        ControlOperationResult driverModeResult = await ReleaseDriverModeAsync(
-                preserveLightingIntent: true,
-                reasonLabel: "low power",
-                cleanupToken)
-            .ConfigureAwait(false);
-        return CombineLowPowerCleanupResults(
-            hyperBoostResult,
-            coolingPadFanResult: null,
-            coolingPadLightingResult: null,
-            driverModeResult);
+            CancellationToken cleanupToken = stillAuthorized is null && cancellationToken.IsCancellationRequested
+                ? CancellationToken.None
+                : cancellationToken;
+            ControlOperationResult driverModeResult = await ReleaseDriverModeAsync(
+                    preserveLightingIntent: true,
+                    reasonLabel: "low power",
+                    cleanupToken,
+                    lowPowerGeneration: generation,
+                    captureResumeState: !activeBoundary,
+                    stillAuthorized: stillAuthorized)
+                .ConfigureAwait(false);
+            ControlOperationResult cleanupResult = CombineLowPowerCleanupResults(
+                hyperBoostResult,
+                coolingPadFanResult: null,
+                coolingPadLightingResult: null,
+                driverModeResult);
+            return lightingResult is null ? cleanupResult : new ControlOperationResult(
+                CombineCleanupStatus(lightingResult, cleanupResult),
+                $"{lightingResult.Message} {cleanupResult.Message}");
+        }
+        finally
+        {
+            if (activeBoundary)
+            {
+                await RetireLightingRendererForSuspendAsync(generation).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<ControlOperationResult> TurnOffLightingForLowPowerAsync(
+        long generation,
+        Func<bool> stillPreparing,
+        CancellationToken cancellationToken)
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(LowPowerLightingBudget);
+        bool acquired = false;
+        try
+        {
+            await operationGate.WaitAsync(bounded.Token).ConfigureAwait(false);
+            acquired = true;
+            if (!stillPreparing()
+                || lastLightingOffSuspendGeneration == generation)
+            {
+                return new(ControlOperationStatus.Stored,
+                    "Keyboard standby preparation is stale or was already attempted.");
+            }
+            lastLightingOffSuspendGeneration = generation;
+            ServiceStatusSnapshot current = GetStatus();
+            ConfirmedDeviceState before = current.ConfirmedState ?? UnknownConfirmedState;
+            // Capture the active baseline before a successful Off becomes the
+            // confirmed state. Off is temporary hardware state, not user intent.
+            CaptureResumeState(generation);
+            if (IsKeyboardLightingDelegated || IsWritePendingFor(DeviceSubsystem.Lighting))
+            {
+                return new(ControlOperationStatus.Stored,
+                    "Keyboard standby Off was skipped because lighting authority is unavailable.");
+            }
+            RefreshControllerPresenceCore(bounded.Token);
+            current = GetStatus();
+            if (!current.DeviceVerified || current.WritesBlocked
+                || current.ControllerDetectionWarning is not null
+                || current.PotentialControllers.Any(CompetingControllerProcesses.Contains))
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Keyboard standby Off was blocked by device or controller admission.");
+            }
+            LightingSettings? owned = lastOwnedLightingSettings;
+            LightingLowPowerOffResult? result = await deviceProvider
+                .TurnOffRetainedLightingForLowPowerAsync(
+                    stillPreparing, bounded.Token)
+                .ConfigureAwait(false);
+            if (result is null)
+            {
+                return new(ControlOperationStatus.Stored,
+                    "No retained keyboard lighting port was available for standby Off.");
+            }
+            if (owned is not null && IsExplicitLightingOwnership(result.OwnershipBefore)
+                && OwnershipMatches(result.OwnershipBefore, owned)
+                && (!pendingLightingRestoreFromLifecycle || pendingLightingRestore is null))
+            {
+                pendingLightingRestore = owned;
+                pendingLightingRestoreFromLifecycle = true;
+            }
+            // The dedicated operation retires the renderer. Preserve its
+            // candidate now; later invalidation must not infer ownership from Off.
+            lastOwnedLightingSettings = null;
+            explicitLightingOwnershipActive = false;
+            faultedLightingRecoveryCandidate = null;
+            ConfirmedDeviceState? confirmed = current.ConfirmedState;
+            ControlOperationStatus outcomeStatus;
+            string message;
+            if (result.Outcome == LightingLowPowerOffOutcome.ConfirmedOff)
+            {
+                confirmed = before with { Lighting = LightingSettingsFactory.Off() };
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: true);
+                outcomeStatus = ControlOperationStatus.Applied;
+                message = "Keyboard lighting Off was confirmed for standby.";
+            }
+            else
+            {
+                outcomeStatus = result.Outcome == LightingLowPowerOffOutcome.Indeterminate
+                    ? ControlOperationStatus.Failed : ControlOperationStatus.Blocked;
+                message = $"Keyboard standby Off was not confirmed: {result.Message}";
+                if (result.Outcome == LightingLowPowerOffOutcome.Indeterminate)
+                {
+                    DesiredDeviceState target = Automation.Resolve(before);
+                    target = target with
+                    {
+                        Lighting = target.Lighting with { Value = LightingSettingsFactory.Off() },
+                    };
+                    SetPendingWriteConfirmation(DeviceSubsystem.Lighting,
+                        new PendingWriteConfirmation(current.ActivePowerSource, target, before));
+                }
+            }
+            history.RecordSummary(outcomeStatus, message);
+            PublishIfChanged(GetStatus() with
+            {
+                ConfirmedState = confirmed,
+                DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
+                LightingRendererOwnership = LightingRendererOwnershipState.None,
+                ExternalChanges = driftTracker.ExternalChanges,
+                Message = message,
+            });
+            return new(outcomeStatus, message);
+        }
+        catch (OperationCanceledException) when (bounded.IsCancellationRequested)
+        {
+            return new(ControlOperationStatus.Blocked,
+                "Keyboard standby Off exhausted its preparation budget before confirmation.");
+        }
+        catch (Exception exception)
+        {
+            return new(ControlOperationStatus.Failed,
+                $"Keyboard standby Off could not be prepared: {exception.Message}");
+        }
+        finally
+        {
+            if (acquired)
+            {
+                operationGate.Release();
+            }
+        }
     }
 
     public async Task BeginResumeValidationAsync(CancellationToken cancellationToken)
@@ -10908,11 +11145,40 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken).ConfigureAwait(false);
             }
 
-            resumeStateValidation.Begin(gpuClockOffsetConfirmationInvalidated);
+            resumeStateValidation.Begin(gpuClockOffsetConfirmationInvalidated,
+                unconfirmedWrites: CurrentUnconfirmedWrites());
         }
         finally
         {
             operationGate.Release();
+        }
+    }
+
+    private void CaptureResumeState(long? generation = null)
+    {
+        // Every caller holds operationGate so cached state and pending-write
+        // attribution describe the same boundary without another device read.
+        ServiceStatusSnapshot current = GetStatus();
+        resumeStateValidation.Capture(
+            current.ActivePowerSource,
+            current.DeviceVerified ? current.ConfirmedState : null,
+            lowPowerGeneration: generation,
+            unconfirmedWrites: CurrentUnconfirmedWrites());
+    }
+
+    private void RebaseLowPowerResumeState(long? generation)
+    {
+        if (generation is { } capturedGeneration)
+        {
+            // Called while thermal cleanup still holds operationGate, including
+            // cancellation after confirmed restoration. The tracker admits only
+            // the matching, unstarted baseline; this performs no device access.
+            ServiceStatusSnapshot current = GetStatus();
+            resumeStateValidation.RebaseBeforeResume(
+                capturedGeneration,
+                current.ActivePowerSource,
+                current.DeviceVerified ? current.ConfirmedState : null,
+                unconfirmedWrites: CurrentUnconfirmedWrites());
         }
     }
 
@@ -10947,48 +11213,89 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<ControlOperationResult> ReleaseDriverModeAsync(
         bool preserveLightingIntent,
         string reasonLabel,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? lowPowerGeneration = null,
+        bool captureResumeState = true,
+        Func<bool>? stillAuthorized = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        LightingSettings? preservedLighting = preserveLightingIntent
-            ? pendingLightingRestore
-            : null;
-        bool preservedLifecycleRestore = preserveLightingIntent
-            && pendingLightingRestoreFromLifecycle;
-        if (preserveLightingIntent)
+        if (preserveLightingIntent && captureResumeState)
         {
-            ServiceStatusSnapshot current = GetStatus();
-            resumeStateValidation.Capture(
-                current.ActivePowerSource,
-                current.DeviceVerified ? current.ConfirmedState : null);
+            CaptureResumeState();
         }
         try
         {
+            if (lowPowerGeneration is { } initialGeneration
+                && (lowPowerGate.Generation != initialGeneration
+                    || stillAuthorized?.Invoke() == false))
+            {
+                return new(ControlOperationStatus.Stored,
+                    "The low-power boundary changed before Driver-mode cleanup.");
+            }
             ControlOperationResult? brightnessResult = displayBrightnessReleaseRequired
                 ? await ReleaseDisplayBrightnessUsageCoreAsync(cancellationToken)
                     .ConfigureAwait(false)
                 : null;
             ControlOperationResult driverModeResult = await ReleaseDriverModeCoreAsync(
                 reasonLabel,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                lowPowerGeneration,
+                stillAuthorized).ConfigureAwait(false);
             return CombineDisplayBrightnessCleanup(brightnessResult, driverModeResult);
         }
         finally
         {
-            if (preserveLightingIntent)
-            {
-                pendingLightingRestore = preservedLighting;
-                pendingLightingRestoreFromLifecycle = preservedLifecycleRestore;
-            }
-
             operationGate.Release();
+        }
+    }
+
+    private async Task RetireLightingRendererForSuspendAsync(long generation)
+    {
+        bool StillRetiring() => lowPowerGate.IsActiveForGeneration(generation);
+        if (!StillRetiring())
+        {
+            return;
+        }
+        // Firmware authorization may already have expired. This independent,
+        // bounded cleanup may only retire the old renderer without any writes.
+        using var bounded = new CancellationTokenSource(LowPowerLightingBudget);
+        bool acquired = false;
+        try
+        {
+            await operationGate.WaitAsync(bounded.Token).ConfigureAwait(false);
+            acquired = true;
+            if (!StillRetiring())
+            {
+                return;
+            }
+            if (lastLightingOffSuspendGeneration != generation)
+            {
+                CaptureResumeState(generation);
+            }
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: true, bounded.Token,
+                lowPower: true, stillRetiring: StillRetiring).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (bounded.IsCancellationRequested)
+        {
+            history.RecordSummary(ControlOperationStatus.Failed,
+                "Write-free standby renderer disposal remains pending after its cleanup budget.");
+        }
+        finally
+        {
+            if (acquired)
+            {
+                operationGate.Release();
+            }
         }
     }
 
     private async Task<ControlOperationResult> ReleaseDriverModeCoreAsync(
         string reasonLabel,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? lowPowerGeneration = null,
+        Func<bool>? stillAuthorized = null)
     {
         string boundary = reasonLabel == "shutdown"
             ? "before shutdown"
@@ -11034,7 +11341,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(ControlOperationStatus.Stored, retained);
             }
 
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            bool? active;
+            if (lowPowerGeneration is { } generation)
+            {
+                using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                bounded.CancelAfter(LowPowerLightingBudget);
+                active = await deviceProvider.ReleaseRetainedDriverModeForLowPowerAsync(
+                    () => lowPowerGate.Generation == generation
+                        && stillAuthorized?.Invoke() != false,
+                    bounded.Token).ConfigureAwait(false);
+            }
+            else if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 string unavailable = reasonLabel == "shutdown"
                     ? "No verified laptop was available during shutdown, so keyboard Driver mode was left unchanged."
@@ -11046,8 +11363,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(unavailableStatus, unavailable);
             }
 
-            bool? active = await device.ReleaseDriverModeAsync(cancellationToken)
-                .ConfigureAwait(false);
+            else
+            {
+                active = await device.ReleaseDriverModeAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
             if (active is not false)
             {
                 const string unconfirmed =
@@ -11311,6 +11631,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             $"Display-brightness input cleanup: {brightnessResult.Message} {otherResult.Message}");
     }
 
+    public async Task InvalidateLightingRendererForLowPowerAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: true, cancellationToken, lowPower: true)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task InvalidateLightingRendererAsync(
         CancellationToken cancellationToken)
     {
@@ -11330,7 +11666,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task InvalidateLightingRendererCoreAsync(
         bool preserveForLifecycleRestore,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool lowPower = false,
+        Func<bool>? stillRetiring = null)
     {
         explicitLightingOwnershipActive = false;
         lightingRecoveryPauseMessage = null;
@@ -11347,9 +11685,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnershipState publishedOwnership =
                 GetStatus().LightingRendererOwnership;
             LightingRendererInvalidationResult invalidation =
-                await deviceProvider
-                    .InvalidateLightingRendererAsync(cancellationToken)
+                await (lowPower
+                    ? deviceProvider.InvalidateLightingRendererForLowPowerAsync(
+                        stillRetiring ?? (() => true), cancellationToken)
+                    : deviceProvider.InvalidateLightingRendererAsync(cancellationToken))
                     .ConfigureAwait(false);
+            if (stillRetiring?.Invoke() == false)
+            {
+                return;
+            }
             LightingRendererOwnershipState liveOwnership = invalidation.Ownership;
             RecordDriverModeRestoreOutcome(invalidation.DriverModeRestoreOutcome);
 
@@ -11365,15 +11709,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         && IsExplicitLightingOwnership(publishedOwnership)
                         && OwnershipMatches(publishedOwnership, owned)))
             {
-                pendingLightingRestore = owned;
-                pendingLightingRestoreFromLifecycle = true;
+                if (!pendingLightingRestoreFromLifecycle || pendingLightingRestore is null)
+                {
+                    pendingLightingRestore = owned;
+                    pendingLightingRestoreFromLifecycle = true;
+                }
             }
             else if (preserveForLifecycleRestore
+                && !(lowPower && pendingLightingRestoreFromLifecycle
+                    && pendingLightingRestore is not null)
                 && (liveOwnership == LightingRendererOwnershipState.Faulted
                     || owned is not null))
             {
                 // A live fault, relinquished renderer, or ownership mismatch
                 // disproves the cached status and must cancel any stale restore.
+                // Write-free retirement cannot disprove separately accepted
+                // lifecycle intent; retaining it does not bypass port admission.
                 pendingLightingRestore = null;
                 pendingLightingRestoreFromLifecycle = false;
             }
@@ -11451,6 +11802,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
+        if (lowPowerGate.IsActive || IsWritePendingFor(DeviceSubsystem.Lighting))
+        {
+            return false;
+        }
         if (unexpectedExitRecoveryDeferredForUserConfiguration)
         {
             return true;
@@ -11851,6 +12206,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The active Windows session changed before the control request started.");
             }
 
+            if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
+            {
+                try
+                {
+                    await mutation(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (IsIntentFailure(exception))
+                {
+                    return RecordRejectedIntent(exception);
+                }
+                return DeferLightingIntentForLowPower();
+            }
+
             if (IsWritePendingFor(subsystem))
             {
                 return PendingWriteBlockedResult(subsystem);
@@ -12019,6 +12391,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ThermalTransitionTrace?>? observeScopedOutcome = null,
         PendingBatteryIntentCommit? pendingBatteryIntentCommit = null)
     {
+        if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
+        {
+            return DeferLightingIntentForLowPower();
+        }
         if (subsystem == DeviceSubsystem.Performance)
         {
             thermalExecutionOptions ??= new ScopedThermalExecutionOptions(
@@ -12112,6 +12488,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             stillControlsSession,
             thermalExecutionOptions);
         ScopedApplyOutcome outcome = execution.Outcome;
+        RecordConfirmedResumeWrites(subsystem, outcome);
         bool lightingExternalBeforeReadback =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         (outcome, ConfirmedDeviceState? confirmed) =
@@ -12244,6 +12621,39 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             current,
             confirmed,
             outcome);
+    }
+
+    private void RecordConfirmedResumeWrites(
+        DeviceSubsystem subsystem,
+        ScopedApplyOutcome outcome)
+    {
+        // The hardware outcome is authoritative even if a later ownership or
+        // persistence check fails. Matching a no-write read is not attribution.
+        if (outcome.WriteAttempted
+            && (outcome.ReadbackMatched
+                || outcome.Result.Status == ControlResultStatus.Applied))
+        {
+            resumeStateValidation.RecordConfirmedWrite(subsystem);
+        }
+        if (outcome.ConfirmedCoupledWrites is { } coupledWrites)
+        {
+            foreach (DeviceSubsystem coupled in coupledWrites)
+            {
+                resumeStateValidation.RecordConfirmedWrite(coupled);
+            }
+        }
+    }
+
+    private void RecordConfirmedResumeWrites(FullTransitionApplyOutcome outcome)
+    {
+        foreach (DeviceSubsystem subsystem in outcome.WriteAttempted)
+        {
+            if (outcome.ReadbackMatched.Contains(subsystem)
+                || ResultFor(outcome.Results, subsystem).Status == ControlResultStatus.Applied)
+            {
+                resumeStateValidation.RecordConfirmedWrite(subsystem);
+            }
+        }
     }
 
     private async Task<ScopedIntentApplyExecution> ApplyScopedIntentOutcomeAsync(
@@ -13454,6 +13864,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<bool>? stillControlsSession = null,
         PendingTransitionContinuation? continuation = null)
     {
+        if (lowPowerGate.IsActive)
+        {
+            _ = DeferLightingIntentForLowPower();
+            return;
+        }
         pendingTransitionContinuation = null;
         ServiceStatusSnapshot current = GetStatus();
         if (hyperBoostJournalSafetyBlock && !ownsHyperBoost)
@@ -13575,6 +13990,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 stillControlsSession,
                 continuation);
         FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
+        RecordConfirmedResumeWrites(outcome);
         device = transitionExecution.Device;
 
         if (outcome.DeferredNotSubmitted is { Count: > 0 } deferred
@@ -15467,6 +15883,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             pendingWriteConfirmations[subsystem] = pending;
         }
+        // The caller holds operationGate. Retain attribution even if a later
+        // observation resolves this write before resume validation begins.
+        resumeStateValidation.RecordPendingWrite(subsystem);
     }
 
     private void RemovePendingWriteConfirmation(DeviceSubsystem subsystem)
@@ -16133,6 +16552,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool ResolveFullChargeOverride(ConfirmedDeviceState? confirmed) =>
         confirmed?.Battery?.TemporaryFullCharge
         ?? Automation.DesiredBattery.TemporaryFullCharge;
+
+    private ControlOperationResult DeferLightingIntentForLowPower()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        DesiredDeviceState desired = Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState);
+        pendingLightingRestore = desired.Lighting.Value;
+        pendingLightingRestoreFromLifecycle = true;
+        const string message = "Lighting intent was stored and will be applied after standby.";
+        history.RecordSummary(ControlOperationStatus.Stored, message);
+        PublishIfChanged(current with { DesiredState = desired, Message = message });
+        return new(ControlOperationStatus.Stored, message);
+    }
 
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
@@ -17552,6 +17983,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         FullTransitionApplyOutcome outcome = execution.Outcome;
         ThermalComponent[] affected = ThermalComponentsFor(candidate.Contradiction);
+        RecordConfirmedResumeWrites(outcome);
         IReadOnlySet<DeviceSubsystem> unavailable = outcome.ConfirmationUnavailable
             ?? new HashSet<DeviceSubsystem>();
         if (outcome.PreWriteState is { } preWrite)
@@ -18734,6 +19166,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // A successful newer effect or explicit Off supersedes any queued
             // recovery. Observation alone must not consume a deferred retry.
             faultedLightingRecoveryCandidate = null;
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
         }
 
         if (appliedSettings is not null

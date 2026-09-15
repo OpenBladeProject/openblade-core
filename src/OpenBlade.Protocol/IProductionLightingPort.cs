@@ -11,6 +11,18 @@ public enum DriverModeRestoreOutcome
     Failed,
 }
 
+public enum LightingLowPowerOffOutcome
+{
+    ConfirmedOff,
+    KnownNotApplied,
+    Indeterminate,
+}
+
+public sealed record LightingLowPowerOffResult(
+    LightingRendererOwnershipState OwnershipBefore,
+    LightingLowPowerOffOutcome Outcome,
+    string? Message = null);
+
 internal static class OwnedRendererOffObservation
 {
     internal static readonly TimeSpan OffConfirmationDelay =
@@ -67,6 +79,11 @@ public interface IProductionLightingPort : IAsyncDisposable
     Task<bool?> ReleaseDriverModeAsync(CancellationToken cancellationToken) =>
         Task.FromResult<bool?>(null);
 
+    Task<bool?> ReleaseDriverModeForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
@@ -75,6 +92,19 @@ public interface IProductionLightingPort : IAsyncDisposable
     Task SetLightingAsync(
         LightingSettings settings,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retires the renderer and confirms keyboard brightness zero at an active
+    /// suspend boundary. Never rolls back to On, acquires Driver mode, or
+    /// changes logo lighting.
+    /// </summary>
+    Task<LightingLowPowerOffResult> TurnOffForLowPowerAsync(
+        Func<bool> stillSuspending,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new LightingLowPowerOffResult(
+            OwnershipState,
+            LightingLowPowerOffOutcome.KnownNotApplied,
+            "This lighting port does not support retained suspend cleanup."));
 
     Task SetLightingRefreshRateAsync(
         LightingRefreshRate refreshRate,
@@ -117,6 +147,14 @@ public interface IProductionLightingPort : IAsyncDisposable
     Task<LightingRendererOwnershipState> InvalidateAsync();
 
     /// <summary>
+    /// Retires the port without firmware mutations. This close mode remains in
+    /// effect for subsequent disposal; Driver release is a separate guarded step.
+    /// </summary>
+    Task<LightingRendererOwnershipState> InvalidateForLowPowerAsync() =>
+        Task.FromException<LightingRendererOwnershipState>(new NotSupportedException(
+            "This port does not support a write-free low-power close."));
+
+    /// <summary>
     /// Disposes the port within its own cleanup deadline. True means the close
     /// task completed; false means cleanup remains safely retained and the
     /// caller must not force-close the handle.
@@ -138,4 +176,13 @@ public interface IProductionLightingPortFactory
 
     Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Opens a port whose Driver-mode writes retain the supplied admission
+    /// predicate through native submission and cleanup.
+    /// </summary>
+    Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+        Func<bool> driverModeWriteAllowed,
+        CancellationToken cancellationToken) => Task.FromResult(
+            new HidSessionResult<IProductionLightingPort>(null, HidSessionFailureKind.ConflictBlocked));
 }

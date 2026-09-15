@@ -60,18 +60,22 @@ public sealed class ServiceLifecycleRefreshLoop
     private readonly IServiceLifecycleEventSource eventSource;
     private readonly LowPowerGate lowPowerGate;
     private readonly ILogger logger;
+    private readonly ServiceSessionPowerTransitionCoordinator powerTransitions;
 
     public ServiceLifecycleRefreshLoop(
         IServiceControlRuntime runtime,
         IServiceLifecycleEventSource eventSource,
         LowPowerGate lowPowerGate,
-        ILogger logger)
+        ILogger logger,
+        ServiceSessionPowerTransitionCoordinator? powerTransitions = null)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.eventSource = eventSource ?? throw new ArgumentNullException(nameof(eventSource));
         this.lowPowerGate = lowPowerGate
             ?? throw new ArgumentNullException(nameof(lowPowerGate));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.powerTransitions = powerTransitions
+            ?? new ServiceSessionPowerTransitionCoordinator(runtime, lowPowerGate);
     }
 
     public async Task RunAsync(CancellationToken stoppingToken)
@@ -101,24 +105,16 @@ public sealed class ServiceLifecycleRefreshLoop
                             }
                             break;
                         case ServiceLifecycleTrigger.Suspending:
-                            await runtime.PrepareForLowPowerAsync(stoppingToken);
-                            await runtime.InvalidateLightingRendererAsync(stoppingToken);
+                            long suspendGeneration = lowPowerGate.Generation;
+                            if (!lowPowerGate.IsActiveForGeneration(suspendGeneration))
+                            {
+                                logger.LogInformation("Skipping a stale suspend notification after the low-power gate cleared.");
+                                break;
+                            }
+                            await ProcessPowerTransitionAsync(trigger, suspending: true, stoppingToken);
                             break;
                         case ServiceLifecycleTrigger.Resumed:
-                            await runtime.InvalidateLightingRendererAsync(stoppingToken);
-                            await runtime.BeginResumeValidationAsync(stoppingToken);
-                            if (lowPowerGate.IsActive)
-                            {
-                                await runtime.CancelResumeValidationAsync(stoppingToken);
-                                logger.LogInformation(
-                                    "Skipping power-source transition and lighting-renderer restoration after resume while the low-power gate remains active.");
-                            }
-                            else
-                            {
-                                await runtime.HandlePowerSourceChangedAsync(stoppingToken);
-                                await runtime.RestoreLightingRendererAsync(stoppingToken);
-                                await runtime.CompleteResumeValidationAsync(stoppingToken);
-                            }
+                            await ProcessPowerTransitionAsync(trigger, suspending: false, stoppingToken);
                             break;
                         case ServiceLifecycleTrigger.DisplayOff:
                             // The console display state is recorded unconditionally: it
@@ -212,5 +208,23 @@ public sealed class ServiceLifecycleRefreshLoop
             logger.LogError(exception, "Windows lifecycle notifications failed.");
             throw;
         }
+    }
+
+    private async Task ProcessPowerTransitionAsync(
+        ServiceLifecycleTrigger trigger,
+        bool suspending,
+        CancellationToken stoppingToken)
+    {
+        OpenBlade.Contracts.ControlOperationResult result =
+            await powerTransitions.ProcessNativeAsync(suspending, stoppingToken);
+        LogLevel level = result.Status switch
+        {
+            OpenBlade.Contracts.ControlOperationStatus.Failed => LogLevel.Error,
+            OpenBlade.Contracts.ControlOperationStatus.Blocked => LogLevel.Warning,
+            _ => LogLevel.Information,
+        };
+        logger.Log(level,
+            "Windows lifecycle trigger {Trigger} finished with {Status}: {Message}",
+            trigger, result.Status, result.Message);
     }
 }

@@ -12,6 +12,7 @@ public sealed class Worker(
     IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     LowPowerGate lowPowerGate,
+    ServiceSessionPowerTransitionCoordinator powerTransitions,
     IServiceClientContextResolver clientContextResolver,
     ILogger<Worker> logger) : BackgroundService
 {
@@ -91,7 +92,8 @@ public sealed class Worker(
                 runtime,
                 lifecycleEventSource,
                 lowPowerGate,
-                logger)
+                logger,
+                powerTransitions)
                 .RunAsync(token),
             token => new ServicePeriodicObservationLoop(runtime, lowPowerGate, logger)
                 .RunAsync(token),

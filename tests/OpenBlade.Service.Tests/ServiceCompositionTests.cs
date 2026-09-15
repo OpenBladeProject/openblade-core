@@ -250,6 +250,7 @@ public sealed class ServiceCompositionTests
     public void AddVerifiedBladeDeviceProvider_ResolvesWindowsProviderOnly()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<LowPowerGate>();
 
         services.AddVerifiedBladeDeviceProvider();
 
