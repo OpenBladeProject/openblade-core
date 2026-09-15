@@ -10471,6 +10471,197 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(DeviceSubsystem.Fans)]
+    [InlineData(DeviceSubsystem.Battery)]
+    public async Task ResumeValidation_ConfirmedScopedWriteDuringDelayedObservationIsNotExternal(
+        DeviceSubsystem subsystem)
+    {
+        TestContext context = CreateWritableContext();
+        await PrepareDelayedResumeValidationAsync(context);
+        if (subsystem == DeviceSubsystem.Fans)
+        {
+            // A confirmed battery request clears the cached unknown-power block
+            // without consuming the delayed full observation. Thermal admission
+            // then accepts another ordinary user request.
+            ControlOperationResult recovered = await context.Runtime.SetBatteryPolicyAsync(
+                BatteryPolicy.Create(75), CancellationToken.None);
+            Assert.True(recovered.Status == ControlOperationStatus.Applied, recovered.Message);
+        }
+        int settersBefore = context.Device.TotalSetterCalls;
+
+        ControlOperationResult write = subsystem == DeviceSubsystem.Fans
+            ? await context.Runtime.SetFanOverrideAsync(
+                new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+                CancellationToken.None)
+            : await context.Runtime.SetBatteryPolicyAsync(
+                BatteryPolicy.Create(75), CancellationToken.None);
+
+        Assert.True(write.Status == ControlOperationStatus.Applied, write.Message);
+        Assert.True(context.Device.TotalSetterCalls > settersBefore);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        int settersAfter = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(settersAfter, context.Device.TotalSetterCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("OpenBlade confirmed control writes after the suspend baseline was captured:", validation.Detail);
+        Assert.Contains(subsystem == DeviceSubsystem.Fans ? "Fans" : "Battery", validation.Detail);
+        Assert.DoesNotContain("externally classified", validation.Detail);
+        Assert.DoesNotContain("unconfirmed writes", validation.Detail);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_ConfirmedProfileWriteDuringDelayedObservationIsNotExternal()
+    {
+        TestContext context = CreateWritableContext();
+        await PrepareDelayedResumeValidationAsync(context);
+        // Use the same ordinary control path that reopens thermal admission;
+        // a full observation here would consume the comparison being tested.
+        ControlOperationResult recovered = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75), CancellationToken.None);
+        Assert.True(recovered.Status == ControlOperationStatus.Applied, recovered.Message);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        }, CancellationToken.None);
+
+        int fanWrites = context.Device.FanSetCalls;
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+        Assert.True(context.Device.FanSetCalls == fanWrites + 1,
+            context.Runtime.GetStatus().Message);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        int setters = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("OpenBlade confirmed control writes after the suspend baseline was captured: Fans", validation.Detail);
+        Assert.DoesNotContain("externally classified", validation.Detail);
+        Assert.DoesNotContain("unconfirmed writes", validation.Detail);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_ConfirmedHyperBoostDuringDelayedObservationIsNotExternal()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadlessHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 75, 80 },
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = ConfirmedBattery(80),
+        };
+        await PrepareDelayedResumeValidationAsync(context);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        // HyperBoost requires the published write block to be cleared first.
+        // Battery control can confirm recovered access without a full sample.
+        ControlOperationResult recovered = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75), CancellationToken.None);
+        Assert.True(recovered.Status == ControlOperationStatus.Applied, recovered.Message);
+
+        ControlOperationResult write = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+        Assert.True(write.Status == ControlOperationStatus.Applied, write.Message);
+        Assert.True(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        int setters = context.Device.TotalSetterCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("OpenBlade confirmed control writes after the suspend baseline was captured: Power mode, Fans", validation.Detail);
+        Assert.DoesNotContain("externally classified", validation.Detail);
+        Assert.DoesNotContain("unconfirmed writes", validation.Detail);
+    }
+
+    [Fact]
+    public async Task ResumeValidation_PendingBatteryMismatchKeepsExternalClassification()
+    {
+        TestContext context = CreateWritableContext();
+        await PrepareDelayedResumeValidationAsync(context);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                    "Battery response lost after submission.");
+            }
+        };
+        ControlOperationResult write = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75), CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Failed, write.Status);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+        context.Device.AfterSetter = null;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = ConfirmedBattery(70),
+        };
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Contains(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        DiagnosticCommandResult validation = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+        Assert.Equal(ControlOperationStatus.Stored.ToString(), validation.Status);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Battery", validation.Detail);
+        Assert.DoesNotContain("confirmed control writes", validation.Detail);
+    }
+
+    private static async Task PrepareDelayedResumeValidationAsync(TestContext context)
+    {
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Off(),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.LowPowerGate.Enter();
+        await context.Runtime.PrepareForLowPowerAsync(
+            context.LowPowerGate.Generation, static () => true, CancellationToken.None);
+        context.LowPowerGate.Exit();
+        await context.Runtime.InvalidateLightingRendererForLowPowerAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerFailure = new IOException("Adapter classification unavailable.");
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.CompleteResumeValidationAsync(CancellationToken.None);
+        Assert.DoesNotContain(context.History.Snapshot().CommandResults,
+            entry => entry.Action == "ResumeValidation");
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        context.Device.AdapterPowerFailure = null;
+    }
+
+    [Theory]
     [InlineData(DeviceSubsystem.Performance, false)]
     [InlineData(DeviceSubsystem.Battery, false)]
     [InlineData(DeviceSubsystem.Battery, true)]

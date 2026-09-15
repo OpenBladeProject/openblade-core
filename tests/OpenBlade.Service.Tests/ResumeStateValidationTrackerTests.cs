@@ -5,6 +5,72 @@ namespace OpenBlade.Service.Tests;
 public sealed class ResumeStateValidationTrackerTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecordConfirmedWrite_PreservesOtherDriftAndNewCaptureResetsAttribution(
+        bool lifecycleCompleted)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        if (lifecycleCompleted)
+        {
+            Assert.Null(tracker.Complete());
+        }
+        tracker.RecordConfirmedWrite(DeviceSubsystem.Battery);
+        ConfirmedDeviceState changed = baseline with
+        {
+            Battery = new ConfirmedBatteryState(true, 75, false),
+            Fans = FanMode.Maximum,
+        };
+        ResumeStateValidationResult? observed = tracker.Observe(PowerSource.PluggedIn, changed);
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(
+            lifecycleCompleted ? observed : tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("changed control state for Fans.", result.Message);
+        Assert.Contains("OpenBlade confirmed control writes after the suspend baseline was captured: Battery", result.Message);
+        Assert.DoesNotContain("unconfirmed writes", result.Message);
+        Assert.DoesNotContain("Unavailable", result.Message);
+
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, changed with { Fans = baseline.Fans });
+        ResumeStateValidationResult next = Assert.IsType<ResumeStateValidationResult>(tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, next.Status);
+        Assert.Contains("changed control state for Battery.", next.Message);
+        Assert.DoesNotContain("confirmed control writes", next.Message);
+    }
+
+    [Fact]
+    public void RebaseBeforeResume_RetiresConfirmedAttributionOnlyForAdoptedFields()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = Confirmed();
+        tracker.Capture(PowerSource.PluggedIn, baseline, lowPowerGeneration: 1);
+        tracker.RecordConfirmedWrite(DeviceSubsystem.Performance);
+        tracker.RecordConfirmedWrite(DeviceSubsystem.Fans);
+        tracker.RecordConfirmedWrite(DeviceSubsystem.Lighting);
+        tracker.RecordPendingWrite(DeviceSubsystem.Battery);
+        tracker.RebaseBeforeResume(1, PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline with
+        {
+            Performance = PerformancePreset.Performance,
+            Fans = FanMode.Maximum,
+            Battery = new ConfirmedBatteryState(true, 75, false),
+            Lighting = LightingSettingsFactory.Static(new RgbColor(10, 20, 30), 80),
+        });
+
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("changed control state for Power mode, Fans.", result.Message);
+        Assert.Contains("OpenBlade confirmed control writes after the suspend baseline was captured: Lighting", result.Message);
+        Assert.Contains("OpenBlade had unconfirmed writes during the suspend or resume lifecycle: Battery", result.Message);
+        Assert.DoesNotContain("Unavailable", result.Message);
+    }
+
+    [Theory]
     [InlineData(DeviceSubsystem.Performance)]
     [InlineData(DeviceSubsystem.Fans)]
     public void Capture_UnconfirmedThermalWriteCopiesInputAndRetainsOtherComparisons(

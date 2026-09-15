@@ -5602,6 +5602,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         automaticFans,
                         token)
                     .ConfigureAwait(false);
+                RecordConfirmedResumeWrites(DeviceSubsystem.Fans, automaticFans);
                 if (!HyperBoostBaselineStepSucceeded(automaticFans))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -5632,6 +5633,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token)
                     .ConfigureAwait(false);
                 transitionDevice = transitionRunner.CurrentDevice;
+                RecordConfirmedResumeWrites(DeviceSubsystem.Performance, balancedPerformance);
                 if (!HyperBoostBaselineStepSucceeded(balancedPerformance))
                 {
                     return await FinishFailedHyperBoostBaselineTransitionAsync(
@@ -5878,6 +5880,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return mismatch;
             }
 
+            resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Performance);
+            resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
             if (!enabled && restoreUserIntent && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
@@ -6713,15 +6717,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             bool confirmIndeterminateManualRestore = false)
     {
         ControlCoordinator coordinator = transitionRunner.CreateRecipeCoordinator();
-        Task<ScopedApplyOutcome> ApplyStepAsync(
+        async Task<ScopedApplyOutcome> ApplyStepAsync(
             DeviceSubsystem component,
             ThermalTransitionStepPurpose purpose,
-            Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> apply) =>
-            transitionRunner.ApplyStepAsync(
+            Func<ControlCoordinator, CancellationToken, Task<ScopedApplyOutcome>> apply)
+        {
+            ScopedApplyOutcome outcome = await transitionRunner.ApplyStepAsync(
                 component,
                 purpose,
                 apply,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
+            RecordConfirmedResumeWrites(component, outcome);
+            return outcome;
+        }
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
             ScopedApplyOutcome fans = await coordinator
@@ -6745,6 +6753,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+            RecordConfirmedResumeWrites(DeviceSubsystem.Fans, fans);
             UpdateOwnedFanControlSettings(
                 intent.FanControl,
                 fans.Result,
@@ -12479,6 +12488,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             stillControlsSession,
             thermalExecutionOptions);
         ScopedApplyOutcome outcome = execution.Outcome;
+        RecordConfirmedResumeWrites(subsystem, outcome);
         bool lightingExternalBeforeReadback =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         (outcome, ConfirmedDeviceState? confirmed) =
@@ -12611,6 +12621,39 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             current,
             confirmed,
             outcome);
+    }
+
+    private void RecordConfirmedResumeWrites(
+        DeviceSubsystem subsystem,
+        ScopedApplyOutcome outcome)
+    {
+        // The hardware outcome is authoritative even if a later ownership or
+        // persistence check fails. Matching a no-write read is not attribution.
+        if (outcome.WriteAttempted
+            && (outcome.ReadbackMatched
+                || outcome.Result.Status == ControlResultStatus.Applied))
+        {
+            resumeStateValidation.RecordConfirmedWrite(subsystem);
+        }
+        if (outcome.ConfirmedCoupledWrites is { } coupledWrites)
+        {
+            foreach (DeviceSubsystem coupled in coupledWrites)
+            {
+                resumeStateValidation.RecordConfirmedWrite(coupled);
+            }
+        }
+    }
+
+    private void RecordConfirmedResumeWrites(FullTransitionApplyOutcome outcome)
+    {
+        foreach (DeviceSubsystem subsystem in outcome.WriteAttempted)
+        {
+            if (outcome.ReadbackMatched.Contains(subsystem)
+                || ResultFor(outcome.Results, subsystem).Status == ControlResultStatus.Applied)
+            {
+                resumeStateValidation.RecordConfirmedWrite(subsystem);
+            }
+        }
     }
 
     private async Task<ScopedIntentApplyExecution> ApplyScopedIntentOutcomeAsync(
@@ -13947,6 +13990,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 stillControlsSession,
                 continuation);
         FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
+        RecordConfirmedResumeWrites(outcome);
         device = transitionExecution.Device;
 
         if (outcome.DeferredNotSubmitted is { Count: > 0 } deferred
@@ -17939,6 +17983,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         FullTransitionApplyOutcome outcome = execution.Outcome;
         ThermalComponent[] affected = ThermalComponentsFor(candidate.Contradiction);
+        RecordConfirmedResumeWrites(outcome);
         IReadOnlySet<DeviceSubsystem> unavailable = outcome.ConfirmationUnavailable
             ?? new HashSet<DeviceSubsystem>();
         if (outcome.PreWriteState is { } preWrite)
