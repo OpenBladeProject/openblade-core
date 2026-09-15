@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.20.23] - 2026-09-15
+
 ### Fixed
 
 - Turn off OpenBlade-controlled keyboard lighting on Windows suspend while preserving the separate display-off preference and eligible lighting settings for resume. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
@@ -1895,7 +1897,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.18...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.23...HEAD
+[0.20.23]: https://github.com/OSSBlade/openblade-core/compare/v0.20.18...v0.20.23
 [0.20.18]: https://github.com/OSSBlade/openblade-core/compare/v0.20.12-nightly.49...v0.20.18
 [0.20.12-nightly.49]: https://github.com/OSSBlade/openblade-core/compare/v0.20.11-nightly.47...v0.20.12-nightly.49
 [0.20.11-nightly.47]: https://github.com/OSSBlade/openblade-core/compare/v0.20.8-nightly.44...v0.20.11-nightly.47
