@@ -630,6 +630,27 @@
   <data name="HyperBoost" xml:space="preserve">
     <value>HyperBoost</value>
   </data>
+  <data name="HyperBoost controls unavailable" xml:space="preserve">
+    <value>HyperBoost 控制不可用</value>
+  </data>
+  <data name="HyperBoost is unavailable while the OpenBlade service is disconnected." xml:space="preserve">
+    <value>OpenBlade 服务断开连接时，HyperBoost 不可用。</value>
+  </data>
+  <data name="HyperBoost is unavailable while OpenBlade reconfirms the retained power source." xml:space="preserve">
+    <value>OpenBlade 重新确认保留的电源来源期间，HyperBoost 不可用。</value>
+  </data>
+  <data name="OpenBlade could not confirm whether another Razer controller is active. Refresh the laptop state. If this continues, exit Razer laptop-control software such as Synapse and refresh again." xml:space="preserve">
+    <value>OpenBlade 无法确认是否有其他 Razer 控制程序正在运行。请刷新笔记本状态。如果问题仍然存在，请退出 Synapse 等 Razer 笔记本控制软件，然后再次刷新。</value>
+  </data>
+  <data name="These Razer components may also control the laptop: {0}. Exit them to change HyperBoost, then refresh the laptop state." xml:space="preserve">
+    <value>以下 Razer 组件也可能控制笔记本：{0}。请退出这些组件以更改 HyperBoost，然后刷新笔记本状态。</value>
+  </data>
+  <data name="Connect the full-power AC adapter to use HyperBoost." xml:space="preserve">
+    <value>请连接全功率交流电源适配器以使用 HyperBoost。</value>
+  </data>
+  <data name="HyperBoost is unavailable with the current performance and fan state. Refresh the laptop state." xml:space="preserve">
+    <value>当前性能和风扇状态不支持 HyperBoost。请刷新笔记本状态。</value>
+  </data>
   <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
     <value>HyperBoost 已关闭，但尚未确认已保存的性能和风扇设置是否已恢复。重试只会恢复这组已保存的设置一次；OpenBlade 不会自动重试。</value>
   </data>

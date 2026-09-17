@@ -8925,6 +8925,8 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
         Assert.Equal(
             "Improves thermal performance so key components can sustain higher power limits.",
             viewModel.HyperBoostDescription);
@@ -9244,6 +9246,8 @@ public sealed partial class MainViewModelTests
 
         Task operation = viewModel.SetLaptopPerformanceOptionAsync(performance, default);
         await client.MutationStarted.Task;
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
         ServiceStatusSnapshot battery = active with
         {
             Revision = active.Revision + 1,
@@ -9563,32 +9567,120 @@ public sealed partial class MainViewModelTests
         Assert.Null(client.HyperBoostEnabled);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task HyperBoostPadlessPath_OmitsEntryDuringControllerConflict(
-        bool controllerDetected)
+    [Fact]
+    public async Task HyperBoostUnavailableReason_TracksControllerGateTransitions()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        var changed = new ConcurrentPropertySet();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false));
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        Assert.Contains("could not confirm", viewModel.HyperBoostUnavailableReason,
+            StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+        Assert.DoesNotContain(
+            viewModel.AvailableLaptopPerformanceOptions,
+            option => option.IsHyperBoost);
+
+        changed.Clear();
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 1,
+            PotentialControllers = ["Razer Chroma SDK Service", "RazerAppEngine"],
+        });
+        Assert.Contains("RazerAppEngine", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "Razer Chroma SDK Service",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+        Assert.Contains(nameof(viewModel.HyperBoostUnavailableReason), changed);
+
+        changed.Clear();
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 2,
+            PotentialControllers = ["Razer Chroma SDK Service"],
+        });
+
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+        Assert.Contains(
+            viewModel.AvailableLaptopPerformanceOptions,
+            option => option.IsHyperBoost);
+        Assert.Contains(nameof(viewModel.HyperBoostUnavailableReason), changed);
+        Assert.Contains(nameof(viewModel.HasHyperBoostUnavailableReason), changed);
+    }
+
+    [Fact]
+    public async Task UnsupportedLaptop_DoesNotShowHyperBoostUnavailableWarning()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.IsHyperBoostVisible);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+    }
+
+    [Fact]
+    public async Task ActiveHyperBoost_ControllerConflictBlocksExitUntilOnlyChromaRemains()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
             CreateStatus(verified: true, blocked: false));
-
-        client.Publish(admitted with
+        ServiceStatusSnapshot active = admitted with
         {
-            PotentialControllers = controllerDetected ? ["RazerAppEngine"] : [],
-            ControllerDetectionWarning = controllerDetected
-                ? null
-                : "Controller detection was incomplete.",
-        });
-        await WaitUntilAsync(() => viewModel.IsHyperBoostWritable);
+            PotentialControllers = ["RazerAppEngine"],
+            ConfirmedState = admitted.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+            },
+        };
+
+        client.Publish(active);
+        await WaitUntilAsync(() => viewModel.HyperBoostActive);
 
         Assert.False(viewModel.CanToggleHyperBoost);
-        Assert.DoesNotContain(
-            viewModel.AvailableLaptopPerformanceOptions,
-            option => option.IsHyperBoost);
-        Assert.Null(client.HyperBoostEnabled);
+        Assert.False(viewModel.CanSelectLaptopPerformance);
+        Assert.Contains(
+            "RazerAppEngine",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+
+        client.Publish(active with
+        {
+            Revision = active.Revision + 1,
+            PotentialControllers = ["Razer Chroma SDK Service"],
+        });
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+
+        Assert.True(viewModel.CanSelectLaptopPerformance);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
     }
 
     [Fact]
@@ -9606,6 +9698,9 @@ public sealed partial class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.IsHyperBoostWritable);
         Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Equal(
+            "Another user is controlling OpenBlade",
+            viewModel.HyperBoostUnavailableReason);
         Assert.DoesNotContain(
             viewModel.AvailableLaptopPerformanceOptions,
             option => option.IsHyperBoost);
@@ -9623,6 +9718,10 @@ public sealed partial class MainViewModelTests
             StringComparison.OrdinalIgnoreCase));
 
         Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Contains(
+            "reconfirms the retained power source",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -9670,6 +9769,11 @@ public sealed partial class MainViewModelTests
 
         Assert.False(viewModel.HyperBoostActive);
         Assert.False(viewModel.CanSelectLaptopPerformance);
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Contains(
+            "saved performance and fan setting was not confirmed",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             viewModel.AvailableLaptopPerformanceOptions,
             option => option.IsHyperBoost);
@@ -9739,6 +9843,9 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Equal(
+            "Connect the full-power AC adapter to use HyperBoost.",
+            viewModel.HyperBoostUnavailableReason);
         Assert.DoesNotContain(
             viewModel.AvailableLaptopPerformanceOptions,
             option => option.IsHyperBoost);

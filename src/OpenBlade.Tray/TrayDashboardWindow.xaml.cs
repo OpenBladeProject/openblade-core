@@ -1338,7 +1338,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     {
         detailControl = kind;
         DetailTitle.Text = title;
-        PerformanceDetail.Visibility = kind == TrayDashboardControlKind.Performance
+        PerformanceDetailHost.Visibility = kind == TrayDashboardControlKind.Performance
             ? Visibility.Visible
             : Visibility.Collapsed;
         FansDetail.Visibility = kind == TrayDashboardControlKind.Fans

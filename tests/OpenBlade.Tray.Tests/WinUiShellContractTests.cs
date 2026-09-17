@@ -207,6 +207,44 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void HyperBoostUnavailableWarningIsAdjacentToBothPerformanceSelectors()
+    {
+        string mainXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string powerModeCard = SliceMethod(
+            mainXaml,
+            "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
+            "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
+        string dashboardXaml = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml");
+        string dashboardWindow = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "TrayDashboardWindow.xaml.cs");
+
+        Assert.Contains("x:Name=\"HyperBoostUnavailableInfoBar\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Severity=\"Warning\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Title=\"{x:Bind HyperBoostUnavailableTitle, Mode=OneWay}\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Contains("Message=\"{x:Bind HyperBoostUnavailableReason, Mode=OneWay}\"", powerModeCard, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                powerModeCard,
+                "{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}"));
+
+        Assert.Contains("x:Name=\"PerformanceDetailHost\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"TrayHyperBoostUnavailableInfoBar\"", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.HasHyperBoostUnavailableReason", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.HyperBoostUnavailableReason", dashboardXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "PerformanceDetailHost.Visibility = kind == TrayDashboardControlKind.Performance",
+            dashboardWindow,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DashboardGpuTuningDescriptionUsesDefinedSharedStyle()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");

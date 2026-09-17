@@ -1009,6 +1009,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1268,7 +1269,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ActivePowerSource: PowerSource.PluggedIn,
             ControllerDetectionWarning: null,
         }
-        && latestStatus.PotentialControllers.Count == 0
+        && !HasBlockingHyperBoostController(latestStatus)
         && !IsHyperBoostRestoreRecoveryInProgress;
 
     public string HyperBoostRestoreRecoveryText => TrayText.Get(
@@ -2277,6 +2278,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyTrayHoverLabel();
@@ -2453,6 +2455,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsManualFanCurveVisible));
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
         }
     }
 
@@ -2848,6 +2851,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsHyperBoostWritable));
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
@@ -2882,6 +2886,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             RefreshLaptopPerformanceOptions();
             Notify(nameof(CanToggleHyperBoost));
             Notify(nameof(HyperBoostDescription));
+            NotifyHyperBoostAvailability();
             Notify(nameof(CanEditPerformance));
             Notify(nameof(CanSelectLaptopPerformance));
             Notify(nameof(SelectedLaptopPerformanceOption));
@@ -2905,6 +2910,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref isHyperBoostOperationInProgress, value);
             Notify(nameof(CanToggleHyperBoost));
+            NotifyHyperBoostAvailability();
             Notify(nameof(CanSelectLaptopPerformance));
             Notify(nameof(IsLaptopPerformanceOperationInProgress));
             RefreshLaptopPerformanceOptions();
@@ -2916,10 +2922,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsRetainedPowerSourceRecheck(latestStatus)
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
+        && !HasControllerDetectionWarning
+        && !HasBlockingHyperBoostController(latestStatus)
         && (HyperBoostActive
             || ActivePowerSource == PowerSource.PluggedIn
-                && !HasControllerDetectionWarning
-                && !HasControllerAdvisory
                 && PerformancePresetPresentation.IsAvailable(
                     PowerSource.PluggedIn,
                     SelectedPerformance)
@@ -2927,6 +2933,120 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && Capabilities.FanModes.Contains(SelectedFanMode)
                 && latestStatus?.PadlessHyperBoostEligibility
                     == PadlessHyperBoostEligibilityState.CoolingPadAbsent);
+
+    public bool HasHyperBoostUnavailableReason =>
+        !string.IsNullOrEmpty(HyperBoostUnavailableReason);
+
+    public string HyperBoostUnavailableTitle => TrayText.Get(
+        "HyperBoost controls unavailable");
+
+    public string HyperBoostUnavailableReason
+    {
+        get
+        {
+            if (!IsHyperBoostVisible
+                || CanToggleHyperBoost
+                || IsHyperBoostOperationInProgress)
+            {
+                return string.Empty;
+            }
+
+            if (!IsConnected)
+            {
+                return TrayText.Get(
+                    "HyperBoost is unavailable while the OpenBlade service is disconnected.");
+            }
+
+            if (latestStatus is not { } status || !status.DeviceVerified)
+            {
+                return TrayText.Get("OpenBlade could not verify which laptop this is.");
+            }
+
+            if (status.ControlAccess == SessionControlAccess.InactiveSession)
+            {
+                return TrayText.Get("Another user is controlling OpenBlade");
+            }
+
+            if (status.ControlAccess == SessionControlAccess.NotInteractive)
+            {
+                return TrayText.Get("Interactive session required");
+            }
+
+            if (IsCheckingLaptopConnection(status))
+            {
+                return TrayText.Get(
+                    "OpenBlade is waiting for a fresh, complete read of the laptop state.");
+            }
+
+            if (status.HyperBoostRestorePending)
+            {
+                return HyperBoostRestoreRecoveryText;
+            }
+
+            if (IsRetainedPowerSourceRecheck(status))
+            {
+                return TrayText.Get(
+                    "HyperBoost is unavailable while OpenBlade reconfirms the retained power source.");
+            }
+
+            if (status.UnconfirmedWrites.Count > 0)
+            {
+                return TrayText.Get(
+                    "A change that may have been sent must be confirmed before OpenBlade tries again.");
+            }
+
+            if (HasControllerDetectionWarning)
+            {
+                return TrayText.Get(
+                    "OpenBlade could not confirm whether another Razer controller is active. Refresh the laptop state. If this continues, exit Razer laptop-control software such as Synapse and refresh again.");
+            }
+
+            string[] blockingControllers = status.PotentialControllers
+                .Where(RazerThermalControllerPolicy.IsBlocking)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (blockingControllers.Length > 0)
+            {
+                return TrayText.Format(
+                    "These Razer components may also control the laptop: {0}. Exit them to change HyperBoost, then refresh the laptop state.",
+                    string.Join(", ", blockingControllers));
+            }
+
+            if (status.ActivePowerSource != PowerSource.PluggedIn)
+            {
+                return TrayText.Get(
+                    "Connect the full-power AC adapter to use HyperBoost.");
+            }
+
+            if (status.PadlessHyperBoostEligibility
+                == PadlessHyperBoostEligibilityState.CoolingPadPresent)
+            {
+                return TrayText.Get(
+                    "Disconnect the cooling pad before enabling HyperBoost.");
+            }
+
+            if (status.PadlessHyperBoostEligibility
+                != PadlessHyperBoostEligibilityState.CoolingPadAbsent)
+            {
+                return TrayText.Get(
+                    "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.");
+            }
+
+            if (!IsHyperBoostWritable)
+            {
+                return HyperBoostDescription;
+            }
+
+            if (status.WritesBlocked)
+            {
+                return TrayText.Get(
+                    "Laptop controls are currently unavailable. Check Troubleshooting for details.");
+            }
+
+            return TrayText.Get(
+                "HyperBoost is unavailable with the current performance and fan state. Refresh the laptop state.");
+        }
+    }
 
     public string HyperBoostDescription => IsHyperBoostWritable
         ? HyperBoostActive
@@ -4493,6 +4613,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
         && !IsCheckingLaptopConnection(latestStatus);
+
+    private static bool HasBlockingHyperBoostController(ServiceStatusSnapshot? status) =>
+        status?.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking) == true;
 
     private bool CanSetThermalControlPolicy(object? parameter) =>
         parameter is ThermalControlPolicyOption option
@@ -9132,6 +9255,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(IsHyperBoostWritable), IsHyperBoostWritable);
         NotifyComputed(nameof(CanToggleHyperBoost), CanToggleHyperBoost);
         NotifyComputed(nameof(HyperBoostDescription), HyperBoostDescription);
+        NotifyHyperBoostAvailability();
         NotifyComputed(nameof(AvailableLaptopPerformanceOptions), AvailableLaptopPerformanceOptions);
         NotifyComputed(nameof(SelectedLaptopPerformanceOption), SelectedLaptopPerformanceOption);
         NotifyComputed(nameof(CanEditFanControl), CanEditFanControl);
@@ -9184,6 +9308,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(PlatformCompatibilityWarningTitle), PlatformCompatibilityWarningTitle);
         NotifyComputed(nameof(DashboardTestedPlatformWarningMessage), DashboardTestedPlatformWarningMessage);
         NotifyComputed(nameof(AboutTestedPlatformWarningMessage), AboutTestedPlatformWarningMessage);
+    }
+
+    private void NotifyHyperBoostAvailability()
+    {
+        NotifyComputed(
+            nameof(HyperBoostUnavailableReason),
+            HyperBoostUnavailableReason);
+        NotifyComputed(
+            nameof(HasHyperBoostUnavailableReason),
+            HasHyperBoostUnavailableReason);
     }
 
     private void NotifyFirmwareFieldLoadingState()
