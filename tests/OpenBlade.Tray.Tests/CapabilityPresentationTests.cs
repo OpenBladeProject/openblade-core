@@ -568,6 +568,16 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(row, "Height"));
             Assert.Null(Attribute(row, "MinHeight"));
             XElement content = Assert.Single(row.Elements());
+            if (content.Name.LocalName == "StackPanel")
+            {
+                XElement[] children = content.Elements().ToArray();
+                Assert.Equal(2, children.Length);
+                Assert.Equal("InfoBar", children[1].Name.LocalName);
+                Assert.Equal("HyperBoostUnavailableInfoBar", Attribute(children[1], "Name"));
+                Assert.Equal("{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}",
+                    Attribute(children[1], "Visibility"));
+                content = children[0];
+            }
             Assert.Equal("Grid", content.Name.LocalName);
             Assert.Equal(
                 compactContentMinHeightReference,

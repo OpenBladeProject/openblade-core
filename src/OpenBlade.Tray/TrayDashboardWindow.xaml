@@ -519,14 +519,33 @@
             </Grid>
 
             <Grid Grid.Row="1">
-                <ListView x:Uid="TrayDashboardWindow_PerformanceDetailText" x:Name="PerformanceDetail"
-                          Margin="14,2,14,10"
-                          ItemsSource="{x:Bind ViewModel.AvailableLaptopPerformanceOptions, Mode=OneWay}"
-                          DisplayMemberPath="Label"
-                          SelectedItem="{x:Bind ViewModel.SelectedLaptopPerformanceOption, Mode=OneWay}"
-                          SelectionMode="Single"
-                          SelectionChanged="OnPerformanceChanged"
-                          AutomationProperties.Name="Performance choices" />
+                <ScrollViewer x:Name="PerformanceDetailHost"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <InfoBar x:Name="TrayHyperBoostUnavailableInfoBar"
+                                 Margin="14,2,14,8"
+                                 IsOpen="{x:Bind ViewModel.HasHyperBoostUnavailableReason, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.HasHyperBoostUnavailableReason, Mode=OneWay}"
+                                 Severity="Warning"
+                                 IsClosable="False"
+                                 Title="{x:Bind ViewModel.HyperBoostUnavailableTitle, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.HyperBoostUnavailableReason, Mode=OneWay}"
+                                 AutomationProperties.LiveSetting="Polite" />
+                        <ListView x:Uid="TrayDashboardWindow_PerformanceDetailText" x:Name="PerformanceDetail"
+                                  Margin="14,2,14,10"
+                                  ItemsSource="{x:Bind ViewModel.AvailableLaptopPerformanceOptions, Mode=OneWay}"
+                                  DisplayMemberPath="Label"
+                                  SelectedItem="{x:Bind ViewModel.SelectedLaptopPerformanceOption, Mode=OneWay}"
+                                  SelectionMode="Single"
+                                  SelectionChanged="OnPerformanceChanged"
+                                  ScrollViewer.VerticalScrollMode="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                                  AutomationProperties.Name="Performance choices" />
+                    </StackPanel>
+                </ScrollViewer>
                 <ListView x:Uid="TrayDashboardWindow_FansDetailText" x:Name="FansDetail"
                           Margin="14,2,14,10"
                           Visibility="Collapsed"

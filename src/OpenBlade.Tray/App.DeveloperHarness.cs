@@ -1046,6 +1046,11 @@ public partial class App
                 await SaveSnapshotAsync(performanceRow, smokeReportPath + ".wrapped.png");
             }
 
+            File.WriteAllText(smokeReportPath, "verify HyperBoost warning and recovery");
+            laptopCardsHost.Width = 450;
+            await VerifyHyperBoostWarningLayoutAsync(
+                smokeWindow, root, smokeReportPath, captureSnapshots);
+
             smokeWindow.Close();
             File.WriteAllText(smokeReportPath, "completed");
             Environment.Exit(0);
@@ -1055,6 +1060,100 @@ public partial class App
             File.WriteAllText(smokeReportPath, exception.ToString());
             Environment.Exit(1);
         }
+    }
+
+    private static async Task VerifyHyperBoostWarningLayoutAsync(
+        MainWindow window,
+        FrameworkElement root,
+        string reportPath,
+        bool captureSnapshots)
+    {
+        // Snapshot windows never start their service client. Feed the real
+        // presentation path with synthetic status, without any device access.
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ServiceStatusSnapshot status = new(
+            1, true, false,
+            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater"],
+            null, [], "Ready",
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            },
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            {
+                HyperBoostActive = false,
+            },
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        await WaitForSnapshotLayoutAsync();
+        Microsoft.UI.Xaml.Controls.InfoBar warning =
+            FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.InfoBar>(
+                root, "HyperBoostUnavailableInfoBar")
+            ?? throw new InvalidOperationException("The HyperBoost warning was not rendered.");
+        RequireResponsiveSelector(
+            warning.IsOpen && warning.ActualHeight > 0
+                && warning.Message.Contains("RazerAppEngine", StringComparison.Ordinal)
+                && !warning.Message.Contains("Razer Chroma SDK Service", StringComparison.Ordinal),
+            "The HyperBoost warning did not show the thermal blockers.");
+        if (captureSnapshots)
+        {
+            await SaveSnapshotAsync(root, reportPath + ".hyperboost-main.png");
+        }
+
+        var popup = new TrayDashboardWindow(
+            window.ViewModel,
+            WindowNative.GetWindowHandle(window),
+            _ => { });
+        double scale = root.XamlRoot?.RasterizationScale ?? 1;
+        popup.AppWindow.Resize(new Windows.Graphics.SizeInt32(
+            (int)(360 * scale),
+            (int)(TrayDashboardLayoutPolicy.CalculatePreferredHeight() * scale)));
+        popup.Activate();
+        System.Reflection.MethodInfo showDetail = typeof(TrayDashboardWindow).GetMethod(
+            "ShowDetail",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Performance detail hook was not found.");
+        showDetail.Invoke(popup, [TrayDashboardControlKind.Performance, "Performance"]);
+        await WaitForSnapshotLayoutAsync();
+        FrameworkElement popupRoot = (FrameworkElement)popup.Content;
+        Microsoft.UI.Xaml.Controls.InfoBar popupWarning =
+            FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.InfoBar>(
+                popupRoot, "TrayHyperBoostUnavailableInfoBar")
+            ?? throw new InvalidOperationException("The tray HyperBoost warning was not rendered.");
+        RequireResponsiveSelector(
+            popupWarning.IsOpen && popupWarning.ActualHeight > 0
+                && popupWarning.ActualWidth > 0
+                && popupWarning.ActualWidth <= popupRoot.ActualWidth - 27,
+            "The tray HyperBoost warning was missing or wider than its viewport.");
+        if (captureSnapshots)
+        {
+            await SaveSnapshotAsync(popupRoot, reportPath + ".hyperboost-tray.png");
+        }
+
+        applyStatus.Invoke(window.ViewModel, [status with
+        {
+            Revision = 2,
+            PotentialControllers = ["Razer Chroma SDK Service"],
+        }, false]);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(
+            window.ViewModel.CanToggleHyperBoost && !warning.IsOpen && !popupWarning.IsOpen,
+            "Clearing thermal blockers did not remove both HyperBoost warnings.");
+        popup.Close();
     }
 
     private static (XamlBorder Row, XamlStackPanel Text, ResponsiveChoiceSelector Selector)

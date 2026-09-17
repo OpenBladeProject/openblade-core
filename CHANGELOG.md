@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Explain HyperBoost restrictions beside the performance controls and allow Chroma lighting services without relaxing checks for Synapse, updater, unknown, or unverified controllers. ([#503](https://github.com/OSSBlade/openblade-core/pull/503))
+
 ## [0.20.23] - 2026-09-15
 
 ### Fixed

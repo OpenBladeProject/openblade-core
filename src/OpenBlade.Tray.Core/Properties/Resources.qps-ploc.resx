@@ -630,6 +630,27 @@
   <data name="HyperBoost" xml:space="preserve">
     <value>[!! HýpérBóóst ~~~~ !!]</value>
   </data>
+  <data name="HyperBoost controls unavailable" xml:space="preserve">
+    <value>[!! HýpérBóóst cóntróls únáváíláblé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost is unavailable while the OpenBlade service is disconnected." xml:space="preserve">
+    <value>[!! HýpérBóóst ís únáváíláblé whílé thé OpenBlade sérvícé ís díscónnéctéd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost is unavailable while OpenBlade reconfirms the retained power source." xml:space="preserve">
+    <value>[!! HýpérBóóst ís únáváíláblé whílé OpenBlade récónfírms thé rétáínéd pówér sóúrcé. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade could not confirm whether another Razer controller is active. Refresh the laptop state. If this continues, exit Razer laptop-control software such as Synapse and refresh again." xml:space="preserve">
+    <value>[!! OpenBlade cóúld nót cónfírm whéthér ánóthér Razer cóntróllér ís áctívé. Réfrésh thé láptóp státé. Íf thís cóntínúés, éxít Razer láptóp-cóntról sóftwáré súch ás Sýnápsé ánd réfrésh ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="These Razer components may also control the laptop: {0}. Exit them to change HyperBoost, then refresh the laptop state." xml:space="preserve">
+    <value>[!! Thésé Razer cómpónénts máý álsó cóntról thé láptóp: {0}. Éxít thém tó chángé HýpérBóóst, thén réfrésh thé láptóp státé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connect the full-power AC adapter to use HyperBoost." xml:space="preserve">
+    <value>[!! Cónnéct thé fúll-pówér ÁC ádáptér tó úsé HýpérBóóst. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost is unavailable with the current performance and fan state. Refresh the laptop state." xml:space="preserve">
+    <value>[!! HýpérBóóst ís únáváíláblé wíth thé cúrrént pérfórmáncé ánd fán státé. Réfrésh thé láptóp státé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="HyperBoost is off, but the saved performance and fan setting was not confirmed. Retry restores that exact saved setting once; OpenBlade will not retry automatically." xml:space="preserve">
     <value>[!! HýpérBóóst ís óff, bút thé sávéd pérfórmáncé ánd fán séttíng wás nót cónfírméd. Rétrý réstórés thát éxáct sávéd séttíng óncé; OpenBlade wíll nót rétrý áútómátícállý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>

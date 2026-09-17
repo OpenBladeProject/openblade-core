@@ -68,7 +68,7 @@ public sealed class TrayXamlStartupSmokeTests
 
     [InteractiveDesktopFact]
     [Trait("Category", "InteractiveDesktop")]
-    public Task LaptopPerformanceRowMatchesFansAndRespondsToSupportingCopy() =>
+    public Task LaptopPerformanceRowMatchesFansAndExplainsHyperBoostRestrictions() =>
         RunTraySmokeAsync(
             "--performance-row-layout-smoke",
             "OpenBlade-performance-row-layout-smoke");

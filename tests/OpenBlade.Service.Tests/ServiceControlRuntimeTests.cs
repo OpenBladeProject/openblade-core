@@ -18912,6 +18912,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData("RazerAppEngine", null)]
     [InlineData("razerwdl", null)]
+    [InlineData("RazerSynapseService", null)]
+    [InlineData("RGS", null)]
+    [InlineData("Razer Gaming Services Updater", null)]
+    [InlineData("Unknown controller", null)]
     [InlineData(null, "Controller detection was incomplete.")]
     public async Task PadlessHyperBoost_CompetingControllerAdmissionDoesNotWrite(
         string? controller,
@@ -18936,6 +18940,74 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData("Razer Chroma SDK Diagnostic Service")]
+    [InlineData("Razer Chroma SDK Server")]
+    [InlineData("Razer Chroma SDK Service")]
+    [InlineData("Razer Chroma Stream Server")]
+    public async Task PadlessHyperBoost_LightingOnlyControllerAllowsEntryAndRestoration(
+        string controller)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: [controller],
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(controller, context.Runtime.GetStatus().PotentialControllers);
+        PerformancePreset? previousPerformance = context.Device.ConfirmedState.Performance;
+        FanMode? previousFans = context.Device.ConfirmedState.Fans;
+
+        ControlOperationResult entry = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, entry.Status);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.NotNull(journal.Journal);
+
+        ControlOperationResult exit = await context.Runtime.SetHyperBoostAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, exit.Status);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(previousPerformance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(previousFans, context.Device.ConfirmedState.Fans);
+        Assert.Null(journal.Journal);
+        Assert.Contains(controller, context.Runtime.GetStatus().PotentialControllers);
+    }
+
+    [Theory]
+    [InlineData("RazerAppEngine", null)]
+    [InlineData(null, "Controller detection was incomplete.")]
+    public async Task PadlessHyperBoost_ChromaDoesNotMaskThermalConflictOrDetectionFailure(
+        string? thermalController,
+        string? detectionWarning)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: thermalController is null
+                ? ["Razer Chroma SDK Service"]
+                : ["Razer Chroma SDK Service", thermalController],
+            detectionFailure: detectionWarning,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent));
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeEntry = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(settersBeforeEntry, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -18971,6 +19043,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData("RazerAppEngine", null)]
     [InlineData("razerwdl", null)]
+    [InlineData("RazerSynapseService", null)]
+    [InlineData("RGS", null)]
+    [InlineData("Razer Gaming Services Updater", null)]
+    [InlineData("Unknown controller", null)]
     [InlineData(null, "Controller detection was incomplete.")]
     public async Task PadlessHyperBoost_ExitControllerSafetyBlockPreservesOwnership(
         string? controller,

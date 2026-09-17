@@ -570,42 +570,53 @@
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
-                                <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
-                                      ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center"
-                                                SizeChanged="OnDashboardTextStackSizeChanged">
-                                        <TextBlock x:Uid="MainWindow_TextBlockLaptopPerformance" Text="Laptop performance"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind HyperBoostDescription, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   HorizontalAlignment="Left"
-                                                   TextWrapping="Wrap"
-                                                   MaxWidth="520"
-                                                   Visibility="Collapsed"
-                                                   local:AnimatedVisibility.IsVisible="{Binding HyperBoostActive}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="10"
-                                                VerticalAlignment="Center">
-                                        <ProgressRing x:Uid="MainWindow_ProgressRingApplyingPowerMode" Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{x:Bind IsLaptopPerformanceOperationInProgress, Mode=OneWay}"
-                                                      AutomationProperties.Name="Applying power mode" />
-                                        <local:ResponsiveChoiceSelector x:Uid="MainWindow_DashboardPerformanceSelectorText" x:Name="DashboardPerformanceSelector"
-                                                                        CompactMinWidth="150"
-                                                                        ExpandedMinWindowWidth="800"
-                                                                        AccessibleName="Laptop performance"
-                                                                        IsEnabled="{x:Bind CanSelectLaptopPerformance, Mode=OneWay}"
-                                                                        ItemsSource="{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}"
-                                                                        DisplayMemberPath="Label"
-                                                                        SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
-                                                                        SelectionChanged="OnDashboardPerformanceChanged" />
-                                    </StackPanel>
-                                </Grid>
+                                <StackPanel>
+                                    <Grid MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}"
+                                          ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center"
+                                                    SizeChanged="OnDashboardTextStackSizeChanged">
+                                            <TextBlock x:Uid="MainWindow_TextBlockLaptopPerformance" Text="Laptop performance"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind HyperBoostDescription, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       HorizontalAlignment="Left"
+                                                       TextWrapping="Wrap"
+                                                       MaxWidth="520"
+                                                       Visibility="Collapsed"
+                                                       local:AnimatedVisibility.IsVisible="{Binding HyperBoostActive}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    Spacing="10"
+                                                    VerticalAlignment="Center">
+                                            <ProgressRing x:Uid="MainWindow_ProgressRingApplyingPowerMode" Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind IsLaptopPerformanceOperationInProgress, Mode=OneWay}"
+                                                          AutomationProperties.Name="Applying power mode" />
+                                            <local:ResponsiveChoiceSelector x:Uid="MainWindow_DashboardPerformanceSelectorText" x:Name="DashboardPerformanceSelector"
+                                                                            CompactMinWidth="150"
+                                                                            ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="Laptop performance"
+                                                                            IsEnabled="{x:Bind CanSelectLaptopPerformance, Mode=OneWay}"
+                                                                            ItemsSource="{x:Bind AvailableLaptopPerformanceOptions, Mode=OneWay}"
+                                                                            DisplayMemberPath="Label"
+                                                                            SelectedItem="{Binding SelectedLaptopPerformanceOption, Mode=OneWay}"
+                                                                            SelectionChanged="OnDashboardPerformanceChanged" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <InfoBar x:Name="HyperBoostUnavailableInfoBar"
+                                             Margin="0,8,0,0"
+                                             IsOpen="{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}"
+                                             Visibility="{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}"
+                                             Severity="Warning"
+                                             IsClosable="False"
+                                             Title="{x:Bind HyperBoostUnavailableTitle, Mode=OneWay}"
+                                             Message="{x:Bind HyperBoostUnavailableReason, Mode=OneWay}"
+                                             AutomationProperties.LiveSetting="Polite" />
+                                </StackPanel>
                             </Border>
                             <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
