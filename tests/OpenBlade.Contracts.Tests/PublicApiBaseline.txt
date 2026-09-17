@@ -1560,6 +1560,8 @@ type sealed class OpenBlade.Contracts.RazerBladeModelInfo
 type static class OpenBlade.Contracts.RazerControllerServiceAliases
   method static System.Boolean Contains(System.String alias)
   method static System.Boolean MatchesService(System.String serviceName, System.String displayName)
+type static class OpenBlade.Contracts.RazerThermalControllerPolicy
+  method static System.Boolean IsBlocking(System.String controller)
 type struct OpenBlade.Contracts.ReactiveKeyPulse
   interface System.IEquatable<OpenBlade.Contracts.ReactiveKeyPulse>
   ctor (System.Byte matrixSlot, System.Nullable<System.Int64> observedTimestamp = null)

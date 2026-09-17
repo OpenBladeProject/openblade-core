@@ -2891,7 +2891,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || !hyperBoostJournalSafetyBlock
                 || HasPendingWriteConfirmations()
                 || current.ControllerDetectionWarning is not null
-                || current.PotentialControllers.Count > 0
+                || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
                 || powerSource != PowerSource.PluggedIn
                 || current.ActivePowerSource != powerSource
                 || current.Capabilities is null
@@ -4855,7 +4855,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Count > 0
+            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
             || current.WritesBlocked
                 && !ownedLifecycleRestore
                 && !allowOwnedJournalCleanup)
@@ -5278,12 +5278,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             ServiceStatusSnapshot current = GetStatus();
             if (current.ControllerDetectionWarning is not null
-                || current.PotentialControllers.Count > 0)
+                || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
             {
                 string transition = enabled ? "entry" : "exit";
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    $"HyperBoost {transition} is blocked until competing-controller detection succeeds and no Razer controller is active.");
+                    $"HyperBoost {transition} is blocked until competing-controller detection succeeds and no potential thermal controller is active.");
             }
             ownedLifecycleRestore = !enabled
                 && expectedOwnershipGeneration is not null
@@ -7331,7 +7331,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Count > 0)
+            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostExitIntent = null;
@@ -7563,7 +7563,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Count > 0)
+            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostEntryIntent = null;
@@ -8452,7 +8452,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || HasPendingWriteConfirmations()
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Count > 0
+            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
             || current.Capabilities is null
             || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice verifiedDevice))
         {
@@ -13701,7 +13701,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || HasPendingWriteConfirmations()
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Count > 0)
+            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
         {
             hyperBoostJournalSafetyBlock = true;
             ClearOwnedHyperBoostState();
