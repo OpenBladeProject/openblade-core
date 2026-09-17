@@ -9630,6 +9630,32 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ActiveHyperBoostSafetyBlockDoesNotSuggestEntryPrerequisites()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: true));
+        await PushAsync(client, dispatcher, status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+                Performance = null,
+            },
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadPresent,
+        });
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Contains("Troubleshooting", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Disconnect", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UnsupportedLaptop_DoesNotShowHyperBoostUnavailableWarning()
     {
         var client = new FakeServiceClient();
@@ -9648,7 +9674,8 @@ public sealed partial class MainViewModelTests
     public async Task ActiveHyperBoost_ControllerConflictBlocksExitUntilOnlyChromaRemains()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
             CreateStatus(verified: true, blocked: false));
@@ -9658,11 +9685,11 @@ public sealed partial class MainViewModelTests
             ConfirmedState = admitted.ConfirmedState! with
             {
                 HyperBoostActive = true,
+                Performance = null,
             },
         };
 
-        client.Publish(active);
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        await PushAsync(client, dispatcher, active);
 
         Assert.False(viewModel.CanToggleHyperBoost);
         Assert.False(viewModel.CanSelectLaptopPerformance);
@@ -9671,12 +9698,11 @@ public sealed partial class MainViewModelTests
             viewModel.HyperBoostUnavailableReason,
             StringComparison.Ordinal);
 
-        client.Publish(active with
+        await PushAsync(client, dispatcher, active with
         {
             Revision = active.Revision + 1,
             PotentialControllers = ["Razer Chroma SDK Service"],
         });
-        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
 
         Assert.True(viewModel.CanSelectLaptopPerformance);
         Assert.False(viewModel.HasHyperBoostUnavailableReason);

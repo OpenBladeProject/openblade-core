@@ -3012,20 +3012,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     string.Join(", ", blockingControllers));
             }
 
-            if (status.ActivePowerSource != PowerSource.PluggedIn)
+            if (status.WritesBlocked)
+            {
+                return TrayText.Get(
+                    "Laptop controls are currently unavailable. Check Troubleshooting for details.");
+            }
+
+            if (!HyperBoostActive && status.ActivePowerSource != PowerSource.PluggedIn)
             {
                 return TrayText.Get(
                     "Connect the full-power AC adapter to use HyperBoost.");
             }
 
-            if (status.PadlessHyperBoostEligibility
+            if (!HyperBoostActive && status.PadlessHyperBoostEligibility
                 == PadlessHyperBoostEligibilityState.CoolingPadPresent)
             {
                 return TrayText.Get(
                     "Disconnect the cooling pad before enabling HyperBoost.");
             }
 
-            if (status.PadlessHyperBoostEligibility
+            if (!HyperBoostActive && status.PadlessHyperBoostEligibility
                 != PadlessHyperBoostEligibilityState.CoolingPadAbsent)
             {
                 return TrayText.Get(
@@ -3035,12 +3041,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (!IsHyperBoostWritable)
             {
                 return HyperBoostDescription;
-            }
-
-            if (status.WritesBlocked)
-            {
-                return TrayText.Get(
-                    "Laptop controls are currently unavailable. Check Troubleshooting for details.");
             }
 
             return TrayText.Get(
