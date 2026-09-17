@@ -521,7 +521,7 @@
             <Grid Grid.Row="1">
                 <ScrollViewer x:Name="PerformanceDetailHost"
                               HorizontalScrollMode="Disabled"
-                              HorizontalScrollBarVisibility="Hidden"
+                              HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollMode="Enabled"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>

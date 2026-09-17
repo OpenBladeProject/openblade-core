@@ -1135,8 +1135,10 @@ public partial class App
                 popupRoot, "TrayHyperBoostUnavailableInfoBar")
             ?? throw new InvalidOperationException("The tray HyperBoost warning was not rendered.");
         RequireResponsiveSelector(
-            popupWarning.IsOpen && popupWarning.ActualHeight > 0,
-            "The tray performance detail did not show the HyperBoost warning.");
+            popupWarning.IsOpen && popupWarning.ActualHeight > 0
+                && popupWarning.ActualWidth > 0
+                && popupWarning.ActualWidth <= popupRoot.ActualWidth - 27,
+            "The tray HyperBoost warning was missing or wider than its viewport.");
         if (captureSnapshots)
         {
             await SaveSnapshotAsync(popupRoot, reportPath + ".hyperboost-tray.png");
