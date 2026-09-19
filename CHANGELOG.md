@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-19
+
 ### Added
 
 - Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch, including its verified Windows lighting helper when a fresh device check finds no Blade lighting interface, while retaining checks for independent controllers, reevaluating patch timestamps after clock corrections, and falling back after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
@@ -1905,7 +1907,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.20.23...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/OSSBlade/openblade-core/compare/v0.20.23...v0.21.0
 [0.20.23]: https://github.com/OSSBlade/openblade-core/compare/v0.20.18...v0.20.23
 [0.20.18]: https://github.com/OSSBlade/openblade-core/compare/v0.20.12-nightly.49...v0.20.18
 [0.20.12-nightly.49]: https://github.com/OSSBlade/openblade-core/compare/v0.20.11-nightly.47...v0.20.12-nightly.49

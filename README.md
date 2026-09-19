@@ -38,8 +38,11 @@ You do not need to install or sign in to Razer Synapse. If Razer software is
 already running, OpenBlade checks for competing laptop controllers. With
 [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker)
 applied and verified for every running AppEngine instance, those instances no
-longer block OpenBlade's features. Other Razer controllers retain their existing
-checks. A missing, restored, or changed patch retains the normal conflict checks. See the
+longer block OpenBlade's features. Its verified Windows lighting helper is also
+accepted when a fresh device check finds no excluded Blade lighting interface.
+Independent controllers, unknown devices, and failed checks retain the normal
+conflict behavior. A missing, restored, or changed patch does too. This optional
+integration is available in OpenBlade 0.21.0 and newer. See the
 [coexistence notes](docs/synapse-blade-blocker.md).
 
 OpenBlade talks to the laptop over the same USB channel Razer uses. Performance
