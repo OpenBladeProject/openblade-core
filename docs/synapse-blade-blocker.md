@@ -9,3 +9,9 @@ Verification uses the applied patch record and matching installed archive/execut
 Synapse updates can replace the patch. Use the blocker's preparation/apply flow for the new installation and report compatibility failures in its repository. OpenBlade will not treat an old record as proof that the updated application is patched.
 
 This is detection of a cooperating local patch, not a security isolation mechanism or proof that every possible native code path is harmless. The user-reported Pro Click V2 result covers that peripheral and the tested build; other devices and lifecycle paths may behave differently.
+
+## Local validation
+
+On 2026-09-19, a read-only probe of the production controller guard at core revision 466966e84c2114444684d53e2dc309ad1c7f3fc2 recognized four live patched AppEngine 4.0.823 processes, returning no conflicts or detection error. The blocker at revision 1261363e1c53a963f23b06d9cef554d22d5932d5 successfully applied and restored under PowerShell 7.6.5. The user confirmed Pro Click V2 visible, Blade absent and ordinary mouse operation. The original archive and normal installed OpenBlade setup were restored afterward.
+
+The installed OpenBlade binaries were unchanged: this validates live patch-to-guard detection, not the new build's installed UI, every peripheral feature, or full hardware isolation.
