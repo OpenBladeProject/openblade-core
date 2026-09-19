@@ -11,13 +11,15 @@ internal sealed class SynapseBladeBlockerVerifier
     private readonly Dictionary<string, CacheEntry> cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object gate = new();
 
-    internal bool IsApplied(RunningControllerProcess process)
+    internal bool IsApplied(RunningControllerProcess process) => GetAppliedBladeProductIds(process) is not null;
+
+    internal IReadOnlySet<int>? GetAppliedBladeProductIds(RunningControllerProcess process)
     {
         if (process.ImagePath is null || process.StartedAtUtc is null
             || !Path.IsPathFullyQualified(process.ImagePath)
             || !string.Equals(Path.GetFileName(process.ImagePath), "RazerAppEngine.exe", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return null;
         }
 
         lock (gate)
@@ -31,10 +33,10 @@ internal sealed class SynapseBladeBlockerVerifier
                 var stamp = new InstallationStamp(Stamp(executable), Stamp(archive), Stamp(manifest));
                 if (!cache.TryGetValue(executable, out CacheEntry? entry) || entry.Stamp != stamp)
                 {
-                    DateTimeOffset? appliedAt = Verify(executable, archive, manifest);
+                    AppliedPatch? appliedPatch = Verify(executable, archive, manifest);
                     if (stamp != new InstallationStamp(Stamp(executable), Stamp(archive), Stamp(manifest)))
                     {
-                        return false;
+                        return null;
                     }
 
                     if (cache.Count >= 8)
@@ -42,22 +44,23 @@ internal sealed class SynapseBladeBlockerVerifier
                         cache.Clear();
                     }
 
-                    entry = new CacheEntry(stamp, appliedAt);
+                    entry = new CacheEntry(stamp, appliedPatch);
                     cache[executable] = entry;
                 }
 
-                return entry.AppliedAtUtc is { } applied && process.StartedAtUtc > applied;
+                return entry.Patch is { } applied && process.StartedAtUtc > applied.AppliedAtUtc
+                    ? applied.BladeProductIds : null;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                 or JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException
                 or KeyNotFoundException)
             {
-                return false;
+                return null;
             }
         }
     }
 
-    private static DateTimeOffset? Verify(string executable, string archive, string manifest)
+    private static AppliedPatch? Verify(string executable, string archive, string manifest)
     {
         using var stream = File.OpenRead(manifest);
         if (stream.Length <= 0 || stream.Length > MaximumManifestBytes)
@@ -95,7 +98,7 @@ internal sealed class SynapseBladeBlockerVerifier
         }
 
         return MatchesHash(archive, root.GetProperty("archiveSha256"))
-            && MatchesHash(executable, root.GetProperty("executableSha256")) ? appliedAt : null;
+            && MatchesHash(executable, root.GetProperty("executableSha256")) ? new AppliedPatch(appliedAt, ids) : null;
     }
 
     private static bool MatchesHash(string path, JsonElement expected)
@@ -118,7 +121,15 @@ internal sealed class SynapseBladeBlockerVerifier
 
     private sealed record FileStamp(long Length, DateTime LastWriteTimeUtc);
     private sealed record InstallationStamp(FileStamp Executable, FileStamp Archive, FileStamp Manifest);
-    private sealed record CacheEntry(InstallationStamp Stamp, DateTimeOffset? AppliedAtUtc);
+    private sealed record AppliedPatch(DateTimeOffset AppliedAtUtc, IReadOnlySet<int> BladeProductIds);
+    private sealed record CacheEntry(InstallationStamp Stamp, AppliedPatch? Patch);
 }
 
-internal sealed record RunningControllerProcess(string Name, string? ImagePath, DateTimeOffset? StartedAtUtc);
+internal sealed record RunningControllerProcess(
+    string Name,
+    string? ImagePath,
+    DateTimeOffset? StartedAtUtc,
+    int? ProcessId = null,
+    int? ParentProcessId = null,
+    int? SessionId = null,
+    bool IsLampArrayHelper = false);

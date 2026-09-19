@@ -201,6 +201,154 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
         Assert.Equal("Windows service enumeration failed.", result.DetectionFailure);
     }
 
+    [Fact]
+    public void Observe_VerifiedLightingChildWithoutBladeEndpointIsNotCompeting()
+    {
+        var (engine, helper) = LightingProcesses();
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => [new(0x1532, 0x00D1)]);
+
+        Assert.True(new WindowsHardwareAccessGuard(monitor).Check().Safe);
+    }
+
+    [Theory]
+    [InlineData(0x1532, 0x02E0)]
+    [InlineData(0x1532, 0x02C6)]
+    [InlineData(null, 0x00D1)]
+    [InlineData(0x1532, null)]
+    [InlineData(0, 0x00D1)]
+    [InlineData(0x1532, 0)]
+    public void Observe_BladeOrUnresolvedLightingEndpointRetainsHelper(int? vendor, int? product)
+    {
+        var (engine, helper) = LightingProcesses();
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => [new((ushort?)vendor, (ushort?)product)]);
+
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+    }
+
+    [Fact]
+    public void Observe_LightingEndpointChangesAreNotCached()
+    {
+        var (engine, helper) = LightingProcesses();
+        int observations = 0;
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => ++observations == 1
+                ? [new(0x1532, 0x00D1)] : [new(0x1532, 0x00D1), new(0x1532, 0x02E0)]);
+
+        Assert.Empty(monitor.Observe().PotentialControllers);
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+        Assert.Equal(2, observations);
+    }
+
+    [Fact]
+    public void Observe_LightingEnumerationFailureRetainsHelper()
+    {
+        var (engine, helper) = LightingProcesses();
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => throw new IOException("Unavailable interface metadata"));
+
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+        Assert.False(new WindowsHardwareAccessGuard(monitor).Check().Safe);
+    }
+
+    [Theory]
+    [InlineData("unknown-identity")]
+    [InlineData("missing-parent")]
+    [InlineData("other-parent")]
+    [InlineData("other-session")]
+    [InlineData("missing-session")]
+    [InlineData("missing-start")]
+    [InlineData("recycled-parent")]
+    [InlineData("future-start")]
+    [InlineData("missing-pid")]
+    [InlineData("same-pid")]
+    public void Observe_UnprovenLightingChildRetainsConflict(string failure)
+    {
+        var (engine, helper) = LightingProcesses();
+        helper = failure switch
+        {
+            "unknown-identity" => helper with { IsLampArrayHelper = false },
+            "missing-parent" => helper with { ParentProcessId = null },
+            "other-parent" => helper with { ParentProcessId = 999 },
+            "other-session" => helper with { SessionId = 2 },
+            "missing-session" => helper with { SessionId = null },
+            "missing-start" => helper with { StartedAtUtc = null },
+            "recycled-parent" => helper with { StartedAtUtc = engine.StartedAtUtc!.Value.AddSeconds(-1) },
+            "future-start" => helper with { StartedAtUtc = DateTimeOffset.UtcNow.AddMinutes(1) },
+            "missing-pid" => helper with { ProcessId = null },
+            _ => helper with { ProcessId = engine.ProcessId },
+        };
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => throw new InvalidOperationException("Unproven helpers must not require endpoint enumeration"));
+
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+        Assert.Null(monitor.Observe().DetectionWarning);
+    }
+
+    [Fact]
+    public void Observe_OneIndependentHelperKeepsConflictDespiteVerifiedSibling()
+    {
+        var (engine, helper) = LightingProcesses();
+        var independent = helper with { ProcessId = 30, ParentProcessId = 999 };
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper, independent], () => [new(0x1532, 0x00D1)]);
+
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+    }
+
+    [Fact]
+    public void Observe_AdditionalBladeIdsFromMarkerAlsoRetainHelperConflict()
+    {
+        var (engine, helper) = LightingProcesses();
+        Dictionary<string, object?> marker = Marker(engine);
+        marker["bladeProductIds"] = new[] { 0x02E0, 0x02C6, 0x0280 };
+        File.WriteAllText(Manifest(engine), JsonSerializer.Serialize(marker));
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, helper], () => [new(0x1532, 0x0280)]);
+
+        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
+    }
+
+    [Theory]
+    [InlineData(@"C:\profile\Razer\RazerAppEngine\User Data\Apps\Common\LampArray\razerwdl.exe", "RazerWDL", "RazerWDL", "Razer Inc.", true)]
+    [InlineData(@"C:\profile\RAZER\RazerAppEngine\User Data\Apps\Common\LampArray\RAZERWDL.EXE", "razerwdl", "razerwdl", "razer inc.", true)]
+    [InlineData(@"C:\other\razerwdl.exe", "RazerWDL", "RazerWDL", "Razer Inc.", false)]
+    [InlineData(@"Razer\RazerAppEngine\User Data\Apps\Common\LampArray\razerwdl.exe", "RazerWDL", "RazerWDL", "Razer Inc.", false)]
+    [InlineData(@"C:\profile\Razer\RazerAppEngine\User Data\Apps\Common\LampArray\razerwdl.exe", "Other", "RazerWDL", "Razer Inc.", false)]
+    [InlineData(@"C:\profile\Razer\RazerAppEngine\User Data\Apps\Common\LampArray\razerwdl.exe", "RazerWDL", null, "Razer Inc.", false)]
+    [InlineData(@"C:\profile\Razer\RazerAppEngine\User Data\Apps\Common\LampArray\razerwdl.exe", "RazerWDL", "RazerWDL", "Other", false)]
+    public void LightingHelperIdentityRequiresExpectedLocationAndProduct(
+        string path, string? product, string? original, string? company, bool expected)
+    {
+        Assert.Equal(expected, WindowsControllerProcessIdentity.IsLampArrayHelper(path, product, original, company));
+    }
+
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(null, false)]
+    public void ParentSnapshotRejectsRecycledChildPidOrMissingBirthTime(int? offsetSeconds, bool expected)
+    {
+        DateTimeOffset snapshotAt = DateTimeOffset.UtcNow;
+        DateTimeOffset? started = offsetSeconds is { } offset ? snapshotAt.AddSeconds(offset) : null;
+        Assert.Equal(expected, WindowsControllerProcessIdentity.CanUseParentSnapshot(started, snapshotAt));
+    }
+
+    private (RunningControllerProcess Engine, RunningControllerProcess Helper) LightingProcesses()
+    {
+        RunningControllerProcess engine = CreateInstallation("lighting-child") with
+        {
+            ProcessId = 10,
+            SessionId = 1,
+            StartedAtUtc = appliedAt.AddMinutes(1),
+        };
+        var helper = new RunningControllerProcess("razerwdl", null, appliedAt.AddMinutes(2),
+            ProcessId: 20, ParentProcessId: 10, SessionId: 1, IsLampArrayHelper: true);
+        return (engine, helper);
+    }
+
     private static void AssertConflicts(WindowsControllerPresenceMonitor monitor)
     {
         ControllerPresenceObservation result = monitor.Observe();
