@@ -349,6 +349,45 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
         return (engine, helper);
     }
 
+    [Fact]
+    public void Verification_ReevaluatesTimeAcrossCachedRejectionAndAcceptance()
+    {
+        RunningControllerProcess engine = CreateInstallation("clock-recovery");
+        var clock = new VerificationClock { UtcNow = appliedAt.AddSeconds(-1) };
+        var verifier = new SynapseBladeBlockerVerifier(clock);
+
+        Assert.Null(verifier.GetAppliedBladeProductIds(engine));
+        clock.UtcNow = appliedAt;
+        Assert.NotNull(verifier.GetAppliedBladeProductIds(engine));
+        clock.UtcNow = appliedAt.AddSeconds(-1);
+        Assert.Null(verifier.GetAppliedBladeProductIds(engine));
+        clock.UtcNow = appliedAt.AddMinutes(1);
+        Assert.NotNull(verifier.GetAppliedBladeProductIds(engine));
+        Assert.Null(verifier.GetAppliedBladeProductIds(engine with { StartedAtUtc = appliedAt }));
+    }
+
+    [Theory]
+    [InlineData("archive")]
+    [InlineData("executable")]
+    public void Verification_ClockRecoveryDoesNotAcceptInvalidPayload(string changed)
+    {
+        RunningControllerProcess engine = CreateInstallation("clock-invalid-payload");
+        File.WriteAllText(changed == "archive" ? Archive(engine) : engine.ImagePath!, "invalid payload");
+        var clock = new VerificationClock { UtcNow = appliedAt.AddSeconds(-1) };
+        var verifier = new SynapseBladeBlockerVerifier(clock);
+
+        Assert.Null(verifier.GetAppliedBladeProductIds(engine));
+        clock.UtcNow = appliedAt.AddMinutes(1);
+        Assert.Null(verifier.GetAppliedBladeProductIds(engine));
+    }
+
+    private sealed class VerificationClock : TimeProvider
+    {
+        internal DateTimeOffset UtcNow { get; set; }
+
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
     private static void AssertConflicts(WindowsControllerPresenceMonitor monitor)
     {
         ControllerPresenceObservation result = monitor.Observe();

@@ -10,6 +10,17 @@ internal sealed class SynapseBladeBlockerVerifier
     private const int MaximumManifestBytes = 65536;
     private readonly Dictionary<string, CacheEntry> cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object gate = new();
+    private readonly TimeProvider timeProvider;
+
+    internal SynapseBladeBlockerVerifier()
+        : this(TimeProvider.System)
+    {
+    }
+
+    internal SynapseBladeBlockerVerifier(TimeProvider timeProvider)
+    {
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
 
     internal bool IsApplied(RunningControllerProcess process) => GetAppliedBladeProductIds(process) is not null;
 
@@ -48,7 +59,11 @@ internal sealed class SynapseBladeBlockerVerifier
                     cache[executable] = entry;
                 }
 
-                return entry.Patch is { } applied && process.StartedAtUtc > applied.AppliedAtUtc
+                // File stamps cannot invalidate a wall-clock decision. Recheck time
+                // for both cached acceptance and rejection after clock corrections.
+                return entry.Patch is { } applied
+                    && applied.AppliedAtUtc <= timeProvider.GetUtcNow()
+                    && process.StartedAtUtc > applied.AppliedAtUtc
                     ? applied.BladeProductIds : null;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
@@ -75,7 +90,7 @@ internal sealed class SynapseBladeBlockerVerifier
         if (root.GetProperty("schemaVersion").GetInt32() != 1
             || root.GetProperty("patchId").GetString() != "OSSBlade/synapse-blade-blocker"
             || !root.GetProperty("appliedAtUtc").TryGetDateTimeOffset(out DateTimeOffset appliedAt)
-            || appliedAt.Offset != TimeSpan.Zero || appliedAt > DateTimeOffset.UtcNow)
+            || appliedAt.Offset != TimeSpan.Zero)
         {
             return null;
         }

@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch, including its verified Windows lighting helper when a fresh device check finds no Blade lighting interface, while retaining checks for independent controllers and falling back after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
+- Allow Synapse to keep serving peripherals when its running AppEngine instances have a verified Synapse Blade Blocker patch, including its verified Windows lighting helper when a fresh device check finds no Blade lighting interface, while retaining checks for independent controllers, reevaluating patch timestamps after clock corrections, and falling back after updates or invalid patch evidence. ([#506](https://github.com/OSSBlade/openblade-core/pull/506))
 
 ### Fixed
 
