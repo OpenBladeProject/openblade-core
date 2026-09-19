@@ -396,17 +396,17 @@ internal sealed class ActiveProfileDraftState
 
     public static bool HasSaveableUnsetField(
         ProfileDraftGroup group, PowerProfile saved, ActiveProfileDraftValues values) => group switch
-    {
-        ProfileDraftGroup.Lighting => saved.Lighting.LogoMode is null && values.LogoMode.HasValue,
-        ProfileDraftGroup.Laptop =>
-            saved.EffectiveLaptopBehavior.StartupAnimationEnabled is null
-                && values.StartupAnimationEnabled.HasValue
-            || saved.EffectiveLaptopBehavior.FunctionKeyPrimary is null
-                && values.FunctionKeyPrimary.HasValue
-            || saved.EffectiveLaptopBehavior.GamingModeEnabled is null
-                && values.GamingModeEnabled.HasValue,
-        _ => false,
-    };
+        {
+            ProfileDraftGroup.Lighting => saved.Lighting.LogoMode is null && values.LogoMode.HasValue,
+            ProfileDraftGroup.Laptop =>
+                saved.EffectiveLaptopBehavior.StartupAnimationEnabled is null
+                    && values.StartupAnimationEnabled.HasValue
+                || saved.EffectiveLaptopBehavior.FunctionKeyPrimary is null
+                    && values.FunctionKeyPrimary.HasValue
+                || saved.EffectiveLaptopBehavior.GamingModeEnabled is null
+                    && values.GamingModeEnabled.HasValue,
+            _ => false,
+        };
 
     public bool CaptureSaveableUnsetFields(
         ProfileSet profiles, PowerSource source, ProfileDraftGroup group, ActiveProfileDraftValues values)
