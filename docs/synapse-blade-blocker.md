@@ -2,7 +2,7 @@
 
 [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. OpenBlade does not install or depend on it.
 
-When every running Synapse AppEngine instance uses an installation with a verified applied patch, OpenBlade excludes the associated Synapse processes and services from its competing-controller checks. Hardware identity, supported commands, power requirements and other feature admission checks still apply.
+When every running Synapse AppEngine instance uses an installation with a verified applied patch, OpenBlade excludes those verified AppEngine processes from its competing-controller checks. Independent Razer controllers, including legacy Synapse services, razerwdl and the gaming-services updater, retain their existing checks because the archive patch does not verify their behavior. Hardware identity, supported commands, power requirements and other feature admission checks still apply.
 
 Verification uses the applied patch record and matching installed archive/executable hashes, not a Synapse version allowlist. A new version can work without an OpenBlade update if the patcher can apply its required edits and write a valid record. Missing or malformed records, changed files, mixed patched/unpatched instances and a process started before patch application retain the usual conflict behavior. Restart Synapse after applying the patch. Its short-lived unpatched launcher may still be reported while starting.
 

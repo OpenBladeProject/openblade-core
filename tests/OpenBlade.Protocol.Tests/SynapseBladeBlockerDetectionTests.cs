@@ -10,13 +10,39 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
     private readonly DateTimeOffset appliedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
 
     [Fact]
-    public void Observe_VerifiedInstallationClearsSynapseAliasesAndHardwareGuard()
+    public void Observe_VerifiedInstallationClearsOnlyAppEngineAndHardwareGuard()
     {
         RunningControllerProcess engine = CreateInstallation("any-version");
-        WindowsControllerPresenceMonitor monitor = Monitor([engine, new("razerwdl", null, null), new("RGS", null, null)]);
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(), () => [engine]);
 
         Assert.Empty(monitor.Observe().PotentialControllers);
         Assert.True(new WindowsHardwareAccessGuard(monitor).Check().Safe);
+    }
+
+    [Theory]
+    [InlineData("razerwdl")]
+    [InlineData("RGS")]
+    [InlineData("RazerSynapseService")]
+    [InlineData("Razer Synapse Service")]
+    public void Observe_VerifiedEngineDoesNotWaiveOtherControllerProcesses(string processName)
+    {
+        RunningControllerProcess engine = CreateInstallation("independent-process");
+        var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
+            () => [engine, new(processName, null, null)]);
+
+        Assert.Equal(new[] { processName }, monitor.Observe().PotentialControllers);
+        Assert.False(new WindowsHardwareAccessGuard(monitor).Check().Safe);
+    }
+
+    [Fact]
+    public void Observe_VerifiedEngineDoesNotWaiveIndependentServices()
+    {
+        RunningControllerProcess engine = CreateInstallation("independent-services");
+        WindowsControllerPresenceMonitor monitor = Monitor([engine]);
+
+        Assert.Equal(new[] { "RGS", "Razer Chroma SDK Service", "Razer Synapse Service" },
+            monitor.Observe().PotentialControllers);
+        Assert.False(new WindowsHardwareAccessGuard(monitor).Check().Safe);
     }
 
     [Fact]
@@ -36,7 +62,7 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
     {
         RunningControllerProcess engine = CreateInstallation("updated");
         WindowsControllerPresenceMonitor monitor = Monitor([engine, new("razerwdl", null, null)]);
-        Assert.Empty(monitor.Observe().PotentialControllers);
+        Assert.DoesNotContain("RazerAppEngine", monitor.Observe().PotentialControllers);
 
         string path = changed switch
         {
@@ -54,7 +80,7 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
     {
         RunningControllerProcess engine = CreateInstallation("same-length");
         WindowsControllerPresenceMonitor monitor = Monitor([engine]);
-        Assert.Empty(monitor.Observe().PotentialControllers);
+        Assert.DoesNotContain("RazerAppEngine", monitor.Observe().PotentialControllers);
         DateTime timestamp = File.GetLastWriteTimeUtc(Archive(engine));
         File.WriteAllText(Archive(engine), new string('x', (int)new FileInfo(Archive(engine)).Length));
         File.SetLastWriteTimeUtc(Archive(engine), timestamp.AddSeconds(1));
@@ -222,6 +248,11 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
     private sealed class EmptyProcesses : IRunningProcessSource
     {
         public IReadOnlyList<string> GetProcessNames() => [];
+    }
+
+    private sealed class EmptyServices : IWindowsServiceSource
+    {
+        public IReadOnlyList<WindowsServiceSnapshot> GetServices() => [];
     }
 
     private sealed class Services : IWindowsServiceSource

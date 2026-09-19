@@ -65,14 +65,15 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
             RunningControllerProcess[] engines = snapshots?
                 .Where(process => process.Name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase))
                 .ToArray() ?? [];
-            // Shared Razer services and razerwdl remain active for peripherals.
-            // Only fully verified live Synapse engines can waive these aliases.
+            // The archive marker covers AppEngine only. Other Razer controllers
+            // keep their existing admission regardless of a patched engine.
             patchedSynapse = engines.Length > 0 && engines.All(blocker.IsApplied);
             potentialControllers.AddRange(names
                 .Where(process =>
                     KnownControllerProcesses.Contains(process)
                     || RazerControllerServiceAliases.Contains(process))
-                .Where(_ => !patchedSynapse));
+                .Where(process => !patchedSynapse
+                    || !process.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase)));
         }
         catch (Exception)
         {
@@ -83,7 +84,7 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
         {
             potentialControllers.AddRange(serviceSource
                 .GetServices()
-                .Where(service => IsActive(service.State) && !patchedSynapse)
+                .Where(service => IsActive(service.State))
                 .Where(service => RazerControllerServiceAliases.MatchesService(
                     service.ServiceName,
                     service.DisplayName))
