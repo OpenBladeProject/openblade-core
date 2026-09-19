@@ -60,6 +60,120 @@ public sealed class RunningProcessSource : IRunningProcessSource
             }
         }
     }
+
+    internal IReadOnlyList<RunningControllerProcess> GetControllerProcessSnapshots()
+    {
+        DateTimeOffset parentSnapshotStartedAtUtc = DateTimeOffset.UtcNow;
+        IReadOnlyDictionary<int, int> parentProcessIds = WindowsControllerProcessParents.Read();
+        Process[] processes = Process.GetProcesses();
+        try
+        {
+            List<RunningControllerProcess> snapshots = [];
+            foreach (Process process in processes)
+            {
+                string name;
+                try
+                {
+                    name = process.ProcessName;
+                }
+                catch (Exception exception) when (exception is
+                    InvalidOperationException or Win32Exception or NotSupportedException)
+                {
+                    continue;
+                }
+
+                int? processId = null;
+                int? parentProcessId = null;
+                int? sessionId = null;
+                string? imagePath = null;
+                DateTimeOffset? startedAtUtc = null;
+                bool isLampArrayHelper = false;
+                if (IsProvenanceTarget(name))
+                {
+                    try
+                    {
+                        processId = process.Id;
+                    }
+                    catch (Exception exception) when (exception is
+                        InvalidOperationException or Win32Exception or NotSupportedException)
+                    {
+                        // Preserve the controller with unavailable provenance.
+                    }
+
+                    if (processId is int id
+                        && parentProcessIds.TryGetValue(id, out int parentId))
+                    {
+                        parentProcessId = parentId;
+                    }
+
+                    try
+                    {
+                        sessionId = process.SessionId;
+                    }
+                    catch (Exception exception) when (exception is
+                        InvalidOperationException or Win32Exception or NotSupportedException)
+                    {
+                        // Preserve the controller with unavailable provenance.
+                    }
+
+                    try
+                    {
+                        using ProcessModule? module = process.MainModule;
+                        imagePath = module?.FileName;
+                    }
+                    catch (Exception exception) when (exception is
+                        InvalidOperationException or Win32Exception or NotSupportedException)
+                    {
+                        // Preserve the controller with unavailable provenance.
+                    }
+
+                    try
+                    {
+                        startedAtUtc = process.StartTime.ToUniversalTime();
+                    }
+                    catch (Exception exception) when (exception is
+                        InvalidOperationException or Win32Exception or NotSupportedException)
+                    {
+                        // Preserve the controller with unavailable provenance.
+                    }
+
+                    if (!WindowsControllerProcessIdentity.CanUseParentSnapshot(startedAtUtc, parentSnapshotStartedAtUtc))
+                    {
+                        // A reused child PID must not inherit an earlier process's parent.
+                        parentProcessId = null;
+                    }
+
+                    if (name.Equals("razerwdl", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isLampArrayHelper = WindowsControllerProcessIdentity
+                            .IsVerifiedLampArrayHelper(imagePath);
+                    }
+                }
+
+                snapshots.Add(new RunningControllerProcess(
+                    name,
+                    imagePath,
+                    startedAtUtc,
+                    processId,
+                    parentProcessId,
+                    sessionId,
+                    isLampArrayHelper));
+            }
+
+            return snapshots;
+        }
+        finally
+        {
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private static bool IsProvenanceTarget(string name) =>
+        name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("razerwdl", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class WindowsServiceSource : IWindowsServiceSource
