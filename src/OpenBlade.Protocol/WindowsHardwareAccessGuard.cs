@@ -60,6 +60,55 @@ public sealed class RunningProcessSource : IRunningProcessSource
             }
         }
     }
+
+    internal IReadOnlyList<RunningControllerProcess> GetControllerProcessSnapshots()
+    {
+        Process[] processes = Process.GetProcesses();
+        try
+        {
+            List<RunningControllerProcess> snapshots = [];
+            foreach (Process process in processes)
+            {
+                string name;
+                try
+                {
+                    name = process.ProcessName;
+                }
+                catch (Exception exception) when (exception is
+                    InvalidOperationException or Win32Exception or NotSupportedException)
+                {
+                    continue;
+                }
+
+                string? image = null;
+                DateTimeOffset? startedAt = null;
+                if (name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        image = process.MainModule?.FileName;
+                        startedAt = process.StartTime.ToUniversalTime();
+                    }
+                    catch (Exception exception) when (exception is
+                        InvalidOperationException or Win32Exception or NotSupportedException)
+                    {
+                        // An inaccessible engine must retain its controller conflict.
+                    }
+                }
+
+                snapshots.Add(new RunningControllerProcess(name, image, startedAt));
+            }
+
+            return snapshots;
+        }
+        finally
+        {
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
+        }
+    }
 }
 
 public sealed class WindowsServiceSource : IWindowsServiceSource

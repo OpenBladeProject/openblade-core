@@ -1,0 +1,11 @@
+# Synapse Blade Blocker coexistence
+
+[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. OpenBlade does not install or depend on it.
+
+When every running Synapse AppEngine instance uses an installation with a verified applied patch, OpenBlade excludes the associated Synapse processes and services from its competing-controller checks. Hardware identity, supported commands, power requirements and other feature admission checks still apply.
+
+Verification uses the applied patch record and matching installed archive/executable hashes, not a Synapse version allowlist. A new version can work without an OpenBlade update if the patcher can apply its required edits and write a valid record. Missing or malformed records, changed files, mixed patched/unpatched instances and a process started before patch application retain the usual conflict behavior. Restart Synapse after applying the patch. Its short-lived unpatched launcher may still be reported while starting.
+
+Synapse updates can replace the patch. Use the blocker's preparation/apply flow for the new installation and report compatibility failures in its repository. OpenBlade will not treat an old record as proof that the updated application is patched.
+
+This is detection of a cooperating local patch, not a security isolation mechanism or proof that every possible native code path is harmless. The user-reported Pro Click V2 result covers that peripheral and the tested build; other devices and lifecycle paths may behave differently.

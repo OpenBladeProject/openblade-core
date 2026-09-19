@@ -35,8 +35,12 @@ do nothing or do the wrong thing.
 ## Why people use it
 
 You do not need to install or sign in to Razer Synapse. If Razer software is
-already running, OpenBlade warns you that the two may conflict and offers to
-stop it for you.
+already running, OpenBlade checks for competing laptop controllers. With
+[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker)
+applied and verified for the running Synapse installation, Synapse can remain
+available for peripherals without blocking OpenBlade's features. A missing,
+restored, or changed patch retains the normal conflict checks. See the
+[coexistence notes](docs/synapse-blade-blocker.md).
 
 OpenBlade talks to the laptop over the same USB channel Razer uses. Performance
 modes, fans, sensors, lighting, and battery settings need no driver of their
