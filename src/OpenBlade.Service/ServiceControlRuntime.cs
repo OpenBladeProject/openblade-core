@@ -1,8 +1,6 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
-using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -16836,46 +16834,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState confirmed,
         bool policyChanged = false)
     {
-        if (thermalConvergenceLedger is not { } prior
+        if (thermalConvergenceLedger is not { InFlight: null } prior
             || string.IsNullOrWhiteSpace(Volatile.Read(ref activeUserSid)))
         {
+            // Preserve possibly submitted reservations and device invalidation
+            // until fresh read-only reconciliation has retired the reservation.
             return;
         }
 
-        DesiredDeviceState desired = NormalizeThermalIntent(
-            ResolveHardwareDesired(confirmed));
-        string performanceRevision = CreateThermalRevision(new
-        {
-            desired.Performance,
-            desired.CustomPerformance,
-            desired.GpuClockTuning,
-        });
-        string fanRevision = CreateThermalRevision(new
-        {
-            desired.Fans,
-            desired.FanControl,
-        });
-        string policyRevision = CreateThermalRevision(new
-        {
-            preferences.ThermalControlPolicy,
-            preferences.ThermalPolicyUpgradeDisclosure,
-        });
-
-        bool intentChanged = policyChanged
-            || !StringComparer.Ordinal.Equals(
-                prior.PerformanceDesiredRevision,
-                performanceRevision)
-            || !StringComparer.Ordinal.Equals(prior.FanDesiredRevision, fanRevision)
-            || !StringComparer.Ordinal.Equals(prior.PolicyRevision, policyRevision);
-        // A durable in-flight reservation means a command may already have
-        // reached firmware. Preserve its exact destination, contradiction,
-        // revisions, and pre-write evidence until a fresh observation retires
-        // it read-only. A later observation can then advance to new intent.
-        if (prior.InFlight is not null)
-        {
-            return;
-        }
-
+        DesiredDeviceState desired = ResolveHardwareDesired(confirmed);
         ServiceStatusSnapshot current = GetStatus();
         PowerSource? currentDestination = current.ActivePowerSource is
             PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -16884,76 +16851,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         string model = string.IsNullOrWhiteSpace(current.Firmware?.ModelNumber)
             ? "verified-device"
             : current.Firmware.ModelNumber;
-        string fingerprint = $"OpenBlade:{model}";
-        bool deviceChanged = prior.DeviceAuthorityEpoch == Guid.Empty
-            || !StringComparer.Ordinal.Equals(prior.DeviceFingerprint, fingerprint)
-            || thermalDeviceAuthorityInvalidated;
+        thermalConvergenceLedger = ThermalConvergenceLedgerTransitions.RefreshIntent(
+            prior,
+            desired,
+            preferences.ThermalControlPolicy,
+            preferences.ThermalPolicyUpgradeDisclosure,
+            currentDestination,
+            $"OpenBlade:{model}",
+            thermalDeviceAuthorityInvalidated,
+            policyChanged);
         thermalDeviceAuthorityInvalidated = false;
-        Guid deviceEpoch = deviceChanged ? Guid.NewGuid() : prior.DeviceAuthorityEpoch;
-        long generation = prior.IsEmpty || intentChanged || deviceChanged
-            ? prior.IntentGeneration + 1
-            : prior.IntentGeneration;
-
-        IReadOnlyList<ThermalConvergenceTombstone> tombstones = policyChanged
-                ? []
-                : [.. prior.Tombstones.Where(tombstone =>
-                    tombstone.Destination != currentDestination
-                    || StringComparer.Ordinal.Equals(
-                        tombstone.PolicyRevision,
-                        policyRevision)
-                        && (!tombstone.Contradiction.HasFlag(
-                                ThermalConvergenceContradiction.Performance)
-                            || StringComparer.Ordinal.Equals(
-                                tombstone.PerformanceDesiredRevision,
-                                performanceRevision))
-                        && (!tombstone.Contradiction.HasFlag(
-                                ThermalConvergenceContradiction.FanTopology)
-                            || StringComparer.Ordinal.Equals(
-                                tombstone.FanDesiredRevision,
-                                fanRevision)))];
-        IReadOnlyList<ThermalConvergenceBudget> budgets = policyChanged
-                ? []
-                : [.. prior.Budgets.Where(budget =>
-                    budget.Destination != currentDestination
-                    || StringComparer.Ordinal.Equals(
-                        budget.PolicyRevision,
-                        policyRevision)
-                        && StringComparer.Ordinal.Equals(
-                            budget.DesiredRevision,
-                            budget.Component == ThermalComponent.Performance
-                                ? performanceRevision
-                                : fanRevision))];
-
-        thermalConvergenceLedger = prior with
-        {
-            DeviceAuthorityEpoch = deviceEpoch,
-            DeviceFingerprint = fingerprint,
-            IntentGeneration = generation,
-            EffectiveIntent = desired,
-            PerformanceDesiredRevision = performanceRevision,
-            FanDesiredRevision = fanRevision,
-            PolicyRevision = policyRevision,
-            SettledDestination = currentDestination ?? prior.SettledDestination,
-            Contradiction = ThermalConvergenceContradiction.None,
-            Tombstones = tombstones,
-            Budgets = budgets,
-            TerminalDisposition = null,
-            TerminalAffectedComponents = [],
-        };
-    }
-
-    private static DesiredDeviceState NormalizeThermalIntent(
-        DesiredDeviceState desired) => desired with
-        {
-            FanControl = desired.FanControl
-                ?? FanControlSettings.FromLegacy(desired.Fans.Value),
-        };
-
-    private static string CreateThermalRevision<T>(T value)
-    {
-        byte[] json = JsonSerializer.SerializeToUtf8Bytes(value);
-        byte[] hash = SHA256.HashData(json);
-        return new Guid(hash.AsSpan(0, 16)).ToString("D");
     }
 
     private static ThermalComponent[] ThermalComponentsFor(
@@ -17231,22 +17138,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        ThermalConvergenceTombstone tombstone = CreateThermalTombstone(
-            ledger,
-            reservedDestination,
-            ledger.Contradiction,
-            reservation.DeclaredComponents,
-            disposition);
-        ThermalConvergenceLedgerState reconciled = ledger with
-        {
-            InFlight = null,
-            Tombstones = [
-                .. ledger.Tombstones.Where(existing => existing != tombstone),
-                tombstone,
-            ],
-            TerminalDisposition = disposition,
-            TerminalAffectedComponents = reservation.DeclaredComponents,
-        };
+        ThermalConvergenceLedgerState reconciled =
+            ThermalConvergenceLedgerTransitions.Complete(
+                ledger,
+                reservedDestination,
+                ledger.Contradiction,
+                reservation.DeclaredComponents,
+                disposition);
         if (!await TryPersistThermalConvergenceLedgerAsync(
                 reconciled,
                 cancellationToken).ConfigureAwait(false))
@@ -17439,7 +17337,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ThermalComponent[] affected = ThermalComponentsFor(candidate.Contradiction);
             Guid transitionAttemptId = Guid.NewGuid();
-            ThermalConvergenceLedgerState reserved = ReserveThermalConvergence(
+            ThermalConvergenceLedgerState reserved = ThermalConvergenceLedgerTransitions.Reserve(
                 ledger,
                 candidate,
                 transitionAttemptId,
@@ -17776,7 +17674,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || !StringComparer.Ordinal.Equals(
                     load.Sha256,
                     expectedReservationSha256)
-                || !IsExpectedThermalConvergenceReservation(
+                || !ThermalConvergenceLedgerTransitions.IsExpectedReservation(
                     load.State,
                     expectedReservation))
             {
@@ -17880,100 +17778,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || load.Journal is { State: HyperBoostOwnershipJournalState.Relinquished }
                 && !string.IsNullOrWhiteSpace(load.Sha256));
 
-    private static bool IsExpectedThermalConvergenceReservation(
-        ThermalConvergenceLedgerState actual,
-        ThermalConvergenceLedgerState expected)
-    {
-        ThermalConvergenceInFlight? actualInFlight = actual.InFlight;
-        ThermalConvergenceInFlight? expectedInFlight = expected.InFlight;
-        return actualInFlight is not null
-            && expectedInFlight is not null
-            && actualInFlight.ReconciliationRequired
-            && actualInFlight.TransitionAttemptId
-                == expectedInFlight.TransitionAttemptId
-            && actualInFlight.DeclaredComponents.SequenceEqual(
-                expectedInFlight.DeclaredComponents)
-            && actualInFlight.PreWriteObservation
-                == expectedInFlight.PreWriteObservation
-            && actualInFlight.DesiredTarget == expectedInFlight.DesiredTarget
-            && string.Equals(
-                actual.ActiveUserSid,
-                expected.ActiveUserSid,
-                StringComparison.OrdinalIgnoreCase)
-            && actual.DeviceAuthorityEpoch == expected.DeviceAuthorityEpoch
-            && actual.IntentGeneration == expected.IntentGeneration
-            && StringComparer.Ordinal.Equals(
-                actual.DeviceFingerprint,
-                expected.DeviceFingerprint)
-            && actual.EffectiveIntent == expected.EffectiveIntent
-            && StringComparer.Ordinal.Equals(
-                actual.PerformanceDesiredRevision,
-                expected.PerformanceDesiredRevision)
-            && StringComparer.Ordinal.Equals(
-                actual.FanDesiredRevision,
-                expected.FanDesiredRevision)
-            && StringComparer.Ordinal.Equals(
-                actual.PolicyRevision,
-                expected.PolicyRevision)
-            && actual.SettledDestination == expected.SettledDestination
-            && actual.Contradiction == expected.Contradiction;
-    }
-
-    private ThermalConvergenceLedgerState ReserveThermalConvergence(
-        ThermalConvergenceLedgerState ledger,
-        ThermalConvergenceCandidate candidate,
-        Guid transitionAttemptId,
-        ConfirmedDeviceState fresh,
-        DesiredDeviceState desired,
-        IReadOnlyList<ThermalComponent> affected)
-    {
-        var budgets = ledger.Budgets.ToList();
-        foreach (ThermalComponent component in affected)
-        {
-            string revision = component == ThermalComponent.Performance
-                ? candidate.PerformanceDesiredRevision
-                : candidate.FanDesiredRevision;
-            int index = budgets.FindIndex(budget =>
-                budget.Destination == candidate.Destination
-                && budget.Component == component
-                && budget.DesiredRevision == revision
-                && budget.PolicyRevision == ledger.PolicyRevision);
-            if (index >= 0)
-            {
-                budgets[index] = budgets[index] with
-                {
-                    ConsumedClaims = budgets[index].ConsumedClaims + 1,
-                };
-            }
-            else
-            {
-                budgets.Add(new ThermalConvergenceBudget(
-                    candidate.Destination,
-                    component,
-                    revision,
-                    ledger.PolicyRevision!,
-                    ConsumedClaims: 1,
-                    MaximumClaims: 1));
-            }
-        }
-
-        return ledger with
-        {
-            SettledDestination = candidate.Destination,
-            Contradiction = candidate.Contradiction,
-            InFlight = new ThermalConvergenceInFlight(
-                transitionAttemptId,
-                affected,
-                fresh,
-                desired,
-                ReconciliationRequired: true),
-            Budgets = [.. budgets.OrderBy(budget => budget.Destination)
-                .ThenBy(budget => budget.Component)],
-            TerminalDisposition = null,
-            TerminalAffectedComponents = [],
-        };
-    }
-
     private async Task CompleteThermalConvergenceExecutionAsync(
         ThermalConvergenceCandidate candidate,
         ThermalConvergenceLedgerState reserved,
@@ -18041,22 +17845,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         ThermalTransitionDisposition disposition = execution.Trace.Disposition;
-        ThermalConvergenceTombstone tombstone = CreateThermalTombstone(
-            reserved,
-            candidate.Destination,
-            candidate.Contradiction,
-            affected,
-            disposition);
-        ThermalConvergenceLedgerState completed = reserved with
-        {
-            InFlight = null,
-            Tombstones = [
-                .. reserved.Tombstones.Where(existing => existing != tombstone),
-                tombstone,
-            ],
-            TerminalDisposition = disposition,
-            TerminalAffectedComponents = affected,
-        };
+        ThermalConvergenceLedgerState completed =
+            ThermalConvergenceLedgerTransitions.Complete(
+                reserved,
+                candidate.Destination,
+                candidate.Contradiction,
+                affected,
+                disposition);
         bool persisted = await TryPersistThermalConvergenceLedgerAsync(
                 completed,
                 cancellationToken)
@@ -18085,24 +17880,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             affected,
             explicitReapplyRequired: state != ThermalConvergenceState.Matched);
     }
-
-    private static ThermalConvergenceTombstone CreateThermalTombstone(
-        ThermalConvergenceLedgerState ledger,
-        PowerSource destination,
-        ThermalConvergenceContradiction contradiction,
-        IReadOnlyList<ThermalComponent> affected,
-        ThermalTransitionDisposition disposition) => new(
-            destination,
-            contradiction,
-            affected,
-            contradiction.HasFlag(ThermalConvergenceContradiction.Performance)
-                ? ledger.PerformanceDesiredRevision
-                : null,
-            contradiction.HasFlag(ThermalConvergenceContradiction.FanTopology)
-                ? ledger.FanDesiredRevision
-                : null,
-            ledger.PolicyRevision!,
-            disposition);
 
     private async Task<bool> TryPersistThermalConvergenceLedgerAsync(
         ThermalConvergenceLedgerState replacement,
