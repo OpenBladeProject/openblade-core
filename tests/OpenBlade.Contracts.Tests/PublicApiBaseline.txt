@@ -575,6 +575,12 @@ type sealed class OpenBlade.Contracts.DeviceNumericRange
   property System.Int32 Maximum { get; init; }
   property System.Int32 Minimum { get; init; }
   property System.Nullable<System.Int32> Step { get; init; }
+type enum OpenBlade.Contracts.DeviceObservationReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.DeviceObservationReason CheckingConnection = 1
+  field const OpenBlade.Contracts.DeviceObservationReason None = 0
+  field const OpenBlade.Contracts.DeviceObservationReason RefreshingControls = 2
+  field const OpenBlade.Contracts.DeviceObservationReason RetainedPowerSource = 3
 type enum OpenBlade.Contracts.DeviceSubsystem
   field System.Int32 value__
   field const OpenBlade.Contracts.DeviceSubsystem Battery = 2
@@ -1288,7 +1294,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 54
+  field const System.Int32 ProtocolVersion = 55
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1838,6 +1844,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method OpenBlade.Contracts.DeviceObservationReason get_ObservationReason()
   method OpenBlade.Contracts.DisplayBrightnessHidAvailability get_DisplayBrightnessHidAvailability()
   method OpenBlade.Contracts.FanControlSettings get_FanControlOverride()
   method OpenBlade.Contracts.FirmwareCompatibilityStatus get_FirmwareCompatibility()
@@ -1906,6 +1913,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_LightingSuppressions(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> value)
   method System.Void set_LiveReadings(OpenBlade.Contracts.LiveReadings value)
   method System.Void set_Message(System.String value)
+  method System.Void set_ObservationReason(OpenBlade.Contracts.DeviceObservationReason value)
   method System.Void set_PadlessHyperBoostEligibility(OpenBlade.Contracts.PadlessHyperBoostEligibilityState value)
   method System.Void set_PerformanceOverride(OpenBlade.Contracts.PerformanceOverride value)
   method System.Void set_PerformanceShortcutPreview(OpenBlade.Contracts.PerformanceShortcutPreview value)
@@ -1928,6 +1936,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
+  property OpenBlade.Contracts.DeviceObservationReason ObservationReason { get; init; }
   property OpenBlade.Contracts.DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability { get; init; }
   property OpenBlade.Contracts.FanControlSettings FanControlOverride { get; init; }
   property OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility { get; init; }

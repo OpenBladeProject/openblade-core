@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(54, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(55, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -65,7 +65,7 @@ public sealed class ServiceMessageContractTests
         string[] expected =
         [
             "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
-            "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message",
+            "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message", "ObservationReason",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PadlessHyperBoostEligibility",

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 54;
+    public const int ProtocolVersion = 55;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -32,9 +32,9 @@ public sealed class IpcProtocolVersionMismatchException : IOException
 public static class IpcMessageCodec
 {
     private static readonly JsonSerializerOptions SerializerOptions =
-        CreateSerializerOptions(omitThermalConvergence: false);
+        CreateSerializerOptions(protocol51Projection: false);
     private static readonly JsonSerializerOptions Protocol51SerializerOptions =
-        CreateSerializerOptions(omitThermalConvergence: true);
+        CreateSerializerOptions(protocol51Projection: true);
 
     public static Task WriteRequestAsync(
         Stream stream,
@@ -364,6 +364,11 @@ public static class IpcMessageCodec
         if (status is null)
         {
             throw InvalidStatus("snapshot is missing");
+        }
+
+        if (!Enum.IsDefined(status.ObservationReason))
+        {
+            throw InvalidStatus("observation reason is invalid");
         }
 
         if (status.Revision < 0)
@@ -820,10 +825,11 @@ public static class IpcMessageCodec
             WritesBlocked = true,
             Message = "OpenBlade was updated. Update or repair the app to restore hardware control.",
             ThermalConvergence = null,
+            ObservationReason = DeviceObservationReason.None,
         };
 
     private static JsonSerializerOptions CreateSerializerOptions(
-        bool omitThermalConvergence)
+        bool protocol51Projection)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
@@ -838,7 +844,7 @@ public static class IpcMessageCodec
                 windowsPowerModes.IsRequired = true;
             }
 
-            if (omitThermalConvergence
+            if (protocol51Projection
                 && typeInfo.Type == typeof(ServiceStatusSnapshot))
             {
                 JsonPropertyInfo thermalConvergence = typeInfo.Properties.Single(property =>
@@ -847,6 +853,12 @@ public static class IpcMessageCodec
                         "thermalConvergence",
                         StringComparison.OrdinalIgnoreCase));
                 thermalConvergence.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo observationReason = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "observationReason",
+                        StringComparison.OrdinalIgnoreCase));
+                observationReason.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

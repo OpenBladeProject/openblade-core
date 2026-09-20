@@ -353,9 +353,13 @@ public sealed class ServiceReactiveLightingLoopTests
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
-        ServiceStatusSnapshot reactive = Status(LightingRendererOwnershipState.Reactive);
+        ServiceStatusSnapshot reactive = Status(LightingRendererOwnershipState.Reactive) with
+        {
+            KeyboardDriverModeActive = true,
+        };
         client.Publish(reactive);
-        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => client.DeliveryCount == 1);
+        Assert.True(factory.Last!.ReadDriverModeObservation().AllowsFunctionRowInterception);
 
         client.Publish(reactive with
         {
@@ -363,12 +367,16 @@ public sealed class ServiceReactiveLightingLoopTests
             DeviceVerified = false,
             WritesBlocked = true,
             PotentialControllers = ["RazerAppEngine"],
-            Message = "Checking the laptop connection.",
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+            Message = "Device observation is pending.",
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
         await WaitUntilAsync(() => client.DeliveryCount == 2);
 
-        factory.Last!.Publish(new ReactiveKeyPulse(53));
+        Assert.False(factory.Last!.ReadDriverModeObservation().AllowsFunctionRowInterception);
+        Assert.Equal(RazerBladeInputDeviceKind.Unsupported, factory.Last.ReadVerifiedInputDeviceKind());
+        Assert.False(factory.Last.IsSpecialKeyInputAdmitted(SpecialKeySlot.M3));
+        factory.Last.Publish(new ReactiveKeyPulse(53));
         await WaitUntilAsync(() => client.Pulses.Count == 1);
 
         cancellation.Cancel();
@@ -421,8 +429,11 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Equal(expected, observation.AllowsFunctionRowInterception);
     }
 
-    [Fact]
-    public async Task TemporaryAccessRefresh_PreservesPreviouslyActiveInputWhenDesiredStateIsStale()
+    [Theory]
+    [InlineData(DeviceObservationReason.CheckingConnection)]
+    [InlineData(DeviceObservationReason.RefreshingControls)]
+    public async Task TemporaryAccessRefresh_PreservesPreviouslyActiveInputWhenDesiredStateIsStale(
+        DeviceObservationReason reason)
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
@@ -438,12 +449,57 @@ public sealed class ServiceReactiveLightingLoopTests
             Revision = 2,
             DeviceVerified = true,
             WritesBlocked = true,
-            Message = "Refreshing laptop controls after a temporary device-access failure. Last read failed.",
+            ObservationReason = reason,
+            Message = "Device observation is pending.",
         });
         await WaitUntilAsync(() => client.DeliveryCount == 2);
 
         factory.Last!.Publish(new ReactiveKeyPulse(53));
         await WaitUntilAsync(() => client.Pulses.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Theory]
+    [InlineData(DeviceObservationReason.None, LightingRendererOwnershipState.None,
+        "Checking the laptop connection.")]
+    [InlineData(DeviceObservationReason.None, LightingRendererOwnershipState.None,
+        "Refreshing laptop controls after a temporary device-access failure.")]
+    [InlineData(DeviceObservationReason.None, LightingRendererOwnershipState.None,
+        "No supported laptop connected.")]
+    [InlineData(DeviceObservationReason.CheckingConnection, LightingRendererOwnershipState.Faulted,
+        "Device observation is pending.")]
+    public async Task UnavailableStatusWithoutTemporaryReasonOrWithFault_ClearsReactiveInputOwnership(
+        DeviceObservationReason reason,
+        LightingRendererOwnershipState ownership,
+        string message)
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Reactive) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        client.Publish(Status(ownership) with
+        {
+            Revision = 2,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            ObservationReason = reason,
+            Message = message,
+        });
+        await WaitUntilAsync(() => client.DeliveryCount == 2);
+
+        Assert.False(factory.Last!.ReadDriverModeObservation().AllowsFunctionRowInterception);
+        factory.Last.Publish(new ReactiveKeyPulse(53));
+        await Task.Delay(50);
+        Assert.Empty(client.Pulses);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);

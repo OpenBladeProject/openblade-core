@@ -544,11 +544,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     }
 
     private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>
-        status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
-            && status.Message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
-        || status.Message.StartsWith(
-            "Refreshing laptop controls after a temporary device-access failure",
-            StringComparison.OrdinalIgnoreCase);
+        status.ObservationReason is
+            DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls;
 
     private async Task SendPulseAsync(
         ReactiveKeyPulse pulse,
