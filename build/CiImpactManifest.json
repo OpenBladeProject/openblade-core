@@ -161,7 +161,7 @@
     },
     {
       "test": "tests/Build.Tests/CiBuildScope.Tests.ps1",
-      "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml"]
+      "patterns": ["build/CiBuildScope.ps1", "build/CiImpactManifest.json", ".github/workflows/ci.yml", ".github/workflows/build.yml", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"]
     },
     {
       "test": "tests/Build.Tests/CiLaneResults.Tests.ps1",

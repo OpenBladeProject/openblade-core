@@ -233,6 +233,12 @@ foreach ($translatorPath in @(
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
         "Translator workflow path '$translatorPath' must run its adversarial contracts."
 }
+$translatorEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')
+Assert-Contains $translatorEvidencePlan.ContractTests `
+    'tests/Build.Tests/CiBuildScope.Tests.ps1' `
+    'Translator producer changes must also validate the failure-artifact handoff.'
+
 $translatorRestore = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'build/LocalizationTranslatorWorkflow.psm1')
 foreach ($restoreProject in @(
@@ -299,6 +305,43 @@ foreach ($requiredBuildContract in @(
     if (-not $build.Contains($requiredBuildContract)) {
         throw "Shared build workflow is missing '$requiredBuildContract'."
     }
+}
+
+$contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)
+$contractsEnd = $build.IndexOf('  component-publish:', $contractsStart, [StringComparison]::Ordinal)
+$contracts = $build.Substring($contractsStart, $contractsEnd - $contractsStart)
+$uploadStart = $contracts.IndexOf('      - name: Retain translator archive mismatch evidence', [StringComparison]::Ordinal)
+if ($uploadStart -lt 0) {
+    throw 'Build contracts must retain translator mismatch evidence on hosted runners.'
+}
+$nextStep = $contracts.IndexOf("`n      - name:", $uploadStart, [StringComparison]::Ordinal)
+$upload = if ($nextStep -lt 0) {
+    $contracts.Substring($uploadStart)
+} else {
+    $contracts.Substring($uploadStart, $nextStep - $uploadStart)
+}
+foreach ($required in @(
+        'if: ${{ failure() }}',
+        'uses: actions/upload-artifact@v4',
+        'name: translator-archive-failures-${{ github.run_id }}-${{ github.run_attempt }}',
+        'path: artifacts/translator-archive-failures/',
+        'if-no-files-found: ignore',
+        'retention-days: 14')) {
+    if (-not $upload.Contains($required)) {
+        throw "Translator failure-artifact handoff is missing '$required'."
+    }
+}
+
+$uploadPathMatch = [Regex]::Match($upload, '(?m)^          path:\s*(\S+)\s*$')
+if (-not $uploadPathMatch.Success) {
+    throw 'Translator evidence upload must declare one artifact directory.'
+}
+$uploadPath = $uploadPathMatch.Groups[1].Value.TrimEnd('/')
+$translatorTest = [IO.File]::ReadAllText((Join-Path $repository 'tests\Build.Tests\LocalizationTranslatorWorkflow.Tests.ps1'))
+$normalizedProducer = $translatorTest.Replace('\', '/')
+if (-not $normalizedProducer.Contains(
+        '$archiveEvidenceRoot = Join-Path $repository ' + "'" + $uploadPath + "'")) {
+    throw 'Translator archive producer and workflow uploader must use the same evidence directory.'
 }
 
 Write-Host 'CI build scope tests passed.'
