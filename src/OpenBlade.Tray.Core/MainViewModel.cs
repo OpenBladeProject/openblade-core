@@ -294,12 +294,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
-    private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
-    private bool useHigherFanTemperature = true;
-    private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
-        ManualFanCurve.Default.Cpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
-    private IReadOnlyList<FanCurveEditorPoint> gpuFanCurveEditorPoints =
-        ManualFanCurve.Default.Gpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
+    private readonly FanControlEditorState fanControlEditor = new();
     private IReadOnlyList<LiveReadingGroupDisplayItem> visibleDashboardTelemetryGroups = [];
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
@@ -2424,18 +2419,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public int FixedFanSpeedRpm
     {
-        get => fixedFanSpeedRpm;
-        set
-        {
-            int normalized = ActiveFanSpeedRange.Quantize(value);
-            if (fixedFanSpeedRpm == normalized)
-            {
-                return;
-            }
-
-            SetField(ref fixedFanSpeedRpm, normalized);
-            Notify(nameof(CurrentFanControlSettings));
-        }
+        get => fanControlEditor.FixedSpeedRpm;
+        set => NotifyFanControlEditorChanges(
+            fanControlEditor.SetFixedSpeed(value, ActiveFanSpeedRange));
     }
 
     public int FixedFanSpeedMinimumRpm => ActiveFanSpeedRange.MinimumRpm;
@@ -2451,24 +2437,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool UseHigherFanTemperature
     {
-        get => useHigherFanTemperature;
-        set
-        {
-            if (useHigherFanTemperature == value)
-            {
-                return;
-            }
-
-            SetField(ref useHigherFanTemperature, value);
-            Notify(nameof(CurrentFanControlSettings));
-        }
+        get => fanControlEditor.UseHigherTemperature;
+        set => NotifyFanControlEditorChanges(fanControlEditor.SetUseHigherTemperature(value));
     }
 
     public IReadOnlyList<FanCurveEditorPoint> CpuFanCurveEditorPoints =>
-        cpuFanCurveEditorPoints;
+        fanControlEditor.CpuPoints;
 
     public IReadOnlyList<FanCurveEditorPoint> GpuFanCurveEditorPoints =>
-        gpuFanCurveEditorPoints;
+        fanControlEditor.GpuPoints;
 
     public bool IsFixedFanSpeedVisible => SelectedFanMode == FanMode.Fixed;
 
@@ -2621,52 +2598,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanEditGamingMode =>
         CanMutate && SupportsGamingMode && !IsGamingModeFieldLoading;
 
-    public FanControlSettings CurrentFanControlSettings => new(
-        SelectedFanMode,
-        FixedFanSpeedRpm,
-        new ManualFanCurve(
-            CpuFanCurveEditorPoints.Select(point => point.ToValue()).ToArray(),
-            GpuFanCurveEditorPoints.Select(point => point.ToValue()).ToArray(),
-            UseHigherFanTemperature));
+    public FanControlSettings CurrentFanControlSettings =>
+        fanControlEditor.ToSettings(SelectedFanMode);
 
-    public void UpdateFanCurvePoint(FanCurveEditorPoint point, int speedRpm)
-    {
-        ArgumentNullException.ThrowIfNull(point);
-        IReadOnlyList<FanCurveEditorPoint> source = CpuFanCurveEditorPoints.Contains(point)
-            ? CpuFanCurveEditorPoints
-            : GpuFanCurveEditorPoints.Contains(point)
-                ? GpuFanCurveEditorPoints
-                : throw new ArgumentException(
-                    "The fan-curve point does not belong to the active editor.",
-                    nameof(point));
-        int index = source.ToList().IndexOf(point);
-        FanSpeedRange range = ActiveFanSpeedRange;
-        int minimum = index == 0
-            ? range.MinimumRpm
-            : source[index - 1].SpeedRpm;
-        int maximum = index == source.Count - 1
-            ? range.MaximumRpm
-            : source[index + 1].SpeedRpm;
-        point.SpeedRpm = Math.Clamp(
-            range.Quantize(speedRpm),
-            minimum,
-            maximum);
-        if (ReferenceEquals(source, CpuFanCurveEditorPoints))
-        {
-            cpuFanCurveEditorPoints = source
-                .Select(value => new FanCurveEditorPoint(value.ToValue()))
-                .ToArray();
-            Notify(nameof(CpuFanCurveEditorPoints));
-        }
-        else
-        {
-            gpuFanCurveEditorPoints = source
-                .Select(value => new FanCurveEditorPoint(value.ToValue()))
-                .ToArray();
-            Notify(nameof(GpuFanCurveEditorPoints));
-        }
-        Notify(nameof(CurrentFanControlSettings));
-    }
+    public void UpdateFanCurvePoint(FanCurveEditorPoint point, int speedRpm) =>
+        NotifyFanControlEditorChanges(
+            fanControlEditor.UpdatePoint(point, speedRpm, ActiveFanSpeedRange));
 
     public LightingSettings SelectedLighting
     {
@@ -2791,11 +2728,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             observation = observation with { Capabilities = value };
             Notify(nameof(Capabilities));
             RefreshCustomPerformanceOptions();
-            int normalizedFanSpeed = ActiveFanSpeedRange.Quantize(fixedFanSpeedRpm);
-            SetField(
-                ref fixedFanSpeedRpm,
-                normalizedFanSpeed,
-                nameof(FixedFanSpeedRpm));
+            if (fanControlEditor.SetFixedSpeed(FixedFanSpeedRpm, ActiveFanSpeedRange)
+                != FanControlEditorChanges.None)
+            {
+                Notify(nameof(FixedFanSpeedRpm));
+            }
             Notify(nameof(FixedFanSpeedMinimumRpm));
             Notify(nameof(FixedFanSpeedMaximumRpm));
             Notify(nameof(FixedFanSpeedStepRpm));
@@ -9054,66 +8991,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : desired;
     }
 
-    private void LoadFanControlEditor(FanControlSettings value)
+    private void LoadFanControlEditor(FanControlSettings value) =>
+        NotifyFanControlEditorChanges(fanControlEditor.Load(value, ActiveFanSpeedRange));
+
+    private void NotifyFanControlEditorChanges(FanControlEditorChanges changes)
     {
-        FanSpeedRange range = ActiveFanSpeedRange;
-        int fixedSpeedRpm = range.Quantize(value.FixedSpeedRpm);
-        bool changed = fixedFanSpeedRpm != fixedSpeedRpm
-            || useHigherFanTemperature != value.ManualCurve.UseHigherTemperatureForBoth;
-        SetField(ref fixedFanSpeedRpm, fixedSpeedRpm, nameof(FixedFanSpeedRpm));
-        SetField(
-            ref useHigherFanTemperature,
-            value.ManualCurve.UseHigherTemperatureForBoth,
-            nameof(UseHigherFanTemperature));
-        // Keep the bound editor points when the curve is unchanged so a status
-        // refresh neither re-templates the sliders nor republishes the editor.
-        if (!FanCurveEditorPointsMatch(cpuFanCurveEditorPoints, value.ManualCurve.Cpu, range))
+        if ((changes & FanControlEditorChanges.FixedSpeed) != 0)
         {
-            cpuFanCurveEditorPoints = CreateFanCurveEditorPoints(value.ManualCurve.Cpu, range);
+            Notify(nameof(FixedFanSpeedRpm));
+        }
+        if ((changes & FanControlEditorChanges.UseHigherTemperature) != 0)
+        {
+            Notify(nameof(UseHigherFanTemperature));
+        }
+        if ((changes & FanControlEditorChanges.CpuPoints) != 0)
+        {
             Notify(nameof(CpuFanCurveEditorPoints));
-            changed = true;
         }
-        if (!FanCurveEditorPointsMatch(gpuFanCurveEditorPoints, value.ManualCurve.Gpu, range))
+        if ((changes & FanControlEditorChanges.GpuPoints) != 0)
         {
-            gpuFanCurveEditorPoints = CreateFanCurveEditorPoints(value.ManualCurve.Gpu, range);
             Notify(nameof(GpuFanCurveEditorPoints));
-            changed = true;
         }
-        if (changed)
+        if (changes != FanControlEditorChanges.None)
         {
             Notify(nameof(CurrentFanControlSettings));
         }
-    }
-
-    private static FanCurveEditorPoint[] CreateFanCurveEditorPoints(
-        IReadOnlyList<FanCurvePoint> points,
-        FanSpeedRange range) =>
-        points
-            .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
-                point.TemperatureCelsius,
-                range.Quantize(point.SpeedRpm))))
-            .ToArray();
-
-    private static bool FanCurveEditorPointsMatch(
-        IReadOnlyList<FanCurveEditorPoint> current,
-        IReadOnlyList<FanCurvePoint> incoming,
-        FanSpeedRange range)
-    {
-        if (current.Count != incoming.Count)
-        {
-            return false;
-        }
-
-        for (int index = 0; index < current.Count; index++)
-        {
-            if (current[index].TemperatureCelsius != incoming[index].TemperatureCelsius
-                || current[index].SpeedRpm != range.Quantize(incoming[index].SpeedRpm))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private void SetEditorField<T>(
