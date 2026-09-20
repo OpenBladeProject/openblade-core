@@ -5,6 +5,57 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task LightingModeRegression_BoundModeChangeCommitsIntentionalBlack(
+        bool starlight,
+        bool startsDual)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var secondary = new RgbColor(78, 90, 123);
+        LightingSettings lighting = starlight
+            ? startsDual
+                ? LightingSettingsFactory.StarlightDual(default, secondary, 63, StarlightLightingDuration.Long)
+                : LightingSettingsFactory.StarlightSingle(default, 63, StarlightLightingDuration.Long)
+            : startsDual
+                ? LightingSettingsFactory.BreathingDual(default, secondary, 63)
+                : LightingSettingsFactory.BreathingSingle(default, 63);
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+            });
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = lighting },
+        });
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState);
+        Assert.Equal(lighting, viewModel.LightingDraft);
+
+        if (starlight)
+        {
+            viewModel.LightingStarlightColorModeEditor = startsDual
+                ? StarlightColorMode.Single : StarlightColorMode.Dual;
+        }
+        else
+        {
+            viewModel.LightingBreathingColorModeEditor = startsDual
+                ? BreathingColorMode.Single : BreathingColorMode.Dual;
+        }
+
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.Equal(default, viewModel.LightingPrimaryColorEditor);
+        LightingSettings draft = viewModel.LightingDraft;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(draft, client.LightingOverride?.Value);
+        Assert.Equal(default, client.LightingOverride!.Value.Color);
+    }
+
     [Fact]
     public async Task LightingColorRegression_RandomTidalStatusRoundTripsAndCommitsStoredPrimary()
     {

@@ -350,6 +350,89 @@ public sealed class LightingEditorStateTests
         Assert.Equal(choice.SecondaryColor, selected.SecondaryColor);
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public void LightingModeRegression_ColoredModesPreservePrimary(
+        bool starlight,
+        bool startsDual,
+        bool nonblack)
+    {
+        var editor = new LightingEditorState();
+        RgbColor primary = nonblack ? new RgbColor(12, 34, 56) : default;
+        var secondary = new RgbColor(78, 90, 123);
+        LightingSettings initial = starlight
+            ? startsDual
+                ? LightingSettingsFactory.StarlightDual(primary, secondary, 63, StarlightLightingDuration.Long)
+                : LightingSettingsFactory.StarlightSingle(primary, 63, StarlightLightingDuration.Long)
+            : startsDual
+                ? LightingSettingsFactory.BreathingDual(primary, secondary, 63)
+                : LightingSettingsFactory.BreathingSingle(primary, 63);
+        editor.Load(initial);
+
+        if (starlight)
+        {
+            editor.StarlightColorMode = startsDual ? StarlightColorMode.Single : StarlightColorMode.Dual;
+        }
+        else
+        {
+            editor.BreathingColorMode = startsDual ? BreathingColorMode.Single : BreathingColorMode.Dual;
+        }
+
+        Assert.Equal(primary, editor.PrimaryColor);
+        Assert.Equal(primary, editor.ToSettings().Color);
+        Assert.Equal(63, editor.Brightness);
+        Assert.True(editor.IsDirty);
+        Assert.Equal(startsDual ? secondary : nonblack ? primary : new RgbColor(255, 0, 170),
+            editor.SecondaryColor);
+        if (starlight)
+        {
+            Assert.Equal(StarlightLightingDuration.Long, editor.StarlightDuration);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public void LightingModeRegression_RandomToColoredRetainsExistingDefaultPolicy(
+        bool starlight,
+        bool toDual,
+        bool nonblack)
+    {
+        var editor = new LightingEditorState();
+        RgbColor retained = nonblack ? new RgbColor(12, 34, 56) : default;
+        editor.Load(starlight
+            ? LightingSettingsFactory.StarlightSingle(retained, 63, StarlightLightingDuration.Long)
+            : LightingSettingsFactory.BreathingSingle(retained, 63));
+        if (starlight)
+        {
+            editor.StarlightColorMode = StarlightColorMode.Random;
+            editor.StarlightColorMode = toDual ? StarlightColorMode.Dual : StarlightColorMode.Single;
+        }
+        else
+        {
+            editor.BreathingColorMode = BreathingColorMode.Random;
+            editor.BreathingColorMode = toDual ? BreathingColorMode.Dual : BreathingColorMode.Single;
+        }
+
+        Assert.Equal(nonblack ? retained : LightingSettingsFactory.DefaultVisibleColor, editor.PrimaryColor);
+        Assert.Equal(nonblack ? retained : toDual ? new RgbColor(255, 0, 170) : default,
+            editor.SecondaryColor);
+        Assert.Equal(63, editor.Brightness);
+    }
+
     [Fact]
     public void InvalidValues_DoNotChangeOrDirtyTheEditor()
     {
