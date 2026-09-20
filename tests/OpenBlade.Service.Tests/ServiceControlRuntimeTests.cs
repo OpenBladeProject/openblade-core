@@ -9430,6 +9430,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         context.Device.ReadStateFailure = new IOException("device vanished");
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Contains(
@@ -9446,6 +9448,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
 
         context.Device.ReadStateFailure = null;
         context.Provider.Available = false;
@@ -9453,6 +9457,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Contains("Checking the laptop connection", context.Runtime.GetStatus().Message);
+        Assert.Equal(DeviceObservationReason.CheckingConnection,
+            context.Runtime.GetStatus().ObservationReason);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
 
@@ -9465,8 +9471,180 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Theory]
+    [InlineData(true, DeviceObservationReason.CheckingConnection)]
+    [InlineData(false, DeviceObservationReason.RefreshingControls)]
+    public async Task ObservationReason_PreservesMetadataAndPreWriteFailureUntilFreshRecovery(
+        bool probeFailure,
+        DeviceObservationReason expected)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = !probeFailure;
+        context.Device.ReadStateFailure = probeFailure
+            ? null
+            : new IOException("arbitrary localized device error");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+        string transientMessage = context.Runtime.GetStatus().Message;
+
+        await context.Runtime.SetExternalLightingOverridePolicyAsync(
+            false, CancellationToken.None);
+        await context.Runtime.UpdateProfilesAsync(
+            context.Runtime.GetStatus().Profiles, CancellationToken.None);
+        Assert.NotEqual(transientMessage, context.Runtime.GetStatus().Message);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+
+        context.Provider.Available = false;
+        ControlOperationResult blocked = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(), OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+
+        context.Provider.Available = true;
+        context.Device.ReadStateFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData(DeviceObservationReason.CheckingConnection)]
+    [InlineData(DeviceObservationReason.RefreshingControls)]
+    [InlineData(DeviceObservationReason.RetainedPowerSource)]
+    public void ObservationReason_OnlyChangeAdvancesRevisionAndPublishes(
+        DeviceObservationReason reason)
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        ServiceStatusSnapshot baseline = context.Runtime.GetStatus();
+        ServiceStatusSnapshot changed = baseline with { ObservationReason = reason };
+        Assert.False(ServiceControlRuntime.Equivalent(baseline, changed));
+        int publications = context.Hub.Published.Count;
+        typeof(ServiceControlRuntime).GetMethod(
+            "PublishIfChanged",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(context.Runtime, [changed, true]);
+
+        Assert.Equal(baseline.Revision + 1, context.Runtime.GetStatus().Revision);
+        Assert.Equal(baseline.Message, context.Runtime.GetStatus().Message);
+        Assert.Equal(reason, context.Runtime.GetStatus().ObservationReason);
+        Assert.Equal(publications + 1, context.Hub.Published.Count);
+        Assert.Equal(reason, context.Hub.Published.Last().ObservationReason);
+    }
+
+    [Fact]
+    public async Task ObservationReason_StoredPerformanceIntentPreservesCachedObservation()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        context.Device.ReadStateFailure = new IOException("arbitrary device-access detail");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
+        int writesBefore = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource.FunctionP, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(writesBefore, context.Device.TotalSetterCalls);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ObservationReason_ConfirmedOrUnavailablePowerTransitionClearsTransientReason(
+        bool unavailable)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.CheckingConnection,
+            context.Runtime.GetStatus().ObservationReason);
+
+        context.Provider.Available = !unavailable;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
+        Assert.Equal(!unavailable, context.Runtime.GetStatus().DeviceVerified);
+    }
+
+    [Fact]
+    public async Task ObservationReason_PowerRecoverySurvivesPreferenceMessageReplacement()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource,
+            context.Runtime.GetStatus().ObservationReason);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        string transientMessage = context.Runtime.GetStatus().Message;
+
+        await context.Runtime.SetExternalLightingOverridePolicyAsync(
+            false, CancellationToken.None);
+        Assert.NotEqual(transientMessage, context.Runtime.GetStatus().Message);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource,
+            context.Runtime.GetStatus().ObservationReason);
+
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData(true, DeviceObservationReason.CheckingConnection)]
+    [InlineData(false, DeviceObservationReason.RefreshingControls)]
+    public async Task ObservationReason_PowerOnlyRefreshPreservesDeviceUncertainty(
+        bool probeFailure,
+        DeviceObservationReason expected)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = !probeFailure;
+        context.Device.ReadStateFailure = probeFailure
+            ? null
+            : new IOException("a device read failed");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        context.Provider.Available = true;
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        context.Device.ReadStateFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -18584,6 +18762,55 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
+    [Theory]
+    [InlineData(true, DeviceObservationReason.CheckingConnection)]
+    [InlineData(false, DeviceObservationReason.RefreshingControls)]
+    public async Task ObservationReason_SuccessfulHyperBoostClearsTransientObservation(
+        bool probeFailure,
+        DeviceObservationReason expected)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent));
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = !probeFailure;
+        context.Device.ReadStateFailure = probeFailure
+            ? null
+            : new IOException("arbitrary transient observation error");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(expected, context.Runtime.GetStatus().ObservationReason);
+
+        context.Provider.Available = true;
+        context.Device.ReadStateFailure = null;
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.True(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
+    }
+
+    [Fact]
+    public async Task ObservationReason_HyperBoostRecoveryWithoutSavedIntentPreservesUncertainty()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailure = new IOException("arbitrary transient observation error");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
+
+        ControlOperationResult result = await context.Runtime.RecoverHyperBoostRestoreAsync(
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
+    }
+
     [Fact]
     public async Task PadlessHyperBoost_EnablesFromBalancedWhenAbsenceIsFresh()
     {
@@ -24311,11 +24538,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             HyperBoostOwnershipJournalState.RestorePending,
             journal.Journal?.State);
 
+        context.Device.ReadStateFailure = new IOException("arbitrary transient restore observation error");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(DeviceObservationReason.RefreshingControls,
+            context.Runtime.GetStatus().ObservationReason);
+        context.Device.ReadStateFailure = null;
+
         ControlOperationResult recovered =
             await context.Runtime.RecoverHyperBoostRestoreAsync(
                 CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Applied, recovered.Status);
+        Assert.Equal(DeviceObservationReason.None,
+            context.Runtime.GetStatus().ObservationReason);
         Assert.Equal(settersAfterFailure + 1, context.Device.TotalSetterCalls);
         Assert.Equal(
             PerformancePreset.Performance,

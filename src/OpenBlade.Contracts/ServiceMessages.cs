@@ -375,6 +375,15 @@ public enum DisplayBrightnessHidAvailability
     Unavailable,
 }
 
+// Describes retained observation evidence, never authority to submit a write.
+public enum DeviceObservationReason
+{
+    None = 0,
+    CheckingConnection = 1,
+    RefreshingControls = 2,
+    RetainedPowerSource = 3,
+}
+
 public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
@@ -414,6 +423,10 @@ public sealed record ServiceStatusSnapshot(
         DisplayBrightnessHidAvailability.Unknown,
     LightingRefreshRate LightingRefreshRate = LightingRefreshRate.ThirtyHz)
 {
+    // Missing values mean no transient-observation exception. Diagnostic text
+    // must never be interpreted as a substitute for this typed state.
+    public DeviceObservationReason ObservationReason { get; init; }
+
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 
     public FanControlSettings? FanControlOverride { get; init; }

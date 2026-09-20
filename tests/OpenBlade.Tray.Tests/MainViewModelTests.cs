@@ -3052,8 +3052,10 @@ public sealed partial class MainViewModelTests
     public async Task TransientFirmwareRefreshKeepsCurrentOneShotSelectionsWhileLoading()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
+        int completedCalls;
         ServiceStatusSnapshot status = CreateStatus(
             verified: true,
             blocked: false,
@@ -3077,12 +3079,16 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
             GamingModeEnabled = true,
         };
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(status);
-        await WaitUntilAsync(() => viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.MultimediaKeys);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.MultimediaKeys);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(status with
         {
             Revision = status.Revision + 1,
+            ObservationReason = DeviceObservationReason.RefreshingControls,
             Message = "Refreshing laptop controls after a temporary device-access failure.",
             WritesBlocked = true,
             Capabilities = DeviceCapabilities.Unavailable(),
@@ -3090,7 +3096,8 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = null,
             GamingModeEnabled = null,
         });
-        await WaitUntilAsync(() => viewModel.IsFunctionKeyFieldLoading);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.IsFunctionKeyFieldLoading);
 
         Assert.True(viewModel.SupportsStartupAnimation);
         Assert.True(viewModel.SupportsFunctionKeyPrimary);
@@ -3105,6 +3112,7 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.CanEditGamingMode);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(status with
         {
             Revision = status.Revision + 2,
@@ -3112,7 +3120,10 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
             GamingModeEnabled = false,
         });
-        await WaitUntilAsync(() => viewModel.CanEditGamingMode);
+        // Pending flags intentionally change before the bound readback values.
+        // Wait for the full dispatcher action before asserting recovered selections.
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.CanEditGamingMode);
 
         Assert.False(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal(FunctionKeyPrimaryMode.FunctionKeys, viewModel.FunctionKeyPrimary);
@@ -3123,6 +3134,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.CanEditStartupAnimation);
         Assert.True(viewModel.CanEditFunctionKeyPrimary);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(status with
         {
             Revision = status.Revision + 3,
@@ -3135,7 +3147,8 @@ public sealed partial class MainViewModelTests
             FunctionKeyPrimary = null,
             GamingModeEnabled = null,
         });
-        await WaitUntilAsync(() => !viewModel.SupportsFunctionKeyPrimary
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && !viewModel.SupportsFunctionKeyPrimary
             && viewModel.FunctionKeyPrimary is null);
 
         Assert.False(viewModel.SupportsStartupAnimation);
@@ -7057,6 +7070,7 @@ public sealed partial class MainViewModelTests
         {
             Revision = 2,
             ActivePowerSource = PowerSource.UsbC,
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
             Message = "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
         });
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
@@ -7174,8 +7188,10 @@ public sealed partial class MainViewModelTests
     public async Task TemporaryDeviceProbeFailure_IsPresentedAsCheckingWithoutLosingValues()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
+        int completedCalls;
         LightingSettings lighting = LightingSettingsFactory.Reactive(
             new RgbColor(0, 170, 255),
             64,
@@ -7192,14 +7208,17 @@ public sealed partial class MainViewModelTests
             },
             LightingRendererOwnership = LightingRendererOwnershipState.Reactive,
         };
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.IsConnected && viewModel.IsReadinessReady);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.IsConnected && viewModel.IsReadinessReady);
         string performance = viewModel.ActivePerformanceLabel;
         string fans = viewModel.ActiveFanModeLabel;
         Assert.Equal(LightingEffect.Reactive, viewModel.LightingEffectEditor);
         Assert.Equal(64, viewModel.LightingBrightnessEditor);
         Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(baseline with
         {
             Revision = 2,
@@ -7208,10 +7227,11 @@ public sealed partial class MainViewModelTests
             Capabilities = DeviceCapabilities.Unavailable(),
             ConfirmedState = baseline.ConfirmedState! with { Lighting = null },
             LightingRendererOwnership = LightingRendererOwnershipState.None,
-            Message = "Checking the laptop connection after a temporary device-access failure.",
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+            Message = "Device observation is pending.",
         });
-        await WaitUntilAsync(() =>
-            viewModel.ProfileStateLabel == "Checking laptop"
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.ProfileStateLabel == "Checking laptop"
             && viewModel.PerformanceSourceLabel == "Checking laptop"
             && viewModel.FanSourceLabel == "Checking laptop"
             && viewModel.LightingSourceLabel == "Checking laptop"
@@ -7232,12 +7252,15 @@ public sealed partial class MainViewModelTests
         Assert.Equal(64, viewModel.LightingBrightnessEditor);
         Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(CreateStatus(verified: true, blocked: true) with
         {
             Revision = 3,
-            Message = "Refreshing laptop controls after a temporary device-access failure. Last read failed.",
+            ObservationReason = DeviceObservationReason.RefreshingControls,
+            Message = "Device observation is pending.",
         });
-        await WaitUntilAsync(() => viewModel.ControlAccessStatus == "Checking laptop");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.ControlAccessStatus == "Checking laptop");
 
         Assert.Equal("Checking laptop", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessChecking);
@@ -7250,12 +7273,15 @@ public sealed partial class MainViewModelTests
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(CreateStatus(verified: false, blocked: true) with
         {
             Revision = 4,
-            Message = "Checking the laptop connection after a temporary device-access failure.",
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+            Message = "Device observation is pending.",
         });
-        await WaitUntilAsync(() => viewModel.ControlAccessStatus == "Checking laptop");
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.ControlAccessStatus == "Checking laptop");
 
         Assert.Equal("Checking laptop", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessChecking);
@@ -7271,14 +7297,34 @@ public sealed partial class MainViewModelTests
         Assert.Equal("Checking laptop", viewModel.BatterySourceLabel);
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+        completedCalls = dispatcher.CompletedCalls;
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            Revision = 5,
+            Capabilities = DeviceCapabilities.Unavailable(),
+            ObservationReason = DeviceObservationReason.None,
+            Message = "Checking the laptop connection after a temporary device-access failure.",
+        });
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.IsReadinessError);
+
+        Assert.False(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.CanRequestHardwareControl);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.Empty(viewModel.AvailablePerformancePresets);
+        Assert.Empty(viewModel.AvailableFanModes);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
     }
 
     [Fact]
     public async Task RetainedPowerSourceRecheck_KeepsKnownManualControlsAvailable()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
+        int completedCalls;
 
         ServiceStatusSnapshot ready = CreateStatus(verified: true, blocked: false) with
         {
@@ -7288,18 +7334,22 @@ public sealed partial class MainViewModelTests
                 Fans = FanMode.Automatic,
             },
         };
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(ready);
-        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.CanControlHardware);
 
+        completedCalls = dispatcher.CompletedCalls;
         client.Publish(ready with
         {
             Revision = 2,
             WritesBlocked = true,
-            Message = "Power adapter classification is temporarily unavailable; " +
-                "the last confirmed power source is retained and control writes are blocked.",
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            Message = "Power observation is pending.",
             Capabilities = DeviceCapabilities.Unavailable(),
         });
-        await WaitUntilAsync(() => viewModel.IsReadinessReady && !viewModel.CanControlHardware);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.IsReadinessReady && !viewModel.CanControlHardware);
 
         Assert.True(viewModel.CanRequestHardwareControl);
         Assert.True(viewModel.IsPerformanceVisible);
@@ -7311,6 +7361,24 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.CanChangeBatteryProtection);
         Assert.True(viewModel.CanAdjustChargeLimit);
         Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
+
+        completedCalls = dispatcher.CompletedCalls;
+        client.Publish(ready with
+        {
+            Revision = 3,
+            WritesBlocked = true,
+            ObservationReason = DeviceObservationReason.None,
+            Message = "The last confirmed power source is retained.",
+        });
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
+            && viewModel.IsReadinessWarning);
+
+        Assert.False(viewModel.CanRequestHardwareControl);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.CanAdjustChargeLimit);
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
     }
 
     [Fact]
@@ -7417,6 +7485,7 @@ public sealed partial class MainViewModelTests
             Revision = status.Revision + 1,
             DeviceVerified = false,
             WritesBlocked = true,
+            ObservationReason = DeviceObservationReason.CheckingConnection,
             Message = "Checking laptop connection.",
         });
         await WaitUntilAsync(() =>
@@ -9688,6 +9757,7 @@ public sealed partial class MainViewModelTests
         {
             Revision = admitted.Revision + 1,
             WritesBlocked = true,
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
             Message =
                 "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
             ControlAccess = SessionControlAccess.Active,

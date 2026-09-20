@@ -64,18 +64,12 @@ internal sealed record DeviceObservationState
             DeviceVerified: true,
             WritesBlocked: true,
             ActivePowerSource: PowerSource.PluggedIn or PowerSource.UsbC,
-        }
-        && status.Message.Contains(
-            "last confirmed power source is retained",
-            StringComparison.OrdinalIgnoreCase);
+            ObservationReason: DeviceObservationReason.RetainedPowerSource,
+        };
 
     public static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
-        status is not null
-        && (status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
-                && status.Message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
-            || status.Message.StartsWith(
-                "Refreshing laptop controls after a temporary device-access failure",
-                StringComparison.OrdinalIgnoreCase));
+        status?.ObservationReason is
+            DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls;
 
     private static bool HasAnyCapability(DeviceCapabilities capabilities) =>
         capabilities.PerformancePresets.Count > 0

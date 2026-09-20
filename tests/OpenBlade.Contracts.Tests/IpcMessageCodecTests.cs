@@ -518,7 +518,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(54, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(55, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1105,7 +1105,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(54, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(55, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2181,6 +2181,7 @@ public sealed class IpcMessageCodecTests
         ServiceStatusSnapshot status = CreateStatus() with
         {
             WritesBlocked = false,
+            ObservationReason = DeviceObservationReason.RefreshingControls,
             ThermalConvergence = new ThermalConvergenceStatus(
                 ThermalControlPolicy.MaintainDesiredState,
                 ThermalPolicyUpgradeDisclosureState.Acknowledged,
@@ -2200,11 +2201,106 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(51, root["version"]!.GetValue<int>());
         JsonObject projected = Assert.IsType<JsonObject>(root["status"]);
         Assert.True(projected["writesBlocked"]!.GetValue<bool>());
-        Assert.Null(projected["thermalConvergence"]);
+        Assert.False(projected.ContainsKey("thermalConvergence"));
+        Assert.False(projected.ContainsKey("observationReason"));
         Assert.Contains(
             "Update or repair",
             projected["message"]!.GetValue<string>(),
             StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(DeviceObservationReason.None)]
+    [InlineData(DeviceObservationReason.CheckingConnection)]
+    [InlineData(DeviceObservationReason.RefreshingControls)]
+    [InlineData(DeviceObservationReason.RetainedPowerSource)]
+    public async Task ObservationReason_RoundTripsIndependentlyOfDiagnosticText(
+        DeviceObservationReason reason)
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            ObservationReason = reason,
+            Message = "Diagnostic wording may change.",
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(reason, actual.ObservationReason);
+        Assert.Equal(expected.Message, actual.Message);
+    }
+
+    [Fact]
+    public async Task ObservationReason_MissingDefaultsToNoneWithoutInferringFromMessage()
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with
+            {
+                ObservationReason = DeviceObservationReason.CheckingConnection,
+                Message = "Checking laptop connection.",
+            }), CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        Assert.True(Assert.IsType<JsonObject>(json["status"]).Remove("observationReason"));
+
+        using MemoryStream missing = FrameJson(json.ToJsonString());
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(missing, CancellationToken.None));
+
+        Assert.Equal(DeviceObservationReason.None, actual.Status.ObservationReason);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    [InlineData(int.MaxValue)]
+    public async Task ObservationReason_RejectsUndefinedValuesOnReadAndWrite(int reason)
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            ObservationReason = (DeviceObservationReason)reason,
+        });
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus()),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        json["status"]!["observationReason"] = reason;
+        using MemoryStream invalid = FrameJson(json.ToJsonString());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(invalid, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PreviousProtocolStatus_IsRejectedBeforeNewObservationStateIsUsed()
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus()),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        json["version"] = 54;
+        Assert.True(Assert.IsType<JsonObject>(json["status"]).Remove("observationReason"));
+        using MemoryStream previous = FrameJson(json.ToJsonString());
+
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(previous, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PreviousProtocolRequest_IsRejectedByNormalAndCompatibilityReaders()
+    {
+        string json = $$"""
+            {"operation":"getStatus","version":54,"requestId":"{{Guid.NewGuid()}}"}
+            """;
+        using MemoryStream normal = FrameJson(json);
+        using MemoryStream compatibility = FrameJson(json);
+
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
+            IpcMessageCodec.ReadRequestAsync(normal, CancellationToken.None));
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
+            IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(
+                compatibility, CancellationToken.None));
     }
 
     private static MemoryStream FrameJson(string json)
@@ -2587,6 +2683,7 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
         Assert.Equal(expected.UnconfirmedWrites, actual.UnconfirmedWrites);
         Assert.Equal(expected.Message, actual.Message);
+        Assert.Equal(expected.ObservationReason, actual.ObservationReason);
         Assert.NotNull(expected.Capabilities);
         Assert.NotNull(actual.Capabilities);
         Assert.True(expected.Capabilities.PerformancePresets.SetEquals(actual.Capabilities.PerformancePresets));

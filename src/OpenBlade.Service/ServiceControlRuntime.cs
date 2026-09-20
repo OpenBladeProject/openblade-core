@@ -3284,6 +3284,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             ConfirmedState = confirmed ?? current.ConfirmedState,
+            ObservationReason = status == ControlOperationStatus.Applied && confirmed is not null
+                ? DeviceObservationReason.None
+                : current.ObservationReason,
             DesiredState = Automation.Resolve(effectiveConfirmed),
             ExternalChanges = driftTracker.ExternalChanges,
             WritesBlocked = hyperBoostJournalSafetyBlock
@@ -6068,6 +6071,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 ConfirmedState = readback,
                 ExternalChanges = driftTracker.ExternalChanges,
+                ObservationReason = result.Status == ControlOperationStatus.Applied
+                    ? DeviceObservationReason.None
+                    : current.ObservationReason,
                 Message = result.Message,
             });
             return result;
@@ -10343,6 +10349,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             ActivePowerSource = powerSource,
+            ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                ? DeviceObservationReason.None
+                : current.ObservationReason,
             WritesBlocked = false,
             DesiredState = Automation.Resolve(confirmed),
             Message =
@@ -10475,6 +10484,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishIfChanged(current with
                 {
                     ActivePowerSource = statusPowerSource,
+                    ObservationReason = current.ObservationReason is
+                        DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls
+                        ? current.ObservationReason
+                        : statusPowerSource == PowerSource.ExternalUnknown
+                            ? DeviceObservationReason.None
+                            : DeviceObservationReason.RetainedPowerSource,
                     WritesBlocked = true,
                     Message = statusPowerSource == PowerSource.ExternalUnknown
                         ? UnclassifiedExternalPowerMessage
@@ -10509,15 +10524,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             if (current.ActivePowerSource != classified
-                || string.Equals(
-                    current.Message,
-                    TransientExternalPowerMessage,
-                    StringComparison.Ordinal))
+                || current.ObservationReason == DeviceObservationReason.RetainedPowerSource)
             {
                 PublishIfChanged(current with
                 {
                     ActivePowerSource = classified,
-                    WritesBlocked = false,
+                    ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                        ? DeviceObservationReason.None
+                        : current.ObservationReason,
+                    WritesBlocked = (current.ObservationReason is
+                        DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls)
+                        && current.WritesBlocked,
                     Message = "Power adapter classification recovered.",
                     DesiredState = Automation.Resolve(
                         current.ConfirmedState ?? UnknownConfirmedState),
@@ -13196,7 +13213,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 outcome.Capabilities ?? current.Capabilities,
                 canceledCommit.Message,
                 deviceVerified: !outcome.DeviceAccessFailed,
-                writesBlocked: outcome.DeviceAccessFailed);
+                writesBlocked: outcome.DeviceAccessFailed,
+                observationReason: DeviceObservationReason.None);
             throw;
         }
         catch (ConfigurationQuarantinedException)
@@ -13216,7 +13234,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 outcome.Capabilities ?? current.Capabilities,
                 failedCommit.Message,
                 deviceVerified: !outcome.DeviceAccessFailed,
-                writesBlocked: outcome.DeviceAccessFailed);
+                writesBlocked: outcome.DeviceAccessFailed,
+                observationReason: DeviceObservationReason.None);
             return ToOperationResult(failedCommit);
         }
 
@@ -13266,7 +13285,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : !outcome.DeviceAccessFailed,
             writesBlocked: preserveCurrentAvailability
                 ? current.WritesBlocked || pendingWriteConfirmations.HasPending
-                : outcome.DeviceAccessFailed || pendingWriteConfirmations.HasPending);
+                : outcome.DeviceAccessFailed || pendingWriteConfirmations.HasPending,
+            observationReason: !outcome.DeviceAccessFailed
+                && !outcome.ConfirmationUnavailable
+                && (outcome.Readback is not null || outcome.PreWriteState is not null)
+                    ? DeviceObservationReason.None
+                    : null);
         return ToOperationResult(outcome.Result);
     }
 
@@ -13544,6 +13568,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ActivePowerSource = powerSource,
             DeviceVerified = true,
             ConfirmedState = freshConfirmed,
+            ObservationReason = DeviceObservationReason.None,
             DesiredState = destinationIntent,
             ExternalChanges = driftTracker.ExternalChanges,
             WritesBlocked = pendingWriteConfirmations.HasPending
@@ -14434,7 +14459,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed
                 || pendingWriteConfirmations.HasPending
-                || !hyperBoostJournalRetired);
+                || !hyperBoostJournalRetired,
+            observationReason: !outcome.DeviceAccessFailed
+                && confirmationUnavailable.Count == 0
+                && (outcome.Readback is not null || outcome.PreWriteState is not null)
+                    ? DeviceObservationReason.None
+                    : null);
     }
 
     private async Task<string?> ApplyProfileLaptopBehaviorAsync(
@@ -15260,6 +15290,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             DeviceVerified = true,
             WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock,
+            ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
+                ? DeviceObservationReason.RetainedPowerSource
+                : DeviceObservationReason.None,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = !powerSourceConfirmed
                 ? powerSource == PowerSource.ExternalUnknown
@@ -15488,6 +15521,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             ActivePowerSource = powerSource,
+            ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                ? DeviceObservationReason.None
+                : current.ObservationReason,
             WritesBlocked = false,
             Message =
                 "The initial power adapter classification was recorded without hardware application during unexpected-exit recovery.",
@@ -16214,6 +16250,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             DeviceVerified = deviceVerified,
             WritesBlocked = true,
+            ObservationReason = DeviceObservationReason.None,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Profiles = Automation.Profiles,
@@ -16261,6 +16298,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             Message = "Checking the laptop connection after a temporary device-access failure.",
+            ObservationReason = DeviceObservationReason.CheckingConnection,
             ActivePowerSource = powerSource,
             LiveReadings = liveReadings,
         });
@@ -16275,6 +16313,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             Message = $"Refreshing laptop controls after a temporary device-access failure. {detail}",
+            ObservationReason = DeviceObservationReason.RefreshingControls,
             ActivePowerSource = powerSource,
             LiveReadings = liveReadings,
         });
@@ -16423,13 +16462,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities? capabilities,
         string message,
         bool deviceVerified,
-        bool writesBlocked)
+        bool writesBlocked,
+        DeviceObservationReason? observationReason = null)
     {
         ServiceStatusSnapshot current = GetStatus();
         PublishIfChanged(current with
         {
             DeviceVerified = deviceVerified,
             WritesBlocked = writesBlocked || hyperBoostJournalSafetyBlock,
+            // Stored intent and failed pre-write admission carry no new device
+            // evidence. Presentation text alone must not retire the reason.
+            ObservationReason = !deviceVerified
+                ? DeviceObservationReason.None
+                : observationReason ?? current.ObservationReason,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
             Capabilities = capabilities ?? UnavailableCapabilities,
@@ -18522,6 +18567,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             left.ThermalConvergence,
             right.ThermalConvergence)
         && left.Message == right.Message
+        && left.ObservationReason == right.ObservationReason
         && CapabilitiesEqual(left.Capabilities, right.Capabilities)
         && left.ConfirmedState == right.ConfirmedState
         && left.Profiles == right.Profiles

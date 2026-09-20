@@ -6,10 +6,34 @@ namespace OpenBlade.Tray.Tests;
 public sealed class DeviceObservationStateTests
 {
     [Theory]
+    [InlineData(DeviceObservationReason.CheckingConnection)]
+    [InlineData(DeviceObservationReason.RefreshingControls)]
+    [InlineData(DeviceObservationReason.RetainedPowerSource)]
+    public void Refresh_RetainsPriorCapabilitiesWhenIncomingCapabilitiesAreMissing(
+        DeviceObservationReason reason)
+    {
+        var observation = new DeviceObservationState
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults(),
+        };
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ObservationReason = reason,
+            Message = "Arbitrary presentation text.",
+        };
+
+        Assert.Same(observation.Capabilities, observation.ResolveCapabilities(status, true));
+        Assert.Same(
+            observation.Capabilities,
+            observation.ResolveCapabilities(status with { Capabilities = null }, true));
+        Assert.Same(status.Capabilities, observation.ResolveCapabilities(status, false));
+    }
+
+    [Theory]
     [InlineData("Checking laptop connection.")]
     [InlineData("Refreshing laptop controls after a temporary device-access failure.")]
     [InlineData("The last confirmed power source is retained while checking power.")]
-    public void Refresh_RetainsPriorCapabilitiesWhenIncomingCapabilitiesAreMissing(string message)
+    public void LegacyMessageWithoutReason_DoesNotRetainCapabilitiesOrChangeAdmission(string message)
     {
         var observation = new DeviceObservationState
         {
@@ -17,11 +41,9 @@ public sealed class DeviceObservationStateTests
         };
         ServiceStatusSnapshot status = CreateStatus() with { Message = message };
 
-        Assert.Same(observation.Capabilities, observation.ResolveCapabilities(status, true));
-        Assert.Same(
-            observation.Capabilities,
-            observation.ResolveCapabilities(status with { Capabilities = null }, true));
-        Assert.Same(status.Capabilities, observation.ResolveCapabilities(status, false));
+        Assert.Same(status.Capabilities, observation.ResolveCapabilities(status, true));
+        Assert.False(DeviceObservationState.IsCheckingLaptopConnection(status));
+        Assert.False(DeviceObservationState.IsRetainedPowerSourceRecheck(status));
     }
 
     [Theory]
@@ -45,7 +67,8 @@ public sealed class DeviceObservationStateTests
             DeviceVerified = verified,
             WritesBlocked = blocked,
             ActivePowerSource = source,
-            Message = "The last confirmed power source is retained.",
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            Message = "Arbitrary presentation text.",
         };
 
         Assert.Same(
@@ -72,7 +95,8 @@ public sealed class DeviceObservationStateTests
         };
         ServiceStatusSnapshot status = CreateStatus() with
         {
-            Message = "Checking laptop connection.",
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+            Message = "Arbitrary presentation text.",
             Capabilities = incoming,
         };
 
@@ -91,7 +115,11 @@ public sealed class DeviceObservationStateTests
             HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ObservedOnly,
         };
         var observation = new DeviceObservationState { Capabilities = observed };
-        ServiceStatusSnapshot status = CreateStatus() with { Message = "Checking laptop connection." };
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+            Message = "Arbitrary presentation text.",
+        };
 
         Assert.Same(observed, observation.ResolveCapabilities(status, true));
     }
