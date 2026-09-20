@@ -17966,16 +17966,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && !current.ExternalChanges.Contains(DeviceSubsystem.Fans)
             && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Performance)
             && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans)
-            && exactFanControlOwnership is
-            {
-                Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
-                Settings: { } ownedSettings,
-                AuthorityEpoch: var ownedEpoch,
-                DesiredRevision: var ownedRevision,
-            }
-            && ownedSettings == settings
-            && ownedEpoch == fanAuthorityEpoch
-            && ownedRevision == fanDesiredRevision;
+            && IsExactFanIntentOwned(settings);
     }
 
     private static bool FanControllerAdmissionUnsafe(ServiceStatusSnapshot current) =>
@@ -18178,30 +18169,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private bool IsExactFanIntentOwned(FanControlSettings settings) =>
-        exactFanControlOwnership is
-        {
-            Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
-            Settings: { } ownedSettings,
-            AuthorityEpoch: var authorityEpoch,
-            DesiredRevision: var desiredRevision,
-        }
-        && ownedSettings == settings
-        && authorityEpoch == fanAuthorityEpoch
-        && desiredRevision == fanDesiredRevision;
+        exactFanControlOwnership.Matches(
+            settings,
+            fanAuthorityEpoch,
+            fanDesiredRevision);
 
     private bool IsDeferredExactFanIntentOwned(
         DeferredManualFanSafetyOwnership ownership) =>
         ownership.Intent is { } expected
-        && exactFanControlOwnership is
-        {
-            Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
-            Settings: { } actual,
-            AuthorityEpoch: var authorityEpoch,
-            DesiredRevision: var desiredRevision,
-        }
-        && actual == expected
-        && authorityEpoch == ownership.AuthorityEpoch
-        && desiredRevision == ownership.DesiredRevision;
+        && exactFanControlOwnership.Matches(
+            expected,
+            ownership.AuthorityEpoch,
+            ownership.DesiredRevision);
 
     private static bool IsUnspentPreSubmission(
         ScopedApplyOutcome? outcome,
@@ -18226,19 +18205,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void ClassifyObservedFanTopology(FanMode? observed)
     {
-        if (observed == FanMode.Automatic)
+        ExactFanOwnershipTransition transition =
+            exactFanControlOwnership.ObserveTopology(observed);
+        if (transition.Ownership is { } ownership)
         {
-            exactFanControlOwnership = ExactFanControlOwnership.Unowned;
-            ClearLastFanCurveTargets();
-            return;
+            exactFanControlOwnership = ownership;
         }
-
-        if (observed is { } fans
-            && DeviceSubsystemOrder.IsManualFanMode(fans)
-            && exactFanControlOwnership.Disposition !=
-                ExactFanControlOwnershipDisposition.OwnedExactIntent)
+        if (transition.ClearCurveTargets)
         {
-            exactFanControlOwnership = ExactFanControlOwnership.ManualTopologyOnly;
             ClearLastFanCurveTargets();
         }
     }
@@ -18258,57 +18232,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         WriteSubmissionState? writeSubmissionState = null,
         bool confirmationUnavailable = false)
     {
-        bool confirmedAutomatic = requested.Mode == FanMode.Automatic
-            && (result.Status == ControlResultStatus.Unchanged
-                || result.Status == ControlResultStatus.Applied
-                    && readbackMatched);
-        if (confirmedAutomatic)
+        ExactFanOwnershipTransition transition =
+            exactFanControlOwnership.EvaluateOutcome(
+                requested.Mode,
+                result.Status,
+                writeAttempted,
+                readbackMatched,
+                allowFanOwnershipRearm,
+                writeSubmissionState,
+                confirmationUnavailable);
+        if (transition.RequiresLiveAdmission)
         {
-            exactFanControlOwnership = ExactFanControlOwnership.Unowned;
+            OwnExactFanIntent(requested);
+            return;
+        }
+
+        if (transition.Ownership is { } ownership)
+        {
+            exactFanControlOwnership = ownership;
+        }
+        if (transition.ClearCurveTargets)
+        {
             ClearLastFanCurveTargets();
-            return;
         }
-
-        if (writeSubmissionState == WriteSubmissionState.Indeterminate
-                && (writeAttempted || confirmationUnavailable)
-            || confirmationUnavailable
-                && writeAttempted
-                && result.Status != ControlResultStatus.Applied)
-        {
-            exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
-            ClearLastFanCurveTargets();
-            return;
-        }
-
-        if (result.Status == ControlResultStatus.Unchanged)
-        {
-            if (readbackMatched)
-            {
-                ClassifyObservedFanTopology(requested.Mode);
-            }
-            return;
-        }
-
-        if (result.Status != ControlResultStatus.Applied || !writeAttempted)
-        {
-            return;
-        }
-
-        if (!readbackMatched)
-        {
-            exactFanControlOwnership = ExactFanControlOwnership.SubmissionUnresolved;
-            ClearLastFanCurveTargets();
-            return;
-        }
-
-        if (exactFanControlOwnership.Disposition ==
-                ExactFanControlOwnershipDisposition.SubmissionUnresolved
-            && !allowFanOwnershipRearm)
-        {
-            return;
-        }
-
-        OwnExactFanIntent(requested);
     }
 
     private static bool IsIntentFailure(Exception exception) => exception is
@@ -18340,40 +18286,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IReadOnlySet<DeviceSubsystem> Dependencies,
         DateTimeOffset ExpiresAt);
 
-    private readonly record struct ExactFanControlOwnership(
-        ExactFanControlOwnershipDisposition Disposition,
-        FanControlSettings? Settings,
-        long AuthorityEpoch,
-        long DesiredRevision)
-    {
-        public static ExactFanControlOwnership Unowned { get; } = new(
-            ExactFanControlOwnershipDisposition.Unowned,
-            null,
-            AuthorityEpoch: -1,
-            DesiredRevision: -1);
-
-        public static ExactFanControlOwnership SubmissionUnresolved { get; } = new(
-            ExactFanControlOwnershipDisposition.SubmissionUnresolved,
-            null,
-            AuthorityEpoch: -1,
-            DesiredRevision: -1);
-
-        public static ExactFanControlOwnership ManualTopologyOnly { get; } = new(
-            ExactFanControlOwnershipDisposition.ManualTopologyOnly,
-            null,
-            AuthorityEpoch: -1,
-            DesiredRevision: -1);
-
-        public static ExactFanControlOwnership Owned(
-            FanControlSettings settings,
-            long authorityEpoch,
-            long desiredRevision) => new(
-                ExactFanControlOwnershipDisposition.OwnedExactIntent,
-                settings,
-                authorityEpoch,
-                desiredRevision);
-    }
-
     private sealed record ManualFanCurveAuthority(
         FanControlSettings Settings,
         DesiredDeviceState Desired,
@@ -18387,14 +18299,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     internal ExactFanControlOwnershipDisposition FanControlOwnershipDisposition =>
         exactFanControlOwnership.Disposition;
-
-    internal enum ExactFanControlOwnershipDisposition
-    {
-        Unowned,
-        ManualTopologyOnly,
-        OwnedExactIntent,
-        SubmissionUnresolved,
-    }
 
     private enum DeferredManualFanSafetyState
     {
