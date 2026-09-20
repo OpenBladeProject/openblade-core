@@ -236,6 +236,15 @@ foreach ($translatorPath in @(
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
         "Translator workflow path '$translatorPath' must run its adversarial contracts."
 }
+$snapshotEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'build/localization/LocalizationSnapshotFailureEvidence.cs')
+foreach ($linkedTestProject in @(
+        'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj',
+        'build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj')) {
+    Assert-Contains $snapshotEvidencePlan.TestProjects $linkedTestProject `
+        'A shared snapshot evidence change must run both linking test projects.'
+}
+
 $translatorEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')
 Assert-Contains $translatorEvidencePlan.ContractTests `

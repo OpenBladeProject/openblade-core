@@ -27,7 +27,7 @@ public sealed class LocalizationSnapshotFailureEvidenceTests
                 candidate);
 
             Assert.True(retained);
-            string directory = Path.Combine(root, "tray-main-home");
+            string directory = GetSingleEvidenceDirectory(root, "tray-main-home");
             Assert.Equal(previous, File.ReadAllBytes(Path.Combine(directory, "previous.bgra")));
             Assert.Equal(candidate, File.ReadAllBytes(Path.Combine(directory, "candidate.bgra")));
             using JsonDocument metadata = JsonDocument.Parse(
@@ -53,47 +53,69 @@ public sealed class LocalizationSnapshotFailureEvidenceTests
     }
 
     [Fact]
-    public void SeparateCaptureRootsPreserveEarlierFailureEvidence()
+    public void SameConfiguredRootPreservesConcurrentFailureEvidence()
     {
-        string parent = CreateTemporaryDirectory();
+        string root = CreateTemporaryDirectory();
         try
         {
-            string firstRoot = Path.Combine(parent, "first-capture");
-            string secondRoot = Path.Combine(parent, "second-capture");
             byte[] first = [1, 1, 1, 1];
             byte[] second = [2, 2, 2, 2];
+            bool firstRetained = false;
+            bool secondRetained = false;
 
-            Assert.True(LocalizationSnapshotFailureEvidence.TryWrite(
-                firstRoot,
-                "tray",
-                "main-home",
-                1,
-                1,
-                first,
-                1,
-                1,
-                first));
-            Assert.True(LocalizationSnapshotFailureEvidence.TryWrite(
-                secondRoot,
-                "tray",
-                "main-home",
-                1,
-                1,
-                second,
-                1,
-                1,
-                second));
+            Parallel.Invoke(
+                () => firstRetained = LocalizationSnapshotFailureEvidence.TryWrite(
+                    root,
+                    "tray",
+                    "main-home",
+                    1,
+                    1,
+                    first,
+                    1,
+                    1,
+                    first),
+                () => secondRetained = LocalizationSnapshotFailureEvidence.TryWrite(
+                    root,
+                    "tray",
+                    "main-home",
+                    1,
+                    1,
+                    second,
+                    1,
+                    1,
+                    second));
 
-            Assert.Equal(
-                first,
-                File.ReadAllBytes(Path.Combine(firstRoot, "tray-main-home", "previous.bgra")));
-            Assert.Equal(
-                second,
-                File.ReadAllBytes(Path.Combine(secondRoot, "tray-main-home", "previous.bgra")));
+            Assert.True(firstRetained);
+            Assert.True(secondRetained);
+            string stageDirectory = Path.Combine(root, "tray-main-home");
+            string[] failures = Directory.GetDirectories(stageDirectory);
+            Assert.Equal(2, failures.Length);
+            byte[][] retainedFrames = failures
+                .Select(directory =>
+                {
+                    byte[] previous = File.ReadAllBytes(
+                        Path.Combine(directory, "previous.bgra"));
+                    byte[] candidate = File.ReadAllBytes(
+                        Path.Combine(directory, "candidate.bgra"));
+                    Assert.Equal(previous, candidate);
+                    using JsonDocument metadata = JsonDocument.Parse(
+                        File.ReadAllText(Path.Combine(directory, "metadata.json")));
+                    Assert.Equal(
+                        Convert.ToHexString(SHA256.HashData(previous)).ToLowerInvariant(),
+                        metadata.RootElement.GetProperty("previous").GetProperty("sha256").GetString());
+                    Assert.Equal(
+                        Convert.ToHexString(SHA256.HashData(candidate)).ToLowerInvariant(),
+                        metadata.RootElement.GetProperty("candidate").GetProperty("sha256").GetString());
+                    return previous;
+                })
+                .OrderBy(bytes => bytes[0])
+                .ToArray();
+            Assert.Equal(first, retainedFrames[0]);
+            Assert.Equal(second, retainedFrames[1]);
         }
         finally
         {
-            Directory.Delete(parent, recursive: true);
+            Directory.Delete(root, recursive: true);
         }
     }
 
@@ -191,4 +213,7 @@ public sealed class LocalizationSnapshotFailureEvidenceTests
         Directory.CreateDirectory(path);
         return path;
     }
+
+    private static string GetSingleEvidenceDirectory(string root, string stage) =>
+        Assert.Single(Directory.GetDirectories(Path.Combine(root, stage)));
 }

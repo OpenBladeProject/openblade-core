@@ -65,10 +65,17 @@ internal static class LocalizationSnapshotFailureEvidence
         ValidateFrame(candidateWidth, candidateHeight, candidatePixels, nameof(candidatePixels));
 
         string root = Path.GetFullPath(evidenceRoot);
-        string directory = Path.GetFullPath(Path.Combine(root, surface + "-" + stage));
+        string stageDirectory = Path.GetFullPath(Path.Combine(root, surface + "-" + stage));
+        string directory = Path.GetFullPath(Path.Combine(
+            stageDirectory,
+            Guid.NewGuid().ToString("N")));
         string prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
-        if (!directory.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        string stagePrefix = stageDirectory.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!stageDirectory.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || !directory.StartsWith(stagePrefix, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Snapshot evidence path escaped its configured root.");
         }

@@ -34,6 +34,33 @@ function Get-SnapshotRelativePath {
     return $fullPath.Substring($prefix.Length)
 }
 
+function Write-SnapshotFailureEvidenceStatus {
+    param([Parameter(Mandatory)][string]$Root)
+
+    try {
+        if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+            Write-Warning "Snapshot failure evidence root does not exist: $Root" `
+                -WarningAction Continue
+            return
+        }
+        $metadata = @(Get-ChildItem -LiteralPath $Root -Filter 'metadata.json' `
+                -File -Recurse -ErrorAction Stop)
+        if ($metadata.Count -eq 0) {
+            Write-Warning (
+                "Snapshot failure evidence root exists but is partial " +
+                "(metadata.json completion marker absent): $Root") `
+                -WarningAction Continue
+            return
+        }
+        Write-Warning "Completed snapshot failure evidence found at: $Root" `
+            -WarningAction Continue
+    }
+    catch {
+        Write-Warning "Snapshot failure evidence status is unavailable: $Root" `
+            -WarningAction Continue
+    }
+}
+
 dotnet build (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
     -c $Configuration -p:NuGetAudit=false -p:OpenBladeLocalizationPreview=true --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'The tray snapshot build failed.' }
@@ -109,6 +136,15 @@ try {
             throw "The tray '$trayPage' snapshot render failed with $($process.ExitCode): $diagnostic"
         }
     }
+}
+catch {
+    try {
+        Write-SnapshotFailureEvidenceStatus -Root $failureEvidenceRoot
+    }
+    catch {
+        # Diagnostics must never replace the renderer failure being rethrown.
+    }
+    throw
 }
 finally {
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $previousSnapshotDirectory

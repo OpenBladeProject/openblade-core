@@ -73,12 +73,15 @@ directory is gitignored; do not commit generated CSV, ZIP, or PNG files.
 
 If either disconnected renderer reaches its existing ten-second frame-stability timeout,
 `Capture-LocalizationSnapshots.ps1` retains the last two canonical frames under
-`artifacts/translator-archive-failures/snapshot-stability/<culture>/<capture-id>/`.
-Each failure contains bounded `previous.bgra` and `candidate.bgra` bytes plus
-`metadata.json` with each frame's dimensions and SHA-256. This retention applies to the
-snapshot capture and translator-export workflows that invoke that script; a direct
-harness launch must configure `OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR` explicitly.
-Successful renders create no failure-evidence directory.
+`artifacts/translator-archive-failures/snapshot-stability/<culture>/<capture-id>/`
+under a surface/stage and unique failure ID. Each frame is bounded to 32 MiB. A complete
+failure contains `previous.bgra` and `candidate.bgra` plus `metadata.json` with each
+frame's dimensions and SHA-256; `metadata.json` is the completion marker, so a directory
+without it is partial evidence from a failed retention attempt. This retention applies to
+the snapshot capture and translator-export workflows that invoke that script. Direct
+localization harness launches are outside the configured workflow, and performance-row
+`--capture` output is intentionally outside localization capture/export scope. Successful
+renders create no failure-evidence directory.
 
 Validate a returned workbook before opening it:
 
