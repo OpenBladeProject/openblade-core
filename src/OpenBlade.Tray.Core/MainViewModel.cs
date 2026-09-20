@@ -8455,7 +8455,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void OnLightingEditorChanged(LightingEditorChange change)
     {
-        if (change.Kind == LightingEditorChangeKind.Parameters)
+        if (change.Kind == LightingEditorChangeKind.ParametersChanged)
         {
             NotifyLightingParameterPresentation();
             return;
@@ -8465,7 +8465,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyCommands();
             return;
         }
-        if (change.Kind == LightingEditorChangeKind.Computed)
+        if (change.Kind == LightingEditorChangeKind.Refreshed)
         {
             switch (change.Value)
             {
@@ -8475,10 +8475,39 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 case LightingEditorValue.SecondaryColor:
                     NotifyComputed(nameof(LightingSecondaryColorEditor), LightingSecondaryColorEditor);
                     break;
-                case LightingEditorValue.AudioMeterDecayPresentation:
+                case LightingEditorValue.AudioMeterDecayMilliseconds:
                     NotifyComputed(nameof(LightingAudioMeterDecayValue), LightingAudioMeterDecayValue);
                     break;
             }
+            return;
+        }
+        if (change.Kind == LightingEditorChangeKind.TransitionCompleted)
+        {
+            switch (change.Value)
+            {
+                case LightingEditorValue.Effect:
+                    Notify(nameof(SelectedLightingEffectOption));
+                    break;
+                case LightingEditorValue.Direction:
+                    Notify(nameof(SelectedLightingDirectionOption));
+                    break;
+                case LightingEditorValue.AmbientAwarenessRegion:
+                    Notify(nameof(SelectedAmbientAwarenessRegionOption));
+                    break;
+                case LightingEditorValue.LogoMode:
+                    Notify(nameof(SelectedLogoLightingModeOption));
+                    break;
+                case LightingEditorValue.AudioMeterDecayMilliseconds:
+                    Notify(nameof(LightingAudioMeterDecayValue));
+                    break;
+            }
+            return;
+        }
+        if (change.Value == LightingEditorValue.EffectUnconfirmed)
+        {
+            Notify(nameof(IsKeyboardEffectUnconfirmed));
+            Notify(nameof(KeyboardEffectDescription));
+            Notify(nameof(SelectedLightingEffectOption));
             return;
         }
         Notify(change.Value switch
@@ -8506,13 +8535,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             LightingEditorValue.LogoMode => nameof(LogoLightingModeEditor),
             LightingEditorValue.Draft => nameof(LightingDraft),
             LightingEditorValue.Dirty => nameof(IsLightingApplyPending),
-            LightingEditorValue.EffectUnconfirmed => nameof(IsKeyboardEffectUnconfirmed),
-            LightingEditorValue.EffectConfirmationDescription => nameof(KeyboardEffectDescription),
-            LightingEditorValue.EffectSelection => nameof(SelectedLightingEffectOption),
-            LightingEditorValue.DirectionSelection => nameof(SelectedLightingDirectionOption),
-            LightingEditorValue.AmbientRegionSelection => nameof(SelectedAmbientAwarenessRegionOption),
-            LightingEditorValue.LogoSelection => nameof(SelectedLogoLightingModeOption),
-            LightingEditorValue.AudioMeterDecayPresentation => nameof(LightingAudioMeterDecayValue),
             _ => throw new ArgumentOutOfRangeException(nameof(change)),
         });
     }

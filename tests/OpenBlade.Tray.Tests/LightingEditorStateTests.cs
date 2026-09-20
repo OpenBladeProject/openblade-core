@@ -52,7 +52,7 @@ public sealed class LightingEditorStateTests
 
         Assert.Equal(settings, editor.ToSettings());
         Assert.False(editor.IsDirty);
-        Assert.DoesNotContain(changes, change => change.Kind != LightingEditorChangeKind.Computed);
+        Assert.DoesNotContain(changes, change => change.Kind != LightingEditorChangeKind.Refreshed);
         editor.LogoMode = LogoLightingMode.Off;
         LightingSettings edited = editor.ToSettings();
         editor.Load(settings);
@@ -68,9 +68,9 @@ public sealed class LightingEditorStateTests
         var observations = new List<(LightingEditorValue Value, LightingSettings Draft)>();
         editor.Changed += change =>
         {
-            if (change.Kind == LightingEditorChangeKind.Value)
+            if (change.Kind == LightingEditorChangeKind.ValueChanged)
             {
-                observations.Add((change.Value, editor.ToSettings()));
+                observations.Add((change.Value!.Value, editor.ToSettings()));
             }
         };
 
@@ -101,8 +101,8 @@ public sealed class LightingEditorStateTests
         Assert.Equal(new[] { LightingEditorValue.Dirty, LightingEditorValue.Red,
             LightingEditorValue.Green, LightingEditorValue.Blue, LightingEditorValue.PrimaryColor,
             LightingEditorValue.Draft }, observations
-                .Where(item => item.Change.Kind == LightingEditorChangeKind.Value)
-                .Select(item => item.Change.Value));
+                .Where(item => item.Change.Kind == LightingEditorChangeKind.ValueChanged)
+                .Select(item => item.Change.Value!.Value));
         Assert.Equal(new RgbColor(1, 2, 3), observations[0].Color);
         Assert.Equal(new RgbColor(4, 2, 3), observations[1].Color);
         Assert.Equal(new RgbColor(4, 5, 3), observations[2].Color);
@@ -214,6 +214,63 @@ public sealed class LightingEditorStateTests
         editor.StarlightColorMode = StarlightColorMode.Dual;
         Assert.Equal(new RgbColor(11, 22, 33), editor.PrimaryColor);
         Assert.Equal(new RgbColor(44, 55, 66), editor.SecondaryColor);
+    }
+
+    [Fact]
+    public void DirectionTransition_PublishesOwnedFieldThenDraftBeforeCompletion()
+    {
+        var editor = new LightingEditorState();
+        editor.Load(LightingSettingsFactory.Wave(LightingDirection.Rightward, 60));
+        var changes = new List<LightingEditorChange>();
+        editor.Changed += changes.Add;
+
+        editor.Direction = LightingDirection.Leftward;
+
+        Assert.Equal(new[]
+        {
+            new LightingEditorChange(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Dirty),
+            new LightingEditorChange(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Direction),
+            new LightingEditorChange(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft),
+            new LightingEditorChange(LightingEditorChangeKind.EditCompleted),
+            new LightingEditorChange(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.Direction),
+        }, changes);
+    }
+
+    [Fact]
+    public void UnconfirmedChange_PublishesOnlyTheOwnedFlag()
+    {
+        var editor = new LightingEditorState();
+        var changes = new List<LightingEditorChange>();
+        editor.Changed += changes.Add;
+
+        editor.SetEffectUnconfirmed(true);
+
+        Assert.Equal(new LightingEditorChange(
+            LightingEditorChangeKind.ValueChanged, LightingEditorValue.EffectUnconfirmed),
+            Assert.Single(changes));
+        editor.SetEffectUnconfirmed(true);
+        Assert.Single(changes);
+    }
+
+    [Fact]
+    public void AggregatePhases_HaveNoMisleadingFieldPayload()
+    {
+        var editor = new LightingEditorState();
+        var changes = new List<LightingEditorChange>();
+        editor.Changed += changes.Add;
+
+        editor.Effect = LightingEffect.Tidal;
+
+        Assert.Contains(changes, change => change.Kind == LightingEditorChangeKind.ParametersChanged);
+        Assert.Equal(4, changes.Count(change => change.Kind == LightingEditorChangeKind.EditCompleted));
+        Assert.All(changes.Where(change => change.Kind is LightingEditorChangeKind.ParametersChanged
+            or LightingEditorChangeKind.EditCompleted), change => Assert.Null(change.Value));
+        Assert.All(changes.Where(change => change.Kind is not (LightingEditorChangeKind.ParametersChanged
+            or LightingEditorChangeKind.EditCompleted)), change => Assert.NotNull(change.Value));
+        var selected = Assert.IsType<TidalLightingParameters>(editor.ToSettings().Parameters);
+        var choice = Assert.IsType<TidalLightingParameters>(LightingEditorState.CreateChoice(
+            LightingEffect.Tidal, LightingSettingsFactory.Off()).Parameters);
+        Assert.Equal(choice.SecondaryColor, selected.SecondaryColor);
     }
 
     [Fact]

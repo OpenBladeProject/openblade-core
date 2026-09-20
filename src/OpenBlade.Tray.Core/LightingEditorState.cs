@@ -4,10 +4,11 @@ namespace OpenBlade.Tray;
 
 internal enum LightingEditorChangeKind
 {
-    Value,
-    Computed,
-    Parameters,
+    ValueChanged,
+    Refreshed,
+    ParametersChanged,
     EditCompleted,
+    TransitionCompleted,
 }
 
 internal enum LightingEditorValue
@@ -36,24 +37,22 @@ internal enum LightingEditorValue
     Draft,
     Dirty,
     EffectUnconfirmed,
-    EffectConfirmationDescription,
-    EffectSelection,
-    DirectionSelection,
-    AmbientRegionSelection,
-    LogoSelection,
-    AudioMeterDecayPresentation,
 }
 
+// A transition can publish several ordered value changes before completion.
+// Payloadless phases describe the aggregate editor, not a particular effect.
 internal readonly record struct LightingEditorChange(
     LightingEditorChangeKind Kind,
-    LightingEditorValue Value = default);
+    LightingEditorValue? Value = null);
 
 // Owns keyboard/logo values and their transformations only. Synchronous changes
 // let the facade preserve notification order and intermediate draft observations;
 // this component never calls the service or chooses whether a write is admitted.
 internal sealed class LightingEditorState
 {
-    public const byte DefaultBrightness = 50;
+    private const byte DefaultBrightness = 50;
+    private static readonly RgbColor DefaultDualSecondaryColor = new(255, 0, 170);
+    private static readonly RgbColor DefaultTidalSecondaryColor = new(0, 0, 255);
 
     public event Action<LightingEditorChange>? Changed;
 
@@ -109,8 +108,8 @@ internal sealed class LightingEditorState
 
             SeedVisibleLightingDefaults(previous, value);
 
-            Publish(LightingEditorChangeKind.Parameters);
-            Publish(LightingEditorChangeKind.Value, LightingEditorValue.EffectSelection);
+            Publish(LightingEditorChangeKind.ParametersChanged);
+            Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.Effect);
         }
     }
 
@@ -132,7 +131,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingRedEditor, value, LightingEditorValue.Red))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.PrimaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.PrimaryColor);
             }
         }
     }
@@ -144,7 +143,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingGreenEditor, value, LightingEditorValue.Green))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.PrimaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.PrimaryColor);
             }
         }
     }
@@ -156,7 +155,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingBlueEditor, value, LightingEditorValue.Blue))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.PrimaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.PrimaryColor);
             }
         }
     }
@@ -177,7 +176,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingSecondaryRedEditor, value, LightingEditorValue.SecondaryRed))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.SecondaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.SecondaryColor);
             }
         }
     }
@@ -189,7 +188,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingSecondaryGreenEditor, value, LightingEditorValue.SecondaryGreen))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.SecondaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.SecondaryColor);
             }
         }
     }
@@ -201,7 +200,7 @@ internal sealed class LightingEditorState
         {
             if (SetLightingColorField(ref lightingSecondaryBlueEditor, value, LightingEditorValue.SecondaryBlue))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.SecondaryColor);
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.SecondaryColor);
             }
         }
     }
@@ -228,7 +227,7 @@ internal sealed class LightingEditorState
 
             SeedBreathingColorDefaults(value);
 
-            Publish(LightingEditorChangeKind.Parameters);
+            Publish(LightingEditorChangeKind.ParametersChanged);
         }
     }
 
@@ -258,7 +257,7 @@ internal sealed class LightingEditorState
             }
 
             SeedStarlightColorDefaults(value);
-            Publish(LightingEditorChangeKind.Parameters);
+            Publish(LightingEditorChangeKind.ParametersChanged);
         }
     }
 
@@ -286,7 +285,7 @@ internal sealed class LightingEditorState
                 return;
             }
 
-            Publish(LightingEditorChangeKind.Parameters);
+            Publish(LightingEditorChangeKind.ParametersChanged);
         }
     }
 
@@ -302,7 +301,7 @@ internal sealed class LightingEditorState
 
             if (SetLightingEditorField(ref lightingDirectionEditor, value, LightingEditorValue.Direction))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.DirectionSelection);
+                Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.Direction);
             }
         }
     }
@@ -333,7 +332,7 @@ internal sealed class LightingEditorState
 
             if (SetLightingEditorField(ref lightingAmbientAwarenessRegionEditor, value, LightingEditorValue.AmbientAwarenessRegion))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.AmbientRegionSelection);
+                Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.AmbientAwarenessRegion);
             }
         }
     }
@@ -370,7 +369,7 @@ internal sealed class LightingEditorState
                 ref lightingAudioMeterDecayMillisecondsEditor,
                 value, LightingEditorValue.AudioMeterDecayMilliseconds))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.AudioMeterDecayPresentation);
+                Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.AudioMeterDecayMilliseconds);
             }
         }
     }
@@ -387,7 +386,7 @@ internal sealed class LightingEditorState
 
             if (SetLightingEditorField(ref logoLightingModeEditor, value, LightingEditorValue.LogoMode))
             {
-                Publish(LightingEditorChangeKind.Value, LightingEditorValue.LogoSelection);
+                Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.LogoMode);
             }
         }
     }
@@ -439,8 +438,8 @@ internal sealed class LightingEditorState
             ref lightingSecondaryBlueEditor,
             (int)secondaryColor.Blue,
             LightingEditorValue.SecondaryBlue);
-        Publish(LightingEditorChangeKind.Computed, LightingEditorValue.PrimaryColor);
-        Publish(LightingEditorChangeKind.Computed, LightingEditorValue.SecondaryColor);
+        Publish(LightingEditorChangeKind.Refreshed, LightingEditorValue.PrimaryColor);
+        Publish(LightingEditorChangeKind.Refreshed, LightingEditorValue.SecondaryColor);
         BreathingColorMode breathingColorMode =
             value.Parameters is BreathingLightingParameters breathing
                 ? breathing.ColorMode
@@ -523,15 +522,15 @@ internal sealed class LightingEditorState
             ref lightingAudioMeterDecayMillisecondsEditor,
             audioMeterDecayMilliseconds,
             LightingEditorValue.AudioMeterDecayMilliseconds);
-        Publish(LightingEditorChangeKind.Computed, LightingEditorValue.AudioMeterDecayPresentation);
+        Publish(LightingEditorChangeKind.Refreshed, LightingEditorValue.AudioMeterDecayMilliseconds);
         SetValue(
             ref logoLightingModeEditor,
             value.LogoMode,
             LightingEditorValue.LogoMode);
     }
 
-    // Explicitly choosing the hidden desired effect confirms intent even when
-    // its enum value did not change. A plain equivalent value assignment does not.
+    // Explicitly choosing the hidden desired effect seeds defaults and marks
+    // an edit even when its enum value did not change.
     public void SelectEffect(LightingEffect effect)
     {
         bool wasUnconfirmed = IsEffectUnconfirmed;
@@ -540,8 +539,8 @@ internal sealed class LightingEditorState
         {
             SeedVisibleLightingDefaults(Effect, effect);
             SetDirty(true);
-            Publish(LightingEditorChangeKind.Value, LightingEditorValue.Draft);
-            Publish(LightingEditorChangeKind.Parameters);
+            Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
+            Publish(LightingEditorChangeKind.ParametersChanged);
             Publish(LightingEditorChangeKind.EditCompleted);
             return;
         }
@@ -698,7 +697,7 @@ internal sealed class LightingEditorState
         if (selected == BreathingColorMode.Dual
             && SecondaryColor == default)
         {
-            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
+            SetLightingColorEditor(DefaultDualSecondaryColor, secondary: true);
         }
     }
 
@@ -712,7 +711,7 @@ internal sealed class LightingEditorState
         }
         if (SecondaryColor == default)
         {
-            SetLightingColorEditor(new RgbColor(0, 0, 255), secondary: true);
+            SetLightingColorEditor(DefaultTidalSecondaryColor, secondary: true);
         }
     }
 
@@ -729,7 +728,7 @@ internal sealed class LightingEditorState
         if (selected == StarlightColorMode.Dual
             && SecondaryColor == default)
         {
-            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
+            SetLightingColorEditor(DefaultDualSecondaryColor, secondary: true);
         }
     }
 
@@ -763,10 +762,10 @@ internal sealed class LightingEditorState
         SetValue(ref red, (int)value.Red, secondary ? LightingEditorValue.SecondaryRed : LightingEditorValue.Red);
         SetValue(ref green, (int)value.Green, secondary ? LightingEditorValue.SecondaryGreen : LightingEditorValue.Green);
         SetValue(ref blue, (int)value.Blue, secondary ? LightingEditorValue.SecondaryBlue : LightingEditorValue.Blue);
-        Publish(LightingEditorChangeKind.Value, secondary
+        Publish(LightingEditorChangeKind.ValueChanged, secondary
             ? LightingEditorValue.SecondaryColor
             : LightingEditorValue.PrimaryColor);
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.Draft);
+        Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
         Publish(LightingEditorChangeKind.EditCompleted);
     }
 
@@ -782,7 +781,7 @@ internal sealed class LightingEditorState
 
         SetDirty(true);
         SetValue(ref field, value, fieldName);
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.Draft);
+        Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
         Publish(LightingEditorChangeKind.EditCompleted);
         return true;
     }
@@ -805,7 +804,7 @@ internal sealed class LightingEditorState
         }
 
         lightingEditorDirty = value;
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.Dirty);
+        Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Dirty);
     }
 
     public void SetEffectUnconfirmed(bool value)
@@ -816,9 +815,7 @@ internal sealed class LightingEditorState
         }
 
         keyboardEffectUnconfirmed = value;
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.EffectUnconfirmed);
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.EffectConfirmationDescription);
-        Publish(LightingEditorChangeKind.Value, LightingEditorValue.EffectSelection);
+        Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.EffectUnconfirmed);
     }
 
     public void PrepareForPowerSource(PowerSource powerSource)
@@ -860,7 +857,7 @@ internal sealed class LightingEditorState
             LightingEffect.Ripple => LightingSettingsFactory.Ripple(color, brightness),
             LightingEffect.Tidal => LightingSettingsFactory.Tidal(
                 color,
-                new RgbColor(0, 0, 255),
+                DefaultTidalSecondaryColor,
                 randomColors: false,
                 LightingDirection.Rightward,
                 brightness),
@@ -892,9 +889,9 @@ internal sealed class LightingEditorState
             return;
         }
         field = value;
-        Publish(LightingEditorChangeKind.Value, fieldName);
+        Publish(LightingEditorChangeKind.ValueChanged, fieldName);
     }
 
-    private void Publish(LightingEditorChangeKind kind, LightingEditorValue value = default) =>
+    private void Publish(LightingEditorChangeKind kind, LightingEditorValue? value = null) =>
         Changed?.Invoke(new LightingEditorChange(kind, value));
 }
