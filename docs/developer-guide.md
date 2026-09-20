@@ -4,6 +4,9 @@ This page collects the build, publish, and hardware-development material that
 used to live in the main [README](../README.md). Read [AGENTS.md](../AGENTS.md)
 before changing hardware, IPC, setup, or process boundaries.
 
+For bounded refactor priorities and autonomous delivery criteria, see the
+[maintainability roadmap](maintainability-roadmap.md).
+
 ## Architecture
 
 ```mermaid
