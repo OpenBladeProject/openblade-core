@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep intentional black primary colors when switching Breathing or Starlight between Single and Dual color modes. ([#541](https://github.com/OSSBlade/openblade-core/pull/541))
 - Preserve stored Tidal colors when disabling random colors, seed visible colors when leaving effects without an editable color, and retain intentional black between colored effects. ([#539](https://github.com/OSSBlade/openblade-core/pull/539))
 - Refresh HyperBoost eligibility when cooling-pad detection changes, even when all other laptop status remains unchanged. ([#531](https://github.com/OSSBlade/openblade-core/pull/531))
 - Preserve connection, control, and power observation state when diagnostic messages change, and clear transient state after confirmed recovery. ([#525](https://github.com/OSSBlade/openblade-core/pull/525))
