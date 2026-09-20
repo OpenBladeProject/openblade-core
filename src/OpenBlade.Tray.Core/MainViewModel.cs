@@ -4811,23 +4811,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return true;
     }
 
-    private void ApplyDeviceStatePresentation(
+    private void ApplyLightingPresentation(
         ServiceStatusSnapshot status,
-        ConfirmedDeviceState? confirmed,
-        DeviceCapabilities capabilities,
         bool checkingLaptopConnection)
     {
-        UpdateOneShotReadbacks(status);
-        HyperBoostActive = confirmed?.HyperBoostActive is true;
-        SelectedPerformance = pendingPerformance?.Requested.Value
-            ?? ResolvePresentedPerformance(status, confirmed, capabilities);
-        SelectedFanMode = pendingFanControl?.Requested.Mode
-            ?? ResolvePresentedFanMode(status, confirmed, capabilities);
-        LoadFanControlEditor(
-            pendingFanControl?.Requested
-            ?? status.FanControlOverride
-            ?? status.DesiredState.FanControl
-            ?? FanControlSettings.FromLegacy(SelectedFanMode));
+        ConfirmedDeviceState? confirmed = status.ConfirmedState;
         lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
         if (!checkingLaptopConnection
             && !lightingEditor.IsDirty
@@ -4852,6 +4840,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SelectedLighting,
                 startUnconfirmedEffectAtDefaultBrightness: true);
         }
+    }
+
+    private void ApplyDeviceStatePresentation(
+        ServiceStatusSnapshot status,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities capabilities,
+        bool checkingLaptopConnection)
+    {
+        UpdateOneShotReadbacks(status);
+        HyperBoostActive = confirmed?.HyperBoostActive is true;
+        SelectedPerformance = pendingPerformance?.Requested.Value
+            ?? ResolvePresentedPerformance(status, confirmed, capabilities);
+        SelectedFanMode = pendingFanControl?.Requested.Mode
+            ?? ResolvePresentedFanMode(status, confirmed, capabilities);
+        LoadFanControlEditor(
+            pendingFanControl?.Requested
+            ?? status.FanControlOverride
+            ?? status.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(SelectedFanMode));
+        ApplyLightingPresentation(status, checkingLaptopConnection);
         if (!chargeLimitEditorDirty)
         {
             LoadChargeLimitEditor(status);
@@ -6004,7 +6012,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     resultStatus = result.Status;
                     if (result.Status is ControlOperationStatus.Applied
-                        or ControlOperationStatus.Stored)
+                            or ControlOperationStatus.Stored
+                        && lightingPresentationGeneration == presentationGenerationAtStart)
                     {
                         MarkActiveProfileDraft(sourceAtStart, lighting: requested);
                     }
@@ -6045,9 +6054,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             if (status.Revision > revisionAtStart
                                 && LightingStatusReflectsRequest(status, submittedIntent))
                             {
-                                LoadLightingEditor(
-                                    status.ConfirmedState?.Lighting
-                                    ?? status.DesiredState.Lighting.Value);
+                                ApplyLightingPresentation(status, IsCheckingLaptopConnection(status));
                             }
                         }
                     }
@@ -6197,7 +6204,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
-        InvalidatePendingLightingHold();
         List<string> hardwareNotApplied = [];
         if (FanOverride is not null)
         {
@@ -6217,6 +6223,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (LightingOverride is not null)
         {
+            InvalidatePendingLightingHold();
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Lighting", "lighting"),
                 cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
