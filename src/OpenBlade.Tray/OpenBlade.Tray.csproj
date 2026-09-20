@@ -57,6 +57,9 @@
   <ItemGroup>
     <Compile Include="..\OpenBlade.Setup\StartupShortcutWriter.cs"
              Link="StartupShortcutWriter.cs" />
+    <Compile Include="..\..\build\localization\LocalizationSnapshotFailureEvidence.cs"
+             Link="LocalizationSnapshotFailureEvidence.cs"
+             Condition="'$(OpenBladeDeveloperHarness)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Assets\Brand\**\*.ico" Condition="Exists('Assets\Brand')">

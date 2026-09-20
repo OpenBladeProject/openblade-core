@@ -949,6 +949,17 @@ throw 'Target catalog was not write-locked during import.'
     Assert-True ($captureScript.Contains(
             '$env:__COMPAT_LAYER = $previousCompatibilityLayer')) `
         'Snapshot capture must restore the caller compatibility environment.'
+    Assert-True ($captureScript.Contains(
+            'artifacts\translator-archive-failures\snapshot-stability\$Culture')) `
+        'Snapshot timeouts must retain evidence outside disposable package fixtures.'
+    Assert-True ($captureScript.Contains("[Guid]::NewGuid().ToString('N')")) `
+        'Each snapshot capture invocation must isolate its failure evidence.'
+    Assert-True ($captureScript.Contains(
+            '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $failureEvidenceRoot')) `
+        'Both disconnected renderers must receive the durable failure-evidence root.'
+    Assert-True ($captureScript.Contains(
+            '$env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory')) `
+        'Snapshot capture must restore the caller failure-evidence environment.'
 }
 finally {
     Import-Module $modulePath -Force

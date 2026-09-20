@@ -18,6 +18,9 @@ $resolvedOutputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
 $resolvedOutput = [IO.Path]::GetFullPath((Join-Path $resolvedOutputRoot $Culture))
 $trayOutput = Join-Path $resolvedOutput 'tray'
 $installerOutput = Join-Path $resolvedOutput 'installer'
+$failureEvidenceRoot = Join-Path $repository (Join-Path (
+    "artifacts\translator-archive-failures\snapshot-stability\$Culture") (
+    [Guid]::NewGuid().ToString('N')))
 [IO.Directory]::CreateDirectory($trayOutput) | Out-Null
 [IO.Directory]::CreateDirectory($installerOutput) | Out-Null
 
@@ -40,13 +43,17 @@ $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
+$previousFailureEvidenceDirectory = $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR
 $previousCompatibilityLayer = $env:__COMPAT_LAYER
 try {
     # Constrain every child renderer to a 96-DPI logical desktop without
     # changing the user's display configuration or machine-wide settings.
+    # Failure evidence stays outside the disposable snapshot/package trees so
+    # this capture and translator export workflow can retain timed-out frames.
     $env:__COMPAT_LAYER = 'DPIUNAWARE'
     $env:OPENBLADE_PSEUDO_LOCALIZATION = if ($Culture -eq 'qps-ploc') { '1' } else { $null }
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $Culture
+    $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $failureEvidenceRoot
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_DIR = $installerOutput
     $installerStates = @(
         'install',
@@ -109,6 +116,7 @@ finally {
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
+    $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory
     $env:__COMPAT_LAYER = $previousCompatibilityLayer
 }
 

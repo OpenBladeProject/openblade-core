@@ -28,6 +28,8 @@
              Link="LocalizationSnapshotWindowInput.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"
              Link="LocalizationSnapshotPixelCanonicalizer.cs" />
+    <Compile Include="..\..\localization\LocalizationSnapshotFailureEvidence.cs"
+             Link="LocalizationSnapshotFailureEvidence.cs" />
   </ItemGroup>
 
 </Project>

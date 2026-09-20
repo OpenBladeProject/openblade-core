@@ -7,6 +7,9 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Windows.Globalization;
 using OpenBlade.Contracts;
+#if OPENBLADE_DEVELOPER_HARNESS
+using OpenBlade.Localization;
+#endif
 using OpenBlade.Platform;
 using OpenBlade.Session;
 using Windows.Graphics;
@@ -873,9 +876,26 @@ public partial class App
 
             if (stabilization.Elapsed >= TimeSpan.FromSeconds(10))
             {
-                throw new InvalidOperationException(
+                var stabilizationException = new InvalidOperationException(
                     "The localization snapshot did not produce two consecutive "
                         + "canonical frames within 10 seconds.");
+                bool retained = LocalizationSnapshotFailureEvidence.TryWrite(
+                    Environment.GetEnvironmentVariable(
+                        LocalizationSnapshotFailureEvidence.DirectoryEnvironmentVariable),
+                    "tray",
+                    Path.GetFileNameWithoutExtension(path),
+                    stableFrame.Width,
+                    stableFrame.Height,
+                    stableFrame.Pixels,
+                    candidate.Width,
+                    candidate.Height,
+                    candidate.Pixels);
+                if (!retained)
+                {
+                    Trace.TraceWarning(
+                        "OpenBlade localization snapshot failure evidence could not be retained.");
+                }
+                throw stabilizationException;
             }
 
             stableFrame = candidate;

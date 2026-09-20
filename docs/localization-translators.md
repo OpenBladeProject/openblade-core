@@ -71,6 +71,15 @@ display settings are not changed. It does not install OpenBlade,
 request UAC, start the service or Session Agent, or perform hardware writes. The output
 directory is gitignored; do not commit generated CSV, ZIP, or PNG files.
 
+If either disconnected renderer reaches its existing ten-second frame-stability timeout,
+`Capture-LocalizationSnapshots.ps1` retains the last two canonical frames under
+`artifacts/translator-archive-failures/snapshot-stability/<culture>/<capture-id>/`.
+Each failure contains bounded `previous.bgra` and `candidate.bgra` bytes plus
+`metadata.json` with each frame's dimensions and SHA-256. This retention applies to the
+snapshot capture and translator-export workflows that invoke that script; a direct
+harness launch must configure `OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR` explicitly.
+Successful renders create no failure-evidence directory.
+
 Validate a returned workbook before opening it:
 
 ```powershell

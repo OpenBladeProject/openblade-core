@@ -213,6 +213,7 @@ foreach ($translatorPath in @(
         'build/Import-LocalizationTranslatorWorkbook.ps1',
         'build/LocalizationTranslatorWorkflow.psm1',
         'build/Validate-LocalizationResources.ps1',
+        'build/localization/LocalizationSnapshotFailureEvidence.cs',
         'build/localization/TranslatorScreenshotMap.json',
         'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
         'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
@@ -312,7 +313,7 @@ foreach ($requiredBuildContract in @(
 $contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)
 $contractsEnd = $build.IndexOf('  component-publish:', $contractsStart, [StringComparison]::Ordinal)
 $contracts = $build.Substring($contractsStart, $contractsEnd - $contractsStart)
-$uploadStart = $contracts.IndexOf('      - name: Retain translator archive mismatch evidence', [StringComparison]::Ordinal)
+$uploadStart = $contracts.IndexOf('      - name: Retain localization workflow failure evidence', [StringComparison]::Ordinal)
 if ($uploadStart -lt 0) {
     throw 'Build contracts must retain translator mismatch evidence on hosted runners.'
 }
