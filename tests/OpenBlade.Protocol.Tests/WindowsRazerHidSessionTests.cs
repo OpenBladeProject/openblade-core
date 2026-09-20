@@ -366,6 +366,7 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Equal(1, batchAssignments);
         Assert.Equal(0, queuedAssignments);
         Assert.Single(io.Calls);
+        await actor.DisposeAsync();
         Assert.Equal(
             RazerCommandSessionDisposition.FullyDisposed,
             actor.Disposition);
@@ -418,6 +419,7 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
         Assert.Equal(0, queuedAssignments);
         Assert.Equal(2, io.Calls.Count);
+        await actor.DisposeAsync();
         Assert.Equal(
             RazerCommandSessionDisposition.FullyDisposed,
             actor.Disposition);
