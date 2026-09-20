@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([switch]$ArchiveEvidenceOnly)
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
@@ -17,6 +17,38 @@ function Assert-Equal {
     if ($Expected -cne $Actual) {
         throw "$Message Expected '$Expected', actual '$Actual'."
     }
+}
+
+function Assert-ArchiveEqual {
+    param(
+        [string]$Reference,
+        [string]$Actual,
+        [string]$Stage,
+        [string]$EvidenceRoot,
+        [string]$Message)
+
+    $expectedHash = (Get-FileHash -LiteralPath $Reference -Algorithm SHA256).Hash
+    $actualHash = (Get-FileHash -LiteralPath $Actual -Algorithm SHA256).Hash
+    if ($expectedHash -ceq $actualHash) { return }
+
+    $failure = "$Message Expected '$expectedHash', actual '$actualHash'."
+    $destination = Join-Path $EvidenceRoot ([Guid]::NewGuid().ToString('N'))
+    try {
+        [IO.Directory]::CreateDirectory($destination) | Out-Null
+        Copy-Item -LiteralPath $Reference -Destination (Join-Path $destination 'reference.zip')
+        Copy-Item -LiteralPath $Actual -Destination (Join-Path $destination 'actual.zip')
+        [ordered]@{
+            stage = $Stage
+            referenceSha256 = $expectedHash
+            actualSha256 = $actualHash
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'comparison.json') -Encoding UTF8
+        $failure += " Archive evidence retained at: $destination"
+    }
+    catch {
+        # Evidence I/O must never hide or turn the original mismatch into success.
+        $failure += " Evidence retention failed: $($_.Exception.Message)"
+    }
+    throw $failure
 }
 
 function Assert-Throws {
@@ -98,6 +130,63 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) (
     'OpenBlade.Translator.Tests.' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
 try {
+    # Exercise the failure path deterministically, without waiting for a renderer mismatch.
+    $probeRoot = Join-Path $testRoot 'archive-evidence-probe'
+    [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+    $referenceProbe = Join-Path $probeRoot 'reference.zip'
+    $actualProbe = Join-Path $probeRoot 'actual.zip'
+    [IO.File]::WriteAllBytes($referenceProbe, [byte[]](1, 2, 3))
+    Copy-Item -LiteralPath $referenceProbe -Destination $actualProbe
+    $probeEvidence = Join-Path $testRoot 'retained-evidence'
+    Assert-ArchiveEqual -Reference $referenceProbe -Actual $actualProbe `
+        -Stage 'same-process' -EvidenceRoot $probeEvidence -Message 'Probe mismatch.'
+    Assert-True (-not (Test-Path -LiteralPath $probeEvidence)) `
+        'Matching archive comparisons must not create retained artifacts.'
+    [IO.File]::WriteAllBytes($actualProbe, [byte[]](3, 2, 1))
+    foreach ($stage in @('same-process', 'fresh-process')) {
+        Assert-Throws 'Probe mismatch.*Archive evidence retained at:' {
+            Assert-ArchiveEqual -Reference $referenceProbe -Actual $actualProbe `
+                -Stage $stage -EvidenceRoot $probeEvidence -Message 'Probe mismatch.'
+        } 'An archive mismatch must remain a failure after retaining evidence.'
+    }
+    $retained = @(Get-ChildItem -LiteralPath $probeEvidence -Directory)
+    Assert-Equal 2 $retained.Count 'Each mismatch must have an independent evidence directory.'
+    $referenceProbeHash = (Get-FileHash -LiteralPath $referenceProbe -Algorithm SHA256).Hash
+    $actualProbeHash = (Get-FileHash -LiteralPath $actualProbe -Algorithm SHA256).Hash
+    $blockedEvidence = Join-Path $testRoot 'blocked-evidence'
+    [IO.File]::WriteAllText($blockedEvidence, 'This file prevents directory creation.')
+    Assert-Throws 'Probe mismatch.*Expected.*actual.*Evidence retention failed:' {
+        Assert-ArchiveEqual -Reference $referenceProbe -Actual $actualProbe `
+            -Stage 'fresh-process' -EvidenceRoot $blockedEvidence -Message 'Probe mismatch.'
+    } 'Evidence I/O failure must preserve the original archive mismatch.'
+    $resolvedProbe = [IO.Path]::GetFullPath($probeRoot)
+    if (-not $resolvedProbe.StartsWith(
+            [IO.Path]::GetFullPath($testRoot) + [IO.Path]::DirectorySeparatorChar,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unexpected archive-probe cleanup target: $resolvedProbe"
+    }
+    Remove-Item -LiteralPath $resolvedProbe -Recurse -Force
+    $retainedStages = @()
+    foreach ($directory in $retained) {
+        $comparison = Get-Content (Join-Path $directory.FullName 'comparison.json') -Raw |
+            ConvertFrom-Json
+        $retainedStages += $comparison.stage
+        Assert-Equal $referenceProbeHash $comparison.referenceSha256 'Reference hash must be recorded.'
+        Assert-Equal $actualProbeHash $comparison.actualSha256 'Actual hash must be recorded.'
+        Assert-Equal $referenceProbeHash `
+            (Get-FileHash (Join-Path $directory.FullName 'reference.zip') -Algorithm SHA256).Hash `
+            'Reference bytes must survive source-fixture cleanup.'
+        Assert-Equal $actualProbeHash `
+            (Get-FileHash (Join-Path $directory.FullName 'actual.zip') -Algorithm SHA256).Hash `
+            'Mismatching bytes must survive source-fixture cleanup.'
+    }
+    Assert-True ($retainedStages -contains 'same-process' -and $retainedStages -contains 'fresh-process') `
+        'Evidence must distinguish same-process and fresh-process comparisons.'
+    if ($ArchiveEvidenceOnly) {
+        Write-Host 'Translator archive evidence tests passed.'
+        return
+    }
+
     $first = Join-Path $testRoot 'first.csv'
     $second = Join-Path $testRoot 'second.csv'
     $model = Export-LocalizationWorkbook -Repository $repository -Locale 'ru-RU' -Path $first
@@ -803,7 +892,9 @@ throw 'Target catalog was not write-locked during import.'
 
     & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
     $archive = Join-Path $packageRoot 'OpenBlade-ru-RU-translator.zip'
-    $firstArchiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+    $referenceArchive = Join-Path $testRoot 'reference-translator.zip'
+    Copy-Item -LiteralPath $archive -Destination $referenceArchive
+    $archiveEvidenceRoot = Join-Path $repository 'artifacts\translator-archive-failures'
     $generatedFolder = Join-Path $packageRoot 'OpenBlade-ru-RU-translator'
     $manifest = Get-Content (Join-Path $generatedFolder 'manifest.json') -Raw |
         ConvertFrom-Json
@@ -824,9 +915,9 @@ throw 'Target catalog was not write-locked during import.'
     Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
         'The package manifest must expose the workbook target-catalog binding.'
     & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
-    Assert-Equal $firstArchiveHash `
-        (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash `
-        'Repeated package exports must produce the same archive bytes.'
+    Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
+        -Stage 'same-process' -EvidenceRoot $archiveEvidenceRoot `
+        -Message 'Repeated package exports must produce the same archive bytes.'
     $freshPowerShell = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') {
         'pwsh.exe'
     } else {
@@ -840,9 +931,9 @@ throw 'Target catalog was not write-locked during import.'
     if ($LASTEXITCODE -ne 0) {
         throw 'Fresh-process translator package export failed.'
     }
-    Assert-Equal $firstArchiveHash `
-        (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash `
-        'Fresh-process package exports must produce the same archive bytes.'
+    Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
+        -Stage 'fresh-process' -EvidenceRoot $archiveEvidenceRoot `
+        -Message 'Fresh-process package exports must produce the same archive bytes.'
 
     $captureScript = [IO.File]::ReadAllText((
         Join-Path $repository 'build\Capture-LocalizationSnapshots.ps1'))

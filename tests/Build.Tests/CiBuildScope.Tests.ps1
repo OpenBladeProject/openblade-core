@@ -301,4 +301,24 @@ foreach ($requiredBuildContract in @(
     }
 }
 
+$contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)
+$contractsEnd = $build.IndexOf('  component-publish:', $contractsStart, [StringComparison]::Ordinal)
+$contracts = $build.Substring($contractsStart, $contractsEnd - $contractsStart)
+$uploadStart = $contracts.IndexOf('      - name: Retain translator archive mismatch evidence', [StringComparison]::Ordinal)
+if ($uploadStart -lt 0) {
+    throw 'Build contracts must retain translator mismatch evidence on hosted runners.'
+}
+$upload = $contracts.Substring($uploadStart)
+foreach ($required in @(
+        'if: ${{ failure() }}',
+        'uses: actions/upload-artifact@v4',
+        'name: translator-archive-failures-${{ github.run_id }}-${{ github.run_attempt }}',
+        'path: artifacts/translator-archive-failures/',
+        'if-no-files-found: ignore',
+        'retention-days: 14')) {
+    if (-not $upload.Contains($required)) {
+        throw "Translator failure-artifact handoff is missing '$required'."
+    }
+}
+
 Write-Host 'CI build scope tests passed.'

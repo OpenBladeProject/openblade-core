@@ -265,6 +265,16 @@ jobs:
           -Lane Contracts
           -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
 
+      - name: Retain translator archive mismatch evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: translator-archive-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/translator-archive-failures/
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 0
+
   component-publish:
     name: Component publish
     needs: validate-request
