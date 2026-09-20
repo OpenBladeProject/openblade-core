@@ -13,6 +13,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using OpenBlade.Localization;
 using WixToolset.BootstrapperApplicationApi;
 using Xunit;
 
@@ -339,7 +340,8 @@ public sealed class InstallerWindowTests
                         visual,
                         background,
                         width,
-                        height);
+                        height,
+                        name);
                     BitmapSource canonicalBitmap = BitmapSource.Create(
                         width,
                         height,
@@ -422,7 +424,8 @@ public sealed class InstallerWindowTests
         FrameworkElement visual,
         SolidColorBrush background,
         int width,
-        int height)
+        int height,
+        string stage)
     {
         byte[] stable = CaptureCanonicalLocalizationSnapshotPixels(
             visual,
@@ -447,9 +450,26 @@ public sealed class InstallerWindowTests
 
             if (stabilization.Elapsed >= TimeSpan.FromSeconds(10))
             {
-                throw new InvalidOperationException(
+                var stabilizationException = new InvalidOperationException(
                     "The installer localization snapshot did not produce two "
                         + "consecutive canonical frames within 10 seconds.");
+                bool retained = LocalizationSnapshotFailureEvidence.TryWrite(
+                    Environment.GetEnvironmentVariable(
+                        LocalizationSnapshotFailureEvidence.DirectoryEnvironmentVariable),
+                    "installer",
+                    stage,
+                    width,
+                    height,
+                    stable,
+                    width,
+                    height,
+                    candidate);
+                if (!retained)
+                {
+                    Trace.TraceWarning(
+                        "OpenBlade installer snapshot failure evidence could not be retained.");
+                }
+                throw stabilizationException;
             }
 
             stable = candidate;

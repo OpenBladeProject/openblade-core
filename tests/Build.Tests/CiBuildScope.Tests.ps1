@@ -213,6 +213,7 @@ foreach ($translatorPath in @(
         'build/Import-LocalizationTranslatorWorkbook.ps1',
         'build/LocalizationTranslatorWorkflow.psm1',
         'build/Validate-LocalizationResources.ps1',
+        'build/localization/LocalizationSnapshotFailureEvidence.cs',
         'build/localization/TranslatorScreenshotMap.json',
         'build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs',
         'build/installer/OpenBlade.Installer.UI/Properties/Resources.resx',
@@ -235,6 +236,15 @@ foreach ($translatorPath in @(
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
         "Translator workflow path '$translatorPath' must run its adversarial contracts."
 }
+$snapshotEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'build/localization/LocalizationSnapshotFailureEvidence.cs')
+foreach ($linkedTestProject in @(
+        'tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj',
+        'build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj')) {
+    Assert-Contains $snapshotEvidencePlan.TestProjects $linkedTestProject `
+        'A shared snapshot evidence change must run both linking test projects.'
+}
+
 $translatorEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')
 Assert-Contains $translatorEvidencePlan.ContractTests `
@@ -312,7 +322,7 @@ foreach ($requiredBuildContract in @(
 $contractsStart = $build.IndexOf('  build-contracts:', [StringComparison]::Ordinal)
 $contractsEnd = $build.IndexOf('  component-publish:', $contractsStart, [StringComparison]::Ordinal)
 $contracts = $build.Substring($contractsStart, $contractsEnd - $contractsStart)
-$uploadStart = $contracts.IndexOf('      - name: Retain translator archive mismatch evidence', [StringComparison]::Ordinal)
+$uploadStart = $contracts.IndexOf('      - name: Retain localization workflow failure evidence', [StringComparison]::Ordinal)
 if ($uploadStart -lt 0) {
     throw 'Build contracts must retain translator mismatch evidence on hosted runners.'
 }

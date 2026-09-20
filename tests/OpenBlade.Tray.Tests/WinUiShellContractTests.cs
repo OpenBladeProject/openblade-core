@@ -2460,6 +2460,62 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LocalizationSnapshotFailureEvidenceRunsOnlyAfterTheExistingTimeout()
+    {
+        string tray = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "App.DeveloperHarness.cs");
+        string installer = ReadRepositoryFile(
+            "build",
+            "installer",
+            "OpenBlade.Installer.UI.Tests",
+            "InstallerWindowTests.cs");
+        string trayProject = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "OpenBlade.Tray.csproj");
+
+        AssertEvidenceFollowsTimeout(tray, "stableFrame = candidate;");
+        AssertEvidenceFollowsTimeout(installer, "stable = candidate;");
+        Assert.Contains(
+            "Condition=\"'$(OpenBladeDeveloperHarness)' == 'true'\"",
+            trayProject,
+            StringComparison.Ordinal);
+
+        static void AssertEvidenceFollowsTimeout(string source, string nextFrameAssignment)
+        {
+            int comparison = source.IndexOf(
+                "canonical frames within 10 seconds.",
+                StringComparison.Ordinal);
+            int timeout = source.LastIndexOf(
+                "stabilization.Elapsed >= TimeSpan.FromSeconds(10)",
+                comparison,
+                StringComparison.Ordinal);
+            int retention = source.IndexOf(
+                "LocalizationSnapshotFailureEvidence.TryWrite(",
+                timeout,
+                StringComparison.Ordinal);
+            int originalFailure = source.IndexOf(
+                "throw stabilizationException;",
+                retention,
+                StringComparison.Ordinal);
+            int nextFrame = source.IndexOf(
+                nextFrameAssignment,
+                originalFailure,
+                StringComparison.Ordinal);
+
+            Assert.True(timeout >= 0 && timeout < retention);
+            Assert.True(retention < originalFailure && originalFailure < nextFrame);
+            Assert.Equal(
+                retention,
+                source.LastIndexOf(
+                    "LocalizationSnapshotFailureEvidence.TryWrite(",
+                    StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
     public void SimplifiedChineseUsesOneLiveReadingsTermAcrossTraySurfaces()
     {
         string trayCore = ReadRepositoryFile(

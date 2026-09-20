@@ -40,6 +40,11 @@
   ],
   "testInputRules": [
     {
+      "patterns": ["build/localization/LocalizationSnapshotFailureEvidence.cs"],
+      "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj", "build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj"],
+      "reason": "Both disconnected renderer test projects link the snapshot failure evidence writer."
+    },
+    {
       "patterns": ["build/tools/OpenBlade.LocalDevDeployment.Tool/*"],
       "testProjects": ["tests/OpenBlade.LocalDevDeployment.Tool.Tests/OpenBlade.LocalDevDeployment.Tool.Tests.csproj"],
       "reason": "The developer-only staging tool must preserve TPM and fixed-inbox contracts."
@@ -196,7 +201,7 @@
     },
     {
       "test": "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1",
-      "patterns": ["build/Export-LocalizationTranslatorPackage.ps1", "build/Import-LocalizationTranslatorWorkbook.ps1", "build/LocalizationTranslatorWorkflow.psm1", "build/Validate-LocalizationResources.ps1", "build/Capture-LocalizationSnapshots.ps1", "build/localization/TranslatorScreenshotMap.json", "build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs", "build/installer/OpenBlade.Installer.UI/Properties/*", "docs/localization-translators.md", "src/OpenBlade.Setup/Properties/*", "src/OpenBlade.Tray/App.xaml.cs", "src/OpenBlade.Tray/App.DeveloperHarness.cs", "src/OpenBlade.Tray/LocalizationSnapshotWindowInput.cs", "src/OpenBlade.Tray/MainWindow.xaml", "src/OpenBlade.Tray/MainWindow.xaml.cs", "src/OpenBlade.Tray/Strings/*", "src/OpenBlade.Tray.Core/Properties/*", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"],
+      "patterns": ["build/Export-LocalizationTranslatorPackage.ps1", "build/Import-LocalizationTranslatorWorkbook.ps1", "build/LocalizationTranslatorWorkflow.psm1", "build/Validate-LocalizationResources.ps1", "build/Capture-LocalizationSnapshots.ps1", "build/localization/LocalizationSnapshotFailureEvidence.cs", "build/localization/TranslatorScreenshotMap.json", "build/installer/OpenBlade.Installer.UI.Tests/InstallerWindowTests.cs", "build/installer/OpenBlade.Installer.UI/Properties/*", "docs/localization-translators.md", "src/OpenBlade.Setup/Properties/*", "src/OpenBlade.Tray/App.xaml.cs", "src/OpenBlade.Tray/App.DeveloperHarness.cs", "src/OpenBlade.Tray/LocalizationSnapshotWindowInput.cs", "src/OpenBlade.Tray/MainWindow.xaml", "src/OpenBlade.Tray/MainWindow.xaml.cs", "src/OpenBlade.Tray/Strings/*", "src/OpenBlade.Tray.Core/Properties/*", "tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1"],
       "restoreProjects": ["src/OpenBlade.Tray/OpenBlade.Tray.csproj", "build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj"]
     },
     {
