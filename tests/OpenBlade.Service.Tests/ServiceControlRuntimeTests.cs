@@ -1920,7 +1920,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(context.Device.FanTargets);
         Assert.Equal(0, temperatures.ReadCount);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .ManualTopologyOnly,
             context.Runtime.FanControlOwnershipDisposition);
     }
@@ -1964,7 +1964,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             acknowledged.Message,
             StringComparison.OrdinalIgnoreCase);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .SubmissionUnresolved,
             context.Runtime.FanControlOwnershipDisposition);
         context.Device.AfterSetter = null;
@@ -1972,7 +1972,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         int targetWritesAfterObservation = context.Device.FanTargets.Count;
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .ManualTopologyOnly,
             context.Runtime.FanControlOwnershipDisposition);
 
@@ -2457,35 +2457,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public void FanOwnership_ConfirmedAutomaticAppliedClearsUnresolvedState()
-    {
-        TestContext context = CreateContext(providerAvailable: true);
-        SetFanOwnershipUnresolved(context.Runtime);
-        typeof(ServiceControlRuntime)
-            .GetMethod(
-                "UpdateOwnedFanControlSettings",
-                System.Reflection.BindingFlags.Instance
-                    | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(
-                context.Runtime,
-                [
-                    FanControlSettings.FromLegacy(FanMode.Automatic),
-                    new ControlResult(
-                        ControlResultStatus.Applied,
-                        "Fans setting applied and confirmed by readback."),
-                    true,
-                    true,
-                    false,
-                    null,
-                    false,
-                ]);
-
-        Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
-            context.Runtime.FanControlOwnershipDisposition);
-    }
-
-    [Fact]
     public async Task FanOwnership_FullTransitionConfirmedAutomaticClearsUnresolvedState()
     {
         DeviceCapabilities capabilities = ManualFanCurveCapabilities();
@@ -2529,7 +2500,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             DeviceSubsystemOrder.IsManualFanMode(
                 context.Device.ConfirmedState.Fans));
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
         SetFanOwnershipUnresolved(context.Runtime);
@@ -2540,7 +2511,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.Contains(FanMode.Automatic, context.Device.FanWrites);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            ExactFanControlOwnershipDisposition.Unowned,
             context.Runtime.FanControlOwnershipDisposition);
     }
 
@@ -6122,7 +6093,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([TimeSpan.FromSeconds(5)], retryDelays);
         Assert.Equal(2, context.Device.FanSetCalls);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
 
@@ -6158,7 +6129,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(2, context.Device.FanSetCalls);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            ExactFanControlOwnershipDisposition.Unowned,
             context.Runtime.FanControlOwnershipDisposition);
     }
 
@@ -6377,7 +6348,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(1, context.Device.FanSetCalls);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition.Unowned,
+            ExactFanControlOwnershipDisposition.Unowned,
             context.Runtime.FanControlOwnershipDisposition);
     }
 
@@ -6407,7 +6378,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 new FanTargetSpeeds(5400, 5400, FailSafe: true),
                 target));
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
     }
@@ -6441,7 +6412,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Device.FanSetCalls);
         Assert.Equal(1, retryDevice.FanSetCalls);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
     }
@@ -6485,7 +6456,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         if (fanMode == FanMode.Fixed)
         {
             Assert.Equal(
-                ServiceControlRuntime.ExactFanControlOwnershipDisposition
+                ExactFanControlOwnershipDisposition
                     .OwnedExactIntent,
                 context.Runtime.FanControlOwnershipDisposition);
         }
@@ -6571,7 +6542,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .SubmissionUnresolved,
             context.Runtime.FanControlOwnershipDisposition);
     }
@@ -6592,7 +6563,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .SubmissionUnresolved,
             context.Runtime.FanControlOwnershipDisposition);
         Assert.Single(context.Device.FanTargets);
@@ -14671,7 +14642,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             DeviceSubsystem.Fans,
             context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
     }
@@ -14721,7 +14692,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             result.Message);
         Assert.Equal(1, targetWritesAfterContinuation);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .OwnedExactIntent,
             context.Runtime.FanControlOwnershipDisposition);
 
@@ -14867,7 +14838,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Single(context.Device.FanTargets);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .SubmissionUnresolved,
             context.Runtime.FanControlOwnershipDisposition);
         int fanWrites = context.Device.FanSetCalls;
@@ -24518,7 +24489,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             journal.Journal?.State);
         Assert.Equal(fanControl, context.Runtime.GetStatus().DesiredState.FanControl);
         Assert.Equal(
-            ServiceControlRuntime.ExactFanControlOwnershipDisposition
+            ExactFanControlOwnershipDisposition
                 .SubmissionUnresolved,
             context.Runtime.FanControlOwnershipDisposition);
         int targetWritesAfterRestore = context.Device.FanTargets.Count;
@@ -27246,14 +27217,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 "exactFanControlOwnership",
                 System.Reflection.BindingFlags.Instance
                     | System.Reflection.BindingFlags.NonPublic)!;
-        object unresolved = Assert.IsAssignableFrom<object>(
-            ownershipField.FieldType
-                .GetProperty(
-                    "SubmissionUnresolved",
-                    System.Reflection.BindingFlags.Static
-                        | System.Reflection.BindingFlags.Public)!
-                .GetValue(null));
-        ownershipField.SetValue(runtime, unresolved);
+        ownershipField.SetValue(runtime, ExactFanControlOwnership.SubmissionUnresolved);
     }
 
     private async Task<(
