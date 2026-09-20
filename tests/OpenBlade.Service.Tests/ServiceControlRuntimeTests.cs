@@ -12639,6 +12639,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingFullCharge_RepeatedUnknownReadbackNeverReplaysBeforeResolution(bool powerChanged)
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, null),
+        };
+        int setters = context.Device.BatterySetCalls;
+
+        for (int observation = 0; observation < 3; observation++)
+        {
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().UnconfirmedWrites);
+            Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+            Assert.Equal(setters, context.Device.BatterySetCalls);
+        }
+
+        // Matching firmware may commit intent only while the original power
+        // boundary still owns it. A transition must abandon the old entry.
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        if (powerChanged)
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+            await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        }
+        int settersBeforeObservation = context.Device.BatterySetCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(!powerChanged, context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(settersBeforeObservation, context.Device.BatterySetCalls);
+        Assert.Null(context.Runtime.GetStatus().BatteryPolicyOverride);
+        Assert.Null(context.Runtime.GetStatus().BatteryProtectionOverride);
+    }
+
+    [Theory]
     [InlineData("battery")]
     [InlineData("hyperboost")]
     [InlineData("manual")]
