@@ -3872,15 +3872,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsStarlightColorMode =>
         LightingEffectEditor == LightingEffect.Starlight;
 
-    public bool LightingShowsPrimaryColor =>
-        LightingEffectEditor is
-            LightingEffect.Static or LightingEffect.Reactive or LightingEffect.Ripple
-        || LightingEffectEditor == LightingEffect.Breathing
-            && LightingBreathingColorModeEditor != BreathingColorMode.Random
-        || LightingEffectEditor == LightingEffect.Tidal
-            && !LightingRandomColorsEditor
-        || LightingEffectEditor == LightingEffect.Starlight
-            && LightingStarlightColorModeEditor != StarlightColorMode.Random;
+    public bool LightingShowsPrimaryColor => lightingEditor.UsesPrimaryColor;
 
     public bool LightingShowsSecondaryColor =>
         LightingEffectEditor == LightingEffect.Breathing
