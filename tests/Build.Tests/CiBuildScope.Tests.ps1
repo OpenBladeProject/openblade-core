@@ -233,6 +233,12 @@ foreach ($translatorPath in @(
         'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1' `
         "Translator workflow path '$translatorPath' must run its adversarial contracts."
 }
+$translatorEvidencePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'tests/Build.Tests/LocalizationTranslatorWorkflow.Tests.ps1')
+Assert-Contains $translatorEvidencePlan.ContractTests `
+    'tests/Build.Tests/CiBuildScope.Tests.ps1' `
+    'Translator producer changes must also validate the failure-artifact handoff.'
+
 $translatorRestore = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'build/LocalizationTranslatorWorkflow.psm1')
 foreach ($restoreProject in @(
