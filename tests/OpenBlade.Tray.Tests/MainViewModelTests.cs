@@ -5119,6 +5119,13 @@ public sealed partial class MainViewModelTests
             Revision = initial.Revision + 1,
             Message = "Lighting applied with readback",
             ConfirmedState = initial.ConfirmedState! with { Lighting = confirmed },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    draft, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                draft, OverrideLifetime.UntilPowerSourceChange),
         });
         await WaitUntilAsync(() =>
             viewModel.ConnectionStatus == "Lighting applied with readback");

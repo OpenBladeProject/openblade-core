@@ -6016,9 +6016,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     {
                         LightingSettings? confirmedLighting =
                             latestStatus.ConfirmedState?.Lighting;
-                        bool statusReflectsRequest = confirmedLighting is not null
-                            || latestStatus.LightingOverride?.Value == requested
-                            || latestStatus.DesiredState.Lighting.Value == requested;
+                        LightingSettings submittedIntent =
+                            LightingSettingsFactory.NormalizeLegacyOff(requested);
+                        bool statusReflectsRequest =
+                            latestStatus.LightingOverride?.Value == submittedIntent
+                            || latestStatus.DesiredState.Lighting.Value == submittedIntent;
                         if (statusReflectsRequest)
                         {
                             LoadLightingEditor(
