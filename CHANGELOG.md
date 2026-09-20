@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.21.6] - 2026-09-20
+
 ### Fixed
 
 - Keep the requested lighting effect visible when an apply completes before the final service status arrives. ([#549](https://github.com/OSSBlade/openblade-core/pull/549))
@@ -1916,7 +1918,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.6...HEAD
+[0.21.6]: https://github.com/OSSBlade/openblade-core/compare/v0.21.0...v0.21.6
 [0.21.0]: https://github.com/OSSBlade/openblade-core/compare/v0.20.23...v0.21.0
 [0.20.23]: https://github.com/OSSBlade/openblade-core/compare/v0.20.18...v0.20.23
 [0.20.18]: https://github.com/OSSBlade/openblade-core/compare/v0.20.12-nightly.49...v0.20.18
