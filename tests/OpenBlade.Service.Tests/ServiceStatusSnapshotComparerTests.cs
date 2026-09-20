@@ -144,7 +144,7 @@ public sealed class ServiceStatusSnapshotComparerTests
     }
 
     [Fact]
-    public void Equivalent_IgnoresRevisionButDetectsTelemetryAndObservationReason()
+    public void Equivalent_IgnoresRevisionButDetectsTelemetryAndObservationState()
     {
         ServiceStatusSnapshot baseline = CreateStatus();
         Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with { Revision = 100 }));
@@ -152,6 +152,13 @@ public sealed class ServiceStatusSnapshotComparerTests
             baseline, baseline with { LiveReadings = new LiveReadings(-10_000, null, null) }));
         Assert.False(ServiceStatusSnapshotComparer.Equivalent(
             baseline, baseline with { ObservationReason = DeviceObservationReason.CheckingConnection }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(
+            baseline,
+            baseline with
+            {
+                PadlessHyperBoostEligibility =
+                    PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            }));
     }
 
     [Fact]

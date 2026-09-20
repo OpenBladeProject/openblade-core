@@ -23,6 +23,7 @@ internal static class ServiceStatusSnapshotComparer
             right.ThermalConvergence)
         && left.Message == right.Message
         && left.ObservationReason == right.ObservationReason
+        && left.PadlessHyperBoostEligibility == right.PadlessHyperBoostEligibility
         && CapabilitiesEqual(left.Capabilities, right.Capabilities)
         && left.ConfirmedState == right.ConfirmedState
         && left.Profiles == right.Profiles
