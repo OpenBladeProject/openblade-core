@@ -3440,6 +3440,59 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TrayDashboardEditorWiringKeepsPreferencePersistenceAndObservationInTheWindow()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        Assert.Contains("trayDashboardEditor.EditAccepted += OnTrayDashboardEditorEditAccepted;",
+            window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;",
+            window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.AvailabilityChanged += UpdateTrayDashboardEditorAvailability;",
+            window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;",
+            window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.Dispose();", window, StringComparison.Ordinal);
+        foreach (string name in new[] { "Controls", "Sliders", "StatusItems" })
+        {
+            Assert.Contains($"=> trayDashboardEditor.{name};", window, StringComparison.Ordinal);
+            Assert.Contains($"ItemsSource=\"{{x:Bind TrayDashboardEditor{name}, Mode=OneWay}}\"",
+                xaml, StringComparison.Ordinal);
+        }
+        foreach (string action in new[] { "AddControl", "RemoveControl", "AddSlider", "RemoveSlider" })
+        {
+            Assert.Contains($"trayDashboardEditor.{action}(option);", window, StringComparison.Ordinal);
+        }
+        Assert.Contains("trayDashboardEditor.Load(preference);", window, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.Reset();", window, StringComparison.Ordinal);
+        string acceptedEdit = SliceMethod(window,
+            "private void OnTrayDashboardEditorEditAccepted(",
+            "private void UpdateTrayDashboardEditorAvailability()");
+        Assert.Equal(1, CountOccurrences(acceptedEdit,
+            "ApplyTrayDashboardPreference(preference, queueSave: true);"));
+        string apply = SliceMethod(window,
+            "private void ApplyTrayDashboardPreference(",
+            "private void ApplyPageLayoutPreferences(");
+        string[] orderedOperations =
+        [
+            "trayDashboardPreference = TrayDashboardPreferenceDefaults.Normalize(preference);",
+            "Volatile.Write(ref trayDashboardLiveReadingSensors, sensors);",
+            "TrayDashboardPreferenceChanged?.Invoke(trayDashboardPreference);",
+            "if (trayDashboardVisible && sensors != previousSensors)",
+            "visibleObservationLoop.StartOrWake();",
+            "if (queueSave)",
+            "QueuePreferenceSave();",
+        ];
+        int previous = -1;
+        foreach (string operation in orderedOperations)
+        {
+            int position = apply.IndexOf(operation, StringComparison.Ordinal);
+            Assert.True(position > previous, $"Missing or reordered operation: {operation}");
+            previous = position;
+        }
+    }
+
+    [Fact]
     public void TrayDashboardUsesSingleClickAndSettingsOwnedLiveCustomization()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
@@ -4089,7 +4142,7 @@ public sealed class WinUiShellContractTests
             CountOccurrences(
                 mainWindow,
                 "GpuClockOffsetCommitPolicy.CanCommit("));
-        Assert.Contains("CreateSliderOptions", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("trayDashboardEditor.AvailableSliders", mainWindow, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardSliderOptionTemplate", mainXaml, StringComparison.Ordinal);
         Assert.Contains("TrayDashboardInteractionPolicy.ResolveNextIndex(", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"InitialFocusTarget\"", dashboardXaml, StringComparison.Ordinal);

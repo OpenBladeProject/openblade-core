@@ -24,6 +24,8 @@
              Link="UnavailableServiceClient.cs" />
     <Compile Include="..\..\src\OpenBlade.Setup\StartupShortcutWriter.cs"
              Link="StartupShortcutWriter.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\TrayDashboardPreferenceEditor.cs"
+             Link="TrayDashboardPreferenceEditor.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\WindowNotificationCoordinator.cs"
              Link="WindowNotificationCoordinator.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\ITrayIconHost.cs"
