@@ -60,6 +60,8 @@ internal sealed class LightingEditorState
 
     public bool IsEffectUnconfirmed => keyboardEffectUnconfirmed;
 
+    public bool UsesPrimaryColor => EffectUsesPrimaryColor(Effect);
+
     private LightingEffect lightingEffectEditor = LightingEffect.Off;
     private bool keyboardEffectUnconfirmed;
     private int lightingBrightnessEditor;
@@ -416,9 +418,16 @@ internal sealed class LightingEditorState
         }
         SetValue(ref lightingEffectEditor, value.Effect, LightingEditorValue.Effect);
         SetValue(ref lightingBrightnessEditor, brightness, LightingEditorValue.Brightness);
-        SetValue(ref lightingRedEditor, (int)value.Color.Red, LightingEditorValue.Red);
-        SetValue(ref lightingGreenEditor, (int)value.Color.Green, LightingEditorValue.Green);
-        SetValue(ref lightingBlueEditor, (int)value.Color.Blue, LightingEditorValue.Blue);
+        // Random Tidal retains its editable color in typed parameters while
+        // the top-level Color is black. Preserve it for round trips and toggling
+        // random colors off; other effects keep their existing color decoding.
+        RgbColor primaryColor = value.Effect == LightingEffect.Tidal
+            && value.Parameters is TidalLightingParameters tidalPrimary
+                ? tidalPrimary.PrimaryColor
+                : value.Color;
+        SetValue(ref lightingRedEditor, (int)primaryColor.Red, LightingEditorValue.Red);
+        SetValue(ref lightingGreenEditor, (int)primaryColor.Green, LightingEditorValue.Green);
+        SetValue(ref lightingBlueEditor, (int)primaryColor.Blue, LightingEditorValue.Blue);
         RgbColor secondaryColor = value.Parameters switch
         {
             BreathingLightingParameters { SecondaryColor: { } color } => color,
@@ -655,10 +664,7 @@ internal sealed class LightingEditorState
             or LightingEffect.Ripple
             or LightingEffect.Tidal
             or LightingEffect.Starlight;
-        bool previousHadNoEditableColor = previous is LightingEffect.Off
-            or LightingEffect.Spectrum
-            || (previous == LightingEffect.Breathing
-                && BreathingColorMode == BreathingColorMode.Random);
+        bool previousHadNoEditableColor = !EffectUsesPrimaryColor(previous);
         if (selectedUsesColor
             && previousHadNoEditableColor
             && PrimaryColor == default)
@@ -668,25 +674,36 @@ internal sealed class LightingEditorState
                 secondary: false);
         }
 
+        // The source-aware decision above owns primary seeding for effect
+        // changes. Keep secondary defaults and direct mode-change seeding.
         if (selected == LightingEffect.Breathing)
         {
-            SeedBreathingColorDefaults(BreathingColorMode);
+            SeedBreathingColorDefaults(BreathingColorMode, seedPrimary: false);
         }
 
         if (selected == LightingEffect.Tidal)
         {
-            SeedTidalColorDefaults();
+            SeedTidalSecondaryColorDefault();
         }
 
         if (selected == LightingEffect.Starlight)
         {
-            SeedStarlightColorDefaults(StarlightColorMode);
+            SeedStarlightColorDefaults(StarlightColorMode, seedPrimary: false);
         }
     }
 
-    private void SeedBreathingColorDefaults(BreathingColorMode selected)
+    // Share the source-color decision with the editor's color availability.
+    // A black color from an editable source is intentional; a colorless source
+    // has no such intent unless it retained a nonblack value while editing.
+    private bool EffectUsesPrimaryColor(LightingEffect effect) =>
+        effect is LightingEffect.Static or LightingEffect.Reactive or LightingEffect.Ripple
+        || effect == LightingEffect.Breathing && BreathingColorMode != BreathingColorMode.Random
+        || effect == LightingEffect.Tidal && !RandomColors
+        || effect == LightingEffect.Starlight && StarlightColorMode != StarlightColorMode.Random;
+
+    private void SeedBreathingColorDefaults(BreathingColorMode selected, bool seedPrimary = true)
     {
-        if (selected is BreathingColorMode.Single or BreathingColorMode.Dual
+        if (seedPrimary && selected is BreathingColorMode.Single or BreathingColorMode.Dual
             && PrimaryColor == default)
         {
             SetLightingColorEditor(
@@ -701,23 +718,17 @@ internal sealed class LightingEditorState
         }
     }
 
-    private void SeedTidalColorDefaults()
+    private void SeedTidalSecondaryColorDefault()
     {
-        if (PrimaryColor == default)
-        {
-            SetLightingColorEditor(
-                LightingSettingsFactory.DefaultVisibleColor,
-                secondary: false);
-        }
         if (SecondaryColor == default)
         {
             SetLightingColorEditor(DefaultTidalSecondaryColor, secondary: true);
         }
     }
 
-    private void SeedStarlightColorDefaults(StarlightColorMode selected)
+    private void SeedStarlightColorDefaults(StarlightColorMode selected, bool seedPrimary = true)
     {
-        if (selected is StarlightColorMode.Single or StarlightColorMode.Dual
+        if (seedPrimary && selected is StarlightColorMode.Single or StarlightColorMode.Dual
             && PrimaryColor == default)
         {
             SetLightingColorEditor(

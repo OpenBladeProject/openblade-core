@@ -5,6 +5,71 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Fact]
+    public async Task LightingColorRegression_RandomTidalStatusRoundTripsAndCommitsStoredPrimary()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+            });
+        var primary = new RgbColor(12, 34, 56);
+        var secondary = new RgbColor(78, 90, 123);
+        LightingSettings incoming = LightingSettingsFactory.Tidal(
+            primary, secondary, true, LightingDirection.Leftward, 63);
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = incoming },
+        });
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState);
+
+        Assert.Equal(incoming, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+        viewModel.LightingRandomColorsEditor = false;
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.Equal(primary, viewModel.LightingPrimaryColorEditor);
+        LightingSettings draft = viewModel.LightingDraft;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(LightingSettingsFactory.Tidal(
+            primary, secondary, false, LightingDirection.Leftward, 63), client.LightingOverride?.Value);
+    }
+
+    [Fact]
+    public async Task LightingColorRegression_WaveToStaticSelectionCommitsVisiblePrimary()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+            });
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Lighting = LightingSettingsFactory.Wave(LightingDirection.Leftward, 63),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+
+        viewModel.SelectedLightingEffectOption = viewModel.AvailableLightingEffectOptions
+            .Single(option => option.Effect == LightingEffect.Static);
+
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.Equal(LightingSettingsFactory.DefaultVisibleColor, viewModel.LightingPrimaryColorEditor);
+        LightingSettings draft = viewModel.LightingDraft;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(LightingSettingsFactory.Static(LightingSettingsFactory.DefaultVisibleColor, 63),
+            client.LightingOverride?.Value);
+    }
+
     [Theory]
     [InlineData(ControlOperationStatus.Failed, false)]
     [InlineData(ControlOperationStatus.Blocked, false)]
@@ -30,7 +95,7 @@ public sealed partial class MainViewModelTests
                 ChargeLimits = ChargeLimits(),
             });
         client.Publish(initial);
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState);
         viewModel.LightingEffectEditor = LightingEffect.Static;
         viewModel.LightingBrightnessEditor = 61;
         LightingSettings submitted = viewModel.LightingDraft;
@@ -63,7 +128,7 @@ public sealed partial class MainViewModelTests
         {
             ConfirmedState = initial.ConfirmedState! with { Lighting = lighting },
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState);
         var observed = new List<(string Property, RgbColor Color)>();
         viewModel.PropertyChanged += (_, args) =>
         {
@@ -100,7 +165,7 @@ public sealed partial class MainViewModelTests
             LightingOverride = null,
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
-        await WaitUntilAsync(() => viewModel.IsConnected && viewModel.IsKeyboardEffectUnconfirmed);
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState && viewModel.IsKeyboardEffectUnconfirmed);
         var observed = new List<(string Property, bool Unconfirmed, bool Dirty)>();
         viewModel.PropertyChanged += (_, args) =>
         {

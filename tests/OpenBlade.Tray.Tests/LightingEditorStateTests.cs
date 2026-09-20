@@ -167,22 +167,99 @@ public sealed class LightingEditorStateTests
     }
 
     [Fact]
-    public void RandomTidalLoad_PreservesExistingTopLevelColorDecoding()
+    public void LightingColorRegression_RandomTidalRoundTripRestoresPrimaryWhenRandomIsDisabled()
     {
         var editor = new LightingEditorState();
         var primary = new RgbColor(12, 34, 56);
         var secondary = new RgbColor(78, 90, 123);
         LightingSettings incoming = LightingSettingsFactory.Tidal(
-            primary, secondary, true, LightingDirection.Leftward, 63);
+            primary, secondary, true, LightingDirection.Leftward, 63)
+            with
+        { LogoMode = LogoLightingMode.Breathing };
 
         editor.Load(incoming);
 
-        // Characterize the pre-extraction decoder: random Tidal's top-level
-        // Color is black, even when its inactive parameter color is nonzero.
-        Assert.Equal(default, editor.PrimaryColor);
-        Assert.Equal(LightingSettingsFactory.Tidal(
-            default, secondary, true, LightingDirection.Leftward, 63), editor.ToSettings());
+        Assert.Equal(primary, editor.PrimaryColor);
+        Assert.Equal(incoming, editor.ToSettings());
         Assert.False(editor.IsDirty);
+        editor.RandomColors = false;
+        Assert.Equal(LightingSettingsFactory.Tidal(
+            primary, secondary, false, LightingDirection.Leftward, 63)
+            with
+        { LogoMode = LogoLightingMode.Breathing }, editor.ToSettings());
+    }
+
+    public static IEnumerable<object[]> PrimaryColorSources()
+    {
+        yield return [LightingSettingsFactory.Off(), true];
+        yield return [LightingSettingsFactory.SpectrumCycling(63), true];
+        yield return [LightingSettingsFactory.Wave(LightingDirection.Leftward, 63), true];
+        yield return [LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 63), true];
+        yield return [LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 63), true];
+        yield return [LightingSettingsFactory.AudioMeter(1, 63), true];
+        yield return [LightingSettingsFactory.Fire(63), true];
+        yield return [LightingSettingsFactory.Sequence(KeyboardLightingLayoutIds.Rz09_0581, "AQID", true, 63), true];
+        yield return [LightingSettingsFactory.BreathingRandom(63), true];
+        yield return [LightingSettingsFactory.StarlightRandom(63, StarlightLightingDuration.Medium), true];
+        yield return [LightingSettingsFactory.Tidal(default, default, true, LightingDirection.Leftward, 63), true];
+        yield return [LightingSettingsFactory.Static(default, 63), false];
+        yield return [LightingSettingsFactory.Reactive(default, 63, ReactiveLightingDuration.Medium), false];
+        yield return [LightingSettingsFactory.Ripple(default, 63), false];
+        yield return [LightingSettingsFactory.BreathingSingle(default, 63), false];
+        yield return [LightingSettingsFactory.BreathingDual(default, default, 63), false];
+        yield return [LightingSettingsFactory.StarlightSingle(default, 63, StarlightLightingDuration.Medium), false];
+        yield return [LightingSettingsFactory.StarlightDual(default, default, 63, StarlightLightingDuration.Medium), false];
+        yield return [LightingSettingsFactory.Tidal(default, default, false, LightingDirection.Leftward, 63), false];
+    }
+
+    [Theory]
+    [MemberData(nameof(PrimaryColorSources))]
+    public void LightingColorRegression_StaticSelectionUsesSourcePrimaryColorEditability(
+        LightingSettings source,
+        bool seedVisibleColor)
+    {
+        var editor = new LightingEditorState();
+        editor.Load(source);
+
+        editor.SelectEffect(LightingEffect.Static);
+
+        Assert.Equal(seedVisibleColor ? LightingSettingsFactory.DefaultVisibleColor : default,
+            editor.PrimaryColor);
+    }
+
+    [Theory]
+    [InlineData(LightingEffect.Breathing)]
+    [InlineData(LightingEffect.Tidal)]
+    [InlineData(LightingEffect.Starlight)]
+    public void LightingColorRegression_ColoredSourceKeepsIntentionalBlack(LightingEffect destination)
+    {
+        var editor = new LightingEditorState();
+        editor.Load(LightingSettingsFactory.Static(default, 63));
+
+        editor.SelectEffect(destination);
+
+        Assert.Equal(default, editor.PrimaryColor);
+        Assert.Equal(default, editor.ToSettings().Color);
+    }
+
+    [Theory]
+    [InlineData(LightingEffect.Wave)]
+    [InlineData(LightingEffect.Tidal)]
+    [InlineData(LightingEffect.Static)]
+    public void LightingColorRegression_ExistingNonblackPrimaryIsNeverReplaced(LightingEffect source)
+    {
+        var editor = new LightingEditorState();
+        editor.Load(LightingEditorState.CreateChoice(source, LightingSettingsFactory.Off()));
+        if (source == LightingEffect.Tidal)
+        {
+            editor.RandomColors = true;
+        }
+        var retained = new RgbColor(12, 34, 56);
+        editor.PrimaryColor = retained;
+
+        editor.SelectEffect(LightingEffect.Static);
+
+        Assert.Equal(retained, editor.PrimaryColor);
     }
 
     [Fact]
