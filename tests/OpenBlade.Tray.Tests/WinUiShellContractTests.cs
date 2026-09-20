@@ -2366,8 +2366,10 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("snapshotDashboardWindow.Activate()", app, StringComparison.Ordinal);
         int noHitTest = app.IndexOf("((UIElement)window.Content).IsHitTestVisible = false", StringComparison.Ordinal);
         int guard = app.IndexOf("LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window))", StringComparison.Ordinal);
-        int show = app.IndexOf("window.AppWindow.Show(activateWindow: false)", StringComparison.Ordinal);
+        int show = app.IndexOf("window.Activate()", guard, StringComparison.Ordinal);
         Assert.True(noHitTest >= 0 && guard > noHitTest && show > guard);
+        Assert.DoesNotContain("window.AppWindow.Show(activateWindow: false)", app, StringComparison.Ordinal);
+        Assert.Contains("A snapshot window unexpectedly took foreground.", app, StringComparison.Ordinal);
         Assert.Contains("window.AppWindow.IsShownInSwitchers = false", app, StringComparison.Ordinal);
         int activate = app.IndexOf("ShowNoninteractiveSnapshotWindow(snapshotMainWindow)", StringComparison.Ordinal);
         int initialLayoutDrain = app.IndexOf(

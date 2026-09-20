@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 namespace OpenBlade.Tray;
 
 /// <summary>Blocks snapshot HWND input without disabling the rendered controls.</summary>
+// Shared by the net10 WinUI harness and net472 installer tests; keep interop portable.
 internal static class LocalizationSnapshotWindowInput
 {
     private const int ExtendedStyleIndex = -20;

@@ -746,8 +746,15 @@ public partial class App
         ((UIElement)window.Content).IsHitTestVisible = false;
         window.AppWindow.IsShownInSwitchers = false;
         LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
-        window.AppWindow.Show(activateWindow: false);
+        // WinUI requires Activate to initialize x:Bind and templates. The native
+        // no-activate style is already installed, so this does not take foreground.
+        window.Activate();
+        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
+        {
+            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
+        }
     }
+
     private static async Task WaitForSnapshotLayoutAsync()
     {
         // Let the built-in navigation transition finish before capturing geometry.
@@ -940,7 +947,14 @@ public partial class App
                 TaskCreationOptions.RunContinuationsAsynchronously);
             root.Loaded += (_, _) => loaded.TrySetResult(true);
             smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
-            smokeWindow.Activate();
+            if (captureSnapshots)
+            {
+                ShowNoninteractiveSnapshotWindow(smokeWindow);
+            }
+            else
+            {
+                smokeWindow.Activate();
+            }
             await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
             smokeWindow.SelectLocalizationSnapshotPage("laptop");
             await WaitForSnapshotLayoutAsync();
@@ -1129,7 +1143,14 @@ public partial class App
         popup.AppWindow.Resize(new Windows.Graphics.SizeInt32(
             (int)(360 * scale),
             (int)(TrayDashboardLayoutPolicy.CalculatePreferredHeight() * scale)));
-        popup.Activate();
+        if (captureSnapshots)
+        {
+            ShowNoninteractiveSnapshotWindow(popup);
+        }
+        else
+        {
+            popup.Activate();
+        }
         System.Reflection.MethodInfo showDetail = typeof(TrayDashboardWindow).GetMethod(
             "ShowDetail",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
