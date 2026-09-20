@@ -13,13 +13,6 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-internal enum StartOpenBladeResult
-{
-    Started,
-    AlreadyRunning,
-    Canceled,
-}
-
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private const string LocalizationLanguageVariable =
@@ -50,6 +43,8 @@ public partial class App : Microsoft.UI.Xaml.Application
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
     private WindowsProcessorEfficiencyPolicy processorPolicy = null!;
+    private readonly CancellationTokenSource serviceStartupCancellation = new();
+    private TrayServiceStartupCoordinator? serviceStartupCoordinator;
     private int fatalCrashReported;
     private int languageRefreshInProgress;
 
@@ -231,6 +226,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         CreateTrayIconHost();
         StartSessionAgent();
         ShowMainWindow(initialLaunch: true);
+        serviceStartupCoordinator = new TrayServiceStartupCoordinator(
+            token => Task.Run(WindowsServiceStateConfirmation.ReadCurrentState, token),
+            StartOpenBladeCoreAsync);
+        _ = TryStartServiceOnLaunchAsync();
     }
 
     private static void ApplyLocalizationPreference()
@@ -759,6 +758,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     public Task ExitTrayAsync()
     {
+        serviceStartupCancellation.Cancel();
         if (exitLifecycle is null)
         {
             return Task.CompletedTask;
@@ -767,10 +767,36 @@ public partial class App : Microsoft.UI.Xaml.Application
         return exitLifecycle.ExitAsync();
     }
 
-    internal async Task<StartOpenBladeResult> StartOpenBladeAsync()
+    private async Task TryStartServiceOnLaunchAsync()
+    {
+        try
+        {
+            await serviceStartupCoordinator!.TryStartOnceAsync(
+                serviceStartupCancellation.Token);
+        }
+        catch (OperationCanceledException) when (serviceStartupCancellation.IsCancellationRequested)
+        {
+            // An exit or complete shutdown supersedes startup recovery.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "OpenBlade's one-time service start attempt failed; manual recovery remains available: {0}",
+                exception);
+        }
+    }
+
+    internal Task<StartOpenBladeResult> StartOpenBladeAsync() =>
+        ExitRequested
+            ? Task.FromResult(StartOpenBladeResult.Canceled)
+            : serviceStartupCoordinator?.StartAsync(CancellationToken.None)
+                ?? Task.FromResult(StartOpenBladeResult.Canceled);
+
+    private async Task<StartOpenBladeResult> StartOpenBladeCoreAsync(
+        CancellationToken cancellationToken)
     {
         WindowsServiceStartPreflightResult preflight =
-            await WindowsServiceStartOperation.PreflightAsync(CancellationToken.None);
+            await WindowsServiceStartOperation.PreflightAsync(cancellationToken);
         if (preflight == WindowsServiceStartPreflightResult.AlreadyRunning)
         {
             return StartOpenBladeResult.AlreadyRunning;
@@ -784,6 +810,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
         var launcher = new ElevatedServiceControlLauncher();
+        cancellationToken.ThrowIfCancellationRequested();
         var coordinator = new TrayServiceStartCoordinator(
             token => launcher.RequestAsync(
                 executablePath,
@@ -807,28 +834,40 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     public async Task ShutdownOpenBladeAsync()
     {
-        string executablePath = Environment.ProcessPath
-            ?? throw new InvalidOperationException("Tray executable path is unavailable.");
-        var launcher = new ElevatedServiceControlLauncher();
-        var coordinator = new TrayCompleteShutdownCoordinator(
-            token => launcher.RequestAsync(
-                executablePath,
-                ElevatedServiceControlAction.Shutdown,
-                token),
-            WindowsServiceStateConfirmation.WaitForStoppedAsync,
-            () => _ = SessionAgentLauncher.TryStopSibling(),
-            ExitTrayAsync);
-        TrayCompleteShutdownResult result = await coordinator.ShutdownAsync(
-            CancellationToken.None);
-        if (result == TrayCompleteShutdownResult.Canceled)
+        serviceStartupCancellation.Cancel();
+        if (serviceStartupCoordinator is not null)
         {
-            Trace.TraceInformation("OpenBlade service shutdown elevation was canceled.");
-            return;
+            await serviceStartupCoordinator.SuspendStartsAsync();
         }
-        if (result == TrayCompleteShutdownResult.Unconfirmed)
+        try
         {
-            throw new InvalidOperationException(
-                "The elevated shutdown result could not be confirmed. OpenBlade did not retry the request.");
+            string executablePath = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+            var launcher = new ElevatedServiceControlLauncher();
+            var coordinator = new TrayCompleteShutdownCoordinator(
+                token => launcher.RequestAsync(
+                    executablePath,
+                    ElevatedServiceControlAction.Shutdown,
+                    token),
+                WindowsServiceStateConfirmation.WaitForStoppedAsync,
+                () => _ = SessionAgentLauncher.TryStopSibling(),
+                ExitTrayAsync);
+            TrayCompleteShutdownResult result = await coordinator.ShutdownAsync(
+                CancellationToken.None);
+            if (result == TrayCompleteShutdownResult.Canceled)
+            {
+                Trace.TraceInformation("OpenBlade service shutdown elevation was canceled.");
+                return;
+            }
+            if (result == TrayCompleteShutdownResult.Unconfirmed)
+            {
+                throw new InvalidOperationException(
+                    "The elevated shutdown result could not be confirmed. OpenBlade did not retry the request.");
+            }
+        }
+        finally
+        {
+            serviceStartupCoordinator?.ResumeManualStarts();
         }
     }
 
