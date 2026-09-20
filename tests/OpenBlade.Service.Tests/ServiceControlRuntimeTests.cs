@@ -18772,7 +18772,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         TestContext context = CreateContext(
             providerAvailable: true,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
-                CoolingPadConnectionState.Absent));
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
         ConfigurePadlessHyperBoost(context);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Provider.Available = !probeFailure;
@@ -18787,7 +18788,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
             true, CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
         Assert.True(context.Runtime.GetStatus().ConfirmedState!.HyperBoostActive);
         Assert.Equal(DeviceObservationReason.None,
             context.Runtime.GetStatus().ObservationReason);
