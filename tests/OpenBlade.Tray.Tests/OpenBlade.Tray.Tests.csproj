@@ -49,6 +49,8 @@
              Link="WindowsServiceStartOperation.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\TrayCompleteShutdownCoordinator.cs"
              Link="TrayCompleteShutdownCoordinator.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\TrayServiceStartupCoordinator.cs"
+             Link="TrayServiceStartupCoordinator.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\TrayServiceStartCoordinator.cs"
              Link="TrayServiceStartCoordinator.cs" />
   </ItemGroup>
