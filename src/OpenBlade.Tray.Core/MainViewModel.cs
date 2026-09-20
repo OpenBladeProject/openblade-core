@@ -51,7 +51,6 @@ public sealed record LightingDirectionOption(
 public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private static string UnavailableLabel => TrayText.Get("Unavailable");
-    private const byte DefaultLightingBrightness = 50;
     private static readonly TimeSpan ReconnectVisualGracePeriod =
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan ControlPresentationHoldGracePeriod =
@@ -327,38 +326,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private LightingSettings usbCLightingEditor = ProfileDefaults.CreateSafeDefaults().UsbC.Lighting;
     private int profileChargeLimitEditor = 80;
     private bool profileEditorsDirty;
-    private LightingEffect lightingEffectEditor = LightingEffect.Off;
-    private bool keyboardEffectUnconfirmed;
-    private int lightingBrightnessEditor;
-    private int lightingRedEditor;
-    private int lightingGreenEditor;
-    private int lightingBlueEditor;
-    private int lightingSecondaryRedEditor;
-    private int lightingSecondaryGreenEditor;
-    private int lightingSecondaryBlueEditor;
-    private BreathingColorMode lightingBreathingColorModeEditor = BreathingColorMode.Single;
-    private StarlightColorMode lightingStarlightColorModeEditor = StarlightColorMode.Single;
-    private StarlightLightingDuration lightingStarlightDurationEditor =
-        StarlightLightingDuration.Medium;
-    private ReactiveLightingDuration lightingReactiveDurationEditor =
-        ReactiveLightingDuration.Medium;
-    private SequenceLightingParameters? importedSequenceParameters;
-    private bool lightingRandomColorsEditor;
-    private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
-    private LightingRotationDirection lightingRotationDirectionEditor =
-        LightingRotationDirection.Clockwise;
-    private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
-        AmbientAwarenessRegion.Full;
-    private double lightingAudioMeterColorBoostEditor = 1;
-    private int lightingAudioMeterDecayMillisecondsEditor =
-        LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds;
-    private LogoLightingMode? logoLightingModeEditor;
-    private bool lightingEditorDirty;
+    private readonly LightingEditorState lightingEditor = new();
     private bool lightingTurnOffWithDisplayEditor;
     private bool lightingIdleTimeoutEnabledEditor;
     private int lightingIdleTimeoutMinutesEditor = 30;
     private bool lightingPowerPolicyEditorDirty;
-    private PowerSource? lastConfirmedLightingEditorPowerSource;
     private readonly ActiveProfileDraftState activeProfileDraft = new();
     private BatteryPolicy? pendingBatteryPolicy;
     private ThemePreference theme = ThemePreference.FollowWindows;
@@ -433,6 +405,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
         this.startupRegistration = startupRegistration
             ?? throw new ArgumentNullException(nameof(startupRegistration));
+        lightingEditor.Changed += OnLightingEditorChanged;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
@@ -3671,31 +3644,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public LightingEffect LightingEffectEditor
     {
-        get => lightingEffectEditor;
-        set
-        {
-            LightingEffect previous = lightingEffectEditor;
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            SetKeyboardEffectUnconfirmed(false);
-            if (!SetLightingEditorField(ref lightingEffectEditor, value))
-            {
-                return;
-            }
-
-            SeedVisibleLightingDefaults(previous, value);
-
-            NotifyLightingParameterPresentation();
-            Notify(nameof(SelectedLightingEffectOption));
-        }
+        get => lightingEditor.Effect;
+        set => lightingEditor.Effect = value;
     }
 
     public LightingEffectOption? SelectedLightingEffectOption
     {
-        get => keyboardEffectUnconfirmed
+        get => lightingEditor.IsEffectUnconfirmed
             ? null
             : AvailableLightingEffectOptions.FirstOrDefault(
                 option => option.Effect == LightingEffectEditor);
@@ -3703,128 +3658,69 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (value is not null)
             {
-                bool wasUnconfirmed = keyboardEffectUnconfirmed;
-                SetKeyboardEffectUnconfirmed(false);
-                if (wasUnconfirmed && lightingEffectEditor == value.Effect)
-                {
-                    SeedVisibleLightingDefaults(lightingEffectEditor, value.Effect);
-                    SetLightingEditorDirty(true);
-                    Notify(nameof(LightingDraft));
-                    NotifyLightingParameterPresentation();
-                    NotifyCommands();
-                    return;
-                }
-
-                LightingEffectEditor = value.Effect;
+                lightingEditor.SelectEffect(value.Effect);
             }
         }
     }
 
-    public bool IsKeyboardEffectUnconfirmed => keyboardEffectUnconfirmed;
+    public bool IsKeyboardEffectUnconfirmed => lightingEditor.IsEffectUnconfirmed;
 
-    public string KeyboardEffectDescription => keyboardEffectUnconfirmed
+    public string KeyboardEffectDescription => lightingEditor.IsEffectUnconfirmed
         ? TrayText.Get("The active effect was set outside OpenBlade and cannot be read from firmware.")
         : TrayText.Get("Choose a supported keyboard lighting effect.");
 
     public int LightingBrightnessEditor
     {
-        get => lightingBrightnessEditor;
-        set
-        {
-            ArgumentOutOfRangeException.ThrowIfNegative(value);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 100);
-            SetLightingEditorField(ref lightingBrightnessEditor, value);
-        }
+        get => lightingEditor.Brightness;
+        set => lightingEditor.Brightness = value;
     }
 
     public int LightingRedEditor
     {
-        get => lightingRedEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingRedEditor, value))
-            {
-                Notify(nameof(LightingPrimaryColorEditor));
-            }
-        }
+        get => lightingEditor.Red;
+        set => lightingEditor.Red = value;
     }
 
     public int LightingGreenEditor
     {
-        get => lightingGreenEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingGreenEditor, value))
-            {
-                Notify(nameof(LightingPrimaryColorEditor));
-            }
-        }
+        get => lightingEditor.Green;
+        set => lightingEditor.Green = value;
     }
 
     public int LightingBlueEditor
     {
-        get => lightingBlueEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingBlueEditor, value))
-            {
-                Notify(nameof(LightingPrimaryColorEditor));
-            }
-        }
+        get => lightingEditor.Blue;
+        set => lightingEditor.Blue = value;
     }
 
     public RgbColor LightingPrimaryColorEditor
     {
-        get => new(
-            (byte)LightingRedEditor,
-            (byte)LightingGreenEditor,
-            (byte)LightingBlueEditor);
-        set => SetLightingColorEditor(value, secondary: false);
+        get => lightingEditor.PrimaryColor;
+        set => lightingEditor.PrimaryColor = value;
     }
 
     public int LightingSecondaryRedEditor
     {
-        get => lightingSecondaryRedEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingSecondaryRedEditor, value))
-            {
-                Notify(nameof(LightingSecondaryColorEditor));
-            }
-        }
+        get => lightingEditor.SecondaryRed;
+        set => lightingEditor.SecondaryRed = value;
     }
 
     public int LightingSecondaryGreenEditor
     {
-        get => lightingSecondaryGreenEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingSecondaryGreenEditor, value))
-            {
-                Notify(nameof(LightingSecondaryColorEditor));
-            }
-        }
+        get => lightingEditor.SecondaryGreen;
+        set => lightingEditor.SecondaryGreen = value;
     }
 
     public int LightingSecondaryBlueEditor
     {
-        get => lightingSecondaryBlueEditor;
-        set
-        {
-            if (SetLightingColorField(ref lightingSecondaryBlueEditor, value))
-            {
-                Notify(nameof(LightingSecondaryColorEditor));
-            }
-        }
+        get => lightingEditor.SecondaryBlue;
+        set => lightingEditor.SecondaryBlue = value;
     }
 
     public RgbColor LightingSecondaryColorEditor
     {
-        get => new(
-            (byte)LightingSecondaryRedEditor,
-            (byte)LightingSecondaryGreenEditor,
-            (byte)LightingSecondaryBlueEditor);
-        set => SetLightingColorEditor(value, secondary: true);
+        get => lightingEditor.SecondaryColor;
+        set => lightingEditor.SecondaryColor = value;
     }
 
     public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes { get; } =
@@ -3832,19 +3728,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public BreathingColorMode LightingBreathingColorModeEditor
     {
-        get => lightingBreathingColorModeEditor;
-        set
-        {
-            if (!Enum.IsDefined(value)
-                || !SetLightingEditorField(ref lightingBreathingColorModeEditor, value))
-            {
-                return;
-            }
-
-            SeedBreathingColorDefaults(value);
-
-            NotifyLightingParameterPresentation();
-        }
+        get => lightingEditor.BreathingColorMode;
+        set => lightingEditor.BreathingColorMode = value;
     }
 
     public IReadOnlyList<ReactiveLightingDuration> LightingReactiveDurations { get; } =
@@ -3852,16 +3737,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public ReactiveLightingDuration LightingReactiveDurationEditor
     {
-        get => lightingReactiveDurationEditor;
-        set
-        {
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            SetLightingEditorField(ref lightingReactiveDurationEditor, value);
-        }
+        get => lightingEditor.ReactiveDuration;
+        set => lightingEditor.ReactiveDuration = value;
     }
 
     public IReadOnlyList<StarlightColorMode> LightingStarlightColorModes { get; } =
@@ -3869,18 +3746,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public StarlightColorMode LightingStarlightColorModeEditor
     {
-        get => lightingStarlightColorModeEditor;
-        set
-        {
-            if (!Enum.IsDefined(value)
-                || !SetLightingEditorField(ref lightingStarlightColorModeEditor, value))
-            {
-                return;
-            }
-
-            SeedStarlightColorDefaults(value);
-            NotifyLightingParameterPresentation();
-        }
+        get => lightingEditor.StarlightColorMode;
+        set => lightingEditor.StarlightColorMode = value;
     }
 
     public IReadOnlyList<StarlightLightingDuration> LightingStarlightDurations { get; } =
@@ -3888,30 +3755,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public StarlightLightingDuration LightingStarlightDurationEditor
     {
-        get => lightingStarlightDurationEditor;
-        set
-        {
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            SetLightingEditorField(ref lightingStarlightDurationEditor, value);
-        }
+        get => lightingEditor.StarlightDuration;
+        set => lightingEditor.StarlightDuration = value;
     }
 
     public bool LightingRandomColorsEditor
     {
-        get => lightingRandomColorsEditor;
-        set
-        {
-            if (!SetLightingEditorField(ref lightingRandomColorsEditor, value))
-            {
-                return;
-            }
-
-            NotifyLightingParameterPresentation();
-        }
+        get => lightingEditor.RandomColors;
+        set => lightingEditor.RandomColors = value;
     }
 
     public IReadOnlyList<LightingDirection> LightingDirections { get; } =
@@ -3936,19 +3787,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public LightingDirection LightingDirectionEditor
     {
-        get => lightingDirectionEditor;
-        set
-        {
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            if (SetLightingEditorField(ref lightingDirectionEditor, value))
-            {
-                Notify(nameof(SelectedLightingDirectionOption));
-            }
-        }
+        get => lightingEditor.Direction;
+        set => lightingEditor.Direction = value;
     }
 
     public IReadOnlyList<LightingRotationDirection> LightingRotationDirections { get; } =
@@ -3956,16 +3796,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public LightingRotationDirection LightingRotationDirectionEditor
     {
-        get => lightingRotationDirectionEditor;
-        set
-        {
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            SetLightingEditorField(ref lightingRotationDirectionEditor, value);
-        }
+        get => lightingEditor.RotationDirection;
+        set => lightingEditor.RotationDirection = value;
     }
 
     public IReadOnlyList<AmbientAwarenessRegionOption>
@@ -3979,60 +3811,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public AmbientAwarenessRegion LightingAmbientAwarenessRegionEditor
     {
-        get => lightingAmbientAwarenessRegionEditor;
-        set
-        {
-            if (!Enum.IsDefined(value))
-            {
-                return;
-            }
-
-            if (SetLightingEditorField(ref lightingAmbientAwarenessRegionEditor, value))
-            {
-                Notify(nameof(SelectedAmbientAwarenessRegionOption));
-            }
-        }
+        get => lightingEditor.AmbientAwarenessRegion;
+        set => lightingEditor.AmbientAwarenessRegion = value;
     }
 
     public double LightingAudioMeterColorBoostEditor
     {
-        get => lightingAudioMeterColorBoostEditor;
-        set
-        {
-            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 4);
-            if (!double.IsFinite(value)
-                || value * 4 != Math.Truncate(value * 4))
-            {
-                throw new ArgumentOutOfRangeException(nameof(value));
-            }
-            SetLightingEditorField(ref lightingAudioMeterColorBoostEditor, value);
-        }
+        get => lightingEditor.AudioMeterColorBoost;
+        set => lightingEditor.AudioMeterColorBoost = value;
     }
 
     public int LightingAudioMeterDecayMillisecondsEditor
     {
-        get => lightingAudioMeterDecayMillisecondsEditor;
-        set
-        {
-            if (value is
-                    < LightingSettingsFactory.MinAudioMeterDecayMilliseconds
-                    or > LightingSettingsFactory.MaxAudioMeterDecayMilliseconds
-                || value % LightingSettingsFactory.AudioMeterDecayStepMilliseconds != 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(value));
-            }
-            if (SetLightingEditorField(
-                ref lightingAudioMeterDecayMillisecondsEditor,
-                value))
-            {
-                Notify(nameof(LightingAudioMeterDecayValue));
-            }
-        }
+        get => lightingEditor.AudioMeterDecayMilliseconds;
+        set => lightingEditor.AudioMeterDecayMilliseconds = value;
     }
 
     public string LightingAudioMeterDecayValue => LightingPresentation.FormatAudioMeterDecay(
-        lightingAudioMeterDecayMillisecondsEditor);
+        lightingEditor.AudioMeterDecayMilliseconds);
 
     public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
     {
@@ -4049,19 +3845,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public LogoLightingMode? LogoLightingModeEditor
     {
-        get => logoLightingModeEditor;
-        set
-        {
-            if (value is { } mode && !Enum.IsDefined(mode))
-            {
-                return;
-            }
-
-            if (SetLightingEditorField(ref logoLightingModeEditor, value))
-            {
-                Notify(nameof(SelectedLogoLightingModeOption));
-            }
-        }
+        get => lightingEditor.LogoMode;
+        set => lightingEditor.LogoMode = value;
     }
 
     public LogoLightingModeOption? SelectedLogoLightingModeOption
@@ -4136,9 +3921,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsAudioMeterControls =>
         LightingEffectEditor == LightingEffect.AudioMeter;
 
-    public LightingSettings LightingDraft => CreateLightingDraft();
+    public LightingSettings LightingDraft => lightingEditor.ToSettings();
 
-    public bool IsLightingApplyPending => lightingEditorDirty;
+    public bool IsLightingApplyPending => lightingEditor.IsDirty;
 
     public bool LightingTurnOffWithDisplayEditor
     {
@@ -5041,12 +4826,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? status.FanControlOverride
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
-        PrepareLightingEditorForPowerSource(status.ActivePowerSource);
+        lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
         if (!checkingLaptopConnection
-            && !lightingEditorDirty
+            && !lightingEditor.IsDirty
             && !IsLightingOperationInProgress)
         {
-            SetKeyboardEffectUnconfirmed(
+            lightingEditor.SetEffectUnconfirmed(
                 confirmed?.Lighting is null
                 && status.LightingOverride is null
                 && status.LightingRendererOwnership is
@@ -5058,7 +4843,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
         }
-        if (!lightingEditorDirty && !checkingLaptopConnection)
+        if (!lightingEditor.IsDirty && !checkingLaptopConnection)
         {
             LoadLightingEditor(
                 SelectedLighting,
@@ -5394,7 +5179,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedLightingEffectOption));
         }
         LightingSettings[] lightingSettings = AvailableLightingEffects
-            .Select(CreateLightingChoice)
+            .Select(effect => LightingEditorState.CreateChoice(effect, SelectedLighting))
             .ToArray();
         if (!AvailableLightingSettings.SequenceEqual(lightingSettings))
         {
@@ -5656,10 +5441,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return false;
         }
 
-        SetKeyboardEffectUnconfirmed(false);
+        lightingEditor.SetEffectUnconfirmed(false);
         EnsureImportedSequenceOption(preset.Lighting);
         LoadLightingEditor(preset.Lighting with { LogoMode = LogoLightingModeEditor });
-        SetLightingEditorDirty(true);
+        lightingEditor.SetDirty(true);
         Notify(nameof(LightingDraft));
         NotifyCommands();
         return true;
@@ -6229,11 +6014,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    if (LightingDraft != requested)
+                    if (!lightingEditor.ClearDirtyIfUnchanged(requested))
                     {
                         return;
                     }
-                    SetLightingEditorDirty(false);
                     if (resultStatus == ControlOperationStatus.Applied
                         && latestStatus is not null
                         && latestAcceptedRevision > revisionAtStart)
@@ -7200,156 +6984,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
         EnsureImportedSequenceOption(value);
-        if (value.Parameters is SequenceLightingParameters sequence)
-        {
-            importedSequenceParameters = sequence;
-        }
-        int brightness = value.Effect == LightingEffect.Off
-            ? 0
-            : value.Brightness == 0
-                ? DefaultLightingBrightness
-                : value.Brightness;
-        if (startUnconfirmedEffectAtDefaultBrightness
-            && keyboardEffectUnconfirmed
-            && brightness == 0)
-        {
-            // PID 02E0 reports brightness independently but cannot report
-            // its current matrix effect. Zero in this state means unknown,
-            // not that the lit keyboard is actually at zero percent. Start
-            // a newly selected visible effect at a neutral, visible level.
-            brightness = (int)DefaultLightingBrightness;
-        }
-        SetField(ref lightingEffectEditor, value.Effect, nameof(LightingEffectEditor));
-        SetField(ref lightingBrightnessEditor, brightness, nameof(LightingBrightnessEditor));
-        SetField(ref lightingRedEditor, (int)value.Color.Red, nameof(LightingRedEditor));
-        SetField(ref lightingGreenEditor, (int)value.Color.Green, nameof(LightingGreenEditor));
-        SetField(ref lightingBlueEditor, (int)value.Color.Blue, nameof(LightingBlueEditor));
-        RgbColor secondaryColor = value.Parameters switch
-        {
-            BreathingLightingParameters { SecondaryColor: { } color } => color,
-            TidalLightingParameters tidal => tidal.SecondaryColor,
-            StarlightLightingParameters { SecondaryColor: { } color } => color,
-            _ => value.Color,
-        };
-        SetField(
-            ref lightingSecondaryRedEditor,
-            (int)secondaryColor.Red,
-            nameof(LightingSecondaryRedEditor));
-        SetField(
-            ref lightingSecondaryGreenEditor,
-            (int)secondaryColor.Green,
-            nameof(LightingSecondaryGreenEditor));
-        SetField(
-            ref lightingSecondaryBlueEditor,
-            (int)secondaryColor.Blue,
-            nameof(LightingSecondaryBlueEditor));
-        NotifyComputed(nameof(LightingPrimaryColorEditor), LightingPrimaryColorEditor);
-        NotifyComputed(nameof(LightingSecondaryColorEditor), LightingSecondaryColorEditor);
-        BreathingColorMode breathingColorMode =
-            value.Parameters is BreathingLightingParameters breathing
-                ? breathing.ColorMode
-                : BreathingColorMode.Single;
-        SetField(
-            ref lightingBreathingColorModeEditor,
-            breathingColorMode,
-            nameof(LightingBreathingColorModeEditor));
-        ReactiveLightingDuration reactiveDuration =
-            value.Parameters is ReactiveLightingParameters reactive
-                ? reactive.Duration
-                : ReactiveLightingDuration.Medium;
-        SetField(
-            ref lightingReactiveDurationEditor,
-            reactiveDuration,
-            nameof(LightingReactiveDurationEditor));
-        StarlightColorMode starlightColorMode =
-            value.Parameters is StarlightLightingParameters starlight
-                ? starlight.ColorMode
-                : StarlightColorMode.Single;
-        SetField(
-            ref lightingStarlightColorModeEditor,
-            starlightColorMode,
-            nameof(LightingStarlightColorModeEditor));
-        StarlightLightingDuration starlightDuration =
-            value.Parameters is StarlightLightingParameters starlightParameters
-                ? starlightParameters.Duration
-                : StarlightLightingDuration.Medium;
-        SetField(
-            ref lightingStarlightDurationEditor,
-            starlightDuration,
-            nameof(LightingStarlightDurationEditor));
-        bool randomColors = value.Parameters is TidalLightingParameters
-        {
-            RandomColors: true,
-        };
-        SetField(
-            ref lightingRandomColorsEditor,
-            randomColors,
-            nameof(LightingRandomColorsEditor));
-        LightingDirection direction = value.Parameters switch
-        {
-            TidalLightingParameters tidalParameters => tidalParameters.Direction,
-            WaveLightingParameters waveParameters => waveParameters.Direction,
-            _ => LightingDirection.Rightward,
-        };
-        SetField(
-            ref lightingDirectionEditor,
-            direction,
-            nameof(LightingDirectionEditor));
-        LightingRotationDirection rotationDirection =
-            value.Parameters is WheelLightingParameters wheelParameters
-                ? wheelParameters.Direction
-                : LightingRotationDirection.Clockwise;
-        SetField(
-            ref lightingRotationDirectionEditor,
-            rotationDirection,
-            nameof(LightingRotationDirectionEditor));
-        AmbientAwarenessRegion ambientAwarenessRegion =
-            value.Parameters is AmbientAwarenessLightingParameters ambientAwareness
-                ? ambientAwareness.Region
-                : AmbientAwarenessRegion.Full;
-        SetField(
-            ref lightingAmbientAwarenessRegionEditor,
-            ambientAwarenessRegion,
-            nameof(LightingAmbientAwarenessRegionEditor));
-        double audioMeterColorBoost =
-            value.Parameters is AudioMeterLightingParameters audioMeter
-                ? audioMeter.ColorBoost
-                : 1;
-        SetField(
-            ref lightingAudioMeterColorBoostEditor,
-            audioMeterColorBoost,
-            nameof(LightingAudioMeterColorBoostEditor));
-        int audioMeterDecayMilliseconds =
-            value.Parameters is AudioMeterLightingParameters audioMeterDecay
-                ? audioMeterDecay.DecayMilliseconds
-                : LightingSettingsFactory.DefaultAudioMeterDecayMilliseconds;
-        SetField(
-            ref lightingAudioMeterDecayMillisecondsEditor,
-            audioMeterDecayMilliseconds,
-            nameof(LightingAudioMeterDecayMillisecondsEditor));
-        NotifyComputed(nameof(LightingAudioMeterDecayValue), LightingAudioMeterDecayValue);
-        SetField(
-            ref logoLightingModeEditor,
-            value.LogoMode,
-            nameof(LogoLightingModeEditor));
+        lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
         NotifyLightingParameterPresentation();
         NotifyComputed(nameof(SelectedLightingEffectOption), SelectedLightingEffectOption);
         NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);
         NotifyComputed(nameof(SelectedAmbientAwarenessRegionOption), SelectedAmbientAwarenessRegionOption);
         NotifyComputed(nameof(LightingDraft), LightingDraft);
-    }
-
-    private void SetKeyboardEffectUnconfirmed(bool value)
-    {
-        if (keyboardEffectUnconfirmed == value)
-        {
-            return;
-        }
-
-        keyboardEffectUnconfirmed = value;
-        Notify(nameof(IsKeyboardEffectUnconfirmed));
-        Notify(nameof(KeyboardEffectDescription));
-        Notify(nameof(SelectedLightingEffectOption));
     }
 
     private void LoadLightingPowerPolicyEditor(LightingPowerPolicy policy)
@@ -7370,22 +7010,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(HasUnsavedLightingPowerPolicy), HasUnsavedLightingPowerPolicy);
         NotifyComputed(nameof(LightingPowerPolicyDraft), LightingPowerPolicyDraft);
         NotifyCommands();
-    }
-
-    private void PrepareLightingEditorForPowerSource(PowerSource powerSource)
-    {
-        if (powerSource is not (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
-        {
-            return;
-        }
-
-        if (lastConfirmedLightingEditorPowerSource is { } previousPowerSource
-            && previousPowerSource != powerSource)
-        {
-            SetLightingEditorDirty(false);
-        }
-
-        lastConfirmedLightingEditorPowerSource = powerSource;
     }
 
     private void LoadChargeLimitEditor(ServiceStatusSnapshot status)
@@ -7890,91 +7514,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 draft.FanControl ?? FanControlSettings.FromLegacy(draft.Fans)));
     }
 
-    private LightingSettings CreateLightingDraft()
-    {
-        byte brightness = LightingEffectEditor != LightingEffect.Off
-            && LightingBrightnessEditor == 0
-                ? DefaultLightingBrightness
-                : (byte)LightingBrightnessEditor;
-        RgbColor primaryColor = new(
-            (byte)LightingRedEditor,
-            (byte)LightingGreenEditor,
-            (byte)LightingBlueEditor);
-        RgbColor secondaryColor = new(
-            (byte)LightingSecondaryRedEditor,
-            (byte)LightingSecondaryGreenEditor,
-            (byte)LightingSecondaryBlueEditor);
-        LightingSettings keyboard = LightingEffectEditor switch
-        {
-            LightingEffect.Off => LightingSettingsFactory.Off(),
-            LightingEffect.Static => LightingSettingsFactory.Static(primaryColor, brightness),
-            LightingEffect.Spectrum => LightingSettingsFactory.SpectrumCycling(brightness),
-            LightingEffect.Breathing when
-                LightingBreathingColorModeEditor == BreathingColorMode.Single =>
-                LightingSettingsFactory.BreathingSingle(primaryColor, brightness),
-            LightingEffect.Breathing when
-                LightingBreathingColorModeEditor == BreathingColorMode.Dual =>
-                LightingSettingsFactory.BreathingDual(
-                    primaryColor,
-                    secondaryColor,
-                    brightness),
-            LightingEffect.Breathing when
-                LightingBreathingColorModeEditor == BreathingColorMode.Random =>
-                LightingSettingsFactory.BreathingRandom(brightness),
-            LightingEffect.Reactive => LightingSettingsFactory.Reactive(
-                primaryColor,
-                brightness,
-                LightingReactiveDurationEditor),
-            LightingEffect.Ripple => LightingSettingsFactory.Ripple(primaryColor, brightness),
-            LightingEffect.Tidal => LightingSettingsFactory.Tidal(
-                primaryColor,
-                secondaryColor,
-                LightingRandomColorsEditor,
-                LightingDirectionEditor,
-                brightness),
-            LightingEffect.Starlight when
-                LightingStarlightColorModeEditor == StarlightColorMode.Single =>
-                LightingSettingsFactory.StarlightSingle(
-                    primaryColor,
-                    brightness,
-                    LightingStarlightDurationEditor),
-            LightingEffect.Starlight when
-                LightingStarlightColorModeEditor == StarlightColorMode.Dual =>
-                LightingSettingsFactory.StarlightDual(
-                    primaryColor,
-                    secondaryColor,
-                    brightness,
-                    LightingStarlightDurationEditor),
-            LightingEffect.Starlight when
-                LightingStarlightColorModeEditor == StarlightColorMode.Random =>
-                LightingSettingsFactory.StarlightRandom(
-                    brightness,
-                    LightingStarlightDurationEditor),
-            LightingEffect.Wave => LightingSettingsFactory.Wave(
-                LightingDirectionEditor,
-                brightness),
-            LightingEffect.Wheel => LightingSettingsFactory.Wheel(
-                LightingRotationDirectionEditor,
-                brightness),
-            LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
-                LightingAmbientAwarenessRegionEditor,
-                brightness),
-            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
-                LightingAudioMeterColorBoostEditor,
-                brightness,
-                LightingAudioMeterDecayMillisecondsEditor),
-            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
-            LightingEffect.Sequence when importedSequenceParameters is not null =>
-                LightingSettingsFactory.Sequence(
-                    importedSequenceParameters.LayoutId,
-                    importedSequenceParameters.TimelineBase64,
-                    importedSequenceParameters.Loop,
-                    brightness),
-            _ => new LightingSettings(LightingEffectEditor, default, brightness),
-        };
-        return keyboard with { LogoMode = LogoLightingModeEditor };
-    }
-
     private void EnsureImportedSequenceOption(LightingSettings value)
     {
         if (value.Effect != LightingEffect.Sequence
@@ -7989,154 +7528,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 .Append(CreateLightingEffectOption(LightingEffect.Sequence))
                 .OrderBy(option => LightingEffectDisplayOrder(option.Effect))
                 .ToArray();
-    }
-
-    private void SeedVisibleLightingDefaults(
-        LightingEffect previous,
-        LightingEffect selected)
-    {
-        if (selected == LightingEffect.Off)
-        {
-            return;
-        }
-
-        if (LightingBrightnessEditor == 0)
-        {
-            SetLightingEditorField(
-                ref lightingBrightnessEditor,
-                (int)DefaultLightingBrightness,
-                nameof(LightingBrightnessEditor));
-        }
-
-        bool selectedUsesColor = selected is LightingEffect.Static
-            or LightingEffect.Breathing
-            or LightingEffect.Reactive
-            or LightingEffect.Ripple
-            or LightingEffect.Tidal
-            or LightingEffect.Starlight;
-        bool previousHadNoEditableColor = previous is LightingEffect.Off
-            or LightingEffect.Spectrum
-            || (previous == LightingEffect.Breathing
-                && LightingBreathingColorModeEditor == BreathingColorMode.Random);
-        if (selectedUsesColor
-            && previousHadNoEditableColor
-            && LightingPrimaryColorEditor == default)
-        {
-            SetLightingColorEditor(
-                LightingSettingsFactory.DefaultVisibleColor,
-                secondary: false);
-        }
-
-        if (selected == LightingEffect.Breathing)
-        {
-            SeedBreathingColorDefaults(LightingBreathingColorModeEditor);
-        }
-
-        if (selected == LightingEffect.Tidal)
-        {
-            SeedTidalColorDefaults();
-        }
-
-        if (selected == LightingEffect.Starlight)
-        {
-            SeedStarlightColorDefaults(LightingStarlightColorModeEditor);
-        }
-    }
-
-    private void SeedBreathingColorDefaults(BreathingColorMode selected)
-    {
-        if (selected is BreathingColorMode.Single or BreathingColorMode.Dual
-            && LightingPrimaryColorEditor == default)
-        {
-            SetLightingColorEditor(
-                LightingSettingsFactory.DefaultVisibleColor,
-                secondary: false);
-        }
-
-        if (selected == BreathingColorMode.Dual
-            && LightingSecondaryColorEditor == default)
-        {
-            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
-        }
-    }
-
-    private void SeedTidalColorDefaults()
-    {
-        if (LightingPrimaryColorEditor == default)
-        {
-            SetLightingColorEditor(
-                LightingSettingsFactory.DefaultVisibleColor,
-                secondary: false);
-        }
-        if (LightingSecondaryColorEditor == default)
-        {
-            SetLightingColorEditor(new RgbColor(0, 0, 255), secondary: true);
-        }
-    }
-
-    private void SeedStarlightColorDefaults(StarlightColorMode selected)
-    {
-        if (selected is StarlightColorMode.Single or StarlightColorMode.Dual
-            && LightingPrimaryColorEditor == default)
-        {
-            SetLightingColorEditor(
-                LightingSettingsFactory.DefaultVisibleColor,
-                secondary: false);
-        }
-
-        if (selected == StarlightColorMode.Dual
-            && LightingSecondaryColorEditor == default)
-        {
-            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
-        }
-    }
-
-    private LightingSettings CreateLightingChoice(LightingEffect effect)
-    {
-        byte brightness = SelectedLighting.Brightness == 0
-            ? DefaultLightingBrightness
-            : SelectedLighting.Brightness;
-        RgbColor color = SelectedLighting.Color == default
-            ? LightingSettingsFactory.DefaultVisibleColor
-            : SelectedLighting.Color;
-        return effect switch
-        {
-            LightingEffect.Off => LightingSettingsFactory.Off(),
-            LightingEffect.Static => LightingSettingsFactory.Static(color, brightness),
-            LightingEffect.Spectrum => LightingSettingsFactory.SpectrumCycling(brightness),
-            LightingEffect.Breathing => LightingSettingsFactory.BreathingSingle(
-                color,
-                brightness),
-            LightingEffect.Reactive => LightingSettingsFactory.Reactive(
-                color,
-                brightness,
-                ReactiveLightingDuration.Medium),
-            LightingEffect.Ripple => LightingSettingsFactory.Ripple(color, brightness),
-            LightingEffect.Tidal => LightingSettingsFactory.Tidal(
-                color,
-                new RgbColor(0, 0, 255),
-                randomColors: false,
-                LightingDirection.Rightward,
-                brightness),
-            LightingEffect.Starlight => LightingSettingsFactory.StarlightSingle(
-                color,
-                brightness,
-                StarlightLightingDuration.Medium),
-            LightingEffect.Wave => LightingSettingsFactory.Wave(
-                LightingDirection.Rightward,
-                brightness),
-            LightingEffect.Wheel => LightingSettingsFactory.Wheel(
-                LightingRotationDirection.Clockwise,
-                brightness),
-            LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
-                AmbientAwarenessRegion.Full,
-                brightness),
-            LightingEffect.AudioMeter => LightingSettingsFactory.AudioMeter(
-                colorBoost: 1,
-                brightness),
-            LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
-            _ => new LightingSettings(effect, color, brightness),
-        };
     }
 
     private void NotifyCommands()
@@ -9062,71 +8453,90 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasUnsavedProfileChanges));
     }
 
-    private bool SetLightingColorField(
-        ref int field,
-        int value,
-        [CallerMemberName] string? propertyName = null)
+    private void OnLightingEditorChanged(LightingEditorChange change)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(value);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 255);
-        return SetLightingEditorField(ref field, value, propertyName);
-    }
-
-    private void SetLightingColorEditor(RgbColor value, bool secondary)
-    {
-        ref int red = ref (secondary
-            ? ref lightingSecondaryRedEditor
-            : ref lightingRedEditor);
-        ref int green = ref (secondary
-            ? ref lightingSecondaryGreenEditor
-            : ref lightingGreenEditor);
-        ref int blue = ref (secondary
-            ? ref lightingSecondaryBlueEditor
-            : ref lightingBlueEditor);
-        if (red == value.Red && green == value.Green && blue == value.Blue)
+        if (change.Kind == LightingEditorChangeKind.ParametersChanged)
         {
+            NotifyLightingParameterPresentation();
             return;
         }
-
-        SetLightingEditorDirty(true);
-        string prefix = secondary ? "LightingSecondary" : "Lighting";
-        SetField(ref red, (int)value.Red, $"{prefix}RedEditor");
-        SetField(ref green, (int)value.Green, $"{prefix}GreenEditor");
-        SetField(ref blue, (int)value.Blue, $"{prefix}BlueEditor");
-        Notify(
-            secondary
-                ? nameof(LightingSecondaryColorEditor)
-                : nameof(LightingPrimaryColorEditor));
-        Notify(nameof(LightingDraft));
-        NotifyCommands();
-    }
-
-    private bool SetLightingEditorField<T>(
-        ref T field,
-        T value,
-        [CallerMemberName] string? propertyName = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
+        if (change.Kind == LightingEditorChangeKind.EditCompleted)
         {
-            return false;
-        }
-
-        SetLightingEditorDirty(true);
-        SetField(ref field, value, propertyName);
-        Notify(nameof(LightingDraft));
-        NotifyCommands();
-        return true;
-    }
-
-    private void SetLightingEditorDirty(bool value)
-    {
-        if (lightingEditorDirty == value)
-        {
+            NotifyCommands();
             return;
         }
-
-        lightingEditorDirty = value;
-        Notify(nameof(IsLightingApplyPending));
+        if (change.Kind == LightingEditorChangeKind.Refreshed)
+        {
+            switch (change.Value)
+            {
+                case LightingEditorValue.PrimaryColor:
+                    NotifyComputed(nameof(LightingPrimaryColorEditor), LightingPrimaryColorEditor);
+                    break;
+                case LightingEditorValue.SecondaryColor:
+                    NotifyComputed(nameof(LightingSecondaryColorEditor), LightingSecondaryColorEditor);
+                    break;
+                case LightingEditorValue.AudioMeterDecayMilliseconds:
+                    NotifyComputed(nameof(LightingAudioMeterDecayValue), LightingAudioMeterDecayValue);
+                    break;
+            }
+            return;
+        }
+        if (change.Kind == LightingEditorChangeKind.TransitionCompleted)
+        {
+            switch (change.Value)
+            {
+                case LightingEditorValue.Effect:
+                    Notify(nameof(SelectedLightingEffectOption));
+                    break;
+                case LightingEditorValue.Direction:
+                    Notify(nameof(SelectedLightingDirectionOption));
+                    break;
+                case LightingEditorValue.AmbientAwarenessRegion:
+                    Notify(nameof(SelectedAmbientAwarenessRegionOption));
+                    break;
+                case LightingEditorValue.LogoMode:
+                    Notify(nameof(SelectedLogoLightingModeOption));
+                    break;
+                case LightingEditorValue.AudioMeterDecayMilliseconds:
+                    Notify(nameof(LightingAudioMeterDecayValue));
+                    break;
+            }
+            return;
+        }
+        if (change.Value == LightingEditorValue.EffectUnconfirmed)
+        {
+            Notify(nameof(IsKeyboardEffectUnconfirmed));
+            Notify(nameof(KeyboardEffectDescription));
+            Notify(nameof(SelectedLightingEffectOption));
+            return;
+        }
+        Notify(change.Value switch
+        {
+            LightingEditorValue.Effect => nameof(LightingEffectEditor),
+            LightingEditorValue.Brightness => nameof(LightingBrightnessEditor),
+            LightingEditorValue.Red => nameof(LightingRedEditor),
+            LightingEditorValue.Green => nameof(LightingGreenEditor),
+            LightingEditorValue.Blue => nameof(LightingBlueEditor),
+            LightingEditorValue.PrimaryColor => nameof(LightingPrimaryColorEditor),
+            LightingEditorValue.SecondaryRed => nameof(LightingSecondaryRedEditor),
+            LightingEditorValue.SecondaryGreen => nameof(LightingSecondaryGreenEditor),
+            LightingEditorValue.SecondaryBlue => nameof(LightingSecondaryBlueEditor),
+            LightingEditorValue.SecondaryColor => nameof(LightingSecondaryColorEditor),
+            LightingEditorValue.BreathingColorMode => nameof(LightingBreathingColorModeEditor),
+            LightingEditorValue.ReactiveDuration => nameof(LightingReactiveDurationEditor),
+            LightingEditorValue.StarlightColorMode => nameof(LightingStarlightColorModeEditor),
+            LightingEditorValue.StarlightDuration => nameof(LightingStarlightDurationEditor),
+            LightingEditorValue.RandomColors => nameof(LightingRandomColorsEditor),
+            LightingEditorValue.Direction => nameof(LightingDirectionEditor),
+            LightingEditorValue.RotationDirection => nameof(LightingRotationDirectionEditor),
+            LightingEditorValue.AmbientAwarenessRegion => nameof(LightingAmbientAwarenessRegionEditor),
+            LightingEditorValue.AudioMeterColorBoost => nameof(LightingAudioMeterColorBoostEditor),
+            LightingEditorValue.AudioMeterDecayMilliseconds => nameof(LightingAudioMeterDecayMillisecondsEditor),
+            LightingEditorValue.LogoMode => nameof(LogoLightingModeEditor),
+            LightingEditorValue.Draft => nameof(LightingDraft),
+            LightingEditorValue.Dirty => nameof(IsLightingApplyPending),
+            _ => throw new ArgumentOutOfRangeException(nameof(change)),
+        });
     }
 
     private void NotifyLightingParameterPresentation()
