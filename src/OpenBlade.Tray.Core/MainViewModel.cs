@@ -290,6 +290,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isHyperBoostOperationInProgress;
     private bool hyperBoostActive;
     private PendingLightingHold? pendingLighting;
+    private long lightingPresentationGeneration;
     private bool isLightingOperationInProgress;
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
@@ -5454,7 +5455,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void MarkDisconnected(string message)
     {
-        pendingLighting = null;
+        InvalidatePendingLightingHold();
         connectionGeneration++;
         reconnectGeneration++;
         subscriptionConnected = false;
@@ -5986,7 +5987,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource sourceAtStart = ActivePowerSource;
         long revisionAtStart = latestAcceptedRevision;
         long connectionAtStart = connectionGeneration;
-        pendingLighting = null;
+        InvalidatePendingLightingHold();
+        long presentationGenerationAtStart = lightingPresentationGeneration;
         ControlOperationStatus? resultStatus = null;
         IsLightingOperationInProgress = true;
         try
@@ -6025,7 +6027,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     }
                     if (resultStatus == ControlOperationStatus.Applied
                         && IsConnected
-                        && connectionGeneration == connectionAtStart)
+                        && connectionGeneration == connectionAtStart
+                        && lightingPresentationGeneration == presentationGenerationAtStart)
                     {
                         LightingSettings submittedIntent =
                             LightingSettingsFactory.NormalizeLegacyOff(requested);
@@ -6075,11 +6078,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return true;
     }
 
+    private void InvalidatePendingLightingHold()
+    {
+        lightingPresentationGeneration++;
+        pendingLighting = null;
+    }
+
     private static bool LightingStatusReflectsRequest(
         ServiceStatusSnapshot status,
         LightingSettings submittedIntent) =>
-        status.LightingOverride?.Value == submittedIntent
-        || status.DesiredState.Lighting.Value == submittedIntent;
+        status.LightingOverride?.Value == submittedIntent;
 
     private async Task SetChargeLimitAsync(object? parameter, CancellationToken token)
     {
@@ -6189,7 +6197,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
-        pendingLighting = null;
+        InvalidatePendingLightingHold();
         List<string> hardwareNotApplied = [];
         if (FanOverride is not null)
         {
@@ -6833,7 +6841,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if ((group is null or ProfileDraftGroup.Lighting)
             && (force || activeProfileDraft.Lighting is not null))
         {
-            pendingLighting = null;
+            InvalidatePendingLightingHold();
 
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetLightingOverrideAsync(
@@ -7028,7 +7036,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingSettings value,
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
-        pendingLighting = null;
+        InvalidatePendingLightingHold();
 
         EnsureImportedSequenceOption(value);
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);

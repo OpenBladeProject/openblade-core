@@ -10191,7 +10191,7 @@ public sealed partial class MainViewModelTests
         public List<LiveReadingSensors> RequestedLiveReadings { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public bool BlockMutations { get; init; }
+        public bool BlockMutations { get; set; }
         public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
