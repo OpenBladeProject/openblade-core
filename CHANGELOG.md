@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserve connection, control, and power observation state when diagnostic messages change, and clear transient state after confirmed recovery. ([#525](https://github.com/OSSBlade/openblade-core/pull/525))
 - Try once to start the OpenBlade service when the tray launches and Windows confirms it is stopped, without repeated elevation prompts or racing manual starts and complete shutdown. ([#519](https://github.com/OSSBlade/openblade-core/pull/519))
 
 ## [0.21.0] - 2026-09-19
