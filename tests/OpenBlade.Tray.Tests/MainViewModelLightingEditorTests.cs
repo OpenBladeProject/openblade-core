@@ -122,6 +122,536 @@ public sealed partial class MainViewModelTests
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task LightingCompletion_DoesNotReloadAnIntermediateOwnershipSnapshot(
+        bool completionBeforeOwnership,
+        bool profileAlreadyRequestsEffect)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        LightingSettings prior = LightingSettingsFactory.Off();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        initial = initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = prior },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    prior, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                prior, OverrideLifetime.UntilPowerSourceChange),
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        };
+        if (profileAlreadyRequestsEffect)
+        {
+            LightingSettings profile = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 65);
+            initial = initial with
+            {
+                Profiles = initial.Profiles with
+                {
+                    PluggedIn = initial.Profiles.PluggedIn with { Lighting = profile },
+                },
+                DesiredState = initial.DesiredState with
+                {
+                    Lighting = new ResolvedSetting<LightingSettings>(
+                        profile, SettingValueSource.PowerProfile),
+                },
+                LightingOverride = null,
+            };
+        }
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial);
+        Assert.Equal(prior, viewModel.LightingDraft);
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 65;
+        viewModel.LightingPrimaryColorEditor = new RgbColor(12, 34, 56);
+        LightingSettings requested = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(requested);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        if (completionBeforeOwnership)
+        {
+            client.CompleteMutation();
+            await apply;
+            Assert.False(viewModel.IsLightingApplyPending);
+        }
+
+        // ReconcileScopedIntentReadbackAsync publishes renderer ownership before
+        // the full snapshot; its confirmed and published intent fields are still old.
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Renderer ownership changed before final lighting status",
+            LightingRendererOwnership = LightingRendererOwnershipState.Static,
+        });
+        Assert.Equal(requested, viewModel.LightingDraft);
+
+        // The independent mutation response can overtake either status publication.
+        if (!completionBeforeOwnership)
+        {
+            client.CompleteMutation();
+            await apply;
+        }
+
+        Assert.Equal(requested, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 2,
+            Message = "Final correlated lighting status",
+            LightingRendererOwnership = LightingRendererOwnershipState.Static,
+            ConfirmedState = initial.ConfirmedState! with { Lighting = requested },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    requested, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                requested, OverrideLifetime.UntilPowerSourceChange),
+        });
+        Assert.Equal(requested, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingCompletion_OffKeepsDirtyComparisonAgainstTheActualSubmittedValue(
+        bool legacyRequest)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Lighting = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 65),
+            },
+        });
+        viewModel.LightingEffectEditor = LightingEffect.Off;
+        LightingSettings draft = viewModel.LightingDraft;
+        LightingSettings submitted = legacyRequest
+            ? new LightingSettings(LightingEffect.Off, default, 0)
+            : draft;
+        LightingSettings serviceIntent = LightingSettingsFactory.NormalizeLegacyOff(submitted);
+        Assert.Equal(draft, serviceIntent);
+        Assert.True(viewModel.IsLightingApplyPending);
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(submitted);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        LightingSettings confirmed = LightingSettingsFactory.SpectrumCycling(40);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Off intent with differing confirmed readback",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = confirmed },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    serviceIntent, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                serviceIntent, OverrideLifetime.UntilPowerSourceChange),
+        });
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.Equal(submitted, client.LightingOverride?.Value);
+        // Service normalization must not make a different editor value count as
+        // the actual submitted draft when deciding whether to release the guard.
+        Assert.Equal(legacyRequest, viewModel.IsLightingApplyPending);
+        Assert.Equal(legacyRequest ? draft : confirmed, viewModel.LightingDraft);
+    }
+
+    [Fact]
+    public async Task LightingHold_ExpiresOnMetadataOnlyStatusWithoutRestartingApply()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher, time);
+        (ServiceStatusSnapshot initial, LightingSettings requested) =
+            await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+        ServiceStatusSnapshot intermediate = initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Intermediate lighting ownership",
+            LightingRendererOwnership = LightingRendererOwnershipState.Static,
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, intermediate);
+        Assert.Equal(requested, viewModel.LightingDraft);
+
+        time.Advance(TimeSpan.FromSeconds(3));
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, intermediate with { LiveReadings = new LiveReadings(null, 2200, 2300) });
+
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.Equal(1, client.MutationCalls);
+        Assert.Equal(initial.ConfirmedState!.Lighting, viewModel.LightingDraft);
+    }
+
+    [Fact]
+    public async Task LightingHold_CorrelatedReadbackReleasesLaterExternalObservations()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        (ServiceStatusSnapshot initial, LightingSettings requested) =
+            await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+        LightingSettings confirmed = LightingSettingsFactory.SpectrumCycling(40);
+        ServiceStatusSnapshot correlated = initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Correlated differing lighting readback",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = confirmed },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    requested, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                requested, OverrideLifetime.UntilPowerSourceChange),
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, correlated);
+        Assert.Equal(confirmed, viewModel.LightingDraft);
+
+        LightingSettings external = LightingSettingsFactory.Wave(LightingDirection.Rightward, 71);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, correlated with
+        {
+            Revision = correlated.Revision + 1,
+            Message = "Later external lighting observation",
+            ConfirmedState = correlated.ConfirmedState! with { Lighting = external },
+        });
+        Assert.Equal(external, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Fact]
+    public async Task LightingHold_IgnoresTransientUnknownButReleasesOnConfirmedSourceChange()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        (ServiceStatusSnapshot initial, LightingSettings requested) =
+            await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 1,
+            ActivePowerSource = PowerSource.ExternalUnknown,
+        });
+        Assert.Equal(requested, viewModel.LightingDraft);
+
+        LightingSettings destination = LightingSettingsFactory.SpectrumCycling(40);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 2,
+            ActivePowerSource = PowerSource.Battery,
+            ConfirmedState = initial.ConfirmedState! with { Lighting = destination },
+        });
+        Assert.Equal(destination, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingHold_PreservesNewerDraftAndReplacesCorrelationOnNewApply(
+        bool applyNewerDraft)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        (ServiceStatusSnapshot initial, LightingSettings first) =
+            await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+        viewModel.LightingBrightnessEditor = 79;
+        LightingSettings newer = viewModel.LightingDraft;
+        if (applyNewerDraft)
+        {
+            await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(newer);
+        }
+        ServiceStatusSnapshot firstFinal = initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "First request final status",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = first },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    first, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                first, OverrideLifetime.UntilPowerSourceChange),
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, firstFinal);
+
+        Assert.Equal(newer, viewModel.LightingDraft);
+        Assert.Equal(!applyNewerDraft, viewModel.IsLightingApplyPending);
+        if (applyNewerDraft)
+        {
+            LightingSettings confirmed = LightingSettingsFactory.SpectrumCycling(40);
+            await PublishStatusAndWaitAsync(client, dispatcher, viewModel, firstFinal with
+            {
+                Revision = firstFinal.Revision + 1,
+                Message = "Second request final status",
+                ConfirmedState = firstFinal.ConfirmedState! with { Lighting = confirmed },
+                DesiredState = firstFinal.DesiredState with
+                {
+                    Lighting = new ResolvedSetting<LightingSettings>(
+                        newer, SettingValueSource.TemporaryOverride),
+                },
+                LightingOverride = new ManualOverride<LightingSettings>(
+                    newer, OverrideLifetime.UntilPowerSourceChange),
+            });
+            Assert.Equal(confirmed, viewModel.LightingDraft);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingHold_ExplicitResetDoesNotSuppressLaterAcceptedState(bool clearAll)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        (ServiceStatusSnapshot initial, _) = await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+        AsyncRelayCommand reset = Assert.IsType<AsyncRelayCommand>(clearAll
+            ? viewModel.ClearManualOverridesCommand
+            : viewModel.DiscardLightingProfileDraftCommand);
+        Assert.True(reset.CanExecute(null));
+
+        await reset.ExecuteAsync(null);
+        LightingSettings external = LightingSettingsFactory.SpectrumCycling(42);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Lighting observed after explicit reset",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = external },
+            LightingOverride = null,
+        });
+
+        Assert.Equal(external, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LightingHold_ClearOverridesDuringApplyOnlySupersedesLightingClear(bool clearLighting)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        LightingSettings prior = LightingSettingsFactory.Off();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        initial = initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = prior },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    prior, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = clearLighting
+                ? new ManualOverride<LightingSettings>(prior, OverrideLifetime.UntilPowerSourceChange)
+                : null,
+            FanOverride = new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.UntilPowerSourceChange),
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial);
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 65;
+        viewModel.LightingPrimaryColorEditor = new RgbColor(12, 34, 56);
+        LightingSettings requested = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(requested);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        AsyncRelayCommand reset = Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand);
+        Assert.True(reset.CanExecute(null));
+        // The reset response is delivered before the already in-flight apply response.
+        client.BlockMutations = false;
+        await reset.ExecuteAsync(null);
+        Assert.Equal(clearLighting, client.MutationOperations.Contains("lighting:<clear>"));
+        Assert.Contains("fans:<clear>", client.MutationOperations);
+        client.CompleteMutation();
+        await apply;
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.Equal(!clearLighting, viewModel.HasLightingProfileDraft);
+
+        LightingSettings restored = LightingSettingsFactory.SpectrumCycling(42);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Final lighting state after reset overtook apply response",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = restored },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    restored, SettingValueSource.PowerProfile),
+            },
+            LightingOverride = null,
+        });
+
+        Assert.Equal(clearLighting ? restored : requested, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Fact]
+    public async Task LightingCompletion_RefreshesUnconfirmedEffectAfterBrightnessOnlyApply()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(
+            client, dispatcher, new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        LightingSettings profile = LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 40);
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        initial = initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = null },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(profile, SettingValueSource.PowerProfile),
+            },
+            LightingOverride = null,
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial);
+        Assert.True(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.True(viewModel.LightingShowsBrightness);
+        viewModel.LightingBrightnessEditor = 65;
+        LightingSettings requested = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(requested);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        ServiceStatusSnapshot correlated = initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Brightness intent confirmed while effect readback is unavailable",
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(requested, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(requested, OverrideLifetime.UntilPowerSourceChange),
+            LightingRendererOwnership = LightingRendererOwnershipState.Static,
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, correlated);
+        Assert.True(viewModel.IsKeyboardEffectUnconfirmed);
+        client.CompleteMutation();
+        await apply;
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel,
+            correlated with { LiveReadings = new LiveReadings(null, 2200, 2300) });
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(requested, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    [Fact]
+    public async Task LightingHold_DisconnectDropsOldCorrelationBeforeReconnection()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var client = new FakeServiceClient { BlockMutations = true };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher, time);
+        (ServiceStatusSnapshot initial, _) = await ApplyLightingWithoutFinalStatusAsync(client, dispatcher, viewModel);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial with { Message = "Reconnected without prior lighting intent" });
+
+        Assert.Equal(initial.ConfirmedState!.Lighting, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+    }
+
+    private static async Task<(ServiceStatusSnapshot Initial, LightingSettings Requested)>
+        ApplyLightingWithoutFinalStatusAsync(
+            FakeServiceClient client,
+            RecordingDispatcher dispatcher,
+            MainViewModel viewModel)
+    {
+        await viewModel.StartAsync();
+        LightingSettings prior = LightingSettingsFactory.Off();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        initial = initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = prior },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    prior, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                prior, OverrideLifetime.UntilPowerSourceChange),
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, initial);
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 65;
+        viewModel.LightingPrimaryColorEditor = new RgbColor(12, 34, 56);
+        LightingSettings requested = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(requested);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        client.CompleteMutation();
+        await apply;
+        Assert.Equal(requested, viewModel.LightingDraft);
+        Assert.False(viewModel.IsLightingApplyPending);
+        return (initial, requested);
+    }
+
+    [Theory]
     [InlineData(ControlOperationStatus.Failed, false)]
     [InlineData(ControlOperationStatus.Blocked, false)]
     [InlineData(ControlOperationStatus.Applied, true)]

@@ -69,6 +69,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         PowerSource PowerSource,
         DateTimeOffset? ExpiresAt);
 
+    private sealed record PendingLightingHold(
+        LightingSettings SubmittedIntent,
+        PowerSource PowerSource,
+        long StartingRevision,
+        DateTimeOffset ExpiresAt);
+
     private sealed record LocalizedOptionCatalog(
         IReadOnlyList<ProfileComparisonOption> Comparison,
         IReadOnlyList<ThermalControlPolicyOption> ThermalControlPolicies,
@@ -283,6 +289,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isPerformanceOperationInProgress;
     private bool isHyperBoostOperationInProgress;
     private bool hyperBoostActive;
+    private PendingLightingHold? pendingLighting;
+    private long lightingPresentationGeneration;
     private bool isLightingOperationInProgress;
     private bool isChargeLimitOperationInProgress;
     private bool isBatteryProtectionOperationInProgress;
@@ -4768,6 +4776,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         bool performanceHoldReleased = ReleasePendingPerformanceHold(status);
         bool fanControlHoldReleased = ReleasePendingFanControlHold(status);
+        bool lightingHoldReleased = ReleasePendingLightingHold(status);
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
@@ -4775,6 +4784,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && previousStatus is not null
             && !performanceHoldReleased
             && !fanControlHoldReleased
+            && !lightingHoldReleased
             && StatusMetadataEqual(previousStatus, status))
         {
             ApplyLiveReadings(status);
@@ -4801,6 +4811,37 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         return true;
     }
 
+    private void ApplyLightingPresentation(
+        ServiceStatusSnapshot status,
+        bool checkingLaptopConnection)
+    {
+        ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
+        if (!checkingLaptopConnection
+            && !lightingEditor.IsDirty
+            && !IsLightingOperationInProgress
+            && pendingLighting is null)
+        {
+            lightingEditor.SetEffectUnconfirmed(
+                confirmed?.Lighting is null
+                && status.LightingOverride is null
+                && status.LightingRendererOwnership is
+                    LightingRendererOwnershipState.None or
+                    LightingRendererOwnershipState.Faulted);
+        }
+        SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
+        if (confirmed?.LogoLighting is { } confirmedLogo)
+        {
+            SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
+        }
+        if (!lightingEditor.IsDirty && !checkingLaptopConnection && pendingLighting is null)
+        {
+            LoadLightingEditor(
+                SelectedLighting,
+                startUnconfirmedEffectAtDefaultBrightness: true);
+        }
+    }
+
     private void ApplyDeviceStatePresentation(
         ServiceStatusSnapshot status,
         ConfirmedDeviceState? confirmed,
@@ -4818,29 +4859,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? status.FanControlOverride
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
-        lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
-        if (!checkingLaptopConnection
-            && !lightingEditor.IsDirty
-            && !IsLightingOperationInProgress)
-        {
-            lightingEditor.SetEffectUnconfirmed(
-                confirmed?.Lighting is null
-                && status.LightingOverride is null
-                && status.LightingRendererOwnership is
-                    LightingRendererOwnershipState.None or
-                    LightingRendererOwnershipState.Faulted);
-        }
-        SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
-        if (confirmed?.LogoLighting is { } confirmedLogo)
-        {
-            SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
-        }
-        if (!lightingEditor.IsDirty && !checkingLaptopConnection)
-        {
-            LoadLightingEditor(
-                SelectedLighting,
-                startUnconfirmedEffectAtDefaultBrightness: true);
-        }
+        ApplyLightingPresentation(status, checkingLaptopConnection);
         if (!chargeLimitEditorDirty)
         {
             LoadChargeLimitEditor(status);
@@ -5444,6 +5463,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void MarkDisconnected(string message)
     {
+        InvalidatePendingLightingHold();
         connectionGeneration++;
         reconnectGeneration++;
         subscriptionConnected = false;
@@ -5974,6 +5994,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingSettings requested = (LightingSettings)parameter!;
         PowerSource sourceAtStart = ActivePowerSource;
         long revisionAtStart = latestAcceptedRevision;
+        long connectionAtStart = connectionGeneration;
+        InvalidatePendingLightingHold();
+        long presentationGenerationAtStart = lightingPresentationGeneration;
         ControlOperationStatus? resultStatus = null;
         IsLightingOperationInProgress = true;
         try
@@ -5989,7 +6012,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     resultStatus = result.Status;
                     if (result.Status is ControlOperationStatus.Applied
-                        or ControlOperationStatus.Stored)
+                            or ControlOperationStatus.Stored
+                        && lightingPresentationGeneration == presentationGenerationAtStart)
                     {
                         MarkActiveProfileDraft(sourceAtStart, lighting: requested);
                     }
@@ -6011,25 +6035,66 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         return;
                     }
                     if (resultStatus == ControlOperationStatus.Applied
-                        && latestStatus is not null
-                        && latestAcceptedRevision > revisionAtStart)
+                        && IsConnected
+                        && connectionGeneration == connectionAtStart
+                        && lightingPresentationGeneration == presentationGenerationAtStart)
                     {
-                        LightingSettings? confirmedLighting =
-                            latestStatus.ConfirmedState?.Lighting;
-                        bool statusReflectsRequest = confirmedLighting is not null
-                            || latestStatus.LightingOverride?.Value == requested
-                            || latestStatus.DesiredState.Lighting.Value == requested;
-                        if (statusReflectsRequest)
+                        LightingSettings submittedIntent =
+                            LightingSettingsFactory.NormalizeLegacyOff(requested);
+                        // Applied can overtake an ownership-only snapshot containing old intent.
+                        // Clear dirty state to stop retries, but hold presentation until correlation.
+                        pendingLighting = new PendingLightingHold(
+                            submittedIntent,
+                            sourceAtStart,
+                            revisionAtStart,
+                            timeProvider.GetUtcNow() + ControlPresentationHoldGracePeriod);
+                        if (latestStatus is { } status)
                         {
-                            LoadLightingEditor(
-                                confirmedLighting
-                                ?? latestStatus.DesiredState.Lighting.Value);
+                            ReleasePendingLightingHold(status);
+                            if (status.Revision > revisionAtStart
+                                && LightingStatusReflectsRequest(status, submittedIntent))
+                            {
+                                ApplyLightingPresentation(status, IsCheckingLaptopConnection(status));
+                            }
                         }
                     }
                 },
                 token);
         }
     }
+
+    private bool ReleasePendingLightingHold(ServiceStatusSnapshot status)
+    {
+        if (pendingLighting is not { } pending)
+        {
+            return false;
+        }
+
+        bool statusCaughtUp = status.Revision > pending.StartingRevision
+            && LightingStatusReflectsRequest(status, pending.SubmittedIntent);
+        bool sourceChanged = status.ActivePowerSource is
+                (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            && status.ActivePowerSource != pending.PowerSource;
+        bool gracePeriodExpired = timeProvider.GetUtcNow() >= pending.ExpiresAt;
+        if (!statusCaughtUp && !sourceChanged && !gracePeriodExpired)
+        {
+            return false;
+        }
+
+        pendingLighting = null;
+        return true;
+    }
+
+    private void InvalidatePendingLightingHold()
+    {
+        lightingPresentationGeneration++;
+        pendingLighting = null;
+    }
+
+    private static bool LightingStatusReflectsRequest(
+        ServiceStatusSnapshot status,
+        LightingSettings submittedIntent) =>
+        status.LightingOverride?.Value == submittedIntent;
 
     private async Task SetChargeLimitAsync(object? parameter, CancellationToken token)
     {
@@ -6158,6 +6223,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (LightingOverride is not null)
         {
+            InvalidatePendingLightingHold();
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Lighting", "lighting"),
                 cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
@@ -6782,6 +6848,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if ((group is null or ProfileDraftGroup.Lighting)
             && (force || activeProfileDraft.Lighting is not null))
         {
+            InvalidatePendingLightingHold();
+
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetLightingOverrideAsync(
                     null,
@@ -6975,6 +7043,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingSettings value,
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
+        InvalidatePendingLightingHold();
+
         EnsureImportedSequenceOption(value);
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
         NotifyLightingParameterPresentation();

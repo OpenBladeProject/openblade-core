@@ -5119,6 +5119,13 @@ public sealed partial class MainViewModelTests
             Revision = initial.Revision + 1,
             Message = "Lighting applied with readback",
             ConfirmedState = initial.ConfirmedState! with { Lighting = confirmed },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    draft, SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                draft, OverrideLifetime.UntilPowerSourceChange),
         });
         await WaitUntilAsync(() =>
             viewModel.ConnectionStatus == "Lighting applied with readback");
@@ -10184,7 +10191,7 @@ public sealed partial class MainViewModelTests
         public List<LiveReadingSensors> RequestedLiveReadings { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public bool BlockMutations { get; init; }
+        public bool BlockMutations { get; set; }
         public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
