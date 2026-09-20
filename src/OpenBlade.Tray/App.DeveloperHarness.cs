@@ -582,7 +582,7 @@ public partial class App
                 AssertLocalizedXamlApplied(snapshotMainWindow);
             }
             snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
-            snapshotMainWindow.Activate();
+            ShowNoninteractiveSnapshotWindow(snapshotMainWindow);
             await WaitForSnapshotLayoutAsync();
             string[] mainDestinations =
             {
@@ -697,7 +697,7 @@ public partial class App
                 }
                 snapshotDashboardWindow.AppWindow.Resize(
                     new Windows.Graphics.SizeInt32(430, 760));
-                snapshotDashboardWindow.Activate();
+                ShowNoninteractiveSnapshotWindow(snapshotDashboardWindow);
                 await WaitForSnapshotLayoutAsync();
                 await SaveSnapshotAsync(
                     snapshotDashboardWindow.Content,
@@ -738,6 +738,20 @@ public partial class App
         {
             snapshotDashboardWindow?.Dispose();
             snapshotMainWindow?.Close();
+        }
+    }
+
+    private static void ShowNoninteractiveSnapshotWindow(Window window)
+    {
+        ((UIElement)window.Content).IsHitTestVisible = false;
+        window.AppWindow.IsShownInSwitchers = false;
+        LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
+        // WinUI requires Activate to initialize x:Bind and templates. The native
+        // no-activate style is already installed, so this does not take foreground.
+        window.Activate();
+        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
+        {
+            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
         }
     }
 
@@ -933,7 +947,14 @@ public partial class App
                 TaskCreationOptions.RunContinuationsAsynchronously);
             root.Loaded += (_, _) => loaded.TrySetResult(true);
             smokeWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
-            smokeWindow.Activate();
+            if (captureSnapshots)
+            {
+                ShowNoninteractiveSnapshotWindow(smokeWindow);
+            }
+            else
+            {
+                smokeWindow.Activate();
+            }
             await loaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
             smokeWindow.SelectLocalizationSnapshotPage("laptop");
             await WaitForSnapshotLayoutAsync();
@@ -1122,7 +1143,14 @@ public partial class App
         popup.AppWindow.Resize(new Windows.Graphics.SizeInt32(
             (int)(360 * scale),
             (int)(TrayDashboardLayoutPolicy.CalculatePreferredHeight() * scale)));
-        popup.Activate();
+        if (captureSnapshots)
+        {
+            ShowNoninteractiveSnapshotWindow(popup);
+        }
+        else
+        {
+            popup.Activate();
+        }
         System.Reflection.MethodInfo showDetail = typeof(TrayDashboardWindow).GetMethod(
             "ShowDetail",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)

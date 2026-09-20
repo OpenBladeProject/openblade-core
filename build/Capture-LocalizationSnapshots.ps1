@@ -132,6 +132,7 @@ $manifest = [ordered]@{
         pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-v2'
         frameStabilization = 'two-consecutive-canonical-frames-v1'
         windowActivation = 'stable-title-foreground-v1'
+        inputIsolation = 'noninteractive-window-v1'
         data = 'sanitized-fixed-preview'
     }
     images = $images

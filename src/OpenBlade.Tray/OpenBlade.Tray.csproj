@@ -41,6 +41,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" />
     <PackageReference Include="System.ServiceProcess.ServiceController" />
   </ItemGroup>
+  <ItemGroup Condition="'$(OpenBladeDeveloperHarness)' != 'true'">
+    <Compile Remove="LocalizationSnapshotWindowInput.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalizationPreview)' != 'true'">
     <PRIResource Remove="Strings\qps-ploc\Resources.resw" />
   </ItemGroup>
