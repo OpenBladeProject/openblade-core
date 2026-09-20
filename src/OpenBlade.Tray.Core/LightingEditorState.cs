@@ -221,13 +221,14 @@ internal sealed class LightingEditorState
         get => lightingBreathingColorModeEditor;
         set
         {
+            BreathingColorMode previous = lightingBreathingColorModeEditor;
             if (!Enum.IsDefined(value)
                 || !SetLightingEditorField(ref lightingBreathingColorModeEditor, value, LightingEditorValue.BreathingColorMode))
             {
                 return;
             }
 
-            SeedBreathingColorDefaults(value);
+            SeedBreathingColorDefaults(value, seedPrimary: previous == BreathingColorMode.Random);
 
             Publish(LightingEditorChangeKind.ParametersChanged);
         }
@@ -252,13 +253,14 @@ internal sealed class LightingEditorState
         get => lightingStarlightColorModeEditor;
         set
         {
+            StarlightColorMode previous = lightingStarlightColorModeEditor;
             if (!Enum.IsDefined(value)
                 || !SetLightingEditorField(ref lightingStarlightColorModeEditor, value, LightingEditorValue.StarlightColorMode))
             {
                 return;
             }
 
-            SeedStarlightColorDefaults(value);
+            SeedStarlightColorDefaults(value, seedPrimary: previous == StarlightColorMode.Random);
             Publish(LightingEditorChangeKind.ParametersChanged);
         }
     }
@@ -701,7 +703,7 @@ internal sealed class LightingEditorState
         || effect == LightingEffect.Tidal && !RandomColors
         || effect == LightingEffect.Starlight && StarlightColorMode != StarlightColorMode.Random;
 
-    private void SeedBreathingColorDefaults(BreathingColorMode selected, bool seedPrimary = true)
+    private void SeedBreathingColorDefaults(BreathingColorMode selected, bool seedPrimary)
     {
         if (seedPrimary && selected is BreathingColorMode.Single or BreathingColorMode.Dual
             && PrimaryColor == default)
@@ -726,7 +728,7 @@ internal sealed class LightingEditorState
         }
     }
 
-    private void SeedStarlightColorDefaults(StarlightColorMode selected, bool seedPrimary = true)
+    private void SeedStarlightColorDefaults(StarlightColorMode selected, bool seedPrimary)
     {
         if (seedPrimary && selected is StarlightColorMode.Single or StarlightColorMode.Dual
             && PrimaryColor == default)
