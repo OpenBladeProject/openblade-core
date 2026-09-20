@@ -914,6 +914,8 @@ throw 'Target catalog was not write-locked during import.'
     $generatedRows = @(Import-Csv -LiteralPath $generatedWorkbook)
     Assert-Equal $generatedRows[0].TargetCatalogHash $manifest.targetCatalogHash `
         'The package manifest must expose the workbook target-catalog binding.'
+    Assert-Equal 'noninteractive-window-v1' $manifest.screenshotRenderProfile.inputIsolation `
+        'Snapshot windows must reject interaction while capturing.'
     & $packageScript -Locale ru-RU -OutputDirectory $packageRoot -Force
     Assert-ArchiveEqual -Reference $referenceArchive -Actual $archive `
         -Stage 'same-process' -EvidenceRoot $archiveEvidenceRoot `

@@ -24,6 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotWindowInput.cs"
+             Link="LocalizationSnapshotWindowInput.cs" />
     <Compile Include="..\..\..\src\OpenBlade.Tray\LocalizationSnapshotPixelCanonicalizer.cs"
              Link="LocalizationSnapshotPixelCanonicalizer.cs" />
   </ItemGroup>

@@ -311,10 +311,11 @@ public sealed class InstallerWindowTests
                     ShowInTaskbar = false,
                     Topmost = true,
                 };
-                window.Show();
-                InstallerTheme.Apply(window, dark: false);
                 try
                 {
+                    PrepareLocalizationSnapshotWindow(window);
+                    window.Show();
+                    InstallerTheme.Apply(window, dark: false);
                     showState(window);
                     PumpDispatcher(window.Dispatcher);
                     window.UpdateLayout();
@@ -361,6 +362,61 @@ public sealed class InstallerWindowTests
             });
         }
     }
+
+    private static void PrepareLocalizationSnapshotWindow(InstallerWindow window)
+    {
+        window.ShowActivated = false;
+        ((UIElement)window.Content).IsHitTestVisible = false;
+        OpenBlade.Tray.LocalizationSnapshotWindowInput.Apply(
+            new WindowInteropHelper(window).EnsureHandle());
+    }
+
+    [Fact]
+    public void LocalizationSnapshotRejectsInputWithoutDisablingControls()
+    {
+        RunWithUiCulture("en-US", () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3")
+            {
+                ShowInTaskbar = false,
+            };
+            try
+            {
+                window.ShowReady(installed: false);
+                var root = Assert.IsType<Grid>(window.Content);
+                PrepareLocalizationSnapshotWindow(window);
+                IntPtr handle = new WindowInteropHelper(window).Handle;
+                window.Show();
+                PumpDispatcher(window.Dispatcher);
+                Assert.NotEqual(handle, GetForegroundWindow());
+                Assert.False(window.IsActive);
+                Assert.False(window.ShowActivated);
+                Assert.True(window.IsEnabled);
+                Assert.True(window.InstallButton.IsEnabled);
+                Assert.False(root.IsHitTestVisible);
+                Assert.Null(root.InputHitTest(new Point(100, 100)));
+                Assert.NotEqual(0L, GetWindowLongPtr(handle, -20).ToInt64() & 0x08000000);
+                // Exercise the real HWND subclass without injecting desktop input.
+                Assert.Equal(IntPtr.Zero, SendMessage(handle, 0x0084, IntPtr.Zero, IntPtr.Zero));
+                Assert.Equal(new IntPtr(4), SendMessage(handle, 0x0021, IntPtr.Zero, IntPtr.Zero));
+                Assert.Equal(new IntPtr(window.Title.Length),
+                    SendMessage(handle, 0x000E, IntPtr.Zero, IntPtr.Zero)); // WM_GETTEXTLENGTH still delegates.
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     private static byte[] CaptureStableLocalizationSnapshotPixels(
         FrameworkElement visual,

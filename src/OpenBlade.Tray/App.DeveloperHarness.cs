@@ -582,7 +582,7 @@ public partial class App
                 AssertLocalizedXamlApplied(snapshotMainWindow);
             }
             snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
-            snapshotMainWindow.Activate();
+            ShowNoninteractiveSnapshotWindow(snapshotMainWindow);
             await WaitForSnapshotLayoutAsync();
             string[] mainDestinations =
             {
@@ -697,7 +697,7 @@ public partial class App
                 }
                 snapshotDashboardWindow.AppWindow.Resize(
                     new Windows.Graphics.SizeInt32(430, 760));
-                snapshotDashboardWindow.Activate();
+                ShowNoninteractiveSnapshotWindow(snapshotDashboardWindow);
                 await WaitForSnapshotLayoutAsync();
                 await SaveSnapshotAsync(
                     snapshotDashboardWindow.Content,
@@ -741,6 +741,13 @@ public partial class App
         }
     }
 
+    private static void ShowNoninteractiveSnapshotWindow(Window window)
+    {
+        ((UIElement)window.Content).IsHitTestVisible = false;
+        window.AppWindow.IsShownInSwitchers = false;
+        LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
+        window.AppWindow.Show(activateWindow: false);
+    }
     private static async Task WaitForSnapshotLayoutAsync()
     {
         // Let the built-in navigation transition finish before capturing geometry.

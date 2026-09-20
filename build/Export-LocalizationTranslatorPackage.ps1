@@ -96,6 +96,9 @@ controlling hardware.
             'two-consecutive-canonical-frames-v1') {
         throw 'Localization snapshot manifest has an unexpected render profile.'
     }
+    if ([string]$captureManifest.renderProfile.inputIsolation -cne 'noninteractive-window-v1') {
+        throw 'Screenshot input isolation profile is missing or unsupported.'
+    }
     $screenshotRenderProfile = $captureManifest.renderProfile
     $contextPath = Join-Path $temporaryPath 'context'
     [IO.Directory]::CreateDirectory($contextPath) | Out-Null
