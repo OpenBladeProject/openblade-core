@@ -23425,6 +23425,57 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_PadOnlyObservationChangesPublishAndUnchangedStatesDoNot()
+    {
+        var discovery = new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: discovery);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(includeLiveReadings: false, CancellationToken.None);
+        await context.Runtime.ObserveAsync(includeLiveReadings: false, CancellationToken.None);
+        ServiceStatusSnapshot settled = context.Runtime.GetStatus();
+        Assert.Equal(PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            settled.PadlessHyperBoostEligibility);
+
+        (CoolingPadConnectionState Discovery, PadlessHyperBoostEligibilityState Eligibility)[] transitions =
+        [
+            (CoolingPadConnectionState.PresentExact, PadlessHyperBoostEligibilityState.CoolingPadPresent),
+            (CoolingPadConnectionState.Ambiguous, PadlessHyperBoostEligibilityState.CoolingPadPresent),
+            (CoolingPadConnectionState.ObservationFailed, PadlessHyperBoostEligibilityState.Unknown),
+            (CoolingPadConnectionState.Unavailable, PadlessHyperBoostEligibilityState.Unknown),
+            (CoolingPadConnectionState.Absent, PadlessHyperBoostEligibilityState.CoolingPadAbsent),
+        ];
+        foreach ((CoolingPadConnectionState state, PadlessHyperBoostEligibilityState expected) in transitions)
+        {
+            ServiceStatusSnapshot previous = context.Runtime.GetStatus();
+            int publications = context.Hub.Published.Count;
+            bool changed = previous.PadlessHyperBoostEligibility != expected;
+            discovery.State = state;
+
+            await context.Runtime.ObserveAsync(includeLiveReadings: false, CancellationToken.None);
+
+            ServiceStatusSnapshot current = context.Runtime.GetStatus();
+            Assert.Equal(expected, current.PadlessHyperBoostEligibility);
+            Assert.Equal(previous.Revision + (changed ? 1 : 0), current.Revision);
+            Assert.Equal(publications + (changed ? 1 : 0), context.Hub.Published.Count);
+            Assert.Equal(settled.Message, current.Message);
+            Assert.Equal(settled.ConfirmedState, current.ConfirmedState);
+            Assert.Null(current.LiveReadings);
+            if (changed)
+            {
+                Assert.Same(current, context.Hub.Published[^1]);
+            }
+
+            await context.Runtime.ObserveAsync(includeLiveReadings: false, CancellationToken.None);
+
+            Assert.Same(current, context.Runtime.GetStatus());
+            Assert.Equal(publications + (changed ? 1 : 0), context.Hub.Published.Count);
+            Assert.Equal(0, context.Device.TotalSetterCalls);
+        }
+    }
+
+    [Fact]
     public async Task PadlessHyperBoost_PadConnectedAfterEnableDoesNotTriggerWrite()
     {
         var discovery = new FixedCoolingPadDiscoverySource(
