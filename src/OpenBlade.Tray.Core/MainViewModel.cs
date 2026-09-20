@@ -294,9 +294,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
-    private bool startupAnimationReadPending;
-    private bool functionKeyReadPending;
-    private bool gamingModeReadPending;
     private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
     private bool useHigherFanTemperature = true;
     private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
@@ -313,7 +310,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool batteryProtectionEnabled = true;
     private bool fullChargeOverride;
     private bool temporaryFullChargeStateKnown;
-    private DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
+    private DeviceObservationState observation = new();
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
     private bool dashboardTelemetryPresentationActive = true;
@@ -378,9 +375,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         TrayHoverLabelMode.ProfileAndPowerFlow;
     private bool startAtSignIn;
     private bool startupStateKnown;
-    private bool? startupAnimationEnabled;
-    private FunctionKeyPrimaryMode? functionKeyPrimary;
-    private bool? gamingModeEnabled;
     private string startupStatusMessage = string.Empty;
     private TrayIconState trayIconState = TrayIconState.GenericError;
     private int disposed;
@@ -2604,19 +2598,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsOneShotFirmwareFieldLoading(
             OneShotLaptopControl.StartupAnimation,
             isStartupAnimationOperationInProgress,
-            startupAnimationReadPending);
+            observation.StartupAnimationReadPending);
 
     public bool IsFunctionKeyFieldLoading =>
         IsOneShotFirmwareFieldLoading(
             OneShotLaptopControl.FunctionKeyPrimary,
             isFunctionKeyOperationInProgress,
-            functionKeyReadPending);
+            observation.FunctionKeyReadPending);
 
     public bool IsGamingModeFieldLoading =>
         IsOneShotFirmwareFieldLoading(
             OneShotLaptopControl.GamingMode,
             isGamingModeOperationInProgress,
-            gamingModeReadPending);
+            observation.GamingModeReadPending);
 
     public bool CanEditStartupAnimation =>
         CanMutate && SupportsStartupAnimation && !IsStartupAnimationFieldLoading;
@@ -2786,15 +2780,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public DeviceCapabilities Capabilities
     {
-        get => capabilities;
+        get => observation.Capabilities;
         private set
         {
-            if (CapabilitiesEqual(capabilities, value))
+            if (CapabilitiesEqual(observation.Capabilities, value))
             {
                 return;
             }
 
-            SetField(ref capabilities, value);
+            observation = observation with { Capabilities = value };
+            Notify(nameof(Capabilities));
             RefreshCustomPerformanceOptions();
             int normalizedFanSpeed = ActiveFanSpeedRange.Quantize(fixedFanSpeedRpm);
             SetField(
@@ -3045,15 +3040,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool? StartupAnimationEnabled
     {
-        get => startupAnimationEnabled;
+        get => observation.StartupAnimationEnabled;
         private set
         {
-            if (startupAnimationEnabled == value)
+            if (observation.StartupAnimationEnabled == value)
             {
                 return;
             }
 
-            startupAnimationEnabled = value;
+            observation = observation with { StartupAnimationEnabled = value };
             Notify(nameof(StartupAnimationEnabled));
             Notify(nameof(StartupAnimationToggleIsOn));
             Notify(nameof(IsStartupAnimationFieldLoading));
@@ -3068,15 +3063,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public FunctionKeyPrimaryMode? FunctionKeyPrimary
     {
-        get => functionKeyPrimary;
+        get => observation.FunctionKeyPrimary;
         private set
         {
-            if (functionKeyPrimary == value)
+            if (observation.FunctionKeyPrimary == value)
             {
                 return;
             }
 
-            functionKeyPrimary = value;
+            observation = observation with { FunctionKeyPrimary = value };
             Notify(nameof(FunctionKeyPrimary));
             Notify(nameof(FunctionKeyPrimaryStateLabel));
             Notify(nameof(SelectedFunctionKeyPrimaryOption));
@@ -3104,15 +3099,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool? GamingModeEnabled
     {
-        get => gamingModeEnabled;
+        get => observation.GamingModeEnabled;
         private set
         {
-            if (gamingModeEnabled == value)
+            if (observation.GamingModeEnabled == value)
             {
                 return;
             }
 
-            gamingModeEnabled = value;
+            observation = observation with { GamingModeEnabled = value };
             Notify(nameof(GamingModeEnabled));
             Notify(nameof(GamingModeToggleIsOn));
             Notify(nameof(TrayDashboardGamingModeLabel));
@@ -5324,15 +5319,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot status,
         ServiceStatusSnapshot? previousStatus)
     {
-        DeviceCapabilities incomingCapabilities = status.Capabilities
-            ?? DeviceCapabilities.Unavailable();
-        DeviceCapabilities capabilities =
-            ShouldPreserveCapabilityPresentationDuringRefresh(
-                status,
-                previousStatus,
-                incomingCapabilities)
-                ? Capabilities
-                : incomingCapabilities;
+        DeviceCapabilities capabilities = observation.ResolveCapabilities(
+            status,
+            hasPreviousStatus: previousStatus is not null);
         Capabilities = capabilities;
         int[] chargeLimits = ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             ? capabilities.ChargeLimits.Order().ToArray()
@@ -8630,26 +8619,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private static bool IsRetainedPowerSourceRecheck(ServiceStatusSnapshot? status) =>
-        status is
-        {
-            DeviceVerified: true,
-            WritesBlocked: true,
-            ActivePowerSource: PowerSource.PluggedIn or PowerSource.UsbC,
-        }
-        && status.Message.Contains(
-            "last confirmed power source is retained",
-            StringComparison.OrdinalIgnoreCase);
+        DeviceObservationState.IsRetainedPowerSourceRecheck(status);
 
     private static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
-        status is not null
-        && IsTemporaryDeviceAccessMessage(status.Message);
-
-    private static bool IsTemporaryDeviceAccessMessage(string message) =>
-        message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
-            && message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
-        || message.StartsWith(
-            "Refreshing laptop controls after a temporary device-access failure",
-            StringComparison.OrdinalIgnoreCase);
+        DeviceObservationState.IsCheckingLaptopConnection(status);
 
     private static string FormatOperationFeedback(string message)
     {
@@ -8759,35 +8732,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void UpdateOneShotReadbacks(ServiceStatusSnapshot status)
     {
-        bool startupPending = SupportsStartupAnimation && status.StartupAnimationEnabled is null;
-        bool functionKeyPending = SupportsFunctionKeyPrimary && status.FunctionKeyPrimary is null;
-        bool gamingPending = SupportsGamingMode && status.GamingModeEnabled is null;
+        DeviceObservationState readbacks = observation.ObserveOneShotReadbacks(status);
         bool pendingChanged =
-            startupAnimationReadPending != startupPending
-            || functionKeyReadPending != functionKeyPending
-            || gamingModeReadPending != gamingPending;
+            observation.StartupAnimationReadPending != readbacks.StartupAnimationReadPending
+            || observation.FunctionKeyReadPending != readbacks.FunctionKeyReadPending
+            || observation.GamingModeReadPending != readbacks.GamingModeReadPending;
 
-        startupAnimationReadPending = startupPending;
-        functionKeyReadPending = functionKeyPending;
-        gamingModeReadPending = gamingPending;
-
-        if (!SupportsStartupAnimation || status.StartupAnimationEnabled is not null
-            || StartupAnimationEnabled is null)
+        // Apply pending flags before the bound values, preserving notification order.
+        observation = observation with
         {
-            StartupAnimationEnabled = status.StartupAnimationEnabled;
-        }
-
-        if (!SupportsFunctionKeyPrimary || status.FunctionKeyPrimary is not null
-            || FunctionKeyPrimary is null)
-        {
-            FunctionKeyPrimary = status.FunctionKeyPrimary;
-        }
-
-        if (!SupportsGamingMode || status.GamingModeEnabled is not null
-            || GamingModeEnabled is null)
-        {
-            GamingModeEnabled = status.GamingModeEnabled;
-        }
+            StartupAnimationReadPending = readbacks.StartupAnimationReadPending,
+            FunctionKeyReadPending = readbacks.FunctionKeyReadPending,
+            GamingModeReadPending = readbacks.GamingModeReadPending,
+        };
+        StartupAnimationEnabled = readbacks.StartupAnimationEnabled;
+        FunctionKeyPrimary = readbacks.FunctionKeyPrimary;
+        GamingModeEnabled = readbacks.GamingModeEnabled;
 
         if (pendingChanged)
         {
@@ -8795,28 +8755,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyCommands();
         }
     }
-
-    private bool ShouldPreserveCapabilityPresentationDuringRefresh(
-        ServiceStatusSnapshot status,
-        ServiceStatusSnapshot? previousStatus,
-        DeviceCapabilities incomingCapabilities) =>
-        previousStatus is not null
-        && (IsCheckingLaptopConnection(status)
-            || IsRetainedPowerSourceRecheck(status))
-        && HasAnyCapability(Capabilities)
-        && !HasAnyCapability(incomingCapabilities);
-
-    private static bool HasAnyCapability(DeviceCapabilities capabilities) =>
-        capabilities.PerformancePresets.Count > 0
-        || capabilities.FanModes.Count > 0
-        || capabilities.LightingEffects.Count > 0
-        || capabilities.ChargeLimits.Count > 0
-        || capabilities.SupportsBatteryProtectionOff
-        || capabilities.SupportsTemporaryFullCharge
-        || capabilities.HyperBoostAccess is not null
-        || capabilities.HyperBoostWithoutCoolingPadAccess is not null
-        || capabilities.LogoLightingModes.Count > 0
-        || capabilities.OneShotLaptopControls.Count > 0;
 
     private void NotifyPresentationState()
     {

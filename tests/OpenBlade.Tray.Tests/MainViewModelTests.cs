@@ -3104,6 +3104,47 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.CanEditStartupAnimation);
         Assert.False(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.CanEditGamingMode);
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 2,
+            StartupAnimationEnabled = false,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+            GamingModeEnabled = false,
+        });
+        await WaitUntilAsync(() => viewModel.CanEditGamingMode);
+
+        Assert.False(viewModel.StartupAnimationToggleIsOn);
+        Assert.Equal(FunctionKeyPrimaryMode.FunctionKeys, viewModel.FunctionKeyPrimary);
+        Assert.False(viewModel.GamingModeToggleIsOn);
+        Assert.False(viewModel.IsStartupAnimationFieldLoading);
+        Assert.False(viewModel.IsFunctionKeyFieldLoading);
+        Assert.False(viewModel.IsGamingModeFieldLoading);
+        Assert.True(viewModel.CanEditStartupAnimation);
+        Assert.True(viewModel.CanEditFunctionKeyPrimary);
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 3,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            Message = "No supported laptop connected.",
+            Capabilities = DeviceCapabilities.Unavailable(),
+            ConfirmedState = null,
+            StartupAnimationEnabled = null,
+            FunctionKeyPrimary = null,
+            GamingModeEnabled = null,
+        });
+        await WaitUntilAsync(() => !viewModel.SupportsFunctionKeyPrimary
+            && viewModel.FunctionKeyPrimary is null);
+
+        Assert.False(viewModel.SupportsStartupAnimation);
+        Assert.False(viewModel.SupportsGamingMode);
+        Assert.Null(viewModel.StartupAnimationEnabled);
+        Assert.Null(viewModel.GamingModeEnabled);
+        Assert.False(viewModel.IsStartupAnimationFieldLoading);
+        Assert.False(viewModel.IsFunctionKeyFieldLoading);
+        Assert.False(viewModel.IsGamingModeFieldLoading);
     }
 
     [Fact]
