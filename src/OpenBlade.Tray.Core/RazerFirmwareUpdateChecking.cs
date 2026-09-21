@@ -292,6 +292,7 @@ public static partial class RazerFirmwarePageParser
 
 public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
 {
+    private const int MaximumRedirectHops = 5;
     private const int MaximumResponseBytes = 512 * 1024;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
     private static readonly HttpClient SharedHttpClient = CreateSharedHttpClient();
@@ -317,21 +318,9 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
         timeout.CancelAfter(RequestTimeout);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, supportPage.OfficialPageUri);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
-            request.Headers.UserAgent.ParseAdd("OpenBlade");
-            using HttpResponseMessage response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
+            using HttpResponseMessage response = await SendFollowingOfficialRedirectsAsync(
+                supportPage.OfficialPageUri,
                 timeout.Token).ConfigureAwait(false);
-            if (response.RequestMessage?.RequestUri is Uri effectiveUri)
-            {
-                if (!IsOfficialPage(effectiveUri))
-                {
-                    throw new RazerFirmwareUpdateException(
-                        "Razer's official firmware page resolved to an unapproved destination.");
-                }
-            }
             response.EnsureSuccessStatusCode();
             await response.Content.LoadIntoBufferAsync(
                 MaximumResponseBytes,
@@ -391,6 +380,75 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
                 exception);
         }
     }
+
+    private async Task<HttpResponseMessage> SendFollowingOfficialRedirectsAsync(
+        Uri initialUri,
+        CancellationToken cancellationToken)
+    {
+        Uri requestUri = initialUri;
+
+        for (int redirectCount = 0; ; redirectCount++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+            request.Headers.UserAgent.ParseAdd("OpenBlade");
+            HttpResponseMessage response = await httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                Uri effectiveUri = response.RequestMessage?.RequestUri ?? requestUri;
+                if (!IsOfficialPage(effectiveUri))
+                {
+                    throw new RazerFirmwareUpdateException(
+                        "Razer's official firmware page resolved to an unapproved destination.");
+                }
+
+                if (!IsRedirect(response.StatusCode))
+                {
+                    return response;
+                }
+
+                if (redirectCount >= MaximumRedirectHops)
+                {
+                    throw new RazerFirmwareUpdateException(
+                        "Razer's official firmware page redirected too many times.");
+                }
+
+                Uri? location = response.Headers.Location;
+                if (location is null
+                    || !Uri.TryCreate(effectiveUri, location, out Uri? destinationUri))
+                {
+                    throw new RazerFirmwareUpdateException(
+                        "Razer's official firmware page returned an invalid redirect.");
+                }
+
+                if (!IsOfficialPage(destinationUri))
+                {
+                    throw new RazerFirmwareUpdateException(
+                        "Razer's official firmware page redirected to an unapproved destination.");
+                }
+
+                requestUri = destinationUri;
+            }
+            catch
+            {
+                response.Dispose();
+                throw;
+            }
+
+            response.Dispose();
+        }
+    }
+
+    private static bool IsRedirect(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.MovedPermanently
+            or HttpStatusCode.Found
+            or HttpStatusCode.SeeOther
+            or HttpStatusCode.TemporaryRedirect
+            or HttpStatusCode.PermanentRedirect;
 
     private static void ValidateOfficialPage(Uri uri)
     {
