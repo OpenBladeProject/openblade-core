@@ -16,7 +16,7 @@ the fields that must stay synchronized with the release:
 | Language | en-US |
 | Installer parameters | `/install /quiet /norestart` |
 | Minimum operating system | Windows 11 version 24H2 x64, build 26100 or later |
-| Supported hardware | Razer Blade 16 (2026), RZ09-0581, USB `1532:02E0` |
+| Supported hardware | Razer Blade 16 (2026), RZ09-0581, USB `1532:02E0`; Blade 16 (2025), RZ09-0528, USB `1532:02C6` |
 
 The submitted package URL must be HTTPS, immutable, and versioned. Never replace
 the file behind an existing URL. A suitable shape is
@@ -59,9 +59,10 @@ synchronized with the deployed documentation and Partner Center.
 Use the following as the starting point for Notes for certification:
 
 > OpenBlade is a free, open-source, Razer-only hardware utility. This release
-> supports only the 2026 Razer Blade 16 model RZ09-0581 with USB identity
-> 1532:02E0 and the firmware combinations listed on the OpenBlade compatibility
-> page. The app installs its own LocalSystem service, which exclusively owns
+> supports the Razer Blade 16 (2026), RZ09-0581, USB 1532:02E0, and the
+> Blade 16 (2025), RZ09-0528, USB 1532:02C6. Available controls vary by model;
+> the compatibility page lists them. The app installs its own LocalSystem
+> service, which exclusively owns
 > the supported laptop-control HID handle and exposes typed local IPC to the
 > per-user tray and Session Agent. It does not install a kernel driver, require
 > the Synapse application, or download executable content. The optional

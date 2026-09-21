@@ -123,13 +123,16 @@ release steps.
   every day at 09:17 UTC and can also be started manually.
 - It runs the formatting, build, test, authoring, and production-publish gates
   used by CI, then retains the Actions artifact for 14 days.
-- Each successful build is a GitHub prerelease with its installer, checksum,
+- Each successful build prepares a draft GitHub prerelease with its installer, checksum,
   metadata, and changelog snapshot from the exact build commit.
-- After publication, the workflow opens or updates a draft documentation pull
+- The workflow also opens or updates a draft documentation pull
   request that records missing Nightly boundaries and preserves newer
   `Unreleased` entries from `main`.
-- Nightlies appear on the Releases page and in the app only when the
-  **Nightly** update channel is selected.
+- Review and merge the changelog PR, then run **Finalize Nightly** on `main`
+  with the draft's exact tag. It verifies the assets and merged changelog before
+  publishing the draft.
+- Published Nightlies appear on the Releases page. The app offers them only
+  when the **Nightly** update channel is selected.
 
 Nightlies are test builds. Verify `OpenBlade-Setup.exe` against the included
 SHA-256 file before installation.
@@ -156,8 +159,10 @@ warning.
 - The changelog job requires the repository setting **Allow GitHub Actions to
   create and approve pull requests**.
 - Its token is limited to repository contents and pull requests in that job.
-- If the setting is disabled, the Nightly release remains published. Enable the
-  setting and rerun the failed changelog job.
-- Changelog tally errors do not block publication. The release attaches the
-  exact source changelog and reports the tally failure instead of withholding
-  the installer and checksum.
+- If the setting is disabled, enable it and rerun the failed changelog job.
+  The release stays in draft until its changelog is merged and verified.
+- Changelog generation or attachment errors stop preparation. Finalization also
+  stops if the source snapshot, merged section, comparison link, or assets do
+  not match. Correct the reported problem and finalize the same draft tag.
+- Hosted and local publication use `build/Complete-NightlyRelease.ps1`.
+  Use `-VerifyOnly` to check a prepared draft without publishing it.
