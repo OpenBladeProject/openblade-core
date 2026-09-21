@@ -386,6 +386,7 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
         CancellationToken cancellationToken)
     {
         Uri requestUri = initialUri;
+        bool retriedAfterSessionCheck = false;
 
         for (int redirectCount = 0; ; redirectCount++)
         {
@@ -408,6 +409,20 @@ public sealed class RazerFirmwareUpdateClient : IRazerFirmwareUpdateClient
 
                 if (!IsRedirect(response.StatusCode))
                 {
+                    // Razer can finish session initialization on an HTML browser-check
+                    // page. Repeat the original metadata GET once with the stored cookies,
+                    // just as a second manual check would, without interpreting scripts.
+                    if (response.IsSuccessStatusCode
+                        && effectiveUri.AbsolutePath.StartsWith(
+                            "/app/pre_page_check/", StringComparison.Ordinal)
+                        && !retriedAfterSessionCheck
+                        && redirectCount < MaximumRedirectHops)
+                    {
+                        retriedAfterSessionCheck = true;
+                        requestUri = initialUri;
+                        response.Dispose();
+                        continue;
+                    }
                     return response;
                 }
 
