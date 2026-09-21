@@ -14,7 +14,7 @@ public sealed class TestedPlatformCatalogTests
         Assert.Equal("RZ09-0581", target.ModelNumber);
         Assert.Equal(["3.01", "4.00", "4.01"], target.BiosVersions);
         Assert.Equal(["1.04"], target.EcVersions);
-        Assert.Equal(["1.5.0.0", "1.6.0.0"], target.McuVersions);
+        Assert.Equal(["1.5.0.0", "1.6.0.0", "1.7.0.0"], target.McuVersions);
 
         TestedPlatformVersionSet rz090528 = TestedPlatformCatalog.Entries[1];
         Assert.Equal("RZ09-0528", rz090528.ModelNumber);
@@ -53,6 +53,7 @@ public sealed class TestedPlatformCatalogTests
     [Theory]
     [InlineData("1.5.0.0")]
     [InlineData("1.6.0.0")]
+    [InlineData("1.7.0.0")]
     public void Assess_AcceptsEachTestedMcuVersion(string mcuVersion)
     {
         TestedPlatformAssessment assessment = TestedPlatformCatalog.Assess(
@@ -69,7 +70,7 @@ public sealed class TestedPlatformCatalogTests
     {
         TestedPlatformAssessment assessment = TestedPlatformCatalog.Assess(
             "RZ09-0581",
-            new FirmwareVersions("3.02", "1.04", "1.7.0.0", "ignored"));
+            new FirmwareVersions("3.02", "1.04", "1.8.0.0", "ignored"));
 
         Assert.False(assessment.MatchesTestedConfiguration);
         Assert.Collection(
@@ -83,8 +84,8 @@ public sealed class TestedPlatformCatalogTests
             mismatch =>
             {
                 Assert.Equal("MCU", mismatch.Component);
-                Assert.Equal("1.7.0.0", mismatch.CurrentValue);
-                Assert.Equal(["1.5.0.0", "1.6.0.0"], mismatch.TestedValues);
+                Assert.Equal("1.8.0.0", mismatch.CurrentValue);
+                Assert.Equal(["1.5.0.0", "1.6.0.0", "1.7.0.0"], mismatch.TestedValues);
             });
     }
 

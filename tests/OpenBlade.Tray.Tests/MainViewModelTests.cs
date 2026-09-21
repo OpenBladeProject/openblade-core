@@ -367,7 +367,7 @@ public sealed partial class MainViewModelTests
             firmwareViewModel.InstalledMcuVersion,
             mainViewModel.AboutMcuVersionStatus);
         Assert.Equal(
-            "OpenBlade has not tested this configuration: MCU 1.07.",
+            "OpenBlade has not tested this configuration: MCU 1.08.",
             mainViewModel.DashboardTestedPlatformWarningMessage);
         Assert.Equal("1.7.0.0", mainViewModel.DetectedFirmware?.McuVersion);
     }
@@ -7626,7 +7626,7 @@ public sealed partial class MainViewModelTests
         client.Publish(stable with
         {
             Revision = stable.Revision + 1,
-            Firmware = stable.Firmware! with { McuVersion = "1.7.0.0" },
+            Firmware = stable.Firmware! with { McuVersion = "1.8.0.0" },
         });
         await WaitUntilAsync(() => viewModel.HasUntestedPlatformVersion);
 
@@ -7635,7 +7635,7 @@ public sealed partial class MainViewModelTests
             "Untested platform configuration",
             viewModel.PlatformCompatibilityWarningTitle);
         Assert.Equal(
-            "OpenBlade has not tested this configuration: MCU 1.07.",
+            "OpenBlade has not tested this configuration: MCU 1.08.",
             viewModel.DashboardTestedPlatformWarningMessage);
         Assert.Contains(
             "This is a compatibility notice, not a hardware failure.",

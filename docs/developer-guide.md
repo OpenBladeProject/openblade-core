@@ -196,6 +196,8 @@ recovery is required.
 
 ### Firmware-update smoke workflow
 
+Recorded validation: [RZ09-0581 MCU 1.7.0.0](firmware-validation-rz09-0581-mcu-1.7.md).
+
 The installed-product firmware workflow starts with a read-only baseline:
 
 ```powershell
