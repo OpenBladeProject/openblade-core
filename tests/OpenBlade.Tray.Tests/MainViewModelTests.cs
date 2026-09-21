@@ -366,9 +366,8 @@ public sealed partial class MainViewModelTests
         Assert.Equal(
             firmwareViewModel.InstalledMcuVersion,
             mainViewModel.AboutMcuVersionStatus);
-        Assert.Equal(
-            "OpenBlade has not tested this configuration: MCU 1.08.",
-            mainViewModel.DashboardTestedPlatformWarningMessage);
+        Assert.False(mainViewModel.HasUntestedPlatformVersion);
+        Assert.Empty(mainViewModel.DashboardTestedPlatformWarningMessage);
         Assert.Equal("1.7.0.0", mainViewModel.DetectedFirmware?.McuVersion);
     }
 
