@@ -278,6 +278,35 @@ unrelated worktrees and checkout changes.
     changes. If local modifications or divergence prevent a safe fast-forward,
     report the blocker rather than stashing, resetting, or discarding work.
 
+## README and documentation language
+
+Use the concise [README](README.md), approved in
+[PR #558](https://github.com/OSSBlade/openblade-core/pull/558), as the writing
+reference for user-facing documentation.
+
+- Write for laptop owners in plain, direct English. Prefer familiar words,
+  concrete actions, and short sentences over implementation jargon.
+- Keep the README a brief introduction: purpose, supported laptops and Windows
+  requirements, main features, installation, and links to detailed guides.
+  The approved version is about 440 words; use that as a guide to brevity, not
+  a rigid word limit. Put substantial new detail in a linked guide.
+- Avoid lawyer-like disclaimers, defensive caveats, repeated warnings,
+  promotional claims, and absolute promises about support or reliability.
+- State a limitation once, near the relevant feature or step, when it helps
+  the reader decide or act. Keep admission rules, compatibility checks,
+  failure handling, and validation history in the relevant technical guide.
+- Preserve real safety requirements and model-specific limits. Simplify the
+  wording without weakening the requirement or overstating support. Distinguish
+  tested firmware provenance from actual production admission restrictions.
+- Prefer compact feature bullets to many small sections. Avoid repetitive
+  bold-label lists, filler, and redundant explanations of what the app does
+  not do.
+- Write instructions positively and concretely, for example: "Start it
+  normally; setup asks for administrator permission when needed."
+- Review documentation edits for factual accuracy, length, repetition, and
+  tone. Verify changed behavior claims against the implementation. Detailed
+  engineering guides should retain the precision their readers need.
+
 ## Versioning and commits
 
 Follow [VERSIONING.md](VERSIONING.md). The short form is:
