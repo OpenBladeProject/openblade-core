@@ -7,6 +7,6 @@
   "offlineInstaller": true,
   "requiresElevation": true,
   "minimumOperatingSystem": "Windows 11 version 24H2 x64 (build 26100 or later)",
-  "supportedHardware": "Razer Blade 16 (2026), model RZ09-0581, USB 1532:02E0",
+  "supportedHardware": "Razer Blade 16 (2026), model RZ09-0581, USB 1532:02E0; Razer Blade 16 (2025), model RZ09-0528, USB 1532:02C6",
   "privacyPolicyUrl": "https://openblade.sh/privacy.html"
 }

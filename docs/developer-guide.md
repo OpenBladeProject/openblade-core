@@ -1,7 +1,7 @@
 # Developer guide
 
-This page collects the build, publish, and hardware-development material that
-used to live in the main [README](../README.md). Read [AGENTS.md](../AGENTS.md)
+Use this guide to build, test, and work on OpenBlade. Read
+[AGENTS.md](../AGENTS.md)
 before changing hardware, IPC, setup, or process boundaries.
 
 For bounded refactor priorities and autonomous delivery criteria, see the
@@ -59,8 +59,9 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
   controls also require independent readback.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
   state, but every write performs fresh identity and safety checks.
-- Razer software is reported as a possible conflict. OpenBlade does not stop it
-  on its own or silently fight external changes.
+- Competing Razer controllers block affected operations. Verified
+  [Synapse Blade Blocker](synapse-blade-blocker.md) installations can coexist
+  with OpenBlade. OpenBlade never stops other controllers automatically.
 - [Unexpected service-exit recovery](service-crash-recovery.md) uses the
   bounded SCM policy, observes fresh exact-device state, and resumes only
   eligible OpenBlade-owned producers.
@@ -119,8 +120,11 @@ installer troubleshooting.
 ### Nightly builds
 
 - Built from committed `main` every day at 09:17 UTC or on manual request
-- Published as GitHub prereleases with the installer, checksum, metadata, and
-  exact-commit changelog snapshot
+- Prepared as draft GitHub prereleases with the installer, checksum, metadata,
+  and exact-commit changelog snapshot
+- Published after the generated changelog PR is reviewed and merged, then
+  **Finalize Nightly** is run on `main` with the draft's exact tag; see the
+  [Nightly workflow](build-install-and-nightly.md)
 - Offered in the app only when the **Nightly** update channel is selected
 - Test builds, not stable releases; unless release signing is connected, the
   installer is expected to report `NotSigned`

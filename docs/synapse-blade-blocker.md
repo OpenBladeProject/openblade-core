@@ -2,6 +2,19 @@
 
 [Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker) is an optional, separately installed patch that lets Synapse serve peripherals while excluding recognized Blade devices. OpenBlade does not install or depend on it.
 
+## Setup
+
+1. Install and apply the blocker using the instructions in its repository.
+2. Restart Synapse so it loads the patched files.
+3. Open OpenBlade. If it reports a conflict, check that the patch is still
+   applied and that no other Razer controller is running.
+
+After a Synapse update, apply the blocker again to the updated installation.
+OpenBlade checks the installed files each time; an old patch record does not
+cover a new installation.
+
+## How OpenBlade checks coexistence
+
 When every running Synapse AppEngine instance uses an installation with a verified applied patch, OpenBlade excludes those verified AppEngine processes from its competing-controller checks. Independent Razer controllers, including legacy Synapse services and the gaming-services updater, retain their existing checks. Hardware identity, supported commands, power requirements and other feature admission checks still apply.
 
 Synapse can also start its `razerwdl` Windows lighting helper after the UI loads. OpenBlade excludes this helper only when its expected installation path and product metadata match, its direct parent is a verified patched AppEngine in the same session, and process start times support that parent relationship. Every running helper must satisfy these checks. On every observation, OpenBlade then enumerates present, enabled Windows LampArray interfaces. Any endpoint matching a Blade product ID in the verified patch records, missing endpoint identity, or enumeration failure retains the helper conflict. Independent helpers remain conflicts even when a patched AppEngine is running. There is no helper-version allowlist.
@@ -10,9 +23,9 @@ The endpoint check reads SetupAPI interface metadata without opening HID device 
 
 Verification uses the applied patch record and matching installed archive/executable hashes, not a Synapse version allowlist. A new version can work without an OpenBlade update if the patcher can apply its required edits and write a valid record. Missing or malformed records, changed files, mixed patched/unpatched instances and a process started before patch application retain the usual conflict behavior. Restart Synapse after applying the patch. Its short-lived unpatched launcher may still be reported while starting.
 
-Synapse updates can replace the patch. Use the blocker's preparation/apply flow for the new installation and report compatibility failures in its repository. OpenBlade will not treat an old record as proof that the updated application is patched.
+Report blocker compatibility failures in the Synapse Blade Blocker repository.
 
-This is detection of a cooperating local patch, not a security isolation mechanism or proof that every possible native code path is harmless. The user-reported Pro Click V2 result covers that peripheral and the tested build; other devices and lifecycle paths may behave differently.
+The blocker changes which devices Synapse handles; it does not sandbox Synapse. The trials below cover a Pro Click V2 and the listed builds.
 
 ## Local validation
 

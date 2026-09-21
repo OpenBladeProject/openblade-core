@@ -11,11 +11,10 @@
   </p>
 </div>
 
-OpenBlade is a small, free app that lives in your Windows system tray and gives
-you the controls Synapse offers: performance modes, fan behavior, battery charge
-limits, keyboard lighting, display settings, and the special keys on your
-laptop. There is no account to create, nothing is sent to the cloud, and it
-only checks for updates if you turn that on.
+OpenBlade is a free Windows tray app for Razer Blade laptops. Adjust performance,
+fans, charging, lighting, display settings, and special keys without a Synapse
+account. Profiles switch automatically between plugged-in, USB-C, and battery
+power, and keep working when you close the window.
 
 | Dashboard | Lighting |
 | :---: | :---: |
@@ -23,156 +22,68 @@ only checks for updates if you turn that on.
 
 ## Supported laptops
 
+Requires Windows 11 x64, version 24H2 or later.
+
 | Laptop | Model number |
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
 
-OpenBlade only works with these models. A control appears for your laptop only
-after it has been tested on that exact model, so you will not find buttons that
-do nothing or do the wrong thing.
+Available controls vary by model. See the
+[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility details.
 
-## Why people use it
+## Features
 
-You do not need to install or sign in to Razer Synapse. If Razer software is
-already running, OpenBlade checks for competing laptop controllers. With
-[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker)
-applied and verified for every running AppEngine instance, those instances no
-longer block OpenBlade's features. Its verified Windows lighting helper is also
-accepted when a fresh device check finds no excluded Blade lighting interface.
-Independent controllers, unknown devices, and failed checks retain the normal
-conflict behavior. A missing, restored, or changed patch does too. This optional
-integration is available in OpenBlade 0.21.0 and newer. See the
-[coexistence notes](docs/synapse-blade-blocker.md).
+- Power modes, automatic or fixed fan speeds,
+  custom fan curves, and NVIDIA GPU clock offsets. HyperBoost is available on
+  the Blade 16 (2026) without the Razer cooling pad.
+- Charge limits, battery health, and separate settings for each
+  power source.
+- Keyboard and lid-logo effects, reactive lighting, mute indicators,
+  and support for Razer `.chroma` files and shared `.oblight` presets.
+- Display profiles, brightness controls, function-row
+  behavior, and M1 to M5 shortcuts on the Fn layer.
+- Rearrange live sensor readouts and find apps keeping the NVIDIA
+  GPU awake.
 
-OpenBlade talks to the laptop over the same USB channel Razer uses. Performance
-modes, fans, sensors, lighting, and battery settings need no driver of their
-own, so that is one less thing that can crash your system or stop working
-after a Windows update.
-
-The one exception is the native Windows brightness flyout on the Blade 16
-(2026). It relies on the signed brightness driver stack that Razer ships for
-that laptop. OpenBlade does not write, modify, or re-sign that driver, and the
-OpenBlade installer does not install it. Running Synapse once installs it, and
-OpenBlade also keeps the exact package in
-[`blade-driver-catalog`](https://github.com/OSSBlade/blade-driver-catalog).
-If the driver is not present, the brightness keys still work through Windows
-and the OpenBlade flyout.
-
-You set up a profile for plugged in, for USB-C power, and for battery, and
-OpenBlade switches between them as soon as you plug in or unplug. Closing the
-window changes nothing: profiles, display settings, lighting, and your special
-keys keep working in the background.
-
-OpenBlade is careful with your hardware. If it cannot confirm which laptop it
-is talking to, or cannot confirm that a change took effect, it stops rather
-than guessing. It only accepts changes from the person signed in at the laptop
-itself. A Remote Desktop session can see the current state but cannot change
-anything.
-
-OpenBlade is free software under the GPL, so you can read every line of code
-that touches your laptop.
-
-## What you can control
-
-### Performance and cooling
-
-- Power modes, including HyperBoost on the Blade 16 (2026) without the Razer
-  cooling pad that Synapse requires
-- Fan behavior: automatic, fixed speed, or your own curve
-- NVIDIA GPU clock offsets for extra headroom or quieter running
-- Live readouts for CPU temperature, fan RPM, GPU temperature and load, and
-  battery power draw
-- If another app changes your performance or fan settings behind your back,
-  OpenBlade can put them back or just let you know
-- A list of apps holding the NVIDIA GPU awake on an idle desktop, with a way
-  to close them
-
-### Battery
-
-- Charge limits to keep the battery healthy when the laptop stays plugged in,
-  with a one-key toggle
-- Battery health and power figures on the dashboard
-- Separate settings per power source, applied automatically
-
-### Lighting
-
-- Keyboard and lid-logo lighting with the built-in effects, plus streaming
-  effects that react in real time
-- The keyboard shows when your microphone or speakers are muted
-- Import Razer `.chroma` keyboard files, or share your own `.oblight` presets
-  with other OpenBlade users
-
-### Display and keys
-
-- Display profiles and brightness behavior, including the native Windows
-  brightness flyout when the Razer brightness driver is installed
-- Choose whether the function row acts as F-keys or media keys by default
-- Bind the M1 to M5 keys on the Fn layer to the actions you want, including
-  Gaming mode, mute, and charge-limit toggles
-
-### Everyday details
-
-- A dashboard you can rearrange. Show the sections you care about and drag
-  them into the order you want
-- Each Windows user on the laptop gets their own profiles and preferences.
-  You can switch users without restarting anything, and only the user who is
-  signed in on screen can change hardware settings
-- Export and import your profiles to move them to another machine
-- Optional update checks on a schedule you pick, with a Nightly channel if you
-  want to try new features early
-- A diagnostics package you can share when reporting a problem. Your user
-  name, computer name, and personal folder paths are stripped out before it is
-  written, and the laptop serial number is never included
-- Available in English, Simplified Chinese, and Russian, or set it to follow
-  your Windows language
+Each Windows user has their own profiles and preferences, with profile import
+and export. The interface supports English, Simplified Chinese, and Russian.
+Update checks are optional, with Stable and Nightly channels.
 
 ## Install
 
 1. Download `OpenBlade-Setup.exe` from the
    [latest release](https://github.com/OSSBlade/openblade-core/releases/latest).
-2. Double-click it and choose **Install**. Windows will ask for permission
-   once, when setup is ready to make changes. Do not use "Run as
-   administrator"; the installer asks for what it needs on its own.
-3. Choose **Launch OpenBlade**. The app appears in your system tray.
+2. Double-click it and choose **Install**. Start it normally; setup asks for
+   administrator permission when needed.
+3. Choose **Launch OpenBlade** to open the tray app.
 
-To remove it, use Windows Settings > Installed apps. Your saved profiles stay
-on disk unless you tick the option to remove them too.
+Uninstall through Windows Settings > Installed apps. You can keep your saved
+profiles or choose to remove them. Nightly builds are test builds that may be unsigned and
+may trigger a Windows warning.
 
-Nightly builds are unsigned test builds, so Windows may show a warning before
-installing one. They are only offered inside the app when you switch the update
-channel to **Nightly**.
+## Using it with Synapse
 
-## Good to know
+OpenBlade works on its own. To keep Synapse for your other Razer devices, use
+[Synapse Blade Blocker](https://github.com/OSSBlade/synapse-blade-blocker).
+OpenBlade checks the patch before allowing shared use; see the
+[setup and coexistence notes](docs/synapse-blade-blocker.md).
 
-- OpenBlade needs Windows 11 x64, version 24H2 or later.
-- OpenBlade does not fight Razer software for control of the hardware. If
-  both are running, you may see settings change unexpectedly. Stop one of them.
-- Battery and firmware settings apply to the physical laptop, no matter which
-  Windows user changed them.
-- The full user guide and compatibility notes live in the
-  [openblade-docs](https://github.com/OSSBlade/openblade-docs) repository.
+Core controls need no additional driver. The native Windows brightness flyout
+on the Blade 16 (2026) uses Razer's brightness driver, installed separately.
+Without it, brightness keys use the OpenBlade flyout. See the
+[brightness driver guide](docs/razer-brightness-driver-package.md).
 
-## For developers
+## Development
 
-Everything technical lives in the [developer guide](docs/developer-guide.md):
-architecture, the hardware safety model, build and test commands, publishing,
-the capture and validation tools, and the lighting file format. Read
-[AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process
-boundaries. Commit messages follow Conventional Commits, and version rules are
-in [VERSIONING.md](VERSIONING.md).
+Start with the [developer guide](docs/developer-guide.md) for architecture,
+builds, tests, and hardware tooling. Contribution rules are in
+[AGENTS.md](AGENTS.md) and [VERSIONING.md](VERSIONING.md).
+
+Related repositories: [user documentation](https://github.com/OSSBlade/openblade-docs),
+[protocol captures](https://github.com/OSSBlade/openblade-captures), and
+[branding](https://github.com/OSSBlade/openblade-branding).
 
 ## License
 
-OpenBlade is free software licensed under the
-[GNU General Public License version 3 or later](LICENSE)
-(`GPL-3.0-or-later`).
-
-## Project repositories
-
-- [openblade-docs](https://github.com/OSSBlade/openblade-docs): user
-  documentation and compatibility notes
-- [openblade-captures](https://github.com/OSSBlade/openblade-captures):
-  sanitized protocol evidence and capture tooling
-- [openblade-branding](https://github.com/OSSBlade/openblade-branding): brand
-  source files and exports
+[GNU General Public License version 3 or later](LICENSE) (`GPL-3.0-or-later`).
