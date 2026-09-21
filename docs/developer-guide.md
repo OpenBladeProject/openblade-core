@@ -33,7 +33,7 @@ flowchart LR
 | `OpenBlade.Display` | Display discovery and Windows refresh rate, HDR, and color profile changes |
 | `OpenBlade.Platform` | Windows NVIDIA GPU activity counters, GPU-app cleanup, and processor efficiency policy |
 | `OpenBlade.Tray.Core` / `OpenBlade.Tray` | Presentation policy and the WinUI 3 tray interface |
-| `OpenBlade.Deployment` | Release manifest parsing and signed-release verification for update checks |
+| `OpenBlade.Deployment` | Manifest parsing and signature verification for enrolled local-development deployments |
 | `OpenBlade.Setup` | Transactional install, repair, shutdown, and uninstall |
 | `OpenBlade.Capture` / `OpenBlade.FirmwareSmoke` | Developer-only protocol and firmware validation |
 | `OpenBlade.DeploymentBroker` / `OpenBlade.DeploymentClient` | Local-development installation of locally built payloads, after explicit enrollment |
