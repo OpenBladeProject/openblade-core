@@ -1214,6 +1214,127 @@ public sealed class RazerFirmwareUpdateCheckingTests
             result.TrySetResult(versions);
     }
 
+    [Theory]
+    [InlineData(301)]
+    [InlineData(302)]
+    [InlineData(303)]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task Client_FollowsOfficialSessionRedirectOnFirstCheck(int status)
+    {
+        var handler = new RedirectHandler((HttpStatusCode)status, "/app/answers/firmware");
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+        var page = RazerFirmwareSupportCatalog.Find("RZ09-0581")!;
+
+        var versions = await client.GetPublishedVersionsAsync(page, CancellationToken.None);
+
+        Assert.Equal("3.01", versions.BiosVersion);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(new Uri(page.OfficialPageUri, "/app/answers/firmware"), handler.Requests[1]);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/firmware")]
+    [InlineData("//example.com/firmware")]
+    [InlineData("http://mysupport.razer.com/firmware")]
+    public async Task Client_RejectsUnsafeRedirectBeforeSending(string destination)
+    {
+        var handler = new RedirectHandler(HttpStatusCode.Found, destination);
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+
+        await Assert.ThrowsAsync<RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+            RazerFirmwareSupportCatalog.Find("RZ09-0581")!, CancellationToken.None));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Client_BoundsRedirectLoops()
+    {
+        var handler = new RedirectHandler(HttpStatusCode.Found, "/loop", repeat: true);
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+
+        await Assert.ThrowsAsync<RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+            RazerFirmwareSupportCatalog.Find("RZ09-0581")!, CancellationToken.None));
+
+        Assert.Equal(6, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Client_RejectsRedirectWithoutLocation()
+    {
+        var handler = new RedirectHandler(HttpStatusCode.Found, null);
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+
+        await Assert.ThrowsAsync<RazerFirmwareUpdateException>(() => client.GetPublishedVersionsAsync(
+            RazerFirmwareSupportCatalog.Find("RZ09-0581")!, CancellationToken.None));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Client_PreservesCancellationBetweenRedirectRequests()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var handler = new RedirectHandler(HttpStatusCode.Found, "/next", onRedirect: cancellation.Cancel);
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetPublishedVersionsAsync(
+            RazerFirmwareSupportCatalog.Find("RZ09-0581")!, cancellation.Token));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Client_RepeatsOriginalMetadataRequestAfterSessionCheckPage()
+    {
+        var handler = new RedirectHandler(HttpStatusCode.Found, "/app/pre_page_check/redirect/firmware");
+        using var httpClient = new HttpClient(handler);
+        var client = new RazerFirmwareUpdateClient(httpClient);
+        var page = RazerFirmwareSupportCatalog.Find("RZ09-0581")!;
+
+        var versions = await client.GetPublishedVersionsAsync(page, CancellationToken.None);
+
+        Assert.Equal("3.01", versions.BiosVersion);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(page.OfficialPageUri, handler.Requests[2]);
+    }
+
+    private sealed class RedirectHandler(
+        HttpStatusCode status,
+        string? destination,
+        bool repeat = false,
+        Action? onRedirect = null) : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request.RequestUri!);
+            Assert.Equal("OpenBlade", request.Headers.UserAgent.ToString());
+            Assert.Contains(request.Headers.Accept, value => value.MediaType == "text/html");
+            var response = new HttpResponseMessage(Requests.Count == 1 || repeat ? status : HttpStatusCode.OK)
+            {
+                RequestMessage = request,
+                Content = new StringContent(request.RequestUri!.AbsolutePath.StartsWith("/app/pre_page_check/", StringComparison.Ordinal) ? "<title>Oracle B2C Service</title>" : "<div>BIOS Firmware Updater v3.01</div>"),
+            };
+            if (destination is not null)
+            {
+                response.Headers.Location = new Uri(destination, UriKind.RelativeOrAbsolute);
+                onRedirect?.Invoke();
+            }
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class StubHandler(string responseBody) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }

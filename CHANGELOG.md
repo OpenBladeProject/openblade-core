@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix firmware checks failing on the first attempt when Razer's support page starts a new session. ([#564](https://github.com/OSSBlade/openblade-core/pull/564))
+
 ## [0.21.6] - 2026-09-20
 
 ### Fixed
