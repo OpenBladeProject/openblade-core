@@ -388,7 +388,11 @@ internal static class LaunchFixture
         {
             int error = Marshal.GetLastWin32Error();
             duplicate.Dispose();
-            Assert.Equal(6, error); // ERROR_INVALID_HANDLE: the slot was not inherited or reused.
+            // Our CreateEvent/OpenEvent sentinels support cross-process duplication
+            // (also proved by the parent/coordinator positive controls). A missing
+            // slot (6) or a reused, nonduplicable object (50) cannot be that event.
+            // Permission failures and every other error remain test failures.
+            Assert.True(error is 6 or 50, $"Unexpected DuplicateHandle error: {error}.");
             return false;
         }
 
