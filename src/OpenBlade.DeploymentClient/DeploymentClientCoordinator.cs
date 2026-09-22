@@ -48,6 +48,14 @@ internal sealed class DeploymentClientCoordinator(
                 return Fail("client-context-rejected");
             }
 
+            // Retain a verified desktop lifetime parent before stopping installed
+            // processes or asking the broker to change their payload.
+            using IDeploymentLaunchContext? launchContext = TryPrepareLaunchContext();
+            if (launchContext is null)
+            {
+                return false;
+            }
+
             InstalledPayloadPaths? expectedPaths = installedPayload.GetExpectedPaths();
             if (expectedPaths is null)
             {
@@ -70,6 +78,11 @@ internal sealed class DeploymentClientCoordinator(
                         expectedPaths))
                 {
                     return Fail("installed-payload-unverified-before-shutdown");
+                }
+
+                if (!ValidateLaunchContext(launchContext))
+                {
+                    return false;
                 }
 
                 bool stopped;
@@ -107,6 +120,11 @@ internal sealed class DeploymentClientCoordinator(
                 return Fail("installed-process-shutdown-incomplete");
             }
 
+            if (!ValidateLaunchContext(launchContext))
+            {
+                return false;
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             Guid requestId = requestIds.Create();
             if (requestId == Guid.Empty)
@@ -121,6 +139,7 @@ internal sealed class DeploymentClientCoordinator(
             {
                 return await CompleteSuccessfulInstallAsync(
                     expectedPaths,
+                    launchContext,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -130,6 +149,7 @@ internal sealed class DeploymentClientCoordinator(
                 await RestoreAfterRollbackAsync(
                     expectedPaths,
                     originalShape,
+                    launchContext,
                     cancellationToken).ConfigureAwait(false);
                 return false;
             }
@@ -148,8 +168,37 @@ internal sealed class DeploymentClientCoordinator(
         }
     }
 
+    private IDeploymentLaunchContext? TryPrepareLaunchContext()
+    {
+        try
+        {
+            return processes.Prepare();
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
+        {
+            Fail("desktop-launch-context-rejected");
+            return null;
+        }
+    }
+
+    private bool ValidateLaunchContext(IDeploymentLaunchContext context)
+    {
+        try
+        {
+            context.Validate();
+            return true;
+        }
+        catch (Exception exception) when (exception is
+            IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
+        {
+            return Fail("desktop-launch-context-changed");
+        }
+    }
+
     private async Task<bool> CompleteSuccessfulInstallAsync(
         InstalledPayloadPaths expectedPaths,
+        IDeploymentLaunchContext launchContext,
         CancellationToken cancellationToken)
     {
         if (!HasRequiredContext())
@@ -181,12 +230,14 @@ internal sealed class DeploymentClientCoordinator(
         return await LaunchShapeAsync(
             paths,
             InstalledProcessShape.SessionAgentAndTray,
+            launchContext,
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task RestoreAfterRollbackAsync(
         InstalledPayloadPaths expectedPaths,
         InstalledProcessShape originalShape,
+        IDeploymentLaunchContext launchContext,
         CancellationToken cancellationToken)
     {
         if (!HasRequiredContext())
@@ -203,13 +254,14 @@ internal sealed class DeploymentClientCoordinator(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await LaunchShapeAsync(paths, originalShape, cancellationToken)
+        await LaunchShapeAsync(paths, originalShape, launchContext, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<bool> LaunchShapeAsync(
         InstalledPayloadPaths paths,
         InstalledProcessShape shape,
+        IDeploymentLaunchContext launchContext,
         CancellationToken cancellationToken)
     {
         if (shape == InstalledProcessShape.None)
@@ -218,7 +270,12 @@ internal sealed class DeploymentClientCoordinator(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using ILaunchedDeploymentProcess? sessionAgent = processes.Launch(
+        if (!ValidateLaunchContext(launchContext))
+        {
+            return false;
+        }
+
+        using ILaunchedDeploymentProcess? sessionAgent = launchContext.Launch(
             InstalledProcessLaunchPlan.SessionAgent(paths));
         if (sessionAgent is null
             || !await sessionAgent.RemainsAliveAsync(SessionAgentSurvivalWindow)
@@ -234,7 +291,12 @@ internal sealed class DeploymentClientCoordinator(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using ILaunchedDeploymentProcess? tray = processes.Launch(
+        if (!ValidateLaunchContext(launchContext))
+        {
+            return false;
+        }
+
+        using ILaunchedDeploymentProcess? tray = launchContext.Launch(
             InstalledProcessLaunchPlan.Tray(paths));
         if (tray is null
             || !await tray.RemainsAliveAsync(SessionAgentSurvivalWindow)

@@ -44,13 +44,14 @@ one Session Agent at normal integrity. Only an exact broker-attested rollback
 may restore the prior process shape; a rejected, failed, mismatched, or
 indeterminate deployment does not relaunch a potentially partial installation.
 
-The client starts each verified installed app without inherited handles and
-outside the command runner's Windows job, using Windows-permitted breakaway.
-Closing the deployment command therefore leaves the apps running. If Windows
-does not permit that separation, relaunch fails instead of starting an app tied
-to the command's lifetime. The client may discard only its own newly created
-child when launch verification fails. Start OpenBlade normally
-from the Start menu if relaunch is rejected.
+The client checks the current user's Windows desktop shell before stopping
+OpenBlade for deployment. It uses that verified, normal-integrity shell as the
+parent of each relaunched app, with no inherited handles. Closing the deployment
+command then leaves the apps running. Windows-managed power jobs remain in place.
+If the shell or user-session checks fail, the client reports the failure without
+falling back to a launch tied to the command runner. The client may discard only
+its own newly created child when launch verification fails. Start OpenBlade
+normally from the Start menu if relaunch is rejected.
 
 Local-development packages are intentionally not release artifacts. They must
 not be uploaded, attached to a GitHub release, submitted to the Store, or

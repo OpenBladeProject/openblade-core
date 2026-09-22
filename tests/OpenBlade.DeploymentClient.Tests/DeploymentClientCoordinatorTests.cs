@@ -55,6 +55,47 @@ public sealed class DeploymentClientCoordinatorTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DesktopContext_RejectedOrChangedBeforeShutdown_NeverStopsOrCallsBroker(bool rejectPreparation)
+    {
+        FixedBrokerChannel broker = new(BrokerProtocolTests.Success());
+        RecordingProcessShutdown shutdown = new(succeeds: true);
+        RecordingProcessLauncher processes = new(sessionRemainsAlive: true)
+        {
+            RejectPreparation = rejectPreparation,
+            RejectValidation = !rejectPreparation,
+        };
+        List<string> diagnostics = [];
+        DeploymentClientCoordinator coordinator = new(broker, new FixedIntegritySource(false),
+            new FixedSessionSource(true), new RecordingLegacyStartupCleanup(), new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new InstalledProcessInventory(true, 1, 1)), shutdown, processes, new FixedRequestIdSource(), diagnostics.Add);
+
+        Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
+        Assert.Empty(shutdown.Shapes);
+        Assert.Equal(0, broker.Calls);
+        Assert.Empty(processes.Plans);
+        Assert.Equal([rejectPreparation ? "desktop-launch-context-rejected" : "desktop-launch-context-changed"], diagnostics);
+    }
+
+    [Fact]
+    public async Task DesktopContext_ChangesAfterShutdown_NeverCallsBrokerAndDisposesContext()
+    {
+        FixedBrokerChannel broker = new(BrokerProtocolTests.Success());
+        RecordingProcessLauncher processes = new(sessionRemainsAlive: true);
+        RecordingProcessShutdown shutdown = new(true, _ => processes.RejectValidation = true);
+        DeploymentClientCoordinator coordinator = new(broker, new FixedIntegritySource(false),
+            new FixedSessionSource(true), new RecordingLegacyStartupCleanup(), new FixedInstalledPayloadVerifier(Paths),
+            new SequenceProcessInventory(new(true, 1, 1), new(true, 0, 0)), shutdown, processes, new FixedRequestIdSource());
+
+        Assert.False(await coordinator.ApplyFixedInboxAsync(CancellationToken.None));
+        Assert.Single(shutdown.Shapes);
+        Assert.Equal(0, broker.Calls);
+        Assert.Empty(processes.Plans);
+        Assert.True(processes.ContextDisposed);
+    }
+
+    [Theory]
     [InlineData(0, 0, (int)InstalledProcessShape.None)]
     [InlineData(1, 0, (int)InstalledProcessShape.SessionAgentOnly)]
     [InlineData(1, 1, (int)InstalledProcessShape.SessionAgentAndTray)]
@@ -1235,7 +1276,7 @@ public sealed class DeploymentClientCoordinatorTests
     private sealed class RecordingProcessLauncher(
         bool sessionRemainsAlive,
         Action<InstalledProcessLaunchPlan>? onLaunch = null)
-        : IDeploymentProcessLauncher
+        : IDeploymentProcessLauncher, IDeploymentLaunchContext
     {
         internal List<InstalledProcessLaunchPlan> Plans { get; } = [];
 
@@ -1244,6 +1285,27 @@ public sealed class DeploymentClientCoordinatorTests
         internal int SessionAliveChecks { get; private set; }
 
         internal int TrayAliveChecks { get; private set; }
+
+        internal bool RejectPreparation { get; set; }
+        internal bool RejectValidation { get; set; }
+        internal bool ContextDisposed { get; private set; }
+
+        public IDeploymentLaunchContext Prepare() => RejectPreparation
+            ? throw new UnauthorizedAccessException("Synthetic desktop admission rejection.")
+            : this;
+
+        public void Validate()
+        {
+            if (RejectValidation)
+            {
+                throw new UnauthorizedAccessException("Synthetic desktop identity change.");
+            }
+        }
+
+        public void Dispose()
+        {
+            ContextDisposed = true;
+        }
 
         public ILaunchedDeploymentProcess Launch(InstalledProcessLaunchPlan plan)
         {

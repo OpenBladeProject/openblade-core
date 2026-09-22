@@ -9,22 +9,34 @@ namespace OpenBlade.DeploymentClient;
 internal static class IndependentInstalledProcess
 {
     private const uint CreateSuspended = 0x00000004;
-    private const uint CreateBreakawayFromJob = 0x01000000;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const uint CreateNoWindow = 0x08000000;
     private const uint StartUseShowWindow = 0x00000001;
     private const uint WaitObjectSignaled = 0;
 
-    // Called only after WindowsDeploymentProcessLauncher admits the two fixed
-    // installed paths. No arguments, shell, alternate token, or elevation path.
-    internal static Process Start(InstalledProcessLaunchPlan plan)
+    // Called only after WindowsDesktopLaunchContext admits the two fixed
+    // installed paths and the same-user desktop parent. No arguments or shell execution.
+    internal static Process Start(InstalledProcessLaunchPlan plan, SafeProcessHandle parent,
+        DesktopProcessIdentity identity)
     {
-        StartupInfo startup = new()
+        if (HasExited(parent) || !identity.IsSameNormalIdentity(DesktopProcessIdentity.ReadCaller())
+            || !identity.IsSameNormalIdentity(DesktopProcessIdentity.Read(parent)))
         {
-            Size = Marshal.SizeOf<StartupInfo>(),
-            Flags = StartUseShowWindow,
-            ShowWindow = plan.WindowStyle == ProcessWindowStyle.Hidden ? (ushort)0 : (ushort)1,
+            throw new UnauthorizedAccessException("The retained launch parent security context changed.");
+        }
+
+        using ParentProcessAttribute attribute = new(parent);
+        StartupInfoEx startup = new()
+        {
+            Startup = new()
+            {
+                Size = Marshal.SizeOf<StartupInfoEx>(),
+                Flags = StartUseShowWindow,
+                ShowWindow = plan.WindowStyle == ProcessWindowStyle.Hidden ? (ushort)0 : (ushort)1,
+            },
+            AttributeList = attribute.List,
         };
-        uint flags = CreateBreakawayFromJob | CreateSuspended;
+        uint flags = ExtendedStartupInfoPresent | CreateSuspended;
         if (plan.CreateNoWindow)
         {
             flags |= CreateNoWindow;
@@ -36,7 +48,6 @@ internal static class IndependentInstalledProcess
         if (!CreateProcessW(plan.FileName, commandLine, IntPtr.Zero, IntPtr.Zero,
                 false, flags, IntPtr.Zero, plan.WorkingDirectory, ref startup, out ProcessInformation info))
         {
-            // A parent job that forbids breakaway must fail without a fallback.
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
@@ -46,16 +57,11 @@ internal static class IndependentInstalledProcess
         bool resumed = false;
         try
         {
-            if (!IsProcessInJob(processHandle, IntPtr.Zero, out bool inJob))
+            // The documented parent-process attribute inherits the desktop's
+            // token and job context. Verify the actual child before user code runs.
+            if (HasExited(parent) || !identity.IsSameNormalIdentity(DesktopProcessIdentity.Read(processHandle)))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            // Breakaway can leave an outer nested job in place. Never execute
-            // application code unless independence from every job is confirmed.
-            if (inJob)
-            {
-                throw new InvalidOperationException("The installed process remains confined to a launcher job.");
+                throw new UnauthorizedAccessException("The installed child security context does not match the verified desktop.");
             }
 
             process = Process.GetProcessById(info.ProcessId);
@@ -97,6 +103,89 @@ internal static class IndependentInstalledProcess
         }
     }
 
+    internal static bool HasExited(SafeProcessHandle process)
+    {
+        uint result = WaitForSingleObject(process, 0);
+        if (result == uint.MaxValue)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return result != 258;
+    }
+
+    private sealed class ParentProcessAttribute : IDisposable
+    {
+        private readonly SafeProcessHandle parent;
+        private bool retained;
+        private bool initialized;
+        private IntPtr list;
+        private IntPtr value;
+
+        internal ParentProcessAttribute(SafeProcessHandle parent)
+        {
+            this.parent = parent;
+            try
+            {
+                parent.DangerousAddRef(ref retained);
+                nuint size = 0;
+                InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+                if (size == 0)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                list = Marshal.AllocHGlobal(checked((nint)size));
+                if (!InitializeProcThreadAttributeList(list, 1, 0, ref size))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                initialized = true;
+                value = Marshal.AllocHGlobal(IntPtr.Size);
+                Marshal.WriteIntPtr(value, parent.DangerousGetHandle());
+                if (!UpdateProcThreadAttribute(list, 0, (nuint)0x00020000, value, (nuint)IntPtr.Size,
+                        IntPtr.Zero, IntPtr.Zero))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        internal IntPtr List => list;
+
+        public void Dispose()
+        {
+            if (initialized)
+            {
+                DeleteProcThreadAttributeList(list);
+                initialized = false;
+            }
+
+            Marshal.FreeHGlobal(list);
+            Marshal.FreeHGlobal(value);
+            list = IntPtr.Zero;
+            value = IntPtr.Zero;
+            if (retained)
+            {
+                parent.DangerousRelease();
+                retained = false;
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StartupInfoEx
+    {
+        internal StartupInfo Startup;
+        internal IntPtr AttributeList;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct StartupInfo
     {
@@ -118,13 +207,20 @@ internal static class IndependentInstalledProcess
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcessW(string applicationName, StringBuilder commandLine,
         IntPtr processAttributes, IntPtr threadAttributes, [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
-        uint creationFlags, IntPtr environment, string currentDirectory, ref StartupInfo startupInfo,
+        uint creationFlags, IntPtr environment, string currentDirectory, ref StartupInfoEx startupInfo,
         out ProcessInformation processInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsProcessInJob(SafeProcessHandle process, IntPtr job,
-        [MarshalAs(UnmanagedType.Bool)] out bool inJob);
+    private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, uint flags, ref nuint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, nuint attribute,
+        IntPtr value, nuint size, IntPtr previousValue, IntPtr returnSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern void DeleteProcThreadAttributeList(IntPtr list);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint ResumeThread(SafeFileHandle thread);

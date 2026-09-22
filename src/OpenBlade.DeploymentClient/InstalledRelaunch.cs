@@ -224,7 +224,7 @@ internal sealed class WindowsInstalledPayloadVerifier : IInstalledPayloadVerifie
     private static bool HasReparsePoint(string path) =>
         (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
-    private static bool IsCallerWritable(FileSystemInfo path)
+    internal static bool IsCallerWritable(FileSystemInfo path)
     {
         FileSystemSecurity security = path switch
         {
@@ -679,23 +679,19 @@ internal interface ILaunchedDeploymentProcess : IDisposable
 
 internal interface IDeploymentProcessLauncher
 {
+    IDeploymentLaunchContext Prepare();
+}
+
+internal interface IDeploymentLaunchContext : IDisposable
+{
+    void Validate();
+
     ILaunchedDeploymentProcess? Launch(InstalledProcessLaunchPlan plan);
 }
 
 internal sealed class WindowsDeploymentProcessLauncher : IDeploymentProcessLauncher
 {
-    public ILaunchedDeploymentProcess? Launch(InstalledProcessLaunchPlan plan)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        InstalledPayloadPaths? expected = InstalledPayloadPathPolicy.GetExpectedPaths();
-        if (expected is null || !InstalledProcessLaunchPolicy.IsAllowed(plan, expected))
-        {
-            throw new UnauthorizedAccessException(
-                "The deployment client refused a non-fixed installed process launch.");
-        }
-
-        return new WindowsLaunchedDeploymentProcess(IndependentInstalledProcess.Start(plan));
-    }
+    public IDeploymentLaunchContext Prepare() => WindowsDesktopLaunchContext.Prepare();
 }
 
 internal sealed class WindowsLaunchedDeploymentProcess(Process process) : ILaunchedDeploymentProcess
