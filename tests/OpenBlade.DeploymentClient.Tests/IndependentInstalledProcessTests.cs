@@ -31,10 +31,10 @@ public sealed class IndependentInstalledProcessTests
             Assert.True(fixture.Coordinator!.WaitForExit(5000));
             await Task.Delay(250);
             Assert.False(child.HasExited, "The installed-process fixture must survive caller-job closure.");
-            Assert.False(report.CallerHandleInherited);
-            Assert.False(report.ParentHandleInherited);
-            Assert.False(fixture.CallerEvent.WaitOne(0));
-            Assert.False(fixture.ParentEvent.WaitOne(0));
+            Assert.False(LaunchFixture.IsSameRemoteObject(child.SafeHandle,
+                report.CallerHandleCandidate, fixture.CallerEvent.SafeWaitHandle));
+            Assert.False(LaunchFixture.IsSameRemoteObject(child.SafeHandle,
+                report.ParentHandleCandidate, fixture.ParentEvent.SafeWaitHandle));
             Assert.True(DesktopProcessIdentity.ReadCaller().IsSameNormalIdentity(report.Identity!));
             Assert.Equal(fixture.Root, report.WorkingDirectory);
         }
@@ -115,11 +115,14 @@ public sealed class IndependentInstalledProcessTests
             Parent = LaunchFixture.StartFixture($"parent \"{Root}\" {parentEventName}", Root, ParentJob);
             await WaitForFileAsync("parent.ready", Parent);
             long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")));
+            Assert.True(LaunchFixture.IsSameRemoteObject(Parent.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
             Assert.True(LaunchFixture.SetHandleInformation(CallerEvent.SafeWaitHandle, 1, 1));
             Coordinator = LaunchFixture.StartFixture(
                 $"launch \"{Root}\" {CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64()} {hidden} {Parent.Id} {parentHandle}",
                 Root, CallerOuterJob, CallerInnerJob);
             await WaitForFileAsync("coordinator.ready", Coordinator);
+            Assert.True(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle,
+                CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64(), CallerEvent.SafeWaitHandle));
         }
 
         internal async Task<LaunchReport> ReadReportAsync()
@@ -163,29 +166,47 @@ public sealed class IndependentInstalledProcessTests
 
         public void Dispose()
         {
-            File.WriteAllText(Path.Combine(Root, "parent.exit"), "exit");
-            File.WriteAllText(Path.Combine(Root, "child.exit"), "exit");
-            CloseCallerJobs();
-            if (Coordinator is not null)
+            try
             {
-                StopExactFixture(Coordinator);
-                Coordinator.Dispose();
-            }
+                File.WriteAllText(Path.Combine(Root, "parent.exit"), "exit");
+                File.WriteAllText(Path.Combine(Root, "child.exit"), "exit");
+                CloseCallerJobs();
+                if (Coordinator is not null)
+                {
+                    StopExactFixture(Coordinator);
+                    Coordinator.Dispose();
+                }
 
-            if (Parent is not null)
+                if (Parent is not null)
+                {
+                    StopExactFixture(Parent);
+                    Parent.Dispose();
+                }
+            }
+            finally
             {
-                StopExactFixture(Parent);
-                Parent.Dispose();
+                try
+                {
+                    // This exclusively fixture-owned job stays benign throughout
+                    // the lifetime assertions. At teardown it also contains any
+                    // child whose PID/report could not be read or parsed.
+                    CloseCallerJobs();
+                    LaunchFixture.TerminateAndDrainFixtureJob(ParentJob);
+                }
+                finally
+                {
+                    Coordinator?.Dispose();
+                    Parent?.Dispose();
+                    ParentJob.Dispose();
+                    ParentEvent.Dispose();
+                    CallerEvent.Dispose();
+                }
             }
-
-            ParentJob.Dispose();
-            ParentEvent.Dispose();
-            CallerEvent.Dispose();
         }
     }
 }
 
-internal sealed record LaunchReport(int ProcessId, bool CallerHandleInherited, bool ParentHandleInherited,
+internal sealed record LaunchReport(int ProcessId, long CallerHandleCandidate, long ParentHandleCandidate,
     string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null);
 
 // This WinExe apphost runs only bounded fixture processes. It never locates or
@@ -264,7 +285,7 @@ internal static class LaunchFixture
             }
             catch (Exception exception)
             {
-                WriteReport(root, new(0, false, false, root, null, exception.GetType().Name));
+                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name));
             }
 
             return 0;
@@ -277,9 +298,11 @@ internal static class LaunchFixture
         }
 
         File.WriteAllText(Path.Combine(childRoot, "child.started"), "started");
-        bool callerInherited = SetEvent(new(long.Parse(Environment.GetEnvironmentVariable(CallerHandleVariable)!)));
-        bool parentInherited = SetEvent(new(long.Parse(Environment.GetEnvironmentVariable(ParentHandleVariable)!)));
-        WriteReport(childRoot, new(Environment.ProcessId, callerInherited, parentInherited,
+        // Numeric slots may be reused by the runtime. Report candidates without
+        // touching their objects; the test compares duplicated kernel handles.
+        long callerCandidate = long.Parse(Environment.GetEnvironmentVariable(CallerHandleVariable)!);
+        long parentCandidate = long.Parse(Environment.GetEnvironmentVariable(ParentHandleVariable)!);
+        WriteReport(childRoot, new(Environment.ProcessId, callerCandidate, parentCandidate,
             Environment.CurrentDirectory, DesktopProcessIdentity.ReadCaller()));
         WaitForMarker(childRoot, "child.exit", 15);
         return 0;
@@ -357,6 +380,50 @@ internal static class LaunchFixture
         return inJob;
     }
 
+    internal static bool IsSameRemoteObject(SafeProcessHandle process, long candidate, SafeWaitHandle expected)
+    {
+        using Process current = Process.GetCurrentProcess();
+        if (!DuplicateHandle(process, new(candidate), current.SafeHandle, out SafeFileHandle duplicate,
+                0, false, 2))
+        {
+            int error = Marshal.GetLastWin32Error();
+            duplicate.Dispose();
+            Assert.Equal(6, error); // ERROR_INVALID_HANDLE: the slot was not inherited or reused.
+            return false;
+        }
+
+        using (duplicate)
+        {
+            return CompareObjectHandles(duplicate, expected);
+        }
+    }
+
+    internal static void TerminateAndDrainFixtureJob(SafeFileHandle job)
+    {
+        Assert.True(TerminateJobObject(job, 1));
+        long start = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            Assert.True(QueryInformationJobObject(job, 1, out JobAccounting accounting,
+                Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
+            if (accounting.ActiveProcesses == 0)
+            {
+                return;
+            }
+
+            Assert.True(Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5),
+                "The exclusively fixture-owned parent job did not empty after termination.");
+            Thread.Sleep(25);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobAccounting
+    {
+        internal long TotalUserTime, TotalKernelTime, PeriodUserTime, PeriodKernelTime;
+        internal uint PageFaultCount, TotalProcesses, ActiveProcesses, TotalTerminatedProcesses;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct JobBasicLimits
     {
@@ -421,7 +488,19 @@ internal static class LaunchFixture
     private static extern bool GetHandleInformation(IntPtr handle, out uint flags);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetEvent(IntPtr handle);
+    private static extern bool DuplicateHandle(SafeProcessHandle sourceProcess, IntPtr sourceHandle,
+        SafeProcessHandle targetProcess, out SafeFileHandle targetHandle, uint access,
+        [MarshalAs(UnmanagedType.Bool)] bool inherit, uint options);
+    [DllImport("kernelbase.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CompareObjectHandles(SafeFileHandle first, SafeWaitHandle second);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateJobObject(SafeFileHandle job, uint exitCode);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(SafeFileHandle job, int informationClass,
+        out JobAccounting information, int size, IntPtr returnLength);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint processId);
     [DllImport("kernel32.dll", SetLastError = true)]
