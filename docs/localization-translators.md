@@ -152,6 +152,6 @@ The design follows these current sources and comparable open-source workflows:
 - [Mozilla Pontoon](https://github.com/mozilla/pontoon), a comparable repository-backed
   open-source workflow with a nontechnical translation interface.
 
-The deliberate tradeoff from gettext/Weblate is stricter staleness handling: OpenBlade
-rejects an outdated workbook rather than importing it as fuzzy work because four
-separately packaged resource surfaces must remain complete and synchronized.
+OpenBlade's staleness handling is stricter than gettext/Weblate's. Outdated
+workbooks are rejected because four separately packaged resource surfaces must
+remain complete and synchronized; they are never imported as fuzzy work.

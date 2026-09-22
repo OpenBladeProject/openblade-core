@@ -56,8 +56,8 @@ admits it.
 
 `build/Export-RazerBrightnessDriverPackage.ps1` creates a private, exact export
 with Windows PowerShell 5.1 from a machine that already has the validated
-stack. It locates each installed package by the hash of its published INF
-rather than its machine-local `oem###` name, calls Windows
+stack. It locates each installed package by the hash of its published INF,
+independent of its machine-local `oem###` name, calls Windows
 `pnputil /export-driver`, and then verifies the complete three-file package,
 SHA-256 hashes, and Microsoft hardware signatures. The output must be outside
 the repository.
