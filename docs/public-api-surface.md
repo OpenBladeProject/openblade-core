@@ -3,7 +3,7 @@
 This document records the audit performed before accepting the public API
 baselines for `OpenBlade.Contracts`, `OpenBlade.Session`, and
 `OpenBlade.Protocol`. The baselines are compatibility gates, so an entry should
-represent an intentional assembly boundary rather than incidental
+represent an intentional assembly boundary and exclude incidental
 accessibility.
 
 ## Method
@@ -58,9 +58,8 @@ confirmed that the apparent candidates are part of existing public signatures:
 - `DisplayAutomationObservation` is returned by observation methods; and
 - `DisplayTransitionResult` is exposed by `DisplayAutomationCoordinator`.
 
-The remaining concrete coordination and persistence types have production
-consumers in `OpenBlade.SessionAgent`, so they are cross-assembly
-implementation surface rather than unused exports.
+The remaining concrete coordination and persistence types are used across
+assemblies by production consumers in `OpenBlade.SessionAgent`.
 
 ### OpenBlade.Protocol
 
@@ -79,7 +78,7 @@ identified them as deliberate public API. This includes the temporary-charge
 ports, protection-off validation port, validation result and target types,
 lighting and fan readings, HID units, and Windows service snapshots. The
 explicit Protocol surface assertions remain authoritative; changing those
-decisions requires a separate API proposal rather than this mechanical audit.
+decisions requires a separate API proposal outside this mechanical audit.
 
 ## Maintaining the baselines
 

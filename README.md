@@ -22,7 +22,7 @@ power, and keep working when you close the window.
 
 ## Supported laptops
 
-Requires Windows 11 x64, version 24H2 or later.
+OpenBlade requires Windows 11 x64, version 24H2 or later.
 
 | Laptop | Model number |
 | --- | --- |
@@ -59,8 +59,8 @@ Update checks are optional, with Stable and Nightly channels.
 3. Choose **Launch OpenBlade** to open the tray app.
 
 Uninstall through Windows Settings > Installed apps. You can keep your saved
-profiles or choose to remove them. Nightly builds are test builds that may be unsigned and
-may trigger a Windows warning.
+profiles or choose to remove them. Nightly test builds may be unsigned and
+trigger a Windows warning.
 
 ## Using it with Synapse
 
@@ -69,8 +69,8 @@ OpenBlade works on its own. To keep Synapse for your other Razer devices, use
 OpenBlade checks the patch before allowing shared use; see the
 [setup and coexistence notes](docs/synapse-blade-blocker.md).
 
-Core controls need no additional driver. The native Windows brightness flyout
-on the Blade 16 (2026) uses Razer's brightness driver, installed separately.
+Core controls work without an additional driver. The native Windows brightness
+flyout on the Blade 16 (2026) uses Razer's brightness driver, installed separately.
 Without it, brightness keys use the OpenBlade flyout. See the
 [brightness driver guide](docs/razer-brightness-driver-package.md).
 

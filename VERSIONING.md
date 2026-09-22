@@ -5,7 +5,7 @@ integers for persisted schemas and IPC protocols.
 
 ## Product version
 
-`OpenBladeVersion` in `Directory.Build.props` is the single source of truth.
+`OpenBladeVersion` in `Directory.Build.props` defines the product version.
 Release tags use `vMAJOR.MINOR.PATCH`.
 
 For a current version `X.Y.Z`, increment the leftmost component justified by
@@ -72,9 +72,8 @@ version change only when the impact is `none`. Apply these rules consistently:
    requires a bump.
 8. If earlier merged work missed its required increments, use a dedicated
    baseline-correction pull request. Classify it by the highest accumulated
-   unversioned product impact, identify the affected release range, and state
-   explicitly that the increment is a one-time correction rather than impact
-   introduced by the correction pull request itself.
+   unversioned product impact, identify the affected release range, and
+   explain that the one-time increment accounts for those earlier changes.
 9. If the impact is uncertain, explain the ambiguity in the pull request and
    resolve it during review instead of silently defaulting to `patch` or `none`.
 
@@ -112,7 +111,7 @@ Assembly identities are derived as follows:
 
 The UI and service display their own built assembly versions. If a change does
 not touch a component, preserve its installed binary instead of rebuilding it
-merely to change the embedded commit hash. In particular, tray-only releases
+just to change the embedded commit hash. Tray-only releases
 must use the tray-only deployment path and leave the service and Session Agent
 files and versions unchanged. The tray-only path is valid only when shared
 Contracts and both IPC protocol versions are unchanged; otherwise publish and
@@ -128,7 +127,7 @@ version `1.4.2.42` and informational version
 `1.4.2-nightly.42+<commit>`. The next stable `1.4.3` normalizes to
 `1.4.3.0` and therefore upgrades every `1.4.2.*` nightly.
 
-Do not edit `OpenBladeVersion` merely to produce a nightly. Nightly identity is
+Keep `OpenBladeVersion` unchanged when producing a nightly. Nightly identity is
 supplied only by `build/Publish.ps1`, and revision zero remains reserved for
 stable builds. The full Git revision, installer hash, and generated identity
 must accompany every retained nightly artifact.

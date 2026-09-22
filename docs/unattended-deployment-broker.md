@@ -103,7 +103,7 @@ run the fixed `install` verb once:
 ```
 
 Windows requests UAC for that attended step. The provisioner refuses an
-existing enrollment rather than replacing it. Re-enrollment or broker changes
+existing enrollment and leaves it unchanged. Re-enrollment or broker changes
 require the attended `uninstall` verb followed by a newly reviewed `install`.
 
 ## Subsequent unattended local builds

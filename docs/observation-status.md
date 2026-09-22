@@ -13,7 +13,7 @@ must not change service, tray, or Session Agent behavior.
 
 The reason never authorizes a hardware write. Existing device identity, session,
 power, controller, and confirmed-state admission still applies. Tray retained-power
-presentation additionally requires verified status, blocked writes, and a retained
+presentation also requires verified status, blocked writes, and a retained
 PluggedIn or USB-C source. Session Agent temporary reactive-state retention uses
 only the two device-access reasons and retains its existing input safety gates.
 

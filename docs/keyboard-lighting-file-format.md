@@ -136,8 +136,8 @@ reports, commands, identities, or mappings.
 
 Strict JSON remains the canonical interchange format for native presets. The
 version 1 `.oblight` schema describes built-in typed effects; imported Chroma
-sequences are normalized into bounded profile state rather than reinterpreting
-that schema. A future `.oblight` schema can expose the same sequence model while
+sequences leave that schema unchanged and are normalized into bounded profile
+state. A future `.oblight` schema can expose the same sequence model while
 preserving version 1 meaning.
 
 Other formats informed the design but are not safe drop-in standards:
