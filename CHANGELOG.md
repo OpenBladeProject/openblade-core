@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep apps launched by the local-development deployment client independent of the command runner, or report a relaunch failure when Windows prevents it. ([#567](https://github.com/OpenBladeProject/openblade-core/pull/567))
 - Recognize validated MCU 1.7.0.0 on Razer Blade 16 RZ09-0581 in the tested-firmware notice. ([#566](https://github.com/OSSBlade/openblade-core/pull/566))
 - Fix firmware checks failing on the first attempt when Razer's support page starts a new session. ([#564](https://github.com/OSSBlade/openblade-core/pull/564))
 
