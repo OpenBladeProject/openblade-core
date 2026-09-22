@@ -38,11 +38,19 @@ does not exist; an inaccessible, stopped, or untrusted service remains
 indeterminate. A normal-integrity client owns the post-install relaunch,
 verifies installed ACLs against its enabled token identities, and coordinates
 the existing Tray and Session Agent through their fixed session-local shutdown
-endpoints before asking the broker to install. It never kills a process or
+endpoints before asking the broker to install. It never kills an existing process or
 signals a caller-selected endpoint. Exact success must end with one Tray and
 one Session Agent at normal integrity. Only an exact broker-attested rollback
 may restore the prior process shape; a rejected, failed, mismatched, or
 indeterminate deployment does not relaunch a potentially partial installation.
+
+The client starts each verified installed app without inherited handles and
+outside the command runner's Windows job, using Windows-permitted breakaway.
+Closing the deployment command therefore leaves the apps running. If Windows
+does not permit that separation, relaunch fails instead of starting an app tied
+to the command's lifetime. The client may discard only its own newly created
+child when launch verification fails. Start OpenBlade normally
+from the Start menu if relaunch is rejected.
 
 Local-development packages are intentionally not release artifacts. They must
 not be uploaded, attached to a GitHub release, submitted to the Store, or

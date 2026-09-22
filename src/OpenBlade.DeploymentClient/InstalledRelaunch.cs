@@ -694,15 +694,7 @@ internal sealed class WindowsDeploymentProcessLauncher : IDeploymentProcessLaunc
                 "The deployment client refused a non-fixed installed process launch.");
         }
 
-        Process? process = Process.Start(new ProcessStartInfo
-        {
-            FileName = plan.FileName,
-            WorkingDirectory = plan.WorkingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = plan.CreateNoWindow,
-            WindowStyle = plan.WindowStyle,
-        });
-        return process is null ? null : new WindowsLaunchedDeploymentProcess(process);
+        return new WindowsLaunchedDeploymentProcess(IndependentInstalledProcess.Start(plan));
     }
 }
 
