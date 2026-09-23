@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.21.9] - 2026-09-23
+
 ### Fixed
 
 - Keep apps launched by the local-development deployment client independent of the command runner, or report a relaunch failure when Windows prevents it. ([#567](https://github.com/OpenBladeProject/openblade-core/pull/567))
@@ -1924,7 +1926,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.6...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.9...HEAD
+[0.21.9]: https://github.com/OSSBlade/openblade-core/compare/v0.21.6...v0.21.9
 [0.21.6]: https://github.com/OSSBlade/openblade-core/compare/v0.21.0...v0.21.6
 [0.21.0]: https://github.com/OSSBlade/openblade-core/compare/v0.20.23...v0.21.0
 [0.20.23]: https://github.com/OSSBlade/openblade-core/compare/v0.20.18...v0.20.23
