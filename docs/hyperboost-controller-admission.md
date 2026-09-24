@@ -20,7 +20,8 @@ checks process or service identity before exempting the helper and updater:
 describes the SDK and its Windows service as a lighting interface. This is the
 basis for the Chroma classification; it is not physical coexistence evidence.
 The `razerwdl` helper handles Windows lighting, and the `RGS` service is the
-gaming-services updater. Both remain visible in diagnostics when detected.
+gaming-services updater. The updater remains visible in diagnostics. The helper
+remains visible when its separate controller checks retain it.
 A helper without verified Razer path and product metadata, a process named
 `RGS`, or a service borrowing the updater display name remains a HyperBoost
 blocker. The helper's other controller checks, lighting
@@ -53,7 +54,7 @@ Synthetic coverage must verify Chroma-only entry and restoration, retained
 diagnostic visibility, mixed-controller and enumeration-failure rejection,
 and warning updates. Before marking the admission change ready, complete the
 repository's physical-validation requirements on an admitted device with the
-reviewed Chroma components, `razerwdl`, Synapse service aliases, RGS, and updater
+reviewed Chroma components, `razerwdl`, Synapse service aliases, and the RGS updater
 present. Exercise each newly exempted component's arrival during operation,
 then verify exit and restoration with each still present. Preserve prior
 confirmed state and verify restoration. Sleep/resume requires a present user
