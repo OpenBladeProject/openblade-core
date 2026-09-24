@@ -1114,7 +1114,7 @@ public partial class App
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceStatusSnapshot status = new(
             1, true, false,
-            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater"],
+            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
             null, [], "Ready",
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -1148,7 +1148,9 @@ public partial class App
         RequireResponsiveSelector(
             warning.IsOpen && warning.ActualHeight > 0
                 && warning.Message.Contains("RazerAppEngine", StringComparison.Ordinal)
-                && !warning.Message.Contains("Razer Chroma SDK Service", StringComparison.Ordinal),
+                && !warning.Message.Contains("Razer Chroma SDK Service", StringComparison.Ordinal)
+                && !warning.Message.Contains("Razer Gaming Services Updater", StringComparison.Ordinal)
+                && !warning.Message.Contains("razerwdl", StringComparison.Ordinal),
             "The HyperBoost warning did not show the thermal blockers.");
         if (captureSnapshots)
         {

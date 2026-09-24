@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 55;
+    public const int ProtocolVersion = 56;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -397,6 +397,24 @@ public static class IpcMessageCodec
         if (potentialControllerStatus == SortedCollectionStatus.Unsorted)
         {
             throw InvalidStatus("potential-controller collection is not ordinally sorted");
+        }
+
+        if (status.HyperBoostBlockingControllers is { } thermalBlockers)
+        {
+            if (thermalBlockers.Count > 16)
+            {
+                throw InvalidStatus("HyperBoost blocker collection exceeds 16 entries");
+            }
+
+            SortedCollectionStatus blockerStatus = ValidateSortedUnique(
+                thermalBlockers,
+                StringComparer.Ordinal);
+            if (blockerStatus != SortedCollectionStatus.Valid
+                || thermalBlockers.Any(controller =>
+                    !status.PotentialControllers.Contains(controller, StringComparer.OrdinalIgnoreCase)))
+            {
+                throw InvalidStatus("HyperBoost blocker collection is invalid");
+            }
         }
 
         if (status.ExternalChanges is null)
@@ -825,6 +843,7 @@ public static class IpcMessageCodec
             WritesBlocked = true,
             Message = "OpenBlade was updated. Update or repair the app to restore hardware control.",
             ThermalConvergence = null,
+            HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
         };
 
@@ -853,6 +872,12 @@ public static class IpcMessageCodec
                         "thermalConvergence",
                         StringComparison.OrdinalIgnoreCase));
                 thermalConvergence.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo hyperBoostBlockers = typeInfo.Properties.Single(property =>
+                    string.Equals(
+                        property.Name,
+                        "hyperBoostBlockingControllers",
+                        StringComparison.OrdinalIgnoreCase));
+                hyperBoostBlockers.ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo observationReason = typeInfo.Properties.Single(property =>
                     string.Equals(
                         property.Name,

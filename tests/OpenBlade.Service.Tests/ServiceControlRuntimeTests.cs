@@ -19226,6 +19226,69 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains(controller, context.Runtime.GetStatus().PotentialControllers);
     }
 
+    [Fact]
+    public async Task PadlessHyperBoost_VerifiedBlockerExemptsSynapseServiceForEntryAndExit()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["Razer Synapse Service"], null)
+        {
+            HyperBoostBlockingControllers = [],
+        };
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(["Razer Synapse Service"],
+            context.Runtime.GetStatus().PotentialControllers);
+        Assert.Empty(context.Runtime.GetStatus().HyperBoostBlockingControllers!);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None)).Status);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_PatchVerificationLossBlocksExitWithoutWriting()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerSynapseService"], null)
+        {
+            HyperBoostBlockingControllers = [],
+        };
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+
+        int writes = context.Device.TotalSetterCalls;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerSynapseService"], null)
+        {
+            HyperBoostBlockingControllers = ["RazerSynapseService"],
+        };
+
+        ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(
+            false, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
     [Theory]
     [InlineData("RazerAppEngine", null)]
     [InlineData(null, "Controller detection was incomplete.")]

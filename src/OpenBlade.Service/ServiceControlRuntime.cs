@@ -2887,7 +2887,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || !hyperBoostJournalSafetyBlock
                 || pendingWriteConfirmations.HasPending
                 || current.ControllerDetectionWarning is not null
-                || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
+                || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0
                 || powerSource != PowerSource.PluggedIn
                 || current.ActivePowerSource != powerSource
                 || current.Capabilities is null
@@ -4854,7 +4854,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
+            || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0
             || current.WritesBlocked
                 && !ownedLifecycleRestore
                 && !allowOwnedJournalCleanup)
@@ -5277,7 +5277,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             ServiceStatusSnapshot current = GetStatus();
             if (current.ControllerDetectionWarning is not null
-                || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
+                || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0)
             {
                 string transition = enabled ? "entry" : "exit";
                 return new ControlOperationResult(
@@ -7333,7 +7333,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
+            || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostExitIntent = null;
@@ -7565,7 +7565,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || hyperBoostJournalSafetyBlock
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
+            || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             pendingIndeterminateHyperBoostEntryIntent = null;
@@ -8454,7 +8454,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || pendingWriteConfirmations.HasPending
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking)
+            || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0
             || current.Capabilities is null
             || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice verifiedDevice))
         {
@@ -13337,6 +13337,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PotentialControllers = potentialControllers,
             ControllerDetectionWarning = observation.DetectionWarning,
+            HyperBoostBlockingControllers = observation.HyperBoostBlockingControllers?
+                .Where(controller => potentialControllers.Contains(
+                    controller, StringComparer.OrdinalIgnoreCase))
+                .Select(controller => potentialControllers.First(name =>
+                    name.Equals(controller, StringComparison.OrdinalIgnoreCase)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(controller => controller, StringComparer.Ordinal)
+                .Take(16)
+                .ToArray(),
         });
     }
 
@@ -13722,7 +13731,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!current.DeviceVerified
             || pendingWriteConfirmations.HasPending
             || current.ControllerDetectionWarning is not null
-            || current.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking))
+            || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0)
         {
             hyperBoostJournalSafetyBlock = true;
             ClearOwnedHyperBoostState();

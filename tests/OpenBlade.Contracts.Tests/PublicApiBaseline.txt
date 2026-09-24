@@ -1294,7 +1294,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 55
+  field const System.Int32 ProtocolVersion = 56
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1568,6 +1568,7 @@ type static class OpenBlade.Contracts.RazerControllerServiceAliases
   method static System.Boolean MatchesService(System.String serviceName, System.String displayName)
 type static class OpenBlade.Contracts.RazerThermalControllerPolicy
   method static System.Boolean IsBlocking(System.String controller)
+  method static System.Collections.Generic.IReadOnlyList<System.String> GetBlockingControllers(OpenBlade.Contracts.ServiceStatusSnapshot status)
 type struct OpenBlade.Contracts.ReactiveKeyPulse
   interface System.IEquatable<OpenBlade.Contracts.ReactiveKeyPulse>
   ctor (System.Byte matrixSlot, System.Nullable<System.Int64> observedTimestamp = null)
@@ -1872,6 +1873,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_ExternalChanges()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> get_UnconfirmedWrites()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> get_LightingSuppressions()
+  method System.Collections.Generic.IReadOnlyList<System.String> get_HyperBoostBlockingControllers()
   method System.Collections.Generic.IReadOnlyList<System.String> get_PotentialControllers()
   method System.Int64 get_Revision()
   method System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> get_FunctionKeyPrimary()
@@ -1904,6 +1906,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_FullChargeOverride(System.Boolean value)
   method System.Void set_FunctionKeyPrimary(System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> value)
   method System.Void set_GamingModeEnabled(System.Nullable<System.Boolean> value)
+  method System.Void set_HyperBoostBlockingControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
   method System.Void set_HyperBoostRestorePending(System.Boolean value)
   method System.Void set_KeyboardDriverModeActive(System.Nullable<System.Boolean> value)
   method System.Void set_KeyboardLightingControlMode(OpenBlade.Contracts.KeyboardLightingControlMode value)
@@ -1963,6 +1966,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> UnconfirmedWrites { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions { get; init; }
+  property System.Collections.Generic.IReadOnlyList<System.String> HyperBoostBlockingControllers { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.Int64 Revision { get; init; }
   property System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary { get; init; }

@@ -11,6 +11,13 @@ internal static class ServiceStatusSnapshotComparer
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
             StringComparer.Ordinal)
+        && ((left.HyperBoostBlockingControllers is null
+                && right.HyperBoostBlockingControllers is null)
+            || (left.HyperBoostBlockingControllers is not null
+                && right.HyperBoostBlockingControllers is not null
+                && left.HyperBoostBlockingControllers.SequenceEqual(
+                    right.HyperBoostBlockingControllers,
+                    StringComparer.Ordinal)))
         && string.Equals(
             left.ControllerDetectionWarning,
             right.ControllerDetectionWarning,

@@ -118,6 +118,9 @@ public sealed class DiagnosticArchiveProviderTests
             "RazerAppEngine",
             configuration.RootElement.GetProperty("status.potentialControllers").GetString());
         Assert.Equal(
+            "Unavailable",
+            configuration.RootElement.GetProperty("status.hyperBoostBlockingControllers").GetString());
+        Assert.Equal(
             bool.FalseString,
             configuration.RootElement.GetProperty("status.hyperBoostRestorePending").GetString());
         using JsonDocument ownership = JsonDocument.Parse(

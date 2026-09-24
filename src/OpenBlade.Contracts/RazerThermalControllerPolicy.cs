@@ -25,4 +25,11 @@ public static class RazerThermalControllerPolicy
         // Synapse and unknown controllers retain the conservative default.
         return !NonThermalControllers.Contains(controller);
     }
+
+    public static IReadOnlyList<string> GetBlockingControllers(ServiceStatusSnapshot status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        return status.HyperBoostBlockingControllers
+            ?? status.PotentialControllers.Where(IsBlocking).ToArray();
+    }
 }

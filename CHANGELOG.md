@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Allow HyperBoost while the Razer gaming-services updater or Windows lighting helper is running, while retaining Synapse controller checks. ([#573](https://github.com/OpenBladeProject/openblade-core/pull/573))
+- Allow HyperBoost with verified Synapse Blade Blocker evidence despite known Synapse service aliases, and while the RGS updater service or verified Windows lighting helper is running; retain diagnostics and other controller checks. ([#573](https://github.com/OSSBlade/openblade-core/pull/573))
 
 ## [0.21.9] - 2026-09-23
 
