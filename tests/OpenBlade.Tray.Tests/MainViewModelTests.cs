@@ -9630,7 +9630,7 @@ public sealed partial class MainViewModelTests
         await PushAsync(client, dispatcher, admitted with
         {
             Revision = admitted.Revision + 1,
-            PotentialControllers = ["Razer Chroma SDK Service", "RazerAppEngine"],
+            PotentialControllers = ["Razer Chroma SDK Service", "Razer Gaming Services Updater", "RazerAppEngine", "razerwdl"],
         });
         Assert.Contains("RazerAppEngine", viewModel.HyperBoostUnavailableReason,
             StringComparison.Ordinal);
@@ -9639,13 +9639,21 @@ public sealed partial class MainViewModelTests
             "Razer Chroma SDK Service",
             viewModel.HyperBoostUnavailableReason,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Razer Gaming Services Updater",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "razerwdl",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
         Assert.Contains(nameof(viewModel.HyperBoostUnavailableReason), changed);
 
         changed.Clear();
         await PushAsync(client, dispatcher, admitted with
         {
             Revision = admitted.Revision + 2,
-            PotentialControllers = ["Razer Chroma SDK Service"],
+            PotentialControllers = ["Razer Chroma SDK Service", "Razer Gaming Services Updater", "razerwdl"],
         });
 
         Assert.False(viewModel.HasHyperBoostUnavailableReason);

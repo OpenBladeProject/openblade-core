@@ -19154,10 +19154,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData("RazerAppEngine", null)]
-    [InlineData("razerwdl", null)]
     [InlineData("RazerSynapseService", null)]
-    [InlineData("RGS", null)]
-    [InlineData("Razer Gaming Services Updater", null)]
     [InlineData("Unknown controller", null)]
     [InlineData(null, "Controller detection was incomplete.")]
     public async Task PadlessHyperBoost_CompetingControllerAdmissionDoesNotWrite(
@@ -19190,7 +19187,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [InlineData("Razer Chroma SDK Server")]
     [InlineData("Razer Chroma SDK Service")]
     [InlineData("Razer Chroma Stream Server")]
-    public async Task PadlessHyperBoost_LightingOnlyControllerAllowsEntryAndRestoration(
+    [InlineData("razerwdl")]
+    [InlineData("RGS")]
+    [InlineData("Razer Gaming Services Updater")]
+    public async Task PadlessHyperBoost_NonThermalControllerAllowsEntryAndRestoration(
         string controller)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
@@ -19229,15 +19229,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData("RazerAppEngine", null)]
     [InlineData(null, "Controller detection was incomplete.")]
-    public async Task PadlessHyperBoost_ChromaDoesNotMaskThermalConflictOrDetectionFailure(
+    public async Task PadlessHyperBoost_NonThermalControllersDoNotMaskConflictOrDetectionFailure(
         string? thermalController,
         string? detectionWarning)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             conflicts: thermalController is null
-                ? ["Razer Chroma SDK Service"]
-                : ["Razer Chroma SDK Service", thermalController],
+                ? ["Razer Chroma SDK Service", "Razer Gaming Services Updater"]
+                : ["Razer Chroma SDK Service", "Razer Gaming Services Updater", thermalController],
             detectionFailure: detectionWarning,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
                 CoolingPadConnectionState.Absent));
@@ -19285,10 +19285,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData("RazerAppEngine", null)]
-    [InlineData("razerwdl", null)]
     [InlineData("RazerSynapseService", null)]
-    [InlineData("RGS", null)]
-    [InlineData("Razer Gaming Services Updater", null)]
     [InlineData("Unknown controller", null)]
     [InlineData(null, "Controller detection was incomplete.")]
     public async Task PadlessHyperBoost_ExitControllerSafetyBlockPreservesOwnership(
@@ -27096,7 +27093,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData("Razer Synapse Service")]
     [InlineData("RazerAppEngine")]
-    [InlineData("razerwdl")]
     public async Task RecoverHyperBoostRestore_ControllerConflictDoesNotWrite(
         string controller)
     {
@@ -27126,6 +27122,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
         Assert.NotNull(journal.Journal);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Theory]
+    [InlineData("razerwdl")]
+    [InlineData("RGS")]
+    [InlineData("Razer Gaming Services Updater")]
+    public async Task RecoverHyperBoostRestore_NonThermalControllerAllowsRestore(
+        string controller)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = CreateRestorePendingJournal(
+                new FanControlSettings(
+                    FanMode.Fixed,
+                    3200,
+                    ManualFanCurve.Default)),
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: [controller],
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result =
+            await context.Runtime.RecoverHyperBoostRestoreAsync(
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.True(context.Device.TotalSetterCalls > settersBeforeRecovery);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(controller, context.Runtime.GetStatus().PotentialControllers);
     }
 
     [Fact]

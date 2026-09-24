@@ -4,24 +4,28 @@ HyperBoost uses a stricter controller policy than ordinary manual performance
 controls because entry and restoration coordinate performance, fans, and durable
 ownership. Detection must succeed before every relevant thermal submission.
 
-The shared `RazerThermalControllerPolicy` exempts only these exact,
-case-insensitive lighting service names from HyperBoost admission:
+The shared `RazerThermalControllerPolicy` exempts these exact,
+case-insensitive names from HyperBoost admission:
 
 - Razer Chroma SDK Diagnostic Service
 - Razer Chroma SDK Server
 - Razer Chroma SDK Service
 - Razer Chroma Stream Server
+- razerwdl
+- RGS
+- Razer Gaming Services Updater
 
 [Razer's Chroma SDK documentation](https://assets.razerzone.com/dev_portal/docs/index.html)
 describes the SDK and its Windows service as a lighting interface. This is the
-basis for the narrow classification; it is not physical coexistence evidence.
-The services remain in diagnostics and retain their existing lighting-conflict
-behavior. Strict capture and developer hardware-validation guards are unchanged.
+basis for the Chroma classification; it is not physical coexistence evidence.
+The `razerwdl` helper handles Windows lighting, and RGS is the gaming-services
+updater. Both remain in diagnostics when detected. Lighting-conflict behavior,
+strict capture, and developer hardware-validation guards are unchanged.
 
-RazerAppEngine, razerwdl, both Synapse service aliases, RGS / Razer Gaming
-Services Updater, and every other name supplied by controller discovery remain
-blocking. A shared process can support both peripherals and the laptop; the
-presence of a mouse or keyboard does not establish that laptop control is idle.
+RazerAppEngine, both Synapse service aliases, and every other name
+supplied by controller discovery remain blocking. A shared process can support
+both peripherals and the laptop; the presence of a mouse or keyboard does not
+establish that laptop control is idle.
 The policy does not discover additional processes and is not a generic guarantee
 about unrecognized software. Enumeration failures remain blocking.
 
