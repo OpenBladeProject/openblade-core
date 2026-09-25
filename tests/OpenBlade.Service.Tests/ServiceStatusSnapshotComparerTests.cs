@@ -144,6 +144,22 @@ public sealed class ServiceStatusSnapshotComparerTests
     }
 
     [Fact]
+    public void Equivalent_DetectsHyperBoostBlockerClassificationChanges()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot classified = baseline with
+        {
+            HyperBoostBlockingControllers = ["ControllerA"],
+        };
+
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, classified));
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(classified,
+            classified with { HyperBoostBlockingControllers = ["ControllerA"] }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(classified,
+            classified with { HyperBoostBlockingControllers = [] }));
+    }
+
+    [Fact]
     public void Equivalent_IgnoresRevisionButDetectsTelemetryAndObservationState()
     {
         ServiceStatusSnapshot baseline = CreateStatus();

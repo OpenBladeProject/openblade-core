@@ -30,7 +30,16 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
         var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
             () => [engine, new(processName, null, null)]);
 
-        Assert.Equal(new[] { processName }, monitor.Observe().PotentialControllers);
+        ControllerPresenceObservation result = monitor.Observe();
+        Assert.Equal(new[] { processName }, result.PotentialControllers);
+        if (processName is "RazerSynapseService" or "Razer Synapse Service")
+        {
+            Assert.Empty(result.HyperBoostBlockingControllers!);
+        }
+        else
+        {
+            Assert.Contains(processName, result.HyperBoostBlockingControllers!);
+        }
         Assert.False(new WindowsHardwareAccessGuard(monitor).Check().Safe);
     }
 
@@ -42,7 +51,19 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
 
         Assert.Equal(new[] { "RGS", "Razer Chroma SDK Service", "Razer Synapse Service" },
             monitor.Observe().PotentialControllers);
+        Assert.Empty(monitor.Observe().HyperBoostBlockingControllers!);
         Assert.False(new WindowsHardwareAccessGuard(monitor).Check().Safe);
+    }
+
+    [Fact]
+    public void Observe_UnpatchedEngineKeepsSynapseThermalBlocker()
+    {
+        RunningControllerProcess engine = CreateInstallation("unpatched-thermal");
+        File.Delete(Manifest(engine));
+        WindowsControllerPresenceMonitor monitor = Monitor([engine]);
+
+        Assert.Equal(["Razer Synapse Service", "RazerAppEngine"],
+            monitor.Observe().HyperBoostBlockingControllers);
     }
 
     [Fact]
@@ -282,8 +303,17 @@ public sealed class SynapseBladeBlockerDetectionTests : IDisposable
         var monitor = new WindowsControllerPresenceMonitor(new EmptyProcesses(), new EmptyServices(),
             () => [engine, helper], () => throw new InvalidOperationException("Unproven helpers must not require endpoint enumeration"));
 
-        Assert.Equal(new[] { "razerwdl" }, monitor.Observe().PotentialControllers);
-        Assert.Null(monitor.Observe().DetectionWarning);
+        ControllerPresenceObservation result = monitor.Observe();
+        Assert.Equal(new[] { "razerwdl" }, result.PotentialControllers);
+        if (failure == "unknown-identity")
+        {
+            Assert.Contains("razerwdl", result.HyperBoostBlockingControllers!);
+        }
+        else
+        {
+            Assert.Empty(result.HyperBoostBlockingControllers!);
+        }
+        Assert.Null(result.DetectionWarning);
     }
 
     [Fact]

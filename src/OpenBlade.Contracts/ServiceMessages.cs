@@ -441,6 +441,10 @@ public sealed record ServiceStatusSnapshot(
 
     public bool HyperBoostRestorePending { get; init; }
 
+    // Null means the sender did not provide source-aware classification.
+    // Consumers then use the conservative name-based policy.
+    public IReadOnlyList<string>? HyperBoostBlockingControllers { get; init; }
+
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 }
 

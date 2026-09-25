@@ -310,7 +310,8 @@ public sealed partial class MainViewModelTests
                     WindowsPowerMode.BestPerformance),
             },
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() =>
+            viewModel.SelectedWindowsPowerModeOption.Value == WindowsPowerMode.BestPerformance);
 
         Assert.Equal(
             WindowsPowerMode.BestPerformance,
@@ -9630,7 +9631,7 @@ public sealed partial class MainViewModelTests
         await PushAsync(client, dispatcher, admitted with
         {
             Revision = admitted.Revision + 1,
-            PotentialControllers = ["Razer Chroma SDK Service", "RazerAppEngine"],
+            PotentialControllers = ["Razer Chroma SDK Service", "Razer Gaming Services Updater", "RazerAppEngine", "razerwdl"],
         });
         Assert.Contains("RazerAppEngine", viewModel.HyperBoostUnavailableReason,
             StringComparison.Ordinal);
@@ -9639,13 +9640,21 @@ public sealed partial class MainViewModelTests
             "Razer Chroma SDK Service",
             viewModel.HyperBoostUnavailableReason,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Razer Gaming Services Updater",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "razerwdl",
+            viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
         Assert.Contains(nameof(viewModel.HyperBoostUnavailableReason), changed);
 
         changed.Clear();
         await PushAsync(client, dispatcher, admitted with
         {
             Revision = admitted.Revision + 2,
-            PotentialControllers = ["Razer Chroma SDK Service"],
+            PotentialControllers = ["Razer Chroma SDK Service", "Razer Gaming Services Updater", "razerwdl"],
         });
 
         Assert.False(viewModel.HasHyperBoostUnavailableReason);
@@ -9655,6 +9664,36 @@ public sealed partial class MainViewModelTests
             option => option.IsHyperBoost);
         Assert.Contains(nameof(viewModel.HyperBoostUnavailableReason), changed);
         Assert.Contains(nameof(viewModel.HasHyperBoostUnavailableReason), changed);
+    }
+
+    [Fact]
+    public async Task HyperBoostAvailability_UsesSourceAwareSynapseBlockerStatus()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false)) with
+        {
+            PotentialControllers = ["Razer Synapse Service"],
+            HyperBoostBlockingControllers = [],
+        };
+
+        await PushAsync(client, dispatcher, admitted);
+
+        Assert.True(viewModel.CanToggleHyperBoost);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 1,
+            HyperBoostBlockingControllers = ["Razer Synapse Service"],
+        });
+
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.Contains("Razer Synapse Service", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
     }
 
     [Fact]

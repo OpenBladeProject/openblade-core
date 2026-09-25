@@ -4,7 +4,12 @@ namespace OpenBlade.Protocol;
 
 public sealed record ControllerPresenceObservation(
     IReadOnlyList<string> PotentialControllers,
-    string? DetectionWarning);
+    string? DetectionWarning)
+{
+    // Null preserves the conservative name-based policy for older or synthetic monitors.
+    // The Windows monitor supplies provenance-aware HyperBoost blockers.
+    public IReadOnlyList<string>? HyperBoostBlockingControllers { get; init; }
+}
 
 public interface IControllerPresenceMonitor
 {
@@ -56,6 +61,7 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
     public ControllerPresenceObservation Observe()
     {
         List<string> potentialControllers = [];
+        List<string> hyperBoostBlockers = [];
         bool processFailed = false;
         bool serviceFailed = false;
         bool patchedSynapse = false;
@@ -77,14 +83,34 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
             bool peripheralLightingOnly = patchedSynapse && helpers.Length > 0
                 && helpers.All(helper => IsVerifiedEngineChild(helper, engines))
                 && HasNoBladeLampArray(exclusions);
-            potentialControllers.AddRange(names
+            string[] detectedProcesses = names
                 .Where(process =>
                     KnownControllerProcesses.Contains(process)
                     || RazerControllerServiceAliases.Contains(process))
                 .Where(process => !patchedSynapse
                     || (!process.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase)
                         && !(process.Equals("razerwdl", StringComparison.OrdinalIgnoreCase)
-                            && peripheralLightingOnly))));
+                            && peripheralLightingOnly)))
+                .ToArray();
+            potentialControllers.AddRange(detectedProcesses);
+            foreach (string process in detectedProcesses)
+            {
+                bool verifiedLightingHelper = process.Equals("razerwdl", StringComparison.OrdinalIgnoreCase)
+                    && snapshots is not null
+                    && helpers.Length > 0
+                    && helpers.All(helper => helper.IsLampArrayHelper);
+                // Service aliases seen as process names have no service provenance.
+                bool unverifiedUpdaterProcess = process.Equals("RGS", StringComparison.OrdinalIgnoreCase)
+                    || process.Equals("Razer Gaming Services Updater", StringComparison.OrdinalIgnoreCase);
+                if (unverifiedUpdaterProcess
+                    || process.Equals("razerwdl", StringComparison.OrdinalIgnoreCase)
+                        && !verifiedLightingHelper
+                    || RazerThermalControllerPolicy.IsBlocking(process)
+                        && !(patchedSynapse && IsSynapseServiceAlias(process)))
+                {
+                    hyperBoostBlockers.Add(process);
+                }
+            }
         }
         catch (Exception)
         {
@@ -93,15 +119,32 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
 
         try
         {
-            potentialControllers.AddRange(serviceSource
+            WindowsServiceSnapshot[] detectedServices = serviceSource
                 .GetServices()
                 .Where(service => IsActive(service.State))
                 .Where(service => RazerControllerServiceAliases.MatchesService(
                     service.ServiceName,
                     service.DisplayName))
-                .Select(service => RazerControllerServiceAliases.Contains(service.DisplayName)
+                .ToArray();
+            foreach (WindowsServiceSnapshot service in detectedServices)
+            {
+                string name = RazerControllerServiceAliases.Contains(service.DisplayName)
                     ? service.DisplayName
-                    : service.ServiceName));
+                    : service.ServiceName;
+                potentialControllers.Add(name);
+                bool verifiedUpdaterService = service.ServiceName.Equals("RGS", StringComparison.OrdinalIgnoreCase);
+                bool unverifiedUpdaterAlias = name.Equals("RGS", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("Razer Gaming Services Updater", StringComparison.OrdinalIgnoreCase);
+                bool synapseService = IsSynapseServiceAlias(service.ServiceName)
+                    || IsSynapseServiceAlias(service.DisplayName);
+                if (!verifiedUpdaterService
+                    && (unverifiedUpdaterAlias
+                        || synapseService && !patchedSynapse
+                        || !synapseService && RazerThermalControllerPolicy.IsBlocking(name)))
+                {
+                    hyperBoostBlockers.Add(name);
+                }
+            }
         }
         catch (Exception)
         {
@@ -120,8 +163,18 @@ public sealed class WindowsControllerPresenceMonitor : IControllerPresenceMonito
             _ => null,
         };
 
-        return new ControllerPresenceObservation(confirmed, detectionWarning);
+        return new ControllerPresenceObservation(confirmed, detectionWarning)
+        {
+            HyperBoostBlockingControllers = hyperBoostBlockers
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(controller => controller, StringComparer.Ordinal)
+                .ToArray(),
+        };
     }
+
+    private static bool IsSynapseServiceAlias(string name) =>
+        name.Equals("RazerSynapseService", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Razer Synapse Service", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsActive(WindowsServiceState state) =>
         state is WindowsServiceState.Running

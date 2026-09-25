@@ -105,6 +105,36 @@ public sealed class WindowsControllerPresenceMonitorTests
     }
 
     [Fact]
+    public void Observe_OnlyTheRgsServiceGetsTheUpdaterThermalExemption()
+    {
+        WindowsControllerPresenceMonitor monitor = CreateMonitor(
+            ["RGS"],
+            [
+                new WindowsServiceSnapshot("RGS", "Razer Gaming Services Updater", WindowsServiceState.Running),
+                new WindowsServiceSnapshot("unexpected", "Razer Gaming Services Updater", WindowsServiceState.Running),
+            ]);
+
+        ControllerPresenceObservation result = monitor.Observe();
+
+        Assert.Equal(["RGS", "Razer Gaming Services Updater"], result.PotentialControllers);
+        Assert.Equal(["RGS", "Razer Gaming Services Updater"],
+            result.HyperBoostBlockingControllers);
+    }
+
+    [Fact]
+    public void Observe_VerifiedUpdaterServiceAloneDoesNotBlockHyperBoost()
+    {
+        WindowsControllerPresenceMonitor monitor = CreateMonitor(
+            [],
+            [new WindowsServiceSnapshot("RGS", "Razer Gaming Services Updater", WindowsServiceState.Running)]);
+
+        ControllerPresenceObservation result = monitor.Observe();
+
+        Assert.Equal(["Razer Gaming Services Updater"], result.PotentialControllers);
+        Assert.Empty(result.HyperBoostBlockingControllers!);
+    }
+
+    [Fact]
     public void Observe_DeduplicatesCaseInsensitivelyAndOrdersOrdinally()
     {
         WindowsControllerPresenceMonitor monitor = CreateMonitor(

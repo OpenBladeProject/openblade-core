@@ -126,10 +126,12 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   interface System.IEquatable<OpenBlade.Protocol.ControllerPresenceObservation>
   ctor (System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String DetectionWarning)
   method OpenBlade.Protocol.ControllerPresenceObservation <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<System.String> get_HyperBoostBlockingControllers()
   method System.Collections.Generic.IReadOnlyList<System.String> get_PotentialControllers()
   method System.String get_DetectionWarning()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, out System.String DetectionWarning)
   method System.Void set_DetectionWarning(System.String value)
+  method System.Void set_HyperBoostBlockingControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
   method System.Void set_PotentialControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -137,6 +139,7 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   method static System.Boolean op_Equality(OpenBlade.Protocol.ControllerPresenceObservation left, OpenBlade.Protocol.ControllerPresenceObservation right)
   method static System.Boolean op_Inequality(OpenBlade.Protocol.ControllerPresenceObservation left, OpenBlade.Protocol.ControllerPresenceObservation right)
   method virtual System.Boolean Equals(OpenBlade.Protocol.ControllerPresenceObservation other)
+  property System.Collections.Generic.IReadOnlyList<System.String> HyperBoostBlockingControllers { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
 type static class OpenBlade.Protocol.CoolingPadDiscoveryFactory

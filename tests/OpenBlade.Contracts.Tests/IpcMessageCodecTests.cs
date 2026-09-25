@@ -518,7 +518,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(55, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(56, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1105,7 +1105,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(55, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(56, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1919,6 +1919,45 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task HyperBoostBlockers_RoundTripAndOmittedFieldUsesConservativeFallback()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            HyperBoostBlockingControllers = [],
+        };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Empty(actual.Status.HyperBoostBlockingControllers!);
+        Assert.Empty(RazerThermalControllerPolicy.GetBlockingControllers(actual.Status));
+
+        JsonObject root = FramedJsonObject(stream);
+        JsonObject serializedStatus = Assert.IsType<JsonObject>(root["status"]);
+        serializedStatus.Remove("hyperBoostBlockingControllers");
+        ServiceStatusEvent legacy = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()), CancellationToken.None));
+        Assert.Null(legacy.Status.HyperBoostBlockingControllers);
+        Assert.Equal(["RazerAppEngine"],
+            RazerThermalControllerPolicy.GetBlockingControllers(legacy.Status));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsHyperBoostBlockerAbsentFromControllers()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            HyperBoostBlockingControllers = ["Unexpected process"],
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
     public async Task WriteServerFrameAsync_RejectsUnsortedExternalChanges()
     {
         ServiceStatusSnapshot status = CreateStatus() with
@@ -2181,6 +2220,7 @@ public sealed class IpcMessageCodecTests
         ServiceStatusSnapshot status = CreateStatus() with
         {
             WritesBlocked = false,
+            HyperBoostBlockingControllers = ["RazerAppEngine"],
             ObservationReason = DeviceObservationReason.RefreshingControls,
             ThermalConvergence = new ThermalConvergenceStatus(
                 ThermalControlPolicy.MaintainDesiredState,
@@ -2202,6 +2242,7 @@ public sealed class IpcMessageCodecTests
         JsonObject projected = Assert.IsType<JsonObject>(root["status"]);
         Assert.True(projected["writesBlocked"]!.GetValue<bool>());
         Assert.False(projected.ContainsKey("thermalConvergence"));
+        Assert.False(projected.ContainsKey("hyperBoostBlockingControllers"));
         Assert.False(projected.ContainsKey("observationReason"));
         Assert.Contains(
             "Update or repair",
@@ -2279,7 +2320,7 @@ public sealed class IpcMessageCodecTests
             new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus()),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        json["version"] = 54;
+        json["version"] = 55;
         Assert.True(Assert.IsType<JsonObject>(json["status"]).Remove("observationReason"));
         using MemoryStream previous = FrameJson(json.ToJsonString());
 
@@ -2679,6 +2720,8 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.DeviceVerified, actual.DeviceVerified);
         Assert.Equal(expected.WritesBlocked, actual.WritesBlocked);
         Assert.Equal(expected.PotentialControllers, actual.PotentialControllers);
+        Assert.Equal(expected.HyperBoostBlockingControllers,
+            actual.HyperBoostBlockingControllers);
         Assert.Equal(expected.ControllerDetectionWarning, actual.ControllerDetectionWarning);
         Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
         Assert.Equal(expected.UnconfirmedWrites, actual.UnconfirmedWrites);
