@@ -9,9 +9,10 @@
 3. Open OpenBlade. If it reports a conflict, check that the patch is still
    applied and that no other Razer controller is running.
 
-After a Synapse update, apply the blocker again to the updated installation.
-OpenBlade checks the installed files each time; an old patch record does not
-cover a new installation.
+After a Synapse update, the blocker may remain applied if the update leaves
+the patched AppEngine files alone. If the update replaces those files, apply
+the blocker again. OpenBlade checks the installed files against the patch
+record; an old record does not cover changed files.
 
 ## How OpenBlade checks coexistence
 
