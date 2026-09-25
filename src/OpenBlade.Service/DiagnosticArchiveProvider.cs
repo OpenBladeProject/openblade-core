@@ -506,6 +506,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["status.hyperBoostRestorePending"] =
                 status.HyperBoostRestorePending.ToString(),
             ["status.potentialControllers"] = string.Join(", ", status.PotentialControllers),
+            ["status.hyperBoostBlockingControllers"] = status.HyperBoostBlockingControllers is null
+                ? "Unavailable"
+                : string.Join(", ", status.HyperBoostBlockingControllers),
             ["status.controllerDetectionWarning"] =
                 status.ControllerDetectionWarning ?? "Unavailable",
             ["status.externalChanges"] = string.Join(", ", status.ExternalChanges),

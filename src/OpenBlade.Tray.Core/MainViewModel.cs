@@ -2883,8 +2883,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "OpenBlade could not confirm whether another Razer controller is active. Refresh the laptop state. If this continues, exit Razer laptop-control software such as Synapse and refresh again.");
             }
 
-            string[] blockingControllers = status.PotentialControllers
-                .Where(RazerThermalControllerPolicy.IsBlocking)
+            string[] blockingControllers = RazerThermalControllerPolicy
+                .GetBlockingControllers(status)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             if (blockingControllers.Length > 0)
@@ -4281,7 +4281,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsCheckingLaptopConnection(latestStatus);
 
     private static bool HasBlockingHyperBoostController(ServiceStatusSnapshot? status) =>
-        status?.PotentialControllers.Any(RazerThermalControllerPolicy.IsBlocking) == true;
+        status is not null
+        && RazerThermalControllerPolicy.GetBlockingControllers(status).Count > 0;
 
     private bool CanSetThermalControlPolicy(object? parameter) =>
         parameter is ThermalControlPolicyOption option
