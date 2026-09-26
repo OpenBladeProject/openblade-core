@@ -48,6 +48,12 @@ internal abstract class UnavailableServiceClient : IServiceClient
                     : new ManualOverride<PerformancePreset>(value.Value, value.Lifetime),
                 token);
 
+    public virtual Task<ControlOperationResult> SetGpuClockTuningAsync(
+        GpuClockTuningSettings value,
+        OverrideLifetime lifetime,
+        CancellationToken token) =>
+        Unavailable("GPU clock tuning is unavailable.");
+
     public virtual Task<ControlOperationResult> SetHyperBoostAsync(
         bool enabled,
         CancellationToken token) =>

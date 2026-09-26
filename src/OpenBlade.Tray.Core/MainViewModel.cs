@@ -2478,7 +2478,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && IsGpuClockTuningAvailable;
 
     public bool CanToggleGpuClockTuning =>
-        CanEditPerformance
+        (HyperBoostActive
+            ? CanMutate
+                && ActivePowerSource == PowerSource.PluggedIn
+                && !IsRetainedPowerSourceRecheck(latestStatus)
+                && !IsPerformanceOperationInProgress
+                && !IsHyperBoostOperationInProgress
+                && !HasPendingHyperBoostRestore
+                && !HasUnconfirmedWrites
+                && !HasControllerDetectionWarning
+                && !HasBlockingHyperBoostController(latestStatus)
+            : CanEditPerformance)
         && IsGpuClockTuningVisible
         && Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite };
 
@@ -2496,6 +2506,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(IsLaptopPerformanceOperationInProgress));
                 Notify(nameof(CanToggleGpuClockTuning));
                 Notify(nameof(CanEditGpuClockTuning));
+                Notify(nameof(CanToggleHyperBoost));
+                NotifyHyperBoostAvailability();
             }
         }
     }
@@ -2771,6 +2783,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyHyperBoostAvailability();
             Notify(nameof(CanEditPerformance));
             Notify(nameof(CanSelectLaptopPerformance));
+            Notify(nameof(CanToggleGpuClockTuning));
+            Notify(nameof(CanEditGpuClockTuning));
             Notify(nameof(SelectedLaptopPerformanceOption));
             Notify(nameof(ActivePerformanceLabel));
             NotifyTrayHoverLabel();
@@ -2795,6 +2809,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyHyperBoostAvailability();
             Notify(nameof(CanSelectLaptopPerformance));
             Notify(nameof(IsLaptopPerformanceOperationInProgress));
+            Notify(nameof(CanToggleGpuClockTuning));
+            Notify(nameof(CanEditGpuClockTuning));
             RefreshLaptopPerformanceOptions();
         }
     }
@@ -2804,6 +2820,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsRetainedPowerSourceRecheck(latestStatus)
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
+        && !IsPerformanceOperationInProgress
         && !HasControllerDetectionWarning
         && !HasBlockingHyperBoostController(latestStatus)
         && (HyperBoostActive
@@ -5769,11 +5786,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         SelectedCustomGpuLevel)
                     : null,
                 gpuClockTuning),
-            token);
+            token,
+            gpuOnly: HyperBoostActive);
 
     private async Task ApplyPerformanceAsync(
         PerformanceOverride requested,
-        CancellationToken token)
+        CancellationToken token,
+        bool gpuOnly = false)
     {
         PowerSource sourceAtStart = ActivePowerSource;
         PerformancePreset previousPerformance = SelectedPerformance;
@@ -5795,9 +5814,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         try
         {
             await RunOperationAsync(
-                cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
-                    requested,
-                    cancellationToken),
+                cancellationToken => gpuOnly
+                    ? serviceClient.SetGpuClockTuningAsync(
+                        requested.GpuClockTuning!,
+                        requested.Lifetime,
+                        cancellationToken)
+                    : serviceClient.SetPerformanceConfigurationOverrideAsync(
+                        requested,
+                        cancellationToken),
                 token,
                 result =>
                 {

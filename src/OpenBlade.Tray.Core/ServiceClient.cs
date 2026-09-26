@@ -173,6 +173,17 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 value),
             token);
 
+    public Task<ControlOperationResult> SetGpuClockTuningAsync(
+        GpuClockTuningSettings value,
+        OverrideLifetime lifetime,
+        CancellationToken token) => SendMutationAsync(
+            new SetGpuClockTuningRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                value,
+                lifetime),
+            token);
+
     public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
         CancellationToken token) => SendMutationAsync(
