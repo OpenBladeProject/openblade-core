@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-25
+
 ### Added
 
 - Keep NVIDIA GPU tuning available while HyperBoost runs on the supported RZ09-0581, and retain confirmed offsets after HyperBoost exits or recovers. ([#579](https://github.com/OpenBladeProject/openblade-core/pull/579))
@@ -1936,7 +1938,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.21.10...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/OSSBlade/openblade-core/compare/v0.21.10...v0.22.0
 [0.21.10]: https://github.com/OSSBlade/openblade-core/compare/v0.21.9...v0.21.10
 [0.21.9]: https://github.com/OSSBlade/openblade-core/compare/v0.21.6...v0.21.9
 [0.21.6]: https://github.com/OSSBlade/openblade-core/compare/v0.21.0...v0.21.6
