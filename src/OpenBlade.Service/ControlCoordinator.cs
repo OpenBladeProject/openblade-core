@@ -283,6 +283,35 @@ public sealed class ControlCoordinator
             };
     }
 
+    internal Task<ScopedApplyOutcome> ApplyGpuClockTuningOutcomeAsync(
+        GpuClockTuningSettings value,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? beforeWrite = null,
+        bool ownsHyperBoost = false) => ApplyScopedAsync(
+            DeviceSubsystem.Performance,
+            "GPU clock tuning",
+            GpuClockTuningSettings.IsWellFormed(value),
+            capabilities => capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite },
+            state => (!state.HyperBoostActive || ownsHyperBoost)
+                && GpuClockTuningMatches(state, value),
+            async token =>
+            {
+                if (beforeWrite is not null)
+                {
+                    await beforeWrite(token).ConfigureAwait(false);
+                }
+                await SetGpuClockOffsetsAsync(value.EffectiveOffsets, value.Enabled, token)
+                    .ConfigureAwait(false);
+            },
+            cancellationToken,
+            initialStateBlockReason: state => state.HyperBoostActive && !ownsHyperBoost
+                ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
+                : null,
+            resolveIndeterminateWriteByReadback: true,
+            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            writeBlockReason: performanceWriteBlockReason,
+            returnBlockedOnWriteAuthorityLoss: true);
+
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
         FanMode value,
         CancellationToken cancellationToken) => ApplyFanControlOutcomeAsync(

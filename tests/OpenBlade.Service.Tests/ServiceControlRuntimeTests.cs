@@ -27266,6 +27266,314 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             RecoveryBaseline = recoveryBaseline,
         };
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task IndependentGpuTuning_PreservesHyperBoostAndUpdatesOnlyGpuRestoreIntent(bool enabled)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        HyperBoostOwnershipJournal before = Assert.IsType<HyperBoostOwnershipJournal>(journal.Journal);
+        int performanceWrites = context.Device.PerformanceSetCalls;
+        int fanWrites = context.Device.FanSetCalls;
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        var tuning = new GpuClockTuningSettings(enabled, new GpuClockOffsetSettings(125, 500));
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.Equal(before with
+        {
+            RestoreIntent = before.RestoreIntent with { GpuClockTuning = tuning },
+        }, journal.Journal);
+        Assert.Equal(tuning, context.Runtime.GetStatus().PerformanceOverride?.GpuClockTuning);
+
+        ControlOperationResult exit = await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None);
+        Assert.True(exit.Status == ControlOperationStatus.Applied, exit.Message);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(before.RestoreIntent.Performance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(tuning, context.Runtime.GetStatus().DesiredState.GpuClockTuning);
+        if (enabled)
+        {
+            Assert.Equal(tuning.EffectiveOffsets, context.Device.ConfirmedState.GpuClockOffsets?.Current);
+        }
+        else
+        {
+            Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed,
+                context.Device.GpuClockOffsetManagementState);
+        }
+    }
+
+    [Theory]
+    [InlineData("power")]
+    [InlineData("controller")]
+    [InlineData("session")]
+    [InlineData("journal")]
+    public async Task IndependentGpuTuning_AdmissionFailureDoesNotWrite(string failure)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        ConfirmedDeviceState before = context.Device.ConfirmedState;
+        int setters = context.Device.TotalSetterCalls;
+        if (failure == "power")
+        {
+            context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        }
+        if (failure == "controller")
+        {
+            context.Monitor.Current = new ControllerPresenceObservation(["Razer Synapse Service"], null);
+        }
+        if (failure == "journal")
+        {
+            journal.JournalSha256Override = "changed";
+        }
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, () => failure != "session", CancellationToken.None);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(before, context.Device.ConfirmedState);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride?.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_JournalReplacementRaceBlocksFurtherWrites()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        HyperBoostOwnershipJournal before = journal.Journal!;
+        journal.BeforeConditionalReplace = () => journal.JournalSha256Override = "changed";
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(before, journal.Journal);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride?.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_UnexpectedExitRestoresEditedGpuIntent()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500));
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, CancellationToken.None)).Status);
+        TestContext recovered = CreateContext(
+            providerAvailable: true, initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        recovered.Device.Capabilities = context.Device.Capabilities;
+        recovered.Device.ConfirmedState = context.Device.ConfirmedState;
+        recovered.Runtime.Initialize(await recovered.Store.LoadAsync(CancellationToken.None),
+            PowerSource.PluggedIn, PersistentOverrideState.Empty with
+            {
+                Performance = context.Runtime.GetStatus().PerformanceOverride!.Value,
+                GpuClockTuning = tuning,
+            }, recoveringUnexpectedExit: true);
+        await recovered.Runtime.ObserveAsync(CancellationToken.None);
+
+        await recovered.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        Assert.False(recovered.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(tuning.EffectiveOffsets, recovered.Device.ConfirmedState.GpuClockOffsets?.Current);
+        Assert.Equal(tuning, recovered.Runtime.GetStatus().DesiredState.GpuClockTuning);
+        Assert.Null(journal.Journal);
+        Assert.False(recovered.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_OverridePersistenceFailureRetainsRecoveryJournalAndBlocks()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal,
+            _ => throw new IOException("Injected override persistence failure."));
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500));
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(tuning, journal.Journal?.RestoreIntent.GpuClockTuning);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride?.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_PowerChangeDuringReadBlocksBeforeNvidiaWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        ConfirmedDeviceState before = context.Device.ConfirmedState;
+        context.Device.AfterReadState = () => context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(before, context.Device.ConfirmedState);
+        Assert.Null(journal.Journal?.RestoreIntent.GpuClockTuning);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_ExternalHyperBoostBlocks()
+    {
+        TestContext context = CreateWritableContext();
+        ConfigurePadlessHyperBoost(context, active: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("ownership", result.Message);
+        Assert.Equal(0, context.Device.GpuClockSetCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentGpuTuning_JournalDriftDuringReadBlocksBeforeNvidiaWrite(bool hashOnly)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        ConfirmedDeviceState before = context.Device.ConfirmedState;
+        context.Device.AfterReadState = () =>
+        {
+            if (hashOnly)
+            {
+                journal.JournalSha256Override = "changed";
+            }
+            else
+            {
+                journal.Journal = journal.Journal! with { TransitionId = Guid.NewGuid() };
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.GpuClockSetCalls);
+        Assert.Equal(before, context.Device.ConfirmedState);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_CancellationAfterSubmissionCompletesReadbackAndDurableIntent()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterGpuClockSet = cancellation.Cancel;
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500));
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, cancellation.Token);
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+        Assert.Equal(tuning, journal.Journal?.RestoreIntent.GpuClockTuning);
+        Assert.Equal(tuning, context.Runtime.GetStatus().PerformanceOverride?.GpuClockTuning);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Fact]
+    public async Task IndependentGpuTuning_CancellationBeforeSubmissionDoesNotWrite()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterReadState = cancellation.Cancel;
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, cancellation.Token);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Device.GpuClockSetCalls);
+        Assert.Null(journal.Journal?.RestoreIntent.GpuClockTuning);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentGpuTuning_UnavailableReadbackBlocksReplayUntilReconciled(bool cancelAfterSubmission)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = await CreateOwnedHyperBoostGpuContextAsync(journal);
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500));
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterGpuClockSet = () =>
+        {
+            context.Device.ReadStateFailure = new IOException("Injected lost GPU readback.");
+            if (cancelAfterSubmission)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        ControlOperationResult result = await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, cancellation.Token);
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+        Assert.Null(journal.Journal?.RestoreIntent.GpuClockTuning);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, CancellationToken.None)).Status);
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+
+        context.Device.ReadStateFailure = null;
+        context.Device.AfterGpuClockSet = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetGpuClockTuningAsync(
+            tuning, OverrideLifetime.Persistent, static () => true, CancellationToken.None)).Status);
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+        Assert.Equal(tuning, journal.Journal?.RestoreIntent.GpuClockTuning);
+    }
+
+    private async Task<TestContext> CreateOwnedHyperBoostGpuContextAsync(
+        RecordingHyperBoostOwnershipJournalStore journal,
+        Func<CancellationToken, Task>? overrideWriteBoundary = null)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            overrideWriteBoundary: overrideWriteBoundary);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        return context;
+    }
+
     private static void ConfigurePadlessHyperBoost(
         TestContext context,
         bool active = false)
@@ -28381,6 +28689,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        public int GpuClockSetCalls { get; private set; }
+
+        public Action? AfterGpuClockSet { get; set; }
+
         public Queue<Exception> PerformanceFailures { get; } = new();
 
         public bool MutatePerformanceBeforeQueuedFailure { get; set; }
@@ -28828,6 +29140,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                         "GPU clock tuning is unavailable in this test device."));
             }
 
+            GpuClockSetCalls++;
             GpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
             ConfirmedState = ConfirmedState with
             {
@@ -28836,6 +29149,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     new GpuClockOffsetRange(-1000, 400, value.CoreMegahertz),
                     new GpuClockOffsetRange(-1000, 3000, value.MemoryMegahertz)),
             };
+            AfterGpuClockSet?.Invoke();
             return Task.CompletedTask;
         }
 

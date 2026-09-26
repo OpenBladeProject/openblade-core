@@ -147,6 +147,23 @@ public sealed class WriteConfirmationPolicyTests
             Match(DeviceSubsystem.Performance, expectation, Confirmed() with { GpuClockOffsets = Offsets(100, 300) }));
     }
 
+    [Fact]
+    public void IndependentGpuTuning_HyperBoostHiddenPresetStillRequiresExactOffsets()
+    {
+        var expectation = new WriteConfirmationExpectation(
+            Desired() with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(100, 200)),
+            }, Confirmed(), GpuClockTuningOnly: true);
+        ConfirmedDeviceState active = Confirmed() with { Performance = null, HyperBoostActive = true };
+        Assert.Equal(PendingConfirmationResult.Unavailable,
+            Match(DeviceSubsystem.Performance, expectation, active));
+        Assert.Equal(PendingConfirmationResult.Match,
+            Match(DeviceSubsystem.Performance, expectation, active with { GpuClockOffsets = Offsets(100, 200) }));
+        Assert.Equal(PendingConfirmationResult.Mismatch,
+            Match(DeviceSubsystem.Performance, expectation, active with { GpuClockOffsets = Offsets(100, 300) }));
+    }
+
     [Theory]
     [InlineData(DeviceSubsystem.Performance)]
     [InlineData(DeviceSubsystem.Fans)]

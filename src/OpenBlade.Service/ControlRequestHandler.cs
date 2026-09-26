@@ -188,6 +188,13 @@ public sealed class ControlRequestHandler
             SetHyperBoostRequest set => Result(
                 request.RequestId,
                 await runtime.SetHyperBoostAsync(set, cancellationToken)),
+            SetGpuClockTuningRequest set => Result(
+                request.RequestId,
+                await runtime.SetGpuClockTuningAsync(
+                    set.Value,
+                    set.Lifetime,
+                    stillControlsSession,
+                    cancellationToken)),
             ValidatePadlessHyperBoostLifecycleRequest validate => Result(
                 request.RequestId,
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(
