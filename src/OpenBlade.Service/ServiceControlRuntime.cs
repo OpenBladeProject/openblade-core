@@ -71,6 +71,14 @@ public interface IServiceControlRuntime
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetGpuClockTuningAsync(
+        GpuClockTuningSettings value,
+        OverrideLifetime lifetime,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Independent GPU clock tuning is unavailable."));
+
     Task<ControlOperationResult> SetHyperBoostAsync(
         bool enabled,
         CancellationToken token) => Task.FromResult(
@@ -1505,6 +1513,205 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> SetGpuClockTuningAsync(
+        GpuClockTuningSettings value,
+        OverrideLifetime lifetime,
+        Func<bool> stillControlsSession,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!GpuClockTuningSettings.IsWellFormed(value) || !Enum.IsDefined(lifetime))
+        {
+            return RecordRejectedIntent(new ArgumentException("GPU clock tuning is invalid."));
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            RefreshControllerPresenceCore(token);
+            // This operation never performs a firmware transition, including a
+            // power-destination transition discovered while admitting the request.
+            if (powerSource != PowerSource.PluggedIn || Automation.PowerSource != powerSource)
+            {
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "GPU clock tuning requires a confirmed, unchanged full-power adapter connection.");
+            }
+
+            ServiceStatusSnapshot current = GetStatus();
+            DesiredDeviceState desired = ResolveHardwareDesired(
+                current.ConfirmedState ?? UnknownConfirmedState) with
+            {
+                GpuClockTuning = value,
+            };
+            string? GpuWriteBlockReason() =>
+                GetStatus().ConfirmedState?.HyperBoostActive == true && !ownsHyperBoost
+                    ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
+                    : hyperBoostRestorePending
+                    || pendingOwnedHyperBoostPowerBoundaryExit
+                    || pendingIndeterminateHyperBoostEntryIntent is not null
+                    || pendingIndeterminateHyperBoostExitIntent is not null
+                    ? "HyperBoost restoration requires read-only reconciliation before GPU tuning."
+                    : GetStatus().ControllerDetectionWarning is not null
+                        || RazerThermalControllerPolicy.GetBlockingControllers(GetStatus()).Count > 0
+                        ? "GPU clock tuning is blocked by a competing or unverified controller."
+                        : null;
+            string? block = ScopedPerformanceWriteBlockReason(
+                desired, state => state with { GpuClockTuning = value },
+                stillControlsSession, GpuWriteBlockReason,
+                ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent);
+            if (block is not null)
+            {
+                return new ControlOperationResult(ControlOperationStatus.Blocked, block);
+            }
+
+            HyperBoostOwnershipJournal? expectedJournal = ownedHyperBoostJournal;
+            string? expectedSha256 = ownedHyperBoostJournalSha256;
+            if (ownsHyperBoost)
+            {
+                HyperBoostOwnershipJournalLoadResult load;
+                try
+                {
+                    load = await hyperBoostOwnershipJournalStore.LoadAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return PublishScopedUnavailable(DeviceSubsystem.Performance, powerSource,
+                        $"The owned HyperBoost journal could not be read: {exception.Message}",
+                        failed: true, preserveCurrentAvailability: true);
+                }
+                if (load.Invalid
+                    || expectedJournal is not { State: HyperBoostOwnershipJournalState.OwnedConfirmed }
+                    || expectedSha256 is null || load.Journal != expectedJournal
+                    || load.Sha256 != expectedSha256)
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return PublishScopedUnavailable(DeviceSubsystem.Performance, powerSource,
+                        "The owned HyperBoost journal changed; GPU tuning is blocked.",
+                        preserveCurrentAvailability: true);
+                }
+            }
+
+            bool gpuSubmissionStarted = false;
+            // Once admitted for submission, finish bounded readback and the
+            // durable intent commit even if the requesting client disconnects.
+            // The original token is checked at the last pre-submission gate.
+            return await ApplyScopedIntentAsync(
+                DeviceSubsystem.Performance,
+                powerSource,
+                (coordinator, _, cancellationToken) =>
+                    coordinator.ApplyGpuClockTuningOutcomeAsync(value, cancellationToken,
+                        async _ =>
+                        {
+                            try
+                            {
+                                token.ThrowIfCancellationRequested();
+                                PowerSource freshPower = await ResolveCurrentPowerSourceAsync(token)
+                                    .ConfigureAwait(false);
+                                RefreshControllerPresenceCore(token);
+                                string? freshBlock = ScopedPerformanceWriteBlockReason(
+                                    desired, state => state with { GpuClockTuning = value },
+                                    stillControlsSession, GpuWriteBlockReason,
+                                    ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent);
+                                if (freshPower != PowerSource.PluggedIn || freshBlock is not null
+                                    || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice freshDevice)
+                                    || !ReferenceEquals(freshDevice, coordinator.ThermalDevice))
+                                {
+                                    throw new WriteAuthorityLostException(freshBlock
+                                        ?? "Power or exact-device admission changed before GPU tuning.");
+                                }
+                                if (ownsHyperBoost)
+                                {
+                                    HyperBoostOwnershipJournalLoadResult latestJournal;
+                                    try
+                                    {
+                                        latestJournal = await hyperBoostOwnershipJournalStore.LoadAsync(token)
+                                            .ConfigureAwait(false);
+                                    }
+                                    catch (Exception exception) when (exception is not OperationCanceledException)
+                                    {
+                                        hyperBoostJournalSafetyBlock = true;
+                                        throw new WriteAuthorityLostException(
+                                            $"The owned HyperBoost journal could not be read before GPU tuning: {exception.Message}");
+                                    }
+                                    if (latestJournal.Invalid || expectedJournal is null || expectedSha256 is null
+                                        || latestJournal.Journal != expectedJournal || latestJournal.Sha256 != expectedSha256)
+                                    {
+                                        hyperBoostJournalSafetyBlock = true;
+                                        throw new WriteAuthorityLostException(
+                                            "The owned HyperBoost journal changed before GPU tuning.");
+                                    }
+                                }
+                                token.ThrowIfCancellationRequested();
+                                gpuSubmissionStarted = true;
+                            }
+                            catch (OperationCanceledException) when (token.IsCancellationRequested)
+                            {
+                                throw new WriteAuthorityLostException(
+                                    "GPU clock tuning was canceled before NVIDIA submission.");
+                            }
+                        }, ownsHyperBoost: ownsHyperBoost),
+                CancellationToken.None,
+                stageDesired: state => state with { GpuClockTuning = value },
+                commitIntent: async cancellationToken =>
+                {
+                    if (!gpuSubmissionStarted)
+                    {
+                        token.ThrowIfCancellationRequested();
+                    }
+                    if (ownsHyperBoost && expectedJournal is not null)
+                    {
+                        HyperBoostOwnershipJournal replacement = expectedJournal with
+                        {
+                            RestoreIntent = expectedJournal.RestoreIntent with { GpuClockTuning = value },
+                        };
+                        HyperBoostOwnershipJournalMutationResult updated =
+                            await TryReplaceHyperBoostOwnershipJournalAsync(
+                                expectedJournal, expectedSha256, replacement,
+                                "GPU tuning was confirmed, but its HyperBoost restore intent could not be saved.")
+                                .ConfigureAwait(false);
+                        if (!updated.Applied || updated.Sha256 is null)
+                        {
+                            hyperBoostJournalSafetyBlock = true;
+                            throw new IOException("The HyperBoost GPU restore intent could not be committed; control writes remain blocked.");
+                        }
+                        ownedHyperBoostJournal = replacement;
+                        ownedHyperBoostJournalSha256 = updated.Sha256;
+                        ownedHyperBoostRestoreIntent = replacement.RestoreIntent;
+                    }
+                    try
+                    {
+                        await SetPerformanceOverrideCoreAsync(new PerformanceOverride(
+                            desired.Performance.Value, lifetime)
+                        {
+                            CustomPerformance = desired.CustomPerformance,
+                            GpuClockTuning = value,
+                        }, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // The journal remains the durable recovery authority if
+                        // saving the user's normal override fails after its CAS.
+                        if (ownsHyperBoost)
+                        {
+                            hyperBoostJournalSafetyBlock = true;
+                        }
+                        throw;
+                    }
+                },
+                stillControlsSession: stillControlsSession,
+                thermalExecutionOptions: new ScopedThermalExecutionOptions(
+                    [DeviceSubsystem.Performance], additionalWriteBlockReason: GpuWriteBlockReason),
+                gpuClockTuningOnly: true).ConfigureAwait(false);
         }
         finally
         {
@@ -12402,7 +12609,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ScopedApplyOutcome,
             ConfirmedDeviceState?,
             ThermalTransitionTrace?>? observeScopedOutcome = null,
-        PendingBatteryIntentCommit? pendingBatteryIntentCommit = null)
+        PendingBatteryIntentCommit? pendingBatteryIntentCommit = null,
+        bool gpuClockTuningOnly = false)
     {
         if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
         {
@@ -12615,7 +12823,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 outcome.EffectiveDesired ?? desired,
                 preWriteState,
-                BatteryIntentCommit: pendingBatteryIntentCommit));
+                BatteryIntentCommit: pendingBatteryIntentCommit,
+                GpuClockTuningOnly: gpuClockTuningOnly));
         }
 
         if (outcome.Result.Status is

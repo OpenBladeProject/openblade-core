@@ -1294,7 +1294,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 56
+  field const System.Int32 ProtocolVersion = 57
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2101,6 +2101,25 @@ type sealed class OpenBlade.Contracts.SetFullChargeOverrideRequest
   method virtual OpenBlade.Contracts.SetFullChargeOverrideRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFullChargeOverrideRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetGpuClockTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetGpuClockTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.GpuClockTuningSettings Value, OpenBlade.Contracts.OverrideLifetime Lifetime)
+  method OpenBlade.Contracts.GpuClockTuningSettings get_Value()
+  method OpenBlade.Contracts.OverrideLifetime get_Lifetime()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.GpuClockTuningSettings Value, out OpenBlade.Contracts.OverrideLifetime Lifetime)
+  method System.Void set_Lifetime(OpenBlade.Contracts.OverrideLifetime value)
+  method System.Void set_Value(OpenBlade.Contracts.GpuClockTuningSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetGpuClockTuningRequest left, OpenBlade.Contracts.SetGpuClockTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetGpuClockTuningRequest left, OpenBlade.Contracts.SetGpuClockTuningRequest right)
+  method virtual OpenBlade.Contracts.SetGpuClockTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetGpuClockTuningRequest other)
+  property OpenBlade.Contracts.GpuClockTuningSettings Value { get; init; }
+  property OpenBlade.Contracts.OverrideLifetime Lifetime { get; init; }
 type sealed class OpenBlade.Contracts.SetHyperBoostRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetHyperBoostRequest>

@@ -98,6 +98,10 @@ internal static class WriteConfirmationPolicy
         WriteConfirmationExpectation pending,
         ConfirmedDeviceState confirmed)
     {
+        if (pending.GpuClockTuningOnly)
+        {
+            return MatchGpuClockTuning(pending.Target.GpuClockTuning!, confirmed);
+        }
         FanMode desiredFans = pending.Target.FanControl?.Mode
             ?? pending.Target.Fans.Value;
         if (DeviceSubsystemOrder.IsManualFanMode(desiredFans)
@@ -121,22 +125,7 @@ internal static class WriteConfirmationPolicy
 
         if (pending.Target.GpuClockTuning is { } tuning)
         {
-            if (!tuning.Enabled)
-            {
-                if (confirmed.GpuClockOffsets is not null)
-                {
-                    return PendingConfirmationResult.Mismatch;
-                }
-
-                // The runtime obtains management evidence only after these gates.
-                return null;
-            }
-
-            return confirmed.GpuClockOffsets is null
-                ? PendingConfirmationResult.Unavailable
-                : confirmed.GpuClockOffsets.Current == tuning.EffectiveOffsets
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch;
+            return MatchGpuClockTuning(tuning, confirmed);
         }
 
         GpuClockOffsetCapabilities? before = pending.PreWriteState.GpuClockOffsets;
@@ -153,6 +142,16 @@ internal static class WriteConfirmationPolicy
                 ? PendingConfirmationResult.Match
                 : PendingConfirmationResult.Mismatch;
     }
+
+    private static PendingConfirmationResult? MatchGpuClockTuning(
+        GpuClockTuningSettings tuning,
+        ConfirmedDeviceState confirmed) => !tuning.Enabled
+            ? confirmed.GpuClockOffsets is null ? null : PendingConfirmationResult.Mismatch
+            : confirmed.GpuClockOffsets is null
+                ? PendingConfirmationResult.Unavailable
+                : confirmed.GpuClockOffsets.Current == tuning.EffectiveOffsets
+                    ? PendingConfirmationResult.Match
+                    : PendingConfirmationResult.Mismatch;
 
     internal static bool BatteryMatchesDesired(
         ConfirmedBatteryState confirmed,
@@ -173,4 +172,5 @@ internal readonly record struct WriteConfirmationExpectation(
     DesiredDeviceState Target,
     ConfirmedDeviceState PreWriteState,
     bool? HyperBoostActive = null,
-    PerformancePreset? HyperBoostBaseMode = null);
+    PerformancePreset? HyperBoostBaseMode = null,
+    bool GpuClockTuningOnly = false);

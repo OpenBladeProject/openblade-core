@@ -56,6 +56,14 @@ public interface IServiceClient : IServiceStatusWatcher
         PerformanceOverride? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetGpuClockTuningAsync(
+        GpuClockTuningSettings value,
+        OverrideLifetime lifetime,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "GPU clock tuning control is unavailable."));
+
     Task<ControlOperationResult> SetHyperBoostAsync(
         bool enabled,
         CancellationToken token) => Task.FromResult(

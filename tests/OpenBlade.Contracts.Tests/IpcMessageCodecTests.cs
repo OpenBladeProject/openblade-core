@@ -261,6 +261,34 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task GpuClockTuningRequest_RoundTrips()
+    {
+        var request = new SetGpuClockTuningRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent);
+        using var stream = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None);
+        stream.Position = 0;
+        Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GpuClockTuningRequest_RejectsMalformedBody(bool missingValue)
+    {
+        var request = new SetGpuClockTuningRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            missingValue ? null! : GpuClockTuningSettings.Disabled,
+            missingValue ? OverrideLifetime.Persistent : (OverrideLifetime)999);
+        using var stream = new MemoryStream();
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
     public async Task LightingSuppressionRequest_RejectsUnknownReason()
     {
         var request = new SetLightingSuppressionRequest(
@@ -518,7 +546,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(56, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(57, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1105,7 +1133,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(56, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(57, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

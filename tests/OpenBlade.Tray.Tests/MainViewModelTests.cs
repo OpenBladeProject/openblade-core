@@ -4410,6 +4410,94 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task GpuClockTuning_WhileHyperBoostActive_UsesIndependentOperation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var current = GpuClockOffsetSettings.Default;
+        var gpuCapabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            new GpuClockOffsetRange(-1000, 1000, current.CoreMegahertz),
+            new GpuClockOffsetRange(-1000, 3000, current.MemoryMegahertz));
+        ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                HyperBoostActive = true,
+                Performance = null,
+                GpuClockOffsets = gpuCapabilities,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        client.Publish(active);
+        await WaitUntilAsync(() => viewModel.HasAppliedServiceState
+            && viewModel.HyperBoostActive
+            && viewModel.IsGpuClockTuningAvailable);
+
+        Assert.False(viewModel.CanEditPerformance);
+        Assert.True(viewModel.CanToggleGpuClockTuning);
+        await viewModel.SetGpuClockTuningEnabledAsync(true, CancellationToken.None);
+
+        Assert.True(viewModel.HyperBoostActive);
+        Assert.Equal(
+            new GpuClockTuningSettings(true, current),
+            client.GpuClockTuningRequest);
+        Assert.True(viewModel.IsGpuClockTuningEnabled,
+            viewModel.OperationStatusMessage);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Equal(OverrideLifetime.UntilPowerSourceChange,
+            client.GpuClockTuningLifetime);
+        Assert.True(viewModel.CanEditGpuClockTuning);
+
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        await viewModel.SetGpuClockOffsetsAsync(offsets, CancellationToken.None);
+        Assert.True(viewModel.HyperBoostActive);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Equal(new GpuClockTuningSettings(true, offsets),
+            client.GpuClockTuningRequest);
+        Assert.Equal(["gpuTuning:True", "gpuTuning:True"],
+            client.MutationOperations);
+
+        client.Publish(active with
+        {
+            Revision = active.Revision + 1,
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.HasControllerDetectionWarning);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+
+        client.Publish(active with
+        {
+            Revision = active.Revision + 2,
+            WritesBlocked = true,
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+        });
+        await WaitUntilAsync(() => viewModel.IsReadOnly
+            && !viewModel.HasControllerDetectionWarning);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+
+        client.Publish(active with
+        {
+            Revision = active.Revision + 3,
+            PotentialControllers = ["RazerAppEngine"],
+        });
+        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+    }
+
+    [Fact]
     public async Task GpuClockTuning_IsVisibleForWritablePolicyWithoutCustomPreset()
     {
         var client = new FakeServiceClient();
@@ -8950,7 +9038,8 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline));
-        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost);
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
+            && viewModel.AvailableLaptopPerformanceOptions.Count == 5);
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
@@ -10234,6 +10323,8 @@ public sealed partial class MainViewModelTests
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
         public PerformanceOverride? PerformanceOverride { get; private set; }
+        public GpuClockTuningSettings? GpuClockTuningRequest { get; private set; }
+        public OverrideLifetime? GpuClockTuningLifetime { get; private set; }
         public ManualOverride<FanMode>? FanOverride { get; private set; }
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
@@ -10382,6 +10473,17 @@ public sealed partial class MainViewModelTests
             MutationOperations.Add(value is null
                 ? "performance:<clear>"
                 : $"performance:{value.Value}");
+            return MutateAsync(token);
+        }
+
+        public override Task<ControlOperationResult> SetGpuClockTuningAsync(
+            GpuClockTuningSettings value,
+            OverrideLifetime lifetime,
+            CancellationToken token)
+        {
+            GpuClockTuningRequest = value;
+            GpuClockTuningLifetime = lifetime;
+            MutationOperations.Add($"gpuTuning:{value.Enabled}");
             return MutateAsync(token);
         }
 

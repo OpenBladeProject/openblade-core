@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Keep NVIDIA GPU tuning available while HyperBoost runs on the supported RZ09-0581, and retain confirmed offsets after HyperBoost exits or recovers. ([#579](https://github.com/OpenBladeProject/openblade-core/pull/579))
+
 ## [0.21.10] - 2026-09-24
 
 ### Fixed

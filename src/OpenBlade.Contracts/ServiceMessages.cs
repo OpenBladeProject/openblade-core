@@ -25,6 +25,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
+[JsonDerivedType(typeof(SetGpuClockTuningRequest), "setGpuClockTuning")]
 [JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
 [JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
 [JsonDerivedType(typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift")]
@@ -105,6 +106,13 @@ public sealed record SetHyperBoostRequest(
     int Version,
     Guid RequestId,
     bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetGpuClockTuningRequest(
+    int Version,
+    Guid RequestId,
+    GpuClockTuningSettings Value,
+    OverrideLifetime Lifetime)
     : ServiceRequest(Version, RequestId);
 
 public enum PadlessHyperBoostLifecycleScenario

@@ -94,10 +94,11 @@ internal sealed record PendingWriteConfirmation(
     ConfirmedDeviceState PreWriteState,
     bool? HyperBoostActive = null,
     PerformancePreset? HyperBoostBaseMode = null,
-    PendingBatteryIntentCommit? BatteryIntentCommit = null)
+    PendingBatteryIntentCommit? BatteryIntentCommit = null,
+    bool GpuClockTuningOnly = false)
 {
     public WriteConfirmationExpectation Expectation => new(
-        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode);
+        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly);
 
     public bool CanConfirm(PowerSource powerSource, ProfileAutomationState owner) =>
         PowerSource == powerSource
