@@ -148,10 +148,11 @@ records both sessions and their exact build provenance.
 
 Separate developer experiments with the pad USB and power disconnected passed
 an immediate Performance-to-HyperBoost round trip and a 60-second no-load
-observation. All 30 observation samples retained mode 7; CPU temperature was
-45 C and the GPU remained explicitly inactive. Fans rose from zero to
-2900/2700 RPM. The frozen 55 C experimental abort threshold is not a hardware
-thermal limit. Both experiments restored Performance, then the original
+observation. All 30 observation samples retained mode 7; the EC-backed thermal
+zone reported 45 C and the GPU remained explicitly inactive. Fans rose from zero to
+2900/2700 RPM. This zone is not a verified CPU core sensor. The frozen 55 C
+experimental abort threshold guarded that zone, not a CPU core thermal limit.
+Both experiments restored Performance, then the original
 Balanced settings, and independently confirmed zero GPU offsets. The
 [sanitized no-load report](https://github.com/OpenBladeProject/openblade-captures/blob/c12bacf4ebbc66a098fb1cef7ab901dd02bd4398/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json)
 records actual timestamps and readings. These results do not admit installed
