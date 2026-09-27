@@ -76,6 +76,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly SpecialKeyKeyboardSuppressionState specialKeyKeyboardInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
+    private readonly Rz090528FunctionPInputState rz090528FunctionPInput = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -140,6 +141,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     }
 
     public Task Completion => completion.Task;
+
+    public void ResetFunctionPInput() => rz090528FunctionPInput.RequestReset();
 
     public void Dispose()
     {
@@ -321,6 +324,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             }
             catch (Exception exception)
             {
+                source.rz090528FunctionPInput.Reset();
                 Trace.TraceError(
                     "Reactive keyboard packet processing failed: {0}",
                     exception.GetType().Name);
@@ -333,6 +337,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // and driver restarts. Never retain an identity decision for a
             // handle after Windows reports either arrival or removal.
             changedSource.inputDevices.TryRemove(messageParameter, out _);
+            changedSource.rz090528FunctionPInput.Reset();
         }
         else if (message == WindowMessageClose)
         {
@@ -532,6 +537,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             nint.Add(buffer, checked((int)headerSize)));
         bool keyDown = (keyboard.Flags & RawKeyboardBreakFlag) == 0;
 
+        if (rz090528FunctionPInput.TryCreateTrigger(
+                deviceKind,
+                keyboard.MakeCode,
+                keyboard.Flags,
+                keyboard.VirtualKey,
+                IsRz090528FunctionPAdmitted()))
+        {
+            publishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        }
+
         bool observedByHook = hookHealth.Consume(
             keyboard.MakeCode,
             keyDown,
@@ -635,6 +650,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 report[offset] = Marshal.ReadByte(reportAddress, offset);
             }
+            rz090528FunctionPInput.ObserveHid(
+                deviceKind,
+                report[..inspectedBytes],
+                IsRz090528FunctionPAdmitted());
             bool specialTriggered = RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
                 deviceKind,
                 report[..inspectedBytes],
@@ -661,9 +680,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             }
             if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
             {
-                // The USB capture preserves Fn+P's report-ID-01 usage, but
-                // Windows Raw Input exposes only the same generic Fn pair as
-                // M1 and M2. Do not infer or publish a shortcut from that pair.
+                // PID 02C6 Fn+P is handled by its composite HID/keyboard
+                // state above. Its M4 packet must not reach the 02E0 decoder.
                 continue;
             }
             if (Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
@@ -689,6 +707,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // the firmware overlay with an incorrect host-rendered frame.
         }
     }
+
+    private bool IsRz090528FunctionPAdmitted() =>
+        readVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0528
+        && readDriverModeObservation().AllowsFunctionRowInterception;
 
     internal static bool ShouldOverrideSpecialKey(
         RazerBladeInputDeviceKind deviceKind,

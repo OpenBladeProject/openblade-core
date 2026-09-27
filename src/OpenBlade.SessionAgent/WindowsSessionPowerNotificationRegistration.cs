@@ -18,6 +18,7 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
 {
     private static readonly ConcurrentBag<WindowsSessionPowerNotificationRegistration> FailedCleanups = [];
     private readonly SessionPowerTransitionRelay relay;
+    private readonly Action? invalidateInput;
     private readonly ISessionPowerNotificationApi api;
     private readonly SessionPowerNotificationCallback callback;
     private IntPtr registration;
@@ -25,11 +26,12 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
 
     internal static WindowsSessionPowerNotificationRegistration? TryCreate(
         SessionPowerTransitionRelay relay,
-        ISessionPowerNotificationApi? api = null)
+        ISessionPowerNotificationApi? api = null,
+        Action? invalidateInput = null)
     {
         try
         {
-            return new WindowsSessionPowerNotificationRegistration(relay, api);
+            return new WindowsSessionPowerNotificationRegistration(relay, api, invalidateInput);
         }
         catch (Exception exception) when (exception is Win32Exception
             or DllNotFoundException or EntryPointNotFoundException)
@@ -42,9 +44,11 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
 
     internal WindowsSessionPowerNotificationRegistration(
         SessionPowerTransitionRelay relay,
-        ISessionPowerNotificationApi? api = null)
+        ISessionPowerNotificationApi? api = null,
+        Action? invalidateInput = null)
     {
         this.relay = relay;
+        this.invalidateInput = invalidateInput;
         this.api = api ?? NativeApi.Instance;
         callback = OnNotification;
         try
@@ -98,6 +102,10 @@ internal sealed class WindowsSessionPowerNotificationRegistration : IDisposable
         {
             if (Volatile.Read(ref disposed) == 0)
             {
+                if (type is 4 or 7 or 18)
+                {
+                    invalidateInput?.Invoke();
+                }
                 relay.OnPowerNotification(type);
             }
         }

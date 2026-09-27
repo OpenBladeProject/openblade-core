@@ -123,8 +123,6 @@ internal static class Program
                     Guid.NewGuid(),
                     Stopwatch.GetTimestamp(),
                     powerTransitionServiceClient.ReportSessionPowerTransitionAsync);
-                using var powerTransitionRegistration =
-                    WindowsSessionPowerNotificationRegistration.TryCreate(powerTransitionRelay);
                 var powerContext = new DisplayPowerContextState();
                 using var applier = new DisplayProfileApplier(controller, powerContext);
                 var checkpointStore = new DisplayAutomationCheckpointStore(
@@ -222,6 +220,10 @@ internal static class Program
                         specialKeyExecutor.ExecuteDefaultAsync,
                         ExecuteFunctionRowInputAsync: functionRowActions.ExecuteAsync,
                         ResetFunctionRowInputAsync: functionRowActions.ResetAsync));
+                using var powerTransitionRegistration =
+                    WindowsSessionPowerNotificationRegistration.TryCreate(
+                        powerTransitionRelay,
+                        invalidateInput: reactive.ResetFunctionPInput);
                 // Ambient Awareness and Audio Meter are mutually exclusive
                 // renderers for the same service request type. Share their
                 // persistent frame pipe so switching modes cannot strand a
