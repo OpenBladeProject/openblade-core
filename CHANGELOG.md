@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Clear a power mode warning after unplugging during sleep when a fresh read confirms the battery profile. ([#587](https://github.com/OpenBladeProject/openblade-core/pull/587))
+
 ## [0.22.0] - 2026-09-25
 
 ### Added
