@@ -132,9 +132,13 @@ disconnection. The non-writable Silent/Balanced access entries are contract
 placeholders and do not establish captured direct-transition evidence. The
 2026 model retains its separately admitted padless Balanced transition.
 GPU tuning was independently validated in Balanced, Silent, Performance and
-Custom modes. Combined GPU offset changes while HyperBoost is active require
-their own exact-device validation; the successful HyperBoost round trip alone
-does not establish that combined behavior.
+Custom modes. A separate exact-device combined validation on 2026-09-27 passed
+both sequences recorded in the [combined validation checkpoint](https://github.com/OpenBladeProject/openblade-captures/blob/16a350740ac971ce7b56bc9c9233ce060c8951ed/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-gpu-developer-validation.json): enter HyperBoost, apply +5/+5 logical MHz, restore zero, then
+exit; and apply +5/+5 before entry, confirm the offsets through entry and exit,
+then restore zero. NVML and NVAPI agreed at each stage. A separate read-only
+process confirmed zero offsets and a typed query confirmed Performance/Automatic
+before the original settings and controller services were restored. These
+bounded checks do not establish sustained-load stability or padless operation.
 
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
