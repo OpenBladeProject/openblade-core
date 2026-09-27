@@ -2845,7 +2845,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (!IsHyperBoostVisible
                 || CanToggleHyperBoost
-                || IsHyperBoostOperationInProgress)
+                || IsHyperBoostOperationInProgress
+                || latestStatus?.ActivePowerSource is PowerSource.Battery or PowerSource.UsbC)
             {
                 return string.Empty;
             }
@@ -2915,12 +2916,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return TrayText.Get(
                     "Laptop controls are currently unavailable. Check Troubleshooting for details.");
-            }
-
-            if (!HyperBoostActive && status.ActivePowerSource != PowerSource.PluggedIn)
-            {
-                return TrayText.Get(
-                    "Connect the full-power AC adapter to use HyperBoost.");
             }
 
             if (!HyperBoostActive && status.PadlessHyperBoostEligibility
