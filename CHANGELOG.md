@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
+
 ## [0.22.0] - 2026-09-25
 
 ### Added
