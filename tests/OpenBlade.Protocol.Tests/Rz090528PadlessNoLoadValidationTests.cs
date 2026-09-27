@@ -98,10 +98,67 @@ public sealed class Rz090528PadlessNoLoadValidationTests
     }
 
     private static Rz090528PadlessNoLoadValidation Create(Clock clock, Telemetry source) => new(source, clock, clock.Wait);
+    [Fact]
+    public async Task SlowFinalBaselineSampleCannotAdmitEntry()
+    {
+        var clock = new Clock();
+        var telemetry = new Telemetry { OnRead = count => { if (count == 3) { clock.Advance(TimeSpan.FromSeconds(3)); } } };
+        var run = Create(clock, telemetry);
+        Assert.False(await run.PrepareAsync(new Source(), CancellationToken.None));
+        Assert.Equal("BaselineSamplingStale", run.Result!.Failure);
+    }
+
+    [Theory]
+    [InlineData(250, true)]
+    [InlineData(251, false)]
+    [InlineData(5000, false)]
+    public async Task FinalWakeMustRespectExplicitCompletionTolerance(int lateMilliseconds, bool completed)
+    {
+        var clock = new Clock();
+        var telemetry = new Telemetry { OnRead = count => { if (count == 33) { clock.DelayExtra = TimeSpan.FromMilliseconds(lateMilliseconds); } } };
+        var run = Create(clock, telemetry);
+        Assert.True(await run.PrepareAsync(new Source(), CancellationToken.None));
+        var result = await run.RunAsync(new Source(), CancellationToken.None);
+        Assert.Equal(completed, result.Completed);
+        Assert.Equal(60000 + lateMilliseconds, result.ElapsedMilliseconds);
+        Assert.True(result.PermitKnownStateRestore);
+        Assert.Equal(completed ? null : "SamplingDeadlineMissed", result.Failure);
+    }
+
+    [Fact]
+    public async Task PendingReadCancellationCannotBecomeSuccessAfterLateCompletion()
+    {
+        var run = Create(new Clock(), new Telemetry());
+        Assert.True(await run.PrepareAsync(new Source(), CancellationToken.None));
+        using var cancel = new CancellationTokenSource();
+        var source = new PendingSource();
+        var pending = run.RunAsync(source, cancel.Token);
+        await source.Started.Task;
+        cancel.Cancel();
+        var result = await pending;
+        Assert.Equal("ProtocolSnapshotUncertain", result.Failure);
+        Assert.False(result.PermitKnownStateRestore);
+        source.Completion.SetResult(new(new(3000, 3000), null, true));
+        Assert.Same(result, run.Result);
+        Assert.False(run.Result!.Completed);
+    }
+
+    private sealed class PendingSource : IRz090528NoLoadSnapshotSource
+    {
+        internal readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource<Rz090528NoLoadSnapshot> Completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<Rz090528NoLoadSnapshot> ReadAsync(bool baseline, CancellationToken token)
+        {
+            Started.SetResult();
+            return Completion.Task;
+        }
+    }
+
     internal sealed class Clock : TimeProvider
     {
         private long ticks;
         internal TimeSpan DelayExtra;
+        internal void Advance(TimeSpan duration) => ticks += duration.Ticks;
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
         public override long GetTimestamp() => ticks;
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch.AddTicks(ticks);
@@ -118,10 +175,12 @@ public sealed class Rz090528PadlessNoLoadValidationTests
         internal bool Unstable;
         internal int BaselineCpu = 45;
         internal int? BaselineGpu;
+        internal Action<int>? OnRead;
         private int reads;
         public ValueTask<HyperBoostTemperatureObservation> ReadAsync(CancellationToken token)
         {
             reads++;
+            OnRead?.Invoke(reads);
             var value = reads <= 3
                 ? new HyperBoostTemperatureObservation(Unstable && reads == 2 ? 49 : BaselineCpu, BaselineGpu, BaselineGpu is null)
                 : Fault switch

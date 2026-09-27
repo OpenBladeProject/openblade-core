@@ -138,7 +138,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
         Action<PerformanceFanThermalPair?>? reconciliation = null) : IRazerCommandSession, IRz090528NoLoadSnapshotSource
     {
         private int nextWrite;
-        private bool failed;
+        private volatile bool failed;
+        private bool snapshotUncertain;
         private static readonly byte[][] Writes = [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, 2, 0], [1, 2, 2, 0]];
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
@@ -286,13 +287,19 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             return new(default, HidSessionFailureKind.IdentityBlocked);
         }
 
+        internal void MarkSnapshotUncertain()
+        {
+            failed = true;
+            snapshotUncertain = true;
+        }
+
         public async ValueTask DisposeAsync()
         {
             // Never upgrade an ambiguous run to success. Preserve independent read-only
             // observations for recovery when the native session is still usable.
             try
             {
-                if ((failed || nextWrite is > 0 and < 4)
+                if (!snapshotUncertain && (failed || nextWrite is > 0 and < 4)
                     && inner.Disposition == RazerCommandSessionDisposition.Healthy)
                 {
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

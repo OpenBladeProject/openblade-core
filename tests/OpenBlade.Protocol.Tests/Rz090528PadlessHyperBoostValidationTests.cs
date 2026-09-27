@@ -5,6 +5,22 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528PadlessHyperBoostValidationTests
 {
     [Fact]
+    public async Task UncertainPendingSnapshotBlocksWritesAndOptionalDisposalQueries()
+    {
+        var inner = new Session();
+        var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            new ValidationRunContext(), new Pad(), () => true);
+        session.MarkSnapshotUncertain();
+        var result = await session.ExecuteAsync(new RazerCommandSpec(0x0D, 2,
+            new byte[] { 1, 1, 7, 0 }, 4), () => TransactionIdAssignment.Valid(1),
+            TimeSpan.FromSeconds(1), CancellationToken.None);
+        Assert.NotNull(result.Failure);
+        await session.DisposeAsync();
+        Assert.Empty(inner.Writes);
+        Assert.Equal(0, inner.Queries);
+    }
+
+    [Fact]
     public async Task NoLoadTemperatureAbortStillRestoresFreshlyKnownPerformance()
     {
         var session = new Session();

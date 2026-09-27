@@ -18,7 +18,7 @@ internal sealed class Rz090528PadlessNoLoadValidation(
     IHyperBoostThermalTelemetrySource telemetry, TimeProvider? clock = null,
     Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    internal const string PlanSha256 = "A47C96694A5B1A0CF69E72DC58DC25A225FEF8C99E1CD846C5713E2A06AC9B24";
+    internal const string PlanSha256 = "3B7BD9F935A1E095FE41222E0581A59AC85C17F9BC33C9B2D5D2281056C79578";
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly Func<TimeSpan, CancellationToken, Task> wait = delay ?? Task.Delay;
     private readonly List<Rz090528NoLoadSample> baseline = [];
@@ -71,6 +71,11 @@ internal sealed class Rz090528PadlessNoLoadValidation(
                     || !(temperature.GpuCelsius is > 0 and <= 50 || temperature.GpuCelsius is null && temperature.GpuInactive))
                 {
                     return Finish(false, "BaselineTelemetryUnavailableOrOutsideEntryEnvelope", false, started).Completed;
+                }
+
+                if (index > 0 && Elapsed(started) - baseline[^1].ElapsedMilliseconds > 4000)
+                {
+                    return Finish(false, "BaselineSamplingStale", false, started).Completed;
                 }
 
                 baseline.Add(new(time.GetUtcNow(), Elapsed(started), temperature.CpuCelsius,
@@ -161,6 +166,10 @@ internal sealed class Rz090528PadlessNoLoadValidation(
                 }
             }
             await WaitUntilAsync(started, 60000, token).ConfigureAwait(false);
+            if (Elapsed(started) > 60250 || Elapsed(started) - samples[^1].ElapsedMilliseconds > 4000)
+            {
+                return Finish(false, "SamplingDeadlineMissed", true, started);
+            }
             return Finish(true, null, true, started);
         }
         catch (OperationCanceledException) { return Finish(false, "Canceled", true, started); }
@@ -174,7 +183,14 @@ internal sealed class Rz090528PadlessNoLoadValidation(
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, budgetMilliseconds)));
         try { return await source.ReadAsync(initial, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false); }
-        catch { return new(null, "ProtocolSnapshotUncertain", false); }
+        catch
+        {
+            if (source is Rz090528PadlessHyperBoostValidation.GuardedSession guarded)
+            {
+                guarded.MarkSnapshotUncertain();
+            }
+            return new(null, "ProtocolSnapshotUncertain", false);
+        }
     }
     private async Task<HyperBoostTemperatureObservation?> TemperatureAsync(CancellationToken token, double budgetMilliseconds = 2000)
     {

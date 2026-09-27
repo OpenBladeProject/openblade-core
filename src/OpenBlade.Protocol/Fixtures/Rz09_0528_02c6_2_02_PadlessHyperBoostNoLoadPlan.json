@@ -7,6 +7,8 @@
   "fanGetter": { "classHex": "0D", "commandHex": "88", "argumentsHex": ["010100", "010200"], "provenance": "Existing exact RZ09-0528 fan query admission and FanRpmProtocol; returned byte times 100 RPM" },
   "workload": "None; all builds and other task activity must be quiescent",
   "durationSeconds": 60,
+  "completionSchedulingToleranceMilliseconds": 250,
+  "durationScope": "Observation duration only; activation, confirmation and guarded restoration add to total mode 7 residence. Late completion beyond tolerance fails validation but permits fresh known-state cleanup.",
   "sampleIntervalMilliseconds": 2000,
   "maximumSampleGapMilliseconds": 4000,
   "baselineSamples": 3,
