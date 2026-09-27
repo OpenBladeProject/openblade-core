@@ -84,6 +84,16 @@ public sealed class Rz090528StockLoadBaselineTests
     }
 
     [Fact]
+    public async Task SameHandleTemperatureReadMustStillConfirmActiveLoad()
+    {
+        var result = await Create(new Clock(), new Workload(), () => Healthy with
+        {
+            GpuTelemetry = Healthy.GpuTelemetry! with { GpuUtilizationPercent = 1 },
+        }).RunAsync(_ => { }, CancellationToken.None);
+        Assert.Equal("SameDeviceGpuLoadAndTemperatureNotConfirmed", result.Failure);
+    }
+
+    [Fact]
     public async Task LostEligibilityStopsBeforeNextQuery()
     {
         var clock = new Clock();
@@ -134,6 +144,8 @@ public sealed class Rz090528StockLoadBaselineTests
         Full280WConfirmed = true,
         PadAbsentConfirmed = true,
         IndependentGpuZeroConfirmed = true,
+        GpuTelemetry = new(DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, true, 95, 65,
+            new Dictionary<string, int>(), null),
     };
     private static Rz090528StockLoadBaseline Create(Clock clock, Workload workload, Func<StockLoadReadings> read)
     {

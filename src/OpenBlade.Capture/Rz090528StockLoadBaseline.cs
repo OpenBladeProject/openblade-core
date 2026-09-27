@@ -15,6 +15,7 @@ internal sealed record StockLoadReadings(int? CpuCelsius, int? GpuCelsius, int? 
     public bool Full280WConfirmed { get; init; }
     public bool PadAbsentConfirmed { get; init; }
     public bool IndependentGpuZeroConfirmed { get; init; }
+    public StockGpuTelemetry? GpuTelemetry { get; init; }
 }
 internal sealed record StockLoadSample(DateTimeOffset ObservedAtUtc, double ElapsedMilliseconds,
     uint GpuUtilizationPercent, StockLoadReadings Readings);
@@ -30,7 +31,7 @@ internal sealed class Rz090528StockLoadBaseline(IStockLoadWorkload workload,
     Func<CancellationToken, Task<StockLoadReadings>> read, Func<bool> eligible,
     TimeProvider? clock = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
 {
-    internal const string PlanSha256 = "DC0C0E519F0A1278842BBE734D50EB18AEEC6C7E345AA14A87F2E2C5D433F2B3";
+    internal const string PlanSha256 = "21B0A3D28B9F4ECB885E1AC3FD49A1579C1A44F0564C895848F67FFCD7F9A5D1";
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly Func<TimeSpan, CancellationToken, Task> wait = delay ?? Task.Delay;
 
@@ -206,6 +207,11 @@ internal sealed class Rz090528StockLoadBaseline(IStockLoadWorkload workload,
                 if (value is not { CpuCelsius: > 0, GpuCelsius: > 0, Fan1Rpm: > 0, Fan2Rpm: > 0 })
                 {
                     return Finish("PositiveActiveTemperaturesAndFansRequired");
+                }
+                if (value.GpuTelemetry is not { ExactDeviceConfirmed: true, Failure: null, GpuCelsius: > 0, GpuUtilizationPercent: >= 80 and <= 100 }
+                    || value.GpuTelemetry.GpuCelsius != value.GpuCelsius)
+                {
+                    return Finish("SameDeviceGpuLoadAndTemperatureNotConfirmed");
                 }
                 if (!GuardsConfirmed(value))
                 {

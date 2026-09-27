@@ -1,6 +1,10 @@
 {
-  "planId": "rz09-0528-bios-2.02-stock-performance-steel-nomad-baseline-v1",
+  "planId": "rz09-0528-bios-2.02-stock-performance-steel-nomad-baseline-v2",
   "scope": "RZ09-05289EN4 / 1532:02C6 / BIOS 2.02 / RTX 5090 Laptop / NVIDIA 617.14",
+  "previousCollectorRevision": "494cb05b995b6d2448b4bb5b0724e3d9eda070a2",
+  "telemetryCorrectionIssue": "https://github.com/OpenBladeProject/openblade-core/issues/599",
+  "gpuTelemetrySource": "NVML utilization and temperature read from the same exact RTX 5090 Laptop device handle with native statuses and start/completion timestamps; CPU source explicitly excludes GPU and its WDDM activity gate",
+  "gpuSensorPlausibility": "Positive through 125 C is only native sensor validity, never a workload thermal threshold; native errors or invalid values refuse the baseline",
   "mode": "Performance / Automatic; both exact 0D82 channels must return mode 2",
   "workloadName": "3DMarkSteelNomad.exe",
   "workloadPathPolicy": "Explicit runtime --workload-exe absolute path; exact basename, SHA256 and version remain fixed; path never exported",

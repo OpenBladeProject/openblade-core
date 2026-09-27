@@ -51,15 +51,17 @@ internal static class Rz090528StockLoadBaselineCommand
                 return new(null, null, null, null, snapshot.Failure);
             }
 
-            var thermal = await temperature.ReadAsync(cancellation);
+            var thermal = await ReadTelemetryAsync(temperature,
+                NvidiaNvmlGpuClockOffsetValidationApi.ReadExactRz090528GpuTelemetry, cancellation);
             bool confirmed = actorFactory.IsStockBaselineEligible();
-            return new(thermal.CpuCelsius, thermal.GpuCelsius, snapshot.Fans?.Selector1Rpm, snapshot.Fans?.Selector2Rpm,
-                confirmed ? null : "EligibilityLostAfterRead")
+            return new(thermal.CpuCelsius, thermal.Gpu.GpuCelsius, snapshot.Fans?.Selector1Rpm, snapshot.Fans?.Selector2Rpm,
+                thermal.Gpu.Failure ?? (confirmed ? null : "EligibilityLostAfterRead"))
             {
                 PairedPerformanceAutomaticConfirmed = true,
                 Full280WConfirmed = true,
                 PadAbsentConfirmed = confirmed,
                 IndependentGpuZeroConfirmed = confirmed,
+                GpuTelemetry = thermal.Gpu,
             };
         }
         StockLoadBaselineResult? result = null;
@@ -102,5 +104,15 @@ internal static class Rz090528StockLoadBaselineCommand
             Success = success,
         }, new JsonSerializerOptions { WriteIndented = true }));
         return success ? 0 : 3;
+    }
+
+    internal static async Task<(int? CpuCelsius, StockGpuTelemetry Gpu)> ReadTelemetryAsync(
+        IFanTemperatureSource cpu, Func<StockGpuTelemetry> gpu, CancellationToken token)
+    {
+        var reading = await cpu.ReadAsync(includeCpu: true, includeGpu: false, token);
+        token.ThrowIfCancellationRequested();
+        StockGpuTelemetry observed = gpu();
+        token.ThrowIfCancellationRequested();
+        return (reading.CpuCelsius, observed);
     }
 }

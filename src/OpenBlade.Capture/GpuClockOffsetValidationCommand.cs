@@ -713,6 +713,14 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationApi
         finally { _ = NvmlShutdown(); }
     }
 
+    internal static StockGpuTelemetry ReadExactRz090528GpuTelemetry() => StockGpuTelemetryReader.Read(
+        Instance,
+        handle => { int status = NvmlDeviceGetUtilizationRates(handle, out var value); return (status, value.Gpu); },
+        handle => { int status = NvmlDeviceGetTemperature(handle, 0, out uint value); return (status, value); });
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlDeviceGetTemperature", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int NvmlDeviceGetTemperature(nint device, uint sensor, out uint temperature);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NvmlUtilization
     {
