@@ -117,7 +117,7 @@ public static class FirmwareSmokeAssessment
     private static readonly GpuOverclockCapabilities ExpectedRz090528GpuOverclock = new(
         new DeviceNumericRange(-1000, 400, null),
         new DeviceNumericRange(-1000, 3000, null),
-        DeviceFeatureAccess.ObservedOnly)
+        DeviceFeatureAccess.ReadWrite)
     {
         SupportsEnableDisable = true,
     };
@@ -711,7 +711,7 @@ public static class FirmwareSmokeAssessment
                 snapshot.Capabilities.CpuVoltageOptimizer?.ToString() ?? "Unavailable"));
             checks.Add(Check(
                 "capabilities.gpu-overclock",
-                "Observed GPU overclock policy is retained",
+                "Admitted GPU overclock policy is retained",
                 snapshot.Capabilities.GpuOverclock == ExpectedRz090528GpuOverclock,
                 ExpectedRz090528GpuOverclock.ToString(),
                 snapshot.Capabilities.GpuOverclock?.ToString() ?? "Unavailable"));

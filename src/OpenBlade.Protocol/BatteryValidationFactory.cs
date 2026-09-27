@@ -523,7 +523,7 @@ public static class BatteryValidationFactory
             new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
             {
                 SupportsEnableDisable = true,
             },

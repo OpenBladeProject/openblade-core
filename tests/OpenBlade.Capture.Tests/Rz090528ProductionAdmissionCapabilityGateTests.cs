@@ -13,6 +13,25 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
     }
 
     [Fact]
+    public void Matches_RejectsGpuAdmissionRegressionOrExpandedBounds()
+    {
+        (DeviceCapabilities battery, DeviceCapabilities lighting) = ExactCapabilities();
+        GpuOverclockCapabilities expected = battery.GpuOverclock!;
+        GpuOverclockCapabilities[] rejected =
+        [
+            expected with { Access = DeviceFeatureAccess.ObservedOnly },
+            expected with { Access = DeviceFeatureAccess.ReadOnly },
+            expected with { CoreOffsetMegahertz = new DeviceNumericRange(-1000, 401, null) },
+            expected with { MemoryOffsetMegahertz = new DeviceNumericRange(-1000, 3001, null) },
+        ];
+        foreach (GpuOverclockCapabilities gpu in rejected)
+        {
+            Assert.False(Rz090528ProductionAdmissionCapabilityGate.Matches(
+                battery with { GpuOverclock = gpu }, lighting));
+        }
+    }
+
+    [Fact]
     public void Matches_RejectsDroppedModelSpecificDiscoveries()
     {
         (DeviceCapabilities battery, DeviceCapabilities lighting) = ExactCapabilities();
@@ -149,7 +168,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             GpuOverclock = new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
             {
                 SupportsEnableDisable = true,
             },

@@ -19,6 +19,16 @@ internal sealed record GpuClockOffsetValidationPlan(
     int AdjacentStepMegahertz,
     GpuClockOffsetValidationSettings? RequiredBaseline = null)
 {
+    internal bool RequiresIndependentReadback { get; init; }
+
+    internal static GpuClockOffsetValidationPlan Rz090528UiStep { get; } = new(
+        "RZ09-0528 1532:02C6 UI step",
+        "NVIDIA GeForce RTX 5090 Laptop GPU",
+        -15, 15, -15, 15, 5, new(0, 0))
+    {
+        RequiresIndependentReadback = true,
+    };
+
     internal static GpuClockOffsetValidationPlan Rz090528 { get; } = new(
         "RZ09-0528 1532:02C6",
         "NVIDIA GeForce RTX 5090 Laptop GPU",
@@ -161,7 +171,8 @@ internal static class GpuClockOffsetValidationCommand
         IGpuClockOffsetValidationController controller,
         TextWriter output,
         GpuClockOffsetValidationPlan plan,
-        Func<bool>? mutationAllowed = null)
+        Func<bool>? mutationAllowed = null,
+        IGpuClockOffsetProbe? independentProbe = null)
     {
         ArgumentNullException.ThrowIfNull(controller);
         ArgumentNullException.ThrowIfNull(output);
@@ -178,10 +189,29 @@ internal static class GpuClockOffsetValidationCommand
         bool restored = false;
         string? failure = null;
 
+        void ConfirmIndependent(GpuClockOffsetCapabilities observed, string phase)
+        {
+            if (!plan.RequiresIndependentReadback)
+            {
+                return;
+            }
+            GpuClockOffsetCapabilities independent = independentProbe?.Query()
+                ?? throw new InvalidOperationException("Independent NVAPI readback is required.");
+            ValidateBaseline(independent, plan with { RequiredBaseline = null });
+            output.WriteLine($"Nvapi{phase}={Format(independent)}");
+            if (independent.DeviceName != observed.DeviceName
+                || independent.Core.CurrentMegahertz != observed.Core.CurrentMegahertz
+                || independent.Memory.CurrentMegahertz != observed.Memory.CurrentMegahertz)
+            {
+                throw new InvalidOperationException($"NVAPI and NVML disagree at {phase}.");
+            }
+        }
+
         try
         {
             baseline = controller.Query();
             ValidateBaseline(baseline, plan);
+            ConfirmIndependent(baseline, "Baseline");
             target = new(
                 ChooseAdjacent(
                     baseline.Core.CurrentMegahertz,
@@ -202,6 +232,7 @@ internal static class GpuClockOffsetValidationCommand
             controller.Set(target.Value);
             applied = true;
             appliedState = controller.Query();
+            ConfirmIndependent(appliedState, "Applied");
             readBack = Matches(appliedState, target.Value);
             if (!readBack)
             {
@@ -221,8 +252,14 @@ internal static class GpuClockOffsetValidationCommand
                     baseline.Memory.CurrentMegahertz);
                 try
                 {
+                    if (plan.RequiresIndependentReadback && !mutationAllowed())
+                    {
+                        throw new InvalidOperationException(
+                            "The controller-isolation checks changed before restoration.");
+                    }
                     controller.Set(saved);
                     restoredState = controller.Query();
+                    ConfirmIndependent(restoredState, "Restored");
                     restored = Matches(restoredState, saved);
                     if (!restored)
                     {
@@ -439,9 +476,9 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     private nint OpenFirstDevice()
     {
         EnsureSuccess(api.GetDeviceCount(out uint count), "enumerate NVIDIA GPUs");
-        if (count == 0)
+        if (count != 1)
         {
-            throw new InvalidOperationException("NVIDIA NVML did not report a GPU.");
+            throw new InvalidOperationException("Exactly one NVIDIA GPU is required.");
         }
 
         EnsureSuccess(

@@ -118,7 +118,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
                 Step: null,
             },
             SupportsEnableDisable: true,
-            Access: DeviceFeatureAccess.ObservedOnly,
+            Access: DeviceFeatureAccess.ReadWrite,
         }
         && battery.ObservedPowerSourceBehaviors.SequenceEqual(PowerSourceBehaviors)
         && battery.FanModes.SetEquals(FanModes)

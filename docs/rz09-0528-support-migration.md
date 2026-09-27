@@ -53,6 +53,7 @@ production support merely because a neighboring model implements it.
 | Logo lighting | Off, Static, Breathing, and getter |
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
+| GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, and M5 microphone-mute mappings |
@@ -75,7 +76,7 @@ groups are:
 
 - USB-C and battery performance setters and remaining transition/lifecycle
   validation;
-- CPU Power Limit, CPU Voltage Optimizer, and GPU overclock ownership without
+- CPU Power Limit and CPU Voltage Optimizer ownership without
   a Synapse-delivered proprietary kernel-driver dependency;
 - effect parameter combinations, native effect/matrix readback, and remaining
   spatial key-map coverage;
@@ -83,10 +84,19 @@ groups are:
   admitted;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
-CPU Power Limit, CPU Voltage Optimizer, and GPU clock policy are discoveries,
+CPU Power Limit and CPU Voltage Optimizer remain discoveries,
 not writable OpenBlade controls. Preserve them in the capability model and
 documentation even when OpenBlade cannot safely own their backend. Never
 silently drop a newly discovered model feature.
+
+GPU tuning is separately admitted after exact-model apply/readback/restore
+validation in Balanced, Silent, Performance, and the tested Custom combination.
+The NVIDIA driver supplies the writable offset backend; no Synapse-delivered
+CPU tuning driver is used. Core offsets remain bounded to `-1000–400 MHz` and
+memory offsets to `-1000–3000 MHz`, further restricted by the driver's reported
+range. The successful bounded validation does not certify sustained stability
+at every offset. CPU tuning and untested Custom combinations are not enabled
+by this GPU admission.
 
 ## Production map
 

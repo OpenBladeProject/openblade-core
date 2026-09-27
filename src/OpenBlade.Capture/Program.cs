@@ -158,10 +158,12 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out);
 }
 
-if (args.Length == 2 && args[0].Equals(
+if ((args.Length == 2 || (args.Length == 3 && args[2] is "--ui-step" or "--mode-matrix")) && args[0].Equals(
     "validate-rz09-0528-02c6-gpu-clock-offsets",
     StringComparison.OrdinalIgnoreCase))
 {
+    bool uiStep = args.Length == 3;
+    bool modeMatrix = uiStep && args[2] == "--mode-matrix";
     bool confirmationMatched = args[1].Equals(
         GpuClockOffsetValidationEnvironment.Confirmation,
         StringComparison.Ordinal);
@@ -172,30 +174,61 @@ if (args.Length == 2 && args[0].Equals(
         GpuClockOffsetValidationEnvironment.IsSynapseInactive();
     bool serviceInactive =
         GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool tuningToolsInactive = GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive();
     Console.WriteLine($"ConfirmationMatched={confirmationMatched}");
     Console.WriteLine($"ExactHost={exactHost}");
     Console.WriteLine($"ExactDevice={exactDevice}");
     Console.WriteLine($"SynapseInactive={synapseInactive}");
     Console.WriteLine($"OpenBladeServiceInactive={serviceInactive}");
+    Console.WriteLine($"GpuTuningToolsInactive={tuningToolsInactive}");
     if (!confirmationMatched
         || !exactHost
         || !exactDevice
         || !synapseInactive
-        || !serviceInactive)
+        || !serviceInactive
+        || !tuningToolsInactive)
     {
         Console.WriteLine("MutationAttempted=False");
         Console.WriteLine("Success=False");
         return 2;
     }
 
+    if (modeMatrix)
+    {
+        IProductionBatteryPortFactory matrixFactory = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+        HidSessionResult<IProductionBatteryPort> matrixOpened = await matrixFactory.OpenAsync(CancellationToken.None);
+        if (matrixOpened.Failure is not null || matrixOpened.Value is null)
+        {
+            if (matrixOpened.Value is not null)
+            {
+                await matrixOpened.Value.DisposeAsync();
+            }
+            Console.WriteLine($"MatrixOpenFailure={matrixOpened.Failure}");
+            return 2;
+        }
+        await using IProductionBatteryPort matrixPort = matrixOpened.Value;
+        return await Rz090528GpuModeMatrixCommand.RunAsync(
+            matrixPort, new NvidiaNvmlGpuClockOffsetValidationController(),
+            new NvidiaNvapiGpuClockOffsetProbe(),
+            static () => GpuClockOffsetValidationEnvironment.IsExactHost()
+                && GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection()
+                && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
+                && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive()
+                && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive(),
+            Console.Out);
+    }
+
     return GpuClockOffsetValidationCommand.Run(
         new NvidiaNvmlGpuClockOffsetValidationController(),
         Console.Out,
+        uiStep ? GpuClockOffsetValidationPlan.Rz090528UiStep : GpuClockOffsetValidationPlan.Rz090528,
         static () =>
             GpuClockOffsetValidationEnvironment.IsExactHost()
             && GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection()
             && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
-            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive());
+            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive()
+            && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive(),
+        uiStep ? new NvidiaNvapiGpuClockOffsetProbe() : null);
 }
 
 if (args.Length == 2 && args[0].Equals(
