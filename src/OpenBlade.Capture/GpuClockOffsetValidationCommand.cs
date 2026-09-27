@@ -375,6 +375,13 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     private const int PerformanceStateZero = 0;
     private const int NvmlMemoryOffsetMultiplier = 2;
     private readonly INvidiaNvmlGpuClockOffsetValidationApi api;
+    private readonly Func<bool>? mutationAllowed;
+    private readonly bool restoreOnFailure;
+
+    internal NvidiaNvmlGpuClockOffsetValidationController(Func<bool> mutationAllowed)
+        : this(NvidiaNvmlGpuClockOffsetValidationApi.Instance, mutationAllowed, restoreOnFailure: false)
+    {
+    }
 
     internal NvidiaNvmlGpuClockOffsetValidationController()
         : this(NvidiaNvmlGpuClockOffsetValidationApi.Instance)
@@ -382,10 +389,13 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     }
 
     internal NvidiaNvmlGpuClockOffsetValidationController(
-        INvidiaNvmlGpuClockOffsetValidationApi api)
+        INvidiaNvmlGpuClockOffsetValidationApi api, Func<bool>? mutationAllowed = null,
+        bool restoreOnFailure = true)
     {
         ArgumentNullException.ThrowIfNull(api);
         this.api = api;
+        this.mutationAllowed = mutationAllowed;
+        this.restoreOnFailure = restoreOnFailure;
     }
 
     public GpuClockOffsetCapabilities Query()
@@ -427,6 +437,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             NvmlValidationClockOffset core = CreateWrite(
                 NvmlValidationClockType.Graphics,
                 settings.CoreMegahertz);
+            RequireMutationAllowed(device);
             coreMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref core),
@@ -435,6 +446,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             NvmlValidationClockOffset memory = CreateWrite(
                 NvmlValidationClockType.Memory,
                 settings.MemoryMegahertz);
+            RequireMutationAllowed(device);
             memoryMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref memory),
@@ -452,7 +464,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         }
         catch (Exception exception)
         {
-            bool restored = prior is not null
+            bool restored = restoreOnFailure && prior is not null
                 && TryRestore(
                     device,
                     prior.Value,
@@ -544,6 +556,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         {
             if (restoreCore)
             {
+                RequireMutationAllowed(device);
                 NvmlValidationClockOffset core = CreateWrite(
                     NvmlValidationClockType.Graphics,
                     prior.CoreMegahertz);
@@ -553,6 +566,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             }
             if (restoreMemory)
             {
+                RequireMutationAllowed(device);
                 NvmlValidationClockOffset memory = CreateWrite(
                     NvmlValidationClockType.Memory,
                     prior.MemoryMegahertz);
@@ -568,6 +582,14 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         catch
         {
             return false;
+        }
+    }
+
+    private void RequireMutationAllowed(nint device)
+    {
+        if (mutationAllowed is not null && (QueryCapabilities(device).DeviceName != GpuClockOffsetValidationPlan.Rz090528UiStep.ExpectedDeviceName || !mutationAllowed()))
+        {
+            throw new InvalidOperationException("The guarded GPU transaction is no longer eligible.");
         }
     }
 

@@ -4,6 +4,76 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528HyperBoostValidationTests
 {
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 2)]
+    [InlineData(2, 4)]
+    public async Task FailedCombinedStageNeverIssuesFurtherThermalWrites(
+        int rejected, int writes)
+    {
+        var session = new Session();
+        var runner = Rz090528HyperBoostValidation.Create(new Actors(session), new Pad(), () => true,
+            TimeSpan.FromSeconds(3), (stage, _, _) => Task.FromResult((int)stage != rejected));
+        var result = await runner.RunAsync(PerformanceFanValidationTarget.HyperBoostFromPerformance, CancellationToken.None);
+        Assert.False(result.Success);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(writes, session.Writes.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CombinedNativeGuardObservesPadOrPowerLossAndStopsThermalExit(bool losePad)
+    {
+        var session = new Session();
+        var pad = new Pad();
+        var runner = Rz090528HyperBoostValidation.Create(new Actors(session), pad, () => true,
+            TimeSpan.FromSeconds(3), async (stage, guard, token) =>
+            {
+                if (stage != ExactHyperBoostValidationStage.Candidate)
+                {
+                    return true;
+                }
+
+                if (losePad)
+                {
+                    pad.State = CoolingPadConnectionState.Absent;
+                }
+                else
+                {
+                    session.RejectPowerAt = session.PowerQueries + 1;
+                }
+
+                return await guard(token);
+            });
+        var result = await runner.RunAsync(PerformanceFanValidationTarget.HyperBoostFromPerformance, CancellationToken.None);
+        Assert.False(result.Success);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(2, session.Writes.Count);
+    }
+
+    [Fact]
+    public async Task CanceledCombinedCandidateNeverRestoresThermalMode()
+    {
+        var session = new Session();
+        using var cancellation = new CancellationTokenSource();
+        var runner = Rz090528HyperBoostValidation.Create(new Actors(session), new Pad(), () => true,
+            TimeSpan.FromSeconds(3), (stage, _, token) =>
+            {
+                if (stage == ExactHyperBoostValidationStage.Candidate)
+                {
+                    cancellation.Cancel();
+                }
+
+                token.ThrowIfCancellationRequested();
+                return Task.FromResult(true);
+            });
+        var result = await runner.RunAsync(PerformanceFanValidationTarget.HyperBoostFromPerformance, cancellation.Token);
+        Assert.Equal(PerformanceFanValidationFailure.Canceled, result.Failure);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(2, session.Writes.Count);
+    }
+
     [Fact]
     public async Task CapturedPairIsConfirmedAndRestoredWithFreshPowerBeforeEveryWrite()
     {

@@ -61,6 +61,7 @@ public sealed record PerformanceFanSetterValidationResult(
     bool ManualRecoveryRequired,
     PerformanceFanValidationFailure Failure)
 {
+    internal PerformanceFanThermalPair? ObserverFailureReconciliation { get; init; }
     internal bool FullPowerAdapterConfirmed { get; init; }
 
     internal OpenBlade.Contracts.AdapterPowerState InitialAdapterPowerState
@@ -245,6 +246,12 @@ internal interface IHyperBoostAdapterTransitionValidationRunner
         CancellationToken cancellationToken);
 }
 
+internal enum ExactHyperBoostValidationStage { Baseline, Candidate, Restored }
+
+internal delegate Task<bool> ExactHyperBoostValidationObserver(
+    ExactHyperBoostValidationStage stage, Func<CancellationToken, Task<bool>> guard,
+    CancellationToken cancellationToken);
+
 internal sealed class PerformanceFanSetterValidationRunner
     : IPerformanceFanSetterValidationRunner,
       IHyperBoostAdapterTransitionValidationRunner,
@@ -276,6 +283,7 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly IHyperBoostExternalWorkloadSource? externalWorkloadSource;
     private readonly ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan;
     private readonly ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan;
+    private readonly ExactHyperBoostValidationObserver? exactObserver;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -293,7 +301,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
         IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
         ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null,
-        ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null)
+        ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null,
+        ExactHyperBoostValidationObserver? exactObserver = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -364,6 +373,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.externalWorkloadSource = externalWorkloadSource;
         this.adapterTransitionPlan = adapterTransitionPlan;
         this.powerSourceBoundaryPlan = powerSourceBoundaryPlan;
+        this.exactObserver = exactObserver;
     }
 
     public Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -534,6 +544,12 @@ internal sealed class PerformanceFanSetterValidationRunner
                 }
             }
 
+            if (!await ObserveExactStageAsync(ExactHyperBoostValidationStage.Baseline,
+                context, actor.Session, state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.ToResult();
+            }
+
             state.ApplyAttempted = true;
             IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
             for (int index = 0; index < applyPayloads.Count; index++)
@@ -677,6 +693,14 @@ internal sealed class PerformanceFanSetterValidationRunner
                 }
             }
 
+            if (exactObserver is not null && (!state.CandidateConfirmed ||
+                !await ObserveExactStageAsync(ExactHyperBoostValidationStage.Candidate,
+                    context, actor.Session, state, cancellationToken).ConfigureAwait(false)))
+            {
+                state.ManualRecoveryRequired = true;
+                return state.ToResult();
+            }
+
             // Restoration starts only after both candidate channels have been read
             // successfully. A failed or mismatched paired read is indeterminate and
             // deliberately requires manual recovery instead of another write.
@@ -722,6 +746,13 @@ internal sealed class PerformanceFanSetterValidationRunner
                     state.ManualRecoveryRequired = true;
                     state.Failure = PerformanceFanValidationFailure.RestorationMismatch;
                 }
+            }
+
+            if (state.Restored && !await ObserveExactStageAsync(
+                ExactHyperBoostValidationStage.Restored, context, actor.Session,
+                state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.ToResult();
             }
 
             if (state.Restored
@@ -792,6 +823,58 @@ internal sealed class PerformanceFanSetterValidationRunner
                     cleanupDrainTimeout,
                     pendingDisposals).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task<bool> ObserveExactStageAsync(
+        ExactHyperBoostValidationStage stage, ValidationRunContext context,
+        IRazerCommandSession session, RunState state, CancellationToken token)
+    {
+        if (exactObserver is null)
+        {
+            return true;
+        }
+
+        async Task<bool> Guard(CancellationToken cancellation)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (session is not Rz090528HyperBoostValidation.GuardedSession exact
+                || !await exact.ValidateExternalWriteAsync(context, exchangeTimeout, cancellation).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            PairRead pair = await ReadPairAsync(context, session, cancellation,
+                allowHyperBoost: stage == ExactHyperBoostValidationStage.Candidate).ConfigureAwait(false);
+            return pair.Success && pair.State == (stage == ExactHyperBoostValidationStage.Candidate
+                ? ThermalModeState.HyperBoostObserved : ThermalModeState.PerformanceAutomatic);
+        }
+        try
+        {
+            if (state.TargetForObserver != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || !await Guard(token).ConfigureAwait(false)
+                || !await exactObserver(stage, Guard, token).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException();
+            }
+
+            return true;
+        }
+        catch
+        {
+            state.Failure = token.IsCancellationRequested
+                ? PerformanceFanValidationFailure.Canceled
+                : PerformanceFanValidationFailure.SustainedValidationFailed;
+            state.ManualRecoveryRequired = true;
+            // The observer may have changed GPU offsets. Do not attempt cleanup writes.
+            try
+            {
+                PairRead observed = await ReadPairAsync(context, session, CancellationToken.None,
+                    allowHyperBoost: true).ConfigureAwait(false);
+                state.ObserverFailureReconciliation = observed.Pair;
+            }
+            catch { }
+            return false;
         }
     }
 
@@ -1816,6 +1899,8 @@ internal sealed class PerformanceFanSetterValidationRunner
 
     private sealed class RunState(PerformanceFanValidationTarget target)
     {
+        internal PerformanceFanValidationTarget TargetForObserver => target;
+        internal PerformanceFanThermalPair? ObserverFailureReconciliation { get; set; }
         internal PerformanceFanThermalPair? Baseline { get; set; }
         internal PerformanceFanThermalPair? Candidate { get; set; }
         internal FanRpmReadings? CandidateFanRpm { get; set; }
@@ -1873,6 +1958,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             Failure)
         {
             FullPowerAdapterConfirmed = FullPowerAdapterConfirmed,
+            ObserverFailureReconciliation = ObserverFailureReconciliation,
             InitialAdapterPowerState = InitialAdapterPowerState,
             CoolingPadAbsentConfirmed = CoolingPadAbsentConfirmed,
             CoolingPadPresentConfirmed = CoolingPadPresentConfirmed,

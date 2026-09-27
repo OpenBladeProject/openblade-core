@@ -5,6 +5,42 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class GpuClockOffsetValidationCommandTests
 {
+    [Theory]
+    [InlineData(1, false, 1)]
+    [InlineData(2, false, 2)]
+    [InlineData(0, true, 2)]
+    public void CombinedNativeFailureNeverAttemptsRollback(int failWrite, bool mismatch, int writes)
+    {
+        var api = new FakeApi { FailWriteAt = failWrite, MismatchAfterWrites = mismatch };
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => true, restoreOnFailure: false);
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Equal(writes, api.Writes.Count);
+    }
+
+    [Fact]
+    public void GuardLossBeforeSecondNativeWritePreventsMemoryAndRollbackWrites()
+    {
+        var api = new FakeApi();
+        int guards = 0;
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => ++guards == 1);
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Single(api.Writes);
+        Assert.Equal(5, api.CoreCurrent);
+        Assert.Equal(0, api.MemoryCurrent);
+    }
+
+    [Fact]
+    public void PartialNativeFailureRetainsGuardedBackendRollback()
+    {
+        var api = new FakeApi { FailFirstMemoryWrite = true };
+        int guards = 0;
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => { guards++; return true; });
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Equal(4, guards);
+        Assert.Equal(0, api.CoreCurrent);
+        Assert.Equal(0, api.MemoryCurrent);
+    }
+
     [Fact]
     public void Run_AppliesAdjacentValuesReadsBackAndRestores()
     {
@@ -315,6 +351,8 @@ public sealed class GpuClockOffsetValidationCommandTests
         internal uint DeviceCount { get; init; } = 1;
         internal int OpenCalls { get; private set; }
         internal bool FailFirstMemoryWrite { get; set; }
+        internal int FailWriteAt { get; init; }
+        internal bool MismatchAfterWrites { get; init; }
 
         internal int CoreCurrent { get; set; }
 
@@ -370,6 +408,10 @@ public sealed class GpuClockOffsetValidationCommandTests
             info.CurrentMegahertz = info.Type == NvmlValidationClockType.Graphics
                 ? CoreCurrent
                 : MemoryCurrent;
+            if (MismatchAfterWrites && Writes.Count >= 2)
+            {
+                info.CurrentMegahertz = 0;
+            }
             return 0;
         }
 
@@ -392,6 +434,10 @@ public sealed class GpuClockOffsetValidationCommandTests
             else
             {
                 MemoryCurrent = info.CurrentMegahertz;
+            }
+            if (Writes.Count == FailWriteAt)
+            {
+                return 3;
             }
             return 0;
         }

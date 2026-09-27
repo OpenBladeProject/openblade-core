@@ -8,7 +8,8 @@ namespace OpenBlade.Protocol;
 /// </summary>
 internal static class Rz090528HyperBoostValidation
 {
-    internal static IPerformanceFanSetterValidationRunner CreateWindows(Func<bool> isolated)
+    internal static IPerformanceFanSetterValidationRunner CreateWindows(Func<bool> isolated,
+        ExactHyperBoostValidationObserver? observer = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -30,17 +31,17 @@ internal static class Rz090528HyperBoostValidation
             TimeProvider.System, timeout, ControllerExclusivityPolicy.Strict,
             TimeSpan.FromMilliseconds(20));
         return Create(factory, new WindowsHyperBoostEligibilitySource(native),
-            () => identity.ReadExactIdentity().Failure is null && isolated(), timeout);
+            () => identity.ReadExactIdentity().Failure is null && isolated(), timeout, observer);
     }
 
     internal static IPerformanceFanSetterValidationRunner Create(
         IValidationActorFactory actors,
         ICoolingPadDiscoverySource pads,
         Func<bool> isolated,
-        TimeSpan timeout) => new ExactTargetRunner(new PerformanceFanSetterValidationRunner(
+        TimeSpan timeout, ExactHyperBoostValidationObserver? observer = null) => new ExactTargetRunner(new PerformanceFanSetterValidationRunner(
             static () => new ValidationRunContext(),
             new GuardedActorFactory(actors, pads, isolated),
-            TimeProvider.System, timeout, TimeSpan.FromSeconds(5)));
+            TimeProvider.System, timeout, TimeSpan.FromSeconds(5), exactObserver: observer));
 
     private sealed class ExactTargetRunner(IPerformanceFanSetterValidationRunner inner)
         : IPerformanceFanSetterValidationRunner
@@ -142,6 +143,26 @@ internal static class Rz090528HyperBoostValidation
                 failed = true;
             }
             return result;
+        }
+
+        internal async Task<bool> ValidateExternalWriteAsync(
+            ValidationRunContext context, TimeSpan timeout, CancellationToken token)
+        {
+            if (failed || !isolated() || pads.Observe() != CoolingPadConnectionState.PresentExact
+                || !context.TryAllocateTransaction(out byte transaction))
+            {
+                return false;
+            }
+
+            var power = await inner.ExecuteAsync(
+                new RazerCommandSpec(0x07, 0x8C, new byte[] { 0, 0 }, 2,
+                    value => value.Span.SequenceEqual(new byte[] { 0x11, 0x11 })),
+                () => TransactionIdAssignment.Valid(transaction), timeout, token).ConfigureAwait(false);
+            bool allowed = power.Failure is null
+                && power.Value.Span.SequenceEqual(new byte[] { 0x11, 0x11 })
+                && isolated() && pads.Observe() == CoolingPadConnectionState.PresentExact;
+            failed |= !allowed;
+            return allowed;
         }
 
         public ValueTask DisposeAsync() => inner.DisposeAsync();
