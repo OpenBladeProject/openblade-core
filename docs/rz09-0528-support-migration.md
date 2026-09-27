@@ -118,6 +118,14 @@ baseline. Ambiguous submission or readback stops further writes and reports
 manual recovery; it never retries blindly. This short round trip does not
 qualify sustained load, padless operation, adapter removal, or sleep/resume.
 
+The service and tray have a capability-gated pad-required path prepared for
+future admission. It requires an explicitly writable Performance base mode,
+keeps the cooling-pad dependency in the ownership journal, and preserves the
+entry-time performance and fan intent. Confirmed pad absence during the existing
+observation cycle permits one owned exit; uncertain enumeration does not prove
+disconnection. The current read-only capability cannot enter this path. The
+2026 model retains its separately admitted padless Balanced transition.
+
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
 The NVIDIA driver supplies the writable offset backend; no Synapse-delivered

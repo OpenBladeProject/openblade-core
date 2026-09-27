@@ -506,6 +506,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool pendingOwnedHyperBoostPowerBoundaryExit;
     private bool ownedHyperBoostPowerBoundaryExitSubmitted;
     private bool ownedHyperBoostRequiresCoolingPad;
+    private long? coolingPadExitAttemptGeneration;
     private bool hyperBoostJournalSafetyBlock;
     private bool hyperBoostRestorePending;
     private HyperBoostOwnershipJournal? lastReportedRetainedHyperBoostRestoreJournal;
@@ -5153,10 +5154,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (hyperBoostCommand
                 && enabled
                 && hyperBoostPadDiscoverySource.Observe()
-                    != CoolingPadConnectionState.Absent)
+                    != (expectedJournal?.RequiresCoolingPad == true
+                        ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent))
             {
                 return ThermalRetryAdmission.Block(
-                    "Fresh cooling-pad absence could not be confirmed before HyperBoost submission.");
+                    "The required cooling-pad state could not be confirmed before HyperBoost submission.");
             }
 
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice admittedDevice)
@@ -5189,7 +5191,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (capabilities.HyperBoostAccess
                         != DeviceFeatureAccess.ReadWrite
                     || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
-                    || enabled
+                    || enabled && !validationOnly
+                        && (HyperBoostCapabilityPolicy.EntryBaseMode(capabilities) != baseMode
+                            || HyperBoostCapabilityPolicy.RequiresCoolingPad(capabilities)
+                                != (expectedJournal?.RequiresCoolingPad == true))
+                    || enabled && expectedJournal?.RequiresCoolingPad != true
                         && (validationOnly
                             ? capabilities.HyperBoostWithoutCoolingPadAccess
                                 is not (DeviceFeatureAccess.ReadWrite
@@ -5310,10 +5316,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (enabled
                 && hyperBoostPadDiscoverySource.Observe()
-                    != CoolingPadConnectionState.Absent)
+                    != (expectedJournal?.RequiresCoolingPad == true
+                        ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent))
             {
                 return ThermalRetryAdmission.Block(
-                    "Fresh cooling-pad absence could not be confirmed before the HyperBoost retry.");
+                    "The required cooling-pad state could not be confirmed before the HyperBoost retry.");
             }
 
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice retryDevice))
@@ -5339,10 +5346,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : null);
             if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
                 || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
+                || enabled && !validationOnly
+                    && (HyperBoostCapabilityPolicy.EntryBaseMode(capabilities) != baseMode
+                        || HyperBoostCapabilityPolicy.RequiresCoolingPad(capabilities)
+                            != (expectedJournal?.RequiresCoolingPad == true))
                 || !IsSupportedHyperBoostRestoreIntent(
                     capabilities,
                     expectedIntent)
-                || enabled
+                || enabled && expectedJournal?.RequiresCoolingPad != true
                     && (validationOnly
                         ? capabilities.HyperBoostWithoutCoolingPadAccess
                             is not (DeviceFeatureAccess.ReadWrite
@@ -5394,14 +5405,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IBladeDevice device,
         bool enabled,
         PerformancePreset baseMode,
+        bool requiresCoolingPad,
         ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
         CancellationToken cancellationToken)
     {
         if (enabled && hyperBoostPadDiscoverySource.Observe()
-            != CoolingPadConnectionState.Absent)
+            != (requiresCoolingPad
+                ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent))
         {
             throw new CapabilityUnavailableException(
-                "Fresh cooling-pad absence could not be confirmed immediately before HyperBoost submission.");
+                "The required cooling-pad state could not be confirmed immediately before HyperBoost submission.");
         }
 
         if (lifecycleValidation is not null)
@@ -5557,6 +5570,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || lifecycleValidation is not null
                     && current.Capabilities?.HyperBoostWithoutCoolingPadAccess
                         == DeviceFeatureAccess.ObservedOnly;
+            journalRequiresCoolingPad = enabled
+                ? !padAbsentAccessAdmitted
+                : ownedHyperBoostRequiresCoolingPad;
             if (enabled
                 && (confirmed.Fans is null
                     || confirmed.Fans == FanMode.Automatic
@@ -5568,7 +5584,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             PerformancePreset requestedBaseMode = enabled
-                ? PerformancePreset.Balanced
+                ? lifecycleValidation is not null
+                    ? PerformancePreset.Balanced
+                    : HyperBoostCapabilityPolicy.EntryBaseMode(current.Capabilities!)
+                        ?? PerformancePreset.Performance
                 : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced;
             pendingBaseMode = requestedBaseMode;
             DeviceFeatureAccess? requestedBaseAccess = current.Capabilities
@@ -5576,11 +5595,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ?? (requestedBaseMode == PerformancePreset.Balanced
                     ? current.Capabilities?.HyperBoostAccess
                     : null);
-            if (enabled && requestedBaseAccess != DeviceFeatureAccess.ReadWrite)
+            if (enabled && (requestedBaseAccess != DeviceFeatureAccess.ReadWrite
+                || lifecycleValidation is null
+                    && HyperBoostCapabilityPolicy.EntryBaseMode(current.Capabilities!) != requestedBaseMode))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Pad-less HyperBoost requires the admitted Balanced transition baseline.");
+                    "HyperBoost requires an admitted transition baseline for this laptop.");
             }
 
             transitionIntent = enabled
@@ -5608,12 +5629,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             if (enabled
-                && (current.ActivePowerSource != PowerSource.PluggedIn
-                    || !padAbsentAccessAdmitted))
+                && current.ActivePowerSource != PowerSource.PluggedIn)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Pad-less HyperBoost requires an admitted full-power adapter.");
+                    "HyperBoost requires an admitted full-power adapter.");
             }
 
             if (enabled)
@@ -5624,11 +5644,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // new state without issuing an automatic HyperBoost write.
                 CoolingPadConnectionState freshPadState =
                     hyperBoostPadDiscoverySource.Observe();
-                if (freshPadState != CoolingPadConnectionState.Absent)
+                if (freshPadState != (journalRequiresCoolingPad
+                    ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent))
                 {
                     return new ControlOperationResult(
                         ControlOperationStatus.Blocked,
-                        "Pad-less HyperBoost requires a fresh observation confirming that no target cooling-pad device is present. Ambiguous or failed enumeration is blocked.");
+                        journalRequiresCoolingPad
+                            ? "Connect the supported cooling pad before enabling HyperBoost."
+                            : "Pad-less HyperBoost requires a fresh observation confirming that no target cooling-pad device is present. Ambiguous or failed enumeration is blocked.");
                 }
             }
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
@@ -5830,10 +5853,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ScopedApplyOutcome balancedPerformance = await transitionRunner
                     .ApplyStepAsync(
                         DeviceSubsystem.Performance,
-                        ThermalTransitionStepPurpose.BalancedBridge,
+                        requestedBaseMode == PerformancePreset.Balanced
+                            ? ThermalTransitionStepPurpose.BalancedBridge
+                            : ThermalTransitionStepPurpose.Requested,
                         (stepCoordinator, cancellationToken) => stepCoordinator
                             .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
-                                PerformancePreset.Balanced,
+                                requestedBaseMode,
                                 customPerformance: null,
                                 cancellationToken),
                         token)
@@ -5876,6 +5901,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                     attemptDevice,
                                     enabled,
                                     requestedBaseMode,
+                                    journalRequiresCoolingPad,
                                     lifecycleValidation,
                                     cancellationToken)
                                 .ConfigureAwait(false);
@@ -6026,7 +6052,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ownedHyperBoostRestoreIntent = transitionIntent;
                     ownedHyperBoostTransitionId =
                         preparedTransitionJournal?.TransitionId;
-                    ownedHyperBoostRequiresCoolingPad = false;
+                    ownedHyperBoostRequiresCoolingPad = journalRequiresCoolingPad;
                 }
                 else if (!readback.HyperBoostActive)
                 {
@@ -6196,7 +6222,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             current,
                             readback,
                             requestedBaseMode,
-                            requiresCoolingPad: false,
+                            requiresCoolingPad: journalRequiresCoolingPad,
                             transitionIntent!,
                             preparedTransitionJournal!,
                             preparedTransitionJournalSha256!,
@@ -6238,7 +6264,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             pendingIndeterminateHyperBoostJournal = null;
             pendingIndeterminateHyperBoostJournalSha256 = null;
             pendingIndeterminateHyperBoostRecoveryState = null;
-            ownedHyperBoostRequiresCoolingPad = false;
+            ownedHyperBoostRequiresCoolingPad = enabled && journalRequiresCoolingPad;
             pendingOwnedHyperBoostPowerBoundaryExit = false;
             ownedHyperBoostPowerBoundaryExitSubmitted = false;
 
@@ -6247,7 +6273,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
 
             string resultMessage = enabled
-                ? "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
+                ? journalRequiresCoolingPad
+                    ? "HyperBoost is active. Keep the supported cooling pad connected."
+                    : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
                 : disableJournalCleared
                     ? $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored."
                     : $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored, but its ownership journal could not be cleared; control writes remain blocked.";
@@ -7717,7 +7745,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var ownedJournal = new HyperBoostOwnershipJournal(
                 HyperBoostOwnershipJournalState.OwnedConfirmed,
                 baseMode,
-                RequiresCoolingPad: false,
+                RequiresCoolingPad: expectedJournal.RequiresCoolingPad,
                 timeProvider.GetUtcNow())
             {
                 RestoreIntent = savedIntent,
@@ -7742,7 +7770,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     pendingIndeterminateHyperBoostEntryTransitionId;
                 ownedHyperBoostJournal = ownedJournal;
                 ownedHyperBoostJournalSha256 = finalization.Sha256;
-                ownedHyperBoostRequiresCoolingPad = false;
+                ownedHyperBoostRequiresCoolingPad = expectedJournal.RequiresCoolingPad;
             }
             pendingIndeterminateHyperBoostEntryTransitionId = null;
             pendingIndeterminateHyperBoostJournal = null;
@@ -7835,7 +7863,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var recoveryJournal = new HyperBoostOwnershipJournal(
                 HyperBoostOwnershipJournalState.RestorePending,
                 baseMode,
-                RequiresCoolingPad: false,
+                RequiresCoolingPad: expectedJournal.RequiresCoolingPad,
                 timeProvider.GetUtcNow())
             {
                 RestoreIntent = restoreIntent,
@@ -8181,6 +8209,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             attemptDevice,
                             enabled: false,
                             baseMode,
+                            requiresCoolingPad,
                             lifecycleValidation: null,
                             cancellationToken),
                     IsHyperBoostCommandRetryEligible,
@@ -9293,6 +9322,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishLightingRelinquishFailure(
                     lightingRelinquishFailure,
                     publishStatus: !transitionMessageHasPriority);
+            }
+            ServiceStatusSnapshot observed = GetStatus();
+            if (ownsHyperBoost && ownedHyperBoostRequiresCoolingPad
+                && observed.ConfirmedState?.HyperBoostActive == true
+                && observed.DeviceVerified && !observed.WritesBlocked
+                && observed.ControllerDetectionWarning is null
+                && RazerThermalControllerPolicy.GetBlockingControllers(observed).Count == 0
+                && coolingPadExitAttemptGeneration != hyperBoostOwnershipGeneration
+                && hyperBoostPadDiscoverySource.Observe() == CoolingPadConnectionState.Absent)
+            {
+                // A failed enumeration is not a disconnect. Confirmed absence
+                // permits one owned exit through the existing journaled executor.
+                coolingPadExitAttemptGeneration = hyperBoostOwnershipGeneration;
+                await SetHyperBoostCoreAsync(
+                    enabled: false,
+                    transitionId: ownedHyperBoostTransitionId,
+                    expectedOwnershipGeneration: hyperBoostOwnershipGeneration,
+                    lifecycleValidation: null,
+                    restoreUserIntent: true,
+                    exitPowerSourceOverride: observed.ActivePowerSource,
+                    expectedExitPowerSourceGeneration: powerSourceGeneration,
+                    token: cancellationToken,
+                    operationGateAlreadyHeld: true).ConfigureAwait(false);
             }
         }
         finally
@@ -19103,7 +19155,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private PadlessHyperBoostEligibilityState ResolvePadlessHyperBoostEligibility(
         DeviceCapabilities capabilities)
     {
-        if (capabilities.HyperBoostWithoutCoolingPadAccess is null)
+        if (capabilities.HyperBoostAccess is null
+            && capabilities.HyperBoostWithoutCoolingPadAccess is null)
         {
             return PadlessHyperBoostEligibilityState.Unknown;
         }
@@ -19112,8 +19165,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             CoolingPadConnectionState.Absent =>
                 PadlessHyperBoostEligibilityState.CoolingPadAbsent,
-            CoolingPadConnectionState.PresentExact or
-            CoolingPadConnectionState.Ambiguous =>
+            CoolingPadConnectionState.PresentExact =>
+                PadlessHyperBoostEligibilityState.CoolingPadPresent,
+            CoolingPadConnectionState.Ambiguous
+                when capabilities.HyperBoostWithoutCoolingPadAccess is not null =>
                 PadlessHyperBoostEligibilityState.CoolingPadPresent,
             _ => PadlessHyperBoostEligibilityState.Unknown,
         };

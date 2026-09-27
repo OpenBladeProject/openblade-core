@@ -27574,6 +27574,205 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
+    [Fact]
+    public async Task PadRequiredHyperBoost_UsesPerformanceAndJournalsDependencyThenRestoresIntent()
+    {
+        var pad = new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact);
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true, hyperBoostPadDiscoverySource: pad,
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.Equal((PerformancePreset.Performance, FanMode.Automatic), Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.True(journal.Journal!.RequiresCoolingPad);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.BaseMode);
+        pad.State = CoolingPadConnectionState.Absent;
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.Ambiguous)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed)]
+    public async Task PadRequiredHyperBoost_RejectsUnconfirmedPadWithoutWriting(CoolingPadConnectionState state)
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state));
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int before = context.Device.TotalSetterCalls;
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        Assert.Equal(before, context.Device.TotalSetterCalls);
+        Assert.NotEqual(PadlessHyperBoostEligibilityState.CoolingPadPresent,
+            context.Runtime.GetStatus().PadlessHyperBoostEligibility);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PadRequiredHyperBoost_StillRequiresControllerAndPowerAdmission(bool controller)
+    {
+        TestContext context = CreateContext(true,
+            conflicts: controller ? ["RazerAppEngine"] : null,
+            initialPowerSource: controller ? PowerSource.PluggedIn : PowerSource.Battery,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact));
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int before = context.Device.TotalSetterCalls;
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        Assert.Equal(before, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(DeviceFeatureAccess.ReadOnly)]
+    [InlineData(DeviceFeatureAccess.ObservedOnly)]
+    public async Task PadRequiredHyperBoost_ReadOnlyCapabilityCannotActivate(DeviceFeatureAccess access)
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact));
+        ConfigurePadRequiredHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            HyperBoostAccess = access,
+            HyperBoostBaseModes = null,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    private static void ConfigurePadRequiredHyperBoost(TestContext context)
+    {
+        ConfigurePadlessHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            HyperBoostWithoutCoolingPadAccess = null,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+        };
+    }
+
+    [Fact]
+    public async Task PadRequiredHyperBoost_PadLossDuringBaselineBlocksEnableAndRestoresIntent()
+    {
+        var pad = new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact);
+        TestContext context = CreateContext(true, hyperBoostPadDiscoverySource: pad,
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                pad.State = CoolingPadConnectionState.Absent;
+            }
+        };
+        Assert.NotEqual(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+    }
+
+    [Fact]
+    public async Task PadRequiredHyperBoost_IndeterminateEntryRetainsPadDependencyWithoutReplay()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.HyperBoostFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate, "Injected ambiguous entry"));
+        context.Device.AfterHyperBoostFailure = () => context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = true,
+        };
+        await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(HyperBoostOwnershipJournalState.OwnedConfirmed, journal.Journal!.State);
+        Assert.True(journal.Journal.RequiresCoolingPad);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.BaseMode);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed, true)]
+    [InlineData(CoolingPadConnectionState.Ambiguous, true)]
+    public async Task PadRequiredHyperBoost_ObservationExitsOnlyOnConfirmedPadLoss(
+        CoolingPadConnectionState state, bool remainsActive)
+    {
+        var pad = new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact);
+        TestContext context = CreateContext(true, hyperBoostPadDiscoverySource: pad,
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        pad.State = state;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(remainsActive, context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Equal(remainsActive ? 1 : 2, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task PadRequiredHyperBoost_UnexpectedExitRestoresJournaledPerformanceWithoutPad()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Performance, RequiresCoolingPad: true, DateTimeOffset.UtcNow),
+        };
+        TestContext context = CreateContext(true, initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadRequiredHyperBoost(context);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = null,
+            HyperBoostActive = true,
+        };
+        context.Runtime.Initialize(await context.Store.LoadAsync(CancellationToken.None),
+            PowerSource.PluggedIn, PersistentOverrideState.Empty, recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        Assert.Equal(1, context.Device.HyperBoostSetCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadRequiredHyperBoost_AmbiguousPadLossExitDoesNotReplayDuringObservation()
+    {
+        var pad = new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact);
+        TestContext context = CreateContext(true, hyperBoostPadDiscoverySource: pad,
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+        context.Device.HyperBoostFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.Indeterminate, "Injected ambiguous exit"));
+        pad.State = CoolingPadConnectionState.Absent;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writes = context.Device.HyperBoostSetCalls;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(2, writes);
+        Assert.Equal(writes, context.Device.HyperBoostSetCalls);
+    }
+
     private static void ConfigurePadlessHyperBoost(
         TestContext context,
         bool active = false)

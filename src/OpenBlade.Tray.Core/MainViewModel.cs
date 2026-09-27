@@ -2764,7 +2764,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || Capabilities.HyperBoostWithoutCoolingPadAccess is not null;
 
     public bool IsHyperBoostWritable =>
-        Capabilities.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite;
+        HyperBoostCapabilityPolicy.EntryBaseMode(Capabilities) is not null;
+
+    private bool HyperBoostRequiresCoolingPad =>
+        HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities);
+
+    private bool HyperBoostPadReady => latestStatus?.PadlessHyperBoostEligibility
+        == (HyperBoostRequiresCoolingPad
+            ? PadlessHyperBoostEligibilityState.CoolingPadPresent
+            : PadlessHyperBoostEligibilityState.CoolingPadAbsent);
 
     public bool HyperBoostActive
     {
@@ -2830,8 +2838,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     SelectedPerformance)
                 && Capabilities.PerformancePresets.Contains(SelectedPerformance)
                 && Capabilities.FanModes.Contains(SelectedFanMode)
-                && latestStatus?.PadlessHyperBoostEligibility
-                    == PadlessHyperBoostEligibilityState.CoolingPadAbsent);
+                && HyperBoostPadReady);
 
     public bool HasHyperBoostUnavailableReason =>
         !string.IsNullOrEmpty(HyperBoostUnavailableReason);
@@ -2918,23 +2925,28 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     "Laptop controls are currently unavailable. Check Troubleshooting for details.");
             }
 
-            if (!HyperBoostActive && status.PadlessHyperBoostEligibility
+            if (!IsHyperBoostWritable)
+            {
+                return HyperBoostDescription;
+            }
+
+            if (!HyperBoostActive && HyperBoostRequiresCoolingPad && !HyperBoostPadReady)
+            {
+                return TrayText.Get("Connect the supported cooling pad before enabling HyperBoost.");
+            }
+
+            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && status.PadlessHyperBoostEligibility
                 == PadlessHyperBoostEligibilityState.CoolingPadPresent)
             {
                 return TrayText.Get(
                     "Disconnect the cooling pad before enabling HyperBoost.");
             }
 
-            if (!HyperBoostActive && status.PadlessHyperBoostEligibility
+            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && status.PadlessHyperBoostEligibility
                 != PadlessHyperBoostEligibilityState.CoolingPadAbsent)
             {
                 return TrayText.Get(
                     "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.");
-            }
-
-            if (!IsHyperBoostWritable)
-            {
-                return HyperBoostDescription;
             }
 
             return TrayText.Get(
@@ -2943,7 +2955,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public string HyperBoostDescription => IsHyperBoostWritable
-        ? HyperBoostActive
+        ? HyperBoostRequiresCoolingPad
+            ? TrayText.Get("HyperBoost requires the supported cooling pad to stay connected.")
+            : HyperBoostActive
             ? TrayText.Get(
                 "Improves thermal performance so key components can sustain higher power limits.")
             : latestStatus?.PadlessHyperBoostEligibility switch

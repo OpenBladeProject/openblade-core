@@ -9022,6 +9022,36 @@ public sealed partial class MainViewModelTests
         Assert.True(command.CanExecute(null));
     }
 
+    [Theory]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadPresent, true)]
+    [InlineData(PadlessHyperBoostEligibilityState.CoolingPadAbsent, false)]
+    [InlineData(PadlessHyperBoostEligibilityState.Unknown, false)]
+    public async Task HyperBoostPadRequired_OnlyExactConnectedPadAllowsToggle(
+        PadlessHyperBoostEligibilityState padState, bool canToggle)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreatePadlessHyperBoostStatus(CreateStatus(verified: true, blocked: false));
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostWithoutCoolingPadAccess = null,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            },
+            PadlessHyperBoostEligibility = padState,
+        });
+        await WaitUntilAsync(() => viewModel.HyperBoostDescription.Contains("stay connected", StringComparison.Ordinal));
+        Assert.True(viewModel.IsHyperBoostWritable);
+        Assert.Equal(canToggle, viewModel.CanToggleHyperBoost);
+        if (!canToggle)
+        {
+            Assert.Contains("Connect the supported cooling pad", viewModel.HyperBoostUnavailableReason);
+        }
+    }
+
     [Fact]
     public async Task HyperBoostReadWrite_AdmittedPadlessBalancedPathCanToggle()
     {
