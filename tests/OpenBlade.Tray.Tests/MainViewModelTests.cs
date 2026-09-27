@@ -10012,8 +10012,11 @@ public sealed partial class MainViewModelTests
             option => option.IsHyperBoost);
     }
 
-    [Fact]
-    public async Task HyperBoostPadlessPath_StillRequiresFullPowerAdapter()
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostPadlessPath_HidesUnavailableBannerOffFullPowerAc(
+        PowerSource powerSource)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -10021,17 +10024,53 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline) with
         {
-            ActivePowerSource = PowerSource.UsbC,
+            ActivePowerSource = powerSource,
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == powerSource);
 
         Assert.False(viewModel.CanToggleHyperBoost);
-        Assert.Equal(
-            "Connect the full-power AC adapter to use HyperBoost.",
-            viewModel.HyperBoostUnavailableReason);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
         Assert.DoesNotContain(
             viewModel.AvailableLaptopPerformanceOptions,
             option => option.IsHyperBoost);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostUnavailableBanner_ReturnsWhenFullPowerAcReturns(
+        PowerSource powerSource)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
+            CreateStatus(verified: true, blocked: false)) with
+        {
+            PotentialControllers = ["RazerAppEngine"],
+        };
+
+        await PushAsync(client, dispatcher, admitted);
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 1,
+            ActivePowerSource = powerSource,
+        });
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+
+        await PushAsync(client, dispatcher, admitted with
+        {
+            Revision = admitted.Revision + 2,
+        });
+        Assert.True(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Contains("RazerAppEngine", viewModel.HyperBoostUnavailableReason,
+            StringComparison.Ordinal);
     }
 
     [Fact]
