@@ -4,7 +4,7 @@ namespace OpenBlade.Protocol;
 
 /// <summary>
 /// Developer-only composition for the captured 02C6 Performance/Automatic
-/// to HyperBoost pair and its exact restoration. Production has no setter.
+/// to HyperBoost pair and its exact restoration, separate from production admission.
 /// </summary>
 internal static class Rz090528HyperBoostValidation
 {

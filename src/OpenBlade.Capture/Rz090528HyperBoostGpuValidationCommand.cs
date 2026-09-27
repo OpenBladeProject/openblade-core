@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Protocol;
@@ -172,24 +171,5 @@ internal static class Rz090528HyperBoostGpuValidationCommand
         return success ? 0 : 3;
     }
 
-    private static string ReadDriverVersion()
-    {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "nvidia-smi.exe"))
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                Arguments = "--query-gpu=driver_version --format=csv,noheader",
-            },
-        };
-        if (!process.Start())
-        {
-            return string.Empty;
-        }
-
-        if (!process.WaitForExit(3000)) { process.Kill(); return string.Empty; }
-        return process.ExitCode == 0 ? process.StandardOutput.ReadToEnd().Trim() : string.Empty;
-    }
+    private static string ReadDriverVersion() => NvidiaNvmlGpuClockOffsetValidationApi.ReadDriverVersion();
 }

@@ -666,6 +666,29 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationApi
     {
     }
 
+    internal static string ReadDriverVersion()
+    {
+        if (NvmlInit() != 0)
+        {
+            return string.Empty;
+        }
+        try
+        {
+            // NVIDIA documents an 80-byte buffer, including its terminator:
+            // https://docs.nvidia.com/deploy/nvml-api/api/group__nvmlSystemQueries.html
+            var version = new StringBuilder(80);
+            return NvmlSystemGetDriverVersion(version, 80) == 0 ? version.ToString() : string.Empty;
+        }
+        finally
+        {
+            _ = NvmlShutdown();
+        }
+    }
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlSystemGetDriverVersion",
+        CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern int NvmlSystemGetDriverVersion(StringBuilder version, uint length);
+
     public int Initialize() => NvmlInit();
 
     public int Shutdown() => NvmlShutdown();
