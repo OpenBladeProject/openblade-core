@@ -9,7 +9,7 @@ The chronological, append-only record was preserved in the
 Do not append new status updates there.
 
 The authoritative feature status is the sanitized
-[device-coverage ledger](https://github.com/OSSBlade/openblade-captures/blob/feat/rz09-0528-full-support/decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json).
+[device-coverage ledger](https://github.com/OpenBladeProject/openblade-captures/blob/main/decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json).
 If this summary and the ledger disagree, the ledger wins and this summary must
 be corrected.
 
@@ -56,7 +56,7 @@ production support merely because a neighboring model implements it.
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
-| Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, and M5 microphone-mute mappings |
+| Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
 | Power source | Full-power barrel AC, USB-C power classes, battery classification, and admitted transition/readback leaves recorded by the ledger |
 | Display | Refresh modes, Dynamic Refresh Rate, Variable Refresh Rate range, HDR, and SDR color profiles through Windows APIs |
 | Ownership | Windows Dynamic Lighting delegation, zero-write delegation policy, external-change detection, and explicit reclaim behavior at their ledger statuses |
@@ -80,7 +80,7 @@ groups are:
   a Synapse-delivered proprietary kernel-driver dependency;
 - effect parameter combinations, native effect/matrix readback, and remaining
   spatial key-map coverage;
-- M1, M2, and Fn+P discrimination; these remain unavailable while M3–M5 are
+- M1 and M2 bindings; these remain unavailable while M3–M5 and Fn+P are
   admitted;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
