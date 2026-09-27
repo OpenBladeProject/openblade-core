@@ -77,12 +77,17 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                 == DeviceFeatureAccess.ReadWrite
             && original.PadlessHyperBoostEligibility
                 == PadlessHyperBoostEligibilityState.CoolingPadAbsent;
-        if (!padAbsentAdmitted)
+        bool padPresentAdmitted = baseMode == PerformancePreset.Performance
+            && HyperBoostCapabilityPolicy.RequiresCoolingPad(capabilities)
+            && HyperBoostCapabilityPolicy.EntryBaseMode(capabilities) == baseMode
+            && original.PadlessHyperBoostEligibility
+                == PadlessHyperBoostEligibilityState.CoolingPadPresent;
+        if (!padAbsentAdmitted && !padPresentAdmitted)
         {
             return Skipped(
                 id,
                 description,
-                "Admitted pad-less Balanced support with confirmed physical pad absence is required.");
+                "The admitted HyperBoost base mode and its required cooling-pad state must be confirmed.");
         }
 
         string application = "Not attempted";

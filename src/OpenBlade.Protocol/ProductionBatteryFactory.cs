@@ -121,7 +121,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
         }
         if (this.hyperBoostAccess == DeviceFeatureAccess.ReadWrite
-            && (!ProductionBatteryPort.HasHyperBoostCommandSet(this.hyperBoostCatalog)
+            && (!ProductionBatteryPort.HasHyperBoostCommandSet(
+                    this.hyperBoostCatalog, catalog, this.hyperBoostBaseModes)
                 || this.hyperBoostEligibility is null))
         {
             throw new UnvalidatedCommandException(

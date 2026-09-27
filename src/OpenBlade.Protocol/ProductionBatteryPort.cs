@@ -279,7 +279,7 @@ internal sealed class ProductionBatteryPort :
                 "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, pad-less evidence, and an independent eligibility gate.");
         }
         if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
-            && (!HasHyperBoostCommandSet(this.hyperBoostCatalog)
+            && (!HasHyperBoostCommandSet(this.hyperBoostCatalog, catalog, hyperBoostBaseModes)
                 || this.hyperBoostEligibility is null))
         {
             throw new UnvalidatedCommandException(
@@ -727,7 +727,10 @@ internal sealed class ProductionBatteryPort :
                     baseMode,
                     lifecycleValidation,
                     token)
-                : null);
+                : null,
+            revalidateEligibilityPerCommand: enabled
+                && Capabilities.HyperBoostWithoutCoolingPadAccess is null
+                && baseMode == PerformancePreset.Performance);
     }
 
     private (IReadOnlyList<string> Actions, DeviceCommandCatalog Catalog)
@@ -1338,6 +1341,26 @@ internal sealed class ProductionBatteryPort :
         HasPair(catalog, HyperBoostEnableFirstAction, HyperBoostEnableSecondAction)
         && HasPair(catalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction);
 
+    internal static bool HasHyperBoostCommandSet(
+        DeviceCommandCatalog hyperBoostCatalog,
+        DeviceCommandCatalog restorationCatalog,
+        HyperBoostBaseModeCapabilities? baseModes)
+    {
+        if (baseModes is null)
+        {
+            return HasHyperBoostCommandSet(hyperBoostCatalog);
+        }
+        PerformancePreset[] writable = new[]
+        {
+            PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance,
+        }.Where(mode => baseModes.AccessFor(mode) == DeviceFeatureAccess.ReadWrite).ToArray();
+        return HasPair(hyperBoostCatalog, HyperBoostEnableFirstAction, HyperBoostEnableSecondAction)
+            && writable.Length > 0
+            && writable.All(mode => mode == PerformancePreset.Balanced
+                ? HasPair(hyperBoostCatalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction)
+                : HasPerformancePair(restorationCatalog, mode));
+    }
+
     internal static bool HasPerformancePair(
         DeviceCommandCatalog catalog,
         PerformancePreset preset) => preset switch
@@ -1493,7 +1516,8 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? commandCatalog = null,
         Func<CancellationToken, Task>? validateEligibility = null,
         IReadOnlyList<string>? hyperBoostExitActions = null,
-        DeviceCommandCatalog? hyperBoostExitCatalog = null)
+        DeviceCommandCatalog? hyperBoostExitCatalog = null,
+        bool revalidateEligibilityPerCommand = false)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1590,7 +1614,7 @@ internal sealed class ProductionBatteryPort :
                 throw KnownNotApplied(preconditionFailure);
             }
 
-            if (validateEligibility is not null)
+            if (validateEligibility is not null && !revalidateEligibilityPerCommand)
             {
                 await validateEligibility(cancellationToken).ConfigureAwait(false);
             }
@@ -1599,9 +1623,17 @@ internal sealed class ProductionBatteryPort :
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
+                if (revalidateEligibilityPerCommand && validateEligibility is not null)
+                {
+                    await validateEligibility(cancellationToken).ConfigureAwait(false);
+                }
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result =
-                    await ExecuteThermalCommandAsync(command, cancellationToken)
+                    await ExecuteThermalCommandAsync(command, cancellationToken,
+                        revalidateEligibilityPerCommand
+                            ? () => hyperBoostEligibility?.ObserveCoolingPad()
+                                == CoolingPadConnectionState.PresentExact
+                            : null)
                         .ConfigureAwait(false);
 
                 if (result.Failure is not null
@@ -1697,13 +1729,17 @@ internal sealed class ProductionBatteryPort :
 
     private Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteThermalCommandAsync(
         RazerCommandDefinition command,
-        CancellationToken cancellationToken) => session.ExecuteAsync(
+        CancellationToken cancellationToken,
+        Func<bool>? submissionAllowed = null) => session.ExecuteAsync(
             new RazerCommandSpec(
                 command.CommandClass,
                 command.CommandId,
                 command.Payload.ToArray(),
                 command.Payload.Length,
-                payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+                payload => payload.Span.SequenceEqual(command.Payload.AsSpan()))
+            {
+                SubmissionAllowed = submissionAllowed,
+            },
             AllocateTransaction,
             exchangeTimeout,
             cancellationToken);

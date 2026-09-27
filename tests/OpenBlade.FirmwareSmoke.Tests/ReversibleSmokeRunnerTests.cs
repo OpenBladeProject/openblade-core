@@ -5,6 +5,23 @@ namespace OpenBlade.FirmwareSmoke.Tests;
 
 public sealed class ReversibleSmokeRunnerTests
 {
+    [Theory]
+    [InlineData(CoolingPadConnectionState.PresentExact, FirmwareSmokeOutcome.Passed)]
+    [InlineData(CoolingPadConnectionState.Absent, FirmwareSmokeOutcome.Skipped)]
+    [InlineData(CoolingPadConnectionState.Ambiguous, FirmwareSmokeOutcome.Skipped)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed, FirmwareSmokeOutcome.Skipped)]
+    public async Task RunAsync_PadRequiredPerformanceRequiresExactPresenceAndRestores(
+        CoolingPadConnectionState pad, FirmwareSmokeOutcome expected)
+    {
+        await using var client = new FakeFirmwareSmokeClient(
+            PerformancePreset.Performance, padlessAdmitted: false, coolingPadConnection: pad);
+        IReadOnlyList<FirmwareSmokeCheck> checks = await new ReversibleSmokeRunner(client)
+            .RunAsync(CancellationToken.None);
+        Assert.Equal(expected, Assert.Single(checks, check => check.Id == "write.hyper-boost").Outcome);
+        Assert.Equal(expected == FirmwareSmokeOutcome.Passed ? 2 : 0, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
+    }
+
     [Fact]
     public async Task SnapshotCollector_CapturesVbiosGpuIdentity()
     {
@@ -282,7 +299,7 @@ public sealed class ReversibleSmokeRunnerTests
                     originalPerformance == PerformancePreset.Silent
                         ? DeviceFeatureAccess.ReadWrite
                         : DeviceFeatureAccess.ObservedOnly,
-                    DeviceFeatureAccess.ReadWrite,
+                    padlessAdmitted ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
                     originalPerformance == PerformancePreset.Performance
                         ? DeviceFeatureAccess.ReadWrite
                         : DeviceFeatureAccess.ObservedOnly),
@@ -343,10 +360,12 @@ public sealed class ReversibleSmokeRunnerTests
                 KeyboardDriverModeActive: true);
             status = status with
             {
-                PadlessHyperBoostEligibility = coolingPadConnection
-                    == CoolingPadConnectionState.Absent
-                        ? PadlessHyperBoostEligibilityState.CoolingPadAbsent
-                        : PadlessHyperBoostEligibilityState.CoolingPadPresent,
+                PadlessHyperBoostEligibility = coolingPadConnection switch
+                {
+                    CoolingPadConnectionState.Absent => PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+                    CoolingPadConnectionState.PresentExact => PadlessHyperBoostEligibilityState.CoolingPadPresent,
+                    _ => PadlessHyperBoostEligibilityState.Unknown,
+                },
             };
         }
 
