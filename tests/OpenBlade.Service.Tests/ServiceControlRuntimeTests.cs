@@ -27778,7 +27778,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
             displayBrightnessHidController: displayBrightnessHidController,
-            hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource,
+            hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource
+                ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
         if (initialize)
