@@ -97,9 +97,54 @@ public sealed class NvidiaGpuClockOffsetControllerTests
                 (NvmlClockType.Graphics, 125),
                 (NvmlClockType.Memory, 1000),
                 (NvmlClockType.Graphics, 50),
+                (NvmlClockType.Memory, 400),
             ],
             api.Writes);
         Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Set_ErrorAfterMutationRestoresOrReportsIndeterminate(
+        bool failMemory,
+        bool failRestoration)
+    {
+        NvmlClockType failingType = failMemory
+            ? NvmlClockType.Memory
+            : NvmlClockType.Graphics;
+        var api = new FakeNvmlApi
+        {
+            CoreCurrent = 50,
+            MemoryCurrent = 400,
+            FailAfterMutation = failingType,
+            FailRestoration = failRestoration,
+        };
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            new NvidiaGpuClockOffsetController(api).Set(
+                new GpuClockOffsetSettings(125, 500)));
+
+        Assert.Equal(
+            failRestoration
+                ? WriteSubmissionState.Indeterminate
+                : WriteSubmissionState.KnownNotApplied,
+            error.SubmissionState);
+        Assert.Equal(failRestoration && !failMemory ? 125 : 50, api.CoreCurrent);
+        Assert.Equal(failRestoration && failMemory ? 1000 : 400, api.MemoryCurrent);
+        Assert.Equal(2, api.Writes.Count(write => write.Type == failingType));
+        Assert.Equal(failMemory ? 4 : 2, api.Writes.Count);
+        Assert.Equal(1, api.ShutdownCalls);
+        if (failRestoration)
+        {
+            Assert.DoesNotContain("were restored", error.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("were restored", error.Message, StringComparison.Ordinal);
+        }
     }
 
     private sealed class FakeNvmlApi : INvidiaNvmlClockOffsetApi
@@ -115,6 +160,10 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public int MemoryCurrent { get; set; }
 
         public bool FailFirstMemoryWrite { get; init; }
+
+        public NvmlClockType? FailAfterMutation { get; init; }
+
+        public bool FailRestoration { get; init; }
 
         public List<(NvmlClockType Type, int Offset)> Writes { get; } = [];
 
@@ -169,6 +218,12 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public int SetClockOffsets(nint device, ref NvmlClockOffset info)
         {
             Writes.Add((info.Type, info.CurrentMegahertz));
+            NvmlClockType type = info.Type;
+            int channelWrites = Writes.Count(write => write.Type == type);
+            if (FailRestoration && FailAfterMutation == type && channelWrites > 1)
+            {
+                return 3;
+            }
             if (info.Type == NvmlClockType.Memory
                 && FailFirstMemoryWrite
                 && Writes.Count(write => write.Type == NvmlClockType.Memory) == 1)
@@ -185,7 +240,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
                 MemoryCurrent = info.CurrentMegahertz;
             }
 
-            return 0;
+            return FailAfterMutation == type && channelWrites == 1 ? 3 : 0;
         }
     }
 }
