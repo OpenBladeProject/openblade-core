@@ -140,6 +140,23 @@ process confirmed zero offsets and a typed query confirmed Performance/Automatic
 before the original settings and controller services were restored. These
 bounded checks do not establish sustained-load stability or padless operation.
 
+Installed build `0.23.0+6e10043f` passed the typed service enable/disable
+round trip and a separate pad-disconnect check. The latter confirmed a
+service-owned exit with zero helper disable calls, journal removal and original
+settings restoration. The [installed evidence](https://github.com/OpenBladeProject/openblade-captures/pull/24)
+records both sessions and their exact build provenance.
+
+Separate developer experiments with the pad USB and power disconnected passed
+an immediate Performance-to-HyperBoost round trip and a 60-second no-load
+observation. All 30 observation samples retained mode 7; CPU temperature was
+45 C and the GPU remained explicitly inactive. Fans rose from zero to
+2900/2700 RPM. The frozen 55 C experimental abort threshold is not a hardware
+thermal limit. Both experiments restored Performance, then the original
+Balanced settings, and independently confirmed zero GPU offsets. The
+[sanitized no-load report](https://github.com/OpenBladeProject/openblade-captures/blob/c12bacf4ebbc66a098fb1cef7ab901dd02bd4398/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json)
+records actual timestamps and readings. These results do not admit installed
+padless operation; load, power-boundary and lifecycle validation remain pending.
+
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
 The NVIDIA driver supplies the writable offset backend; no Synapse-delivered
