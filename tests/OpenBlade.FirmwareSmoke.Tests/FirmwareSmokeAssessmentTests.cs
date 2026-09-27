@@ -229,6 +229,7 @@ public sealed class FirmwareSmokeAssessmentTests
                     "Off",
                     "Reactive",
                     "Ripple",
+                    "Sequence",
                     "Spectrum",
                     "Starlight",
                     "Static",
@@ -296,7 +297,28 @@ public sealed class FirmwareSmokeAssessmentTests
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
+        Assert.Contains("Sequence", snapshot.Capabilities.LightingEffects);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.lighting").Outcome);
         Assert.True(report.Succeeded);
+
+        FirmwareSmokeReport missingSequenceReport = FirmwareSmokeAssessment.ValidateBaseline(
+            snapshot with
+            {
+                Capabilities = snapshot.Capabilities with
+                {
+                    LightingEffects = snapshot.Capabilities.LightingEffects
+                        .Where(effect => effect != "Sequence")
+                        .ToArray(),
+                },
+            });
+        Assert.False(missingSequenceReport.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                missingSequenceReport.Checks,
+                check => check.Id == "capabilities.lighting").Outcome);
         Assert.DoesNotContain(
             report.Checks,
             check => check.Outcome == FirmwareSmokeOutcome.Failed);
