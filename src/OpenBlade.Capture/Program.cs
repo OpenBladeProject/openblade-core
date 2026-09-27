@@ -6,7 +6,8 @@ using OpenBlade.Service;
 
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
-    || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+    || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
 {
     using var cancellation = new CancellationTokenSource();
     ConsoleCancelEventHandler cancel = (_, eventArgs) =>
@@ -17,6 +18,11 @@ if (args.Length > 0 && args[0].Equals(
     Console.CancelKeyPress += cancel;
     try
     {
+        if (args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessHyperBoostValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, cancellation.Token);
+        }
         if (args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
         {
             return await Rz090528HyperBoostGpuValidationCommand.RunWindowsAsync(
@@ -2030,6 +2036,11 @@ if (args.Length > 0 && args[0].Equals(
 
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.Name} " +
+    $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation} " +
+    $"--confirm-pad-disconnected {Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation} " +
+    $"--plan-sha256 {Rz090528PadlessHyperBoostValidation.PlanSha256}");
 Console.WriteLine(
     $"  OpenBlade.Capture {Rz090528HyperBoostGpuValidationCommand.Name} " +
     $"--confirm-target {Rz090528HyperBoostGpuValidationCommand.Confirmation} " +

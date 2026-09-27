@@ -1,0 +1,32 @@
+{
+  "planId": "rz09-0528-bios-2.02-padless-immediate-round-trip-v1",
+  "modelNumber": "RZ09-0528",
+  "sku": "RZ09-05289EN4",
+  "vendorIdHex": "1532",
+  "productIdHex": "02C6",
+  "biosVersion": "2.02",
+  "gpu": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "driverVersion": "617.14",
+  "commandEvidence": [
+    "https://github.com/OpenBladeProject/openblade-captures/blob/34b5da28b7bbf9391eed9298676ee235e0bc76b3/annotations/2026-09-27-rz09-0528-hyperboost-vendor-round-trip.json",
+    "https://github.com/OpenBladeProject/openblade-captures/blob/34b5da28b7bbf9391eed9298676ee235e0bc76b3/annotations/2026-09-27-rz09-0528-hyperboost-developer-validation.json"
+  ],
+  "evidenceBoundary": "Commands verified with a connected pad; pad-absent use is an unvalidated new experimental condition",
+  "baseline": "Performance/Automatic; both GPU offsets zero",
+  "enablePayloads": ["01010700", "01020700"],
+  "restorationPayloads": ["01010200", "01020200"],
+  "minimumAbsenceSamples": 2,
+  "minimumAbsenceIntervalMilliseconds": 500,
+  "minimumMatchingBaselinePairs": 2,
+  "adapter": "FullPower280W",
+  "baselineTelemetry": "Two timestamped positive CPU readings; GPU positive when reported or explicitly inactive; availability/sanity does not establish thermal safety",
+  "postTelemetry": "Record independently; missing/invalid telemetry marks uncertainty without changing the observed hardware restoration result",
+  "workload": "None",
+  "dwellMilliseconds": 0,
+  "restorationDeadlineMilliseconds": 5000,
+  "padRequiredDuringRestoration": false,
+  "partialSubmissionPolicy": "Stop all writes; read-only reconciliation and manual recovery",
+  "cancellationAfterConfirmedCandidate": "Fresh known-state readback and bounded independent Performance restoration",
+  "productionAdmissionAllowed": false,
+  "claims": "Immediate developer transition only; no sustained, thermal-limit, performance, endpoint, padless production or lifecycle admission"
+}
