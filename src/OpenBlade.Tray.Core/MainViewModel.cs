@@ -2422,6 +2422,21 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         set => NotifyFanControlEditorChanges(fanControlEditor.SetUseHigherTemperature(value));
     }
 
+    public Task SetUseHigherFanTemperatureAsync(bool requested)
+    {
+        // One-way toggle synchronization reports the already-loaded editor value.
+        // Only a changed selection may create a fan override.
+        if (requested == UseHigherFanTemperature)
+        {
+            return Task.CompletedTask;
+        }
+
+        FanControlSettings current = CurrentFanControlSettings;
+        var settings = new FanControlSettings(current.Mode, current.FixedSpeedRpm,
+            new ManualFanCurve(current.ManualCurve.Cpu, current.ManualCurve.Gpu, requested));
+        return ((AsyncRelayCommand)SetFanControlCommand).ExecuteAsync(settings);
+    }
+
     public IReadOnlyList<FanCurveEditorPoint> CpuFanCurveEditorPoints =>
         fanControlEditor.CpuPoints;
 

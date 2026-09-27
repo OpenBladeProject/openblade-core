@@ -938,7 +938,7 @@
                                         <ToggleSwitch Grid.Column="1"
                                                       Style="{StaticResource CompactCardToggleSwitchStyle}"
                                                       IsEnabled="{x:Bind CanEditFanControl, Mode=OneWay}"
-                                                      IsOn="{Binding UseHigherFanTemperature, Mode=TwoWay}"
+                                                      IsOn="{Binding UseHigherFanTemperature, Mode=OneWay}"
                                                       Toggled="OnManualFanCurveSettingChanged" />
                                     </Grid>
                                     <Grid ColumnSpacing="20">
