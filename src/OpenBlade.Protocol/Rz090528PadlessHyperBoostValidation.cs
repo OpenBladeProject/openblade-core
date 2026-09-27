@@ -38,6 +38,35 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     internal Rz090528NoLoadResult? NoLoadResult => noLoad?.Result;
     private int started;
 
+    internal bool IsStockBaselineEligible() => isolated() && pads.Observe() == CoolingPadConnectionState.Absent;
+
+    // Query-only baseline entry point. It never invokes the setter validation runner.
+    internal async Task<StockBaselineQueries> OpenStockBaselineQueriesAsync()
+    {
+        if (!isolated() || pads.Observe() != CoolingPadConnectionState.Absent)
+        {
+            throw new InvalidOperationException("Baseline identity, isolation or pad absence not confirmed.");
+        }
+        var context = new ValidationRunContext();
+        var opened = await actors.OpenAsync(context).ConfigureAwait(false);
+        if (opened.Failure is not null || opened.Value is not { } actor)
+        {
+            if (opened.Value is not null)
+            {
+                await opened.Value.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw new InvalidOperationException("Baseline query actor could not open.");
+        }
+        return new(new GuardedSession(actor.Session, context, pads, isolated));
+    }
+
+    internal sealed class StockBaselineQueries(GuardedSession session) : IAsyncDisposable
+    {
+        internal Task<Rz090528NoLoadSnapshot> ReadAsync(CancellationToken token) => session.ReadAsync(true, token);
+        public ValueTask DisposeAsync() => session.DisposeAsync();
+    }
+
     internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated,
         Rz090528PadlessNoLoadValidation? noLoad = null)
     {

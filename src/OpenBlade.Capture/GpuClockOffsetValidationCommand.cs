@@ -685,6 +685,44 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationApi
         }
     }
 
+    internal static uint? ReadExactRz090528GpuUtilization()
+    {
+        if (NvmlInit() != 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (NvmlDeviceGetCount(out uint count) != 0 || count != 1
+                || NvmlDeviceGetHandleByIndex(0, out nint device) != 0)
+            {
+                return null;
+            }
+
+            var name = new StringBuilder(96);
+            if (NvmlDeviceGetName(device, name, 96) != 0
+                || name.ToString() != GpuClockOffsetValidationPlan.Rz090528UiStep.ExpectedDeviceName)
+            {
+                return null;
+            }
+
+            return NvmlDeviceGetUtilizationRates(device, out var value) == 0 && value.Gpu <= 100
+                ? value.Gpu : null;
+        }
+        finally { _ = NvmlShutdown(); }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NvmlUtilization
+    {
+        internal uint Gpu;
+        internal uint Memory;
+    }
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlDeviceGetUtilizationRates", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int NvmlDeviceGetUtilizationRates(nint device, out NvmlUtilization utilization);
+
     [DllImport("nvml.dll", EntryPoint = "nvmlSystemGetDriverVersion",
         CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern int NvmlSystemGetDriverVersion(StringBuilder version, uint length);

@@ -5,6 +5,34 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528PadlessHyperBoostValidationTests
 {
     [Fact]
+    public async Task StockBaselineEntryQueriesPerformanceWithoutAnySetter()
+    {
+        var inner = new Session();
+        var runner = Create(inner, new Pad());
+        Assert.True(runner.IsStockBaselineEligible());
+        await using (var queries = await runner.OpenStockBaselineQueriesAsync())
+        {
+            var sample = await queries.ReadAsync(CancellationToken.None);
+            Assert.Null(sample.Failure);
+            Assert.Equal(new FanRpmReadings(3000, 3000), sample.Fans);
+        }
+        Assert.Empty(inner.Writes);
+        Assert.Equal(2, inner.Queries);
+        Assert.Equal(1, inner.PowerQueries);
+    }
+
+    [Fact]
+    public async Task StockBaselineRefusesPadPresenceBeforeOpeningActor()
+    {
+        var inner = new Session();
+        var runner = Create(inner, new Pad { State = CoolingPadConnectionState.PresentExact });
+        Assert.False(runner.IsStockBaselineEligible());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runner.OpenStockBaselineQueriesAsync());
+        Assert.Empty(inner.Writes);
+        Assert.Equal(0, inner.Queries);
+    }
+
+    [Fact]
     public async Task UncertainPendingSnapshotBlocksWritesAndOptionalDisposalQueries()
     {
         var inner = new Session();

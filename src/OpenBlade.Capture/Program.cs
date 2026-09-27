@@ -8,7 +8,8 @@ if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
-    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase))
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
 {
     using var cancellation = new CancellationTokenSource();
     ConsoleCancelEventHandler cancel = (_, eventArgs) =>
@@ -19,6 +20,11 @@ if (args.Length > 0 && args[0].Equals(
     Console.CancelKeyPress += cancel;
     try
     {
+        if (args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528StockLoadBaselineCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+        }
         if (args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
             || args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase))
         {
@@ -2044,6 +2050,10 @@ Console.WriteLine(
     $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation}:60S:BASELINE-PLUS-10C " +
     $"--confirm-pad-disconnected {Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation} " +
     $"--plan-sha256 {Rz090528PadlessNoLoadValidation.PlanSha256}");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528StockLoadBaselineCommand.Name} " +
+    $"--confirm-target {Rz090528StockLoadBaselineCommand.Confirmation} " +
+    $"--plan-sha256 {Rz090528StockLoadBaseline.PlanSha256} --workload-exe <absolute-path-to-3DMarkSteelNomad.exe>");
 Console.WriteLine(
     $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.Name} " +
     $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation} " +
