@@ -878,6 +878,8 @@ public static class FirmwareSmokeAssessment
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
                 DeviceFeatureAccess.ReadWrite.ToString(),
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                DeviceFeatureAccess.ReadOnly.ToString(),
             _ => "Unavailable",
         };
 

@@ -64,6 +64,9 @@ public sealed class Rz090528BatteryValidationFactoryTests
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
         var productionFactory = Assert.IsType<ProductionBatteryFactory>(factory);
 
+        Assert.Equal(DeviceFeatureAccess.ReadOnly, factory.Capabilities.HyperBoostAccess);
+        Assert.Null(factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
+        Assert.Null(factory.Capabilities.HyperBoostBaseModes);
         Assert.Equal([50, 55, 60, 65, 70, 75, 80], factory.Capabilities.ChargeLimits);
         Assert.Equal(
             [

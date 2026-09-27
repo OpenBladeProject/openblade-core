@@ -54,6 +54,7 @@ production support merely because a neighboring model implements it.
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
+| HyperBoost | Read-only recognition of paired thermal mode 7; production mutation and padless operation remain unadmitted |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
@@ -80,14 +81,42 @@ groups are:
   a Synapse-delivered proprietary kernel-driver dependency;
 - effect parameter combinations, native effect/matrix readback, and remaining
   spatial key-map coverage;
-- M1 and M2 bindings; these remain unavailable while M3–M5 and Fn+P are
-  admitted;
+- M1 and M2 discrimination and suppression; Fn+P is admitted through the
+  captured composite Fn-state and P input while M3–M5 retain their mappings;
+- cooling-pad HyperBoost setter, pad fan readiness, thermal and lifecycle
+  validation;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
 CPU Power Limit and CPU Voltage Optimizer remain discoveries,
 not writable OpenBlade controls. Preserve them in the capability model and
 documentation even when OpenBlade cannot safely own their backend. Never
 silently drop a newly discovered model feature.
+
+### HyperBoost developer validation
+
+The exact `02C6` vendor capture and independent paired readbacks establish
+mode 7 and restoration to Performance/Automatic. They do not establish
+padless safety or cooling-pad fan control. The baseline capture contained no
+thermal query, so every validation must freshly read Performance/Automatic
+before applying the captured pair. After the vendor capture, the present
+operator restored High through the vendor UI and confirmed the pad fan kept
+running after vendor software exited. This is attended readiness evidence,
+not independent pad-control or fan-RPM readback. Every run still requires a
+fresh operator confirmation that the genuine pad fan is ready.
+
+The developer-only command is:
+
+```text
+OpenBlade.Capture validate-rz09-0528-02c6-hyperboost-performance --confirm-target RZ09-0528:1532:02C6:BIOS-2.02:HYPERBOOST:RESTORE-PERFORMANCE --confirm-pad-ready ATTENDED:COOLING-PAD-FAN-READY
+```
+
+It requires the exact captured host and firmware, one control collection,
+OpenBlade service and competing controllers stopped, no USBPcap capture,
+fresh exact-pad presence, and full-power adapter readback before each write.
+It confirms both channels and restores only the freshly saved Performance
+baseline. Ambiguous submission or readback stops further writes and reports
+manual recovery; it never retries blindly. This short round trip does not
+qualify sustained load, padless operation, adapter removal, or sleep/resume.
 
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.

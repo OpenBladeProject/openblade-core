@@ -4,6 +4,30 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0].Equals(
+    Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+{
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancel = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancel;
+    try
+    {
+        return await Rz090528HyperBoostValidationCommand.RunAsync(
+            args.Skip(1).ToArray(),
+            () => Rz090528HyperBoostValidation.CreateWindows(
+                Rz090528HyperBoostValidationCommand.IsIsolated),
+            Console.Out, cancellation.Token);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancel;
+    }
+}
+
 if (args.Length == 1 && args[0].Equals("target", StringComparison.OrdinalIgnoreCase))
 {
     Console.WriteLine($"Model: {TargetBladeDevice.Model}");
@@ -1999,6 +2023,10 @@ if (args.Length > 0 && args[0].Equals(
 
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528HyperBoostValidationCommand.Name} " +
+    $"--confirm-target {Rz090528HyperBoostValidationCommand.Confirmation} " +
+    $"--confirm-pad-ready {Rz090528HyperBoostValidationCommand.PadConfirmation}");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent " +
     "--confirm-target " +
