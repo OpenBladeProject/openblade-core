@@ -96,16 +96,16 @@ internal sealed class NvidiaGpuClockOffsetController : IGpuClockOffsetController
             NvmlClockOffset core = CreateWrite(
                 NvmlClockType.Graphics,
                 settings.CoreMegahertz);
-            EnsureSuccess(api.SetClockOffsets(device, ref core), "set the GPU core clock offset");
             coreMayHaveChanged = true;
+            EnsureSuccess(api.SetClockOffsets(device, ref core), "set the GPU core clock offset");
 
             NvmlClockOffset memory = CreateWrite(
                 NvmlClockType.Memory,
                 settings.MemoryMegahertz);
+            memoryMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref memory),
                 "set the GPU memory clock offset");
-            memoryMayHaveChanged = true;
 
             GpuClockOffsetCapabilities confirmed = QueryCapabilities(device);
             if (confirmed.Current != settings)
