@@ -10198,6 +10198,133 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(PerformancePreset.BatterySaver, status.ConfirmedState!.Performance);
         Assert.Contains(DeviceSubsystem.Performance, status.ExternalChanges);
         Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = newSource == PowerSource.PluggedIn
+                ? PerformancePreset.Balanced : PerformancePreset.BatteryBalanced,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ResumePowerTransition_IntermediateModeClearsAfterDestinationRead()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            PowerSource.PluggedIn,
+            PerformancePreset.Balanced,
+            timeProvider: time,
+            batteryPerformance: PerformancePreset.BatterySaver);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatteryBalanced,
+        };
+        int setterCalls = context.Device.PerformanceSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(context.Runtime.ShouldRunPendingTransitionObservation());
+        Assert.Equal(setterCalls, context.Device.PerformanceSetCalls);
+
+        context.Provider.Available = false;
+        time.Advance(TimeSpan.FromSeconds(15));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(context.Runtime.ShouldRunPendingTransitionObservation());
+
+        context.Provider.Available = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+        };
+        time.Advance(TimeSpan.FromSeconds(15));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
+        Assert.Equal(setterCalls, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ResumePowerTransition_PersistentIntermediateModeRetainsWarning()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            PowerSource.PluggedIn,
+            PerformancePreset.Balanced,
+            timeProvider: time,
+            batteryPerformance: PerformancePreset.BatterySaver);
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatteryBalanced,
+        };
+        int setterCalls = context.Device.PerformanceSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.True(context.Runtime.ShouldRunPendingTransitionObservation());
+
+        time.Advance(ResumeStateValidationTracker.ObservationWindow);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
+        Assert.Equal(setterCalls, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task ResumePowerTransition_PreexistingWarningDoesNotBecomeProvisional()
+    {
+        var time = new ManualTimeProvider();
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            PowerSource.PluggedIn,
+            PerformancePreset.Balanced,
+            timeProvider: time,
+            batteryPerformance: PerformancePreset.BatterySaver);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        await context.Runtime.BeginResumeValidationAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatteryBalanced,
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+        };
+        time.Advance(TimeSpan.FromSeconds(15));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Contains(DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.ShouldRunPendingTransitionObservation());
     }
 
     [Theory]
@@ -18589,11 +18716,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private async Task<TestContext> CreateBatteryBalancedTransitionContextAsync(
         PowerSource initialSource,
-        PerformancePreset initialPerformance)
+        PerformancePreset initialPerformance,
+        TimeProvider? timeProvider = null,
+        PerformancePreset batteryPerformance = PerformancePreset.BatteryBalanced)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
-            initialPowerSource: initialSource);
+            initialPowerSource: initialSource,
+            timeProvider: timeProvider);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 80 },
@@ -18605,7 +18735,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             Battery = profiles.Battery with
             {
-                Performance = PerformancePreset.BatteryBalanced,
+                Performance = batteryPerformance,
             },
         };
         await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);

@@ -474,6 +474,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     // baseline before startup reconciliation can apply saved intent.
     private readonly PendingWriteConfirmationTracker pendingWriteConfirmations = new();
     private volatile PendingTransitionContinuation? pendingTransitionContinuation;
+    private volatile PendingResumePerformanceDrift? pendingResumePerformanceDrift;
+    private long resumePowerSourceTransitionGeneration = -1;
     private ServiceStatusSnapshot? status;
     private int rz090581CapabilityDiagnosticsReadAttempts;
     private Rz090581CapabilityDiagnostics? rz090581CapabilityDiagnostics;
@@ -9308,7 +9310,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ThermalConvergencePolicyAdmitted();
 
     public bool ShouldRunPendingTransitionObservation() =>
-        pendingTransitionContinuation is not null;
+        pendingTransitionContinuation is not null
+        || pendingResumePerformanceDrift is { } pending
+            && timeProvider.GetUtcNow() < pending.ExpiresAt;
 
     public Task RunThermalConvergenceAsync(CancellationToken cancellationToken) =>
         thermalConvergenceArbiter.RunAsync(
@@ -11355,6 +11359,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // Resume begins a new hardware-enumeration session. Restore the bounded
             // MCU inventory budget without turning ordinary healthy observations
             // into an unbounded retry loop.
+            pendingResumePerformanceDrift = null;
             AdvanceFanAuthorityEpoch();
             mcuVersionReadAttempts = 0;
             bool gpuClockOffsetConfirmationInvalidated = false;
@@ -14229,6 +14234,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 stillControlsSession,
                 continuation);
         FullTransitionApplyOutcome outcome = transitionExecution.Outcome;
+        if (outcome.WriteAttempted.Contains(DeviceSubsystem.Performance)
+            || outcome.ConfirmationUnavailable?.Contains(DeviceSubsystem.Performance) == true)
+        {
+            pendingResumePerformanceDrift = null;
+        }
         RecordConfirmedResumeWrites(outcome);
         device = transitionExecution.Device;
 
@@ -14350,7 +14360,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (preserveObservedExternalChanges)
             {
+                bool performanceWasExternal = driftTracker.ExternalChanges.Contains(
+                    DeviceSubsystem.Performance);
                 ObserveAutomaticState(confirmed, priorDesired, desired);
+                if (!performanceWasExternal
+                    && driftTracker.ExternalChanges.Contains(DeviceSubsystem.Performance)
+                    && resumePowerSourceTransitionGeneration == powerSourceGeneration
+                    && current.ActivePowerSource != powerSource
+                    && priorDesired is not null
+                    && confirmed.Performance is not null
+                    && !PerformanceMatchesDesired(confirmed, priorDesired)
+                    && !PerformanceMatchesDesired(confirmed, desired)
+                    && !pendingWriteConfirmations.HasPending
+                    && !confirmed.HyperBoostActive
+                    && current.PotentialControllers.Count == 0
+                    && current.ControllerDetectionWarning is null)
+                {
+                    // Firmware can settle into the destination mode after the
+                    // first read on resume. Keep writes paused until a fresh
+                    // observation proves that the destination took effect.
+                    pendingResumePerformanceDrift = new(
+                        powerSourceGeneration,
+                        powerSource,
+                        desired,
+                        timeProvider.GetUtcNow().Add(
+                            ResumeStateValidationTracker.ObservationWindow));
+                }
             }
             else
             {
@@ -15105,6 +15140,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     powerSource,
                     device);
             }
+            ReconcileResumePerformanceDrift(
+                observation.Confirmed,
+                powerSource,
+                powerSourceConfirmed);
             bool suppressInactiveHyperBoostJournalRetirement = false;
             string? pendingHyperBoostMessage = null;
             if (powerSourceConfirmed)
@@ -15724,6 +15763,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             AdvanceFanDesiredRevision();
             powerSourceGeneration++;
+            pendingResumePerformanceDrift = null;
+            resumePowerSourceTransitionGeneration = resumeStateValidation.ResumeStarted
+                && !pendingWriteConfirmations.HasPending
+                ? powerSourceGeneration : -1;
             InvalidatePendingWriteConfirmations(markExternal: true);
             explicitLightingOwnershipActive = false;
             lightingRecoveryPauseMessage = null;
@@ -16361,6 +16404,66 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             || confirmed.GpuClockOffsets is null
             || confirmed.GpuClockOffsets.Current
                 == desired.GpuClockTuning.EffectiveOffsets);
+
+    private void ReconcileResumePerformanceDrift(
+        ConfirmedDeviceState confirmed,
+        PowerSource powerSource,
+        bool powerSourceConfirmed)
+    {
+        if (pendingResumePerformanceDrift is not { } pending)
+        {
+            return;
+        }
+
+        if (timeProvider.GetUtcNow() >= pending.ExpiresAt
+            || pending.PowerGeneration != powerSourceGeneration
+            || pending.PowerSource != powerSource
+            || Automation.PowerSource != powerSource
+            || lowPowerGate.IsActive
+            || !driftTracker.ExternalChanges.Contains(DeviceSubsystem.Performance))
+        {
+            pendingResumePerformanceDrift = null;
+            return;
+        }
+
+        // Ambiguous reads and competing-controller observations never revoke
+        // an external-change latch. The bounded observation continues only
+        // while the original power and performance intent still apply.
+        if (!powerSourceConfirmed || pendingWriteConfirmations.HasPending)
+        {
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.PotentialControllers.Count > 0
+            || current.ControllerDetectionWarning is not null)
+        {
+            pendingResumePerformanceDrift = null;
+            return;
+        }
+
+        DesiredDeviceState desired = ResolveHardwareDesired(confirmed);
+        if (desired.Performance != pending.Desired.Performance
+            || desired.CustomPerformance != pending.Desired.CustomPerformance
+            || desired.GpuClockTuning != pending.Desired.GpuClockTuning)
+        {
+            pendingResumePerformanceDrift = null;
+            return;
+        }
+
+        if (confirmed.Performance is null
+            || confirmed.Performance == PerformancePreset.Custom
+                && confirmed.CustomPerformance is null
+            || desired.GpuClockTuning is not null
+                && confirmed.GpuClockOffsets is null
+            || !PerformanceMatchesDesired(confirmed, desired))
+        {
+            return;
+        }
+
+        pendingResumePerformanceDrift = null;
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+    }
 
     private void CompareInitialAutomaticValue<T>(
         DeviceSubsystem subsystem,
@@ -18502,6 +18605,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState PreWriteState,
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
+        DateTimeOffset ExpiresAt);
+
+    private sealed record PendingResumePerformanceDrift(
+        long PowerGeneration,
+        PowerSource PowerSource,
+        DesiredDeviceState Desired,
         DateTimeOffset ExpiresAt);
 
     private sealed record ManualFanCurveAuthority(
