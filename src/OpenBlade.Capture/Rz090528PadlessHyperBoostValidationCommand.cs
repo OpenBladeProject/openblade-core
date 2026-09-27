@@ -8,34 +8,38 @@ namespace OpenBlade.Capture;
 internal static class Rz090528PadlessHyperBoostValidationCommand
 {
     internal const string Name = "validate-rz09-0528-02c6-hyperboost-padless-immediate";
+    internal const string NoLoadName = "validate-rz09-0528-02c6-hyperboost-padless-no-load";
     internal const string Confirmation = "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:APPLY-ONCE:RESTORE";
     internal const string AttendedConfirmation = "ATTENDED:PAD-USB-AND-POWER-DISCONNECTED:NO-LOAD";
 
-    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, CancellationToken token)
+    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, CancellationToken token, bool noLoad = false)
     {
         using var temperature = new SafeWindowsFanTemperatureSource();
-        return await RunAsync(args, Rz090528PadlessHyperBoostValidation.CreateWindows,
+        var observation = noLoad ? new Rz090528PadlessNoLoadValidation(new HyperBoostThermalTelemetrySource(temperature)) : null;
+        return await RunAsync(args, guard => Rz090528PadlessHyperBoostValidation.CreateWindows(guard, observation),
             new NvidiaNvmlGpuClockOffsetValidationController(), new NvidiaNvapiGpuClockOffsetProbe(),
             () => Rz090528HyperBoostValidationCommand.IsIsolated()
                 && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive()
                 && NvidiaNvmlGpuClockOffsetValidationApi.ReadDriverVersion() == "617.14",
-            async cancellation => await temperature.ReadAsync(cancellation), output, token);
+            async cancellation => await temperature.ReadAsync(cancellation), output, token, noLoad);
     }
 
     internal static async Task<int> RunAsync(string[] args,
         Func<Func<bool>, Rz090528PadlessHyperBoostValidation> createRunner,
         IGpuClockOffsetValidationController gpu, IGpuClockOffsetProbe independent,
         Func<bool> isolated, Func<CancellationToken, ValueTask<FanTemperatureReadings>> telemetry,
-        TextWriter output, CancellationToken token)
+        TextWriter output, CancellationToken token, bool noLoad = false)
     {
-        if (!args.SequenceEqual(new[] { "--confirm-target", Confirmation,
+        string confirmation = noLoad ? Confirmation + ":60S:BASELINE-PLUS-10C" : Confirmation;
+        string planHash = noLoad ? Rz090528PadlessNoLoadValidation.PlanSha256 : Rz090528PadlessHyperBoostValidation.PlanSha256;
+        if (!args.SequenceEqual(new[] { "--confirm-target", confirmation,
             "--confirm-pad-disconnected", AttendedConfirmation,
-            "--plan-sha256", Rz090528PadlessHyperBoostValidation.PlanSha256 }))
+            "--plan-sha256", planHash }))
         {
             await output.WriteLineAsync("Exact target, attended pad USB/power disconnection, no-load and reviewed plan confirmations are required.");
             return 2;
         }
-        byte[] plan = Rz090528PadlessHyperBoostValidation.ReadPlan();
+        byte[] plan = noLoad ? Rz090528PadlessNoLoadValidation.ReadPlan() : Rz090528PadlessHyperBoostValidation.ReadPlan();
         DateTimeOffset startedUtc = DateTimeOffset.UtcNow;
         var gpuObservations = new List<object>();
         bool Eligible()
@@ -71,7 +75,7 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
         {
             await output.WriteLineAsync(JsonSerializer.Serialize(new
             {
-                PlanSha256 = Rz090528PadlessHyperBoostValidation.PlanSha256,
+                PlanSha256 = planHash,
                 ProductionAdmitted = false,
                 PadlessProductionAdmitted = false,
                 PreflightFailure = "CPU telemetry must be present and positive; GPU telemetry must be positive or explicitly inactive.",
@@ -92,13 +96,14 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
             PerformanceFanValidationTarget.HyperBoostFromPerformance, token);
         bool finalGpuZero = Eligible();
         FanTemperatureReadings? after = await Temperature();
-        bool hardwareRoundTripConfirmed = result.Success && finalGpuZero;
+        bool hardwareRoundTripConfirmed = result.ApplyAcknowledged && result.CandidateConfirmed && result.Restored && finalGpuZero;
         bool telemetryUncertain = !Sane(after);
-        bool success = hardwareRoundTripConfirmed && !telemetryUncertain && !token.IsCancellationRequested;
+        bool success = result.Success && finalGpuZero && !telemetryUncertain && !token.IsCancellationRequested
+            && (!noLoad || runner.NoLoadResult?.Completed == true);
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             Target = "RZ09-0528 / RZ09-05289EN4 / 1532:02C6 / BIOS 2.02 / RTX 5090 Laptop / driver 617.14",
-            PlanSha256 = Rz090528PadlessHyperBoostValidation.PlanSha256,
+            PlanSha256 = planHash,
             Plan = JsonSerializer.Deserialize<JsonElement>(plan),
             ProductionAdmitted = false,
             PadlessProductionAdmitted = false,
@@ -126,7 +131,10 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
             HardwareRoundTripConfirmed = hardwareRoundTripConfirmed,
             SensorSanityDoesNotEstablishThermalSafety = true,
             TelemetryEstablishesNoThermalLimit = true,
-            NoDwellOrLoadPerformed = true,
+            NoLoadPerformed = true,
+            NoDwellOrLoadPerformed = !noLoad,
+            NoDwellPerformed = !noLoad,
+            NoLoadObservation = runner.NoLoadResult,
             Result = result,
             CancellationRequested = token.IsCancellationRequested,
             Success = success,

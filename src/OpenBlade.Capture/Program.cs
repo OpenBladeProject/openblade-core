@@ -7,7 +7,8 @@ using OpenBlade.Service;
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
-    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase))
 {
     using var cancellation = new CancellationTokenSource();
     ConsoleCancelEventHandler cancel = (_, eventArgs) =>
@@ -18,10 +19,12 @@ if (args.Length > 0 && args[0].Equals(
     Console.CancelKeyPress += cancel;
     try
     {
-        if (args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+        if (args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+            || args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase))
         {
             return await Rz090528PadlessHyperBoostValidationCommand.RunWindowsAsync(
-                args.Skip(1).ToArray(), Console.Out, cancellation.Token);
+                args.Skip(1).ToArray(), Console.Out, cancellation.Token,
+                args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase));
         }
         if (args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
         {
@@ -2036,6 +2039,11 @@ if (args.Length > 0 && args[0].Equals(
 
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.NoLoadName} " +
+    $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation}:60S:BASELINE-PLUS-10C " +
+    $"--confirm-pad-disconnected {Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation} " +
+    $"--plan-sha256 {Rz090528PadlessNoLoadValidation.PlanSha256}");
 Console.WriteLine(
     $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.Name} " +
     $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation} " +

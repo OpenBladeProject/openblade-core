@@ -284,6 +284,7 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan;
     private readonly ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan;
     private readonly ExactHyperBoostValidationObserver? exactObserver;
+    private readonly Rz090528PadlessNoLoadValidation? padlessNoLoad;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -302,7 +303,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
         ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null,
         ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null,
-        ExactHyperBoostValidationObserver? exactObserver = null)
+        ExactHyperBoostValidationObserver? exactObserver = null,
+        Rz090528PadlessNoLoadValidation? padlessNoLoad = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -374,6 +376,12 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.adapterTransitionPlan = adapterTransitionPlan;
         this.powerSourceBoundaryPlan = powerSourceBoundaryPlan;
         this.exactObserver = exactObserver;
+        if (padlessNoLoad is not null && (exactObserver is not null || safetyGate is not null || sustainedPlan is not null))
+        {
+            throw new ArgumentException("The exact padless no-load experiment requires its own composition.");
+        }
+
+        this.padlessNoLoad = padlessNoLoad;
     }
 
     public Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -550,6 +558,13 @@ internal sealed class PerformanceFanSetterValidationRunner
                 return state.ToResult();
             }
 
+            if (padlessNoLoad is not null && (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession baselineSession
+                || !await padlessNoLoad.PrepareAsync(baselineSession, cancellationToken).ConfigureAwait(false)))
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
+                return state.ToResult();
+            }
             state.ApplyAttempted = true;
             IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
             for (int index = 0; index < applyPayloads.Count; index++)
@@ -699,6 +714,26 @@ internal sealed class PerformanceFanSetterValidationRunner
             {
                 state.ManualRecoveryRequired = true;
                 return state.ToResult();
+            }
+
+            if (padlessNoLoad is not null)
+            {
+                if (!state.CandidateConfirmed || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession dwellSession)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+                Rz090528NoLoadResult observed = await padlessNoLoad.RunAsync(dwellSession, cancellationToken).ConfigureAwait(false);
+                if (!observed.Completed)
+                {
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
+                }
+
+                if (!observed.PermitKnownStateRestore)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
             }
 
             // Restoration starts only after both candidate channels have been read

@@ -5,6 +5,54 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528PadlessHyperBoostValidationTests
 {
     [Fact]
+    public async Task NoLoadTemperatureAbortStillRestoresFreshlyKnownPerformance()
+    {
+        var session = new Session();
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Rz090528PadlessNoLoadValidationTests.Telemetry { Fault = "cpu" };
+        var noLoad = new Rz090528PadlessNoLoadValidation(telemetry, clock, clock.Wait);
+        var runner = new Rz090528PadlessHyperBoostValidation(new Actors(session), new Pad(), () => true, noLoad);
+        var result = await Run(runner);
+        Assert.False(result.Success);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal("CpuExperimentalTripwire", runner.NoLoadResult!.Failure);
+        Assert.Equal(4, session.Writes.Count);
+    }
+
+    [Fact]
+    public async Task NoLoadReadBudgetKeepsEightTransactionsForRestoration()
+    {
+        var context = new ValidationRunContext();
+        for (int i = 0; i < 243; i++)
+        {
+            Assert.True(context.TryAllocateTransaction(out _));
+        }
+
+        var inner = new Session();
+        await using var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner, context, new Pad(), () => true);
+        var sample = await session.ReadAsync(false, CancellationToken.None);
+        Assert.Equal("CleanupTransactionReserve", sample.Failure);
+        Assert.True(sample.PermitKnownStateRestore);
+        Assert.Equal(12, context.RemainingTransactions);
+        Assert.Equal(0, inner.Queries);
+    }
+
+    [Fact]
+    public async Task NoLoadThermalAmbiguityNeverAttemptsPerformanceExit()
+    {
+        var session = new Session { DriftAtQuery = 13 };
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var observation = new Rz090528PadlessNoLoadValidation(
+            new Rz090528PadlessNoLoadValidationTests.Telemetry(), clock, clock.Wait);
+        var runner = new Rz090528PadlessHyperBoostValidation(new Actors(session), new Pad(), () => true, observation);
+        var result = await Run(runner);
+        Assert.False(result.Success);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.False(result.RestoreAttempted);
+        Assert.Equal(2, session.Writes.Count);
+    }
+    [Fact]
     public void PlanHashRejectsTampering()
     {
         byte[] plan = Rz090528PadlessHyperBoostValidation.ReadPlan();
@@ -161,6 +209,10 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
             {
                 PowerQueries++;
                 response = PowerQueries == RejectPowerAt ? [0, 0] : [0x11, 0x11];
+            }
+            else if (command.CommandId == 0x88)
+            {
+                response = [1, command.Arguments.Span[1], 30];
             }
             else if (command.CommandId == 0x82)
             {

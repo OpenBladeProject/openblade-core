@@ -5,7 +5,8 @@ namespace OpenBlade.Protocol;
 
 // Developer experiment only. It deliberately does not alter pad-required production admission.
 internal sealed class Rz090528PadlessHyperBoostValidation(
-    IValidationActorFactory actors, ICoolingPadDiscoverySource pads, Func<bool> isolated)
+    IValidationActorFactory actors, ICoolingPadDiscoverySource pads, Func<bool> isolated,
+    Rz090528PadlessNoLoadValidation? noLoad = null)
     : IPerformanceFanSetterValidationRunner
 {
     internal const string PlanSha256 = "53436C5DE5B19301FFDDA9EB3670DA62F6440B9CA5168A81878FE58386DB8CD1";
@@ -34,9 +35,11 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     internal DateTimeOffset? FirstAbsenceObservedAtUtc { get; private set; }
     internal DateTimeOffset? SecondAbsenceObservedAtUtc { get; private set; }
     internal PerformanceFanThermalPair? FailureReconciliation { get; private set; }
+    internal Rz090528NoLoadResult? NoLoadResult => noLoad?.Result;
     private int started;
 
-    internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated)
+    internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated,
+        Rz090528PadlessNoLoadValidation? noLoad = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -50,7 +53,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             TimeProvider.System, TimeSpan.FromSeconds(3), ControllerExclusivityPolicy.Strict,
             TimeSpan.FromMilliseconds(20));
         return new(factory, new WindowsHyperBoostEligibilitySource(native),
-            () => identity.ReadExactIdentity().Failure is null && isolated());
+            () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad);
     }
 
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -90,7 +93,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
 
             var runner = new PerformanceFanSetterValidationRunner(() => new ValidationRunContext(),
                 new GuardedActors(actors, pads, isolated, pair => FailureReconciliation = pair), TimeProvider.System,
-                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad);
             innerRunStarted = true;
             return await runner.RunAsync(target, token).ConfigureAwait(false);
         }
@@ -132,12 +135,76 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
 
     internal sealed class GuardedSession(IRazerCommandSession inner, ValidationRunContext context,
         ICoolingPadDiscoverySource pads, Func<bool> isolated,
-        Action<PerformanceFanThermalPair?>? reconciliation = null) : IRazerCommandSession
+        Action<PerformanceFanThermalPair?>? reconciliation = null) : IRazerCommandSession, IRz090528NoLoadSnapshotSource
     {
         private int nextWrite;
         private bool failed;
         private static readonly byte[][] Writes = [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, 2, 0], [1, 2, 2, 0]];
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
+
+        public async Task<Rz090528NoLoadSnapshot> ReadAsync(bool baseline, CancellationToken token)
+        {
+            // Five read transactions plus eight reserved for independent restoration/readback.
+            if (context.RemainingTransactions < 13)
+            {
+                return new(null, "CleanupTransactionReserve", true);
+            }
+
+            try
+            {
+                if (failed || !isolated())
+                {
+                    return new(null, "IsolationOrSessionLost", false);
+                }
+
+                byte mode = baseline ? (byte)2 : (byte)7;
+                for (byte channel = 1; channel <= 2; channel++)
+                {
+                    var read = await ReadAsync(new RazerCommandSpec(0x0D, 0x82,
+                        new byte[] { 1, channel, 0, 0 }, 4), TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
+                    if (read.Failure is not null || !read.Value.Span.SequenceEqual(new byte[] { 1, channel, mode, 0 }))
+                    {
+                        failed = true;
+                        return new(null, "ThermalReadOrPairAmbiguous", false);
+                    }
+                }
+                if (!await FullPowerAsync(TimeSpan.FromSeconds(1), token).ConfigureAwait(false))
+                {
+                    return new(null, "FullPowerNotConfirmed", false);
+                }
+
+                CoolingPadConnectionState pad = pads.Observe();
+                if (pad != CoolingPadConnectionState.Absent)
+                {
+                    return new(null, "PadAbsenceLost", true);
+                }
+
+                var fans = new int[2];
+                for (byte selector = 1; selector <= 2; selector++)
+                {
+                    if (!isolated())
+                    {
+                        return new(null, "IsolationLost", false);
+                    }
+
+                    var read = await ReadAsync(new RazerCommandSpec(0x0D, 0x88,
+                        new byte[] { 1, selector, 0 }, 3), TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
+                    if (read.Failure is not null || !FanRpmProtocol.TryDecodeQuery(read.Value.Span,
+                        (FanRpmSelector)selector, out fans[selector - 1]))
+                    {
+                        failed = true;
+                        return new(null, "FanReadAmbiguous", false);
+                    }
+                }
+                return isolated() ? new(new(fans[0], fans[1]), null, true)
+                    : new(null, "IsolationLost", false);
+            }
+            catch
+            {
+                failed = true;
+                return new(null, "SnapshotReadAmbiguous", false);
+            }
+        }
 
         public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan timeout, CancellationToken token)
