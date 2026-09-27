@@ -15,6 +15,9 @@
 
   <ItemGroup>
     <EmbeddedResource
+      Include="Fixtures\Rz09_0528_02c6_2_02_HyperBoostProduction.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_HyperBoostProduction.json" />
+    <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_BatteryProduction.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_BatteryProduction.json" />
     <EmbeddedResource

@@ -879,7 +879,7 @@ public static class FirmwareSmokeAssessment
             RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
                 DeviceFeatureAccess.ReadWrite.ToString(),
             RazerBladeModelCatalog.Rz090528ModelNumber =>
-                DeviceFeatureAccess.ReadOnly.ToString(),
+                DeviceFeatureAccess.ReadWrite.ToString(),
             _ => "Unavailable",
         };
 
@@ -891,13 +891,18 @@ public static class FirmwareSmokeAssessment
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
         string modelNumber) =>
-        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
-            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
-                ? new HyperBoostBaseModeCapabilities(
+        RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly,
                     DeviceFeatureAccess.ReadWrite,
-                    DeviceFeatureAccess.ObservedOnly)
-                : null;
+                    DeviceFeatureAccess.ObservedOnly),
+            RazerBladeModelCatalog.Rz090528ModelNumber => new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ObservedOnly,
+                    DeviceFeatureAccess.ReadWrite),
+            _ => null,
+        };
 
     private static string HyperBoostBaseModeSummary(
         HyperBoostBaseModeCapabilities? capabilities) => capabilities is null

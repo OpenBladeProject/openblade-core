@@ -216,9 +216,10 @@ public sealed class FirmwareSmokeAssessmentTests
             Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
-                HyperBoostAccess = DeviceFeatureAccess.ReadOnly.ToString(),
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 HyperBoostWithoutCoolingPadAccess = null,
-                HyperBoostBaseModes = null,
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
                 LightingEffects =
                 [
@@ -329,12 +330,12 @@ public sealed class FirmwareSmokeAssessmentTests
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
-        Assert.Equal(DeviceFeatureAccess.ReadOnly.ToString(), snapshot.Capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite.ToString(), snapshot.Capabilities.HyperBoostAccess);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.hyper-boost").Outcome);
         foreach (DeviceFeatureAccess unsupportedAccess in Enum.GetValues<DeviceFeatureAccess>()
-            .Where(access => access != DeviceFeatureAccess.ReadOnly))
+            .Where(access => access != DeviceFeatureAccess.ReadWrite))
         {
             FirmwareSmokeReport unsupportedHyperBoostReport = FirmwareSmokeAssessment.ValidateBaseline(
                 snapshot with

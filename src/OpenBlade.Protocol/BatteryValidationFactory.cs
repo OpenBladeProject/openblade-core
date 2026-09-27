@@ -455,6 +455,10 @@ public static class BatteryValidationFactory
             ]);
         ProductionBatteryReadEvidence readEvidence =
             CreateRz090528ProductionBatteryReadEvidence();
+        ReadOnlyMemory<byte> hyperBoostFixture = HyperBoostFixtureSource.ReadRz090528()
+            ?? throw new UnvalidatedCommandException("The exact RZ09-0528 HyperBoost fixture is absent.");
+        DeviceCommandCatalog hyperBoostCatalog = CapturedFixtureFile.LoadCatalog(
+            hyperBoostFixture, TrustedFixtureHashRegistry.Rz090528HyperBoostProduction, target);
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
@@ -552,7 +556,13 @@ public static class BatteryValidationFactory
                 AdapterPowerState.FullPower280W,
             },
             Rz090528CommandSessionGate.Shared,
-            hyperBoostAccess: DeviceFeatureAccess.ReadOnly);
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite),
+            hyperBoostCatalog: hyperBoostCatalog,
+            hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native));
     }
 
     internal static ProductionBatteryReadEvidence

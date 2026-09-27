@@ -6,6 +6,25 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528BatteryValidationFactoryTests
 {
     [Fact]
+    public void HyperBoostFixture_RequiresReviewedHashAndExactTargetWithoutBalancedAliases()
+    {
+        byte[] bytes = HyperBoostFixtureSource.ReadRz090528()!.Value.ToArray();
+        var target = new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02");
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            bytes, TrustedFixtureHashRegistry.Rz090528HyperBoostProduction, target);
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(catalog));
+        Assert.True(ProductionBatteryPort.HasHyperBoostCommandSet(catalog, catalog,
+            new HyperBoostBaseModeCapabilities(DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite)));
+        Assert.Throws<UnvalidatedCommandException>(() => CapturedFixtureFile.LoadCatalog(
+            bytes, TrustedFixtureHashRegistry.Rz090528HyperBoostProduction,
+            target with { ProductId = 0x02E0 }));
+        bytes[0] ^= 1;
+        Assert.Throws<UnvalidatedCommandException>(() => CapturedFixtureFile.LoadCatalog(
+            bytes, TrustedFixtureHashRegistry.Rz090528HyperBoostProduction, target));
+    }
+
+    [Fact]
     public void ProductionLightingFactory_AdmitsCapturedExactSynapseEffects()
     {
         IProductionLightingPortFactory factory =
@@ -64,9 +83,11 @@ public sealed class Rz090528BatteryValidationFactoryTests
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
         var productionFactory = Assert.IsType<ProductionBatteryFactory>(factory);
 
-        Assert.Equal(DeviceFeatureAccess.ReadOnly, factory.Capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.Capabilities.HyperBoostAccess);
         Assert.Null(factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
-        Assert.Null(factory.Capabilities.HyperBoostBaseModes);
+        Assert.Equal(new HyperBoostBaseModeCapabilities(
+            DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            factory.Capabilities.HyperBoostBaseModes);
         Assert.Equal([50, 55, 60, 65, 70, 75, 80], factory.Capabilities.ChargeLimits);
         Assert.Equal(
             [

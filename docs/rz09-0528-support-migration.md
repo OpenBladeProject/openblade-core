@@ -54,7 +54,7 @@ production support merely because a neighboring model implements it.
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
-| HyperBoost | Read-only recognition of paired thermal mode 7; production mutation and padless operation remain unadmitted |
+| HyperBoost | Exact cooling-pad-required Performance/Automatic entry, paired mode-7 readback, and restoration; padless operation and direct Silent/Balanced transitions remain unadmitted |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
@@ -83,8 +83,7 @@ groups are:
   spatial key-map coverage;
 - M1 and M2 discrimination and suppression; Fn+P is admitted through the
   captured composite Fn-state and P input while M3–M5 retain their mappings;
-- cooling-pad HyperBoost setter, pad fan readiness, thermal and lifecycle
-  validation;
+- cooling-pad HyperBoost sustained thermal and remaining lifecycle validation;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
 CPU Power Limit and CPU Voltage Optimizer remain discoveries,
@@ -118,13 +117,24 @@ baseline. Ambiguous submission or readback stops further writes and reports
 manual recovery; it never retries blindly. This short round trip does not
 qualify sustained load, padless operation, adapter removal, or sleep/resume.
 
-The service and tray have a capability-gated pad-required path prepared for
-future admission. It requires an explicitly writable Performance base mode,
+The service and tray use the capability-gated pad-required path validated by
+the exact-device developer round trip on 2026-09-27. Both enable channels were
+acknowledged and independently read as mode 7, then both channels were restored
+and independently read as Performance/Automatic. The embedded exact-model
+fixture is checked against its reviewed SHA-256 before command admission.
+The [sanitized developer checkpoint](https://github.com/OpenBladeProject/openblade-captures/blob/34b5da28b7bbf9391eed9298676ee235e0bc76b3/decoded/rz09-0528-pid-02c6-bios-2.02-hyperboost-developer-validation.json)
+records the exact build, acknowledgements, independent readbacks and restoration.
+The path requires an explicitly writable Performance base mode,
 keeps the cooling-pad dependency in the ownership journal, and preserves the
 entry-time performance and fan intent. Confirmed pad absence during the existing
 observation cycle permits one owned exit; uncertain enumeration does not prove
-disconnection. The current read-only capability cannot enter this path. The
+disconnection. The non-writable Silent/Balanced access entries are contract
+placeholders and do not establish captured direct-transition evidence. The
 2026 model retains its separately admitted padless Balanced transition.
+GPU tuning was independently validated in Balanced, Silent, Performance and
+Custom modes. Combined GPU offset changes while HyperBoost is active require
+their own exact-device validation; the successful HyperBoost round trip alone
+does not establish that combined behavior.
 
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
