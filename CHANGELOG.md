@@ -5,8 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+
 ### Fixed
 
+- Recognize Fn+P on the supported Blade 16 (2025) RZ09-0528 and clear held-key state across connection, session, and power changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
 
 ## [0.22.0] - 2026-09-25
