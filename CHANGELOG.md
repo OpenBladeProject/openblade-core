@@ -11,6 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recognize the supported cooling pad when its auxiliary input interfaces report a different revision. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Recognize Fn+P on the supported Blade 16 (2025) RZ09-0528 and clear held-key state across connection, session, and power changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
 - Hide the HyperBoost unavailable warning on battery and USB-C power; show it again when full-power AC returns. ([#589](https://github.com/OSSBlade/openblade-core/pull/589))
