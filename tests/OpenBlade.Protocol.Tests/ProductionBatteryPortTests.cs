@@ -26,9 +26,12 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task PadRequiredPerformance_SecondChannelEligibilityFailureIsIndeterminateAndNeverReplayed(bool padLost)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, DeviceFeatureAccess.ObservedOnly)]
+    [InlineData(true, DeviceFeatureAccess.ObservedOnly)]
+    public async Task PadRequiredPerformance_SecondChannelEligibilityFailureIsIndeterminateAndNeverReplayed(
+        bool padLost, DeviceFeatureAccess? padlessAccess)
     {
         var pad = new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact);
         var session = new ScriptedSession(
@@ -43,7 +46,7 @@ public sealed class ProductionBatteryPortTests
                 }
             },
         };
-        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session, pad);
+        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session, pad, padlessAccess);
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
         Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
@@ -78,12 +81,14 @@ public sealed class ProductionBatteryPortTests
     }
 
     private static ProductionBatteryPort CreatePadRequiredPerformancePort(
-        ScriptedSession session, IHyperBoostEligibilitySource pad) => new(
+        ScriptedSession session, IHyperBoostEligibilitySource pad,
+        DeviceFeatureAccess? padlessAccess = null) => new(
             session,
             Catalog(Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 0x0D, 2, [1, 1, 2, 0]),
                 Fixture(ProductionBatteryPort.PerformanceBoostSecondAction, 0x0D, 2, [1, 2, 2, 0])),
             AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: padlessAccess,
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
             hyperBoostCatalog: Catalog(

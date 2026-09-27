@@ -729,7 +729,7 @@ internal sealed class ProductionBatteryPort :
                     token)
                 : null,
             revalidateEligibilityPerCommand: enabled
-                && Capabilities.HyperBoostWithoutCoolingPadAccess is null
+                && HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities)
                 && baseMode == PerformancePreset.Performance);
     }
 
