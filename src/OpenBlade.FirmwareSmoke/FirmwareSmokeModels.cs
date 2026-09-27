@@ -225,6 +225,24 @@ public static class FirmwareSmokeFiles
             WriteIndented = true,
         };
         options.Converters.Add(new JsonStringEnumConverter());
+        options.Converters.Add(new CustomPerformanceCombinationSetJsonConverter());
         return options;
+    }
+
+    private sealed class CustomPerformanceCombinationSetJsonConverter
+        : JsonConverter<IReadOnlySet<CustomPerformanceCombination>>
+    {
+        public override IReadOnlySet<CustomPerformanceCombination> Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options) =>
+            JsonSerializer.Deserialize<HashSet<CustomPerformanceCombination>>(ref reader, options)
+            ?? throw new JsonException("Custom performance combinations are missing.");
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            IReadOnlySet<CustomPerformanceCombination> value,
+            JsonSerializerOptions options) =>
+            JsonSerializer.Serialize(writer, value.ToArray(), options);
     }
 }
