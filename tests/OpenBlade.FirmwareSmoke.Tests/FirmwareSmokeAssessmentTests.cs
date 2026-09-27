@@ -208,7 +208,7 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
-    public void HealthyRz090528BaselineUsesItsExactCapabilityGate()
+    public async Task HealthyRz090528BaselineRoundTripsAndUsesItsExactCapabilityGate()
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.9.0.0") with
         {
@@ -294,6 +294,38 @@ public sealed class FirmwareSmokeAssessmentTests
                 ],
             },
         };
+
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "OpenBlade.FirmwareSmoke.Tests",
+            Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "baseline.json");
+        FirmwareSmokeSnapshot expected = snapshot;
+        try
+        {
+            await FirmwareSmokeFiles.WriteJsonAsync(path, expected, CancellationToken.None);
+            snapshot = await FirmwareSmokeFiles.ReadJsonAsync<FirmwareSmokeSnapshot>(
+                path,
+                CancellationToken.None);
+
+            Assert.Equal(expected.SchemaVersion, snapshot.SchemaVersion);
+            Assert.Equal(expected.TargetModel, snapshot.TargetModel);
+            Assert.Equal(expected.Controls, snapshot.Controls);
+            Assert.NotNull(snapshot.Capabilities.CustomPerformance);
+            Assert.Equal(7, snapshot.Capabilities.CustomPerformance.AllowedCombinations.Count);
+            Assert.True(expected.Capabilities.CustomPerformance!.AllowedCombinations.SetEquals(
+                snapshot.Capabilities.CustomPerformance.AllowedCombinations));
+            Assert.Equal(
+                System.Text.Json.JsonSerializer.Serialize(expected, FirmwareSmokeFiles.JsonOptions),
+                System.Text.Json.JsonSerializer.Serialize(snapshot, FirmwareSmokeFiles.JsonOptions));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
