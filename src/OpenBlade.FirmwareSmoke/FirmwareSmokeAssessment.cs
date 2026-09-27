@@ -52,6 +52,7 @@ public static class FirmwareSmokeAssessment
         "Off",
         "Reactive",
         "Ripple",
+        "Sequence",
         "Spectrum",
         "Starlight",
         "Static",
@@ -877,8 +878,6 @@ public static class FirmwareSmokeAssessment
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
                 DeviceFeatureAccess.ReadWrite.ToString(),
-            RazerBladeModelCatalog.Rz090528ModelNumber =>
-                DeviceFeatureAccess.ObservedOnly.ToString(),
             _ => "Unavailable",
         };
 
