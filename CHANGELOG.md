@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
+- Hide the HyperBoost unavailable warning on battery and USB-C power; show it again when full-power AC returns. ([#589](https://github.com/OSSBlade/openblade-core/pull/589))
 
 ## [0.22.0] - 2026-09-25
 
