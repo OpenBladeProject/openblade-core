@@ -11,27 +11,47 @@ internal sealed record Rz090528LoadedResult(bool Completed, string? Failure, boo
     double ObservationElapsedMilliseconds, double? CandidateApplyMilliseconds,
     double? ConfirmedCandidateToRestorationReadbackMilliseconds, bool ObservationTimingUncertain, bool SnapshotQuiesced);
 
+// A reviewed observation length, workload requirement and experimental tripwire. The ten-second profile is the original plan.
+internal sealed record Rz090528LoadedProfile(string Name, string PlanResource, string PlanSha256,
+    int ObservationMilliseconds, bool RequiresWorkload, double AbortCpuCelsius, int AbortGpuCelsius)
+{
+    internal static readonly Rz090528LoadedProfile TenSecondLoaded = new("Loaded10",
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json",
+        Rz090528PadlessLoadedValidation.PlanSha256, 10000, true, 75, 75);
+    internal static readonly Rz090528LoadedProfile SixtySecondLoaded = new("Loaded60",
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoaded60Plan.json",
+        Rz090528PadlessLoadedValidation.Loaded60PlanSha256, 60000, true, 85, 80);
+    internal static readonly Rz090528LoadedProfile SixtySecondNoLoad = new("NoLoad60",
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostNoLoad60Plan.json",
+        Rz090528PadlessLoadedValidation.NoLoad60PlanSha256, 60000, false, 85, 80);
+}
+
 // Exact-device developer experiment. These entry/abort values are experimental tripwires, not ratings.
 internal sealed class Rz090528PadlessLoadedValidation(
     Func<CancellationToken, ValueTask<Rz090528LoadedReading>> read,
     Func<DateTimeOffset, string?> arm, Action<DateTimeOffset>? armed = null,
-    TimeProvider? clock = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
+    TimeProvider? clock = null, Func<TimeSpan, CancellationToken, Task>? delay = null,
+    Rz090528LoadedProfile? profile = null)
 {
     internal const string PlanSha256 = "FF5258CEDB14E09DFD9BF9C0F33030044E7F646F2088DAA3635240FABA37A029";
-    internal static byte[] ReadPlan()
+    internal const string Loaded60PlanSha256 = "AA1C670D89373C3823236BDFB6458747F2002DB8175EBE325D6845C9529ABDF7";
+    internal const string NoLoad60PlanSha256 = "06E25F5884267F8382974D3E790781BEB06645232B7C767B24C95B00C2F306AF";
+    private readonly Rz090528LoadedProfile plan = profile ?? Rz090528LoadedProfile.TenSecondLoaded;
+    internal Rz090528LoadedProfile Profile => plan;
+    internal static byte[] ReadPlan(Rz090528LoadedProfile? profile = null)
     {
+        profile ??= Rz090528LoadedProfile.TenSecondLoaded;
         using Stream resource = typeof(Rz090528PadlessLoadedValidation).Assembly.GetManifestResourceStream(
-            "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json")
-            ?? throw new InvalidOperationException("Loaded plan missing.");
+            profile.PlanResource) ?? throw new InvalidOperationException("Loaded plan missing.");
         using var bytes = new MemoryStream();
         resource.CopyTo(bytes);
         byte[] value = bytes.ToArray();
-        ValidatePlan(value);
+        ValidatePlan(value, profile);
         return value;
     }
-    internal static void ValidatePlan(ReadOnlySpan<byte> value)
+    internal static void ValidatePlan(ReadOnlySpan<byte> value, Rz090528LoadedProfile? profile = null)
     {
-        if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(value)) != PlanSha256)
+        if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(value)) != (profile ?? Rz090528LoadedProfile.TenSecondLoaded).PlanSha256)
         {
             throw new InvalidOperationException("Loaded plan hash mismatch.");
         }
@@ -78,7 +98,7 @@ internal sealed class Rz090528PadlessLoadedValidation(
 
     internal async Task<bool> PrepareAsync(IRz090528NoLoadSnapshotSource source, CancellationToken token)
     {
-        _ = ReadPlan();
+        _ = ReadPlan(plan);
         long start = time.GetTimestamp();
         if (Interlocked.Exchange(ref prepared, 1) != 0)
         {
@@ -91,13 +111,28 @@ internal sealed class Rz090528PadlessLoadedValidation(
             {
                 if (index > 0) { await wait(TimeSpan.FromSeconds(2), token).ConfigureAwait(false); }
                 var value = await ReadAsync(token).ConfigureAwait(false);
-                string? failure = TelemetryFailure(value, entry: true);
+                string? failure = TelemetryFailure(value, entry: true) ?? (plan.RequiresWorkload ? null : NoLoadFailure(value));
                 if (failure is not null) { return Finish(false, failure, false, start).Completed; }
                 if (index > 0 && value.CpuSourceTimestampUtc <= baseline[0].Reading.CpuSourceTimestampUtc)
                 {
                     return Finish(false, "CpuSourceDidNotAdvance", false, start).Completed;
                 }
                 baseline.Add(new(time.GetUtcNow(), Elapsed(start), value, null));
+            }
+            if (!plan.RequiresWorkload)
+            {
+                // No workload is invited: admit directly from a fresh paired snapshot and a fresh idle reading.
+                var idleProtocol = await SnapshotAsync(source, true, token, 2000).ConfigureAwait(false);
+                if (idleProtocol.Failure is not null || !PositiveFans(idleProtocol.Fans))
+                {
+                    return Finish(false, idleProtocol.Failure ?? "EntryFanNotPositive", false, start).Completed;
+                }
+                var idle = await ReadAsync(token).ConfigureAwait(false);
+                string? idleFailure = TelemetryFailure(idle, entry: true) ?? NoLoadFailure(idle);
+                if (idleFailure is not null) { return Finish(false, idleFailure, false, start).Completed; }
+                admission = new(time.GetUtcNow(), Elapsed(start), idle, idleProtocol.Fans);
+                Finish(false, "AwaitingPairedCandidate", false, start);
+                return true;
             }
             string? armFailure = arm(time.GetUtcNow());
             if (armFailure is not null) { return Finish(false, armFailure, false, start).Completed; }
@@ -167,10 +202,12 @@ internal sealed class Rz090528PadlessLoadedValidation(
         }
         try
         {
-            for (int index = 0; index < 4; index++)
+            int window = plan.ObservationMilliseconds;
+            // Paired snapshots every two seconds, then one external-only sample two seconds before the deadline.
+            for (int index = 0; index < window / 2000 - 1; index++)
             {
                 await WaitUntil(start, index * 2000, token).ConfigureAwait(false);
-                double remaining = 10000 - Elapsed(start);
+                double remaining = window - Elapsed(start);
                 if (remaining < 2000 || samples.Count > 0 && Elapsed(start) - samples[^1].ElapsedMilliseconds > 4000)
                 {
                     return Finish(false, "ObservationDeadlineMissed", true, start);
@@ -178,9 +215,9 @@ internal sealed class Rz090528PadlessLoadedValidation(
                 // Read external telemetry first: a hot/stale sample must not wait behind optional HID queries.
                 var value = await ReadAsync(token, Math.Min(2000, remaining)).ConfigureAwait(false);
                 samples.Add(new(time.GetUtcNow(), Elapsed(start), value, null));
-                string? failure = TelemetryFailure(value, entry: false) ?? WorkloadFailure(value);
+                string? failure = TelemetryFailure(value, entry: false) ?? LoadFailure(value);
                 if (failure is not null) { return Finish(false, failure, true, start); }
-                remaining = 10000 - Elapsed(start);
+                remaining = window - Elapsed(start);
                 if (remaining < 2000) { return Finish(false, "InsufficientSnapshotBudget", true, start); }
                 var protocol = await SnapshotAsync(source, false, token, 2000).ConfigureAwait(false);
                 if (protocol.Failure is not null)
@@ -191,19 +228,19 @@ internal sealed class Rz090528PadlessLoadedValidation(
                 if (!PositiveFans(protocol.Fans)) { return Finish(false, "FanNotPositive", true, start); }
                 failure = TelemetryFailure(value, entry: false);
                 if (failure is not null) { return Finish(false, failure, true, start); }
-                if (Elapsed(start) >= 10000) { return Finish(false, "ObservationDeadlineMissed", true, start); }
+                if (Elapsed(start) >= window) { return Finish(false, "ObservationDeadlineMissed", true, start); }
             }
-            // At eight seconds observe external thermal/workload state without spending more HID budget.
-            await WaitUntil(start, 8000, token).ConfigureAwait(false);
-            double finalBudget = 10000 - Elapsed(start);
+            // Two seconds before the deadline observe external thermal/workload state without spending more HID budget.
+            await WaitUntil(start, window - 2000, token).ConfigureAwait(false);
+            double finalBudget = window - Elapsed(start);
             if (finalBudget <= 0) { return Finish(false, "ObservationDeadlineMissed", true, start); }
             var finalExternal = await ReadAsync(token, Math.Min(2000, finalBudget)).ConfigureAwait(false);
             samples.Add(new(time.GetUtcNow(), Elapsed(start), finalExternal, null));
-            string? finalFailure = TelemetryFailure(finalExternal, entry: false) ?? WorkloadFailure(finalExternal);
+            string? finalFailure = TelemetryFailure(finalExternal, entry: false) ?? LoadFailure(finalExternal);
             if (finalFailure is not null) { return Finish(false, finalFailure, true, start); }
-            if (Elapsed(start) >= 10000) { return Finish(false, "ObservationDeadlineMissed", true, start); }
-            await WaitUntil(start, 10000, token).ConfigureAwait(false);
-            return Elapsed(start) <= 10250 ? Finish(true, null, true, start)
+            if (Elapsed(start) >= window) { return Finish(false, "ObservationDeadlineMissed", true, start); }
+            await WaitUntil(start, window, token).ConfigureAwait(false);
+            return Elapsed(start) <= window + 250 ? Finish(true, null, true, start)
                 : Finish(false, "ObservationDeadlineMissed", true, start);
         }
         catch (OperationCanceledException) { return Finish(false, "CanceledDuringObservation", true, start); }
@@ -221,9 +258,13 @@ internal sealed class Rz090528PadlessLoadedValidation(
             return "CpuOrGpuTelemetryUnavailable";
         }
         if (entry && (cpu > 70 || value.GpuCelsius > 72)) { return "ExperimentalEntryEnvelopeExceeded"; }
-        if (!entry && (cpu >= 75 || value.GpuCelsius >= 75)) { return "ExperimentalTemperatureTripwire"; }
+        if (!entry && (cpu >= plan.AbortCpuCelsius || value.GpuCelsius >= plan.AbortGpuCelsius)) { return "ExperimentalTemperatureTripwire"; }
         return null;
     }
+    private string? LoadFailure(Rz090528LoadedReading value) => plan.RequiresWorkload ? WorkloadFailure(value) : NoLoadFailure(value);
+    // No-load: no benchmark process may appear and the GPU must stay idle.
+    private static string? NoLoadFailure(Rz090528LoadedReading value) =>
+        value.RunningExact || value.GpuUtilizationPercent is not <= 10 ? "NoLoadConditionLost" : null;
     private string? WorkloadFailure(Rz090528LoadedReading value) => !value.RunningExact
         || string.IsNullOrWhiteSpace(bound) || value.WorkloadIdentity != bound ? "BoundWorkloadLost"
         : value.GpuUtilizationPercent is not (>= 80 and <= 100) ? "QualifyingGpuLoadLost" : null;
@@ -294,5 +335,5 @@ internal sealed class Rz090528PadlessLoadedValidation(
     private Rz090528LoadedResult Finish(bool completed, string? failure, bool restore, long start) => Result = new(
         completed, failure, restore, baseline.ToArray(), qualification.ToArray(), admission, samples.ToArray(),
         candidateConfirmed is null ? 0 : Elapsed(start), applyMilliseconds, restoredMilliseconds,
-        timingUncertain || candidateConfirmed is not null && Elapsed(start) > 10250, SnapshotQuiesced);
+        timingUncertain || candidateConfirmed is not null && Elapsed(start) > plan.ObservationMilliseconds + 250, SnapshotQuiesced);
 }

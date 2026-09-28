@@ -59,7 +59,7 @@ internal static class Rz090528PadlessBatteryBoundaryValidationCommand
     internal static bool NoBenchmarkProcesses(IEnumerable<string> names) =>
         !names.Any(name => name.StartsWith("3DMark", StringComparison.OrdinalIgnoreCase));
 
-    private static bool ObserveNoBenchmarkProcesses()
+    internal static bool ObserveNoBenchmarkProcesses()
     {
         Process[] processes;
         try { processes = Process.GetProcesses(); }

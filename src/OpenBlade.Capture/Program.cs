@@ -10,6 +10,8 @@ if (args.Length > 0 && args[0].Equals(
     || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Loaded60Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.NoLoad60Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.UsbCName, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
@@ -33,6 +35,14 @@ if (args.Length > 0 && args[0].Equals(
         {
             return await Rz090528PadlessBatteryBoundaryValidationCommand.RunWindowsAsync(
                 args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+        }
+        foreach (var variant in new[] { Rz090528PadlessLoadedHyperBoostValidationCommand.Loaded60, Rz090528PadlessLoadedHyperBoostValidationCommand.NoLoad60 })
+        {
+            if (args[0].Equals(variant.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return await Rz090528PadlessLoadedHyperBoostValidationCommand.RunWindowsAsync(
+                    args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token, variant);
+            }
         }
         if (args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
         {

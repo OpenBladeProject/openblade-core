@@ -146,6 +146,47 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
         Assert.DoesNotContain("late", frozen);
     }
 
+    [Fact]
+    public void SixtySecondVariantsRequireTheirOwnConfirmationsPlansAndArgumentShapes()
+    {
+        var loaded = Rz090528PadlessLoadedHyperBoostValidationCommand.Loaded60;
+        var idle = Rz090528PadlessLoadedHyperBoostValidationCommand.NoLoad60;
+        string[] Loaded(Rz090528PadlessLoadedHyperBoostValidationCommand.Variant v) =>
+        [
+            "--confirm-target", v.TargetConfirmation, "--confirm-pad-disconnected", v.BoundaryConfirmation,
+            "--plan-sha256", v.Profile.PlanSha256,
+            "--workload-exe", Path.Combine(Path.GetTempPath(), StockSteelNomadWorkload.ExpectedExecutableName),
+            "--hwinfo-exe", Path.Combine(Path.GetTempPath(), "HWiNFO64.exe"),
+            "--hwinfo-log", Path.Combine(Path.GetTempPath(), "sensors.json"),
+        ];
+        string[] NoLoad(Rz090528PadlessLoadedHyperBoostValidationCommand.Variant v) =>
+        [
+            "--confirm-target", v.TargetConfirmation, "--confirm-pad-disconnected", v.BoundaryConfirmation,
+            "--plan-sha256", v.Profile.PlanSha256,
+            "--hwinfo-exe", Path.Combine(Path.GetTempPath(), "HWiNFO64.exe"),
+            "--hwinfo-log", Path.Combine(Path.GetTempPath(), "sensors.json"),
+        ];
+        Assert.True(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(Loaded(loaded), loaded));
+        Assert.True(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(NoLoad(idle), idle));
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(NoLoad(loaded), loaded));
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(Loaded(idle), idle));
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(Arguments(), loaded));
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(Loaded(loaded)));
+        Assert.True(Rz090528PadlessLoadedHyperBoostValidationCommand.ValidArguments(Arguments()));
+        Assert.False(idle.Profile.RequiresWorkload);
+        Assert.Equal(60000, loaded.Profile.ObservationMilliseconds);
+    }
+
+    [Fact]
+    public void NoLoadTreatsAnyBenchmarkProcessAsRunningWorkload()
+    {
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.IdleWorkloadObservation(false, () => true).RunningExact);
+        Assert.True(Rz090528PadlessLoadedHyperBoostValidationCommand.IdleWorkloadObservation(false, () => false).RunningExact);
+        int calls = 0;
+        Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.IdleWorkloadObservation(true, () => { calls++; return false; }).RunningExact);
+        Assert.Equal(0, calls);
+    }
+
     private static string[] Arguments() =>
     [
         "--confirm-target", Rz090528PadlessLoadedHyperBoostValidationCommand.Confirmation,

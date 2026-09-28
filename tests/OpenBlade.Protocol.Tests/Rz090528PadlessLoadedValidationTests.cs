@@ -293,6 +293,140 @@ public sealed class Rz090528PadlessLoadedValidationTests
         finally { release.Set(); }
     }
 
+    [Fact]
+    public async Task SixtySecondLoadedProfileTakesThirtySamplesWithinItsTripwire()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock);
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondLoaded);
+        var source = new Source();
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        telemetry.Cpu = 84.9;
+        telemetry.Gpu = 79;
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.True(result.Completed);
+        Assert.Equal(30, result.Samples.Count);
+        Assert.Equal(30, source.Reads);
+        Assert.Null(result.Samples[^1].Fans);
+        Assert.Equal(58000, result.Samples[^1].ElapsedMilliseconds);
+        Assert.Equal(60000, result.ObservationElapsedMilliseconds);
+    }
+
+    [Theory]
+    [InlineData(85, 70)]
+    [InlineData(60, 80)]
+    public async Task SixtySecondProfilesUseTheApprovedTripwire(double cpu, int gpu)
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock);
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondLoaded);
+        var source = new Source();
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        telemetry.Cpu = cpu;
+        telemetry.Gpu = gpu;
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.False(result.Completed);
+        Assert.Equal("ExperimentalTemperatureTripwire", result.Failure);
+        Assert.True(result.PermitKnownStateRestore);
+    }
+
+    [Fact]
+    public void TenSecondProfileKeepsTheOriginalSeventyFiveDegreeTripwire()
+    {
+        Assert.Equal(75, Rz090528LoadedProfile.TenSecondLoaded.AbortCpuCelsius);
+        Assert.Equal(75, Rz090528LoadedProfile.TenSecondLoaded.AbortGpuCelsius);
+        Assert.Equal(10000, Rz090528LoadedProfile.TenSecondLoaded.ObservationMilliseconds);
+        Assert.Equal(Rz090528PadlessLoadedValidation.PlanSha256, Rz090528LoadedProfile.TenSecondLoaded.PlanSha256);
+        Assert.NotEmpty(Rz090528PadlessLoadedValidation.ReadPlan(Rz090528LoadedProfile.SixtySecondLoaded));
+        Assert.NotEmpty(Rz090528PadlessLoadedValidation.ReadPlan(Rz090528LoadedProfile.SixtySecondNoLoad));
+        Assert.Throws<InvalidOperationException>(() => Rz090528PadlessLoadedValidation.ValidatePlan(
+            Rz090528PadlessLoadedValidation.ReadPlan(), Rz090528LoadedProfile.SixtySecondLoaded));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SixtySecondProfilesRunEndToEndThroughTheGuardedSessionWithinTheTransactionBudget(bool loadedProfile)
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = loadedProfile ? new Telemetry(clock) : new Telemetry(clock) { Running = false, Utilization = 2 };
+        var session = new Session();
+        var loaded = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: loadedProfile ? Rz090528LoadedProfile.SixtySecondLoaded : Rz090528LoadedProfile.SixtySecondNoLoad);
+        var runner = Runner(session, loaded);
+        var result = await runner.RunAsync(PerformanceFanValidationTarget.HyperBoostFromPerformance, CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(new[] { "01010700", "01020700", "01010200", "01020200" }, session.Writes);
+        Assert.True(loaded.Result!.Completed);
+        Assert.Equal(30, loaded.Result.Samples.Count);
+        Assert.Equal(29, loaded.Result.Samples.Count(sample => sample.Fans is not null));
+        Assert.True(runner.DisposalConfirmed);
+    }
+
+    [Fact]
+    public async Task NoLoadProfileAdmitsWithoutArmingAndCompletes()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = false, Utilization = 3 };
+        int arms = 0;
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => { arms++; return null; }, clock: clock,
+            delay: clock.Wait, profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source();
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        Assert.Equal(0, arms);
+        Assert.Empty(run.Result!.Qualification);
+        Assert.Equal(1, source.Reads);
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.True(result.Completed);
+        Assert.Equal(30, result.Samples.Count);
+    }
+
+    [Theory]
+    [InlineData(true, 3u)]
+    [InlineData(false, 11u)]
+    public async Task NoLoadProfileRefusesEntryWithBenchmarkOrBusyGpu(bool running, uint utilization)
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = running, Utilization = utilization };
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source();
+        Assert.False(await run.PrepareAsync(source, CancellationToken.None));
+        Assert.Equal("NoLoadConditionLost", run.Result!.Failure);
+        Assert.Equal(0, source.Reads);
+    }
+
+    [Theory]
+    [InlineData(true, 3u)]
+    [InlineData(false, 11u)]
+    public async Task NoLoadProfileAbortsToKnownRestoreWhenLoadAppears(bool running, uint utilization)
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = false, Utilization = 3 };
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source();
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        telemetry.Running = running;
+        telemetry.Utilization = utilization;
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.False(result.Completed);
+        Assert.Equal("NoLoadConditionLost", result.Failure);
+        Assert.True(result.PermitKnownStateRestore);
+    }
+
     private static Rz090528PadlessLoadedValidation Create(Rz090528PadlessNoLoadValidationTests.Clock clock, Telemetry telemetry) =>
         new(telemetry.Read, _ => null, clock: clock, delay: clock.Wait);
     private static Rz090528PadlessHyperBoostValidation Runner(Session session, Rz090528PadlessLoadedValidation loaded) =>
@@ -305,6 +439,8 @@ public sealed class Rz090528PadlessLoadedValidationTests
         internal int AdvanceAt, WarmupFrom = int.MaxValue, WarmupThrough, LostAt;
         internal TimeSpan AdvanceBy;
         internal string? Fault;
+        internal bool Running = true;
+        internal uint Utilization = 90;
         private int reads;
         internal ValueTask<Rz090528LoadedReading> Read(CancellationToken token)
         {
@@ -313,7 +449,7 @@ public sealed class Rz090528PadlessLoadedValidationTests
             if (Stall) { return new ValueTask<Rz090528LoadedReading>(new TaskCompletionSource<Rz090528LoadedReading>().Task); }
             if (reads == AdvanceAt) { clock.Advance(AdvanceBy); }
             return ValueTask.FromResult(new Rz090528LoadedReading(Frozen ? DateTimeOffset.UnixEpoch : clock.GetUtcNow(), Age,
-                reads >= WarmupFrom && reads <= WarmupThrough ? 85 : Fault == "hot" || reads == HotAt ? 75 : Cpu, Gpu, Fault != "workload" && reads != LostAt, "exact-bound-process", 90,
+                reads >= WarmupFrom && reads <= WarmupThrough ? 85 : Fault == "hot" || reads == HotAt ? 75 : Cpu, Gpu, Fault != "workload" && reads != LostAt && Running, "exact-bound-process", Utilization,
                 Fault == "lost" || reads == FailAt ? "CpuJsonLost" : null));
         }
     }

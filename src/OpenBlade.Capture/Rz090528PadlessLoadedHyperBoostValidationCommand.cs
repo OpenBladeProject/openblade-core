@@ -17,14 +17,42 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
     internal const string Confirmation = "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:APPLY-ONCE:RESTORE:10S:EXPERIMENTAL-75C";
     internal const string AttendedConfirmation = "ATTENDED:PAD-USB-AND-POWER-DISCONNECTED:STEEL-NOMAD-DX12";
 
-    internal static bool ValidArguments(string[] args) => args.Length == 12 && args.Take(6).SequenceEqual(new[]
+    internal const string Loaded60Name = "validate-rz09-0528-02c6-hyperboost-padless-loaded-60s";
+    internal const string NoLoad60Name = "validate-rz09-0528-02c6-hyperboost-padless-no-load-60s";
+
+    // One implementation; each variant names its reviewed profile, confirmations and operator instruction.
+    internal sealed record Variant(string Name, string TargetConfirmation, string BoundaryConfirmation,
+        Rz090528LoadedProfile Profile, string ArmedInstruction);
+    internal static readonly Variant TenSecond = new(Name, Confirmation, AttendedConfirmation,
+        Rz090528LoadedProfile.TenSecondLoaded,
+        "Start one Steel Nomad DX12 run. Experimental 10-second observation; 180-second arming timeout.");
+    internal static readonly Variant Loaded60 = new(Loaded60Name,
+        "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:APPLY-ONCE:RESTORE:60S:EXPERIMENTAL-CPU85-GPU80",
+        "ATTENDED:PAD-USB-AND-POWER-DISCONNECTED:STEEL-NOMAD-STRESS-TEST", Rz090528LoadedProfile.SixtySecondLoaded,
+        "Start the Steel Nomad Stress Test. Experimental 60-second observation; 180-second arming timeout.");
+    internal static readonly Variant NoLoad60 = new(NoLoad60Name,
+        "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:APPLY-ONCE:RESTORE:60S-NO-LOAD:EXPERIMENTAL-CPU85-GPU80",
+        "ATTENDED:PAD-USB-AND-POWER-DISCONNECTED:NO-WORKLOAD", Rz090528LoadedProfile.SixtySecondNoLoad, "");
+
+    internal static bool ValidArguments(string[] args, Variant? variant = null)
     {
-        "--confirm-target", Confirmation, "--confirm-pad-disconnected", AttendedConfirmation,
-        "--plan-sha256", Rz090528PadlessLoadedValidation.PlanSha256,
-    }) && args[6] == "--workload-exe" && ExactPath(args[7], StockSteelNomadWorkload.ExpectedExecutableName)
-        && args[8] == "--hwinfo-exe" && ExactPath(args[9], "HWiNFO64.exe")
-        && args[10] == "--hwinfo-log" && LocalPath(args[11])
-        && Path.GetExtension(args[11]).Equals(".json", StringComparison.OrdinalIgnoreCase);
+        variant ??= TenSecond;
+        // Loaded variants bind an explicit workload executable; the no-load variant has none.
+        int h = variant.Profile.RequiresWorkload ? 8 : 6;
+        return args.Length == h + 4 && args.Take(6).SequenceEqual(new[]
+        {
+            "--confirm-target", variant.TargetConfirmation, "--confirm-pad-disconnected", variant.BoundaryConfirmation,
+            "--plan-sha256", variant.Profile.PlanSha256,
+        }) && (!variant.Profile.RequiresWorkload
+            || args[6] == "--workload-exe" && ExactPath(args[7], StockSteelNomadWorkload.ExpectedExecutableName))
+            && args[h] == "--hwinfo-exe" && ExactPath(args[h + 1], "HWiNFO64.exe")
+            && args[h + 2] == "--hwinfo-log" && LocalPath(args[h + 3])
+            && Path.GetExtension(args[h + 3]).Equals(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // No-load reports any 3DMark process as a running workload so the no-load gate fails closed.
+    internal static StockLoadWorkloadObservation IdleWorkloadObservation(bool requiresWorkload, Func<bool> noBenchmarkProcesses) =>
+        new(!requiresWorkload && !noBenchmarkProcesses(), null, null);
 
     private static bool LocalPath(string path) => Path.IsPathFullyQualified(path)
         && !Path.GetPathRoot(path)!.StartsWith("\\\\", StringComparison.Ordinal);
@@ -52,9 +80,12 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
             workload.RunningExact, workloadIdentity, gpu.GpuUtilizationPercent, failure);
     }
 
-    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, TextWriter progress, CancellationToken token)
+    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, TextWriter progress, CancellationToken token,
+        Variant? variant = null)
     {
-        if (!ValidArguments(args))
+        variant ??= TenSecond;
+        int h = variant.Profile.RequiresWorkload ? 8 : 6;
+        if (!ValidArguments(args, variant))
         {
             await output.WriteLineAsync("Exact target, attended workload, reviewed plan and explicit HWiNFO/workload paths required.");
             return 2;
@@ -75,7 +106,7 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
         bool externalTelemetryQuiesced = true;
         try
         {
-            provider = await VerifiedHwinfoProcess.OpenAsync(args[9], token);
+            provider = await VerifiedHwinfoProcess.OpenAsync(args[h + 1], token);
             providerProvenance = new
             {
                 provider.Identity.ProcessId,
@@ -86,10 +117,11 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
                 provider.Identity.SignatureVerified,
                 Signer = "REALiX"
             };
-            cpu = new HwinfoTimestampedCpuLog(args[11], provider.Identity, provider.Observe);
+            cpu = new HwinfoTimestampedCpuLog(args[h + 3], provider.Identity, provider.Observe);
             StockGpuTelemetry? currentGpu = null;
-            var workload = new StockSteelNomadWorkload(args[7], StockSteelNomadWorkload.EnumerateWindows,
-                () => currentGpu?.GpuUtilizationPercent);
+            // The no-load variant never binds, arms or observes a benchmark workload.
+            StockSteelNomadWorkload? workload = variant.Profile.RequiresWorkload
+                ? new(args[7], StockSteelNomadWorkload.EnumerateWindows, () => currentGpu?.GpuUtilizationPercent) : null;
             bool armed = false;
             lane = new(() => { cpu.Dispose(); provider.Dispose(); });
             async ValueTask<Rz090528LoadedReading> Read(CancellationToken cancellation)
@@ -99,12 +131,13 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
                     cancellation.ThrowIfCancellationRequested();
                     HwinfoCpuLogObservation cpuValue = cpu.ReadFresh(cancellation);
                     currentGpu = NvidiaNvmlGpuClockOffsetValidationApi.ReadExactRz090528GpuTelemetry();
-                    StockLoadWorkloadObservation observedWorkload = armed ? workload.Observe() : new(false, null, null);
+                    StockLoadWorkloadObservation observedWorkload = armed && workload is not null ? workload.Observe()
+                        : IdleWorkloadObservation(variant.Profile.RequiresWorkload, Rz090528PadlessBatteryBoundaryValidationCommand.ObserveNoBenchmarkProcesses);
                     cancellation.ThrowIfCancellationRequested();
-                    string? binding = workload.Bound is { } bound ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                    string? binding = workload?.Bound is { } bound ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                         $"{bound.ProcessId}|{bound.StartedAtUtc:O}|{Path.GetFullPath(bound.Path)}|{bound.Sha256}|{bound.Version}"))) : null;
                     Rz090528LoadedReading combined = ComposeReading(cpuValue, currentGpu, observedWorkload, binding, DateTimeOffset.UtcNow);
-                    return new(cpuValue, currentGpu, combined, workload.Bound, null);
+                    return new(cpuValue, currentGpu, combined, workload?.Bound, null);
                 }, accepted =>
                 {
                     observations.Add(new { Cpu = accepted.Cpu, Gpu = accepted.Gpu, Combined = accepted.Reading });
@@ -116,15 +149,15 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
             {
                 return lane.InvokeAsync(() =>
                 {
-                    string? failure = workload.Arm(at);
+                    string? failure = workload is null ? "NoWorkloadVariantCannotArm" : workload.Arm(at);
                     armed = failure is null;
                     return new(null, null, null, null, failure);
                 }, null, token).AsTask().GetAwaiter().GetResult().ArmFailure;
             }, at =>
             {
-                progress.WriteLine($"ARMED {at:O} - Start one Steel Nomad DX12 run. Experimental 10-second observation; 180-second arming timeout.");
+                progress.WriteLine($"ARMED {at:O} - {variant.ArmedInstruction}");
                 progress.Flush();
-            });
+            }, profile: variant.Profile);
             var nvml = new NvidiaNvmlGpuClockOffsetProbe();
             var nvapi = new NvidiaNvapiGpuClockOffsetProbe();
             bool Eligible()
@@ -169,8 +202,9 @@ internal static class Rz090528PadlessLoadedHyperBoostValidationCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             Target = "RZ09-05289EN4 / 1532:02C6 / BIOS 2.02 / RTX 5090 Laptop / driver 617.14",
-            Rz090528PadlessLoadedValidation.PlanSha256,
-            Plan = JsonSerializer.Deserialize<JsonElement>(Rz090528PadlessLoadedValidation.ReadPlan()),
+            Profile = variant.Profile.Name,
+            variant.Profile.PlanSha256,
+            Plan = JsonSerializer.Deserialize<JsonElement>(Rz090528PadlessLoadedValidation.ReadPlan(variant.Profile)),
             Hwinfo = providerProvenance,
             Workload = acceptedWorkload is { } bound ? new
             {
