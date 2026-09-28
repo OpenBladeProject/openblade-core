@@ -20,12 +20,23 @@ public static class BatteryValidationFactory
             : ProductionBatteryFactory.CreateWindows();
 
     internal static IProductionBatteryPortFactory
-        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation() =>
-        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
-            ? throw new UnvalidatedCommandException(
-                "Pad-less HyperBoost lifecycle validation is unavailable on this model.")
-            : ProductionBatteryFactory
-                .CreateWindowsForPadlessHyperBoostLifecycleValidation();
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation()
+    {
+        PadlessHyperBoostLifecycleTarget? target = PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost();
+        RequireLifecycleReadiness(target);
+        return target!.Model == "RZ09-0528"
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null, allowPadlessLifecycleValidation: true)
+            : ProductionBatteryFactory.CreateWindowsForPadlessHyperBoostLifecycleValidation();
+    }
+
+    internal static void RequireLifecycleReadiness(PadlessHyperBoostLifecycleTarget? target)
+    {
+        if (target is null || !target.Readiness.LifecycleValidationReady)
+        {
+            throw new UnvalidatedCommandException(
+                "Developer lifecycle validation remains blocked until this exact model's non-lifecycle evidence is reviewed.");
+        }
+    }
 
     internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService(
@@ -44,8 +55,18 @@ public static class BatteryValidationFactory
 
     private static IProductionBatteryPortFactory
         CreateWindowsRz090528ProductionBattery(
-            FirmwareCompatibilityPolicy? compatibilityPolicy)
+            FirmwareCompatibilityPolicy? compatibilityPolicy,
+            bool allowPadlessLifecycleValidation = false)
     {
+        if (allowPadlessLifecycleValidation)
+        {
+            PadlessHyperBoostLifecycleTarget? selected = PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost();
+            if (selected?.Model != "RZ09-0528")
+            {
+                throw new UnvalidatedCommandException("The exact RZ09-0528 lifecycle target is unavailable.");
+            }
+            RequireLifecycleReadiness(selected);
+        }
         var target = new DeviceIdentity(
             Model: "RZ09-0528",
             VendorId: 0x1532,
@@ -467,13 +488,17 @@ public static class BatteryValidationFactory
         var hostIdentity = new WindowsHostIdentitySource(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
-            WindowsHostIdentitySource.Rz090528Identity,
+            allowPadlessLifecycleValidation
+                ? WindowsHostIdentitySource.Rz090528Identity with { FirmwareAdmission = FirmwareAdmissionScope.ExactVersions }
+                : WindowsHostIdentitySource.Rz090528Identity,
             compatibilityPolicy);
+        ControllerExclusivityPolicy exclusivity = allowPadlessLifecycleValidation
+            ? ControllerExclusivityPolicy.Strict : ControllerExclusivityPolicy.Advisory;
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             guard,
             native,
-            ControllerExclusivityPolicy.Advisory,
+            exclusivity,
             new HidHandleIdentity(
                 VendorId: 0x1532,
                 ProductId: 0x02C6,
@@ -490,7 +515,7 @@ public static class BatteryValidationFactory
                 guard,
                 TimeProvider.System,
                 DefaultExchangeTimeout,
-                ControllerExclusivityPolicy.Advisory,
+                exclusivity,
                 settleDelay),
             TimeProvider.System,
             DefaultExchangeTimeout,
@@ -557,12 +582,15 @@ public static class BatteryValidationFactory
             },
             Rz090528CommandSessionGate.Shared,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: allowPadlessLifecycleValidation ? DeviceFeatureAccess.ObservedOnly : null,
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ReadWrite),
             hyperBoostCatalog: hyperBoostCatalog,
-            hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native));
+            hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native),
+            allowPadlessHyperBoostLifecycleValidation: allowPadlessLifecycleValidation,
+            padlessHyperBoostLifecycleBaseMode: PerformancePreset.Performance);
     }
 
     internal static ProductionBatteryReadEvidence

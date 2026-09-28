@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "scope": "Developer lifecycle validation preparation only; not admission evidence",
+  "model": "RZ09-0528",
+  "sku": "RZ09-05289EN4",
+  "biosVersion": "2.02",
+  "baselineMode": "Performance",
+  "fanMode": "Automatic",
+  "transition": "Captured paired mode 2 to 7 to 2 only",
+  "gates": {
+    "exactDeviceAndFirmwareReviewed": false,
+    "immediateNoLoadApplyReadbackRestoreValidated": false,
+    "sustainedNoLoadPlanReviewed": false,
+    "sustainedNoLoadExecutionValidated": false,
+    "postRestorationAbsenceValidated": false,
+    "reviewedLoadPlanReviewed": false,
+    "reviewedLoadValidated": false,
+    "adapterTransitionValidated": false,
+    "lowPowerLifecycleValidated": false,
+    "crashRecoveryValidated": false
+  }
+}

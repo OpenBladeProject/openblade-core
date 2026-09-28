@@ -93,6 +93,7 @@ internal sealed class ProductionBatteryPort :
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
+    private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -120,7 +121,8 @@ internal sealed class ProductionBatteryPort :
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
-        bool allowPadlessHyperBoostLifecycleValidation = false)
+        bool allowPadlessHyperBoostLifecycleValidation = false,
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
         : this(
             session,
             session,
@@ -141,7 +143,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostBaseModes,
             hyperBoostCatalog,
             hyperBoostEligibility,
-            allowPadlessHyperBoostLifecycleValidation)
+            allowPadlessHyperBoostLifecycleValidation,
+            padlessHyperBoostLifecycleBaseMode)
     {
     }
 
@@ -165,7 +168,8 @@ internal sealed class ProductionBatteryPort :
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         DeviceCommandCatalog? hyperBoostCatalog = null,
         IHyperBoostEligibilitySource? hyperBoostEligibility = null,
-        bool allowPadlessHyperBoostLifecycleValidation = false)
+        bool allowPadlessHyperBoostLifecycleValidation = false,
+        PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -188,7 +192,8 @@ internal sealed class ProductionBatteryPort :
             hyperBoostBaseModes,
             hyperBoostCatalog,
             hyperBoostEligibility,
-            allowPadlessHyperBoostLifecycleValidation)
+            allowPadlessHyperBoostLifecycleValidation,
+            padlessHyperBoostLifecycleBaseMode)
     {
     }
 
@@ -212,7 +217,8 @@ internal sealed class ProductionBatteryPort :
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes,
         DeviceCommandCatalog? hyperBoostCatalog,
         IHyperBoostEligibilitySource? hyperBoostEligibility,
-        bool allowPadlessHyperBoostLifecycleValidation)
+        bool allowPadlessHyperBoostLifecycleValidation,
+        PerformancePreset padlessHyperBoostLifecycleBaseMode)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -241,6 +247,7 @@ internal sealed class ProductionBatteryPort :
         this.hyperBoostEligibility = hyperBoostEligibility;
         this.allowPadlessHyperBoostLifecycleValidation =
             allowPadlessHyperBoostLifecycleValidation;
+        this.padlessHyperBoostLifecycleBaseMode = padlessHyperBoostLifecycleBaseMode;
         if (hyperBoostBaseModes is not null
             && (hyperBoostAccess is null
                 || !Enum.IsDefined(hyperBoostBaseModes.Silent)
@@ -270,13 +277,14 @@ internal sealed class ProductionBatteryPort :
             && (hyperBoostAccess != DeviceFeatureAccess.ReadWrite
                 || hyperBoostWithoutCoolingPadAccess is not
                     (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
-                || hyperBoostBaseModes?.Balanced
+                || padlessHyperBoostLifecycleBaseMode is not (PerformancePreset.Balanced or PerformancePreset.Performance)
+                || hyperBoostBaseModes?.AccessFor(padlessHyperBoostLifecycleBaseMode)
                     != DeviceFeatureAccess.ReadWrite
                 || this.hyperBoostEligibility is null
-                || !HasHyperBoostCommandSet(this.hyperBoostCatalog)))
+                || !HasHyperBoostCommandSet(this.hyperBoostCatalog, catalog, hyperBoostBaseModes)))
         {
             throw new UnvalidatedCommandException(
-                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, Balanced restoration, pad-less evidence, and an independent eligibility gate.");
+                "Developer pad-less lifecycle validation requires the exact admitted HyperBoost pair, selected baseline restoration, pad-less evidence, and an independent eligibility gate.");
         }
         if (hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!HasHyperBoostCommandSet(this.hyperBoostCatalog, catalog, hyperBoostBaseModes)
@@ -671,7 +679,7 @@ internal sealed class ProductionBatteryPort :
         .EnablePadlessHyperBoostLifecycleValidationAsync(
             CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
                 enabled: true,
-                PerformancePreset.Balanced,
+                padlessHyperBoostLifecycleBaseMode,
                 allowPadlessLifecycleValidation: true,
                 cancellationToken);
 
@@ -730,7 +738,9 @@ internal sealed class ProductionBatteryPort :
                 : null,
             revalidateEligibilityPerCommand: enabled
                 && HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities)
-                && baseMode == PerformancePreset.Performance);
+                && baseMode == PerformancePreset.Performance,
+            requiredPadStatePerCommand: lifecycleValidation
+                ? CoolingPadConnectionState.Absent : CoolingPadConnectionState.PresentExact);
     }
 
     private (IReadOnlyList<string> Actions, DeviceCommandCatalog Catalog)
@@ -1517,7 +1527,8 @@ internal sealed class ProductionBatteryPort :
         Func<CancellationToken, Task>? validateEligibility = null,
         IReadOnlyList<string>? hyperBoostExitActions = null,
         DeviceCommandCatalog? hyperBoostExitCatalog = null,
-        bool revalidateEligibilityPerCommand = false)
+        bool revalidateEligibilityPerCommand = false,
+        CoolingPadConnectionState requiredPadStatePerCommand = CoolingPadConnectionState.PresentExact)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1632,7 +1643,7 @@ internal sealed class ProductionBatteryPort :
                     await ExecuteThermalCommandAsync(command, cancellationToken,
                         revalidateEligibilityPerCommand
                             ? () => hyperBoostEligibility?.ObserveCoolingPad()
-                                == CoolingPadConnectionState.PresentExact
+                                == requiredPadStatePerCommand
                             : null)
                         .ConfigureAwait(false);
 
@@ -1760,13 +1771,16 @@ internal sealed class ProductionBatteryPort :
             padState = CoolingPadConnectionState.ObservationFailed;
         }
 
-        bool padPresentEligibility = padState == CoolingPadConnectionState.PresentExact;
+        bool exactPerformanceLifecycle = allowPadlessLifecycleValidation
+            && this.allowPadlessHyperBoostLifecycleValidation
+            && padlessHyperBoostLifecycleBaseMode == PerformancePreset.Performance;
+        bool padPresentEligibility = !exactPerformanceLifecycle && padState == CoolingPadConnectionState.PresentExact;
         bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
-            && baseMode == PerformancePreset.Balanced
-            && (Capabilities.HyperBoostWithoutCoolingPadAccess
+            && (baseMode == PerformancePreset.Balanced && Capabilities.HyperBoostWithoutCoolingPadAccess
                     == DeviceFeatureAccess.ReadWrite
                 || allowPadlessLifecycleValidation
                     && this.allowPadlessHyperBoostLifecycleValidation
+                    && baseMode == padlessHyperBoostLifecycleBaseMode
                     && Capabilities.HyperBoostWithoutCoolingPadAccess
                         == DeviceFeatureAccess.ObservedOnly);
         if (!padPresentEligibility && !padAbsentEligibility)

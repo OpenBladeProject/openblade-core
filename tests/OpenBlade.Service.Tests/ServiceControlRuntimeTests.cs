@@ -9,6 +9,28 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceControlRuntimeTests : IDisposable
 {
+    [Fact]
+    public async Task PadlessLifecycle_NormalBuildRejectsRequestWithoutDeviceWrites()
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent));
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int before = context.Device.TotalSetterCalls;
+        var request = new ValidatePadlessHyperBoostLifecycleRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            PadlessHyperBoostLifecycleScenario.UnexpectedExit, Guid.NewGuid(),
+            new string('A', 40), new string('B', 64),
+            HyperBoostWithoutCoolingPadAdmissionSource.TrustedManifestSha256);
+
+        ControlOperationResult result = await context.Runtime.ValidatePadlessHyperBoostLifecycleAsync(
+            request, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(before, context.Device.TotalSetterCalls);
+        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.Runtime.Tests",

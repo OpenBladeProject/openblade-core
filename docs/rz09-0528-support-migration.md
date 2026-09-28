@@ -177,6 +177,17 @@ The surrounding validation restores original settings after the benchmark
 exits. This command provides no production padless admission; its hardware
 results require separate review.
 
+Developer lifecycle validation selects a separate exact-model contract. The
+RZ09-0528 preparation descriptor uses Performance/Automatic and keeps every
+evidence gate closed; the RZ09-0581 admission manifest cannot authorize this
+model. Service requests bind the selected manifest as well as the exact build.
+The 2025 lifecycle factory refuses hardware access until its own non-lifecycle
+evidence requirements are reviewed. This preparation does not enable installed
+padless controls or authorize an adapter, crash-recovery, or sleep experiment.
+Before an installed experiment, the lifecycle harness must also select the
+2025 baseline and enforce its reviewed GPU/driver prerequisites. The existing
+Balanced-only harness is not a 2025 validation path.
+
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
 The NVIDIA driver supplies the writable offset backend; no Synapse-delivered

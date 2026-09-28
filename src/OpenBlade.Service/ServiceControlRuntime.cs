@@ -4400,14 +4400,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ControlOperationStatus.Blocked,
                 "The pad-less HyperBoost lifecycle validation scenario is invalid."));
         }
+        PadlessHyperBoostLifecycleTarget? target =
+            PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost();
         PadlessHyperBoostLifecycleValidationBuildIdentity build =
-            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent();
-        if (!build.Matches(
+            PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent(target);
+        if (!build.Authorizes(
+                target,
                 request.ExpectedSourceRevision,
                 request.ExpectedServiceAssemblySha256,
-                request.ExpectedAdmissionManifestSha256)
-            || !HyperBoostWithoutCoolingPadEvidenceGates.Current
-                .LifecycleValidationReady)
+                request.ExpectedAdmissionManifestSha256))
         {
             return Task.FromResult(new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -4422,7 +4423,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             restoreUserIntent: false,
             exitPowerSourceOverride: null,
             expectedExitPowerSourceGeneration: null,
-            token);
+            token,
+            lifecycleTarget: target);
     }
 
     public Task<ControlOperationResult> ValidateThermalExternalDriftAsync(
@@ -5454,9 +5456,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool operationGateAlreadyHeld = false,
         Action<bool>? writeAttemptObserver = null,
         Func<bool>? stillPreparing = null,
-        long? lowPowerResumeGeneration = null)
+        long? lowPowerResumeGeneration = null,
+        PadlessHyperBoostLifecycleTarget? lifecycleTarget = null)
     {
         EnsureInitialized();
+        if (lifecycleValidation is not null
+            && (lifecycleTarget is null || !lifecycleTarget.Readiness.LifecycleValidationReady))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The exact-model pad-less lifecycle evidence is not ready.");
+        }
         ServiceStatusSnapshot? writeBaseline = null;
         bool setterCompleted = false;
         bool ownedDisableAttempt = false;
@@ -5585,7 +5595,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             PerformancePreset requestedBaseMode = enabled
                 ? lifecycleValidation is not null
-                    ? PerformancePreset.Balanced
+                    ? lifecycleTarget!.BaseMode
                     : HyperBoostCapabilityPolicy.EntryBaseMode(current.Capabilities!)
                         ?? PerformancePreset.Performance
                 : ownedHyperBoostBaseMode ?? PerformancePreset.Balanced;
