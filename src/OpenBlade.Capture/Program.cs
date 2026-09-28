@@ -11,6 +11,7 @@ if (args.Length > 0 && args[0].Equals(
     || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.UsbCName, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
 {
     using var cancellation = new CancellationTokenSource();
@@ -22,6 +23,12 @@ if (args.Length > 0 && args[0].Equals(
     Console.CancelKeyPress += cancel;
     try
     {
+        if (args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.UsbCName, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessBatteryBoundaryValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token,
+                Rz090528PadlessBatteryBoundaryValidationCommand.UsbC);
+        }
         if (args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
         {
             return await Rz090528PadlessBatteryBoundaryValidationCommand.RunWindowsAsync(

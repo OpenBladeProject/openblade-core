@@ -25,14 +25,31 @@ internal sealed record Rz090528BatteryBoundaryResult(bool Completed, string? Fai
 internal sealed record Rz090528BatteryBoundaryDecision(bool TransitionPassed, bool PermitRestore,
     bool AlreadyPerformance, PerformanceFanThermalPair? Pair);
 
+// The observed non-full-AC destination. Full-AC entry, setters and cleanup are identical for every destination.
+// AbortPower is a coherent but unplanned off-AC state: it aborts to full-AC cleanup instead of poisoning.
+internal sealed record Rz090528PowerBoundaryDestination(string Name, string Power, bool WindowsAcOnline,
+    byte[] ObservedModes, string PlanResource, string PlanSha256, string? AbortPower = null)
+{
+    internal static readonly Rz090528PowerBoundaryDestination Battery = new("Battery", "0011", false, [2, 3, 7],
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessBatteryBoundaryPlan.json",
+        Rz090528PadlessBatteryBoundaryValidation.PlanSha256);
+    internal static readonly Rz090528PowerBoundaryDestination UsbC100W = new("UsbC100W", "0711", true, [0, 2, 3, 7],
+        "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessUsbCBoundaryPlan.json",
+        Rz090528PadlessBatteryBoundaryValidation.UsbCPlanSha256, AbortPower: "0011");
+}
+
 internal sealed class Rz090528PadlessBatteryBoundaryValidation(
     Func<CancellationToken, ValueTask<Rz090528BatteryBoundaryExternal>> readExternal,
     Action<Rz090528BatteryBoundarySignal> signal, TimeProvider? clock = null,
     Func<TimeSpan, CancellationToken, Task>? delay = null,
-    Func<bool>? externalQuiesced = null, Func<bool?>? readWindowsAc = null)
+    Func<bool>? externalQuiesced = null, Func<bool?>? readWindowsAc = null,
+    Rz090528PowerBoundaryDestination? destination = null)
 {
     internal const string PlanSha256 = "FAEAE270DA1DB0E520A256BD67AE8C1112107D5886D585B22A0B5B4CABECC0E7";
+    internal const string UsbCPlanSha256 = "D6E14BCFF2FF64DB6B4548066E2580E0CF217B3D6B7F9B2A7E2EC857FC648B79";
     internal const string Transitional = "PowerTransitionInProgress";
+    private readonly Rz090528PowerBoundaryDestination target = destination ?? Rz090528PowerBoundaryDestination.Battery;
+    internal Rz090528PowerBoundaryDestination Destination => target;
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly Func<TimeSpan, CancellationToken, Task> wait = delay ?? Task.Delay;
     private readonly List<Rz090528BatteryBoundaryObservation> observations = [];
@@ -45,14 +62,14 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
     private bool SnapshotQuiesced => snapshotOperation?.IsCompleted != false;
     private bool ExternalQuiesced => externalOperation?.IsCompleted != false && (externalQuiesced?.Invoke() ?? true);
 
-    internal static byte[] ReadPlan()
+    internal static byte[] ReadPlan(Rz090528PowerBoundaryDestination? destination = null)
     {
+        destination ??= Rz090528PowerBoundaryDestination.Battery;
         using Stream stream = typeof(Rz090528PadlessBatteryBoundaryValidation).Assembly.GetManifestResourceStream(
-            "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessBatteryBoundaryPlan.json")
-            ?? throw new InvalidOperationException("Battery boundary plan missing.");
+            destination.PlanResource) ?? throw new InvalidOperationException("Power boundary plan missing.");
         using var bytes = new MemoryStream(); stream.CopyTo(bytes);
         byte[] value = bytes.ToArray();
-        if (Convert.ToHexString(SHA256.HashData(value)) != PlanSha256) { throw new InvalidOperationException("Battery boundary plan hash mismatch."); }
+        if (Convert.ToHexString(SHA256.HashData(value)) != destination.PlanSha256) { throw new InvalidOperationException("Power boundary plan hash mismatch."); }
         return value;
     }
 
@@ -62,7 +79,7 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
         prepared = true; started = time.GetTimestamp();
         try
         {
-            _ = ReadPlan();
+            _ = ReadPlan(target);
             DateTimeOffset? previousCpu = null;
             for (int index = 0; index < 2; index++)
             {
@@ -112,25 +129,28 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
                 if (value.Failure is not null) { failure ??= value.Failure; return Finish(false, false, false, null); }
                 if (Elapsed() >= 30000) { failure ??= "BoundaryDeadlineExceeded"; break; }
                 byte mode = Mode(value.Snapshot.Pair)!.Value;
-                bool battery = value.Snapshot.PowerAfter == "0011";
+                bool battery = value.Snapshot.PowerAfter == target.Power;
+                bool offAc = battery || value.Snapshot.PowerAfter == target.AbortPower;
                 // Reconnect immediately on the first coherent battery observation; no deliberate dwell.
                 if (battery && !batteryObserved)
                 {
                     batteryObserved = true;
                     signal(Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow);
                 }
-                autoReversion |= batteryObserved && mode is 2 or 3;
-                string? invalid = recoveryObservation ? null : ThermalFailure(value.Before, false) ?? ThermalFailure(value.After, false);
+                // Only destination samples can show a firmware reversion; full-AC return modes are cleanup inputs.
+                autoReversion |= battery && mode != 7;
+                string? invalid = (recoveryObservation ? null : ThermalFailure(value.Before, false) ?? ThermalFailure(value.After, false))
+                    ?? (offAc && !battery ? "UnexpectedPowerState" : null);
                 if (invalid is not null || !value.Snapshot.PadAbsent)
                 {
                     failure ??= invalid ?? "PadAbsenceLost";
                     recoveryObservation = true; SignalAbort();
                     if (!ExternalQuiesced) { return Finish(false, false, false, null); }
-                    if (!battery) { break; }
+                    if (!offAc) { break; }
                 }
                 // A tripwire first seen on a transitional sample still exits from full AC without waiting.
-                else if (recoveryObservation && !battery && !batteryObserved) { break; }
-                if (battery) { fullAcAt = null; fullAcMode = null; }
+                else if (recoveryObservation && !offAc && !batteryObserved) { break; }
+                if (offAc) { fullAcAt = null; fullAcMode = null; }
                 else if (batteryObserved)
                 {
                     if (fullAcAt is { } previous && time.GetElapsedTime(previous).TotalMilliseconds >= 1000)
@@ -141,7 +161,8 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
                     fullAcAt ??= time.GetTimestamp();
                     fullAcMode ??= mode;
                 }
-                if (!batteryObserved && Elapsed() >= 10000) { failure ??= "NoPowerTransition"; break; }
+                // While off AC the operator is reconnecting; only the overall deadline applies.
+                if (!batteryObserved && !offAc && Elapsed() >= 10000) { failure ??= "NoPowerTransition"; break; }
                 await wait(TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
             }
             failure ??= "BoundaryDeadlineExceeded";
@@ -204,7 +225,7 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
             after = windowsOnly ? WindowsOnly() : await ExternalAsync(token, budget).ConfigureAwait(false);
         }
         string? invalid = snapshot.Failure;
-        if (invalid is null && (snapshot.PowerBefore is not ("1111" or "0011") || snapshot.PowerAfter is not ("1111" or "0011")
+        if (invalid is null && (!KnownPower(snapshot.PowerBefore) || !KnownPower(snapshot.PowerAfter)
             || snapshot.Pair is null || !KnownMode(snapshot.Pair.Thermal1Hex) || !KnownMode(snapshot.Pair.Thermal2Hex)))
         {
             invalid = "PowerThermalOrExternalStateConflict";
@@ -212,7 +233,7 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
         else if (invalid is null && (snapshot.PowerBefore != snapshot.PowerAfter
             || snapshot.Pair!.Thermal1Hex[4..] != snapshot.Pair.Thermal2Hex[4..]
             || before.WindowsAcOnline is null || after.WindowsAcOnline is null
-            || before.WindowsAcOnline != after.WindowsAcOnline || after.WindowsAcOnline != (snapshot.PowerAfter == "1111")))
+            || before.WindowsAcOnline != after.WindowsAcOnline || after.WindowsAcOnline != ExpectedWindowsAc(snapshot.PowerAfter)))
         {
             // A physical plug event can land inside one bracket; this is not native uncertainty.
             invalid = Transitional;
@@ -275,9 +296,13 @@ internal sealed class Rz090528PadlessBatteryBoundaryValidation(
         { Thermal1Hex: "01010200", Thermal2Hex: "01020200" } => 2,
         { Thermal1Hex: "01010700", Thermal2Hex: "01020700" } => 7,
         { Thermal1Hex: "01010300", Thermal2Hex: "01020300" } => 3,
+        { Thermal1Hex: "01010000", Thermal2Hex: "01020000" } => 0,
         _ => null,
     };
-    private static bool KnownMode(string hex) => hex.Length == 8 && hex[4..6] is "02" or "03" or "07";
+    private bool KnownPower(string? power) => power == "1111" || power == target.Power || power is not null && power == target.AbortPower;
+    private bool ExpectedWindowsAc(string? power) => power == "1111" || power == target.Power && target.WindowsAcOnline;
+    private bool KnownMode(string hex) => hex.Length == 8 && hex[..4] is "0101" or "0102" && hex[6..] == "00"
+        && target.ObservedModes.Any(mode => hex[4..6] == mode.ToString("X2"));
     private void SignalAbort()
     {
         // Tell the present operator at once to keep or restore full AC; emitted at most once after arming.

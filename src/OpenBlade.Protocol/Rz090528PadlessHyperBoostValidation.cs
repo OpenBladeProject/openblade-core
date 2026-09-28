@@ -228,7 +228,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                 byte[] first = await Query(new RazerCommandSpec(0x0D, 0x82, new byte[] { 1, 1, 0, 0 }, 4)).ConfigureAwait(false);
                 byte[] second = await Query(new RazerCommandSpec(0x0D, 0x82, new byte[] { 1, 2, 0, 0 }, 4)).ConfigureAwait(false);
                 byte[] after = await Query(powerCommand).ConfigureAwait(false);
-                bool Power(byte[] value) => value.Length == 2 && value[1] == 0x11 && value[0] is 0 or 0x11;
+                // 0011 battery, 0711 100 W USB-C, 1111 full AC; the boundary decides which its plan admits.
+                bool Power(byte[] value) => value.Length == 2 && value[1] == 0x11 && value[0] is 0 or 0x07 or 0x11;
                 bool Thermal(byte[] value, byte channel) => value.Length == 4 && value[0] == 1
                     && value[1] == channel && value[2] is 0 or 2 or 3 or 7 && value[3] == 0;
                 // Malformed values poison. A well-formed bracket that changed during a physical

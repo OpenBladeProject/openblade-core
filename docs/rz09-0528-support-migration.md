@@ -199,8 +199,16 @@ sample whose power or paired mode changes during one read bracket is treated
 as a plug-event transition: it is discarded, resets the full-power stability
 window, and is retried within the same deadline. Malformed readings,
 unsupported stable modes, mixed pairs that persist to the deadline, or
-uncertain native operations leave recovery pending. This command does not validate USB-C transitions or installed service
-lifecycle recovery, and does not change production padless admission.
+uncertain native operations leave recovery pending. A separate USB-C variant
+uses the same entry, setters and cleanup, but its destination is the
+read-only-confirmed 100 W USB-C value `0711` with Windows AC online. The
+operator connects USB-C before HyperBoost is applied, removes only the
+barrel, and reconnects it when `0711` is observed. An unexpected battery
+reading in that variant aborts to the same full-AC cleanup, while USB-C
+readings poison the battery variant. Windows reports AC online for both full
+AC and USB-C, so only the firmware reading distinguishes them. The USB-C variant
+is not yet hardware-validated. Neither variant validates installed service
+lifecycle recovery or changes production padless admission.
 
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.

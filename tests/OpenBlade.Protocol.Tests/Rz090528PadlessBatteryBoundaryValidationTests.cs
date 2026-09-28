@@ -236,6 +236,130 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationTests
         Assert.Empty(f.Signals);
     }
 
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(7, false)]
+    public async Task UsbCDestinationSignalsOnCoherent0711AndUsesSameFullAcCleanup(int returnMode, bool noOp)
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, UsbC(7), UsbC(7), Snapshot(returnMode), Snapshot(returnMode));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.True(result.TransitionPassed);
+        Assert.Equal(noOp, result.AlreadyPerformance);
+        Assert.Equal(!noOp, result.PermitRestore);
+        Assert.Equal(new[] { Rz090528BatteryBoundarySignal.ReadyToUnplug, Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow }, f.Signals);
+        Assert.False(f.Run.Result!.AutomaticReversionObserved);
+        Assert.False(f.Source.Poisoned);
+    }
+
+    [Fact]
+    public async Task UsbCBalancedIsObservedButFullAcBalancedNeverAuthorizesCleanup()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, UsbC(0), Snapshot(0));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.False(result.PermitRestore);
+        Assert.False(result.AlreadyPerformance);
+        Assert.True(f.Run.Result!.AutomaticReversionObserved);
+        Assert.True(f.Source.Poisoned);
+    }
+
+    [Fact]
+    public async Task UsbCUnexpectedBatteryAbortsWithoutPoisonAndEscapesOnlyThroughFullAcCleanup()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, Snapshot(7, false), Snapshot(7));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.True(result.PermitRestore);
+        Assert.False(result.TransitionPassed);
+        Assert.False(f.Source.Poisoned);
+        Assert.Equal("UnexpectedPowerState", f.Run.Result!.Failure);
+        Assert.Equal(new[] { Rz090528BatteryBoundarySignal.ReadyToUnplug, Rz090528BatteryBoundarySignal.AbortReconnectAc }, f.Signals);
+        Assert.False(f.Run.Result.BatteryObserved);
+    }
+
+    [Fact]
+    public async Task UsbCUnexpectedBatteryThatNeverReturnsLeavesManualRecovery()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, Snapshot(7, false));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.False(result.PermitRestore);
+        Assert.False(result.AlreadyPerformance);
+        Assert.True(f.Run.Result!.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task UsbCWithWindowsOfflineIsTransitionalAndNeverSignalsDestination()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, UsbC(7));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        f.WindowsOverride = false;
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.False(result.PermitRestore);
+        Assert.False(f.Source.Poisoned);
+        Assert.DoesNotContain(Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow, f.Signals);
+    }
+
+    [Fact]
+    public async Task UsbCMixedFullAcAndUsbCBracketIsTransitional()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, UsbC(7) with { PowerBefore = "1111" }, UsbC(7),
+            UsbC(7) with { PowerBefore = "0711", PowerAfter = "1111" }, Snapshot(7), Snapshot(7));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.True(result.TransitionPassed);
+        Assert.True(result.PermitRestore);
+        Assert.False(f.Source.Poisoned);
+        Assert.Equal(Rz090528PadlessBatteryBoundaryValidation.Transitional, f.Run.Result!.Observations[2].Failure);
+        Assert.Equal(Rz090528PadlessBatteryBoundaryValidation.Transitional, f.Run.Result.Observations[4].Failure);
+    }
+
+    [Fact]
+    public async Task UsbCStillPresentAtDeadlineNeverAuthorizesCleanup()
+    {
+        var f = new Fixture(Rz090528PowerBoundaryDestination.UsbC100W, UsbC(7));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        var result = await f.Run.RunAsync(f.Source, default);
+        Assert.False(result.PermitRestore);
+        Assert.False(result.AlreadyPerformance);
+        Assert.False(f.Source.Poisoned);
+        Assert.Contains(Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow, f.Signals);
+        Assert.Equal("BoundaryDeadlineExceeded", f.Run.Result!.Failure);
+    }
+
+    [Theory]
+    [InlineData("01010201", "01020200")]
+    [InlineData("01030200", "01020200")]
+    public async Task BatteryPlanPoisonsMalformedThermalBytes(string first, string second)
+    {
+        var f = new Fixture(Snapshot(7) with { Pair = new(first, second) });
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        Assert.False((await f.Run.RunAsync(f.Source, default)).PermitRestore);
+        Assert.True(f.Source.Poisoned);
+    }
+
+    [Fact]
+    public async Task BatteryPlanStillPoisonsOnUsbCReading()
+    {
+        var f = new Fixture(UsbC(7));
+        Assert.True(await f.Run.PrepareAsync(f.Source, default));
+        Assert.False((await f.Run.RunAsync(f.Source, default)).PermitRestore);
+        Assert.True(f.Source.Poisoned);
+        Assert.DoesNotContain(Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow, f.Signals);
+    }
+
+    [Fact]
+    public void BothReviewedPlansAreEmbeddedAndHashPinned()
+    {
+        Assert.NotEmpty(Rz090528PadlessBatteryBoundaryValidation.ReadPlan(Rz090528PowerBoundaryDestination.Battery));
+        Assert.NotEmpty(Rz090528PadlessBatteryBoundaryValidation.ReadPlan(Rz090528PowerBoundaryDestination.UsbC100W));
+        Assert.NotEqual(Rz090528PadlessBatteryBoundaryValidation.PlanSha256, Rz090528PadlessBatteryBoundaryValidation.UsbCPlanSha256);
+    }
+
+    private static Rz090528BatteryBoundarySnapshot UsbC(int mode) =>
+        new("0711", new($"0101{mode:X2}00", $"0102{mode:X2}00"), "0711", true, null);
+
     private static Rz090528BatteryBoundarySnapshot Snapshot(int mode, bool ac = true) =>
         new(ac ? "1111" : "0011", new($"0101{mode:X2}00", $"0102{mode:X2}00"), ac ? "1111" : "0011", true, null);
 
@@ -252,16 +376,17 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationTests
         internal Action? OnExternal;
         internal bool? WindowsOverride;
         private int externalReads;
-        internal Fixture(params Rz090528BatteryBoundarySnapshot[] samples)
+        internal Fixture(params Rz090528BatteryBoundarySnapshot[] samples) : this(null, samples) { }
+        internal Fixture(Rz090528PowerBoundaryDestination? destination, params Rz090528BatteryBoundarySnapshot[] samples)
         {
             Source = new([Snapshot(2), Snapshot(2), .. samples]);
             Run = new(Read, Signals.Add, Clock, Clock.Wait, () => ExternalQuiesced,
-                () => WindowsOverride ?? Source.Peek.PowerBefore == "1111");
+                () => WindowsOverride ?? Source.Peek.PowerBefore is "1111" or "0711", destination);
         }
         private ValueTask<Rz090528BatteryBoundaryExternal> Read(CancellationToken token)
         {
             OnExternal?.Invoke(); OnExternal = null;
-            bool ac = (externalReads++ % 2 == 0 ? Source.Peek : Source.Last).PowerBefore == "1111";
+            bool ac = (externalReads++ % 2 == 0 ? Source.Peek : Source.Last).PowerBefore is "1111" or "0711";
             bool missing = MissingBatteryGpu && !ac;
             return ValueTask.FromResult(new Rz090528BatteryBoundaryExternal(Clock.GetUtcNow(), 0, Cpu,
                 missing ? null : Gpu, Utilization, WindowsOverride ?? ac, true, !missing, missing ? "GpuUnavailable" : null));

@@ -154,11 +154,25 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
         Assert.Equal(1, disposed);
     }
 
-    private static string[] Arguments() =>
+    [Fact]
+    public void UsbCVariantRequiresItsOwnConfirmationsAndPlanAndRejectsBatteryArguments()
+    {
+        var usbC = Rz090528PadlessBatteryBoundaryValidationCommand.UsbC;
+        Assert.True(Rz090528PadlessBatteryBoundaryValidationCommand.ValidArguments(Arguments(usbC), usbC));
+        Assert.False(Rz090528PadlessBatteryBoundaryValidationCommand.ValidArguments(Arguments(), usbC));
+        Assert.False(Rz090528PadlessBatteryBoundaryValidationCommand.ValidArguments(Arguments(usbC)));
+        Assert.Equal("0711", usbC.Destination.Power);
+        Assert.True(usbC.Destination.WindowsAcOnline);
+        Assert.NotEqual(Rz090528PadlessBatteryBoundaryValidationCommand.Battery.DestinationMarker, usbC.DestinationMarker);
+        Assert.Equal(Rz090528PadlessBatteryBoundaryValidationCommand.Battery.Destination,
+            Rz090528PowerBoundaryDestination.Battery);
+    }
+
+    private static string[] Arguments(Rz090528PadlessBatteryBoundaryValidationCommand.Variant? variant = null) =>
     [
-        "--confirm-target", Rz090528PadlessBatteryBoundaryValidationCommand.Confirmation,
-        "--confirm-boundary", Rz090528PadlessBatteryBoundaryValidationCommand.AttendedConfirmation,
-        "--plan-sha256", Rz090528PadlessBatteryBoundaryValidation.PlanSha256,
+        "--confirm-target", (variant ?? Rz090528PadlessBatteryBoundaryValidationCommand.Battery).TargetConfirmation,
+        "--confirm-boundary", (variant ?? Rz090528PadlessBatteryBoundaryValidationCommand.Battery).BoundaryConfirmation,
+        "--plan-sha256", (variant ?? Rz090528PadlessBatteryBoundaryValidationCommand.Battery).Destination.PlanSha256,
         "--hwinfo-exe", Path.Combine(Path.GetTempPath(), "HWiNFO64.exe"),
         "--hwinfo-log", Path.Combine(Path.GetTempPath(), "sensors.json"),
     ];

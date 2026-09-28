@@ -1,0 +1,41 @@
+{
+  "scope": "Developer attended 100 W USB-C boundary experiment only; no production admission, USB-C setter or sustained safety claim",
+  "issue": 604,
+  "target": "RZ09-0528, 1532:02C6, BIOS 2.02, exact existing firmware and device guards",
+  "evidence": "Read-only gapless swaps with the operator's 100 W charger read 0711 on USB-C only and 1111 with barrel plus USB-C, Windows AC online throughout, with no battery state",
+  "entry": {
+    "thermalPair": ["01010200", "01020200"],
+    "power": "1111 with the 280 W barrel and the 100 W USB-C charger both connected before apply",
+    "pad": "Absent, two observations separated by at least 2 seconds",
+    "external": "Two fresh HWiNFO CPU and same-device NVML GPU observations at least 2 seconds apart; CPU <=70 C, GPU <=72 C, GPU utilization <=10 percent, independently confirmed zero offsets, no 3DMark process, attended no-workload confirmation"
+  },
+  "apply": ["01010700", "01020700"],
+  "nativeWritePolicy": "Existing exact-device, controller isolation, full-AC 1111, pad and zero-offset guards remain unchanged for every setter; no writes on 0711 or 0011",
+  "observation": {
+    "unplugWindowMilliseconds": 10000,
+    "totalBoundaryMilliseconds": 30000,
+    "pollDelayMilliseconds": 1000,
+    "perReadBudgetMilliseconds": 2000,
+    "bracket": "Fresh Windows AC, 07/8C power, 0D/82 channels 1 and 2, 07/8C power, fresh Windows AC",
+    "destinationPower": "0711",
+    "destinationWindowsAcOnline": true,
+    "destinationThermalModes": [0, 2, 3, 7],
+    "abortPower": "A coherent battery 0011 sample with Windows AC offline is an unplanned state: it signals AbortReconnectAc, never counts as the destination, and waits within the deadline for two coherent full-AC samples before the existing cleanup",
+    "windowsLimitation": "Windows AC is online for both 1111 and 0711, so only 07/8C distinguishes full AC from USB-C; the setter guard reads the same register and is not an independent second source",
+    "operatorSequence": "Remove only the 280 W barrel after ReadyToUnplug; reconnect it on the destination signal; remove USB-C only after the validator and restoration finish",
+    "transitionalSample": "A well-formed bracket whose 07/8C values, paired channels or Windows AC state change within one observation is discarded without poisoning, resets the full-AC stability window, and is retried within the same deadline; any other power value, an unlisted channel mode, malformed or uncertain native reads poison",
+    "signals": ["ReadyToUnplug after paired mode 7 confirmation", "Destination observed: reconnect the barrel immediately on the first coherent 0711 sample", "AbortReconnectAc at most once, immediately on a tripwire, pad loss or any failed boundary"],
+    "experimentalAbortCelsius": 75,
+    "limitations": "No intentional USB-C dwell, external load, automatic HyperBoost re-entry, new HyperBoost apply on USB-C, power-limit claim or assertion of exact total mode-7 residence"
+  },
+  "cleanup": {
+    "independentBudgetMilliseconds": 5000,
+    "required": "Actual external worker quiescence, fresh Windows AC and two matching complete full-AC 1111 thermal observations separated by at least 1 second; setter guards independently verify GPU zero, 1111 and isolation",
+    "mode2": "Verified no-op; no restore setter or acknowledgement claimed",
+    "mode7": "One existing guarded paired Performance restoration followed by paired readback",
+    "restore": ["01010200", "01020200"],
+    "other": "Unknown, mixed, mode 0 or 3 on full AC, inconsistent brackets, native uncertainty or insufficient transaction reserve require pending manual recovery; no replay",
+    "reserve": "Four observation transactions plus at least eight reserved cleanup transactions"
+  },
+  "productionEvidenceGatesChanged": false
+}

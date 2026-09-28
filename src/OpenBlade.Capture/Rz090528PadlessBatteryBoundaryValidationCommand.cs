@@ -13,10 +13,22 @@ internal static class Rz090528PadlessBatteryBoundaryValidationCommand
     internal const string Confirmation = "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:BATTERY-ONLY:EXPERIMENTAL-75C";
     internal const string AttendedConfirmation = "ATTENDED:PAD-USB-AND-POWER-OFF:USB-C-DISCONNECTED:ORIGINAL-AC:NO-WORKLOAD";
 
-    internal static bool ValidArguments(string[] args) => args.Length == 10 && args.Take(6).SequenceEqual(new[]
+    internal const string UsbCName = "validate-rz09-0528-02c6-hyperboost-padless-usbc-boundary";
+    internal const string UsbCConfirmation = "RZ09-0528:1532:02C6:BIOS-2.02:PERFORMANCE-AUTO:GPU-ZERO:USB-C-100W-ONLY:EXPERIMENTAL-75C";
+    internal const string UsbCAttendedConfirmation = "ATTENDED:PAD-USB-AND-POWER-OFF:USB-C-100W-AND-ORIGINAL-AC-CONNECTED:NO-WORKLOAD";
+
+    // One implementation; each variant only names its reviewed destination, confirmations and operator marker.
+    internal sealed record Variant(string Name, string TargetConfirmation, string BoundaryConfirmation,
+        Rz090528PowerBoundaryDestination Destination, string DestinationMarker);
+    internal static readonly Variant Battery = new(Name, Confirmation, AttendedConfirmation,
+        Rz090528PowerBoundaryDestination.Battery, "BATTERY_OBSERVED_RECONNECT_NOW");
+    internal static readonly Variant UsbC = new(UsbCName, UsbCConfirmation, UsbCAttendedConfirmation,
+        Rz090528PowerBoundaryDestination.UsbC100W, "USB_C_OBSERVED_RECONNECT_BARREL_NOW");
+
+    internal static bool ValidArguments(string[] args, Variant? variant = null) => args.Length == 10 && args.Take(6).SequenceEqual(new[]
     {
-        "--confirm-target", Confirmation, "--confirm-boundary", AttendedConfirmation,
-        "--plan-sha256", Rz090528PadlessBatteryBoundaryValidation.PlanSha256,
+        "--confirm-target", (variant ?? Battery).TargetConfirmation, "--confirm-boundary", (variant ?? Battery).BoundaryConfirmation,
+        "--plan-sha256", (variant ?? Battery).Destination.PlanSha256,
     }) && args[6] == "--hwinfo-exe" && LocalPath(args[7])
         && Path.GetFileName(args[7]).Equals("HWiNFO64.exe", StringComparison.OrdinalIgnoreCase)
         && args[8] == "--hwinfo-log" && LocalPath(args[9])
@@ -77,11 +89,13 @@ internal static class Rz090528PadlessBatteryBoundaryValidationCommand
             gpu.GpuUtilizationPercent, CoherentWindowsPower(windowsBefore, windowsAfter), noWorkload, gpuZero, failure);
     }
 
-    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, TextWriter progress, CancellationToken token)
+    internal static async Task<int> RunWindowsAsync(string[] args, TextWriter output, TextWriter progress, CancellationToken token,
+        Variant? variant = null)
     {
-        if (!ValidArguments(args))
+        variant ??= Battery;
+        if (!ValidArguments(args, variant))
         {
-            await output.WriteLineAsync("Exact target, attended battery-only boundary, reviewed plan and explicit HWiNFO paths required.");
+            await output.WriteLineAsync("Exact target, attended power boundary, reviewed plan and explicit HWiNFO paths required.");
             return 2;
         }
         bool runnerEntered = false, finalGpuZero = false, externalTelemetryQuiesced = true;
@@ -152,13 +166,14 @@ internal static class Rz090528PadlessBatteryBoundaryValidationCommand
                 string marker = signal switch
                 {
                     Rz090528BatteryBoundarySignal.ReadyToUnplug => "READY_TO_UNPLUG",
-                    Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow => "BATTERY_OBSERVED_RECONNECT_NOW",
+                    Rz090528BatteryBoundarySignal.BatteryObservedReconnectNow => variant.DestinationMarker,
                     Rz090528BatteryBoundarySignal.AbortReconnectAc => "ABORT_RECONNECT_AC_AND_WAIT",
                     _ => "RECOVERY_REQUIRED"
                 };
                 progress.WriteLine($"{marker} {DateTimeOffset.UtcNow:O}");
                 progress.Flush();
-            }, externalQuiesced: () => lane.OperationQuiesced, readWindowsAc: ReadWindowsAcOnline);
+            }, externalQuiesced: () => lane.OperationQuiesced, readWindowsAc: ReadWindowsAcOnline,
+                destination: variant.Destination);
             runner = Rz090528PadlessHyperBoostValidation.CreateWindows(Eligible, batteryBoundary: boundary,
                 batteryReadIsolation: () => Rz090528HyperBoostValidationCommand.IsIsolated()
                     && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive());
@@ -196,8 +211,10 @@ internal static class Rz090528PadlessBatteryBoundaryValidationCommand
         await output.WriteLineAsync(SerializeReport(new
         {
             Target = "RZ09-05289EN4 / 1532:02C6 / BIOS 2.02 / RTX 5090 Laptop / driver 617.14",
-            Rz090528PadlessBatteryBoundaryValidation.PlanSha256,
-            Plan = JsonSerializer.Deserialize<JsonElement>(Rz090528PadlessBatteryBoundaryValidation.ReadPlan()),
+            Destination = variant.Destination.Name,
+            DestinationPower = variant.Destination.Power,
+            variant.Destination.PlanSha256,
+            Plan = JsonSerializer.Deserialize<JsonElement>(Rz090528PadlessBatteryBoundaryValidation.ReadPlan(variant.Destination)),
             Hwinfo = providerProvenance,
             Result = result,
             BatteryBoundary = runner?.BatteryBoundaryResult,
