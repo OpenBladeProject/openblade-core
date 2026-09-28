@@ -188,6 +188,20 @@ Before an installed experiment, the lifecycle harness must also select the
 2025 baseline and enforce its reviewed GPU/driver prerequisites. The existing
 Balanced-only harness is not a 2025 validation path.
 
+The developer-only battery-boundary command observes a separate attended
+full-power AC to battery to AC transition without a workload. It requires
+fresh CPU/GPU telemetry, zero GPU offsets, low GPU activity, pad absence and
+disconnected USB-C power. Firmware setters remain restricted to confirmed
+full-power AC. Battery mode 3 is an observed state, not a newly admitted setter.
+On return, two matching full-power observations may confirm mode 2 without a
+write or permit the existing guarded mode-7-to-2 restoration. A well-formed
+sample whose power or paired mode changes during one read bracket is treated
+as a plug-event transition: it is discarded, resets the full-power stability
+window, and is retried within the same deadline. Malformed readings,
+unsupported stable modes, mixed pairs that persist to the deadline, or
+uncertain native operations leave recovery pending. This command does not validate USB-C transitions or installed service
+lifecycle recovery, and does not change production padless admission.
+
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
 The NVIDIA driver supplies the writable offset backend; no Synapse-delivered

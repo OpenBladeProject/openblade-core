@@ -246,6 +246,11 @@ internal sealed class OwnedReadOnlyLane<T> where T : class
     private bool closed;
     private bool pending;
 
+    internal bool OperationQuiesced
+    {
+        get { lock (gate) { return !pending || worker.IsCompleted; } }
+    }
+
     internal OwnedReadOnlyLane(Action dispose, TimeSpan? timeout = null)
     {
         this.timeout = timeout ?? TimeSpan.FromSeconds(2);

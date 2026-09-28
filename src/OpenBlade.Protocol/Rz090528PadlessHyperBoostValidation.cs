@@ -6,7 +6,8 @@ namespace OpenBlade.Protocol;
 // Developer experiment only. It deliberately does not alter pad-required production admission.
 internal sealed class Rz090528PadlessHyperBoostValidation(
     IValidationActorFactory actors, ICoolingPadDiscoverySource pads, Func<bool> isolated,
-    Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null)
+    Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null,
+    Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null)
     : IPerformanceFanSetterValidationRunner
 {
     internal const string PlanSha256 = "53436C5DE5B19301FFDDA9EB3670DA62F6440B9CA5168A81878FE58386DB8CD1";
@@ -37,6 +38,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     internal PerformanceFanThermalPair? FailureReconciliation { get; private set; }
     internal Rz090528NoLoadResult? NoLoadResult => noLoad?.Result;
     internal Rz090528LoadedResult? LoadedResult => loaded?.Result;
+    internal Rz090528BatteryBoundaryResult? BatteryBoundaryResult => batteryBoundary?.Result;
     internal bool HardwareOpened { get; private set; }
     internal bool DisposalConfirmed { get; private set; }
     private int started;
@@ -71,8 +73,13 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     }
 
     internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated,
-        Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null)
+        Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null,
+        Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null)
     {
+        if (batteryBoundary is not null && batteryReadIsolation is null)
+        {
+            throw new ArgumentException("Battery boundary reads require an independent read-only isolation guard.");
+        }
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var identity = new WindowsHostIdentitySource(registry,
@@ -85,7 +92,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             TimeProvider.System, TimeSpan.FromSeconds(3), ControllerExclusivityPolicy.Strict,
             TimeSpan.FromMilliseconds(20));
         return new(factory, new WindowsHyperBoostEligibilitySource(native),
-            () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad, loaded);
+            () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad, loaded, batteryBoundary,
+            batteryReadIsolation is null ? null : () => identity.ReadExactIdentity().Failure is null && batteryReadIsolation());
     }
 
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -97,6 +105,11 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             return Rejected(target, PerformanceFanValidationFailure.WrongTarget);
         }
         bool innerRunStarted = false;
+        PerformanceFanSetterValidationResult Complete(PerformanceFanSetterValidationResult result)
+        {
+            batteryBoundary?.CompleteFromRunner(result, DisposalConfirmed);
+            return result;
+        }
         try
         {
             _ = ReadPlan();
@@ -125,19 +138,21 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
 
             var runner = new PerformanceFanSetterValidationRunner(() => new ValidationRunContext(),
                 new GuardedActors(actors, pads, isolated, pair => FailureReconciliation = pair,
-                    () => HardwareOpened = true, () => DisposalConfirmed = true), TimeProvider.System,
-                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded);
+                    () => HardwareOpened = true, () => DisposalConfirmed = true,
+                    batteryBoundary is null ? null : batteryReadIsolation ?? (() => false), batteryBoundary is not null), TimeProvider.System,
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded, padlessBatteryBoundary: batteryBoundary);
             innerRunStarted = true;
-            return await runner.RunAsync(target, token).ConfigureAwait(false);
+            PerformanceFanSetterValidationResult result = await runner.RunAsync(target, token).ConfigureAwait(false);
+            return Complete(result);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            return Rejected(target, PerformanceFanValidationFailure.Canceled, possibleWrite: innerRunStarted);
+            return Complete(Rejected(target, PerformanceFanValidationFailure.Canceled, possibleWrite: innerRunStarted));
         }
         catch
         {
-            return Rejected(target, innerRunStarted ? PerformanceFanValidationFailure.ApplyWriteIndeterminate
-                : PerformanceFanValidationFailure.OpenFailed, possibleWrite: innerRunStarted);
+            return Complete(Rejected(target, innerRunStarted ? PerformanceFanValidationFailure.ApplyWriteIndeterminate
+                : PerformanceFanValidationFailure.OpenFailed, possibleWrite: innerRunStarted));
         }
     }
 
@@ -147,7 +162,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
 
     private sealed class GuardedActors(IValidationActorFactory inner, ICoolingPadDiscoverySource pads,
         Func<bool> isolated, Action<PerformanceFanThermalPair?> reconciliation,
-        Action opened, Action disposed) : IValidationActorFactory
+        Action opened, Action disposed, Func<bool>? boundaryReadIsolation = null,
+        bool boundaryMode = false) : IValidationActorFactory
     {
         public async ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context)
         {
@@ -163,20 +179,73 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             }
 
             opened();
-            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation, disposed);
+            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation, disposed, boundaryReadIsolation, boundaryMode);
             return new(new ValidationActor(session, actor.BatteryCommands, actor.TemporaryFullChargeCommands), null);
         }
     }
 
     internal sealed class GuardedSession(IRazerCommandSession inner, ValidationRunContext context,
         ICoolingPadDiscoverySource pads, Func<bool> isolated,
-        Action<PerformanceFanThermalPair?>? reconciliation = null, Action? disposed = null) : IRazerCommandSession, IRz090528NoLoadSnapshotSource
+        Action<PerformanceFanThermalPair?>? reconciliation = null, Action? disposed = null,
+        Func<bool>? boundaryReadIsolation = null, bool boundaryMode = false)
+        : IRazerCommandSession, IRz090528NoLoadSnapshotSource, IRz090528BatteryBoundarySource
     {
         private int nextWrite;
         private volatile bool failed;
         private bool snapshotUncertain;
         private static readonly byte[][] Writes = [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, 2, 0], [1, 2, 2, 0]];
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
+
+        public async Task<Rz090528BatteryBoundarySnapshot> ReadBatteryBoundaryAsync(CancellationToken token)
+        {
+            Rz090528BatteryBoundarySnapshot Refuse(string reason)
+            {
+                MarkSnapshotUncertain();
+                return new(null, null, null, false, reason);
+            }
+            if (!boundaryMode || boundaryReadIsolation is null || failed)
+            {
+                return Refuse("BoundaryReadNotAdmitted");
+            }
+            // Four queries must leave eight transactions for the existing guarded restoration.
+            if (context.RemainingTransactions < 12) { return Refuse("CleanupTransactionReserve"); }
+            try
+            {
+                async Task<byte[]> Query(RazerCommandSpec command)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (failed || !boundaryReadIsolation()) { throw new InvalidOperationException(); }
+                    // Recheck after a potentially synchronous isolation probe, before enqueue.
+                    token.ThrowIfCancellationRequested();
+                    if (failed) { throw new InvalidOperationException(); }
+                    var response = await ReadAsync(command, TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    if (failed || response.Failure is not null) { throw new InvalidOperationException(); }
+                    return response.Value.ToArray();
+                }
+                var powerCommand = new RazerCommandSpec(7, 0x8C, new byte[] { 0, 0 }, 2);
+                byte[] before = await Query(powerCommand).ConfigureAwait(false);
+                byte[] first = await Query(new RazerCommandSpec(0x0D, 0x82, new byte[] { 1, 1, 0, 0 }, 4)).ConfigureAwait(false);
+                byte[] second = await Query(new RazerCommandSpec(0x0D, 0x82, new byte[] { 1, 2, 0, 0 }, 4)).ConfigureAwait(false);
+                byte[] after = await Query(powerCommand).ConfigureAwait(false);
+                bool Power(byte[] value) => value.Length == 2 && value[1] == 0x11 && value[0] is 0 or 0x11;
+                bool Thermal(byte[] value, byte channel) => value.Length == 4 && value[0] == 1
+                    && value[1] == channel && value[2] is 0 or 2 or 3 or 7 && value[3] == 0;
+                // Malformed values poison. A well-formed bracket that changed during a physical
+                // plug event is returned as observed; the boundary classifies it as transitional.
+                if (!Power(before) || !Power(after) || !Thermal(first, 1) || !Thermal(second, 2))
+                {
+                    return Refuse("BoundaryPowerOrThermalAmbiguous");
+                }
+                bool absent = pads.Observe() == CoolingPadConnectionState.Absent;
+                if (!boundaryReadIsolation()) { return Refuse("BoundaryIsolationLost"); }
+                token.ThrowIfCancellationRequested();
+                if (failed) { return Refuse("BoundaryReadUncertain"); }
+                return new(Convert.ToHexString(before), new(Convert.ToHexString(first), Convert.ToHexString(second)),
+                    Convert.ToHexString(after), absent, null);
+            }
+            catch { return Refuse("BoundaryReadUncertain"); }
+        }
 
         public async Task<Rz090528NoLoadSnapshot> ReadAsync(bool baseline, CancellationToken token)
         {
@@ -330,7 +399,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             return new(default, HidSessionFailureKind.IdentityBlocked);
         }
 
-        internal void MarkSnapshotUncertain()
+        public void MarkSnapshotUncertain()
         {
             failed = true;
             snapshotUncertain = true;
@@ -342,7 +411,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             // observations for recovery when the native session is still usable.
             try
             {
-                if (!snapshotUncertain && (failed || nextWrite is > 0 and < 4)
+                if (!boundaryMode && !snapshotUncertain && (failed || nextWrite is > 0 and < 4)
                     && inner.Disposition == RazerCommandSessionDisposition.Healthy)
                 {
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

@@ -286,6 +286,7 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly ExactHyperBoostValidationObserver? exactObserver;
     private readonly Rz090528PadlessNoLoadValidation? padlessNoLoad;
     private readonly Rz090528PadlessLoadedValidation? padlessLoaded;
+    private readonly Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -306,7 +307,8 @@ internal sealed class PerformanceFanSetterValidationRunner
         ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null,
         ExactHyperBoostValidationObserver? exactObserver = null,
         Rz090528PadlessNoLoadValidation? padlessNoLoad = null,
-        Rz090528PadlessLoadedValidation? padlessLoaded = null)
+        Rz090528PadlessLoadedValidation? padlessLoaded = null,
+        Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -387,6 +389,13 @@ internal sealed class PerformanceFanSetterValidationRunner
         {
             throw new ArgumentException("The exact loaded experiment requires its own composition.");
         }
+        if (padlessBatteryBoundary is not null && (padlessNoLoad is not null || padlessLoaded is not null
+            || exactObserver is not null || safetyGate is not null || sustainedPlan is not null
+            || adapterTransitionPlan is not null || powerSourceBoundaryPlan is not null))
+        {
+            throw new ArgumentException("The exact battery-boundary experiment requires its own composition.");
+        }
+        this.padlessBatteryBoundary = padlessBatteryBoundary;
         this.padlessLoaded = padlessLoaded;
         this.padlessNoLoad = padlessNoLoad;
     }
@@ -579,6 +588,13 @@ internal sealed class PerformanceFanSetterValidationRunner
                 state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
                 return state.ToResult();
             }
+            if (padlessBatteryBoundary is not null && (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || actor.Session is not IRz090528BatteryBoundarySource boundaryEntry
+                || !await padlessBatteryBoundary.PrepareAsync(boundaryEntry, cancellationToken).ConfigureAwait(false)))
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
+                return state.ToResult();
+            }
             padlessLoaded?.MarkApplyStarted();
             state.ApplyAttempted = true;
             IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
@@ -764,6 +780,31 @@ internal sealed class PerformanceFanSetterValidationRunner
                 if (!observed.PermitKnownStateRestore)
                 {
                     state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+            }
+
+            if (padlessBatteryBoundary is not null)
+            {
+                if (!state.CandidateConfirmed || actor.Session is not IRz090528BatteryBoundarySource boundarySource)
+                {
+                    state.ManualRecoveryRequired = true;
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
+                    return state.ToResult();
+                }
+                Rz090528BatteryBoundaryDecision decision = await padlessBatteryBoundary.RunAsync(
+                    boundarySource, cancellationToken).ConfigureAwait(false);
+                if (!decision.TransitionPassed) { state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed; }
+                if (decision.AlreadyPerformance && decision.Pair == baseline.Pair)
+                {
+                    // Firmware restored the saved pair; do not claim a restoration setter.
+                    state.Restoration = decision.Pair;
+                    state.Restored = true;
+                }
+                else if (!decision.PermitRestore || decision.AlreadyPerformance)
+                {
+                    state.ManualRecoveryRequired = true;
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
                     return state.ToResult();
                 }
             }

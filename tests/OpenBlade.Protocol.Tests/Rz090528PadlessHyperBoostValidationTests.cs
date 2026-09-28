@@ -218,6 +218,115 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
         Assert.Equal(2, session.Writes.Count);
     }
 
+    [Theory]
+    [InlineData(2, 2, false)]
+    [InlineData(7, 4, true)]
+    [InlineData(3, 2, false)]
+    public async Task BoundaryReturnsOnlyThroughConfirmedPerformanceOrGuardedEscape(byte returnMode, int writes, bool restoreWrite)
+    {
+        var session = new Session();
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var boundary = new Rz090528PadlessBatteryBoundaryValidation(
+            _ => ValueTask.FromResult(new Rz090528BatteryBoundaryExternal(clock.GetUtcNow(), 0, 45, 40, 0,
+                session.Power == 0x11, true, true, null)),
+            signal =>
+            {
+                if (signal == Rz090528BatteryBoundarySignal.ReadyToUnplug)
+                {
+                    session.Power = 0; session.modes[0] = session.modes[1] = 3;
+                }
+                else { session.Power = 0x11; session.modes[0] = session.modes[1] = returnMode; }
+            }, clock, clock.Wait, readWindowsAc: () => session.Power == 0x11);
+        var runner = new Rz090528PadlessHyperBoostValidation(new Actors(session), new Pad(), () => true,
+            batteryBoundary: boundary, batteryReadIsolation: () => true);
+        var result = await Run(runner);
+        Assert.Equal(writes, session.Writes.Count);
+        Assert.Equal(restoreWrite, result.RestoreAttempted);
+        Assert.Equal(restoreWrite, result.RestoreAcknowledged);
+        Assert.Equal(returnMode != 3, result.Restored);
+        Assert.Equal(returnMode == 3, result.ManualRecoveryRequired);
+        Assert.True(session.Disposed);
+        Assert.True(runner.DisposalConfirmed);
+        Assert.Equal(result.Restored, runner.BatteryBoundaryResult!.Restored);
+        Assert.True(runner.BatteryBoundaryResult.HardwareQuiesced);
+        if (returnMode != 3) { Assert.True(result.Success); }
+    }
+
+    [Fact]
+    public async Task BoundaryBatteryReadDoesNotRequireGpuWriteEligibility()
+    {
+        var inner = new Session { Power = 0 };
+        inner.modes[0] = inner.modes[1] = 3;
+        await using var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            new ValidationRunContext(), new Pad(), () => false, boundaryReadIsolation: () => true, boundaryMode: true);
+        var observed = await session.ReadBatteryBoundaryAsync(CancellationToken.None);
+        Assert.Null(observed.Failure);
+        Assert.Equal("0011", observed.PowerBefore);
+        Assert.Equal(new PerformanceFanThermalPair("01010300", "01020300"), observed.Pair);
+        Assert.Equal(2, inner.PowerQueries);
+        Assert.Equal(2, inner.Queries);
+        var write = await session.ExecuteAsync(new RazerCommandSpec(0x0D, 2, new byte[] { 1, 1, 7, 0 }, 4),
+            () => TransactionIdAssignment.Valid(1), TimeSpan.FromSeconds(1), CancellationToken.None);
+        Assert.NotNull(write.Failure);
+        Assert.Empty(inner.Writes);
+    }
+
+    [Fact]
+    public async Task BoundaryWellFormedMixedPairIsReturnedWithoutPoisoningWrites()
+    {
+        var inner = new Session();
+        inner.modes[1] = 3;
+        await using var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            new ValidationRunContext(), new Pad(), () => true, boundaryReadIsolation: () => true, boundaryMode: true);
+        var observed = await session.ReadBatteryBoundaryAsync(CancellationToken.None);
+        Assert.Null(observed.Failure);
+        Assert.Equal(new PerformanceFanThermalPair("01010200", "01020300"), observed.Pair);
+        Assert.Empty(inner.Writes);
+    }
+
+    [Fact]
+    public async Task BoundaryMalformedPowerPoisonsWritesAndSkipsDisposalQueries()
+    {
+        var inner = new Session();
+        inner.RejectPowerAt = 2;
+        var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            new ValidationRunContext(), new Pad(), () => true, boundaryReadIsolation: () => true, boundaryMode: true);
+        Assert.NotNull((await session.ReadBatteryBoundaryAsync(CancellationToken.None)).Failure);
+        int queries = inner.Queries, powerQueries = inner.PowerQueries;
+        var write = await session.ExecuteAsync(new RazerCommandSpec(0x0D, 2, new byte[] { 1, 1, 7, 0 }, 4),
+            () => TransactionIdAssignment.Valid(1), TimeSpan.FromSeconds(1), CancellationToken.None);
+        Assert.NotNull(write.Failure);
+        await session.DisposeAsync();
+        Assert.Empty(inner.Writes);
+        Assert.Equal(queries, inner.Queries);
+        Assert.Equal(powerQueries, inner.PowerQueries);
+    }
+
+    [Fact]
+    public async Task BoundaryReserveRejectsBeforeAnyQuery()
+    {
+        var context = new ValidationRunContext();
+        for (int i = 0; i < 244; i++) { Assert.True(context.TryAllocateTransaction(out _)); }
+        var inner = new Session();
+        await using var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            context, new Pad(), () => true, boundaryReadIsolation: () => true, boundaryMode: true);
+        Assert.Equal("CleanupTransactionReserve", (await session.ReadBatteryBoundaryAsync(CancellationToken.None)).Failure);
+        Assert.Equal(0, inner.Queries + inner.PowerQueries);
+    }
+
+    [Fact]
+    public async Task BoundaryCanceledIsolationPrefixCannotEnqueueNativeQuery()
+    {
+        using var canceled = new CancellationTokenSource();
+        var inner = new Session();
+        await using var session = new Rz090528PadlessHyperBoostValidation.GuardedSession(inner,
+            new ValidationRunContext(), new Pad(), () => true,
+            boundaryReadIsolation: () => { canceled.Cancel(); return true; }, boundaryMode: true);
+        Assert.NotNull((await session.ReadBatteryBoundaryAsync(canceled.Token)).Failure);
+        Assert.Equal(0, inner.Queries + inner.PowerQueries);
+        Assert.Empty(inner.Writes);
+    }
+
     private static Rz090528PadlessHyperBoostValidation Create(Session session, Pad pad) => new(new Actors(session), pad, () => true);
     private static Task<PerformanceFanSetterValidationResult> Run(Rz090528PadlessHyperBoostValidation runner) =>
         runner.RunAsync(PerformanceFanValidationTarget.HyperBoostFromPerformance, CancellationToken.None);
@@ -241,7 +350,9 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
         internal List<string> Writes = [];
         internal int Queries, QueriesAtFirstWrite, PowerQueries, FailWriteAt, DriftAtQuery, RejectPowerAt;
         internal Action<int>? AfterWrite, AfterQuery;
-        private readonly byte[] modes = [2, 2];
+        internal readonly byte[] modes = [2, 2];
+        internal byte Power = 0x11;
+        internal bool Disposed;
         public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> transaction, TimeSpan timeout, CancellationToken token)
@@ -252,7 +363,7 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
             if (command.ClassId == 7)
             {
                 PowerQueries++;
-                response = PowerQueries == RejectPowerAt ? [0, 0] : [0x11, 0x11];
+                response = PowerQueries == RejectPowerAt ? [0, 0] : [Power, 0x11];
             }
             else if (command.CommandId == 0x88)
             {
@@ -288,6 +399,6 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
             }
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
         }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }
 }

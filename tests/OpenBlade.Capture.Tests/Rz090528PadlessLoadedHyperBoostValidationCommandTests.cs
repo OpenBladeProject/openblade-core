@@ -80,11 +80,13 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             await Assert.ThrowsAsync<TimeoutException>(() => read.WaitAsync(TimeSpan.FromSeconds(2)));
             Assert.False(await lane.CloseAsync());
+            Assert.False(lane.OperationQuiesced);
             Assert.Equal(0, Volatile.Read(ref disposed));
             await Assert.ThrowsAsync<InvalidOperationException>(() => lane.InvokeAsync(() => "retry", null, CancellationToken.None).AsTask());
         }
         finally { release.Set(); }
         Assert.True(await lane.CloseAsync());
+        Assert.True(lane.OperationQuiesced);
         Assert.Equal(1, Volatile.Read(ref disposed));
         Assert.Equal(0, Volatile.Read(ref published));
     }
