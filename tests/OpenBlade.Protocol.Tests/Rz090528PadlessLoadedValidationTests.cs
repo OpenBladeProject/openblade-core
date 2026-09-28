@@ -386,13 +386,44 @@ public sealed class Rz090528PadlessLoadedValidationTests
     }
 
     [Fact]
-    public async Task NoLoadFansThatStayStoppedInModeSevenAbortToKnownRestore()
+    public async Task NoLoadAllowsFirmwareStoppedFansInModeSeven()
     {
         var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
         var telemetry = new Telemetry(clock) { Running = false, Utilization = 0 };
         var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
             profile: Rz090528LoadedProfile.SixtySecondNoLoad);
-        var source = new Source { FansAt = _ => new(0, 0) };
+        var source = new Source { FansAt = read => read % 3 == 0 ? new(0, 500) : new(0, 0) };
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        Assert.True((await run.RunAsync(source, CancellationToken.None)).Completed);
+    }
+
+    [Fact]
+    public async Task NoLoadMissingFanReadbackInModeSevenAbortsToKnownRestore()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = false, Utilization = 0 };
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source { FansAt = read => read == 5 ? new(-1, 0) : new(0, 0) };
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.False(result.Completed);
+        Assert.Equal("FanReadbackInvalid", result.Failure);
+        Assert.True(result.PermitKnownStateRestore);
+    }
+
+    [Fact]
+    public async Task LoadedStoppedFanInModeSevenStillAborts()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock);
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondLoaded);
+        var source = new Source { FansAt = read => read >= 4 ? new(0, 1800) : new(2500, 2500) };
         Assert.True(await run.PrepareAsync(source, CancellationToken.None));
         run.MarkApplyStarted();
         run.MarkCandidateConfirmed();

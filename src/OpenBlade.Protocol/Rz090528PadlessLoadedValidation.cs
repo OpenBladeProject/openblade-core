@@ -35,7 +35,7 @@ internal sealed class Rz090528PadlessLoadedValidation(
 {
     internal const string PlanSha256 = "FF5258CEDB14E09DFD9BF9C0F33030044E7F646F2088DAA3635240FABA37A029";
     internal const string Loaded60PlanSha256 = "AA1C670D89373C3823236BDFB6458747F2002DB8175EBE325D6845C9529ABDF7";
-    internal const string NoLoad60PlanSha256 = "D56C277FD3B284EF8229435F16B5DEDFF3D3A8E00E41675A6B5E516ED11AC2FD";
+    internal const string NoLoad60PlanSha256 = "7C5F8DA522F2DEBA865D4128E9D485D152E41F6E7AB0B9DE5847E6A1D88F424E";
     private readonly Rz090528LoadedProfile plan = profile ?? Rz090528LoadedProfile.TenSecondLoaded;
     internal Rz090528LoadedProfile Profile => plan;
     internal static byte[] ReadPlan(Rz090528LoadedProfile? profile = null)
@@ -123,8 +123,8 @@ internal sealed class Rz090528PadlessLoadedValidation(
             {
                 // No workload is invited: admit directly from a fresh paired snapshot and a fresh idle reading.
                 var idleProtocol = await SnapshotAsync(source, true, token, 2000).ConfigureAwait(false);
-                // Idle fans may be stopped; a valid zero-RPM readback admits entry. Every snapshot in mode 7 still requires positive fans.
-                if (idleProtocol.Failure is not null || idleProtocol.Fans is not { Selector1Rpm: >= 0, Selector2Rpm: >= 0 })
+                // Firmware may stop idle fans; a valid zero-RPM readback admits entry.
+                if (idleProtocol.Failure is not null || !ValidFans(idleProtocol.Fans))
                 {
                     return Finish(false, idleProtocol.Failure ?? "EntryFanReadbackInvalid", false, start).Completed;
                 }
@@ -226,7 +226,11 @@ internal sealed class Rz090528PadlessLoadedValidation(
                     return Finish(false, protocol.Failure, protocol.PermitKnownStateRestore, start);
                 }
                 samples[^1] = new(time.GetUtcNow(), Elapsed(start), value, protocol.Fans);
-                if (!PositiveFans(protocol.Fans)) { return Finish(false, "FanNotPositive", true, start); }
+                // Under load a stopped fan is a fault. Without load firmware legitimately stops fans once cool, so only a valid readback is required.
+                if (plan.RequiresWorkload ? !PositiveFans(protocol.Fans) : !ValidFans(protocol.Fans))
+                {
+                    return Finish(false, plan.RequiresWorkload ? "FanNotPositive" : "FanReadbackInvalid", true, start);
+                }
                 failure = TelemetryFailure(value, entry: false);
                 if (failure is not null) { return Finish(false, failure, true, start); }
                 if (Elapsed(start) >= window) { return Finish(false, "ObservationDeadlineMissed", true, start); }
@@ -270,6 +274,7 @@ internal sealed class Rz090528PadlessLoadedValidation(
         || string.IsNullOrWhiteSpace(bound) || value.WorkloadIdentity != bound ? "BoundWorkloadLost"
         : value.GpuUtilizationPercent is not (>= 80 and <= 100) ? "QualifyingGpuLoadLost" : null;
     private static bool PositiveFans(FanRpmReadings? value) => value is { Selector1Rpm: > 0, Selector2Rpm: > 0 };
+    private static bool ValidFans(FanRpmReadings? value) => value is { Selector1Rpm: >= 0, Selector2Rpm: >= 0 };
     private async Task<Rz090528LoadedReading> ReadAsync(CancellationToken token, double milliseconds = 2000)
     {
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(token);
