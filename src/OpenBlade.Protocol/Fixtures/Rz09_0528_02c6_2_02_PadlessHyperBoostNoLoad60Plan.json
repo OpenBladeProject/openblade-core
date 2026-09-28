@@ -25,7 +25,7 @@
   "abortGpuAtOrAboveCelsius": 80,
   "thresholdsAreHardwareLimits": false,
   "workload": "None. No 3DMark process may exist and same-device GPU utilization must stay at or below 10 percent before apply and at every sample",
-  "finalEntry": "Same-actor Performance pair, full power, pad absence and both positive fan readings, then fresh JSON CPU/NVML GPU and no-load admission before ApplyAttempted",
+  "finalEntry": "Same-actor Performance pair, full power, pad absence and valid fan readbacks (zero RPM allowed at idle), then fresh JSON CPU/NVML GPU and no-load admission before ApplyAttempted",
   "candidatePayloads": [
     "01010700",
     "01020700"
@@ -84,5 +84,6 @@
   "tripwireSource": "User-approved experimental values matching the reviewed RZ09-0581 padless plans; not hardware ratings",
   "issue": 605,
   "maximumGpuUtilizationPercent": 10,
-  "noLoadLimitation": "Only 3DMark processes and same-device GPU utilization sampled every 2 seconds are policed; CPU-only or non-3DMark load between samples is not detected beyond the CPU tripwire and relies on the attended no-workload confirmation"
+  "noLoadLimitation": "Only 3DMark processes and same-device GPU utilization sampled every 2 seconds are policed; CPU-only or non-3DMark load between samples is not detected beyond the CPU tripwire and relies on the attended no-workload confirmation",
+  "entryFans": "Idle fans may be stopped: no-load entry accepts valid zero-RPM readbacks from the paired snapshot. Every observation snapshot after apply requires both fans above zero RPM, otherwise the run aborts to the known-state Performance restoration"
 }

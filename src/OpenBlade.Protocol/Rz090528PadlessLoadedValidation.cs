@@ -35,7 +35,7 @@ internal sealed class Rz090528PadlessLoadedValidation(
 {
     internal const string PlanSha256 = "FF5258CEDB14E09DFD9BF9C0F33030044E7F646F2088DAA3635240FABA37A029";
     internal const string Loaded60PlanSha256 = "AA1C670D89373C3823236BDFB6458747F2002DB8175EBE325D6845C9529ABDF7";
-    internal const string NoLoad60PlanSha256 = "06E25F5884267F8382974D3E790781BEB06645232B7C767B24C95B00C2F306AF";
+    internal const string NoLoad60PlanSha256 = "D56C277FD3B284EF8229435F16B5DEDFF3D3A8E00E41675A6B5E516ED11AC2FD";
     private readonly Rz090528LoadedProfile plan = profile ?? Rz090528LoadedProfile.TenSecondLoaded;
     internal Rz090528LoadedProfile Profile => plan;
     internal static byte[] ReadPlan(Rz090528LoadedProfile? profile = null)
@@ -123,9 +123,10 @@ internal sealed class Rz090528PadlessLoadedValidation(
             {
                 // No workload is invited: admit directly from a fresh paired snapshot and a fresh idle reading.
                 var idleProtocol = await SnapshotAsync(source, true, token, 2000).ConfigureAwait(false);
-                if (idleProtocol.Failure is not null || !PositiveFans(idleProtocol.Fans))
+                // Idle fans may be stopped; a valid zero-RPM readback admits entry. Every snapshot in mode 7 still requires positive fans.
+                if (idleProtocol.Failure is not null || idleProtocol.Fans is not { Selector1Rpm: >= 0, Selector2Rpm: >= 0 })
                 {
-                    return Finish(false, idleProtocol.Failure ?? "EntryFanNotPositive", false, start).Completed;
+                    return Finish(false, idleProtocol.Failure ?? "EntryFanReadbackInvalid", false, start).Completed;
                 }
                 var idle = await ReadAsync(token).ConfigureAwait(false);
                 string? idleFailure = TelemetryFailure(idle, entry: true) ?? NoLoadFailure(idle);

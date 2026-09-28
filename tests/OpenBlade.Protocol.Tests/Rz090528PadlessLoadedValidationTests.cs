@@ -372,6 +372,49 @@ public sealed class Rz090528PadlessLoadedValidationTests
     }
 
     [Fact]
+    public async Task NoLoadEntryAcceptsStoppedIdleFansButEverySnapshotInModeSevenNeedsSpinningFans()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = false, Utilization = 0 };
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source { FansAt = read => read == 1 ? new(0, 0) : new(2600, 2400) };
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        Assert.True((await run.RunAsync(source, CancellationToken.None)).Completed);
+    }
+
+    [Fact]
+    public async Task NoLoadFansThatStayStoppedInModeSevenAbortToKnownRestore()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock) { Running = false, Utilization = 0 };
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondNoLoad);
+        var source = new Source { FansAt = _ => new(0, 0) };
+        Assert.True(await run.PrepareAsync(source, CancellationToken.None));
+        run.MarkApplyStarted();
+        run.MarkCandidateConfirmed();
+        var result = await run.RunAsync(source, CancellationToken.None);
+        Assert.False(result.Completed);
+        Assert.Equal("FanNotPositive", result.Failure);
+        Assert.True(result.PermitKnownStateRestore);
+    }
+
+    [Fact]
+    public async Task LoadedEntryStillRequiresSpinningFans()
+    {
+        var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
+        var telemetry = new Telemetry(clock);
+        var run = new Rz090528PadlessLoadedValidation(telemetry.Read, _ => null, clock: clock, delay: clock.Wait,
+            profile: Rz090528LoadedProfile.SixtySecondLoaded);
+        var source = new Source { FansAt = _ => new(0, 0) };
+        Assert.False(await run.PrepareAsync(source, CancellationToken.None));
+        Assert.Equal("EntryFanNotPositive", run.Result!.Failure);
+    }
+
+    [Fact]
     public async Task NoLoadProfileAdmitsWithoutArmingAndCompletes()
     {
         var clock = new Rz090528PadlessNoLoadValidationTests.Clock();
@@ -456,10 +499,11 @@ public sealed class Rz090528PadlessLoadedValidationTests
     private sealed class Source : IRz090528NoLoadSnapshotSource
     {
         internal int Reads;
+        internal Func<int, FanRpmReadings>? FansAt;
         public Task<Rz090528NoLoadSnapshot> ReadAsync(bool baseline, CancellationToken token)
         {
             Reads++;
-            return Task.FromResult(new Rz090528NoLoadSnapshot(new(3000, 3000), null, true));
+            return Task.FromResult(new Rz090528NoLoadSnapshot(FansAt?.Invoke(Reads) ?? new(3000, 3000), null, true));
         }
     }
     private sealed class Pad : ICoolingPadDiscoverySource
