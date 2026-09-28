@@ -69,6 +69,7 @@
       Include="Fixtures\Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_4_00_SlimQ330WAdapterAdmission.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_StockLoadBaselinePlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_StockLoadBaselinePlan.json" />
+    <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json" />
   </ItemGroup>
 
 </Project>

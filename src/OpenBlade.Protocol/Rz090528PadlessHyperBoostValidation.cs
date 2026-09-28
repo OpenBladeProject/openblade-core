@@ -6,7 +6,7 @@ namespace OpenBlade.Protocol;
 // Developer experiment only. It deliberately does not alter pad-required production admission.
 internal sealed class Rz090528PadlessHyperBoostValidation(
     IValidationActorFactory actors, ICoolingPadDiscoverySource pads, Func<bool> isolated,
-    Rz090528PadlessNoLoadValidation? noLoad = null)
+    Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null)
     : IPerformanceFanSetterValidationRunner
 {
     internal const string PlanSha256 = "53436C5DE5B19301FFDDA9EB3670DA62F6440B9CA5168A81878FE58386DB8CD1";
@@ -36,6 +36,9 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     internal DateTimeOffset? SecondAbsenceObservedAtUtc { get; private set; }
     internal PerformanceFanThermalPair? FailureReconciliation { get; private set; }
     internal Rz090528NoLoadResult? NoLoadResult => noLoad?.Result;
+    internal Rz090528LoadedResult? LoadedResult => loaded?.Result;
+    internal bool HardwareOpened { get; private set; }
+    internal bool DisposalConfirmed { get; private set; }
     private int started;
 
     internal bool IsStockBaselineEligible() => isolated() && pads.Observe() == CoolingPadConnectionState.Absent;
@@ -68,7 +71,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     }
 
     internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated,
-        Rz090528PadlessNoLoadValidation? noLoad = null)
+        Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -82,7 +85,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             TimeProvider.System, TimeSpan.FromSeconds(3), ControllerExclusivityPolicy.Strict,
             TimeSpan.FromMilliseconds(20));
         return new(factory, new WindowsHyperBoostEligibilitySource(native),
-            () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad);
+            () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad, loaded);
     }
 
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -121,8 +124,9 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             }
 
             var runner = new PerformanceFanSetterValidationRunner(() => new ValidationRunContext(),
-                new GuardedActors(actors, pads, isolated, pair => FailureReconciliation = pair), TimeProvider.System,
-                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad);
+                new GuardedActors(actors, pads, isolated, pair => FailureReconciliation = pair,
+                    () => HardwareOpened = true, () => DisposalConfirmed = true), TimeProvider.System,
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded);
             innerRunStarted = true;
             return await runner.RunAsync(target, token).ConfigureAwait(false);
         }
@@ -142,7 +146,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             possibleWrite, false, false, false, false, false, possibleWrite, possibleWrite, failure);
 
     private sealed class GuardedActors(IValidationActorFactory inner, ICoolingPadDiscoverySource pads,
-        Func<bool> isolated, Action<PerformanceFanThermalPair?> reconciliation) : IValidationActorFactory
+        Func<bool> isolated, Action<PerformanceFanThermalPair?> reconciliation,
+        Action opened, Action disposed) : IValidationActorFactory
     {
         public async ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context)
         {
@@ -157,14 +162,15 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                 return result;
             }
 
-            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation);
+            opened();
+            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation, disposed);
             return new(new ValidationActor(session, actor.BatteryCommands, actor.TemporaryFullChargeCommands), null);
         }
     }
 
     internal sealed class GuardedSession(IRazerCommandSession inner, ValidationRunContext context,
         ICoolingPadDiscoverySource pads, Func<bool> isolated,
-        Action<PerformanceFanThermalPair?>? reconciliation = null) : IRazerCommandSession, IRz090528NoLoadSnapshotSource
+        Action<PerformanceFanThermalPair?>? reconciliation = null, Action? disposed = null) : IRazerCommandSession, IRz090528NoLoadSnapshotSource
     {
         private int nextWrite;
         private volatile bool failed;
@@ -187,9 +193,15 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                     return new(null, "IsolationOrSessionLost", false);
                 }
 
+                // A timed-out loaded snapshot may have been blocked in the synchronous isolation prefix.
+                token.ThrowIfCancellationRequested();
+                if (failed) { return new(null, "SnapshotLaneClosed", false); }
+
                 byte mode = baseline ? (byte)2 : (byte)7;
                 for (byte channel = 1; channel <= 2; channel++)
                 {
+                    token.ThrowIfCancellationRequested();
+                    if (failed) { return new(null, "SnapshotLaneClosed", false); }
                     var read = await ReadAsync(new RazerCommandSpec(0x0D, 0x82,
                         new byte[] { 1, channel, 0, 0 }, 4), TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
                     if (read.Failure is not null || !read.Value.Span.SequenceEqual(new byte[] { 1, channel, mode, 0 }))
@@ -217,6 +229,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                         return new(null, "IsolationLost", false);
                     }
 
+                    token.ThrowIfCancellationRequested();
+                    if (failed) { return new(null, "SnapshotLaneClosed", false); }
                     var read = await ReadAsync(new RazerCommandSpec(0x0D, 0x88,
                         new byte[] { 1, selector, 0 }, 3), TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
                     if (read.Failure is not null || !FanRpmProtocol.TryDecodeQuery(read.Value.Span,
@@ -356,7 +370,11 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                 }
             }
             catch { }
-            finally { await inner.DisposeAsync().ConfigureAwait(false); }
+            finally
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+                disposed?.Invoke();
+            }
         }
     }
 }

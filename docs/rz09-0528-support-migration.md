@@ -158,6 +158,25 @@ Balanced settings, and independently confirmed zero GPU offsets. The
 records actual timestamps and readings. These results do not admit installed
 padless operation; load, power-boundary and lifecycle validation remain pending.
 
+The developer-only `validate-rz09-0528-02c6-hyperboost-padless-loaded` command
+prepares a separate ten-second observation under an exact Steel Nomad workload.
+It requires the full-power adapter, disconnected and unpowered cooling pad,
+zero GPU offsets, and a fresh timestamped JSON log from an already installed,
+verified HWiNFO process. It selects the named CPU (Tctl/Tdie) sensor and retains
+temperature peaks between reads; GPU temperature and utilization come from the
+same verified NVML device. HWiNFO is a validation tool, not an installed
+OpenBlade dependency.
+
+The reviewed plan uses experimental entry limits of 70 C CPU and 72 C GPU,
+and stops observation at 75 C on either sensor. These values are not hardware
+ratings. The ten-second observation deadline excludes paired transition and
+restoration latency, which are recorded separately. A telemetry failure ends
+observation and permits restoration only while the existing native guards
+confirm a known state. Ambiguous firmware operations stop further writes.
+The surrounding validation restores original settings after the benchmark
+exits. This command provides no production padless admission; its hardware
+results require separate review.
+
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
 The NVIDIA driver supplies the writable offset backend; no Synapse-delivered
