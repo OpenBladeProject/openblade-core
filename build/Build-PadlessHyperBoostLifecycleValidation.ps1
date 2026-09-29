@@ -5,7 +5,11 @@ param(
 
     # The exact model whose reviewed readiness manifest the service will bind; never aliased across models.
     [ValidateSet('RZ09-0581', 'RZ09-0528')]
-    [string]$Model = 'RZ09-0581'
+    [string]$Model = 'RZ09-0581',
+
+    # Match a Nightly exact-build installation so the swapped service carries the installed identity.
+    [ValidateRange(0, 65534)]
+    [int]$NightlyBuildRevision = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,12 +44,30 @@ if (Test-Path -LiteralPath $resolvedOutput) {
 else {
     New-Item -ItemType Directory -Path $resolvedOutput | Out-Null
 }
+$identityArguments = @()
+if ($NightlyBuildRevision -gt 0) {
+    . (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
+    [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repoRoot 'Directory.Build.props')
+    $identity = Resolve-OpenBladeBuildIdentity `
+        -BaseVersion $buildProperties.SelectSingleNode('/Project/PropertyGroup/OpenBladeVersion').InnerText `
+        -Channel Nightly `
+        -BuildRevision $NightlyBuildRevision `
+        -SourceRevision $revision
+    $identityArguments = @(
+        "-p:Version=$($identity.Version)",
+        "-p:AssemblyVersion=$($identity.AssemblyVersion)",
+        "-p:FileVersion=$($identity.FileVersion)",
+        "-p:InformationalVersion=$($identity.InformationalVersion)",
+        '-p:IncludeSourceRevisionInInformationalVersion=false'
+    )
+}
 & dotnet publish (Join-Path $repoRoot 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
     -c Release `
     --no-restore `
     -p:NuGetAudit=false `
     -p:OpenBladePadlessHyperBoostLifecycleValidation=true `
     -p:SourceRevision=$revision `
+    @identityArguments `
     -o $resolvedOutput
 if ($LASTEXITCODE -ne 0) {
     throw "Validation Service publish failed with exit code $LASTEXITCODE."
@@ -64,6 +86,7 @@ if (-not (Test-Path -LiteralPath $serviceAssembly -PathType Leaf) -or
 $manifest = [ordered]@{
     schemaVersion = 1
     model = $Model
+    nightlyBuildRevision = $NightlyBuildRevision
     validationRunId = [guid]::NewGuid()
     sourceRevision = $revision
     serviceAssemblySha256 = (Get-FileHash -LiteralPath $serviceAssembly -Algorithm SHA256).Hash
