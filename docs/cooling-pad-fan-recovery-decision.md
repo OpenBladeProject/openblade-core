@@ -66,7 +66,7 @@ restoration. A timeout or absent physical confirmation must not trigger an
 unconditional Auto cleanup. Production, fan-state, ownership and handback gates
 stay closed even if this single experiment succeeds.
 
-## Manual recovery decision before implementation or execution
+## Manual recovery decision before live wiring or execution
 
 The user must decide whether a future exploratory trial may use vendor-assisted
 recovery if necessary. No recovery action is performed by this document or by the
@@ -88,9 +88,41 @@ A permitted recovery plan must name these contingencies and save the preferred
 Auto/full-brightness/static-green settings before any fan mutation. Permission
 for recovery would not authorize automatic vendor restarts, production admission,
 additional service stops or the fan trial itself. Implement and independently
-review the bounded typed experiment only after its recovery constraints are
-resolved, then show the exact action before a fresh attended trial.
+review live hardware wiring only after its recovery constraints are resolved,
+then show the exact action before a fresh attended trial.
 
 Another ordinary vendor Auto/Fixed capture or an opaque-byte query would not
 resolve this known gap. Further evidence should target the acquisition context
 and the missing restoration path. Until then, keep fan mutation disabled.
+
+## Offline prototype boundary
+
+An internal prototype exercises this fixed sequence against injected test
+sessions while the recovery decision is pending. It has no command-line entry,
+Windows actor factory or installed-product integration. It cannot be invoked
+through OpenBlade.Capture on the device. Offline preparation does not authorize
+a fan write or vendor restart.
+
+The prototype reserves seven transactions before opening a session. It requires
+exact raw baseline `0000`, exact mode `0300` acknowledgement/readback, and exact
+three-byte Medium and Auto setter echoes. It waits for separate operator
+observations after Medium and Auto, then confirms raw-mode restoration and a
+final physical observation. These observations never become target, RPM,
+ownership or firmware fan-state readback.
+
+Every failed exchange, unexpected echo, rejected observation, timeout, exception
+or cancellation stops further writes. There is no unconditional Auto cleanup,
+mode cleanup or retry. Operator waits are bounded even if an observer ignores cancellation or its
+cancellation handler blocks; disposal is bounded separately. An incomplete mutation sequence is
+reported as requiring manual recovery rather than claimed restored. Success of
+test doubles validates control flow only, not device restoration.
+
+Before any future live wiring, resolve the recovery decision, review the fresh
+exact-device/controller factory and explicit attended command, and retain the
+known negative Auto evidence. This document is not an execution instruction for
+the offline prototype.
+
+Offline verification: all 563 Capture tests and three architecture tests passed,
+including 48 exploratory-runner cases. Independent review passed after checking
+noncooperative observer invocation, timeout and asynchronous cancellation cleanup.
+No fan hardware trial, CLI route, native factory or vendor restart is included.
