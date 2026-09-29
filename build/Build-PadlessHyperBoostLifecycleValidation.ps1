@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+
+    # The exact model whose reviewed readiness manifest the service will bind; never aliased across models.
+    [ValidateSet('RZ09-0581', 'RZ09-0528')]
+    [string]$Model = 'RZ09-0581'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,8 +52,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $serviceAssembly = Join-Path $resolvedOutput 'OpenBlade.Service.dll'
-$admissionManifest = Join-Path $repoRoot `
-    'src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json'
+$admissionManifest = Join-Path $repoRoot $(switch ($Model) {
+    'RZ09-0581' { 'src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json' }
+    'RZ09-0528' { 'src\OpenBlade.Protocol\Fixtures\Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json' }
+})
 if (-not (Test-Path -LiteralPath $serviceAssembly -PathType Leaf) -or
     -not (Test-Path -LiteralPath $admissionManifest -PathType Leaf)) {
     throw 'The validation Service or admission manifest is missing.'
@@ -57,6 +63,7 @@ if (-not (Test-Path -LiteralPath $serviceAssembly -PathType Leaf) -or
 
 $manifest = [ordered]@{
     schemaVersion = 1
+    model = $Model
     validationRunId = [guid]::NewGuid()
     sourceRevision = $revision
     serviceAssemblySha256 = (Get-FileHash -LiteralPath $serviceAssembly -Algorithm SHA256).Hash
