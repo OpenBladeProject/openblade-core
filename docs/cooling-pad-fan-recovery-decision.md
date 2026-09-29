@@ -26,6 +26,11 @@ production handback contract. The older standalone Auto negative remains valid
 and must not be generalized away. The result does not establish that raw `0300`
 caused the improvement or exclude state retained from prior vendor recovery.
 
+A fresh read-only query 131.58 seconds after trial-process exit still returned
+raw `0000`; the operator subsequently confirmed quiet Auto and unchanged normal
+green lighting, with no red/sleep. This establishes persistence after this normal
+exit observation, not crash, disconnect, sleep or autonomous recovery.
+
 Next prepare offline lifecycle cases against this fixed sequence: cancellation
 and failure after each mutation, disconnect/reconnect with fresh device identity,
 controller conflict, and bounded shutdown/crash recovery. Any attended lifecycle
