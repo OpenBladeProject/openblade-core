@@ -90,8 +90,24 @@ Serial-bearing startup replies remain private.
 
 Application exit does not establish independent firmware ownership, and the
 observed mode-family pair is not an admitted OpenBlade release. The historical
-negative standalone Auto result remains relevant. Both sessions are vendor
+negative standalone Auto result remains relevant. These sessions are vendor
 observations, with all OpenBlade accessory mutation gates closed.
+
+A third session repeated exit/reopen after vendor Fixed Medium 2200 selection,
+then restored preferred Auto. Exit/startup uses the same `00/04` values as Auto.
+The operator noticed no physical change at exit and reported that Synapse still
+showed Fixed after reopening. Eight Medium pairs occur, seven after reopening;
+four later vendor repetitions have unexplained triggers. One final acknowledged
+Auto pair correlates with restoration. No fan-demand writes or fan-state queries
+occur. All 216 complete bodies pass checksums; shutdown and service restart
+completed without errors. Two zero-AppEngine snapshots retain running services.
+
+After capture, an opt-in metadata check initialized 91-byte memory buffers with
+`HidP_InitializeReportForID` for candidates `00` and `05`. Both returned
+`C0110010` (report does not exist). The collection has zero feature button/value
+capabilities; this parser result leaves user-mode framing unresolved.
+No feature report was sent. The enhanced inventory records raw parser statuses
+separately from actual device I/O validation.
 
 The bounded vendor-baseline procedure is:
 
@@ -133,19 +149,25 @@ Keep raw PCAP, process traces, instance IDs, serials, and local paths private.
 
 ## Decision after capture
 
-The next attended vendor capture should repeat normal exit/reopen from Fixed
-Medium 2200 to determine whether the complete lifecycle sequence differs from
-Auto. Record physical behavior and remaining controllers, then use Synapse to
-restore the operator's preferred Auto and full-brightness static-green state.
-Keep USB and 12 V recovery accessible. Vendor services stay under operator
-control; their continued presence prevents a claim of independent ownership.
+The next manual gate is actual HID report-descriptor acquisition. Prepare a
+short attended descriptor-discovery capture on the verified USB root. Unlike
+action captures, descriptor discovery may use `-AllDevices`: reconnect can
+change the device address, and enumeration can use address zero. Keep raw root
+traffic private and extract only the exact pad's actual MI_00 report descriptor,
+binding its address through VID/PID/revision enumeration. Injected device/config
+descriptors and a reported descriptor length are insufficient.
 
-Separately establish Windows user-mode feature-report framing from read-only
-descriptor/API evidence before preparing any device query. Then prepare an
-exact-device, bounded query-only check of the captured `00/84` contract. Record
-its raw result without assigning laptop Driver/Normal semantics. The wire
-report ID alone does not authorize trying guessed user-mode IDs. Review a
-complete restoration contract before preparing a direct typed write trial.
+Before USB detachment, confirm pad-dependent HyperBoost is inactive. The
+operator reconnects only USB while 12 V stays powered, observes behavior, and
+restores preferred Auto/full-brightness/static-green through Synapse. No
+automatic device reset, vendor-service stop or driver restart is included. If
+the actual report descriptor is absent, stop without guessed queries.
+
+Once framing is established, prepare an exact-device, bounded query-only check
+of captured `00/84`, recording raw results without assigning laptop
+Driver/Normal semantics. Review a complete restoration contract before any
+direct typed write trial. Vendor services remain under operator control;
+continued presence prevents a claim of independent ownership.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
