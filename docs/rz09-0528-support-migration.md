@@ -232,10 +232,10 @@ HyperBoost enters directly from the current one of these modes and restores it
 on exit, with or without the pad. Pad-less entry uses the full-power adapter
 (`FullPower280W`, value `1111`), a fresh exact pad-absence observation and
 competing-controller checks, and never switches the performance mode first;
-from Custom it is refused. GPU clock tuning must be off with zero confirmed
-offsets for pad-less entry and cannot be turned on during a pad-less session
-until that combination is tested. With the pad, Custom still switches to
-Performance first. A fresh
+from Custom it is refused. A separate pad-less round trip confirmed +5/+5 MHz
+GPU offsets applied during HyperBoost and held through entry and exit, with both
+NVML and NVAPI returning to zero, so GPU tuning stays available with or without
+the pad. With the pad, Custom still switches to Performance first. A fresh
 pad observation selects and journals the path at entry; the port submits only
 under that path and rechecks it before every command, so a pad change
 mid-transition blocks or becomes indeterminate instead of switching paths.
