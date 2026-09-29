@@ -5,6 +5,44 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class GetterCandidateProbeRunnerTests
 {
+    [Theory]
+    [InlineData("0000")]
+    [InlineData("0300")]
+    public async Task CoolingPadQuery_SendsOneCapturedGetterWithoutLaptopSemantics(string response)
+    {
+        var session = new RecordingSession(Convert.FromHexString(response));
+        var runner = new CoolingPadControlStateQueryRunner(
+            static () => new ValidationRunContext(),
+            new ActorFactory(new ValidationActor(session,
+                new UnsupportedBatteryCommands(), new UnsupportedTemporaryCommands())),
+            TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5),
+            new PendingDisposalRegistry());
+
+        var result = await runner.RunAsync(default);
+        Assert.Equal(response, result.Value!.ResponsePayloadHex);
+        var command = Assert.Single(session.Commands);
+        Assert.Equal(0x00, command.ClassId);
+        Assert.Equal(0x84, command.CommandId);
+        Assert.Equal([0x00, 0x00], command.Arguments.ToArray());
+        Assert.True(command.PayloadValidator!(Convert.FromHexString(response)));
+        Assert.False(command.PayloadValidator!(new byte[] { 0x02, 0x00 }));
+        Assert.False(command.PayloadValidator!(new byte[] { 0x03 }));
+        Assert.Equal(HidSessionFailureKind.Disposed, (await runner.RunAsync(default)).Failure);
+        Assert.Single(session.Commands);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
+    public void CoolingPadIdentity_RejectsLaptopInputCollectionAndOtherRevision()
+    {
+        var identity = CoolingPadControlStateQueryFactory.ExactIdentity;
+        Assert.Equal(new HidHandleIdentity(0x1532, 0x0F43, 0x000C, 0x0001, 91, 0x0200), identity);
+        Assert.False((identity with { ProductId = 0x02C6 }).MatchesExpected(identity));
+        Assert.False((identity with { Usage = 0x0002 }).MatchesExpected(identity));
+        Assert.False((identity with { FeatureReportByteLength = 0 }).MatchesExpected(identity));
+        Assert.False((identity with { VersionNumber = 0x0300 }).MatchesExpected(identity));
+    }
+
     [Fact]
     public async Task FunctionKeyRunner_SendsOnlyTheFixedCandidateAndDisposes()
     {

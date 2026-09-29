@@ -345,7 +345,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             && candidate.ProductId == expected.ProductId
             && candidate.UsagePage == expected.UsagePage
             && candidate.Usage == expected.Usage
-            && candidate.FeatureReportByteLength == expected.FeatureReportByteLength;
+            && candidate.FeatureReportByteLength == expected.FeatureReportByteLength
+            && (expected.VersionNumber == 0 || candidate.VersionNumber == expected.VersionNumber);
 
         HidEvidenceEvaluation FinishFailure(
             BatteryValidationProbeStage stage,

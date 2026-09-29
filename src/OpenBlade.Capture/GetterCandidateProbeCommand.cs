@@ -39,6 +39,7 @@ internal abstract class GetterCandidateProbeCommand
     }
 
     protected abstract CandidateMetadata Metadata { get; }
+    protected virtual bool DeviceBiosIsCaptureProvenance => false;
 
     internal async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
@@ -95,6 +96,7 @@ internal abstract class GetterCandidateProbeCommand
         ProductionAdmitted: false,
         TypedReadbackAdmitted: false,
         SemanticMappingConfirmed: false,
+        DeviceBiosIsCaptureProvenance: DeviceBiosIsCaptureProvenance,
         TransportSuccess: result.Failure is null && result.Value is not null,
         Failure: result.Failure?.ToString() ?? "None",
         FailurePhase: result.Diagnostic?.Phase.ToString() ?? "None",
@@ -120,6 +122,7 @@ internal abstract class GetterCandidateProbeCommand
         bool ProductionAdmitted,
         bool TypedReadbackAdmitted,
         bool SemanticMappingConfirmed,
+        bool DeviceBiosIsCaptureProvenance,
         bool TransportSuccess,
         string Failure,
         string FailurePhase,
