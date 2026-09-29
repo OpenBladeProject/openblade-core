@@ -1619,6 +1619,15 @@ if (args.Length == 1 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    CoolingPadControlStateRoundTripCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var runner = GetterCandidateProbeFactory.CreateCoolingPadControlStateRoundTripWindows();
+    var command = new CoolingPadControlStateRoundTripCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     CoolingPadControlStateQueryCommand.Name,
     StringComparison.OrdinalIgnoreCase))
 {

@@ -69,3 +69,6 @@ The operator reported normal unchanged physical behavior. Synapse and both
 services remain stopped at the user's explicit request. This result does not
 establish fan state, RPM, ownership or safe handback. The sanitized record is
 `2026-09-29-rz09-0528-cooling-pad-control-state-query.json` in captures PR #33.
+
+The next prepared experiment is the [raw control-state round trip](cooling-pad-control-state-round-trip.md).
+Its mode setters have not yet been validated through OpenBlade.

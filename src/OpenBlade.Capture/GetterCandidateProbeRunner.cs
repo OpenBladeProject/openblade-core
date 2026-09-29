@@ -17,6 +17,15 @@ internal static class GetterCandidateProbeFactory
     private static readonly TimeSpan FeatureReportSettleDelay = TimeSpan.FromMilliseconds(20);
 
     internal static IGetterCandidateProbeRunner CreateCoolingPadControlStateWindows()
+        => new CoolingPadControlStateQueryRunner(
+            static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout);
+
+    internal static CoolingPadControlStateRoundTripRunner CreateCoolingPadControlStateRoundTripWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout);
+
+    private static IValidationActorFactory CreateCoolingPadActorFactory()
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -27,13 +36,10 @@ internal static class GetterCandidateProbeFactory
                 WindowsHostIdentitySource.Rz090528Identity),
             guard, native, ControllerExclusivityPolicy.Strict,
             CoolingPadControlStateQueryFactory.ExactIdentity);
-        return new CoolingPadControlStateQueryRunner(
-            static () => new ValidationRunContext(),
-            new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+        return new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
                 guard, TimeProvider.System, TimeSpan.FromSeconds(3),
                 ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30),
-                featureReportId: 0),
-            TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
+                featureReportId: 0);
     }
 
     internal static IGetterCandidateProbeRunner CreateFunctionKeyPrimaryWindows() =>
