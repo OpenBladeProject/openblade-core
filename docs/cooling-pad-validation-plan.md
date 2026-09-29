@@ -173,11 +173,19 @@ and both services remain stopped. BIOS versions are provenance only.
 
 This establishes actual Windows feature I/O for the observed raw query,
 without laptop Driver/Normal semantics, fan-state, RPM or ownership claims.
-The next write work must first review a complete accessory restoration contract
-using the captured `00/04` lifecycle candidates. Any direct mode-transition or
-fan trial needs an attended, saved-state, bounded plan with explicit physical
-confirmation and safe recovery. The historical standalone Auto failure still
-blocks presumed release; no new setter is authorized by query success.
+The captured mode-family round trip has now completed in draft PR #624, from
+reviewed build `746586c9`: fresh raw `0000`, set/echo `0300`, query `0300`,
+immediate set/echo `0000`, final query `0000`. The operator approved this exact
+trial and confirmed normal unchanged fan and full-brightness static-green
+lighting afterward, without red/sleep indication. No retry, fan/lighting setter
+or vendor restart occurred. Evidence is the hashed typed-result annotation in
+captures PR #33, without concurrent PCAP or retained native response traces.
+
+This validates immediate restoration of the saved raw value on this exact unit.
+It does not establish meaningful fan state, ownership or safe fan handback. The
+next fan-write work still needs a complete accessory acquisition/restoration
+contract and bounded attended plan. The historical standalone Auto failure
+continues to block presumed release.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
