@@ -9392,6 +9392,29 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task HyperBoostUnavailableReason_StaysHiddenWhileAPerformanceChangeRuns()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreatePadlessHyperBoostStatus(CreateStatus(verified: true, blocked: false)));
+        await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
+            && viewModel.AvailableLaptopPerformanceOptions.Any(option => option.Value == PerformancePreset.Silent));
+        LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.Silent);
+
+        Task operation = viewModel.SetLaptopPerformanceOptionAsync(silent, default);
+        await client.MutationStarted.Task;
+
+        Assert.True(viewModel.IsPerformanceOperationInProgress);
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.HasHyperBoostUnavailableReason);
+        Assert.Empty(viewModel.HyperBoostUnavailableReason);
+        client.CompleteMutation();
+        await operation;
+    }
+
+    [Fact]
     public async Task LaptopPerformanceChoice_PowerChangeDuringExitStopsBeforePresetWrite()
     {
         var client = new FakeServiceClient

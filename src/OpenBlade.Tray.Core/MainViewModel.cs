@@ -2873,9 +2873,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get
         {
+            // A running performance or HyperBoost change is a transient state, not a reason to warn.
             if (!IsHyperBoostVisible
                 || CanToggleHyperBoost
                 || IsHyperBoostOperationInProgress
+                || IsPerformanceOperationInProgress
                 || latestStatus?.ActivePowerSource is PowerSource.Battery or PowerSource.UsbC)
             {
                 return string.Empty;
