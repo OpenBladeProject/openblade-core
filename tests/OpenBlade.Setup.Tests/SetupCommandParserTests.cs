@@ -92,6 +92,18 @@ public sealed class SetupCommandParserTests
         Assert.Equal("01234567-89ab-cdef-0123-456789abcdef", invocation.BundleOwnerId);
     }
 
+    [Theory]
+    [InlineData(SetupCommand.Install, "install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--log", @"C:\Logs\OpenBlade_000_OpenBladeSetup.log")]
+    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--bundle-managed", "--log", @"C:\Logs\OpenBlade_000_OpenBladeSetup.log", "--purge", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef")]
+    public void TryParseInvocation_AcceptsTheBundlePackageLogPath(
+        SetupCommand expected,
+        params string[] arguments)
+    {
+        Assert.True(SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation));
+        Assert.Equal(expected, invocation.Command);
+        Assert.Equal(@"C:\Logs\OpenBlade_000_OpenBladeSetup.log", invocation.LogPath);
+    }
+
     [Fact]
     public void InteractiveMarker_IsLimitedToExactUserFacingUninstallInvocation()
     {
@@ -120,6 +132,11 @@ public sealed class SetupCommandParserTests
     [InlineData("uninstall", "--bundle-managed", "--progress-pipe", "--purge")]
     [InlineData("uninstall", "--bundle-managed", "--purge", "--purge")]
     [InlineData("uninstall", "--bundle-managed", "--progress-pipe", "pipe", "--progress-pipe", "other")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--log", "relative.log")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--log")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--log", "")]
+    [InlineData("install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef", "--log", @"C:\a.log", "--log", @"C:\b.log")]
+    [InlineData("install", "--log", @"C:\setup.log")]
     [InlineData("remove")]
     public void TryParseInvocation_RejectsUnknownFlagsExtraArgumentsAndDuplicateOptions(
         params string[] arguments)

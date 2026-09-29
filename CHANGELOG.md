@@ -14,6 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
 - Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Prevent fan-editor synchronization from creating a temporary fan override without a changed selection. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Keep the restored performance and fan settings after OpenBlade recovers HyperBoost from an unexpected service stop on full-power AC, instead of reporting them as external changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
