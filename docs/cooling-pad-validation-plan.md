@@ -49,13 +49,31 @@ Recalculate hashes against the selected capture commit before extracting an
 admission manifest. Some draft #125 source hashes no longer match the retained
 annotations; copying the old manifest does not establish admission.
 
-## Next attended session: vendor baseline on RZ09-0528
+## Completed vendor baseline on RZ09-0528
 
 A metadata-only inventory on 2026-09-29 found RZ09-05289EN4 BIOS 2.02 and the
 exact revision-0200 pad with the expected MI_00 geometry. This verifies present
 identity, not protocol semantics or write admission on this host.
 
-Prepare one vendor-controlled Fixed-2200 transition and restoration session:
+The attended session is recorded in
+[capture PR #33](https://github.com/OpenBladeProject/openblade-captures/pull/33).
+Starting from Fixed Medium 2200, the operator selected Auto, observed fan
+ramp-down, then restored Fixed Medium 2200 with normal fan response and
+unchanged full-brightness static-green lighting. Both vendor pairs have matching
+status-02 semantic echoes and checksums. Medium restoration is `01012C`, distinct
+from the historical High-2200 payload `01022C`.
+
+The 44.87-second Auto interval contains no host-demand updates or fan queries.
+Green lighting frames continue approximately every five seconds. Raw USB
+SET_REPORT/GET_REPORT uses selector `0300` on interface zero, with a 90-byte
+body; this does not validate Windows user-mode feature-report framing. Preserve
+that distinction from the historical report-ID-05 path.
+
+Capture stopped gracefully and OpenBlade restarted without errors. After
+capture, the operator selected Auto again for quietness. That preference is
+preserved; it is outside the captured restoration evidence.
+
+The bounded vendor-baseline procedure is:
 
 1. The operator confirms the pad is powered, its fan behaves normally, Synapse
    can control it, and USB and 12 V connections are accessible. Save the current
@@ -94,6 +112,16 @@ physical outcome, and restoration outcome. Validate it with
 Keep raw PCAP, process traces, instance IDs, serials, and local paths private.
 
 ## Decision after capture
+
+The next attended capture should observe vendor-controller relinquishment from
+the current normal Auto baseline: the operator exits Synapse normally while
+physical fan/lighting behavior and remaining vendor processes/services are
+recorded, then restores the vendor controller and confirms the saved settings.
+Do not automatically stop vendor services or treat a closed window as proof
+that the producer has stopped. Keep USB and 12 V recovery accessible. Record
+the remaining controllers rather than claiming autonomous operation while one
+may still own the pad. Verify user-mode report framing read-only before
+preparing a direct typed trial.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
