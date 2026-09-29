@@ -4,7 +4,36 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Related: [developer validation PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624)
 and [evidence PR #33](https://github.com/OpenBladeProject/openblade-captures/pull/33).
 
-## Live attempts on 2026-09-29
+## Completed attended fan experiment
+
+After the bounded raw recovery, a fresh trial on 2026-09-29 completed from source
+`1c19debf8b712667822093dc2f9e428e4ff54171`. The seven typed exchanges confirmed
+raw baseline `0000`, acquired/read-back `0300`, Medium `01012C` acknowledgement,
+Auto `000600` acknowledgement, and restored/read-back `0000`. The operator
+separately confirmed Medium normal with unchanged green lighting, quiet Auto
+normal with unchanged green lighting, then normal unchanged final behavior.
+Exit was zero, with no timeout, rejected observation or manual recovery needed.
+
+No vendor process/service restart, power cycle, lighting setter, demand update,
+PCAP capture or retry occurred during this completed attempt. Synapse and both
+named Razer services remained stopped. Evidence is a hashed typed result plus
+attended observations; no independently sniffed PCAP or retained native report
+trace is available. The first two incomplete attempts remain separate evidence.
+
+This establishes one physically successful exploratory sequence on this exact
+host and pad, not an RPM or firmware fan-state readback, ownership proof, or
+production handback contract. The older standalone Auto negative remains valid
+and must not be generalized away. The result does not establish that raw `0300`
+caused the improvement or exclude state retained from prior vendor recovery.
+
+Next prepare offline lifecycle cases against this fixed sequence: cancellation
+and failure after each mutation, disconnect/reconnect with fresh device identity,
+controller conflict, and bounded shutdown/crash recovery. Any attended lifecycle
+trial needs its own present-operator baseline and recovery plan. Production fan
+mutation stays closed until meaningful confirmation, ownership and those recovery
+contracts are independently established. Do not repeat a generic fan round trip
+or opaque query as a substitute for those missing contracts.
+## Earlier incomplete attempts on 2026-09-29
 
 The first attended execution from reviewed source `45a4aa6e` reached raw `0300`
 and acknowledged Medium Fixed `01012C`. The operator observed Medium and later
@@ -20,11 +49,11 @@ build. It read raw `0300` and stopped with `BaselineNot0000` before any setter.
 Vendor-assisted physical Auto recovery therefore did not establish raw `0000`
 in this session. Both Razer services were subsequently stopped as authorized.
 
-A bounded raw-mode restoration path is being prepared for independent review.
+A bounded raw-mode restoration path was independently reviewed and completed.
 It must preserve both original results, check the current raw value before a
 single `0000` setter, confirm the exact echo and readback, and obtain a separate
 physical check. It must send no fan or lighting command and perform no vendor
-restart. Further fan execution requires that restoration and a fresh baseline.
+restart. The completed fan experiment above followed that restoration and a fresh baseline.
 Production, fan-state, ownership and handback admission remain closed.
 ## Bounded raw-mode restoration command
 
@@ -202,3 +231,7 @@ passed, including 48 exploratory-runner cases and 22 CLI-admission cases.
 Independent review passed for exact argument admission, deferred native factory,
 strict pad identity/controller checks, JSON/prompt separation and stopped-write
 behavior. The live attempts and vendor-assisted recovery are recorded above.
+
+Raw recovery verification: 26 focused tests, all 611 Capture tests and three
+architecture tests passed; independent review passed. The exact committed build
+completed with zero warnings or errors.
