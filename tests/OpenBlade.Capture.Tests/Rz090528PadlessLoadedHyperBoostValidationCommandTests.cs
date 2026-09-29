@@ -178,6 +178,13 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
     }
 
     [Fact]
+    public void OnlyExactReviewedHwinfoBuildsAreAccepted()
+    {
+        Assert.Equal(new[] { "8.48-5990", "8.52-6060" }, VerifiedHwinfoProcess.ReviewedVersions);
+        Assert.DoesNotContain("8.52", VerifiedHwinfoProcess.ReviewedVersions);
+        Assert.DoesNotContain("8.53-6100", VerifiedHwinfoProcess.ReviewedVersions);
+    }
+    [Fact]
     public void NoLoadTreatsAnyBenchmarkProcessAsRunningWorkload()
     {
         Assert.False(Rz090528PadlessLoadedHyperBoostValidationCommand.IdleWorkloadObservation(false, () => true).RunningExact);

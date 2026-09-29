@@ -346,6 +346,8 @@ internal sealed class OwnedReadOnlyLane<T> where T : class
 internal sealed class VerifiedHwinfoProcess : IDisposable
 {
     internal const string ExpectedVersion = "8.48-5990";
+    // Each entry is an exact REALiX-signed build whose JSON CPU Tctl/Tdie log passed the read-only reader proof.
+    internal static readonly string[] ReviewedVersions = [ExpectedVersion, "8.52-6060"];
     private readonly FileStream executable;
     internal HwinfoProcessIdentity Identity { get; }
 
@@ -389,7 +391,7 @@ internal sealed class VerifiedHwinfoProcess : IDisposable
             await stderr;
             if (helper.ExitCode != 0 || !TrustedSignature(signature)) { throw new InvalidDataException("HwinfoSignatureNotVerified"); }
             string version = FileVersionInfo.GetVersionInfo(canonical).FileVersion ?? string.Empty;
-            if (version != ExpectedVersion) { throw new InvalidDataException("HwinfoVersionNotReviewed"); }
+            if (!ReviewedVersions.Contains(version, StringComparer.Ordinal)) { throw new InvalidDataException("HwinfoVersionNotReviewed"); }
             string hash = Convert.ToHexString(SHA256.HashData(locked));
             HwinfoProcessIdentity identity = ObserveExact(canonical, hash, version)
                 ?? throw new InvalidDataException("ExactHwinfoProcessUnavailable");
