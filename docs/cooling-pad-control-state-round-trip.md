@@ -80,5 +80,17 @@ and limitations. Do not claim independent packet capture when none ran.
 
 ## Validation status
 
-Preparation only. The mode-write round trip has not been executed. A fresh
-attended approval and baseline confirmation are required before hardware use.
+The single attended trial completed on 2026-09-29 from reviewed source
+`746586c9`. Its fixed sequence confirmed raw `0000` -> `0300` -> `0000`, with
+both exact setter echoes, all three readbacks and exit code zero. No retry,
+fan/lighting setter, fallback report ID or vendor restart occurred.
+
+The operator confirmed normal unchanged fan and full-brightness static-green
+lighting, with no flashing-red or sleep indication. Synapse and the two Razer
+services remain stopped at the user's request. The sanitized typed-result record
+is `2026-09-29-rz09-0528-cooling-pad-control-state-round-trip.json` in captures
+PR #33. No concurrent PCAP or native report trace was retained.
+
+This validates immediate restoration of the saved raw value on this exact device.
+Meaningful fan state, ownership, fan/lighting handback and production mutation
+remain unvalidated. Any further hardware action needs its own reviewed contract.
