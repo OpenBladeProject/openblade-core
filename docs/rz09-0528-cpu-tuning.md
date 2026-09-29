@@ -59,18 +59,18 @@ before the native adapter runs. It contains no driver lifecycle commands. On
 service registration absent, so a separate attended provisioning proposal is
 required before a live query.
 
-The first approved attended live query on 2026-09-29 returned `Unavailable`
-without a completed observation. Its private helper created and started the
-registration from the pinned installed driver, then stopped and removed only
-that registration after the query process exited. Fresh checks confirmed that
-the original registration absence was restored. This result does not admit
-production live access. A later test requires a new attended proposal.
+Attended validation on 2026-09-29 measured all 12 enabled physical cores at curve
+optimizer −1. The PM version was `0x005D000B`, with table length `0xD50`. The query
+made no CPU-setting writes. Its private helper temporarily registered and started
+the pinned installed driver, then stopped and removed its own registration after
+the query exited. Independent checks confirmed registration absence and that both
+validation processes had exited.
 
-A second diagnostic run stopped at controller isolation before device opening.
-A hardware-free reproduction traced that failure to missing Windows runtime
-dependencies in the developer staging payload. The complete published payload
-passes read-only process and service enumeration. This fixes staging; it does
-not prove that the native query transport works on the laptop.
+The validated adapter confirms the CPU node, SMN root bridge, and topology
+function separately before its SMN transport writes. Earlier attempts identified
+a developer payload dependency omission and an incorrect topology assumption;
+both were corrected before the successful measurement. This observation does
+not admit production live tuning or prove boot activation.
 
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
