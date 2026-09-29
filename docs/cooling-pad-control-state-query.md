@@ -14,7 +14,7 @@ on 2026-09-29. Its SHA-256 is
 It declares one unnumbered 90-byte constant Feature report. Windows metadata
 reports 91 feature-buffer bytes; Windows requires prefix zero for an
 unnumbered report. There is no fallback to historical prefix `05`. Descriptor
-geometry is established; actual OpenBlade feature I/O remains unvalidated.
+geometry is established; actual OpenBlade feature I/O is validated by the trial below.
 BIOS versions do not restrict this query. Output `device.biosVersion` identifies
 the captured-evidence BIOS (2.02), not the runtime host BIOS;
 `deviceBiosIsCaptureProvenance` is true. Record the runtime BIOS separately in
@@ -47,10 +47,25 @@ the metadata inventory for any trial.
    length, checksum, transaction, command, status and captured payload shape.
    On ambiguity, stop without retry or a setter. This command does not claim
    production admission or meaningful fan-state readback.
-6. Reopen Synapse normally and confirm the saved Auto/lighting state and
+6. Restore saved vendor service states and reopen Synapse normally unless the
+   operator explicitly requests that they remain stopped. Confirm the saved Auto/lighting state and
    normal physical behavior. Any unexpected state belongs in the trial
    evidence; use vendor recovery instead of replaying commands.
 
 The command performs no mode change, fan setter, lighting write, ownership
 acquisition or restoration command. Production accessory mutation stays closed
 until independently reviewed restoration and lifecycle contracts exist.
+
+## Completed query trial
+
+On 2026-09-29, build `37011fd6` performed one guarded query after the operator
+exited Synapse and explicitly authorized stopping Razer Elevation Service and
+Razer Game Manager Service 3. The result was raw `0000`, with exit code zero
+and successful shared-session protocol validation. Prefix-zero Windows feature
+I/O is now validated for this observed device. There was no setter, fallback
+ID, retry or concurrent USBPcap capture.
+
+The operator reported normal unchanged physical behavior. Synapse and both
+services remain stopped at the user's explicit request. This result does not
+establish fan state, RPM, ownership or safe handback. The sanitized record is
+`2026-09-29-rz09-0528-cooling-pad-control-state-query.json` in captures PR #33.
