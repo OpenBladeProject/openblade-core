@@ -53,6 +53,7 @@ production support merely because a neighboring model implements it.
 | Logo lighting | Off, Static, Breathing, and getter |
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
+| Battery performance | Battery Saver and Battery Balanced on battery power, captured from Synapse and validated by a typed round trip with readback and restoration |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
 | HyperBoost | Direct entry from Silent, Balanced, Performance or Custom with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration to the starting mode, including Custom CPU/GPU levels |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
@@ -75,8 +76,7 @@ readback.
 Use the coverage ledger for the complete leaf-level list. The main unresolved
 groups are:
 
-- USB-C and battery performance setters and remaining transition/lifecycle
-  validation;
+- USB-C performance setters and remaining transition/lifecycle validation;
 - CPU Power Limit and CPU Voltage Optimizer ownership without
   a Synapse-delivered proprietary kernel-driver dependency;
 - effect parameter combinations, native effect/matrix readback, and remaining

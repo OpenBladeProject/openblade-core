@@ -10,6 +10,8 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
             PerformancePreset.Balanced,
             PerformancePreset.Silent,
             PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
             PerformancePreset.Custom,
         };
 

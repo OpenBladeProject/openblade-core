@@ -97,6 +97,8 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.BatterySaver,
+                PerformancePreset.BatteryBalanced,
                 PerformancePreset.Custom,
             ],
             factory.Capabilities.PerformancePresets);

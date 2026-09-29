@@ -140,6 +140,8 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.BatterySaver,
+                PerformancePreset.BatteryBalanced,
                 PerformancePreset.Custom,
             },
             new HashSet<FanMode>
