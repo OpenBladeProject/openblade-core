@@ -111,6 +111,12 @@ model's device-specific assumptions may be copied to the other.
    model or driver build. Developer export tooling does not authorize installer
    bundling or publication without the corresponding redistribution
    authorization, notice, hashes, and signature validation.
+   CPU tuning on RZ09-0528 may also offer an optional integration with its
+   exact, signed, already installed AMD driver stack. Keep the driverless
+   saved-configuration path available. Availability checks and reads must not
+   install, enable, start, stop, or remove a driver; provisioning requires a
+   separate attended proposal. Saved configuration and measured live state
+   require separate admission and must never be presented interchangeably.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
