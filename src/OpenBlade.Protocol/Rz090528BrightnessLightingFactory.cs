@@ -323,6 +323,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 return true;
             }
 
+            // Normal mode breaks the claim that a one-shot matrix frame is still
+            // displayed. Reacquiring Driver mode cannot verify or restore it;
+            // leave restoration to the user's lighting ownership policy.
+            if (CaptureOwnedEffectCore().Effect is { RequiresContinuousRendering: false })
+            {
+                ClearOwnedEffectCore(settings: null);
+            }
+
             // Mark the transition as ours before submission so an indeterminate
             // reply still receives a conservative cleanup attempt.
             ownsDriverMode = true;

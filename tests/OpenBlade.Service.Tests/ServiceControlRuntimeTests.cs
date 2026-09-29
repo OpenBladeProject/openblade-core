@@ -7831,6 +7831,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DriverModeMaintenance_LostLightingOwnershipObeysOverridePolicy(
+        bool alwaysOverride, bool failReadback)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        await context.Runtime.SetExternalLightingOverridePolicyAsync(alwaysOverride, CancellationToken.None);
+        int writesBefore = context.Device.LightingSetCalls;
+        LightingSettings? saved = context.Runtime.GetStatus().DesiredState.Lighting.Value;
+        context.Device.DriverModeActive = true;
+        context.Device.AfterDriverModeEnsure = () =>
+        {
+            context.Device.LightingRendererOwnership = LightingRendererOwnershipState.None;
+            context.Device.ConfirmedState = context.Device.ConfirmedState with { Lighting = null };
+        };
+
+        if (failReadback)
+        {
+            context.Device.DriverModeReadFailures.Enqueue(new IOException("mode readback unavailable"));
+        }
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot lost = context.Runtime.GetStatus();
+        Assert.True(lost.KeyboardDriverModeActive);
+        Assert.Equal(LightingRendererOwnershipState.None, lost.LightingRendererOwnership);
+        Assert.Null(lost.ConfirmedState?.Lighting);
+        Assert.Contains(DeviceSubsystem.Lighting, lost.ExternalChanges);
+        Assert.Equal(saved, lost.DesiredState.Lighting.Value);
+        Assert.Equal(writesBefore, context.Device.LightingSetCalls);
+
+        context.Device.AfterDriverModeEnsure = null;
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        Assert.Equal(writesBefore + (alwaysOverride ? 1 : 0), context.Device.LightingSetCalls);
+        Assert.Equal(alwaysOverride ? LightingRendererOwnershipState.Static : LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DriverModeMaintenance_UnknownLightingOwnershipDoesNotClassifyExternalDrift(
+        bool failAfterMaintenance)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.DriverModeActive = true;
+        if (failAfterMaintenance)
+        {
+            context.Device.AfterDriverModeEnsure = () =>
+                context.Device.LightingOwnershipReadFailures.Enqueue(new IOException("ownership unavailable"));
+        }
+        else
+        {
+            context.Device.LightingOwnershipReadFailures.Enqueue(new IOException("ownership unavailable"));
+        }
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.KeyboardDriverModeActive);
+        Assert.Equal(LightingRendererOwnershipState.Static, status.LightingRendererOwnership);
+        Assert.DoesNotContain(DeviceSubsystem.Lighting, status.ExternalChanges);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+    }
+
     [Fact]
     public async Task PeriodicRefreshRecoversOneTransientLightingRendererFault()
     {
@@ -29333,6 +29404,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Queue<Exception> DriverModeReadFailures { get; } = new();
 
+        public Action? AfterDriverModeEnsure { get; set; }
+
+        public Queue<Exception> LightingOwnershipReadFailures { get; } = new();
+
         public int DriverModeEnsureCalls { get; private set; }
 
         public int DriverModeReadCalls { get; private set; }
@@ -29568,6 +29643,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             DriverModeEnsureCalls++;
+            AfterDriverModeEnsure?.Invoke();
             return Task.CompletedTask;
         }
 
@@ -30129,6 +30205,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ReadLightingRendererOwnershipAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (LightingOwnershipReadFailures.TryDequeue(out Exception? failure))
+            {
+                return Task.FromException<LightingRendererOwnershipState>(failure);
+            }
             return Task.FromResult(LightingRendererOwnership);
         }
 

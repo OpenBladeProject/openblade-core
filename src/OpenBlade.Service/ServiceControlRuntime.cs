@@ -10979,6 +10979,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private async Task PublishLightingOwnershipLostDuringDriverModeMaintenanceAsync(
+        IBladeDevice device,
+        LightingRendererOwnershipState? ownershipBefore,
+        CancellationToken cancellationToken)
+    {
+        LightingRendererOwnershipState? ownershipAfter =
+            await TryReadLightingOwnershipAsync(device, cancellationToken)
+                .ConfigureAwait(false);
+        if (ownershipBefore is { } previousOwnership
+            && IsExplicitLightingOwnership(previousOwnership)
+            && ownershipAfter == LightingRendererOwnershipState.None)
+        {
+            // Maintenance can retire a one-shot frame when firmware has
+            // left Driver mode. This is external drift, not a renderer
+            // fault that may be replayed without the override policy.
+            RelinquishRememberedLightingOwnership();
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+            ServiceStatusSnapshot current = GetStatus();
+            PublishIfChanged(current with
+            {
+                ConfirmedState = current.ConfirmedState is null
+                    ? null
+                    : current.ConfirmedState with { Lighting = null },
+                LightingRendererOwnership = LightingRendererOwnershipState.None,
+                ExternalChanges = driftTracker.ExternalChanges,
+            });
+        }
+    }
+
     public async Task MaintainDriverModeAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
@@ -11015,10 +11044,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
             }
 
+            LightingRendererOwnershipState? ownershipBefore = null;
             try
             {
+                ownershipBefore =
+                    await TryReadLightingOwnershipAsync(device, cancellationToken)
+                        .ConfigureAwait(false);
                 bool? active = await device.MaintainDriverModeAsync(cancellationToken)
                     .ConfigureAwait(false);
+                await PublishLightingOwnershipLostDuringDriverModeMaintenanceAsync(
+                    device, ownershipBefore, cancellationToken).ConfigureAwait(false);
                 driverModePortRecoveryAttempted = false;
                 PublishIfChanged(GetStatus() with
                 {
@@ -11031,6 +11066,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             catch
             {
+                await PublishLightingOwnershipLostDuringDriverModeMaintenanceAsync(
+                    device, ownershipBefore, cancellationToken).ConfigureAwait(false);
                 PublishIfChanged(GetStatus() with { KeyboardDriverModeActive = null });
 
                 if (!driverModePortRecoveryAttempted)
@@ -18892,6 +18929,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private static async Task<LightingRendererOwnershipState> ReadLightingOwnershipAsync(
         IBladeDevice device,
+        CancellationToken cancellationToken) =>
+        await TryReadLightingOwnershipAsync(device, cancellationToken).ConfigureAwait(false)
+            ?? LightingRendererOwnershipState.None;
+
+    private static async Task<LightingRendererOwnershipState?> TryReadLightingOwnershipAsync(
+        IBladeDevice device,
         CancellationToken cancellationToken)
     {
         try
@@ -18905,7 +18948,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch
         {
-            return LightingRendererOwnershipState.None;
+            return null;
         }
     }
 
