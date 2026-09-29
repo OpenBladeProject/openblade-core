@@ -54,7 +54,7 @@ production support merely because a neighboring model implements it.
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
-| HyperBoost | Exact cooling-pad-required Performance/Automatic entry, paired mode-7 readback, and restoration; padless operation and direct Silent/Balanced transitions remain unadmitted |
+| HyperBoost | Performance/Automatic entry with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration; direct Silent/Balanced transitions remain unadmitted |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
@@ -155,8 +155,8 @@ experimental abort threshold guarded that zone, not a CPU core thermal limit.
 Both experiments restored Performance, then the original
 Balanced settings, and independently confirmed zero GPU offsets. The
 [sanitized no-load report](https://github.com/OpenBladeProject/openblade-captures/blob/c12bacf4ebbc66a098fb1cef7ab901dd02bd4398/annotations/2026-09-27-rz09-0528-padless-hyperboost-no-load.json)
-records actual timestamps and readings. These results do not admit installed
-padless operation; load, power-boundary and lifecycle validation remain pending.
+records actual timestamps and readings. These results alone did not admit
+installed padless operation; see [Pad-less production admission](#pad-less-production-admission).
 
 The developer-only `validate-rz09-0528-02c6-hyperboost-padless-loaded` command
 prepares a separate ten-second observation under an exact Steel Nomad workload.
@@ -181,9 +181,9 @@ Developer lifecycle validation selects a separate exact-model contract. The
 RZ09-0528 readiness descriptor uses Performance/Automatic and binds each
 non-lifecycle gate to merged, hash-pinned 2025 evidence: the immediate run,
 the 60-second no-load and Stress Test plans and runs, the post-restoration
-pad-absence record, and the battery and USB-C boundary runs. The low-power and
-crash-recovery gates stay closed, so production padless admission remains
-unavailable; the RZ09-0581 admission manifest cannot authorize this model.
+pad-absence record, and the battery and USB-C boundary runs. Its low-power and
+crash-recovery gates stay closed by design, because only installed lifecycle
+runs can satisfy them; the RZ09-0581 admission manifest cannot authorize this model.
 Service requests bind the selected manifest as well as the exact build, and
 only a separately built developer lifecycle-validation service can use this
 readiness. The FirmwareSmoke harness selects the Performance transition for
@@ -209,9 +209,34 @@ operator connects USB-C before HyperBoost is applied, removes only the
 barrel, and reconnects it when `0711` is observed. An unexpected battery
 reading in that variant aborts to the same full-AC cleanup, while USB-C
 readings poison the battery variant. Windows reports AC online for both full
-AC and USB-C, so only the firmware reading distinguishes them. The USB-C variant
-is not yet hardware-validated. Neither variant validates installed service
-lifecycle recovery or changes production padless admission.
+AC and USB-C, so only the firmware reading distinguishes them. Both variants
+were later hardware-validated. Neither validates installed service lifecycle
+recovery.
+
+### Pad-less production admission
+
+Installed lifecycle runs on build `0.23.0-nightly.4+8ed9088a` closed the last
+two gates. An unexpected Service termination and one Windows Sleep each ended
+with exactly one owned restoration to Performance/Automatic, matching desired
+state, no external changes and a retired journal
+([crash recovery](https://github.com/OpenBladeProject/openblade-captures/pull/31),
+[low power](https://github.com/OpenBladeProject/openblade-captures/pull/32)).
+The exact-model admission manifest
+`Rz09_0528_02c6_2_02_HyperBoostWithoutCoolingPadAdmission.json` binds all ten
+gates to hash-pinned 2025 evidence. It is model-scoped: BIOS 2.02 is capture
+provenance, not a firmware restriction.
+
+Production admits pad-less entry only directly from confirmed and selected
+Performance/Automatic, without custom performance, on the full-power adapter
+(`FullPower280W`, value `1111`), after a fresh exact pad-absence observation and
+competing-controller checks. It does not bridge from another mode. GPU clock
+tuning must be off with zero confirmed offsets for pad-less entry and cannot be
+turned on during a pad-less session, because the evidence excludes it. The
+cooling-pad path is unchanged, including its bridge from other modes. A fresh
+pad observation selects and journals the path at entry; the port submits only
+under that path and rechecks it before every command, so a pad change
+mid-transition blocks or becomes indeterminate instead of switching paths.
+Only a cooling-pad session exits automatically when the pad disconnects.
 
 GPU tuning is separately admitted after exact-model apply/readback/restore
 validation in Balanced, Silent, Performance, and the tested Custom combination.
