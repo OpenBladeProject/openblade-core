@@ -13,6 +13,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Prevent fan-editor synchronization from creating a temporary fan override without a changed selection. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Keep the restored performance and fan settings after OpenBlade recovers HyperBoost from an unexpected service stop on full-power AC, instead of reporting them as external changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Recognize the supported cooling pad when its auxiliary input interfaces report a different revision. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
