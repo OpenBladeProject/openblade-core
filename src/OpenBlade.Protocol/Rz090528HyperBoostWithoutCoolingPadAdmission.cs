@@ -47,7 +47,7 @@ internal static class Rz090528HyperBoostWithoutCoolingPadAdmissionSource
     private const string ResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_HyperBoostWithoutCoolingPadAdmission.json";
     private const string ExpectedSha256 =
-        "2550146B62FF0419082A083F8878EAFF5EE9A7D4DE775B91910E650206CFB113";
+        "13AEF5172C00382EBE4613FAC6675822E0F1D464A3F4B80AB254A0AAA539DEBF";
     private const string ImmediateAnnotationSha256 =
         "AFFD4F85C5677B747009A42B3AD0DEFBDFAFC7A255B7B5962140AFE1D77BCB92";
     private const string SustainedNoLoadPlanSha256 =
@@ -159,7 +159,7 @@ internal static class Rz090528HyperBoostWithoutCoolingPadAdmissionSource
                     ExactPerformanceRestoreRequired: true,
                     IndeterminateRetryForbidden: true,
                     PhysicalPadVidPidPresenceVetoRequired: true,
-                    GpuClockTuningExcluded: true,
+                    GpuClockTuningExcluded: false,
                     CoolingPadPathRetained: true,
                 },
                 Evidence:

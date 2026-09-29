@@ -27969,11 +27969,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(CoolingPadConnectionState.Absent, false)]
-    [InlineData(CoolingPadConnectionState.PresentExact, true)]
-    public async Task BothPadPathHyperBoost_PadlessEntryRequiresGpuTuningOff(
-        CoolingPadConnectionState state,
-        bool admitted)
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.PresentExact)]
+    public async Task BothPadPathHyperBoost_EntersWithGpuTuningOnEitherPath(
+        CoolingPadConnectionState state)
     {
         TestContext context = CreateContext(true,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
@@ -27989,20 +27988,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
 
-        Assert.Equal(admitted ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked, enabled.Status);
-        Assert.Equal(hyperBoostWrites + (admitted ? 1 : 0), context.Device.HyperBoostSetCalls);
-        if (!admitted)
-        {
-            Assert.Contains("GPU clock tuning off", enabled.Message, StringComparison.Ordinal);
-        }
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        Assert.Equal(hyperBoostWrites + 1, context.Device.HyperBoostSetCalls);
     }
 
     [Theory]
-    [InlineData(CoolingPadConnectionState.Absent, false)]
-    [InlineData(CoolingPadConnectionState.PresentExact, true)]
-    public async Task BothPadPathHyperBoost_GpuTuningCannotTurnOnDuringPadlessSession(
-        CoolingPadConnectionState state,
-        bool admitted)
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.PresentExact)]
+    public async Task BothPadPathHyperBoost_GpuTuningStaysAvailableDuringEitherSession(
+        CoolingPadConnectionState state)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(true,
@@ -28021,11 +28015,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new GpuClockTuningSettings(false, new GpuClockOffsetSettings(125, 500)),
             OverrideLifetime.Persistent, static () => true, CancellationToken.None);
 
-        Assert.Equal(admitted ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked, on.Status);
-        if (!admitted)
-        {
-            Assert.Contains("cannot be turned on during pad-less HyperBoost", on.Message, StringComparison.Ordinal);
-        }
+        Assert.True(on.Status == ControlOperationStatus.Applied, on.Message);
         Assert.True(off.Status == ControlOperationStatus.Applied, off.Message);
         Assert.True(context.Device.ConfirmedState.HyperBoostActive);
     }

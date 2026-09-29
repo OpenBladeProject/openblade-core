@@ -98,7 +98,8 @@ public sealed class PadlessLifecycleEntryRefusalTests
     {
         Assert.Equal(direct, ServiceControlRuntime.IsDirectPadlessEntry(
             Confirmed(current, FanMode.Automatic), Desired(current, FanMode.Automatic), baseMode));
-        Assert.False(ServiceControlRuntime.IsDirectPadlessEntry(
+        // GPU tuning stays available with production pad-less HyperBoost.
+        Assert.Equal(direct, ServiceControlRuntime.IsDirectPadlessEntry(
             Confirmed(current, FanMode.Automatic),
             Desired(current, FanMode.Automatic, new GpuClockTuningSettings(true, GpuClockOffsetSettings.Default)),
             baseMode));

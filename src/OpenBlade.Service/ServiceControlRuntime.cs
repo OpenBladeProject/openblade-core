@@ -1560,13 +1560,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string? GpuWriteBlockReason() =>
                 GetStatus().ConfirmedState?.HyperBoostActive == true && !ownsHyperBoost
                     ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
-                    // The reviewed Performance-based pad-less evidence excludes GPU tuning.
-                    : value.Enabled
-                        && ownsHyperBoost
-                        && !ownedHyperBoostRequiresCoolingPad
-                        && GetStatus().Capabilities is { } gpuCapabilities
-                        && HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(gpuCapabilities) is not null
-                    ? "GPU clock tuning cannot be turned on during pad-less HyperBoost on this laptop."
                     : hyperBoostRestorePending
                     || pendingOwnedHyperBoostPowerBoundaryExit
                     || pendingIndeterminateHyperBoostEntryIntent is not null
@@ -5657,7 +5650,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             // On a model admitting both pad paths (RZ09-0528), pad-less HyperBoost enters directly
-            // from the current Silent, Balanced or Performance mode and, as validated, without GPU tuning.
+            // from the current Silent, Balanced or Performance mode; it never switches mode first.
             if (enabled
                 && lifecycleValidation is null
                 && !journalRequiresCoolingPad
@@ -5666,7 +5659,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Pad-less HyperBoost on this laptop starts from Silent, Balanced or Performance with GPU clock tuning off.");
+                    "Pad-less HyperBoost on this laptop starts from Silent, Balanced or Performance.");
             }
 
             transitionIntent = enabled
@@ -6752,25 +6745,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     // The Performance-based pad-less evidence (RZ09-0528) covers only a direct entry from
     // confirmed and desired Performance/Automatic, with no custom performance, no GPU tuning
     // intent and no confirmed GPU offsets. Production and lifecycle entries share this rule.
+    // The developer lifecycle evidence was recorded from Performance/Automatic without GPU tuning.
     internal static bool IsCapturedPerformancePadlessEntry(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState desired) =>
         confirmed.Fans == FanMode.Automatic
         && desired.Fans.Value == FanMode.Automatic
-        && IsDirectPadlessEntry(confirmed, desired, PerformancePreset.Performance);
+        && IsDirectPadlessEntry(confirmed, desired, PerformancePreset.Performance)
+        && (confirmed.GpuClockOffsets?.Current ?? GpuClockOffsetSettings.Default)
+            == GpuClockOffsetSettings.Default
+        && desired.GpuClockTuning?.Enabled != true;
 
-    // Direct pad-less entry: the confirmed and selected mode is the base, with no custom
-    // performance, no GPU tuning intent and no confirmed GPU offsets.
+    // Direct pad-less entry: the confirmed and selected mode is the base, with no custom performance.
     internal static bool IsDirectPadlessEntry(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState desired,
         PerformancePreset baseMode) =>
         confirmed.Performance == baseMode
         && desired.Performance.Value == baseMode
-        && desired.CustomPerformance is null
-        && (confirmed.GpuClockOffsets?.Current ?? GpuClockOffsetSettings.Default)
-            == GpuClockOffsetSettings.Default
-        && desired.GpuClockTuning?.Enabled != true;
+        && desired.CustomPerformance is null;
 
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
         ServiceStatusSnapshot current,

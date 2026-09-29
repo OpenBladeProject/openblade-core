@@ -22,7 +22,7 @@ public sealed class Rz090528HyperBoostWithoutCoolingPadAdmissionTests
         Assert.Equal("Automatic", manifest.Transition.BaselineFanMode);
         Assert.Equal(["FullPower280W"], manifest.Transition.AdmittedFullPowerAdapterStates);
         Assert.True(manifest.Transition.ExactPerformanceRestoreRequired);
-        Assert.True(manifest.Transition.GpuClockTuningExcluded);
+        Assert.False(manifest.Transition.GpuClockTuningExcluded);
         Assert.True(manifest.Transition.CoolingPadPathRetained);
     }
 
@@ -124,7 +124,7 @@ public sealed class Rz090528HyperBoostWithoutCoolingPadAdmissionTests
         "balanced-baseline",
         "330w-adapter",
         "other-host",
-        "gpu-tuning-allowed",
+        "gpu-tuning-excluded",
         "pad-path-dropped",
         "lifecycle-gate-open",
         "lifecycle-evidence-hash",
@@ -150,7 +150,7 @@ public sealed class Rz090528HyperBoostWithoutCoolingPadAdmissionTests
                 },
             },
             "other-host" => manifest with { Host = manifest.Host with { Model = "Blade 16 - RZ09-0581", ProductId = 0x02E0 } },
-            "gpu-tuning-allowed" => manifest with { Transition = manifest.Transition with { GpuClockTuningExcluded = false } },
+            "gpu-tuning-excluded" => manifest with { Transition = manifest.Transition with { GpuClockTuningExcluded = true } },
             "pad-path-dropped" => manifest with { Transition = manifest.Transition with { CoolingPadPathRetained = false } },
             "lifecycle-gate-open" => manifest with
             {

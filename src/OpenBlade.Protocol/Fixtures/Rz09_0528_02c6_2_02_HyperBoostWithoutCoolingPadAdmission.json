@@ -23,7 +23,7 @@
     "exactPerformanceRestoreRequired": true,
     "indeterminateRetryForbidden": true,
     "physicalPadVidPidPresenceVetoRequired": true,
-    "gpuClockTuningExcluded": true,
+    "gpuClockTuningExcluded": false,
     "coolingPadPathRetained": true
   },
   "evidence": {
