@@ -63,6 +63,49 @@ internal sealed record Rz090528CpuLiveObservation(uint EnabledCoreMask, uint PmV
 internal sealed record Rz090528CpuLiveQueryResult(CpuLiveQueryStatus Status,
     Rz090528CpuLiveObservation? Observation, CpuQueryDiagnostic? Diagnostic = null);
 
+// The exact SDK selects the 16F8 node record but uses its bus for D0F0 SMN
+// transport. On the admitted host, that root is 1507 and the fixed D18F1
+// orientation source is 16F9, all on bus zero. These are distinct functions.
+internal static class CpuQueryPciTopology
+{
+    internal const uint RootId = 0x15071022, NodeId = 0x16F81022, OrientationId = 0x16F91022;
+
+    internal static bool TryFindBus(byte[] records, out uint bus)
+    {
+        bus = 0;
+        if (records.Length < 28 || (records.Length - 28) % 52 != 0
+            || records.AsSpan(0, 24).IndexOfAnyExcept((byte)0) >= 0
+            || Word(records, 24) is 0 or > 65536
+            || Word(records, 24) != (records.Length - 28) / 52) { return false; }
+        bool root = false, node = false, orientation = false;
+        var seen = new HashSet<uint>();
+        for (int offset = 28; offset < records.Length; offset += 52)
+        {
+            uint b = Word(records, offset), d = Word(records, offset + 4), f = Word(records, offset + 8);
+            if (b > 255 || d > 31 || f > 7 || !seen.Add((b << 8) | (d << 3) | f)) { return false; }
+            uint id = Word(records, offset + 12);
+            if (id == RootId)
+            {
+                if (root || b != 0 || d != 0 || f != 0) { return false; }
+                root = true;
+            }
+            else if (id == NodeId)
+            {
+                if (node || b != 0 || d != 0x18 || f != 0) { return false; }
+                node = true;
+            }
+            else if (id == OrientationId)
+            {
+                if (orientation || b != 0 || d != 0x18 || f != 1) { return false; }
+                orientation = true;
+            }
+        }
+        return root && node && orientation;
+    }
+
+    private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
+}
+
 /// <summary>
 /// Query-only Strix wire engine. Production admission, CPU family/build/signature
 /// checks, running-driver checks and competing-controller checks belong to the
@@ -105,13 +148,14 @@ internal sealed class Rz090528CpuLiveQuery(
         {
             var bus = DiscoverBus(cancellationToken);
             stage = CpuQueryStage.PciIdentity;
-            if (ReadPciWord(bus, 0, 0, 0, cancellationToken) != 0x16F81022)
+            if (ReadPciWord(bus, 0, 0, 0, cancellationToken) != CpuQueryPciTopology.RootId
+                || ReadPciWord(bus, 0x18, 0, 0, cancellationToken) != CpuQueryPciTopology.NodeId)
             {
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
-            // The exact SDK obtains orientation from this BDF. Confirm its vendor
+            // The exact SDK obtains orientation from this BDF. Confirm its identity
             // independently, then compare the orientation to the separate fuse mask.
-            if ((ReadPciWord(0, 0x18, 1, 0, cancellationToken) & 0xFFFF) != 0x1022)
+            if (ReadPciWord(0, 0x18, 1, 0, cancellationToken) != CpuQueryPciTopology.OrientationId)
             {
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
@@ -182,31 +226,8 @@ internal sealed class Rz090528CpuLiveQuery(
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
-        uint? selected = null;
-        for (var index = 0; index < count; index++)
-        {
-            var offset = 28 + (int)index * 52;
-            var bus = Word(records, offset);
-            var device = Word(records, offset + 4);
-            var function = Word(records, offset + 8);
-            if (bus > 255 || device > 31 || function > 7)
-            {
-                throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
-            }
-
-            if (Word(records, offset + 12) != 0x16F81022)
-            {
-                continue;
-            }
-
-            if (selected.HasValue || device != 0 || function != 0)
-            {
-                throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
-            }
-
-            selected = bus;
-        }
-        return selected ?? throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
+        return CpuQueryPciTopology.TryFindBus(records, out uint bus)
+            ? bus : throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
     }
 
     private static bool HeaderIsZero(byte[] bytes) => bytes.AsSpan(0, 24).IndexOfAnyExcept((byte)0) < 0;

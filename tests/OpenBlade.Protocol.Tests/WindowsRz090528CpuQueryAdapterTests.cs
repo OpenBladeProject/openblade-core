@@ -202,11 +202,11 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
     }
 
     [Theory]
-    [InlineData(0u, 0x03B10934u, 7u)] // another mailbox
-    [InlineData(0u, 0xC0010015u, 7u)] // MSR-shaped address
-    [InlineData(0u, 0x03B10A80u, 0u)] // wrong bus
-    [InlineData(2u, 0u, 7u)] // only indices 0/1
-    [InlineData(1u, 0u, 7u)] // no index selection
+    [InlineData(0u, 0x03B10934u, 0u)] // another mailbox
+    [InlineData(0u, 0xC0010015u, 0u)] // MSR-shaped address
+    [InlineData(0u, 0x03B10A80u, 7u)] // wrong bus
+    [InlineData(2u, 0u, 0u)] // only indices 0/1
+    [InlineData(1u, 0u, 0u)] // no index selection
     public void RawRegisterPayloadsAreDenied(uint index, uint value, uint bus)
     {
         Assert.False(Discover().Allows(0x81112FF8, Words(index, value, bus), 0));
@@ -223,12 +223,15 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
     {
         var wire = PrepareMailbox();
         Write(wire, 0, 0x03B10A20);
-        Assert.False(wire.Allows(0x81112FF8, Words(1, command, 7), 0));
+        Assert.False(wire.Allows(0x81112FF8, Words(1, command, 0), 0));
     }
 
     [Theory]
     [InlineData(0u, 0u, 0u, 0xB8u)]
-    [InlineData(7u, 0u, 0u, 0xC4u)]
+    [InlineData(0u, 0u, 0u, 0xC4u)]
+    [InlineData(0u, 0x18u, 0u, 0xC8u)]
+    [InlineData(0u, 0x18u, 2u, 0u)]
+    [InlineData(7u, 0u, 0u, 0u)]
     [InlineData(0u, 0x18u, 1u, 0x144u)]
     [InlineData(256u, 0u, 0u, 0u)]
     public void PciReadScopeCannotBeGeneralized(uint bus, uint device, uint function, uint offset)
@@ -236,39 +239,82 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         Assert.False(Discover().Allows(0x81112F24, Words(bus, device, function, offset, 4), 24));
     }
 
+    [Theory]
+    [MemberData(nameof(Rz090528CpuLiveQueryTests.InvalidPciIdentities), MemberType = typeof(Rz090528CpuLiveQueryTests))]
+    public void NativeBoundaryRejectsInvalidPciIdentitiesBeforeAnySmnWrite(string fault)
+    {
+        var platform = new FakePlatform { Failure = fault };
+        var result = Run(platform, Approval());
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Null(result.Observation);
+        Assert.Equal(CpuQueryFailureCode.WireReplyRejected, result.Diagnostic!.Failure);
+        Assert.DoesNotContain(0x81112FF8u, platform.Device.Codes);
+        Assert.Equal(1, platform.Mutex.Releases);
+    }
+
+    [Fact]
+    public void NativeDiscoveryAllowsUnrelatedUniqueFunctionsAndDifferentRecordOrder()
+    {
+        Assert.Equal(CpuLiveQueryStatus.Observed, Run(new FakePlatform { Failure = "unrelated-functions" }, Approval()).Status);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void WireRequiresEveryIndependentIdentityReadBeforeSmnIndexWrites(int missing)
+    {
+        var wire = Discover(confirmIdentities: false);
+        var identities = new[] { (0u, 0u, 0x15071022u), (0x18u, 0u, 0x16F81022u), (0x18u, 1u, 0x16F91022u) };
+        for (int i = 0; i < identities.Length; i++)
+        {
+            if (i == missing) { continue; }
+            var (device, function, id) = identities[i];
+            var read = Words(0, device, function, 0, 4);
+            Exchange(wire, 0x81112F24, read, [.. read, .. Words(id)]);
+        }
+        Assert.False(wire.Allows(0x81112FF8, Words(0, 0x03820AB0, 0), 0));
+    }
+
     [Fact]
     public void SchemasAndReplyLengthsAreExactAndFailurePoisonsSession()
     {
         var wire = Discover();
-        Assert.False(wire.Allows(0x81112F24, Words(7, 0, 0, 0, 8), 28));
-        Assert.False(wire.Allows(0x81112F24, Words(7, 0, 0, 0, 4), 24));
+        Assert.False(wire.Allows(0x81112F24, Words(0, 0, 0, 0, 8), 28));
+        Assert.False(wire.Allows(0x81112F24, Words(0, 0, 0, 0, 4), 24));
         wire = Discover();
-        var request = Words(7, 0, 0, 0, 4);
+        var request = Words(0, 0, 0, 0, 4);
         Assert.True(wire.Allows(0x81112F24, request, 24));
         Assert.False(wire.AcceptReply(0x81112F24, request, 24, new(true, new byte[25])));
         wire = Discover();
         Write(wire, 0, 0x03B10A88);
-        Assert.False(wire.Allows(0x81112FF8, Words(1, 0, 7), 0)); // no response clear
+        Assert.False(wire.Allows(0x81112FF8, Words(1, 0, 0), 0)); // no response clear
         wire = PrepareMailbox();
-        Assert.False(wire.Allows(0x81112FF8, Words(1, 0xFFFFFFFF, 7), 0));
+        Assert.False(wire.Allows(0x81112FF8, Words(1, 0xFFFFFFFF, 0), 0));
     }
 
     private static Rz090528CpuLiveQueryResult Run(FakePlatform platform, CpuQueryAttendedApproval? approval,
         CancellationToken cancellationToken = default) =>
         WindowsRz090528CpuQueryAdapter.QueryForAttendedValidation(approval, () => Exact, platform, cancellationToken);
 
-    private static CpuQueryWireAdmission Discover()
+    private static CpuQueryWireAdmission Discover(bool confirmIdentities = true)
     {
         var wire = new CpuQueryWireAdmission();
         var first = new byte[28];
-        Put(first, 24, 1);
+        Put(first, 24, 3);
         Exchange(wire, 0x81112F18, new byte[28], first);
-        var input = new byte[80];
-        Put(input, 24, 1);
-        var output = (byte[])input.Clone();
-        Put(output, 28, 7);
-        Put(output, 40, 0x16F81022);
+        var input = new byte[184];
+        Put(input, 24, 3);
+        var output = CpuQueryPciTestRecords.Create();
         Exchange(wire, 0x81112F18, input, output);
+        if (confirmIdentities)
+        {
+            foreach (var (device, function, id) in new[] { (0u, 0u, 0x15071022u), (0x18u, 0u, 0x16F81022u), (0x18u, 1u, 0x16F91022u) })
+            {
+                var read = Words(0, device, function, 0, 4);
+                Exchange(wire, 0x81112F24, read, [.. read, .. Words(id)]);
+            }
+        }
         return wire;
     }
 
@@ -276,7 +322,7 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
     {
         var wire = Discover();
         Write(wire, 0, 0x03B10A80);
-        var read = Words(7, 0, 0, 0xC8, 4);
+        var read = Words(0, 0, 0, 0xC8, 4);
         Exchange(wire, 0x81112F24, read, [.. read, 1, 0, 0, 0]);
         Write(wire, 1, 0);
         Write(wire, 0, 0x03B10A88);
@@ -285,7 +331,7 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
     }
 
     private static void Write(CpuQueryWireAdmission wire, uint index, uint value) =>
-        Exchange(wire, 0x81112FF8, Words(index, value, 7), []);
+        Exchange(wire, 0x81112FF8, Words(index, value, 0), []);
     private static void Exchange(CpuQueryWireAdmission wire, uint code, byte[] input, byte[] output)
     {
         Assert.True(wire.Allows(code, input, output.Length));
@@ -386,15 +432,17 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
             var output = new byte[outputLength];
             if (code == 0x81112F18)
             {
-                Put(output, 24, 1);
+                var records = CpuQueryPciTestRecords.Create(platform.Failure);
+                Put(output, 24, Word(records, 24));
+                if (outputLength > 28) { records.CopyTo(output, 0); }
                 if (platform.Failure == "invalid-reply") { output[0] = 1; }
-                if (outputLength > 28) { Put(output, 28, 7); Put(output, 40, 0x16F81022); }
             }
             else if (code == 0x81112F24)
             {
                 input.CopyTo(output, 0);
                 uint offset = Word(input, 12);
-                uint value = offset == 0 ? Word(input, 0) == 7 ? 0x16F81022u : 0x1022u
+                uint value = offset == 0 ? Word(input, 4) == 0 ? 0x15071022u
+                    : Word(input, 8) == 0 ? 0x16F81022u : 0x16F91022u
                     : offset == 0x140 ? 0xFFFu : selected switch
                     {
                         0x03820AB0 => (~0xFFFu & 0xFFFF) << 5,
@@ -402,6 +450,9 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
                         0x03B10A88 => replyValue,
                         _ => throw new InvalidOperationException("Unexpected fake read"),
                     };
+                if (offset == 0 && (platform.Failure == "stale-root" && Word(input, 4) == 0
+                    || platform.Failure == "stale-node" && Word(input, 4) == 0x18 && Word(input, 8) == 0
+                    || platform.Failure == "stale-orientation" && Word(input, 8) == 1)) { value = 0; }
                 if (selected == 0x03B10A80 && CancelOnResponse is not null)
                 { CancelOnResponse.Cancel(); value = 0; }
                 Put(output, 20, value);

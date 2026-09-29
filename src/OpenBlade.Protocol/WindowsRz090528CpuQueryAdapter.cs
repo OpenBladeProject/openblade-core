@@ -249,6 +249,7 @@ internal sealed class CpuQueryWireAdmission
     private uint count, selected, argument;
     private uint? bus;
     private bool enumerated, failed, responseReady, cleared, argumentWritten;
+    private bool rootConfirmed, nodeConfirmed, orientationConfirmed;
 
     internal bool Allows(uint code, byte[] input, int outputLength)
     {
@@ -273,10 +274,12 @@ internal sealed class CpuQueryWireAdmission
             if (input.Length != 20 || outputLength != 24 || Word(input, 16) != 4) { return false; }
             uint b = Word(input, 0), d = Word(input, 4), f = Word(input, 8), offset = Word(input, 12);
             return b == 0 && d == 0x18 && f == 1 && offset is 0 or 0x140
+                || b == bus && d == 0x18 && f == 0 && offset == 0
                 || b == bus && d == 0 && f == 0 && (offset == 0
                     || offset == 0xC8 && selected is Fuse or Response or Argument);
         }
-        if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus) { return false; }
+        if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus
+            || !rootConfirmed || !nodeConfirmed || !orientationConfirmed) { return false; }
         uint index = Word(input, 0), value = Word(input, 4);
         if (index == 0) { return value is Fuse or Response or Argument or Message; }
         if (index != 1) { return false; }
@@ -302,22 +305,22 @@ internal sealed class CpuQueryWireAdmission
             { failed = true; return false; }
             if (count == 0) { count = received; return true; }
             if (received != count) { failed = true; return false; }
-            uint? found = null;
-            for (int offset = 28; offset < reply.Bytes.Length; offset += 52)
-            {
-                uint b = Word(reply.Bytes, offset), d = Word(reply.Bytes, offset + 4), f = Word(reply.Bytes, offset + 8);
-                if (b > 255 || d > 31 || f > 7) { failed = true; return false; }
-                if (Word(reply.Bytes, offset + 12) != 0x16F81022) { continue; }
-                if (found.HasValue || d != 0 || f != 0) { failed = true; return false; }
-                found = b;
-            }
+            if (!CpuQueryPciTopology.TryFindBus(reply.Bytes, out uint found)) { failed = true; return false; }
             enumerated = true;
             bus = found;
-            if (!found.HasValue) { failed = true; return false; }
         }
         else if (code == Read)
         {
             if (!reply.Bytes.AsSpan(0, 20).SequenceEqual(input)) { failed = true; return false; }
+            if (Word(input, 12) == 0)
+            {
+                uint d = Word(input, 4), f = Word(input, 8), id = Word(reply.Bytes, 20);
+                if (d == 0) { rootConfirmed = id == CpuQueryPciTopology.RootId; }
+                else if (f == 0) { nodeConfirmed = id == CpuQueryPciTopology.NodeId; }
+                else { orientationConfirmed = id == CpuQueryPciTopology.OrientationId; }
+                if (!(d == 0 ? rootConfirmed : f == 0 ? nodeConfirmed : orientationConfirmed))
+                { failed = true; return false; }
+            }
             if (Word(input, 12) == 0xC8 && selected == Response)
             { responseReady = Word(reply.Bytes, 20) == 1; }
         }

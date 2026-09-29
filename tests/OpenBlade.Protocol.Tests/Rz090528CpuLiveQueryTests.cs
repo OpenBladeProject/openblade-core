@@ -28,12 +28,15 @@ public sealed class Rz090528CpuLiveQueryTests
         {
             Assert.Equal(12, call.Input.Length);
             Assert.InRange(U32(call.Input, 0), 0u, 1u);
-            Assert.Equal(7u, U32(call.Input, 8));
+            Assert.Equal(0u, U32(call.Input, 8));
             Assert.Equal(0, call.OutputLength);
         });
         Assert.Equal(2, wire.Calls.Count(call => call.Code == 0x81112F18));
         Assert.Equal(28, wire.Calls[0].OutputLength);
-        Assert.Equal(80, wire.Calls[1].OutputLength);
+        Assert.Equal(184, wire.Calls[1].OutputLength);
+        Assert.Equal(new[] { (0u, 0u, 0u), (0x18u, 0u, 0u), (0x18u, 1u, 0u), (0x18u, 1u, 0x140u) },
+            wire.Calls.Skip(2).Take(4).Select(call => (U32(call.Input, 4), U32(call.Input, 8), U32(call.Input, 12))));
+        Assert.All(wire.Calls.Skip(2).Take(4), call => Assert.Equal(0x81112F24u, call.Code));
         Assert.Equal(TimeSpan.FromSeconds(20), sync.AcquisitionTimeout);
         Assert.Equal(1, sync.Acquisitions);
         Assert.Equal(1, sync.Releases);
@@ -102,6 +105,35 @@ public sealed class Rz090528CpuLiveQueryTests
         Assert.Null(result.Observation);
         Assert.Empty(wire.Messages);
         Assert.Equal(1, sync.Releases);
+    }
+
+    public static IEnumerable<object[]> InvalidPciIdentities => new[]
+    {
+        "old-d0-node", "swapped", "duplicate", "duplicate-root", "duplicate-orientation", "duplicate-bdf",
+        "wrong-slot", "wrong-function", "missing", "missing-root", "missing-orientation", "cross-bus",
+        "unvalidated-bus", "stale-root", "stale-node", "stale-orientation",
+    }.Select(fault => new object[] { fault });
+
+    [Theory]
+    [MemberData(nameof(InvalidPciIdentities))]
+    public void InvalidRootNodeOrOrientationCannotReachAnySmnWrite(string fault)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Fault = fault };
+        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        Assert.Equal(CpuLiveQueryStatus.InvalidData, result.Status);
+        Assert.Null(result.Observation);
+        Assert.DoesNotContain(wire.Calls, call => call.Code == 0x81112FF8);
+        Assert.Empty(wire.Messages);
+        Assert.Equal(1, sync.Releases);
+    }
+
+    [Fact]
+    public void DiscoveryAllowsUnrelatedUniqueFunctionsAndDifferentRecordOrder()
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Fault = "unrelated-functions" };
+        Assert.Equal(CpuLiveQueryStatus.Observed, new Rz090528CpuLiveQuery(wire, sync).Query(Exact).Status);
     }
 
     [Theory]
@@ -221,11 +253,11 @@ public sealed class Rz090528CpuLiveQueryTests
     [InlineData(1, "PciCount", "PciEnumeration")]
     [InlineData(2, "PciRecords", "PciEnumeration")]
     [InlineData(3, "PciIdentity", "PciRead")]
-    [InlineData(5, "CoreMask", "PciRead")]
-    [InlineData(6, "FuseMask", "SmnWrite")]
-    [InlineData(7, "FuseMask", "PciRead")]
-    [InlineData(8, "PmVersion", "SmnWrite")]
-    [InlineData(20, "CoreOffset", "SmnWrite")]
+    [InlineData(6, "CoreMask", "PciRead")]
+    [InlineData(7, "FuseMask", "SmnWrite")]
+    [InlineData(8, "FuseMask", "PciRead")]
+    [InlineData(9, "PmVersion", "SmnWrite")]
+    [InlineData(21, "CoreOffset", "SmnWrite")]
     public void TransportFailureReportsExactStageWithoutRetryOrPartialObservation(
         int call, string stage, string operation)
     {
@@ -274,8 +306,9 @@ public sealed class Rz090528CpuLiveQueryTests
 
             if (code == 0x81112F18)
             {
-                var count = Fault == "duplicate" ? 2u : 1u;
-                var output = new byte[outputLength];
+                var records = CpuQueryPciTestRecords.Create(Fault);
+                uint count = U32(records, 24);
+                var output = outputLength == 28 ? new byte[28] : records;
                 Put(output, 24, Fault switch
                 {
                     "zero-count" => 0,
@@ -283,23 +316,13 @@ public sealed class Rz090528CpuLiveQueryTests
                     "count-change" when outputLength > 28 => count + 1,
                     _ => count,
                 });
-                if (outputLength > 28)
-                {
-                    Assert.Equal(count, U32(input, 24));
-                    for (var index = 0; index < count; index++)
-                    {
-                        var offset = 28 + (int)index * 52;
-                        Put(output, offset, Fault == "invalid-bus" ? 256u : 7u);
-                        Put(output, offset + 4, Fault == "wrong-slot" ? 1u : 0u);
-                        Put(output, offset + 12, Fault == "missing" ? 0x00001022u : 0x16F81022u);
-                    }
-                }
+                if (outputLength > 28) { Assert.Equal(count, U32(input, 24)); }
                 return new(true, Fault == "short-reply" ? output[..^1] : output);
             }
             if (code == 0x81112FF8)
             {
                 Assert.Equal(12, input.Length);
-                Assert.Equal(7u, U32(input, 8));
+                Assert.Equal(0u, U32(input, 8));
                 var index = U32(input, 0);
                 var value = U32(input, 4);
                 Assert.InRange(index, 0u, 1u);
@@ -338,7 +361,7 @@ public sealed class Rz090528CpuLiveQueryTests
             var offsetInConfig = U32(input, 12);
             if (offsetInConfig == 0xC8)
             {
-                Assert.Equal(7u, U32(input, 0));
+                Assert.Equal(0u, U32(input, 0));
                 Assert.Equal(0u, U32(input, 4));
                 Assert.Equal(0u, U32(input, 8));
                 if (selectedAddress == 0x03820AB0)
@@ -367,20 +390,28 @@ public sealed class Rz090528CpuLiveQueryTests
             else if (U32(input, 4) == 0x18)
             {
                 Assert.Equal(0u, U32(input, 0));
-                Assert.Equal(1u, U32(input, 8));
-                data = offsetInConfig == 0 ? 0x12341022u : Fault switch
+                if (U32(input, 8) == 0)
                 {
-                    "mask-high" => 0x1F6BD,
-                    "mask-count" => 0xF6BC,
-                    _ => 0xF6BD,
-                };
+                    Assert.Equal(0u, offsetInConfig);
+                    data = Fault == "stale-node" ? 0u : 0x16F81022u;
+                }
+                else
+                {
+                    Assert.Equal(1u, U32(input, 8));
+                    data = offsetInConfig == 0 ? Fault == "stale-orientation" ? 0u : 0x16F91022u : Fault switch
+                    {
+                        "mask-high" => 0x1F6BD,
+                        "mask-count" => 0xF6BC,
+                        _ => 0xF6BD,
+                    };
+                }
                 Assert.Contains(offsetInConfig, new uint[] { 0, 0x140 });
             }
             else
             {
-                Assert.Equal(7u, U32(input, 0));
+                Assert.Equal(0u, U32(input, 0));
                 Assert.Equal(0u, offsetInConfig);
-                data = Fault == "stale-id" ? 0u : 0x16F81022u;
+                data = Fault is "stale-id" or "stale-root" ? 0u : 0x15071022u;
             }
             Put(response, 20, data);
             if (Fault == "header-change")
@@ -428,5 +459,46 @@ public sealed class Rz090528CpuLiveQueryTests
         {
             public void Dispose() { Assert.True(owner.Held); owner.Held = false; owner.Releases++; }
         }
+    }
+}
+
+// Synthetic driver records matching the independently observed exact host BDFs;
+// the SDK's node record and its D0F0 SMN transport are distinct PCI functions.
+internal static class CpuQueryPciTestRecords
+{
+    internal static byte[] Create(string? fault = null)
+    {
+        var records = new List<(uint Bus, uint Device, uint Function, uint Id)>
+        {
+            (0, 0, 0, 0x15071022), (0, 0x18, 0, 0x16F81022), (0, 0x18, 1, 0x16F91022),
+        };
+        switch (fault)
+        {
+            case "unrelated-functions": records.Add((0, 1, 0, 0x12341022)); records.Reverse(); break;
+            case "old-d0-node": records = [(0, 0, 0, 0x16F81022)]; break;
+            case "swapped": records[0] = (0, 0, 0, 0x16F81022); records[1] = (0, 0x18, 0, 0x15071022); break;
+            case "duplicate": records.Add((1, 0x18, 0, 0x16F81022)); break;
+            case "duplicate-root": records.Add((1, 0, 0, 0x15071022)); break;
+            case "duplicate-orientation": records.Add((1, 0x18, 1, 0x16F91022)); break;
+            case "duplicate-bdf": records.Add((0, 0x18, 0, 0x12341022)); break;
+            case "invalid-bus": records[0] = (256, 0, 0, 0x15071022); break;
+            case "wrong-slot": records[1] = (0, 1, 0, 0x16F81022); break;
+            case "wrong-function": records[1] = (0, 0x18, 2, 0x16F81022); break;
+            case "missing": records[1] = (0, 0x18, 0, 0x12341022); break;
+            case "missing-root": records[0] = (0, 0, 0, 0x12341022); break;
+            case "missing-orientation": records[2] = (0, 0x18, 1, 0x12341022); break;
+            case "cross-bus": records[1] = (1, 0x18, 0, 0x16F81022); break;
+            case "unvalidated-bus": records = records.Select(r => (7u, r.Device, r.Function, r.Id)).ToList(); break;
+        }
+        var bytes = new byte[28 + records.Count * 52];
+        Put(24, (uint)records.Count);
+        for (int i = 0; i < records.Count; i++)
+        {
+            int offset = 28 + i * 52;
+            var record = records[i];
+            Put(offset, record.Bus); Put(offset + 4, record.Device); Put(offset + 8, record.Function); Put(offset + 12, record.Id);
+        }
+        return bytes;
+        void Put(int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
     }
 }
