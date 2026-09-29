@@ -103,7 +103,7 @@ public sealed record CpuSavedConfiguration(
     uint PowerLimitMilliwatts,
     byte Policy,
     byte PowerMode,
-    CpuCurveOptimizerState CurveOptimizer)
+    CpuCurveOptimizerState? CurveOptimizer)
 {
     // Only decoded, observed flag combinations establish custom enablement.
     public bool? CustomPowerLimitEnabled => (Policy, PowerMode) switch
@@ -113,7 +113,7 @@ public sealed record CpuSavedConfiguration(
         _ => null,
     };
 
-    public bool IsWellFormed => CurveOptimizer is { IsWellFormed: true };
+    public bool IsWellFormed => CurveOptimizer is null or { IsWellFormed: true };
 }
 
 public sealed record CpuLivePowerLimits(
@@ -136,7 +136,8 @@ public sealed record CpuLiveState(
     IReadOnlyList<CpuCoreCurveOptimizerValue> CoreValues)
 {
     public bool IsWellFormed => PowerLimits is { IsWellFormed: true }
-        && CpuCurveOptimizerState.AreCoreValuesWellFormed(CoreValues);
+        && CpuCurveOptimizerState.AreCoreValuesWellFormed(CoreValues)
+        && CoreValues.All(value => value.Value is >= short.MinValue and <= short.MaxValue);
 
     // Null means mixed or invalid, never an average or the first core's value.
     public int? UniformCurveOptimizerValue => IsWellFormed

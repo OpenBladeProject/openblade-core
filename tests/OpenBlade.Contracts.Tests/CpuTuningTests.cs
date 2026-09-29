@@ -56,6 +56,14 @@ public sealed class CpuTuningTests
     }
 
     [Fact]
+    public void LiveBaselineRequiresSignedSixteenBitValuesWhileSavedMagnitudeCanBeLarger()
+    {
+        Assert.True(new CpuCurveOptimizerState(CpuCurveOptimizerMode.AllCore, -65535, []).IsWellFormed);
+        Assert.False(new CpuLiveState(new(65, null, null), [new(0, -65535)]).IsWellFormed);
+        Assert.True(new CpuLiveState(new(65, null, null), [new(0, short.MinValue)]).IsWellFormed);
+    }
+
+    [Fact]
     public void EmptyDuplicateAndOversizedCoreBaselinesAreRejected()
     {
         Assert.False(new CpuLiveState(new(65, null, null), []).IsWellFormed);
@@ -106,6 +114,15 @@ public sealed class CpuTuningTests
         Assert.True(saved.IsWellFormed);
         Assert.False(saved.CustomPowerLimitEnabled);
         Assert.Null((saved with { Policy = 99 }).CustomPowerLimitEnabled);
+    }
+
+    [Fact]
+    public void UnsupportedSavedCurveModeCanRemainUnknownWithoutInventingDisabledState()
+    {
+        var saved = new CpuSavedConfiguration(0, 2, 0xFF, null);
+        Assert.True(saved.IsWellFormed);
+        Assert.Null(saved.CurveOptimizer);
+        Assert.False(saved.CustomPowerLimitEnabled);
     }
 
     [Fact]
