@@ -229,10 +229,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
         {
             SupportsKeyboardBrightness = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
-            WritableSpecialKeySlots =
-                SpecialKeySlotSet.M3
-                | SpecialKeySlotSet.M4
-                | SpecialKeySlotSet.M5,
+            WritableSpecialKeySlots = SpecialKeySlotSet.All,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {

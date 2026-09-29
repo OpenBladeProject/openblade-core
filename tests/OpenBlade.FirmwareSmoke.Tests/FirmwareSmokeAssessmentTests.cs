@@ -264,10 +264,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 ],
                 ObservedLightingEffects = [],
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite.ToString(),
-                WritableSpecialKeySlots =
-                    (SpecialKeySlotSet.M3
-                    | SpecialKeySlotSet.M4
-                    | SpecialKeySlotSet.M5).ToString(),
+                WritableSpecialKeySlots = SpecialKeySlotSet.All.ToString(),
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
                 OneShotLaptopControls =
                     ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],

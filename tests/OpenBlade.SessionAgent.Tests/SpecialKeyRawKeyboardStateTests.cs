@@ -38,7 +38,7 @@ public sealed class SpecialKeyRawKeyboardStateTests
 
     [Theory]
     [InlineData(false, RazerBladeInputDeviceKind.Rz09_0581)]
-    [InlineData(true, RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData(false, RazerBladeInputDeviceKind.Rz09_0528)]
     [InlineData(true, RazerBladeInputDeviceKind.Unsupported)]
     public void IneligiblePageUp_DoesNotTrigger(
         bool functionKeyPressed,
@@ -53,6 +53,21 @@ public sealed class SpecialKeyRawKeyboardStateTests
             functionKeyPressed,
             pressed,
             out _));
+    }
+
+    [Fact]
+    public void Rz090528FnPageUp_TriggersM1()
+    {
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.True(SpecialKeyRawKeyboardState.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            SpecialKeyKeyboardSuppressionState.VirtualKeyPageUp,
+            keyDown: true,
+            functionKeyPressed: true,
+            pressed,
+            out SpecialKeySlot slot));
+        Assert.Equal(SpecialKeySlot.M1, slot);
     }
 
     [Fact]

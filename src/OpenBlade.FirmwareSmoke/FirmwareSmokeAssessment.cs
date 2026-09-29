@@ -88,7 +88,7 @@ public static class FirmwareSmokeAssessment
         ExpectedLogoModes,
         ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
         DeviceFeatureAccess.ReadWrite.ToString(),
-        (SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5).ToString(),
+        SpecialKeySlotSet.All.ToString(),
         DeviceFeatureAccess.ObservedOnly.ToString());
 
     private static readonly IReadOnlySet<CustomPerformanceCombination>
