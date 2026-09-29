@@ -109,6 +109,18 @@ capabilities; this parser result leaves user-mode framing unresolved.
 No feature report was sent. The enhanced inventory records raw parser statuses
 separately from actual device I/O validation.
 
+A fourth attended session reconnected USB while retaining 12 V power, with
+pad-dependent HyperBoost inactive. The operator reported nothing abnormal and
+confirmed the requested preferred-state restoration. Actual enumeration binds
+the exact revision-0200 pad to MI_00 descriptor request/response frames 247/248.
+The response is the complete 22-byte report descriptor, independently hashed
+and decoded. It declares one unnumbered constant Feature item: size 8 bits,
+count 90. There is no Report ID item. Windows' inventoried 91-byte buffer thus
+requires prefix zero; historical prefix `05` is not declared. This resolves
+framing choice, while actual OpenBlade Windows feature I/O remains unvalidated.
+Capture stopped gracefully, OpenBlade restarted, and raw root traffic remains
+private. BIOS versions are evidence provenance and do not gate validation.
+
 The bounded vendor-baseline procedure is:
 
 1. The operator confirms the pad is powered, its fan behaves normally, Synapse
@@ -149,25 +161,23 @@ Keep raw PCAP, process traces, instance IDs, serials, and local paths private.
 
 ## Decision after capture
 
-The next manual gate is actual HID report-descriptor acquisition. Prepare a
-short attended descriptor-discovery capture on the verified USB root. Unlike
-action captures, descriptor discovery may use `-AllDevices`: reconnect can
-change the device address, and enumeration can use address zero. Keep raw root
-traffic private and extract only the exact pad's actual MI_00 report descriptor,
-binding its address through VID/PID/revision enumeration. Injected device/config
-descriptors and a reported descriptor length are insufficient.
+The next manual gate is competing-controller absence for the prepared, single
+`00/84:0000` query in
+[draft PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624).
+Save current vendor service states and preferred
+Auto/full-brightness/static-green settings. The operator exits Synapse and
+temporarily stops only the guard-reported competing vendor services through
+Windows Services. The agent does not stop them automatically. Current blockers
+include AppEngine, Razer Elevation Service and Razer Game Manager Service 3.
+USBPcap must be stopped, and fresh exact-model/SKU, pad revision and control
+geometry checks must pass. BIOS versions are provenance only.
 
-Before USB detachment, confirm pad-dependent HyperBoost is inactive. The
-operator reconnects only USB while 12 V stays powered, observes behavior, and
-restores preferred Auto/full-brightness/static-green through Synapse. No
-automatic device reset, vendor-service stop or driver restart is included. If
-the actual report descriptor is absent, stop without guessed queries.
-
-Once framing is established, prepare an exact-device, bounded query-only check
-of captured `00/84`, recording raw results without assigning laptop
-Driver/Normal semantics. Review a complete restoration contract before any
-direct typed write trial. Vendor services remain under operator control;
-continued presence prevents a claim of independent ownership.
+The developer command accepts only captured raw results `0000` or `0300`,
+with no laptop Driver/Normal meaning, fan-state or ownership claim. It performs
+one bounded exchange, with no setter, fallback ID or retry after ambiguity.
+Reopen the vendor controller and restore its saved service states/settings,
+then confirm normal physical behavior. Actual Windows feature-I/O success
+requires this trial; safe OpenBlade handback remains a separate gate.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
