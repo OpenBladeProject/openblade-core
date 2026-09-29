@@ -13,6 +13,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Start HyperBoost directly from Custom on the supported Blade 16 (2025) RZ09-0528, with or without the cooling pad, and return to the same Custom CPU/GPU levels afterward. ([#610](https://github.com/OpenBladeProject/openblade-core/pull/610))
 - Choose Battery Saver or Battery Balanced on battery power on the supported Blade 16 (2025) RZ09-0528. ([#614](https://github.com/OpenBladeProject/openblade-core/pull/614))
 - Assign M1 (Fn+Page Up) and M2 (Fn+Page Down) on the supported Blade 16 (2025) RZ09-0528, like M3–M5. ([#616](https://github.com/OpenBladeProject/openblade-core/pull/616))
+- Show Windows' own brightness flyout on the supported Blade 16 (2025) RZ09-0528 when its Razer driver is installed, like the RZ09-0581. ([#618](https://github.com/OpenBladeProject/openblade-core/pull/618))
 
 ### Fixed
 

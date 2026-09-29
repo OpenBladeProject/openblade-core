@@ -25,7 +25,7 @@ public sealed class RazerDisplayBrightnessHidTransportTests
     }
 
     [Fact]
-    public void AdmissionConstants_AreExactToValidatedRz09_0581Stack()
+    public void AdmissionConstants_AreExactToValidatedSharedStack()
     {
         Assert.Equal(
             new Guid("e3be005d-d130-4910-88ff-09ae02f680e9"),
@@ -33,24 +33,44 @@ public sealed class RazerDisplayBrightnessHidTransportTests
         Assert.Equal(
             new Guid("745a17a0-74d3-11d0-b6fe-00a0c90f57da"),
             WindowsRazerDisplayBrightnessHidTransport.HidClassGuid);
-        Assert.Equal(
-            @"RZCONTROL\VID_1532&PID_02E0&MI_00\",
-            WindowsRazerDisplayBrightnessHidTransport.ControlInstanceIdPrefix);
-        Assert.Equal(
-            @"RZVIRTUAL\VID_1532&PID_02E0&MI_00&COL03\",
-            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerInstanceIdPrefix);
-        Assert.Equal(
-            @"USB\VID_1532&PID_02E0&MI_02\",
-            WindowsRazerDisplayBrightnessHidTransport.PhysicalInterfaceAncestorPrefix);
-        Assert.Equal(
-            @"USB\VID_1532&PID_02E0&MI_01\",
-            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerAncestorPrefix);
         Assert.Equal("RzCommon", WindowsRazerDisplayBrightnessHidTransport.ControlServiceName);
-        Assert.Equal(
-            "RzDev_02e0",
-            WindowsRazerDisplayBrightnessHidTransport.VirtualConsumerServiceName);
         Assert.Equal(0x88883020u, WindowsRazerDisplayBrightnessHidTransport.SubmitInputIoctl);
         Assert.Equal(10u, WindowsRazerDisplayBrightnessHidTransport.ConsumerControlInputType);
+        Assert.Equal(
+            [
+                WindowsRazerDisplayBrightnessHidTransport.Rz09_0581Stack,
+                WindowsRazerDisplayBrightnessHidTransport.Rz09_0528Stack,
+            ],
+            WindowsRazerDisplayBrightnessHidTransport.AdmittedStacks);
+    }
+
+    [Theory]
+    [InlineData(
+        "02E0",
+        "RzDev_02e0",
+        "BC1666048D81A8DBA6BBFFDBDC86C2119632FD68EF2BB6D5D417FE3B84744787")]
+    [InlineData(
+        "02C6",
+        "RzDev_02c6",
+        "307940C7C5AB537F19F0A33ADA592D2D6DE5ECADB13D748019A8F0E13816BA82")]
+    public void ModelStacks_BindEveryIdentityToOneExactProduct(
+        string productId,
+        string serviceName,
+        string driverSha256)
+    {
+        RazerDisplayBrightnessDriverStack stack = Assert.Single(
+            WindowsRazerDisplayBrightnessHidTransport.AdmittedStacks,
+            candidate => candidate.ProductId == productId);
+
+        Assert.Equal($@"RZCONTROL\VID_1532&PID_{productId}&MI_00\", stack.ControlInstanceIdPrefix);
+        Assert.Equal(
+            $@"RZVIRTUAL\VID_1532&PID_{productId}&MI_00&COL03\",
+            stack.VirtualConsumerInstanceIdPrefix);
+        Assert.Equal($@"USB\VID_1532&PID_{productId}&MI_02\", stack.PhysicalInterfaceAncestorPrefix);
+        Assert.Equal($@"USB\VID_1532&PID_{productId}&MI_01\", stack.VirtualConsumerAncestorPrefix);
+        Assert.Equal(serviceName, stack.VirtualConsumerServiceName);
+        Assert.Equal(serviceName + ".sys", stack.DeviceDriverFileName);
+        Assert.Equal(driverSha256, stack.DeviceDriverSha256);
     }
 
     [Fact]
