@@ -178,15 +178,18 @@ exits. This command provides no production padless admission; its hardware
 results require separate review.
 
 Developer lifecycle validation selects a separate exact-model contract. The
-RZ09-0528 preparation descriptor uses Performance/Automatic and keeps every
-evidence gate closed; the RZ09-0581 admission manifest cannot authorize this
-model. Service requests bind the selected manifest as well as the exact build.
-The 2025 lifecycle factory refuses hardware access until its own non-lifecycle
-evidence requirements are reviewed. This preparation does not enable installed
-padless controls or authorize an adapter, crash-recovery, or sleep experiment.
-Before an installed experiment, the lifecycle harness must also select the
-2025 baseline and enforce its reviewed GPU/driver prerequisites. The existing
-Balanced-only harness is not a 2025 validation path.
+RZ09-0528 readiness descriptor uses Performance/Automatic and binds each
+non-lifecycle gate to merged, hash-pinned 2025 evidence: the immediate run,
+the 60-second no-load and Stress Test plans and runs, the post-restoration
+pad-absence record, and the battery and USB-C boundary runs. The low-power and
+crash-recovery gates stay closed, so production padless admission remains
+unavailable; the RZ09-0581 admission manifest cannot authorize this model.
+Service requests bind the selected manifest as well as the exact build, and
+only a separately built developer lifecycle-validation service can use this
+readiness. The FirmwareSmoke harness selects the Performance transition for
+RZ09-0528 and admits only a Performance/Automatic entry without GPU tuning;
+the service independently refuses any other entry. The harness does not yet
+check GPU offsets or the NVIDIA driver version before an installed run.
 
 The developer-only battery-boundary command observes a separate attended
 full-power AC to battery to AC transition without a workload. It requires

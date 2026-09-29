@@ -13,10 +13,83 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
         Assert.Equal(PerformancePreset.Performance, selected.BaseMode);
         Assert.Equal(Rz090528PadlessLifecyclePreparation.ManifestSha256, selected.ManifestSha256);
         Assert.NotEqual(HyperBoostWithoutCoolingPadAdmissionSource.TrustedManifestSha256, selected.ManifestSha256);
-        Assert.False(selected.Readiness.LifecycleValidationReady);
+        // Every non-lifecycle gate is bound to merged 2025 evidence; lifecycle gates and production stay closed.
+        Assert.True(selected.Readiness.LifecycleValidationReady);
         Assert.False(selected.Readiness.WriteAdmitted);
-        Assert.Equal(new HyperBoostWithoutCoolingPadEvidenceGates(false, false, false, false, false, false, false, false, false, false), selected.Readiness);
-        Assert.Throws<UnvalidatedCommandException>(() => BatteryValidationFactory.RequireLifecycleReadiness(selected));
+        Assert.Equal(new HyperBoostWithoutCoolingPadEvidenceGates(true, true, true, true, true, true, true, true, false, false), selected.Readiness);
+        BatteryValidationFactory.RequireLifecycleReadiness(selected);
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "OpenBlade.slnx"))) { return directory.FullName; }
+        }
+        throw new InvalidOperationException("Repository root not found.");
+    }
+
+    private static byte[] Descriptor() => File.ReadAllBytes(Path.Combine(RepositoryRoot(),
+        "src", "OpenBlade.Protocol", "Fixtures", "Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json"));
+
+    [Fact]
+    public void EveryCitedArtifactMatchesTheRepositoryBytes()
+    {
+        byte[] descriptor = Descriptor();
+        Assert.Equal(Rz090528PadlessLifecyclePreparation.ManifestSha256, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(descriptor)));
+        using var document = System.Text.Json.JsonDocument.Parse(descriptor);
+        int cited = 0;
+        foreach (var gate in document.RootElement.GetProperty("gates").EnumerateObject())
+        {
+            foreach (var property in gate.Value.EnumerateObject().Where(p => p.Name is "evidence" or "supplementalEvidence"))
+            {
+                if (property.Value.ValueKind == System.Text.Json.JsonValueKind.Null) { continue; }
+                string artifact = property.Value.GetProperty("artifact").GetString()!;
+                string path = Path.Combine(RepositoryRoot(), artifact.Replace('/', Path.DirectorySeparatorChar));
+                Assert.True(File.Exists(path), artifact);
+                Assert.Equal(property.Value.GetProperty("sha256").GetString(),
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))));
+                cited++;
+            }
+        }
+        Assert.Equal(9, cited);
+    }
+
+    [Theory]
+    [InlineData("lowPowerLifecycleValidated")]
+    [InlineData("crashRecoveryValidated")]
+    public void LifecycleGatesCanNeverBeClaimedByReadinessEvidence(string gate)
+    {
+        string json = System.Text.Encoding.UTF8.GetString(Descriptor());
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        node["gates"]![gate] = System.Text.Json.Nodes.JsonNode.Parse(
+            "{\"validated\":true,\"evidence\":{\"artifact\":\"captures/annotations/2026-09-29-rz09-0528-x.json\",\"sha256\":\"" + new string('A', 64) + "\"}}");
+        Assert.Throws<UnvalidatedCommandException>(() => Rz090528PadlessLifecyclePreparation.ValidateContent(
+            System.Text.Encoding.UTF8.GetBytes(node.ToJsonString())));
+    }
+
+    [Theory]
+    [InlineData("captures/annotations/2026-08-19-rz09-0581-hyperboost-padless-immediate.json")]
+    [InlineData("captures/annotations/../annotations/2026-09-29-rz09-0528-x.json")]
+    [InlineData("src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_PadAbsentHyperBoostNoLoadPlan.json")]
+    [InlineData("C:/elsewhere/rz09-0528.json")]
+    public void GatesCannotCiteAnotherModelOrPath(string artifact)
+    {
+        string json = System.Text.Encoding.UTF8.GetString(Descriptor());
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        node["gates"]!["reviewedLoadValidated"]!["evidence"]!["artifact"] = artifact;
+        Assert.Throws<UnvalidatedCommandException>(() => Rz090528PadlessLifecyclePreparation.ValidateContent(
+            System.Text.Encoding.UTF8.GetBytes(node.ToJsonString())));
+    }
+
+    [Fact]
+    public void GatesMustCarryAFullHash()
+    {
+        string json = System.Text.Encoding.UTF8.GetString(Descriptor());
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        node["gates"]!["reviewedLoadValidated"]!["evidence"]!["sha256"] = "ABC";
+        Assert.Throws<UnvalidatedCommandException>(() => Rz090528PadlessLifecyclePreparation.ValidateContent(
+            System.Text.Encoding.UTF8.GetBytes(node.ToJsonString())));
     }
 
     [Theory]
