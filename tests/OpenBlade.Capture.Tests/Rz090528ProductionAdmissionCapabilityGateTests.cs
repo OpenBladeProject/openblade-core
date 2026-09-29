@@ -43,9 +43,9 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             (battery with { HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ObservedOnly }, lighting),
             (battery with { HyperBoostBaseModes = null }, lighting),
             (battery with { HyperBoostBaseModes = battery.HyperBoostBaseModes! with
-                { Balanced = DeviceFeatureAccess.ReadWrite } }, lighting),
+                { Balanced = DeviceFeatureAccess.ObservedOnly } }, lighting),
             (battery with { HyperBoostBaseModes = battery.HyperBoostBaseModes! with
-                { Silent = DeviceFeatureAccess.ReadWrite } }, lighting),
+                { Silent = DeviceFeatureAccess.ObservedOnly } }, lighting),
             (battery with { CpuPowerLimit = null }, lighting),
             (battery with { CpuVoltageOptimizer = null }, lighting),
             (
@@ -156,7 +156,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
             HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
             HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+                DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite),
             FanSpeedRange = new FanSpeedRange(2000, 5000, 100),
             CustomPerformance = new CustomPerformanceCapabilities(
                 new HashSet<CustomPerformanceCombination>

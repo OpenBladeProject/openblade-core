@@ -954,6 +954,7 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
 type static class OpenBlade.Contracts.HyperBoostCapabilityPolicy
+  method static System.Boolean IsDirectEntryBase(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent, OpenBlade.Contracts.PerformancePreset mode)
   method static System.Boolean IsWritable(OpenBlade.Contracts.DeviceCapabilities capabilities)
   method static System.Boolean RequiresCoolingPad(OpenBlade.Contracts.DeviceCapabilities capabilities)
   method static System.Nullable<OpenBlade.Contracts.PerformancePreset> EntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent)

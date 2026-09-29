@@ -27862,6 +27862,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.Capabilities = context.Device.Capabilities with
         {
             HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite),
             GpuOverclock = new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
@@ -27928,30 +27930,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData(CoolingPadConnectionState.Absent, false)]
     [InlineData(CoolingPadConnectionState.PresentExact, true)]
-    public async Task BothPadPathHyperBoost_OnlyThePadPathBridgesFromAnotherBaseline(
+    public async Task BothPadPathHyperBoost_EntersDirectlyFromTheCurrentMode(
         CoolingPadConnectionState state,
-        bool admitted)
+        bool requiresCoolingPad)
     {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(true,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
-            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+            hyperBoostOwnershipJournalStore: journal);
         ConfigureBothPadPathHyperBoost(context);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
-        int before = context.Device.TotalSetterCalls;
 
         ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
 
-        if (admitted)
-        {
-            Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
-        }
-        else
-        {
-            Assert.Equal(ControlOperationStatus.Blocked, enabled.Status);
-            Assert.Contains("starts only from Performance", enabled.Message, StringComparison.Ordinal);
-            Assert.Equal(before, context.Device.TotalSetterCalls);
-        }
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        Assert.Equal((PerformancePreset.Balanced, FanMode.Automatic), Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Balanced, journal.Journal!.BaseMode);
+        Assert.Equal(requiresCoolingPad, journal.Journal.RequiresCoolingPad);
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None);
+        Assert.True(disabled.Status == ControlOperationStatus.Applied, disabled.Message);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
     }
 
     [Fact]

@@ -87,6 +87,23 @@ public sealed class PadlessLifecycleEntryRefusalTests
         Assert.Equal(captured, ServiceControlRuntime.PadlessLifecycleEntryRefusal(Rz090528, confirmed, desired) is null);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Silent, PerformancePreset.Silent, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.Balanced, true)]
+    [InlineData(PerformancePreset.Performance, PerformancePreset.Performance, true)]
+    [InlineData(PerformancePreset.Balanced, PerformancePreset.Performance, false)]
+    [InlineData(PerformancePreset.Custom, PerformancePreset.Custom, false)]
+    public void DirectPadlessEntry_StartsFromTheConfirmedAndSelectedMode(
+        PerformancePreset current, PerformancePreset baseMode, bool direct)
+    {
+        Assert.Equal(direct, ServiceControlRuntime.IsDirectPadlessEntry(
+            Confirmed(current, FanMode.Automatic), Desired(current, FanMode.Automatic), baseMode));
+        Assert.False(ServiceControlRuntime.IsDirectPadlessEntry(
+            Confirmed(current, FanMode.Automatic),
+            Desired(current, FanMode.Automatic, new GpuClockTuningSettings(true, GpuClockOffsetSettings.Default)),
+            baseMode));
+    }
+
     [Fact]
     public void BalancedTargetKeepsItsExistingEntryPolicy()
     {

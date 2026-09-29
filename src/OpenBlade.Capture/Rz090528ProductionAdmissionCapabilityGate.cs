@@ -123,7 +123,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         && battery.HyperBoostAccess == DeviceFeatureAccess.ReadWrite
         && battery.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
         && battery.HyperBoostBaseModes == new HyperBoostBaseModeCapabilities(
-            DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite)
+            DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
         && battery.ObservedPowerSourceBehaviors.SequenceEqual(PowerSourceBehaviors)
         && battery.FanModes.SetEquals(FanModes)
         && battery.FanSpeedRange == new FanSpeedRange(2000, 5000, 100)

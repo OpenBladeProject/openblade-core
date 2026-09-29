@@ -243,7 +243,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
-                    DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+                    DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite),
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
                 LightingEffects =
                 [

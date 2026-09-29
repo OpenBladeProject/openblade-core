@@ -589,9 +589,11 @@ public static class BatteryValidationFactory
                 : Rz090528HyperBoostWithoutCoolingPadAdmissionSource.ReadGates().WriteAdmitted
                     ? DeviceFeatureAccess.ReadWrite
                     : null,
+            // Direct mode-7 entry and exact restoration were confirmed from Silent, Balanced and
+            // Performance with Automatic fans on the exact 02C6 laptop.
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
-                DeviceFeatureAccess.ObservedOnly,
-                DeviceFeatureAccess.ObservedOnly,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
                 DeviceFeatureAccess.ReadWrite),
             hyperBoostCatalog: hyperBoostCatalog,
             hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native),

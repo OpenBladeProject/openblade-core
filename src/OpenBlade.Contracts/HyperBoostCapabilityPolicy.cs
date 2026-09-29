@@ -39,6 +39,17 @@ public static class HyperBoostCapabilityPolicy
             ? PadPresentEntryBaseMode(capabilities)
             : PadlessEntryBaseMode(capabilities);
 
+    // A mode HyperBoost may enter from and restore to directly on an admitted pad path.
+    public static bool IsDirectEntryBase(
+        DeviceCapabilities capabilities,
+        bool coolingPadPresent,
+        PerformancePreset mode) =>
+        EntryBaseMode(capabilities, coolingPadPresent) is not null
+        && mode is PerformancePreset.Silent or PerformancePreset.Balanced or PerformancePreset.Performance
+        && (capabilities.HyperBoostBaseModes?.AccessFor(mode)
+            ?? (mode == PerformancePreset.Balanced ? capabilities.HyperBoostAccess : null))
+            == DeviceFeatureAccess.ReadWrite;
+
     public static bool IsWritable(DeviceCapabilities capabilities) =>
         PadPresentEntryBaseMode(capabilities) is not null
         || PadlessEntryBaseMode(capabilities) is not null;

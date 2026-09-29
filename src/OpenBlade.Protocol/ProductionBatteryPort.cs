@@ -755,11 +755,9 @@ internal sealed class ProductionBatteryPort :
                     entryPadState,
                     token).ConfigureAwait(false)
                 : null,
+            // Wherever a pad-present path exists, the pad state can change which path applies.
             revalidateEligibilityPerCommand: enabled
-                && baseMode == PerformancePreset.Performance
-                && (HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities)
-                    || HyperBoostCapabilityPolicy.PadlessEntryBaseMode(Capabilities)
-                        == PerformancePreset.Performance),
+                && HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(Capabilities) is not null,
             requiredPadStatePerCommand: () => entryPadState
                 ?? (lifecycleValidation
                     ? CoolingPadConnectionState.Absent : CoolingPadConnectionState.PresentExact));
@@ -772,6 +770,9 @@ internal sealed class ProductionBatteryPort :
                 ([PerformanceSilentFirstAction, PerformanceSilentSecondAction], catalog),
             PerformancePreset.Performance =>
                 ([PerformanceBoostFirstAction, PerformanceBoostSecondAction], catalog),
+            // Models without a dedicated HyperBoost restore pair restore Balanced directly.
+            _ when !HasPair(hyperBoostCatalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction) =>
+                ([PerformanceBalancedFirstAction, PerformanceBalancedSecondAction], catalog),
             _ =>
                 ([HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction], hyperBoostCatalog),
         };
@@ -1390,6 +1391,7 @@ internal sealed class ProductionBatteryPort :
             && writable.Length > 0
             && writable.All(mode => mode == PerformancePreset.Balanced
                 ? HasPair(hyperBoostCatalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction)
+                    || HasPerformancePair(restorationCatalog, mode)
                 : HasPerformancePair(restorationCatalog, mode));
     }
 
@@ -1805,7 +1807,7 @@ internal sealed class ProductionBatteryPort :
                 "The cooling-pad state changed during the HyperBoost transition.");
         }
         bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
-            && (HyperBoostCapabilityPolicy.PadlessEntryBaseMode(Capabilities) == baseMode
+            && (HyperBoostCapabilityPolicy.IsDirectEntryBase(Capabilities, coolingPadPresent: false, baseMode)
                 || allowPadlessLifecycleValidation
                     && this.allowPadlessHyperBoostLifecycleValidation
                     && baseMode == padlessHyperBoostLifecycleBaseMode

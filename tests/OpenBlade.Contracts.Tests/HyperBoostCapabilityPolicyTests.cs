@@ -32,6 +32,25 @@ public sealed class HyperBoostCapabilityPolicyTests
         Assert.True(HyperBoostCapabilityPolicy.IsWritable(capabilities));
     }
 
+    [Fact]
+    public void DirectEntry_UsesEveryWritableBaseOnAnAdmittedPath()
+    {
+        // Admitted RZ09-0528 shape: Silent, Balanced and Performance enter and restore directly.
+        DeviceCapabilities rz0528 = Create(padless: RW, silent: RW, balanced: RW, performance: RW);
+        foreach (PerformancePreset mode in new[] { PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance })
+        {
+            Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: true, mode));
+            Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: false, mode));
+        }
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: false, PerformancePreset.Custom));
+
+        // RZ09-0581 shape: pad-less Balanced only; no pad-present path.
+        DeviceCapabilities rz0581 = Create(padless: RW, silent: Observed, balanced: RW, performance: Observed);
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0581, coolingPadPresent: false, PerformancePreset.Balanced));
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0581, coolingPadPresent: false, PerformancePreset.Silent));
+        Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0581, coolingPadPresent: true, PerformancePreset.Balanced));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(DeviceFeatureAccess.ObservedOnly)]

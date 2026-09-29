@@ -125,8 +125,9 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_PadlessRejectsNonBalancedBase()
+    public async Task RunAsync_PadlessUsesAnotherWritableDirectBase()
     {
+        // Performance is a writable direct base here, so pad-less HyperBoost enters from it directly.
         await using var client = new FakeFirmwareSmokeClient(
             PerformancePreset.Performance,
             padlessAdmitted: true,
@@ -138,8 +139,8 @@ public sealed class ReversibleSmokeRunnerTests
         FirmwareSmokeCheck hyperBoost = Assert.Single(
             checks,
             check => check.Id == "write.hyper-boost");
-        Assert.Equal(FirmwareSmokeOutcome.Skipped, hyperBoost.Outcome);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
+        Assert.Equal(FirmwareSmokeOutcome.Passed, hyperBoost.Outcome);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
         client.AssertOriginalState();
     }
 
