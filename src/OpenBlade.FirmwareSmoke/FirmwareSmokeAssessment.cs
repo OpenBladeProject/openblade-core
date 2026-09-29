@@ -81,7 +81,7 @@ public static class FirmwareSmokeAssessment
         "Unavailable");
 
     private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
-        ["Balanced", "Custom", "Performance", "Silent"],
+        ExpectedPerformancePresets,
         ExpectedFanModes,
         ExpectedRz090528LightingEffects,
         ExpectedChargeLimits,

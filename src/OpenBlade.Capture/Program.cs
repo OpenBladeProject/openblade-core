@@ -859,14 +859,22 @@ if (args.Length == 2 && (
         StringComparison.OrdinalIgnoreCase)
     || args[0].Equals(
         "validate-rz09-0528-02c6-performance-performance",
+        StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals(
+        "validate-rz09-0528-02c6-performance-battery",
         StringComparison.OrdinalIgnoreCase)))
 {
     const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
-    PerformancePreset targetPreset = args[0].EndsWith(
-        "-silent",
-        StringComparison.OrdinalIgnoreCase)
-        ? PerformancePreset.Silent
-        : PerformancePreset.Performance;
+    // The battery variant runs on battery power and switches to the other battery mode and back.
+    bool batteryRoundTrip = args[0].EndsWith("-battery", StringComparison.OrdinalIgnoreCase);
+    PerformancePreset targetPreset = batteryRoundTrip
+        ? PerformancePreset.BatteryBalanced
+        : args[0].EndsWith("-silent", StringComparison.OrdinalIgnoreCase)
+            ? PerformancePreset.Silent
+            : PerformancePreset.Performance;
+    PerformancePreset basePreset = batteryRoundTrip
+        ? PerformancePreset.BatterySaver
+        : PerformancePreset.Balanced;
     if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
     {
         Console.WriteLine(
@@ -891,11 +899,16 @@ if (args.Length == 2 && (
         ProductionPerformanceFanState baseline =
             await port.QueryPerformanceFanStateAsync(CancellationToken.None);
         Console.WriteLine($"Baseline={baseline.Performance}/{baseline.Fans}");
+        if (batteryRoundTrip && baseline.Performance == PerformancePreset.BatteryBalanced)
+        {
+            (basePreset, targetPreset) = (PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver);
+        }
+
         if (baseline != new ProductionPerformanceFanState(
-                PerformancePreset.Balanced,
+                basePreset,
                 FanMode.Automatic))
         {
-            Console.WriteLine("Refused=Baseline must be Balanced/Automatic");
+            Console.WriteLine($"Refused=Baseline must be {basePreset}/Automatic");
             Console.WriteLine("Success=False");
             return 2;
         }
@@ -919,7 +932,7 @@ if (args.Length == 2 && (
             try
             {
                 await port.SetPerformanceAsync(
-                    PerformancePreset.Balanced,
+                    basePreset,
                     CancellationToken.None);
                 restored = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
             }
