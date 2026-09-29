@@ -73,4 +73,29 @@ public sealed class SetupLogTests : IDisposable
         Assert.Single(inner.Events);
         Assert.EndsWith("Step: StopServiceForReplacement", Assert.Single(File.ReadAllLines(path)), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ProgressReporter_CollapsesRepeatedStepsWithTheLastArgument()
+    {
+        string path = Path.Combine(directory, "setup.log");
+        var inner = new RecordingSetupProgressReporter();
+        using (var reporter = new LoggingSetupProgressReporter(inner, new SetupLog(path)))
+        {
+            reporter.Report(SetupProgressCode.CopyFile, "OpenBlade.Service.exe");
+            reporter.Report(SetupProgressCode.CopyFile, "OpenBlade.Service.dll");
+            reporter.Report(SetupProgressCode.CopyFile, "OpenBlade.Tray.exe");
+            reporter.Report(SetupProgressCode.ActivateFiles);
+            reporter.Report(SetupProgressCode.CommitFiles);
+            reporter.Report(SetupProgressCode.CommitFiles);
+        }
+
+        Assert.Equal(6, inner.Events.Count);
+        string[] lines = File.ReadAllLines(path);
+        Assert.Equal(5, lines.Length);
+        Assert.EndsWith("Step: CopyFile", lines[0], StringComparison.Ordinal);
+        Assert.EndsWith("Step: CopyFile x3 in total, last: OpenBlade.Tray.exe", lines[1], StringComparison.Ordinal);
+        Assert.EndsWith("Step: ActivateFiles", lines[2], StringComparison.Ordinal);
+        Assert.EndsWith("Step: CommitFiles", lines[3], StringComparison.Ordinal);
+        Assert.EndsWith("Step: CommitFiles x2 in total, last: ", lines[4], StringComparison.Ordinal);
+    }
 }
