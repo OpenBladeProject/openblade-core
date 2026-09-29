@@ -54,7 +54,7 @@ production support merely because a neighboring model implements it.
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
-| HyperBoost | Performance/Automatic entry with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration; direct Silent/Balanced transitions remain unadmitted |
+| HyperBoost | Direct entry from Silent, Balanced or Performance with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration to the starting mode; Custom still switches to Performance first with the pad |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
@@ -226,13 +226,16 @@ The exact-model admission manifest
 gates to hash-pinned 2025 evidence. It is model-scoped: BIOS 2.02 is capture
 provenance, not a firmware restriction.
 
-Production admits pad-less entry only directly from confirmed and selected
-Performance/Automatic, without custom performance, on the full-power adapter
-(`FullPower280W`, value `1111`), after a fresh exact pad-absence observation and
-competing-controller checks. It does not bridge from another mode. GPU clock
-tuning must be off with zero confirmed offsets for pad-less entry and cannot be
-turned on during a pad-less session, because the evidence excludes it. The
-cooling-pad path is unchanged, including its bridge from other modes. A fresh
+Typed round trips on the exact laptop confirmed mode 7 and exact restoration
+from Silent (mode 5) and Balanced (mode 0) as well as Performance (mode 2), so
+HyperBoost enters directly from the current one of these modes and restores it
+on exit, with or without the pad. Pad-less entry uses the full-power adapter
+(`FullPower280W`, value `1111`), a fresh exact pad-absence observation and
+competing-controller checks, and never switches the performance mode first;
+from Custom it is refused. GPU clock tuning must be off with zero confirmed
+offsets for pad-less entry and cannot be turned on during a pad-less session
+until that combination is tested. With the pad, Custom still switches to
+Performance first. A fresh
 pad observation selects and journals the path at entry; the port submits only
 under that path and rechecks it before every command, so a pad change
 mid-transition blocks or becomes indeterminate instead of switching paths.
