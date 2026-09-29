@@ -299,6 +299,86 @@ public sealed class ProductionLightingPortTests
             CommandTuple(session.Commands.Last()));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rz090528DriverModeDrift_RelinquishesStaticWithoutRedrawing(
+        bool failReadback)
+    {
+        var session = new LightingSession(initialBrightness: 128)
+        {
+            FailDeviceModeQueryOnCall = failReadback ? 2 : null,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true);
+        LightingSettings settings = LightingSettingsFactory.Static(new RgbColor(0x47, 0xE1, 0x0C), 50);
+        await port.SetLightingAsync(settings, default);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        session.Commands.Clear();
+        session.DeviceMode = RazerDeviceMode.Normal;
+
+        if (failReadback)
+        {
+            await Assert.ThrowsAsync<IOException>(() => port.MaintainDriverModeAsync(default));
+        }
+        else
+        {
+            Assert.True(await port.MaintainDriverModeAsync(default));
+        }
+
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Null(await port.ReadStateAsync(default));
+        Assert.Equal(128, session.Brightness);
+        Assert.DoesNotContain(session.Commands, command =>
+            command.CommandId is Rz090528MatrixRowProtocol.RowCommandId
+                or Rz090528MatrixRowProtocol.LatchCommandId);
+
+        // Re-selecting the same saved intent must send a fresh frame, rather
+        // than retaining the frame whose ownership was lost.
+        await port.SetLightingAsync(settings, default);
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal(Rz090528MatrixFrame.RowCount, session.Commands.Count(command =>
+            command.CommandId == Rz090528MatrixRowProtocol.RowCommandId));
+    }
+
+    [Fact]
+    public async Task Rz090528DriverModeUnchanged_PreservesStaticWithoutRedrawing()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            staticEffectAdmitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0x47, 0xE1, 0x0C), 50), default);
+        session.Commands.Clear();
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+
+        Assert.Equal(LightingRendererOwnershipState.Static, port.OwnershipState);
+        Assert.Equal([(0x00, 0x84, "0000")], session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528DriverModeDrift_PreservesContinuousRenderer()
+    {
+        var session = new LightingSession(initialBrightness: 128);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
+            TimeSpan.FromSeconds(1),
+            spectrumEffectAdmitted: true,
+            timeProvider: new ManualTimeProvider());
+        await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(50), default);
+        session.DeviceMode = RazerDeviceMode.Normal;
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+
+        Assert.Equal(LightingRendererOwnershipState.Spectrum, port.OwnershipState);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+    }
+
     [Fact]
     public async Task Rz090528Spectrum_AcknowledgesFirstFrameThenStreamsSetOnlyFrames()
     {
