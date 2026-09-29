@@ -15,6 +15,11 @@ final behavior, with full-brightness static-green lighting and no red/sleep.
 No Synapse/service restart, lighting setter, demand update, power cycle or retry
 occurred during this completed attempt. Vendor software remains stopped.
 
+One fresh read-only query 131.58 seconds after trial-process exit still returned
+raw `0000`. The operator subsequently confirmed quiet Auto and normal unchanged
+green lighting, with no red/sleep. This is a normal-exit persistence observation;
+disconnect, crash, sleep and autonomous recovery remain unvalidated.
+
 The result is typed evidence and operator observation, without independent PCAP
 or retained native report traces. It establishes one physically successful fixed
 sequence on this host; it does not establish RPM/firmware state readback, causal
