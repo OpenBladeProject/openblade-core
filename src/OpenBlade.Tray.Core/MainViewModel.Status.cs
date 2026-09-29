@@ -68,6 +68,7 @@ public sealed partial class MainViewModel
         || (left is not null && right is not null
             && left.Firmware == right.Firmware && left.Live == right.Live
             && left.PendingBoot == right.PendingBoot && left.RestorePending == right.RestorePending
+            && left.FirmwareRecovery == right.FirmwareRecovery && left.LiveRecovery == right.LiveRecovery
             && SavedCpuEqual(left.SavedConfiguration, right.SavedConfiguration)
             && LiveCpuEqual(left.LiveState, right.LiveState));
 

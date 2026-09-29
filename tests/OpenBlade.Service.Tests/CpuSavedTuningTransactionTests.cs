@@ -11,6 +11,57 @@ public sealed class CpuSavedTuningTransactionTests
     private static readonly CpuTuningSettings Curve = new(null, new(true, -12));
 
     [Fact]
+    public async Task CompleteReversePlanIsAdmittedBeforeFirstRestoreCommand()
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, new(75, new(true, -12)), CancellationToken.None);
+        backend.DeniedKind = CpuSavedTuningCommandKind.ResetPowerLimit;
+        CpuSavedTuningTransactionResult result = await transaction.RestoreAsync(Identity, CancellationToken.None);
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, result.Outcome);
+        Assert.Equal(CpuSavedTuningBlockReason.AdmissionDenied, result.Reason);
+        Assert.Equal(2, backend.Sent.Count);
+        Assert.Equal(2, store.Journal!.CompletedSteps);
+    }
+
+    [Fact]
+    public async Task RecoveryFeaturesFollowCompletedCommandsRatherThanUnsubmittedIntent()
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        backend.AfterWrite = () => backend.DeniedKind = CpuSavedTuningCommandKind.CurveOptimizer;
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, new(75, new(true, -12)), CancellationToken.None);
+        var partial = await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.PowerLimit), partial.Recovery);
+        backend.MirrorMismatch = true;
+        var drift = await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.PowerLimit), drift.Recovery);
+        var mismatch = await transaction.ObserveOwnershipAsync(Identity with { BiosVersion = "2.03" }, CancellationToken.None);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None), mismatch.Recovery);
+    }
+
+    [Fact]
+    public async Task PreparedCleanupOwnsNoFeaturesAndMatchingObservationOwnsNothing()
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store) { Submission = CpuSavedTuningSubmission.NotSubmitted };
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        Assert.Equal(new(CpuTuningRecoveryState.None, CpuTuningFeatures.None),
+            (await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None)).Recovery);
+        await transaction.ApplyAsync(Identity, Curve, CancellationToken.None);
+        Assert.Equal(CpuTuningOwnershipState.Prepared, store.Journal!.State);
+        var prepared = await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None);
+        Assert.True(prepared.RestorePending);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.None), prepared.Recovery);
+        await transaction.RestoreAsync(Identity, CancellationToken.None);
+        Assert.Equal(new(CpuTuningRecoveryState.None, CpuTuningFeatures.None),
+            (await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None)).Recovery);
+        Assert.Single(backend.Sent);
+    }
+
+    [Fact]
     public async Task VerifiedWriteDurablyOwnsBothFullImagesAndExplicitRestoreReturnsEveryByte()
     {
         var store = new MemoryStore();
@@ -136,6 +187,8 @@ public sealed class CpuSavedTuningTransactionTests
         int reads = backend.Reads;
 
         var restarted = new CpuSavedTuningTransaction(backend, store);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.PowerLimit),
+            (await restarted.ObserveOwnershipAsync(Identity, CancellationToken.None)).Recovery);
         Assert.Equal(CpuTuningPendingBoot.Unknown, (await restarted.ObserveOwnershipAsync(Identity, CancellationToken.None)).PendingBoot);
         Assert.Equal(CpuSavedTuningOutcome.Uncertain, (await restarted.RestoreAsync(Identity, CancellationToken.None)).Outcome);
         Assert.Equal(CpuSavedTuningOutcome.Uncertain, (await restarted.ApplyAsync(Identity, Curve, CancellationToken.None)).Outcome);
@@ -216,8 +269,10 @@ public sealed class CpuSavedTuningTransactionTests
         Assert.Equal(baseline, backend.Bytes);
     }
 
-    [Fact]
-    public async Task AmbiguousEditPreservesOriginalBaselineAndBlocksFurtherChanges()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AmbiguousEditPreservesOriginalBaselineAndBlocksFurtherChanges(bool addPower)
     {
         var store = new MemoryStore();
         var backend = new FakeBackend(store);
@@ -227,9 +282,12 @@ public sealed class CpuSavedTuningTransactionTests
         backend.AfterWrite = () => throw new TimeoutException();
 
         Assert.Equal(CpuSavedTuningOutcome.Uncertain, (await transaction.ApplyAsync(Identity,
-            new(null, new(true, -13)), CancellationToken.None)).Outcome);
+            addPower ? new(75, null) : new(null, new(true, -13)), CancellationToken.None)).Outcome);
         Assert.NotNull(store.Journal!.PendingUpdateStep);
         Assert.Equal(baseline, store.Journal.BaselineCurrent);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer
+            | (addPower ? CpuTuningFeatures.PowerLimit : CpuTuningFeatures.None)),
+            (await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None)).Recovery);
         await new CpuSavedTuningTransaction(backend, store).RestoreAsync(Identity, CancellationToken.None);
         Assert.Equal(2, backend.Sent.Count);
     }
@@ -335,6 +393,8 @@ public sealed class CpuSavedTuningTransactionTests
 
         Assert.True((await transaction.ApplyAsync(Identity, Curve, CancellationToken.None)).RestorePending);
         Assert.True((await transaction.RestoreAsync(Identity, CancellationToken.None)).RestorePending);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None),
+            (await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None)).Recovery);
         Assert.Equal(0, backend.Reads);
         Assert.Empty(backend.Sent);
     }

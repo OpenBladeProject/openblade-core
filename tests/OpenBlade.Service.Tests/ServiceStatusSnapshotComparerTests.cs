@@ -5,6 +5,37 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceStatusSnapshotComparerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecoveryOnlyChangesArePublishedForEachTarget(bool live)
+    {
+        var backend = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
+            CpuTuningBackendAvailability.Available);
+        var recovery = new CpuTuningRecoveryStatus(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer);
+        var cpu = new CpuTuningStatus(null, null, backend, backend, CpuTuningPendingBoot.Unknown, true)
+        {
+            FirmwareRecovery = live ? null : recovery,
+            LiveRecovery = live ? recovery : null,
+        };
+        ServiceStatusSnapshot baseline = CreateStatus() with { CpuTuning = cpu };
+        CpuTuningStatus WithRecovery(CpuTuningRecoveryStatus? value) => live
+            ? cpu with { LiveRecovery = value } : cpu with { FirmwareRecovery = value };
+
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline,
+            baseline with { CpuTuning = WithRecovery(new(recovery.State, recovery.Features)) }));
+        foreach (CpuTuningRecoveryStatus? changed in new CpuTuningRecoveryStatus?[]
+        {
+            null,
+            recovery with { State = CpuTuningRecoveryState.Blocked },
+            recovery with { Features = CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer },
+        })
+        {
+            Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline,
+                baseline with { CpuTuning = WithRecovery(changed) }));
+        }
+    }
+
     [Fact]
     public void CpuStatusComparesValuesAcrossNewCoreCollectionsAndDetectsIndependentStateChanges()
     {

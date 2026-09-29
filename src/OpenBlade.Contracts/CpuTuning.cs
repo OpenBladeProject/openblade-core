@@ -148,6 +148,32 @@ public sealed record CpuLiveState(
             : null;
 }
 
+public enum CpuTuningRecoveryState
+{
+    Unknown,
+    None,
+    RestoreReady,
+    Blocked,
+}
+
+[Flags]
+public enum CpuTuningFeatures
+{
+    None = 0,
+    PowerLimit = 1,
+    CurveOptimizer = 2,
+}
+
+// Authority comes from durable ownership and fresh identity/full readback, never
+// matching observations, editor intent, or advertised feature capabilities.
+public sealed record CpuTuningRecoveryStatus(CpuTuningRecoveryState State, CpuTuningFeatures Features)
+{
+    public bool IsWellFormed => Enum.IsDefined(State)
+        && (Features & ~(CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer)) == 0
+        && (State is not (CpuTuningRecoveryState.Unknown or CpuTuningRecoveryState.None)
+            || Features == CpuTuningFeatures.None);
+}
+
 public sealed record CpuTuningStatus(
     CpuSavedConfiguration? SavedConfiguration,
     CpuLiveState? LiveState,
@@ -156,10 +182,18 @@ public sealed record CpuTuningStatus(
     CpuTuningPendingBoot PendingBoot,
     bool RestorePending)
 {
+    // Missing entries in older status payloads confer no restoration authority.
+    public CpuTuningRecoveryStatus? FirmwareRecovery { get; init; }
+    public CpuTuningRecoveryStatus? LiveRecovery { get; init; }
+
     public bool IsWellFormed =>
         (SavedConfiguration is null || SavedConfiguration.IsWellFormed)
         && (LiveState is null || LiveState.IsWellFormed)
         && Firmware is { IsWellFormed: true }
         && Live is { IsWellFormed: true }
-        && Enum.IsDefined(PendingBoot);
+        && Enum.IsDefined(PendingBoot)
+        && (FirmwareRecovery is null or { IsWellFormed: true })
+        && (LiveRecovery is null or { IsWellFormed: true })
+        && (RestorePending || FirmwareRecovery?.State != CpuTuningRecoveryState.RestoreReady
+            && LiveRecovery?.State != CpuTuningRecoveryState.RestoreReady);
 }

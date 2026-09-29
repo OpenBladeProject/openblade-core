@@ -484,11 +484,41 @@ type sealed class OpenBlade.Contracts.CpuTuningBackendStatus
   property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
   property System.Boolean CanWrite { get; }
   property System.Boolean IsWellFormed { get; }
+type enum OpenBlade.Contracts.CpuTuningFeatures
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningFeatures CurveOptimizer = 2
+  field const OpenBlade.Contracts.CpuTuningFeatures None = 0
+  field const OpenBlade.Contracts.CpuTuningFeatures PowerLimit = 1
 type enum OpenBlade.Contracts.CpuTuningPendingBoot
   field System.Int32 value__
   field const OpenBlade.Contracts.CpuTuningPendingBoot None = 2
   field const OpenBlade.Contracts.CpuTuningPendingBoot Requested = 1
   field const OpenBlade.Contracts.CpuTuningPendingBoot Unknown = 0
+type enum OpenBlade.Contracts.CpuTuningRecoveryState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CpuTuningRecoveryState Blocked = 3
+  field const OpenBlade.Contracts.CpuTuningRecoveryState None = 1
+  field const OpenBlade.Contracts.CpuTuningRecoveryState RestoreReady = 2
+  field const OpenBlade.Contracts.CpuTuningRecoveryState Unknown = 0
+type sealed class OpenBlade.Contracts.CpuTuningRecoveryStatus
+  interface System.IEquatable<OpenBlade.Contracts.CpuTuningRecoveryStatus>
+  ctor (OpenBlade.Contracts.CpuTuningRecoveryState State, OpenBlade.Contracts.CpuTuningFeatures Features)
+  method OpenBlade.Contracts.CpuTuningFeatures get_Features()
+  method OpenBlade.Contracts.CpuTuningRecoveryState get_State()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CpuTuningRecoveryState State, out OpenBlade.Contracts.CpuTuningFeatures Features)
+  method System.Void set_Features(OpenBlade.Contracts.CpuTuningFeatures value)
+  method System.Void set_State(OpenBlade.Contracts.CpuTuningRecoveryState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuTuningRecoveryStatus left, OpenBlade.Contracts.CpuTuningRecoveryStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuTuningRecoveryStatus left, OpenBlade.Contracts.CpuTuningRecoveryStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuTuningRecoveryStatus other)
+  property OpenBlade.Contracts.CpuTuningFeatures Features { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryState State { get; init; }
+  property System.Boolean IsWellFormed { get; }
 type sealed class OpenBlade.Contracts.CpuTuningSettings
   interface System.IEquatable<OpenBlade.Contracts.CpuTuningSettings>
   ctor (System.Nullable<System.Int32> PowerLimitWatts, OpenBlade.Contracts.CpuCurveOptimizerSettings CurveOptimizer)
@@ -518,12 +548,16 @@ type sealed class OpenBlade.Contracts.CpuTuningStatus
   method OpenBlade.Contracts.CpuTuningBackendStatus get_Firmware()
   method OpenBlade.Contracts.CpuTuningBackendStatus get_Live()
   method OpenBlade.Contracts.CpuTuningPendingBoot get_PendingBoot()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus get_FirmwareRecovery()
+  method OpenBlade.Contracts.CpuTuningRecoveryStatus get_LiveRecovery()
   method OpenBlade.Contracts.CpuTuningStatus <Clone>$()
   method System.Boolean get_IsWellFormed()
   method System.Boolean get_RestorePending()
   method System.Void Deconstruct(out OpenBlade.Contracts.CpuSavedConfiguration SavedConfiguration, out OpenBlade.Contracts.CpuLiveState LiveState, out OpenBlade.Contracts.CpuTuningBackendStatus Firmware, out OpenBlade.Contracts.CpuTuningBackendStatus Live, out OpenBlade.Contracts.CpuTuningPendingBoot PendingBoot, out System.Boolean RestorePending)
   method System.Void set_Firmware(OpenBlade.Contracts.CpuTuningBackendStatus value)
+  method System.Void set_FirmwareRecovery(OpenBlade.Contracts.CpuTuningRecoveryStatus value)
   method System.Void set_Live(OpenBlade.Contracts.CpuTuningBackendStatus value)
+  method System.Void set_LiveRecovery(OpenBlade.Contracts.CpuTuningRecoveryStatus value)
   method System.Void set_LiveState(OpenBlade.Contracts.CpuLiveState value)
   method System.Void set_PendingBoot(OpenBlade.Contracts.CpuTuningPendingBoot value)
   method System.Void set_RestorePending(System.Boolean value)
@@ -539,6 +573,8 @@ type sealed class OpenBlade.Contracts.CpuTuningStatus
   property OpenBlade.Contracts.CpuTuningBackendStatus Firmware { get; init; }
   property OpenBlade.Contracts.CpuTuningBackendStatus Live { get; init; }
   property OpenBlade.Contracts.CpuTuningPendingBoot PendingBoot { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryStatus FirmwareRecovery { get; init; }
+  property OpenBlade.Contracts.CpuTuningRecoveryStatus LiveRecovery { get; init; }
   property System.Boolean IsWellFormed { get; }
   property System.Boolean RestorePending { get; init; }
 type enum OpenBlade.Contracts.CpuTuningTarget

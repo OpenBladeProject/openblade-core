@@ -54,10 +54,16 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public bool CanEditPowerValue => CanEditPower && ManagePower;
     public bool CanEditCurveValue => CanEditCurve && ManageCurve && CurveEnabled;
     public bool CanApply => CanEdit && Settings.IsConfigured && Settings.IsWellFormed
+        && status?.FirmwareRecovery?.State != CpuTuningRecoveryState.Blocked
+        && status?.LiveRecovery?.State != CpuTuningRecoveryState.Blocked
         && (!ManagePower || CanEditPower) && (!ManageCurve || CanEditCurve);
     public bool CanRestore => CanEdit && status?.RestorePending == true
-        && (capabilities?.CpuPowerLimit is null or { Access: DeviceFeatureAccess.ReadWrite })
-        && (capabilities?.CpuVoltageOptimizer is null or { Access: DeviceFeatureAccess.ReadWrite });
+        && (LiveNow ? status.LiveRecovery : status.FirmwareRecovery)
+            is { IsWellFormed: true, State: CpuTuningRecoveryState.RestoreReady } recovery
+        && (!recovery.Features.HasFlag(CpuTuningFeatures.PowerLimit)
+            || capabilities?.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
+        && (!recovery.Features.HasFlag(CpuTuningFeatures.CurveOptimizer)
+            || capabilities?.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite });
     public bool CanRefresh => IsVisible && connected() && !busy;
     public string TargetLabel => TrayText.Get(LiveNow ? "Live now" : "Next boot");
     public string ApplyLabel => TrayText.Get(LiveNow ? "Apply now" : "Save for next boot");

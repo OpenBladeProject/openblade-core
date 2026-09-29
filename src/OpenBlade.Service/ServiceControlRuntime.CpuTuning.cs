@@ -139,13 +139,12 @@ public sealed partial class ServiceControlRuntime
         && current.ConfirmedState?.HyperBoostActive != true && !current.HyperBoostRestorePending
         && !hyperBoostJournalSafetyBlock && !hyperBoostRestorePending;
 
+    // The durable reverse plan determines restoration's required features.
+    // Every reverse command is admitted before any submission and again at send
+    // time; unrelated advertised features confer no authority.
     private static bool CpuFeaturesAdmitted(DeviceCapabilities? capabilities, CpuTuningSettings? settings, bool restoring) =>
         capabilities is not null
-        && (restoring
-            ? (capabilities.CpuPowerLimit is not null || capabilities.CpuVoltageOptimizer is not null)
-                && (capabilities.CpuPowerLimit is null or { Access: DeviceFeatureAccess.ReadWrite })
-                && (capabilities.CpuVoltageOptimizer is null or { Access: DeviceFeatureAccess.ReadWrite })
-            : settings is not null
+        && (restoring || settings is not null
                 && (settings.PowerLimitWatts is null || capabilities.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
                 && (settings.CurveOptimizer is null || capabilities.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite }));
 

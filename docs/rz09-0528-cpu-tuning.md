@@ -32,6 +32,12 @@ unexpected changes, or a failed mirror check block further commands. Explicit
 restoration proceeds in reverse order and verifies every byte. These paths are
 covered by fake-backend tests; production command admission remains disabled.
 
+Recovery authority identifies its saved or live target and the features that
+need restoration. A saved curve-only change does not require admission for an
+unmanaged power limit, and saved recovery cannot enable a live restore. Missing,
+malformed, drifted or uncertain recovery data blocks restoration. Every required
+reverse command is admitted before the first restoration submission.
+
 ## Optional installed AMD backend
 
 The optional backend is scoped to the RZ09-0528's exact signed AMD stack. Passive
@@ -59,6 +65,12 @@ registration from the pinned installed driver, then stopped and removed only
 that registration after the query process exited. Fresh checks confirmed that
 the original registration absence was restored. This result does not admit
 production live access. A later test requires a new attended proposal.
+
+A second diagnostic run stopped at controller isolation before device opening.
+A hardware-free reproduction traced that failure to missing Windows runtime
+dependencies in the developer staging payload. The complete published payload
+passes read-only process and service enumeration. This fixes staging; it does
+not prove that the native query transport works on the laptop.
 
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.

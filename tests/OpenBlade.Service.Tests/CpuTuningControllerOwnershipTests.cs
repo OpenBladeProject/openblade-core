@@ -23,6 +23,8 @@ public sealed class CpuTuningControllerOwnershipTests : IDisposable
         Assert.Null(first.CpuTuning.LiveState);
         Assert.Equal(CpuTuningPendingBoot.Requested, first.CpuTuning.PendingBoot);
         Assert.True(first.CpuTuning.RestorePending);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer), first.CpuTuning.FirmwareRecovery);
+        Assert.Null(first.CpuTuning.LiveRecovery);
 
         ControlOperationResult second = await Controller().ApplySavedAsync(new(null, new(true, -2)),
             (_, _) => true, CancellationToken.None);
@@ -32,13 +34,34 @@ public sealed class CpuTuningControllerOwnershipTests : IDisposable
         Assert.True(observed.RestorePending);
         Assert.Equal(CpuTuningPendingBoot.Requested, observed.PendingBoot);
         Assert.False(observed.Firmware.CanWrite);
+        Assert.Equal(first.CpuTuning.FirmwareRecovery, observed.FirmwareRecovery);
 
         ControlOperationResult restored = await Controller().RestoreSavedAsync((_, _) => true, CancellationToken.None);
         Assert.Equal(ControlOperationStatus.Stored, restored.Status);
         Assert.False(restored.CpuTuning!.RestorePending);
+        Assert.Equal(new(CpuTuningRecoveryState.None, CpuTuningFeatures.None), restored.CpuTuning.FirmwareRecovery);
         Assert.Null(restored.CpuTuning.LiveState);
         Assert.Equal(original, source.Bytes);
         Assert.Equal(3, source.Submissions);
+    }
+
+    [Fact]
+    public async Task PossibleSubmissionReadbackNeverProjectsRestorationAuthority()
+    {
+        var source = new Source { UnknownSubmission = true };
+        var store = new CpuTuningOwnershipJournalStore(Path.Combine(directory, "ownership.json"));
+        var controller = new CpuTuningController(source, store, gate => new Backend(source, gate));
+        ControlOperationResult uncertain = await controller.ApplySavedAsync(new(null, new(false, -10)),
+            (_, _) => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Failed, uncertain.Status);
+        Assert.True(uncertain.CpuTuning!.RestorePending);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer), uncertain.CpuTuning.FirmwareRecovery);
+        Assert.Null(uncertain.CpuTuning.LiveRecovery);
+        CpuTuningStatus observed = await controller.ObserveAsync(false, CancellationToken.None);
+        Assert.Equal(uncertain.CpuTuning.FirmwareRecovery, observed.FirmwareRecovery);
+        await controller.RestoreSavedAsync((_, _) => true, CancellationToken.None);
+        await controller.ApplySavedAsync(new(75, null), (_, _) => true, CancellationToken.None);
+        Assert.Equal(1, source.Submissions);
     }
 
     [Fact]
@@ -86,6 +109,7 @@ public sealed class CpuTuningControllerOwnershipTests : IDisposable
         internal byte[] Bytes = CpuSavedTuningTransactionTests.Baseline();
         internal int Submissions;
         internal bool MirrorMismatch;
+        internal bool UnknownSubmission;
         public DeviceIdentity? ReadIdentity() => Identity;
         public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity)
         {
@@ -109,7 +133,7 @@ public sealed class CpuTuningControllerOwnershipTests : IDisposable
             if (!gate(identity, command)) { return Task.FromResult(CpuSavedTuningSubmission.NotSubmitted); }
             source.Submissions++;
             source.Bytes = CpuSavedTuningPlan.Simulate(source.Bytes, command);
-            return Task.FromResult(CpuSavedTuningSubmission.Acknowledged);
+            return Task.FromResult(source.UnknownSubmission ? CpuSavedTuningSubmission.Unknown : CpuSavedTuningSubmission.Acknowledged);
         }
     }
 

@@ -58,7 +58,10 @@ internal sealed record CpuSavedTuningTransactionResult(
     SavedCpuFirmwareReadResult? Observation,
     CpuTuningPendingBoot PendingBoot,
     bool RestorePending,
-    CpuSavedTuningBlockReason Reason = CpuSavedTuningBlockReason.None);
+    CpuSavedTuningBlockReason Reason = CpuSavedTuningBlockReason.None)
+{
+    internal CpuTuningRecoveryStatus Recovery { get; init; } = new(CpuTuningRecoveryState.Unknown, CpuTuningFeatures.None);
+}
 
 internal static class CpuSavedTuningPlan
 {
@@ -152,7 +155,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            CpuTuningOwnershipJournalLoadResult loaded = await store.LoadAsync(token).ConfigureAwait(false);
+            CpuTuningOwnershipJournalLoadResult loaded = await LoadJournalAsync(token).ConfigureAwait(false);
             if (!loaded.Invalid && loaded.Journal is { State: CpuTuningOwnershipState.OwnedVerified } owned
                 && owned.Identity == identity && loaded.Sha256 is not null
                 && settings is { IsWellFormed: true, IsConfigured: true })
@@ -201,7 +204,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            CpuTuningOwnershipJournalLoadResult loaded = await store.LoadAsync(token).ConfigureAwait(false);
+            CpuTuningOwnershipJournalLoadResult loaded = await LoadJournalAsync(token).ConfigureAwait(false);
             if (!loaded.Invalid && loaded.Journal is { State: CpuTuningOwnershipState.Prepared } prepared
                 && prepared.Identity == identity && loaded.Sha256 is not null)
             {
@@ -221,6 +224,16 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
             {
                 return await ObserveCoreAsync(identity, loaded, token).ConfigureAwait(false);
             }
+            // Admit the entire exact reverse plan before the first submission.
+            // A curve command must not partially restore a plan whose later
+            // power-limit reverse route has lost admission.
+            foreach (CpuSavedTuningStep step in journal.Steps.Take(journal.CompletedSteps).Reverse())
+            {
+                if (!await backend.CheckWriteAdmissionAsync(identity, step.RestoreCommand, token).ConfigureAwait(false))
+                {
+                    return Blocked(null, true, CpuSavedTuningBlockReason.AdmissionDenied);
+                }
+            }
             return await ExecuteAsync(journal, loaded.Sha256, restoring: true, token).ConfigureAwait(false);
         }
         finally { gate.Release(); }
@@ -231,7 +244,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            return await ObserveCoreAsync(identity, await store.LoadAsync(token).ConfigureAwait(false), token).ConfigureAwait(false);
+            return await ObserveCoreAsync(identity, await LoadJournalAsync(token).ConfigureAwait(false), token).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
@@ -242,33 +255,67 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            return await ObserveCoreAsync(identity, await store.LoadAsync(token).ConfigureAwait(false), token, freshObservation).ConfigureAwait(false);
+            return await ObserveCoreAsync(identity, await LoadJournalAsync(token).ConfigureAwait(false), token, freshObservation).ConfigureAwait(false);
         }
         finally { gate.Release(); }
+    }
+
+    private async Task<CpuTuningOwnershipJournalLoadResult> LoadJournalAsync(CancellationToken token)
+    {
+        CpuTuningOwnershipJournalLoadResult loaded = await store.LoadAsync(token).ConfigureAwait(false);
+        return loaded.Journal is { IsWellFormed: false } || loaded.Journal is not null && loaded.Sha256 is null
+            ? new(null, true, null) : loaded;
     }
 
     private async Task<CpuSavedTuningTransactionResult> ObserveCoreAsync(
         DeviceIdentity identity, CpuTuningOwnershipJournalLoadResult loaded, CancellationToken token,
         SavedCpuFirmwareReadResult? freshObservation = null)
     {
-        if (loaded.Invalid) { return Blocked(null, true, CpuSavedTuningBlockReason.InvalidJournal); }
+        if (loaded.Invalid)
+        {
+            return Blocked(null, true, CpuSavedTuningBlockReason.InvalidJournal) with
+            { Recovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None) };
+        }
         CpuTuningOwnershipJournal? journal = loaded.Journal;
         bool pending = journal is { State: not CpuTuningOwnershipState.Restored };
         if (!CpuSavedTuningPlan.IsExactIdentity(identity) || journal is not null && journal.Identity != identity)
         {
-            return Blocked(null, pending, CpuSavedTuningBlockReason.IdentityMismatch);
+            return Blocked(null, pending, CpuSavedTuningBlockReason.IdentityMismatch) with
+            { Recovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None) };
         }
         SavedCpuFirmwareReadResult observation = freshObservation ?? await backend.ReadAsync(identity, token).ConfigureAwait(false);
         bool owned = journal is { State: CpuTuningOwnershipState.OwnedVerified }
             && Matches(observation, journal.ExpectedCurrent);
+        CpuTuningFeatures features = CpuTuningFeatures.None;
+        if (journal is not null)
+        {
+            foreach (CpuSavedTuningStep step in journal.Steps.Take(journal.CompletedSteps))
+            { features |= Feature(step.RestoreCommand); }
+            if (journal.State == CpuTuningOwnershipState.PossibleSubmission)
+            {
+                CpuSavedTuningCommand possible = journal.PendingUpdateStep?.Command
+                    ?? (journal.Restoring ? journal.Steps[journal.CompletedSteps - 1].RestoreCommand
+                        : journal.Steps[journal.CompletedSteps].Command);
+                features |= Feature(possible);
+            }
+        }
+        CpuTuningRecoveryState recovery = journal is null or { State: CpuTuningOwnershipState.Restored }
+            ? CpuTuningRecoveryState.None
+            : owned || journal.State == CpuTuningOwnershipState.Prepared && Matches(observation, journal.BaselineCurrent)
+                ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked;
         // Read-only reconciliation can identify drift, but cannot prove that
         // a timed-out provider has finished or turn ambiguity into authority.
         return new(journal?.State == CpuTuningOwnershipState.PossibleSubmission
                 ? CpuSavedTuningOutcome.Uncertain : CpuSavedTuningOutcome.Blocked,
             observation, owned ? CpuTuningPendingBoot.Requested : CpuTuningPendingBoot.Unknown, pending,
             journal?.State == CpuTuningOwnershipState.PossibleSubmission
-                ? CpuSavedTuningBlockReason.PendingSubmission : CpuSavedTuningBlockReason.StateChanged);
+                ? CpuSavedTuningBlockReason.PendingSubmission : CpuSavedTuningBlockReason.StateChanged)
+        { Recovery = new(recovery, features) };
     }
+
+    private static CpuTuningFeatures Feature(CpuSavedTuningCommand command) =>
+        command.Kind == CpuSavedTuningCommandKind.CurveOptimizer
+            ? CpuTuningFeatures.CurveOptimizer : CpuTuningFeatures.PowerLimit;
 
     private async Task<CpuSavedTuningTransactionResult> ExecuteAsync(
         CpuTuningOwnershipJournal journal, string hash, bool restoring, CancellationToken token)

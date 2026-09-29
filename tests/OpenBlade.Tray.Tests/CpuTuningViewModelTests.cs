@@ -14,7 +14,12 @@ public sealed class CpuTuningViewModelTests
     private static CpuTuningStatus Status(DeviceFeatureAccess access, bool restore = false) => new(
         new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -10, [])), null,
         new(access, CpuTuningBackendAvailability.Available),
-        new(access, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, restore);
+        new(access, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, restore)
+    {
+        FirmwareRecovery = restore
+            ? new(CpuTuningRecoveryState.RestoreReady,
+                CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer) : null,
+    };
 
     [Fact]
     public void ObservedCapabilitiesRemainVisibleButOptInDoesNotAdmitWrites()
@@ -65,7 +70,7 @@ public sealed class CpuTuningViewModelTests
     }
 
     [Fact]
-    public void RestoreRequiresAdmissionForEveryAdvertisedFeature()
+    public void RestoreRequiresAdmissionForEveryOwnedFeature()
     {
         var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
         vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true),
@@ -82,6 +87,78 @@ public sealed class CpuTuningViewModelTests
         // Restore admission cannot be widened by leaving an editor field unmanaged.
         vm.ManageCurve = false;
         Assert.False(vm.CanRestore);
+    }
+
+    [Fact]
+    public void CurveOnlyRecoveryDoesNotRequireUnownedPowerAdmission()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        {
+            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer),
+        }, Capabilities(DeviceFeatureAccess.ReadWrite) with
+        {
+            CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ObservedOnly),
+        });
+        Assert.True(vm.CanRestore);
+        vm.ManagePower = true;
+        Assert.True(vm.CanRestore);
+    }
+
+    [Fact]
+    public void SavedRecoveryNeverEnablesLiveRestore()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true), Capabilities(DeviceFeatureAccess.ReadWrite));
+        Assert.True(vm.CanRestore);
+        vm.LiveNow = true;
+        Assert.False(vm.CanRestore);
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        {
+            LiveRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer),
+        }, Capabilities(DeviceFeatureAccess.ReadWrite));
+        Assert.True(vm.CanRestore);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(CpuTuningRecoveryState.Unknown)]
+    [InlineData(CpuTuningRecoveryState.None)]
+    [InlineData(CpuTuningRecoveryState.Blocked)]
+    public void GlobalPendingWithoutTargetRecoveryAuthorityCannotRestore(CpuTuningRecoveryState? state)
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        {
+            FirmwareRecovery = state.HasValue ? new(state.Value, CpuTuningFeatures.None) : null,
+        }, Capabilities(DeviceFeatureAccess.ReadWrite));
+        Assert.False(vm.CanRestore);
+    }
+
+    [Fact]
+    public void BlockedRecoveryCannotBeBypassedWithEditorOrTargetChanges()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { ManageCurve = true };
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        {
+            FirmwareRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer),
+        }, Capabilities(DeviceFeatureAccess.ReadWrite));
+        Assert.False(vm.CanApply);
+        Assert.False(vm.CanRestore);
+        vm.LiveNow = true;
+        Assert.False(vm.CanApply);
+        Assert.False(vm.CanRestore);
+    }
+
+    [Fact]
+    public void PreparedCleanupWithNoHardwareCommandsRequiresReadyRecoveryAndSafety()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        {
+            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.None),
+        }, Capabilities(DeviceFeatureAccess.ObservedOnly));
+        Assert.True(vm.CanRestore);
     }
 
     [Fact]

@@ -9,6 +9,58 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class CpuTuningIpcTests
 {
     [Fact]
+    public async Task OptionalTargetRecoveryRoundTripsWithoutPrivateJournalData()
+    {
+        CpuTuningStatus status = ValidStatus() with
+        {
+            RestorePending = true,
+            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer),
+            LiveRecovery = new(CpuTuningRecoveryState.None, CpuTuningFeatures.None),
+        };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(stream,
+            ResultResponse(new(ControlOperationStatus.Stored, "Saved") { CpuTuning = status }), CancellationToken.None);
+        string json = Encoding.UTF8.GetString(stream.ToArray(), 4, checked((int)stream.Length - 4));
+        Assert.DoesNotContain("baselineCurrent", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("baselineLast", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("steps", json, StringComparison.OrdinalIgnoreCase);
+        stream.Position = 0;
+        var actual = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Equal(status.FirmwareRecovery, actual.Result!.CpuTuning!.FirmwareRecovery);
+        Assert.Equal(status.LiveRecovery, actual.Result.CpuTuning.LiveRecovery);
+
+        JsonObject root = JsonNode.Parse(json)!.AsObject();
+        var cpu = root["result"]!["cpuTuning"]!.AsObject();
+        cpu.Remove("firmwareRecovery");
+        cpu.Remove("liveRecovery");
+        using MemoryStream legacy = Frame(root.ToJsonString());
+        var old = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(legacy, CancellationToken.None));
+        Assert.True(old.Result!.CpuTuning!.RestorePending);
+        Assert.Null(old.Result.CpuTuning.FirmwareRecovery);
+        Assert.Null(old.Result.CpuTuning.LiveRecovery);
+    }
+
+    [Theory]
+    [InlineData(99, 0, true)]
+    [InlineData(2, 4, true)]
+    [InlineData(2, -1, true)]
+    [InlineData(1, 1, false)]
+    [InlineData(0, 2, true)]
+    [InlineData(2, 2, false)]
+    public async Task MalformedOrContradictoryRecoveryCannotCrossIpc(int state, int features, bool pending)
+    {
+        using MemoryStream valid = new();
+        await IpcMessageCodec.WriteServerFrameAsync(valid,
+            ResultResponse(new(ControlOperationStatus.Stored, "Saved") { CpuTuning = ValidStatus() }), CancellationToken.None);
+        JsonObject root = JsonNode.Parse(Encoding.UTF8.GetString(valid.ToArray(), 4, checked((int)valid.Length - 4)))!.AsObject();
+        var cpu = root["result"]!["cpuTuning"]!.AsObject();
+        cpu["restorePending"] = pending;
+        cpu["firmwareRecovery"] = new JsonObject { ["state"] = state, ["features"] = features };
+        using MemoryStream invalid = Frame(root.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadServerFrameAsync(invalid, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task RequestsRoundTripExplicitTargetIntentAndOptionalDependencyChoice()
     {
         ServiceRequest[] requests =

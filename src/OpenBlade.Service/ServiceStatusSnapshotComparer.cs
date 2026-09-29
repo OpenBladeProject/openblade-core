@@ -123,6 +123,7 @@ internal static class ServiceStatusSnapshotComparer
         || (left is not null && right is not null
             && left.Firmware == right.Firmware && left.Live == right.Live
             && left.PendingBoot == right.PendingBoot && left.RestorePending == right.RestorePending
+            && left.FirmwareRecovery == right.FirmwareRecovery && left.LiveRecovery == right.LiveRecovery
             && SavedCpuEqual(left.SavedConfiguration, right.SavedConfiguration)
             && (ReferenceEquals(left.LiveState, right.LiveState)
                 || (left.LiveState is { } liveLeft && right.LiveState is { } liveRight

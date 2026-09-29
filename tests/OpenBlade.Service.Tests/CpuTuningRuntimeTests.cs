@@ -129,6 +129,25 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task CurveOnlyRecoveryIgnoresUnownedObservedOnlyPowerLimitAndCannotRestoreLive()
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true, powerAdmitted: false);
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        ControlOperationResult applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -12)), () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer), applied.CpuTuning!.FirmwareRecovery);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.RestoreCpuTuningAsync(
+            CpuTuningTarget.LiveNow, () => true, CancellationToken.None)).Status);
+        Assert.Equal(1, context.Source.Submissions);
+        ControlOperationResult restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(2, context.Source.Submissions);
+        Assert.Equal(baseline, context.Source.Bytes);
+    }
+
+    [Fact]
     public async Task SessionLossAfterInitialGateStopsFakeSavedSubmission()
     {
         TestContext context = await CreateContextAsync(admittedSavedBackend: true);
@@ -142,7 +161,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
-        bool admittedSavedBackend = false)
+        bool admittedSavedBackend = false, bool powerAdmitted = true)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
@@ -150,7 +169,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         var device = new BatteryTestDevice();
         device.Capabilities = device.Capabilities with
         {
-            CpuPowerLimit = supported ? new(new(45, 95, 1), admittedSavedBackend
+            CpuPowerLimit = supported ? new(new(45, 95, 1), admittedSavedBackend && powerAdmitted
                 ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly) : null,
             CpuVoltageOptimizer = admittedSavedBackend ? new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) : null,
         };

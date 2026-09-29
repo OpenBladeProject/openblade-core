@@ -27,7 +27,12 @@ internal sealed class CpuTuningController(ICpuTuningObservationSource source,
         if (journalStore is null || observed.Identity is null || observed.Saved is null) { return observed.Status; }
         CpuSavedTuningTransactionResult ownership = await CreateTransaction(static (_, _) => false)
             .ObserveOwnershipAsync(observed.Identity, observed.Saved, token).ConfigureAwait(false);
-        return observed.Status with { PendingBoot = ownership.PendingBoot, RestorePending = ownership.RestorePending };
+        return observed.Status with
+        {
+            PendingBoot = ownership.PendingBoot,
+            RestorePending = ownership.RestorePending,
+            FirmwareRecovery = ownership.Recovery,
+        };
     }
 
     private (CpuTuningStatus Status, DeviceIdentity? Identity, SavedCpuFirmwareReadResult? Saved)
@@ -90,13 +95,19 @@ internal sealed class CpuTuningController(ICpuTuningObservationSource source,
         CpuSavedTuningTransactionResult result = restoring
             ? await transaction.RestoreAsync(identity!, token).ConfigureAwait(false)
             : await transaction.ApplyAsync(identity!, settings!, token).ConfigureAwait(false);
+        // Reload the durable journal, using only this operation's readback.
+        // Missing readback must not fall back to an older UI observation.
+        CpuSavedTuningTransactionResult ownership = await transaction.ObserveOwnershipAsync(identity!,
+            result.Observation ?? new(SavedCpuFirmwareReadStatus.Unavailable, null, null, 0, 0),
+            token).ConfigureAwait(false);
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
             CpuTuningBackendAvailability.Unavailable);
         CpuSavedConfiguration? saved = result.Observation?.Current is { } current
             ? new(current.PowerLimitMilliwatts, current.PolicyMode, current.PowerLimitMode, DecodeCurve(current)) : null;
         var status = new CpuTuningStatus(saved, null,
             DescribeFirmwareBackend(result.Observation),
-            unavailable, result.PendingBoot, result.RestorePending);
+            unavailable, ownership.PendingBoot, ownership.RestorePending)
+        { FirmwareRecovery = ownership.Recovery };
         ControlOperationStatus operation = result.Outcome switch
         {
             CpuSavedTuningOutcome.Verified or CpuSavedTuningOutcome.Unchanged => ControlOperationStatus.Stored,
