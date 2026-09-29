@@ -94,3 +94,6 @@ PR #33. No concurrent PCAP or native report trace was retained.
 This validates immediate restoration of the saved raw value on this exact device.
 Meaningful fan state, ownership, fan/lighting handback and production mutation
 remain unvalidated. Any further hardware action needs its own reviewed contract.
+
+The [fan recovery decision](cooling-pad-fan-recovery-decision.md) records the
+remaining restoration gap and the next manual prerequisite.
