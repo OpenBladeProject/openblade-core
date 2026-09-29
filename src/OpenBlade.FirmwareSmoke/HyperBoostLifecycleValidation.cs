@@ -113,8 +113,8 @@ internal static class HyperBoostLifecycleModelPolicy
             {
                 Performance: PerformancePreset.Performance,
                 CustomPerformance: null,
-                GpuClockTuning: null,
-            } && intent.FanControl.Mode == FanMode.Automatic,
+            } && intent.GpuClockTuning?.Enabled != true
+                && intent.FanControl.Mode == FanMode.Automatic,
             _ => false,
         };
 }
@@ -807,6 +807,16 @@ internal sealed class HyperBoostLifecycleValidationRunner
         requiresCoolingPad = false;
         useValidationRequest = status.Capabilities.HyperBoostWithoutCoolingPadAccess
                 != DeviceFeatureAccess.ReadWrite;
+        // The service reads GPU offsets only while it owns tuning; any it does report must be zero.
+        // Independent NVML/NVAPI zero confirmation stays with the attended wrapper before arming.
+        if (current.TargetModel == RazerBladeModelCatalog.Rz090528ModelNumber
+            && status.ConfirmedState!.GpuClockOffsets is { } offsets
+            && (offsets.Core.CurrentMegahertz != 0 || offsets.Memory.CurrentMegahertz != 0))
+        {
+            failure = "Exact-model lifecycle validation requires zero GPU clock offsets.";
+            return false;
+        }
+
         return true;
     }
 

@@ -1219,6 +1219,51 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
         Assert.Equal(0, client.ValidationEnableCalls);
     }
 
+    [Theory]
+    [InlineData(false, 0, 0, true)]
+    [InlineData(true, 0, 0, false)]
+    [InlineData(false, 5, 0, false)]
+    [InlineData(false, 0, -5, false)]
+    public async Task ArmAsync_Rz090528RequiresDisabledTuningAndZeroReportedOffsets(
+        bool tuningEnabled, int core, int memory, bool admitted)
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(PerformancePreset.Performance, baseModes: Rz090528BaseModes());
+        client.Status = client.Status with
+        {
+            DesiredState = client.Status.DesiredState with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(tuningEnabled, GpuClockOffsetSettings.Default),
+            },
+            ConfirmedState = client.Status.ConfirmedState! with
+            {
+                GpuClockOffsets = core == 0 && memory == 0 && !tuningEnabled ? null : new GpuClockOffsetCapabilities(
+                    "NVIDIA GeForce RTX 5090 Laptop GPU",
+                    new GpuClockOffsetRange(-1000, 1000, core),
+                    new GpuClockOffsetRange(-1000, 1000, memory)),
+            },
+        };
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status, "RZ09-0528");
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_106, 123_506),
+            () => OwnedJournal(PerformancePreset.Performance, journalBase: PerformancePreset.Performance) with
+            {
+                RestoreIntent = new HyperBoostLifecycleRestoreIntent(PerformancePreset.Performance, null,
+                    new GpuClockTuningSettings(tuningEnabled, GpuClockOffsetSettings.Default), FanControlSettings.Default),
+            });
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            Path.Combine(directory, $"gpu-{tuningEnabled}-{core}-{memory}.json"),
+            CancellationToken.None);
+
+        Assert.Equal(admitted, result.Success);
+        Assert.Equal(admitted ? 1 : 0, client.EnableCalls);
+    }
+
     [Fact]
     public async Task ArmAsync_Rz090528RefusesBalancedOnlyWritableCapabilities()
     {
@@ -1551,7 +1596,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             };
         }
 
-        internal ServiceStatusSnapshot Status { get; private set; }
+        internal ServiceStatusSnapshot Status { get; set; }
 
         internal int EnableCalls { get; private set; }
 
