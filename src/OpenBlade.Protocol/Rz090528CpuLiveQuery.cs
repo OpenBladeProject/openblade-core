@@ -3,7 +3,42 @@ using System.Numerics;
 
 namespace OpenBlade.Protocol;
 
-internal sealed record CpuQueryIoctlReply(bool Success, byte[] Bytes);
+internal sealed record CpuQueryIoctlReply(bool Success, byte[] Bytes,
+    CpuQueryFailureCode? Failure = null, int? NativeErrorCode = null);
+
+// Bounded attended-probe diagnostics only. Never include exception messages,
+// paths, hardware identifiers or raw request/reply payloads in this record.
+internal enum CpuQueryStage
+{
+    Approval, InitialUsbIdentity, MutexCreate, MutexWait, BackendFilePins,
+    HostIdentity, ProcessorIdentity, FreshUsbIdentity, ControllerPresence,
+    InstalledBackend, DeviceOpen, PciCount, PciRecords, PciIdentity,
+    CoreMask, FuseMask, PmVersion, CoreOffset, Cleanup,
+}
+internal enum CpuQueryFailureCode
+{
+    AdmissionDenied, Timeout, Win32Error, AccessDenied, IoError, InvalidOperation,
+    SecurityError, CryptographicError, JsonError, NativeIoctlFailed,
+    WireRequestRejected, WireReplyRejected, ReplyLengthMismatch, InvalidData,
+    UnsupportedVersion,
+}
+internal enum CpuQueryOperation { PciEnumeration, PciRead, SmnWrite }
+internal sealed record CpuQueryDiagnostic(CpuQueryStage Stage, CpuQueryFailureCode Failure,
+    int? NativeErrorCode = null, CpuQueryOperation? Operation = null)
+{
+    internal static CpuQueryDiagnostic FromException(CpuQueryStage stage, Exception exception,
+        CpuQueryOperation? operation = null) => new(stage, exception switch
+        {
+            System.ComponentModel.Win32Exception => CpuQueryFailureCode.Win32Error,
+            UnauthorizedAccessException => CpuQueryFailureCode.AccessDenied,
+            IOException => CpuQueryFailureCode.IoError,
+            System.Security.SecurityException => CpuQueryFailureCode.SecurityError,
+            System.Security.Cryptography.CryptographicException => CpuQueryFailureCode.CryptographicError,
+            System.Text.Json.JsonException => CpuQueryFailureCode.JsonError,
+            _ => CpuQueryFailureCode.InvalidOperation,
+        }, exception is System.ComponentModel.Win32Exception { NativeErrorCode: > 0 } native
+            ? native.NativeErrorCode : null, operation);
+}
 
 // A separately attended Windows adapter implements this boundary. Production
 // native invocation remains blocked; the engine never provisions a driver.
@@ -26,7 +61,7 @@ internal sealed record CpuLiveCoreOffset(int PhysicalCoreId, short Offset);
 internal sealed record Rz090528CpuLiveObservation(uint EnabledCoreMask, uint PmVersion,
     int PmTableLength, IReadOnlyList<CpuLiveCoreOffset> CoreOffsets);
 internal sealed record Rz090528CpuLiveQueryResult(CpuLiveQueryStatus Status,
-    Rz090528CpuLiveObservation? Observation);
+    Rz090528CpuLiveObservation? Observation, CpuQueryDiagnostic? Diagnostic = null);
 
 /// <summary>
 /// Query-only Strix wire engine. Production admission, CPU family/build/signature
@@ -47,25 +82,29 @@ internal sealed class Rz090528CpuLiveQuery(
     private const uint MessageAddress = 0x03B10A20;
     private const int MaximumPciRecords = 256 * 32 * 8;
     private const int MaximumPolls = 1000;
+    private CpuQueryStage stage;
 
     internal Rz090528CpuLiveQueryResult Query(DeviceIdentity identity,
         CancellationToken cancellationToken = default)
     {
         if (identity.Model != "RZ09-0528" || identity.VendorId != 0x1532 || identity.ProductId != 0x02C6)
         {
-            return new(CpuLiveQueryStatus.UnsupportedIdentity, null);
+            return new(CpuLiveQueryStatus.UnsupportedIdentity, null,
+                new(CpuQueryStage.InitialUsbIdentity, CpuQueryFailureCode.AdmissionDenied));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         using var lease = synchronization.Acquire(TimeSpan.FromSeconds(20), cancellationToken);
         if (lease is null)
         {
-            return new(CpuLiveQueryStatus.Busy, null);
+            return new(CpuLiveQueryStatus.Busy, null,
+                new(CpuQueryStage.MutexWait, CpuQueryFailureCode.Timeout));
         }
 
         try
         {
             var bus = DiscoverBus(cancellationToken);
+            stage = CpuQueryStage.PciIdentity;
             if (ReadPciWord(bus, 0, 0, 0, cancellationToken) != 0x16F81022)
             {
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
@@ -77,13 +116,16 @@ internal sealed class Rz090528CpuLiveQuery(
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
 
+            stage = CpuQueryStage.CoreMask;
             var mask = ReadPciWord(0, 0x18, 1, 0x140, cancellationToken);
+            stage = CpuQueryStage.FuseMask;
             var fusedMask = ~(ReadSmn(bus, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
             if ((mask & 0xFFFF0000) != 0 || BitOperations.PopCount(mask) != 12 || mask != fusedMask)
             {
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
 
+            stage = CpuQueryStage.PmVersion;
             var version = QueryMailbox(bus, QueryCommand.PmVersion, 0, cancellationToken);
             var length = version switch
             {
@@ -94,6 +136,7 @@ internal sealed class Rz090528CpuLiveQuery(
                 0x005D000C => 0xD68,
                 _ => throw new QueryFailure(CpuLiveQueryStatus.UnsupportedVersion),
             };
+            stage = CpuQueryStage.CoreOffset;
             var offsets = new List<CpuLiveCoreOffset>(12);
             for (var physicalId = 0; physicalId < 16; physicalId++)
             {
@@ -108,11 +151,21 @@ internal sealed class Rz090528CpuLiveQuery(
             }
             return new(CpuLiveQueryStatus.Observed, new(mask, version, length, offsets.AsReadOnly()));
         }
-        catch (QueryFailure failure) { return new(failure.Status, null); }
+        catch (QueryFailure failure)
+        {
+            return new(failure.Status, null, new(stage, failure.Failure, failure.NativeErrorCode, failure.Operation));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException
+            or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException)
+        {
+            return new(CpuLiveQueryStatus.Unavailable, null, CpuQueryDiagnostic.FromException(stage, exception));
+        }
     }
 
     private uint DiscoverBus(CancellationToken cancellationToken)
     {
+        stage = CpuQueryStage.PciCount;
         var first = Exchange(EnumeratePci, new byte[28], 28, cancellationToken);
         var count = Word(first, 24);
         if (count == 0 || count > MaximumPciRecords || !HeaderIsZero(first))
@@ -122,6 +175,7 @@ internal sealed class Rz090528CpuLiveQuery(
 
         var request = new byte[checked(28 + (int)count * 52)];
         Put(request, 24, count);
+        stage = CpuQueryStage.PciRecords;
         var records = Exchange(EnumeratePci, request, request.Length, cancellationToken);
         if (Word(records, 24) != count || !HeaderIsZero(records))
         {
@@ -234,15 +288,26 @@ internal sealed class Rz090528CpuLiveQuery(
     private byte[] Exchange(uint code, byte[] input, int outputLength, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var reply = ioctl.Invoke(code, input, outputLength);
+        CpuQueryIoctlReply reply;
+        try { reply = ioctl.Invoke(code, input, outputLength); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException
+            or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException)
+        {
+            var diagnostic = CpuQueryDiagnostic.FromException(stage, exception, Operation(code));
+            throw new QueryFailure(CpuLiveQueryStatus.Unavailable,
+                diagnostic.Failure, diagnostic.NativeErrorCode, diagnostic.Operation);
+        }
         if (!reply.Success)
         {
-            throw new QueryFailure(CpuLiveQueryStatus.Unavailable);
+            throw new QueryFailure(CpuLiveQueryStatus.Unavailable,
+                reply.Failure ?? CpuQueryFailureCode.NativeIoctlFailed, reply.NativeErrorCode, Operation(code));
         }
 
         if (reply.Bytes.Length != outputLength)
         {
-            throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
+            throw new QueryFailure(CpuLiveQueryStatus.InvalidData,
+                CpuQueryFailureCode.ReplyLengthMismatch, operation: Operation(code));
         }
 
         return reply.Bytes;
@@ -260,5 +325,25 @@ internal sealed class Rz090528CpuLiveQuery(
     }
     private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
-    private sealed class QueryFailure(CpuLiveQueryStatus status) : Exception { internal CpuLiveQueryStatus Status { get; } = status; }
+    private static CpuQueryOperation Operation(uint code) => code switch
+    {
+        EnumeratePci => CpuQueryOperation.PciEnumeration,
+        ReadPci => CpuQueryOperation.PciRead,
+        WriteSmnRegister => CpuQueryOperation.SmnWrite,
+        _ => throw new InvalidOperationException("Unknown CPU query operation."),
+    };
+
+    private sealed class QueryFailure(CpuLiveQueryStatus status, CpuQueryFailureCode? failure = null,
+        int? nativeErrorCode = null, CpuQueryOperation? operation = null) : Exception
+    {
+        internal CpuLiveQueryStatus Status { get; } = status;
+        internal CpuQueryFailureCode Failure { get; } = failure ?? status switch
+        {
+            CpuLiveQueryStatus.Busy => CpuQueryFailureCode.Timeout,
+            CpuLiveQueryStatus.UnsupportedVersion => CpuQueryFailureCode.UnsupportedVersion,
+            _ => CpuQueryFailureCode.InvalidData,
+        };
+        internal int? NativeErrorCode { get; } = nativeErrorCode;
+        internal CpuQueryOperation? Operation { get; } = operation;
+    }
 }

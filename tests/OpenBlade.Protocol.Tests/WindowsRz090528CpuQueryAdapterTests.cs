@@ -118,6 +118,67 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         Assert.Contains("unpin", platform.Events);
     }
 
+    [Theory]
+    [InlineData("host", "HostIdentity")]
+    [InlineData("sku", "HostIdentity")]
+    [InlineData("family", "ProcessorIdentity")]
+    [InlineData("controllers", "ControllerPresence")]
+    [InlineData("hash", "InstalledBackend")]
+    public void AdmissionDiagnosticsIdentifyTheFailedGate(string failure, string stage)
+    {
+        var platform = new FakePlatform { Failure = failure };
+        var result = Run(platform, Approval());
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(stage, result.Diagnostic!.Stage.ToString());
+        Assert.Equal(CpuQueryFailureCode.AdmissionDenied, result.Diagnostic.Failure);
+        Assert.Null(result.Diagnostic.NativeErrorCode);
+        Assert.Null(result.Diagnostic.Operation);
+        Assert.Empty(platform.Device.Codes);
+    }
+
+    [Theory]
+    [InlineData("mutex-error", "MutexCreate", "AccessDenied", null)]
+    [InlineData("wait-error", "MutexWait", "SecurityError", null)]
+    [InlineData("pin-error", "BackendFilePins", "Win32Error", 32)]
+    [InlineData("host-error", "HostIdentity", "IoError", null)]
+    [InlineData("open-error", "DeviceOpen", "Win32Error", 5)]
+    [InlineData("ioctl-error", "PciCount", "NativeIoctlFailed", 50)]
+    [InlineData("ioctl-exception", "PciCount", "Win32Error", 5)]
+    [InlineData("short-reply", "PciCount", "ReplyLengthMismatch", null)]
+    [InlineData("invalid-reply", "PciCount", "WireReplyRejected", null)]
+    public void FailureDiagnosticsDistinguishPreflightFromTransportWithoutPrivateText(
+        string failure, string stage, string code, int? nativeErrorCode)
+    {
+        var platform = new FakePlatform { Failure = failure };
+        var result = Run(platform, Approval());
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Null(result.Observation);
+        Assert.Equal(stage, result.Diagnostic!.Stage.ToString());
+        Assert.Equal(code, result.Diagnostic.Failure.ToString());
+        Assert.Equal(nativeErrorCode, result.Diagnostic.NativeErrorCode);
+        Assert.DoesNotContain("private", result.Diagnostic.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(stage == "PciCount" ? CpuQueryOperation.PciEnumeration : (CpuQueryOperation?)null,
+            result.Diagnostic.Operation);
+        Assert.Equal(stage is "MutexCreate" or "MutexWait" ? 0 : 1, platform.Mutex.Releases);
+        if (stage != "PciCount") { Assert.Empty(platform.Device.Codes); }
+        else { Assert.Single(platform.Device.Codes); }
+    }
+
+    [Theory]
+    [InlineData("close-error")]
+    [InlineData("unpin-error")]
+    [InlineData("preflight-cleanup-error")]
+    public void CleanupErrorsHaveSanitizedDiagnosticsAndStillReleaseMutex(string failure)
+    {
+        var platform = new FakePlatform { Failure = failure };
+        var result = Run(platform, Approval());
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(new(CpuQueryStage.Cleanup, CpuQueryFailureCode.IoError), result.Diagnostic);
+        Assert.Null(result.Observation);
+        Assert.Equal(1, platform.Mutex.Releases);
+        Assert.Equal("mutex-dispose", platform.Events.Last());
+    }
+
     [Fact]
     public void CancellationDuringMailboxPollingReleasesOnQueryThread()
     {
@@ -249,16 +310,24 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         internal bool ChangeAfterOpen, Pinned;
         internal FakePlatform() { Mutex = new(this); Device = new(this); }
         internal void Event(string name) { Events.Add(name); Threads.Add(Environment.CurrentManagedThreadId); }
-        public HostIdentityReadResult ReadHost() => new(new("Razer",
-            Failure == "host" ? "other" : "Blade 16 - RZ09-0528",
-            Failure == "sku" ? "other" : "RZ09-05289EN4", "2.02"), null);
+        public HostIdentityReadResult ReadHost()
+        {
+            if (Failure == "host-error") { throw new IOException("private host details"); }
+            return new(new("Razer", Failure is "host" or "preflight-cleanup-error" ? "other" : "Blade 16 - RZ09-0528",
+                Failure == "sku" ? "other" : "RZ09-05289EN4", "2.02"), null);
+        }
         public CpuQueryProcessorIdentity ReadProcessor() => new(Failure == "vendor" ? "other" : "AuthenticAMD",
             Failure == "family" ? 0x19 : 0x1A, Failure == "model" ? 0x20 : 0x24, Failure == "stepping" ? 1 : 0);
         public bool ControllersAbsent() => Failure != "controllers";
         public IDisposable PinBackendFiles()
         {
+            if (Failure == "pin-error") { throw new Win32Exception(32, "private backend path"); }
             Event("pin"); Pinned = true;
-            return new ActionDisposable(() => { Event("unpin"); Pinned = false; });
+            return new ActionDisposable(() =>
+            {
+                Event("unpin"); Pinned = false;
+                if (Failure == "unpin-error") { throw new IOException("private backend path"); }
+            });
         }
         public InstalledCpuBackendSnapshot ReadBackend()
         {
@@ -272,10 +341,15 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         public ICpuQueryDevice OpenExistingDevice()
         {
             Assert.True(Pinned); Assert.True(Mutex.Held); Event("open");
-            if (Failure == "open-error") { throw new Win32Exception(5); }
+            if (Failure == "open-error") { throw new Win32Exception(5, "private device path"); }
             return Device;
         }
-        public ICpuQueryMutex CreateSharedMutex() { Event("mutex-create"); return Mutex; }
+        public ICpuQueryMutex CreateSharedMutex()
+        {
+            Event("mutex-create");
+            if (Failure == "mutex-error") { throw new UnauthorizedAccessException("private mutex details"); }
+            return Mutex;
+        }
     }
 
     private sealed class FakeMutex(FakePlatform platform) : ICpuQueryMutex
@@ -286,9 +360,14 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         public CpuQueryMutexWait Wait(TimeSpan timeout, CancellationToken cancellationToken)
         {
             Assert.Equal(TimeSpan.FromSeconds(20), timeout); cancellationToken.ThrowIfCancellationRequested();
+            if (platform.Failure == "wait-error") { throw new System.Security.SecurityException("private owner details"); }
             platform.Event("wait"); Held = Outcome != CpuQueryMutexWait.Timeout; return Outcome;
         }
-        public void Release() { Assert.True(Held); platform.Event("release"); Held = false; Releases++; }
+        public void Release()
+        {
+            Assert.True(Held); platform.Event("release"); Held = false; Releases++;
+            if (platform.Failure == "preflight-cleanup-error") { throw new IOException("private cleanup details"); }
+        }
         public void Dispose() { Assert.False(Held); platform.Event("mutex-dispose"); }
     }
 
@@ -301,12 +380,14 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
         {
             Assert.True(platform.Pinned); Assert.True(platform.Mutex.Held);
             platform.Event("ioctl"); Codes.Add(code);
-            if (platform.Failure == "ioctl-error") { return new(false, []); }
+            if (platform.Failure == "ioctl-error") { return new(false, [], CpuQueryFailureCode.NativeIoctlFailed, 50); }
+            if (platform.Failure == "ioctl-exception") { throw new Win32Exception(5, "private device path"); }
             if (platform.Failure == "short-reply") { return new(true, new byte[outputLength - 1]); }
             var output = new byte[outputLength];
             if (code == 0x81112F18)
             {
                 Put(output, 24, 1);
+                if (platform.Failure == "invalid-reply") { output[0] = 1; }
                 if (outputLength > 28) { Put(output, 28, 7); Put(output, 40, 0x16F81022); }
             }
             else if (code == 0x81112F24)
@@ -336,7 +417,11 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
             else { throw new InvalidOperationException("Unexpected fake IOCTL"); }
             return new(true, output);
         }
-        public void Dispose() { Assert.True(platform.Mutex.Held); platform.Event("close"); }
+        public void Dispose()
+        {
+            Assert.True(platform.Mutex.Held); platform.Event("close");
+            if (platform.Failure == "close-error") { throw new IOException("private device path"); }
+        }
     }
 
     private sealed class ActionDisposable(Action action) : IDisposable { public void Dispose() => action(); }

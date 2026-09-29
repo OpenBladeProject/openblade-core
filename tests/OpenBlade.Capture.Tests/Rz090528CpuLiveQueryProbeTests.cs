@@ -80,6 +80,43 @@ public sealed class Rz090528CpuLiveQueryProbeTests
     }
 
     [Fact]
+    public void NativeFailureReportsOnlyTypedStageOperationAndErrorCode()
+    {
+        var fake = new FakeQuery
+        {
+            Result = new(CpuLiveQueryStatus.Unavailable, null,
+                new(CpuQueryStage.PciCount, CpuQueryFailureCode.NativeIoctlFailed, 5,
+                    CpuQueryOperation.PciEnumeration))
+        };
+        var output = new StringWriter();
+        Assert.Equal(3, Run(Approved, fake, output));
+        Assert.Contains("NativeQueryStage=PciCount", output.ToString());
+        Assert.Contains("NativeQueryFailure=NativeIoctlFailed", output.ToString());
+        Assert.Contains("NativeQueryOperation=PciEnumeration", output.ToString());
+        Assert.Contains("NativeQueryErrorCode=5", output.ToString());
+        Assert.DoesNotContain("LiveObservedAtUtc=", output.ToString());
+        Assert.DoesNotContain("LiveCurveOptimizerPhysicalCoreOffsets=", output.ToString());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void AbsentOrInvalidNativeErrorIsNotPresentedAsWin32Evidence(int? errorCode)
+    {
+        var fake = new FakeQuery
+        {
+            Result = new(CpuLiveQueryStatus.Unavailable, null,
+                new(CpuQueryStage.DeviceOpen, CpuQueryFailureCode.Win32Error, errorCode))
+        };
+        var output = new StringWriter();
+        Assert.Equal(3, Run(Approved, fake, output));
+        Assert.Contains("NativeQueryStage=DeviceOpen", output.ToString());
+        Assert.DoesNotContain("NativeQueryOperation=", output.ToString());
+        Assert.DoesNotContain("NativeQueryErrorCode=", output.ToString());
+    }
+
+    [Fact]
     public void PreCancelledInvocationDoesNotReadPlatformOrInvokeQuery()
     {
         using var cancellation = new CancellationTokenSource();

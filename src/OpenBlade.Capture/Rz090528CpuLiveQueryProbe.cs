@@ -74,6 +74,19 @@ internal static class Rz090528CpuLiveQueryProbe
                 readFreshUsbIdentity, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             output.WriteLine($"NativeQueryStatus={result.Status}");
+            if (result.Diagnostic is { } diagnostic)
+            {
+                output.WriteLine($"NativeQueryStage={diagnostic.Stage}");
+                output.WriteLine($"NativeQueryFailure={diagnostic.Failure}");
+                if (diagnostic.Operation is { } operation)
+                {
+                    output.WriteLine($"NativeQueryOperation={operation}");
+                }
+                if (diagnostic.NativeErrorCode is > 0)
+                {
+                    output.WriteLine($"NativeQueryErrorCode={diagnostic.NativeErrorCode}");
+                }
+            }
             if (result.Status != CpuLiveQueryStatus.Observed || result.Observation is null)
             {
                 return 3;

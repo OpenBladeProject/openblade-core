@@ -37,6 +37,7 @@ public sealed class Rz090528CpuLiveQueryTests
         Assert.Equal(TimeSpan.FromSeconds(20), sync.AcquisitionTimeout);
         Assert.Equal(1, sync.Acquisitions);
         Assert.Equal(1, sync.Releases);
+        Assert.Null(result.Diagnostic);
     }
 
     [Theory]
@@ -165,6 +166,18 @@ public sealed class Rz090528CpuLiveQueryTests
     }
 
     [Fact]
+    public void DelayExceptionKeepsQueryStageAndReleasesLease()
+    {
+        var sync = new FakeSynchronization { OnDelay = () => throw new IOException("private wait details") };
+        var wire = new ScriptedIoctl(sync) { IdleResponse = 0 };
+        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(new(CpuQueryStage.PmVersion, CpuQueryFailureCode.IoError), result.Diagnostic);
+        Assert.Empty(wire.Messages);
+        Assert.Equal(1, sync.Releases);
+    }
+
+    [Fact]
     public void PollingIsBoundedAndLeaseReleasedOnTimeout()
     {
         var sync = new FakeSynchronization();
@@ -204,6 +217,31 @@ public sealed class Rz090528CpuLiveQueryTests
         Assert.Equal(1, sync.Releases);
     }
 
+    [Theory]
+    [InlineData(1, "PciCount", "PciEnumeration")]
+    [InlineData(2, "PciRecords", "PciEnumeration")]
+    [InlineData(3, "PciIdentity", "PciRead")]
+    [InlineData(5, "CoreMask", "PciRead")]
+    [InlineData(6, "FuseMask", "SmnWrite")]
+    [InlineData(7, "FuseMask", "PciRead")]
+    [InlineData(8, "PmVersion", "SmnWrite")]
+    [InlineData(20, "CoreOffset", "SmnWrite")]
+    public void TransportFailureReportsExactStageWithoutRetryOrPartialObservation(
+        int call, string stage, string operation)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Fault = "ioctl-failure", FailureCall = call };
+        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Null(result.Observation);
+        Assert.Equal(stage, result.Diagnostic!.Stage.ToString());
+        Assert.Equal(operation, result.Diagnostic.Operation.ToString());
+        Assert.Equal(CpuQueryFailureCode.NativeIoctlFailed, result.Diagnostic.Failure);
+        Assert.Equal(50, result.Diagnostic.NativeErrorCode);
+        Assert.Equal(call, wire.Calls.Count);
+        Assert.Equal(1, sync.Releases);
+    }
+
     private static uint U32(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
     private sealed record Call(uint Code, byte[] Input, int OutputLength);
@@ -213,6 +251,7 @@ public sealed class Rz090528CpuLiveQueryTests
         public List<Call> Calls { get; } = [];
         public List<(uint Command, uint Argument)> Messages { get; } = [];
         public string? Fault { get; set; }
+        public int? FailureCall { get; set; }
         public uint Version { get; set; } = 0x005D0008;
         public uint IdleResponse { get; set; } = 1;
         public uint CompletionResponse { get; set; } = 1;
@@ -228,9 +267,9 @@ public sealed class Rz090528CpuLiveQueryTests
         {
             Assert.True(synchronization.Held);
             Calls.Add(new(code, input.ToArray(), outputLength));
-            if (Fault == "ioctl-failure")
+            if (Fault == "ioctl-failure" && (FailureCall is null || FailureCall == Calls.Count))
             {
-                return new(false, []);
+                return new(false, [], CpuQueryFailureCode.NativeIoctlFailed, 50);
             }
 
             if (code == 0x81112F18)

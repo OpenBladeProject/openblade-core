@@ -53,6 +53,13 @@ before the native adapter runs. It contains no driver lifecycle commands. On
 service registration absent, so a separate attended provisioning proposal is
 required before a live query.
 
+The first approved attended live query on 2026-09-29 returned `Unavailable`
+without a completed observation. Its private helper created and started the
+registration from the pinned installed driver, then stopped and removed only
+that registration after the query process exited. Fresh checks confirmed that
+the original registration absence was restored. This result does not admit
+production live access. A later test requires a new attended proposal.
+
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
 Boot activation, validation of the service recovery workflow, and attended live
