@@ -119,6 +119,34 @@ public sealed class Rz090528PadlessHyperBoostValidationTests
     }
 
     [Theory]
+    [InlineData(PerformanceFanValidationTarget.HyperBoost, 0, "00")]
+    [InlineData(PerformanceFanValidationTarget.HyperBoostFromSilent, 5, "05")]
+    public async Task ImmediateRoundTripRestoresTheExactStartingMode(
+        PerformanceFanValidationTarget target, byte mode, string restored)
+    {
+        var session = new Session();
+        session.modes[0] = session.modes[1] = mode;
+        var runner = Create(session, new Pad());
+
+        var result = await runner.RunAsync(target, CancellationToken.None);
+
+        Assert.True(result.Success, result.Failure.ToString());
+        Assert.Equal(new[] { "01010700", "01020700", $"0101{restored}00", $"0102{restored}00" }, session.Writes);
+    }
+
+    [Fact]
+    public async Task ImmediateRoundTripRefusesAStartingModeThatDoesNotMatchTheTarget()
+    {
+        var session = new Session();
+        var runner = Create(session, new Pad());
+
+        var result = await runner.RunAsync(PerformanceFanValidationTarget.HyperBoost, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
     [InlineData(CoolingPadConnectionState.PresentExact)]
     [InlineData(CoolingPadConnectionState.Ambiguous)]
     [InlineData(CoolingPadConnectionState.ObservationFailed)]

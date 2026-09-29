@@ -30,9 +30,25 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
         Func<bool> isolated, Func<CancellationToken, ValueTask<FanTemperatureReadings>> telemetry,
         TextWriter output, CancellationToken token, bool noLoad = false)
     {
-        string confirmation = noLoad ? Confirmation + ":60S:BASELINE-PLUS-10C" : Confirmation;
+        // The immediate round trip may start from any AC Automatic mode: --base Balanced|Silent|Performance.
+        PerformanceFanValidationTarget target = PerformanceFanValidationTarget.HyperBoostFromPerformance;
+        string baseName = "PERFORMANCE";
+        if (!noLoad && args.Length == 8 && args[6] == "--base")
+        {
+            (target, baseName) = args[7] switch
+            {
+                "Balanced" => (PerformanceFanValidationTarget.HyperBoost, "BALANCED"),
+                "Silent" => (PerformanceFanValidationTarget.HyperBoostFromSilent, "SILENT"),
+                "Performance" => (PerformanceFanValidationTarget.HyperBoostFromPerformance, "PERFORMANCE"),
+                _ => (target, ""),
+            };
+            args = args[..6];
+        }
+        string confirmation = noLoad
+            ? Confirmation + ":60S:BASELINE-PLUS-10C"
+            : Confirmation.Replace("PERFORMANCE-AUTO", baseName + "-AUTO", StringComparison.Ordinal);
         string planHash = noLoad ? Rz090528PadlessNoLoadValidation.PlanSha256 : Rz090528PadlessHyperBoostValidation.PlanSha256;
-        if (!args.SequenceEqual(new[] { "--confirm-target", confirmation,
+        if (baseName.Length == 0 || !args.SequenceEqual(new[] { "--confirm-target", confirmation,
             "--confirm-pad-disconnected", AttendedConfirmation,
             "--plan-sha256", planHash }))
         {
@@ -92,8 +108,7 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
             return 3;
         }
         var runner = createRunner(Eligible);
-        PerformanceFanSetterValidationResult result = await runner.RunAsync(
-            PerformanceFanValidationTarget.HyperBoostFromPerformance, token);
+        PerformanceFanSetterValidationResult result = await runner.RunAsync(target, token);
         bool finalGpuZero = Eligible();
         FanTemperatureReadings? after = await Temperature();
         bool hardwareRoundTripConfirmed = result.ApplyAcknowledged && result.CandidateConfirmed && result.Restored && finalGpuZero;
@@ -103,6 +118,7 @@ internal static class Rz090528PadlessHyperBoostValidationCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             Target = "RZ09-0528 / RZ09-05289EN4 / 1532:02C6 / BIOS 2.02 / RTX 5090 Laptop / driver 617.14",
+            BaseMode = baseName,
             PlanSha256 = planHash,
             Plan = JsonSerializer.Deserialize<JsonElement>(plan),
             ProductionAdmitted = false,

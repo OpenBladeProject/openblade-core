@@ -99,8 +99,16 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
         PerformanceFanValidationTarget target, CancellationToken token)
     {
-        if (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
-            || Interlocked.Exchange(ref started, 1) != 0)
+        // The immediate round trip may start from any AC Automatic mode; the observation
+        // variants remain bound to their reviewed Performance plans.
+        byte? baseMode = target switch
+        {
+            PerformanceFanValidationTarget.HyperBoostFromPerformance => 2,
+            PerformanceFanValidationTarget.HyperBoost when noLoad is null && loaded is null && batteryBoundary is null => 0,
+            PerformanceFanValidationTarget.HyperBoostFromSilent when noLoad is null && loaded is null && batteryBoundary is null => 5,
+            _ => null,
+        };
+        if (baseMode is null || Interlocked.Exchange(ref started, 1) != 0)
         {
             return Rejected(target, PerformanceFanValidationFailure.WrongTarget);
         }
@@ -139,7 +147,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             var runner = new PerformanceFanSetterValidationRunner(() => new ValidationRunContext(),
                 new GuardedActors(actors, pads, isolated, pair => FailureReconciliation = pair,
                     () => HardwareOpened = true, () => DisposalConfirmed = true,
-                    batteryBoundary is null ? null : batteryReadIsolation ?? (() => false), batteryBoundary is not null), TimeProvider.System,
+                    batteryBoundary is null ? null : batteryReadIsolation ?? (() => false), batteryBoundary is not null,
+                    baseMode.Value), TimeProvider.System,
                 TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded, padlessBatteryBoundary: batteryBoundary);
             innerRunStarted = true;
             PerformanceFanSetterValidationResult result = await runner.RunAsync(target, token).ConfigureAwait(false);
@@ -163,7 +172,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     private sealed class GuardedActors(IValidationActorFactory inner, ICoolingPadDiscoverySource pads,
         Func<bool> isolated, Action<PerformanceFanThermalPair?> reconciliation,
         Action opened, Action disposed, Func<bool>? boundaryReadIsolation = null,
-        bool boundaryMode = false) : IValidationActorFactory
+        bool boundaryMode = false, byte baseMode = 2) : IValidationActorFactory
     {
         public async ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context)
         {
@@ -179,7 +188,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             }
 
             opened();
-            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation, disposed, boundaryReadIsolation, boundaryMode);
+            var session = new GuardedSession(actor.Session, context, pads, isolated, reconciliation, disposed, boundaryReadIsolation, boundaryMode, baseMode);
             return new(new ValidationActor(session, actor.BatteryCommands, actor.TemporaryFullChargeCommands), null);
         }
     }
@@ -187,13 +196,15 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
     internal sealed class GuardedSession(IRazerCommandSession inner, ValidationRunContext context,
         ICoolingPadDiscoverySource pads, Func<bool> isolated,
         Action<PerformanceFanThermalPair?>? reconciliation = null, Action? disposed = null,
-        Func<bool>? boundaryReadIsolation = null, bool boundaryMode = false)
+        Func<bool>? boundaryReadIsolation = null, bool boundaryMode = false, byte baseMode = 2)
         : IRazerCommandSession, IRz090528NoLoadSnapshotSource, IRz090528BatteryBoundarySource
     {
         private int nextWrite;
         private volatile bool failed;
         private bool snapshotUncertain;
-        private static readonly byte[][] Writes = [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, 2, 0], [1, 2, 2, 0]];
+        // Enable pair, then restoration of the exact starting AC mode (2 Performance, 0 Balanced, 5 Silent).
+        private readonly byte[][] writes =
+            [[1, 1, 7, 0], [1, 2, 7, 0], [1, 1, baseMode, 0], [1, 2, baseMode, 0]];
         public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
         public async Task<Rz090528BatteryBoundarySnapshot> ReadBatteryBoundaryAsync(CancellationToken token)
@@ -335,7 +346,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             if (write)
             {
                 token.ThrowIfCancellationRequested();
-                if (nextWrite >= Writes.Length || !command.Arguments.Span.SequenceEqual(Writes[nextWrite]))
+                if (nextWrite >= writes.Length || !command.Arguments.Span.SequenceEqual(writes[nextWrite]))
                 {
                     return Block();
                 }
@@ -350,7 +361,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                 // before restoration, even when the caller canceled after candidate readback.
                 if (nextWrite is 0 or 2)
                 {
-                    byte mode = nextWrite == 0 ? (byte)2 : (byte)7;
+                    byte mode = nextWrite == 0 ? baseMode : (byte)7;
                     for (byte channel = 1; channel <= 2; channel++)
                     {
                         var observed = await ReadAsync(new RazerCommandSpec(0x0D, 0x82,
