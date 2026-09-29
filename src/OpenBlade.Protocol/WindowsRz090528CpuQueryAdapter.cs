@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
-using System.ServiceProcess;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 
@@ -325,28 +324,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             return new("AuthenticAMD", family, model, (int)(eax & 15));
         }
 
-        public bool ControllersAbsent()
-        {
-            // Conservatively block Razer controllers even when the HID-only blocker
-            // would admit a patched Synapse process. That patch does not cover CPU IO.
-            bool absent = true;
-            foreach (var process in Process.GetProcesses())
-            {
-                using (process) { if (ControllerName(process.ProcessName)) { absent = false; } }
-            }
-            foreach (var service in ServiceController.GetServices())
-            {
-                using (service)
-                {
-                    if ((ControllerName(service.ServiceName) || ControllerName(service.DisplayName))
-                        && service.Status != ServiceControllerStatus.Stopped) { absent = false; }
-                }
-            }
-            return absent;
-        }
-
-        private static bool ControllerName(string name) => name.Contains("Razer", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Ryzen", StringComparison.OrdinalIgnoreCase);
+        public bool ControllersAbsent() => Rz090528CpuControllerPresence.ControllersAbsent();
 
         public InstalledCpuBackendSnapshot ReadBackend() => new WindowsInstalledCpuBackendSnapshotSource().Read();
         public ICpuQueryDevice OpenExistingDevice() => new NativeDevice();

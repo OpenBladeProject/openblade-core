@@ -22,6 +22,10 @@ internal static class ServiceComposition
 
         services.AddSingleton<IHyperBoostOwnershipJournalStore>(
             _ => new HyperBoostOwnershipJournalStore(journalPath));
+        services.AddSingleton<ICpuTuningOwnershipJournalStore>(_ => new CpuTuningOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-tuning-ownership.json")));
+        services.AddSingleton(provider => new CpuTuningController(new WindowsCpuTuningObservationSource(),
+            provider.GetRequiredService<ICpuTuningOwnershipJournalStore>()));
         services.AddSingleton<IServiceControlRuntime>(provider =>
             new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),
@@ -40,7 +44,8 @@ internal static class ServiceComposition
                 displayBrightnessHidController:
                     provider.GetRequiredService<IDisplayBrightnessHidController>(),
                 hyperBoostOwnershipJournalStore:
-                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
+                cpuTuningController: provider.GetRequiredService<CpuTuningController>()));
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

@@ -14,12 +14,24 @@ internal interface ICpuTuningObservationSource
     CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend);
 }
 
-internal sealed class CpuTuningController(ICpuTuningObservationSource source)
+internal sealed class CpuTuningController(ICpuTuningObservationSource source,
+    ICpuTuningOwnershipJournalStore? journalStore = null,
+    Func<Func<DeviceIdentity, CpuSavedTuningCommand, bool>, ICpuSavedTuningBackend>? backendFactory = null)
 {
-    internal Task<CpuTuningStatus> ObserveAsync(bool useInstalledBackend, CancellationToken token) =>
-        Task.Run(() => Observe(useInstalledBackend, token), token);
+    internal bool HasSavedBackend => journalStore is not null;
 
-    private CpuTuningStatus Observe(bool useInstalledBackend, CancellationToken token)
+    internal async Task<CpuTuningStatus> ObserveAsync(bool useInstalledBackend, CancellationToken token)
+    {
+        var observed = await CpuFirmwareReadScheduler.RunAsync(() => Observe(useInstalledBackend, token),
+            TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
+        if (journalStore is null || observed.Identity is null || observed.Saved is null) { return observed.Status; }
+        CpuSavedTuningTransactionResult ownership = await CreateTransaction(static (_, _) => false)
+            .ObserveOwnershipAsync(observed.Identity, observed.Saved, token).ConfigureAwait(false);
+        return observed.Status with { PendingBoot = ownership.PendingBoot, RestorePending = ownership.RestorePending };
+    }
+
+    private (CpuTuningStatus Status, DeviceIdentity? Identity, SavedCpuFirmwareReadResult? Saved)
+        Observe(bool useInstalledBackend, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
@@ -28,7 +40,7 @@ internal sealed class CpuTuningController(ICpuTuningObservationSource source)
         token.ThrowIfCancellationRequested();
         if (identity is null)
         {
-            return new(null, null, unavailable, unavailable, CpuTuningPendingBoot.Unknown, false);
+            return (new(null, null, unavailable, unavailable, CpuTuningPendingBoot.Unknown, false), null, null);
         }
 
         SavedCpuFirmwareReadResult saved = source.ReadSaved(identity);
@@ -37,12 +49,7 @@ internal sealed class CpuTuningController(ICpuTuningObservationSource source)
             ? new(current.PowerLimitMilliwatts, current.PolicyMode, current.PowerLimitMode,
                 DecodeCurve(current))
             : null;
-        var firmware = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
-            saved.Status == SavedCpuFirmwareReadStatus.Observed
-                ? CpuTuningBackendAvailability.Available
-                : saved.Status is SavedCpuFirmwareReadStatus.InvalidData or SavedCpuFirmwareReadStatus.MirrorMismatch
-                    ? CpuTuningBackendAvailability.Failed
-                    : CpuTuningBackendAvailability.Unavailable);
+        CpuTuningBackendStatus firmware = DescribeFirmwareBackend(saved);
         CpuTuningBackendStatus live = source.InspectInstalled(identity, useInstalledBackend) with
         {
             // Passive dependency discovery is not native query/write admission.
@@ -51,8 +58,80 @@ internal sealed class CpuTuningController(ICpuTuningObservationSource source)
         token.ThrowIfCancellationRequested();
         // Saved observations cannot establish active settings, ownership, a
         // pending OpenBlade write, or successful boot activation.
-        return new(decoded, null, firmware, live, CpuTuningPendingBoot.Unknown, false);
+        return (new(decoded, null, firmware, live, CpuTuningPendingBoot.Unknown, false), identity, saved);
     }
+
+    internal async Task<ControlOperationResult> ApplySavedAsync(CpuTuningSettings settings,
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token) =>
+        await MutateSavedAsync(settings, freshRuntimeAdmission, restoring: false, token).ConfigureAwait(false);
+
+    internal async Task<ControlOperationResult> RestoreSavedAsync(
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token) =>
+        await MutateSavedAsync(null, freshRuntimeAdmission, restoring: true, token).ConfigureAwait(false);
+
+    private CpuSavedTuningTransaction CreateTransaction(
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission) => new(
+            backendFactory?.Invoke(freshRuntimeAdmission) ?? new WindowsSavedCpuTuningBackend(source,
+                (identity, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command)
+                    && freshRuntimeAdmission(identity, command)),
+            journalStore ?? throw new InvalidOperationException("CPU ownership storage is unavailable."));
+
+    private async Task<ControlOperationResult> MutateSavedAsync(CpuTuningSettings? settings,
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, bool restoring,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (journalStore is null)
+        { return new(ControlOperationStatus.Blocked, "CPU ownership storage is unavailable."); }
+        DeviceIdentity? identity = source.ReadIdentity();
+        if (!CpuSavedTuningPlan.IsExactIdentity(identity))
+        { return new(ControlOperationStatus.Blocked, "The saved CPU firmware identity is not admitted."); }
+        CpuSavedTuningTransaction transaction = CreateTransaction(freshRuntimeAdmission);
+        CpuSavedTuningTransactionResult result = restoring
+            ? await transaction.RestoreAsync(identity!, token).ConfigureAwait(false)
+            : await transaction.ApplyAsync(identity!, settings!, token).ConfigureAwait(false);
+        var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
+            CpuTuningBackendAvailability.Unavailable);
+        CpuSavedConfiguration? saved = result.Observation?.Current is { } current
+            ? new(current.PowerLimitMilliwatts, current.PolicyMode, current.PowerLimitMode, DecodeCurve(current)) : null;
+        var status = new CpuTuningStatus(saved, null,
+            DescribeFirmwareBackend(result.Observation),
+            unavailable, result.PendingBoot, result.RestorePending);
+        ControlOperationStatus operation = result.Outcome switch
+        {
+            CpuSavedTuningOutcome.Verified or CpuSavedTuningOutcome.Unchanged => ControlOperationStatus.Stored,
+            CpuSavedTuningOutcome.Uncertain => ControlOperationStatus.Failed,
+            _ => ControlOperationStatus.Blocked,
+        };
+        string message = result.Outcome switch
+        {
+            CpuSavedTuningOutcome.Verified => restoring
+                ? "The original saved CPU configuration was restored and verified. Live settings remain unconfirmed."
+                : "CPU settings were saved and verified for the next boot. Live settings remain unconfirmed.",
+            CpuSavedTuningOutcome.Unchanged => result.RestorePending
+                ? "Saved CPU settings already match; the original restoration baseline was retained."
+                : "Saved CPU settings already match; no ownership was established.",
+            CpuSavedTuningOutcome.Uncertain => "CPU submission or readback is uncertain. Further CPU writes are blocked.",
+            _ => result.Reason switch
+            {
+                CpuSavedTuningBlockReason.InvalidJournal => "CPU recovery data is invalid. Further CPU writes are blocked.",
+                CpuSavedTuningBlockReason.PendingSubmission => "A prior CPU submission remains unresolved. Further writes are blocked.",
+                CpuSavedTuningBlockReason.UnrestorableBaseline => "The saved CPU baseline has no admitted exact restoration route.",
+                CpuSavedTuningBlockReason.AdmissionDenied => "CPU commands require attended service write and restoration admission.",
+                CpuSavedTuningBlockReason.JournalUnavailable => "CPU recovery data could not be saved. No further command was submitted.",
+                _ => "The saved CPU state or write authority changed; further writes are blocked.",
+            },
+        };
+        return new(operation, message) { CpuTuning = status };
+    }
+
+    private static CpuTuningBackendStatus DescribeFirmwareBackend(SavedCpuFirmwareReadResult? saved) =>
+        new(DeviceFeatureAccess.ObservedOnly, saved?.Status switch
+        {
+            SavedCpuFirmwareReadStatus.Observed => CpuTuningBackendAvailability.Available,
+            SavedCpuFirmwareReadStatus.InvalidData or SavedCpuFirmwareReadStatus.MirrorMismatch => CpuTuningBackendAvailability.Failed,
+            _ => CpuTuningBackendAvailability.Unavailable,
+        });
 
     private static CpuCurveOptimizerState? DecodeCurve(Rz090528SavedCpuConfiguration saved)
     {

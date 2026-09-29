@@ -24,6 +24,14 @@ submissions were acknowledged. Both saved copies changed only the magnitude byte
 and then restored byte-for-byte. Power-limit fields remained unchanged. No reboot
 or live CPU measurement was part of that test.
 
+The service transaction retains both complete original copies in a bounded
+machine-level recovery journal. Repeated edits preserve that original baseline.
+Before each provider call it records possible submission durably; only an
+acknowledged command and exact full readback establish ownership. Timeout,
+unexpected changes, or a failed mirror check block further commands. Explicit
+restoration proceeds in reverse order and verifies every byte. These paths are
+covered by fake-backend tests; production command admission remains disabled.
+
 ## Optional installed AMD backend
 
 The optional backend is scoped to the RZ09-0528's exact signed AMD stack. Passive
@@ -37,10 +45,19 @@ invocation remains blocked. Fake-transport tests do not establish hardware
 admission, and hashes of installed files do not attest the image already loaded
 in the kernel.
 
+The developer `cpu-live-query-rz09-0528` command requires separate approval for
+PCI transport writes and acknowledgement of a freshly loaded pinned driver.
+It passively verifies a healthy exact USB devnode and installed-backend readiness
+before the native adapter runs. It contains no driver lifecycle commands. On
+2026-09-29, a fresh readiness check found the signed driver file present but its
+service registration absent, so a separate attended provisioning proposal is
+required before a live query.
+
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
-Boot activation, durable restoration ownership, and attended live readback and
-restoration remain necessary before enabling the corresponding controls.
+Boot activation, validation of the service recovery workflow, and attended live
+readback and restoration remain necessary before enabling the corresponding
+controls.
 
 Tracked in [issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622)
 and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).

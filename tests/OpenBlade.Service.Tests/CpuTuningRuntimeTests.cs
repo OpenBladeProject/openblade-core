@@ -109,7 +109,40 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.Null(context.Runtime.GetStatus().CpuTuning);
     }
 
-    private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true)
+    [Fact]
+    public async Task AdmittedFakeSavedWorkflowPublishesOwnershipAndRestoresOriginalBytes()
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true);
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        ControlOperationResult saved = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -10)), () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, saved.Status);
+        Assert.True(context.Runtime.GetStatus().CpuTuning!.RestorePending);
+        Assert.Equal(CpuTuningPendingBoot.Requested, saved.CpuTuning!.PendingBoot);
+        Assert.Null(saved.CpuTuning.LiveState);
+        ControlOperationResult restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            () => true, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.False(context.Runtime.GetStatus().CpuTuning!.RestorePending);
+        Assert.Equal(baseline, context.Source.Bytes);
+        Assert.Equal(2, context.Source.Submissions);
+    }
+
+    [Fact]
+    public async Task SessionLossAfterInitialGateStopsFakeSavedSubmission()
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true);
+        bool active = true;
+        context.Source.BeforeIdentity = () => active = false;
+        ControlOperationResult result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -1)), () => active, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Source.Submissions);
+        Assert.False(result.CpuTuning!.RestorePending);
+    }
+
+    private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
+        bool admittedSavedBackend = false)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
@@ -117,19 +150,26 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         var device = new BatteryTestDevice();
         device.Capabilities = device.Capabilities with
         {
-            CpuPowerLimit = supported ? new(new(45, 95, 1), DeviceFeatureAccess.ObservedOnly) : null,
+            CpuPowerLimit = supported ? new(new(45, 95, 1), admittedSavedBackend
+                ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly) : null,
+            CpuVoltageOptimizer = admittedSavedBackend ? new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) : null,
         };
         var provider = new FakeProvider(device) { Available = verified };
         var source = new FakeObservationSource();
+        if (admittedSavedBackend) { source.Bytes = CpuSavedTuningTransactionTests.Baseline(); }
         var gate = new LowPowerGate();
         var hub = new FakeHub();
         var runtime = new ServiceControlRuntime(store,
             new PersistentOverrideStore(Path.Combine(directory, "overrides.json")),
-            new FakePowerState(), hub, provider, new DiagnosticHistory(), gate,
+            new FakePowerState { Power = admittedSavedBackend ? PowerSource.PluggedIn : PowerSource.Battery },
+            hub, provider, new DiagnosticHistory(), gate,
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
-            cpuTuningController: new CpuTuningController(source));
-        runtime.Initialize(configuration, PowerSource.Battery);
+            cpuTuningController: admittedSavedBackend
+                ? new CpuTuningController(source, new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")),
+                    safety => new FakeSavedBackend(source, safety))
+                : new CpuTuningController(source));
+        runtime.Initialize(configuration, admittedSavedBackend ? PowerSource.PluggedIn : PowerSource.Battery);
         await runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(verified, runtime.GetStatus().DeviceVerified);
         return new(runtime, device, provider, source, gate, hub);
@@ -147,14 +187,23 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     {
         public int Calls { get; private set; }
         public Action? AfterInspection { get; set; }
+        internal Action? BeforeIdentity;
+        internal byte[]? Bytes;
+        internal int Submissions;
         public DeviceIdentity? ReadIdentity()
         {
             Calls++;
+            BeforeIdentity?.Invoke();
             return new("RZ09-0528", 0x1532, 0x02C6, "2.02");
         }
         public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity)
         {
             Calls++;
+            if (Bytes is not null)
+            {
+                return new(SavedCpuFirmwareReadStatus.Observed, Rz090528CpuFirmwareCodec.DecodeSaved(Bytes),
+                    Rz090528CpuFirmwareCodec.DecodeSaved(Bytes), 0, 0);
+            }
             return new(SavedCpuFirmwareReadStatus.Unavailable, null, null, 5, 5);
         }
         public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend)
@@ -180,8 +229,25 @@ public sealed class CpuTuningRuntimeTests : IDisposable
 
     private sealed class FakePowerState : IPowerStateProvider
     {
-        public PowerSource CapturePowerSource() => PowerSource.Battery;
+        internal PowerSource Power = PowerSource.Battery;
+        public PowerSource CapturePowerSource() => Power;
         public int? CaptureBatteryPowerFlowMilliwatts() => null;
+    }
+
+    private sealed class FakeSavedBackend(FakeObservationSource source,
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> safety) : ICpuSavedTuningBackend
+    {
+        public Task<bool> CheckWriteAdmissionAsync(DeviceIdentity identity, CpuSavedTuningCommand command, CancellationToken token) =>
+            Task.FromResult(safety(identity, command));
+        public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token) =>
+            Task.FromResult(source.ReadSaved(identity));
+        public Task<CpuSavedTuningSubmission> SendAsync(DeviceIdentity identity, CpuSavedTuningCommand command, CancellationToken token)
+        {
+            if (!safety(identity, command)) { return Task.FromResult(CpuSavedTuningSubmission.NotSubmitted); }
+            source.Bytes = CpuSavedTuningPlan.Simulate(source.Bytes!, command);
+            source.Submissions++;
+            return Task.FromResult(CpuSavedTuningSubmission.Acknowledged);
+        }
     }
 
     private sealed class FakePresenceMonitor : IControllerPresenceMonitor
