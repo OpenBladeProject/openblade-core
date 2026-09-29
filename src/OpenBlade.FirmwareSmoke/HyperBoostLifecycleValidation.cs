@@ -94,6 +94,31 @@ internal sealed record HyperBoostLifecycleRestoreIntent(
             or PerformancePreset.Custom;
 }
 
+// Exact per-model padless lifecycle transition. Never inferred from, or aliased to, another model.
+internal static class HyperBoostLifecycleModelPolicy
+{
+    internal static PerformancePreset? BaseMode(string? model) => model switch
+    {
+        RazerBladeModelCatalog.OpenBladeTargetModelNumber => PerformancePreset.Balanced,
+        RazerBladeModelCatalog.Rz090528ModelNumber => PerformancePreset.Performance,
+        _ => null,
+    };
+
+    // RZ09-0528 captured only Performance/Automatic -> mode 7 -> Performance/Automatic; no bridge or GPU tuning.
+    internal static bool AdmitsRestoreIntent(string? model, HyperBoostLifecycleRestoreIntent? intent) =>
+        intent is { IsWellFormed: true, IsFullPowerProfile: true } && model switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => true,
+            RazerBladeModelCatalog.Rz090528ModelNumber => intent is
+            {
+                Performance: PerformancePreset.Performance,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+            } && intent.FanControl.Mode == FanMode.Automatic,
+            _ => false,
+        };
+}
+
 internal sealed record HyperBoostLifecycleRecoveryBaseline(
     PerformancePreset? Performance,
     FanMode Fans,
@@ -138,12 +163,9 @@ internal sealed record HyperBoostLifecycleMarker(
         && Enum.IsDefined(Scenario)
         && !string.IsNullOrWhiteSpace(TargetModel)
         && IsSha256(InstalledGenerationSha256)
-        && BaseMode == PerformancePreset.Balanced
-        && RestoreIntent is
-        {
-            IsWellFormed: true,
-            IsFullPowerProfile: true,
-        }
+        && HyperBoostLifecycleModelPolicy.BaseMode(TargetModel) is { } expectedBase
+        && BaseMode == expectedBase
+        && HyperBoostLifecycleModelPolicy.AdmitsRestoreIntent(TargetModel, RestoreIntent)
         && ArmedAtUtc != default
         && ServiceProcess is
         {
@@ -691,15 +713,20 @@ internal sealed class HyperBoostLifecycleValidationRunner
         out bool useValidationRequest,
         out string failure)
     {
-        baseMode = PerformancePreset.Balanced;
+        baseMode = HyperBoostLifecycleModelPolicy.BaseMode(current.TargetModel) ?? PerformancePreset.Balanced;
         restoreIntent = new HyperBoostLifecycleRestoreIntent(
-            PerformancePreset.Balanced,
+            baseMode,
             CustomPerformance: null,
             GpuClockTuning: null,
             FanControlSettings.Default);
         requiresCoolingPad = false;
         useValidationRequest = false;
         failure = string.Empty;
+        if (HyperBoostLifecycleModelPolicy.BaseMode(current.TargetModel) is null)
+        {
+            failure = "No exact-model padless lifecycle transition is defined for this laptop.";
+            return false;
+        }
         if (!ToolMatchesInstalledGeneration(current))
         {
             failure =
@@ -723,7 +750,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             }
             || status.Capabilities?.HyperBoostAccess
                 != DeviceFeatureAccess.ReadWrite
-            || status.Capabilities.HyperBoostBaseModes?.Balanced
+            || status.Capabilities.HyperBoostBaseModes?.AccessFor(baseMode)
                 != DeviceFeatureAccess.ReadWrite
             || status.DesiredState.Performance.Value is not (PerformancePreset.Silent
                 or PerformancePreset.Balanced
@@ -740,7 +767,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             || status.ActivePowerSource != PowerSource.PluggedIn)
         {
             failure =
-                "The exact installed generation, verified inactive full-power profile, admitted fan intent, and writable Balanced HyperBoost transition are required.";
+                "The exact installed generation, verified inactive full-power profile, admitted fan intent, and the model's writable HyperBoost transition are required.";
             return false;
         }
 
@@ -753,12 +780,12 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 : null,
             status.DesiredState.GpuClockTuning,
             fanControl);
-        if (!restoreIntent.IsWellFormed
+        if (!HyperBoostLifecycleModelPolicy.AdmitsRestoreIntent(current.TargetModel, restoreIntent)
             || status.DesiredState.Fans.Value != confirmedFans
             || fanControl.Mode != confirmedFans)
         {
             failure =
-                "The confirmed performance and fan state must match one well-formed entry-time profile intent.";
+                "The confirmed performance and fan state must match one entry-time intent admitted for this model's captured transition.";
             return false;
         }
 
@@ -773,7 +800,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
         if (!padAbsentAdmitted)
         {
             failure =
-                "Installed-service lifecycle validation requires the admitted Balanced transition and confirmed physical pad absence.";
+                "Installed-service lifecycle validation requires the model's admitted transition and confirmed physical pad absence.";
             return false;
         }
 
@@ -995,7 +1022,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
 
         if (!journal.Valid
             || journal.State is null
-            || journal.BaseMode != PerformancePreset.Balanced
+            || journal.BaseMode is not (PerformancePreset.Balanced or PerformancePreset.Performance)
             || journal.RequiresCoolingPad is null
             || journal.RestoreIntent is not { IsWellFormed: true }
             || journal.TransitionId == Guid.Empty
@@ -1118,7 +1145,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
                 : null;
         bool valid = schemaVersion is 2 or 3 or 4 or 5 or 6 or 7
             && stateName is not null
-            && parsedBase == PerformancePreset.Balanced
+            && parsedBase is PerformancePreset.Balanced or PerformancePreset.Performance
             && updatedAtUtc != default
             && restoreIntent is { IsWellFormed: true }
             && transitionId != Guid.Empty

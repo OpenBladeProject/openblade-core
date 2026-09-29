@@ -5593,6 +5593,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "HyperBoost requires a fresh confirmed performance and fan state.");
             }
 
+            if (enabled
+                && lifecycleValidation is not null
+                && PadlessLifecycleEntryRefusal(lifecycleTarget!, confirmed, current.DesiredState) is { } entryRefusal)
+            {
+                return new ControlOperationResult(ControlOperationStatus.Blocked, entryRefusal);
+            }
+
             PerformancePreset requestedBaseMode = enabled
                 ? lifecycleValidation is not null
                     ? lifecycleTarget!.BaseMode
@@ -6682,6 +6689,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             desired.FanControl
                 ?? FanControlSettings.FromLegacy(desired.Fans.Value));
     }
+
+    // A Performance-based lifecycle target (RZ09-0528) captured only Performance/Automatic -> mode 7 -> back.
+    // Lifecycle validation must never compose an uncaptured bridge, GPU-tuned or custom entry for it.
+    internal static string? PadlessLifecycleEntryRefusal(
+        PadlessHyperBoostLifecycleTarget target,
+        ConfirmedDeviceState confirmed,
+        DesiredDeviceState desired) =>
+        target.BaseMode != PerformancePreset.Performance
+            || confirmed is { Performance: PerformancePreset.Performance, Fans: FanMode.Automatic }
+                && desired.Performance.Value == PerformancePreset.Performance
+                && desired.Fans.Value == FanMode.Automatic
+                && desired.CustomPerformance is null
+                && desired.GpuClockTuning?.Enabled != true
+            ? null
+            : "Exact-model lifecycle validation requires confirmed and desired Performance with Automatic fans and no GPU tuning.";
 
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
         ServiceStatusSnapshot current,

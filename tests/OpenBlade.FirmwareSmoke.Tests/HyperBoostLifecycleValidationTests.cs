@@ -1157,6 +1157,167 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             },
             FirmwareSmokeFiles.JsonOptions);
 
+    // RZ09-0528 base-mode access mirrors the exact model catalog: only the Performance transition is writable.
+    private static HyperBoostBaseModeCapabilities Rz090528BaseModes() => new(
+        DeviceFeatureAccess.ObservedOnly,
+        DeviceFeatureAccess.ObservedOnly,
+        DeviceFeatureAccess.ReadWrite);
+
+    [Fact]
+    public async Task ArmAsync_Rz090528UsesExactPerformanceTransition()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(PerformancePreset.Performance, baseModes: Rz090528BaseModes());
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status, "RZ09-0528");
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_101, 123_501),
+            () => OwnedJournal(PerformancePreset.Performance, journalBase: PerformancePreset.Performance));
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            Path.Combine(directory, "rz090528.json"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        HyperBoostLifecycleMarker marker = Assert.IsType<HyperBoostLifecycleMarker>(result.Marker);
+        Assert.Equal(PerformancePreset.Performance, marker.BaseMode);
+        Assert.Equal(PerformancePreset.Performance, marker.RestoreIntent.Performance);
+        Assert.True(marker.IsWellFormed);
+        Assert.Equal(1, client.EnableCalls);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Custom, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Performance, FanMode.Fixed)]
+    public async Task ArmAsync_Rz090528RefusesUncapturedEntryIntentBeforeAnyWrite(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(performance, fans, baseModes: Rz090528BaseModes());
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status, "RZ09-0528");
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_102, 123_502),
+            () => OwnedJournal(performance, fans, journalBase: PerformancePreset.Performance));
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.UnexpectedExit,
+            Path.Combine(directory, $"refused-{performance}-{fans}.json"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+        Assert.Equal(0, client.ValidationEnableCalls);
+    }
+
+    [Fact]
+    public async Task ArmAsync_Rz090528RefusesBalancedOnlyWritableCapabilities()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient(PerformancePreset.Performance, baseModes: new HyperBoostBaseModeCapabilities(
+            DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ObservedOnly));
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status, "RZ09-0528");
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_103, 123_503),
+            () => OwnedJournal(PerformancePreset.Performance, journalBase: PerformancePreset.Performance));
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            Path.Combine(directory, "balanced-only.json"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+    }
+
+    [Fact]
+    public async Task ArmAsync_UnknownModelHasNoLifecycleTransition()
+    {
+        Directory.CreateDirectory(directory);
+        var client = new FakeClient();
+        FirmwareSmokeSnapshot snapshot = Snapshot(client.Status, "RZ09-0999");
+        HyperBoostLifecycleValidationRunner runner = Runner(
+            client,
+            snapshot,
+            () => new HyperBoostLifecycleServiceProcess(42_104, 123_504),
+            () => OwnedJournal());
+
+        HyperBoostLifecycleArmResult result = await runner.ArmAsync(
+            snapshot,
+            HyperBoostLifecycleScenario.LowPower,
+            Path.Combine(directory, "unknown.json"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, client.EnableCalls);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0528", PerformancePreset.Balanced, PerformancePreset.Performance)]
+    [InlineData("RZ09-0528", PerformancePreset.Performance, PerformancePreset.Balanced)]
+    [InlineData("RZ09-0581", PerformancePreset.Performance, PerformancePreset.Balanced)]
+    [InlineData("RZ09-0999", PerformancePreset.Balanced, PerformancePreset.Balanced)]
+    public void MarkerIsWellFormed_RejectsCrossModelTransition(
+        string model,
+        PerformancePreset baseMode,
+        PerformancePreset restore)
+    {
+        var marker = new HyperBoostLifecycleMarker(
+            HyperBoostLifecycleMarker.CurrentSchemaVersion,
+            HyperBoostLifecycleScenario.LowPower,
+            model,
+            new string('A', 64),
+            baseMode,
+            RequiresCoolingPad: false,
+            DateTimeOffset.UtcNow,
+            new HyperBoostLifecycleServiceProcess(42_105, 123_505),
+            new string('B', 64),
+            RestoreIntent(restore))
+        {
+            TransitionId = Guid.NewGuid(),
+        };
+
+        Assert.False(marker.IsWellFormed);
+    }
+
+    [Fact]
+    public void ParseOwnershipJournalDiagnostics_AcceptsExactPerformanceBase()
+    {
+        string serviceJson = JsonSerializer.Serialize(
+            new
+            {
+                exists = true,
+                valid = true,
+                state = "OwnedConfirmed",
+                baseMode = PerformancePreset.Performance,
+                requiresCoolingPad = false,
+                restoreIntent = RestoreIntent(PerformancePreset.Performance),
+                sha256 = new string('A', 64),
+                transitionId = Guid.NewGuid(),
+            },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        HyperBoostLifecycleJournalObservation observation =
+            HyperBoostLifecycleValidationRunner.ParseOwnershipJournalDiagnostics(
+                JsonSerializer.Deserialize<HyperBoostLifecycleJournalDiagnostic>(
+                    serviceJson,
+                    FirmwareSmokeFiles.JsonOptions));
+
+        Assert.True(observation.Valid);
+        Assert.Equal(PerformancePreset.Performance, observation.BaseMode);
+    }
+
     private static HyperBoostLifecycleValidationRunner Runner(
         FakeClient client,
         FirmwareSmokeSnapshot snapshot,
@@ -1195,11 +1356,12 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
     private static HyperBoostLifecycleJournalObservation OwnedJournal(
         PerformancePreset restorePerformance = PerformancePreset.Balanced,
         FanMode restoreFans = FanMode.Automatic,
-        bool requiresCoolingPad = false) => new(
+        bool requiresCoolingPad = false,
+        PerformancePreset journalBase = PerformancePreset.Balanced) => new(
         true,
         true,
         "OwnedConfirmed",
-        PerformancePreset.Balanced,
+        journalBase,
         RestoreIntent(restorePerformance, restoreFans),
         RequiresCoolingPad: requiresCoolingPad,
         Sha256: new string('A', 64));
@@ -1236,11 +1398,11 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 transitionId),
         ];
 
-    private static FirmwareSmokeSnapshot Snapshot(ServiceStatusSnapshot status) => new(
+    private static FirmwareSmokeSnapshot Snapshot(ServiceStatusSnapshot status, string model = "RZ09-0581") => new(
         SchemaVersion: FirmwareSmokeSnapshotCollector.CurrentSchemaVersion,
         CapturedAtUtc: DateTimeOffset.UtcNow,
         ObservationAttempts: 1,
-        TargetModel: "RZ09-0581",
+        TargetModel: model,
         ServiceVersion: status.ServiceVersion,
         DeviceVerified: true,
         WritesBlocked: false,
@@ -1311,7 +1473,8 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
             bool padlessAdmitted = true,
             bool padlessObservedOnly = false,
             CoolingPadConnectionState coolingPadConnection =
-                CoolingPadConnectionState.Absent)
+                CoolingPadConnectionState.Absent,
+            HyperBoostBaseModeCapabilities? baseModes = null)
         {
             this.baseMode = baseMode;
             this.fanMode = fanMode;
@@ -1323,7 +1486,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                     : padlessObservedOnly
                         ? DeviceFeatureAccess.ObservedOnly
                         : null,
-                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                HyperBoostBaseModes = baseModes ?? new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ReadWrite,
                     DeviceFeatureAccess.ReadWrite,
                     DeviceFeatureAccess.ReadWrite),
