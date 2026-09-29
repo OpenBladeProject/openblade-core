@@ -199,7 +199,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
         ICoolingPadDiscoverySource pads, Func<bool> isolated,
         Action<PerformanceFanThermalPair?>? reconciliation = null, Action? disposed = null,
         Func<bool>? boundaryReadIsolation = null, bool boundaryMode = false, byte baseMode = 2)
-        : IRazerCommandSession, IRz090528NoLoadSnapshotSource, IRz090528BatteryBoundarySource
+        : IRazerCommandSession, IRz090528NoLoadSnapshotSource, IRz090528BatteryBoundarySource, IExactExternalWriteGuard
     {
         private int nextWrite;
         private volatile bool failed;
@@ -394,6 +394,20 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             var result = await inner.ExecuteAsync(command, assignTransactionId, timeout, token).ConfigureAwait(false);
             failed |= result.Failure is not null;
             return result;
+        }
+
+        // Re-admits an observer's GPU write: isolation, fresh pad absence and the full-power adapter.
+        public async Task<bool> ValidateExternalWriteAsync(
+            ValidationRunContext runContext, TimeSpan timeout, CancellationToken token)
+        {
+            if (failed || !isolated() || pads.Observe() != CoolingPadConnectionState.Absent)
+            {
+                return false;
+            }
+            bool allowed = await FullPowerAsync(timeout, token).ConfigureAwait(false)
+                && isolated() && pads.Observe() == CoolingPadConnectionState.Absent;
+            failed |= !allowed;
+            return allowed;
         }
 
         private async Task<bool> FullPowerAsync(TimeSpan timeout, CancellationToken token)

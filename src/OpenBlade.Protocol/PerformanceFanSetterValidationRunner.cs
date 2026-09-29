@@ -252,6 +252,13 @@ internal delegate Task<bool> ExactHyperBoostValidationObserver(
     ExactHyperBoostValidationStage stage, Func<CancellationToken, Task<bool>> guard,
     CancellationToken cancellationToken);
 
+// A validation session that can re-admit an observer's external (non-HID) write, such as a GPU offset.
+internal interface IExactExternalWriteGuard
+{
+    Task<bool> ValidateExternalWriteAsync(
+        ValidationRunContext context, TimeSpan timeout, CancellationToken token);
+}
+
 internal sealed class PerformanceFanSetterValidationRunner
     : IPerformanceFanSetterValidationRunner,
       IHyperBoostAdapterTransitionValidationRunner,
@@ -947,7 +954,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         async Task<bool> Guard(CancellationToken cancellation)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (session is not Rz090528HyperBoostValidation.GuardedSession exact
+            if (session is not IExactExternalWriteGuard exact
                 || !await exact.ValidateExternalWriteAsync(context, exchangeTimeout, cancellation).ConfigureAwait(false))
             {
                 return false;

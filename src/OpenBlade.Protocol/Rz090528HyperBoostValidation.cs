@@ -79,7 +79,7 @@ internal static class Rz090528HyperBoostValidation
 
     internal sealed class GuardedSession(
         IRazerCommandSession inner, ICoolingPadDiscoverySource pads, Func<bool> isolated)
-        : IRazerCommandSession
+        : IRazerCommandSession, IExactExternalWriteGuard
     {
         private int nextWrite;
         private bool failed;
@@ -145,7 +145,7 @@ internal static class Rz090528HyperBoostValidation
             return result;
         }
 
-        internal async Task<bool> ValidateExternalWriteAsync(
+        public async Task<bool> ValidateExternalWriteAsync(
             ValidationRunContext context, TimeSpan timeout, CancellationToken token)
         {
             if (failed || !isolated() || pads.Observe() != CoolingPadConnectionState.PresentExact
