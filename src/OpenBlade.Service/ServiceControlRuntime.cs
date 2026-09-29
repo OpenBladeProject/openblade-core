@@ -555,6 +555,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool unexpectedExitRecoveryPending;
     private bool manualFanCurveRecoveryPending;
     private bool unexpectedExitRecoveryDeferredForUserConfiguration;
+    // Entry intent written by unexpected-exit HyperBoost recovery before the deferred user
+    // configuration loaded; that activation rebuilds automation and would discard it.
+    private HyperBoostRestoreIntent? deferredRecoveredHyperBoostEntryIntent;
     private DeferredManualFanSafetyOwnership deferredManualFanSafetyOwnership =
         DeferredManualFanSafetyOwnership.Lost;
     private bool recoveryUserConfigurationLoaded;
@@ -881,6 +884,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // classify retained user-owned hardware as external drift.
             unexpectedExitRecoveryDeferredForUserConfiguration =
                 recoveringUnexpectedExit && userConfigurationRepository is not null;
+            deferredRecoveredHyperBoostEntryIntent = null;
             deferredManualFanSafetyOwnership =
                 unexpectedExitRecoveryDeferredForUserConfiguration
                     ? DeferredManualFanSafetyOwnership.Pending(
@@ -9598,6 +9602,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 && ConfirmedStateMatchesRecoveredIntent(restored, recoveredEntryIntent))
             {
                 RestoreRecoveredHyperBoostIntentInAutomation(recoveredEntryIntent);
+                deferredRecoveredHyperBoostEntryIntent =
+                    unexpectedExitRecoveryDeferredForUserConfiguration
+                        ? recoveredEntryIntent
+                        : null;
                 AdvanceFanDesiredRevision();
                 ServiceStatusSnapshot recoveredStatus = GetStatus();
                 PublishIfChanged(recoveredStatus with
@@ -10542,6 +10550,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
+        // Loading the user configuration rebuilt automation. Reinstate the entry intent that
+        // recovery wrote, before fan reconciliation and drift classification, under the same
+        // full-AC exact-match gate; anything else is drift the user must see. Firmware Automatic
+        // fans written by that recovery need no ongoing ownership, so they are not drift either.
+        bool recoveredAutomaticFansReinstated = false;
+        if (deferredRecoveredHyperBoostEntryIntent is { } recoveredEntryIntent)
+        {
+            deferredRecoveredHyperBoostEntryIntent = null;
+            if (confirmedPowerSource == PowerSource.PluggedIn
+                && confirmed is { HyperBoostActive: false }
+                && ConfirmedStateMatchesRecoveredIntent(confirmed, recoveredEntryIntent))
+            {
+                RestoreRecoveredHyperBoostIntentInAutomation(recoveredEntryIntent);
+                AdvanceFanDesiredRevision();
+                recoveredAutomaticFansReinstated =
+                    recoveredEntryIntent.FanControl.Mode == FanMode.Automatic;
+            }
+        }
+
         bool deferredFanStateConverged =
             await ReconcileDeferredManualFanSafetyWithUserIntentCoreAsync(
                 confirmedPowerSource,
@@ -10572,7 +10599,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         unexpectedExitRecoveryDeferredForUserConfiguration = false;
         startupProfileReconciliationRequested = true;
         ObserveAutomaticState(confirmed);
-        if (!deferredFanStateConverged)
+        if (!deferredFanStateConverged && !recoveredAutomaticFansReinstated)
         {
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
         }
@@ -15839,6 +15866,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool changed = Automation.ChangePowerSource(powerSource);
         if (changed)
         {
+            deferredRecoveredHyperBoostEntryIntent = null;
             AdvanceFanDesiredRevision();
             powerSourceGeneration++;
             InvalidatePendingWriteConfirmations(markExternal: true);

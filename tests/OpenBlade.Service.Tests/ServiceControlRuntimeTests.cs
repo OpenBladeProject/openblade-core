@@ -23729,6 +23729,88 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(status.WritesBlocked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PadlessHyperBoost_UnexpectedExitKeepsWrittenEntryIntentAcrossDeferredUserActivation(
+        bool hardwareChangedBeforeActivation)
+    {
+        // Installed recovery completes before the active user's configuration loads, and that
+        // activation rebuilds automation. The written entry intent must survive it, but only while
+        // the hardware still matches what recovery wrote.
+        var userSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet>
+            {
+                [userSid.Value] = defaults with
+                {
+                    PluggedIn = defaults.PluggedIn with
+                    {
+                        Performance = PerformancePreset.Balanced,
+                        Fans = FanMode.Automatic,
+                    },
+                },
+            },
+            directory);
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Performance,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.FromLegacy(FanMode.Automatic)),
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal,
+            userConfigurationRepository: repository);
+        ConfigurePadlessHyperBoost(context, active: true);
+        context.Runtime.Initialize(
+            await context.Store.LoadAsync(CancellationToken.None),
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+        if (hardwareChangedBeforeActivation)
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Silent,
+            };
+        }
+
+        await context.Runtime.ActivateUserAsync(userSid, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(1, repository.Loads[userSid.Value]);
+        if (hardwareChangedBeforeActivation)
+        {
+            Assert.Equal(PerformancePreset.Balanced, status.DesiredState.Performance.Value);
+            Assert.Contains(DeviceSubsystem.Performance, status.ExternalChanges);
+        }
+        else
+        {
+            Assert.Equal(PerformancePreset.Performance, status.DesiredState.Performance.Value);
+            Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
+            Assert.Equal(Array.Empty<DeviceSubsystem>(), status.ExternalChanges);
+            Assert.False(status.WritesBlocked);
+        }
+    }
+
     [Fact]
     public async Task PadlessHyperBoost_UnexpectedExitOnBatteryNeverReinstatesUnwrittenEntryIntent()
     {
