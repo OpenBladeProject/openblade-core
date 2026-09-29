@@ -188,6 +188,29 @@ public sealed class FirmwareSmokeAssessmentTests
                     == "capabilities.hyper-boost-without-cooling-pad").Outcome);
     }
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("ObservedOnly", true)]
+    [InlineData("ReadWrite", false)]
+    public void Rz090528PadlessAccessAllowsOnlyUnavailableOrValidationObservedOnly(
+        string? access, bool passes)
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.6.0.0") with
+        {
+            TargetModel = "RZ09-0528",
+        };
+        snapshot = snapshot with
+        {
+            Capabilities = snapshot.Capabilities with { HyperBoostWithoutCoolingPadAccess = access },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+        Assert.Equal(
+            passes ? FirmwareSmokeOutcome.Passed : FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost-without-cooling-pad").Outcome);
+    }
     [Fact]
     public void Rz090581FirmwareUsesModelScopedHyperBoostCapability()
     {

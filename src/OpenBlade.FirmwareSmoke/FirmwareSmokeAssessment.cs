@@ -463,7 +463,7 @@ public static class FirmwareSmokeAssessment
             snapshot.TargetModel);
         string expectedHyperBoostAccess = ExpectedHyperBoostAccess(
             snapshot.TargetModel);
-        string expectedHyperBoostWithoutCoolingPadAccess =
+        string[] expectedHyperBoostWithoutCoolingPadAccess =
             ExpectedHyperBoostWithoutCoolingPadAccess(snapshot.TargetModel);
         HyperBoostBaseModeCapabilities? expectedHyperBoostBaseModes =
             ExpectedHyperBoostBaseModes(snapshot.TargetModel);
@@ -603,12 +603,10 @@ public static class FirmwareSmokeAssessment
             Check(
                 "capabilities.hyper-boost-without-cooling-pad",
                 "Pad-less HyperBoost access matches reviewed evidence",
-                string.Equals(
+                expectedHyperBoostWithoutCoolingPadAccess.Contains(
                     snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
-                        ?? "Unavailable",
-                    expectedHyperBoostWithoutCoolingPadAccess,
-                    StringComparison.Ordinal),
-                expectedHyperBoostWithoutCoolingPadAccess,
+                        ?? "Unavailable"),
+                string.Join(" or ", expectedHyperBoostWithoutCoolingPadAccess),
                 snapshot.Capabilities.HyperBoostWithoutCoolingPadAccess
                     ?? "Unavailable"),
             Check(
@@ -883,11 +881,15 @@ public static class FirmwareSmokeAssessment
             _ => "Unavailable",
         };
 
-    private static string ExpectedHyperBoostWithoutCoolingPadAccess(
-        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber
-            == RazerBladeModelCatalog.OpenBladeTargetModelNumber
-                ? DeviceFeatureAccess.ReadWrite.ToString()
-                : "Unavailable";
+    // RZ09-0528 production keeps pad-less HyperBoost unavailable; its reviewed developer lifecycle-validation
+    // service reports ObservedOnly. ReadWrite is never expected for it until its lifecycle gates are admitted.
+    private static string[] ExpectedHyperBoostWithoutCoolingPadAccess(
+        string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => [DeviceFeatureAccess.ReadWrite.ToString()],
+            RazerBladeModelCatalog.Rz090528ModelNumber => ["Unavailable", DeviceFeatureAccess.ObservedOnly.ToString()],
+            _ => ["Unavailable"],
+        };
 
     private static HyperBoostBaseModeCapabilities? ExpectedHyperBoostBaseModes(
         string modelNumber) =>
