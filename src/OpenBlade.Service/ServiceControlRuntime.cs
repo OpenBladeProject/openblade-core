@@ -6717,6 +6717,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ => HyperBoostRestoreIntent.BalancedAutomatic,
         };
 
+    private static bool ConfirmedStateMatchesRecoveredIntent(
+        ConfirmedDeviceState confirmed,
+        HyperBoostRestoreIntent intent) =>
+        confirmed.Performance == intent.Performance
+        && confirmed.Fans == intent.FanControl.Mode
+        && (intent.Performance != PerformancePreset.Custom
+            || confirmed.CustomPerformance == intent.CustomPerformance)
+        && (intent.GpuClockTuning?.Enabled != true
+            || confirmed.GpuClockOffsets?.Current == intent.GpuClockTuning.EffectiveOffsets);
+
     private void RestoreRecoveredHyperBoostIntentInAutomation(
         HyperBoostRestoreIntent intent)
         => Automation.RestoreHyperBoostIntentUntilPowerSourceChange(intent);
@@ -9436,6 +9446,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         EnsureInitialized();
         bool restoreJournaledHyperBoost = false;
+        HyperBoostRestoreIntent? recoveredEntryIntent = null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -9532,6 +9543,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ownsHyperBoost = true;
                     ownedHyperBoostBaseMode = journal.BaseMode;
                     ownedHyperBoostRestoreIntent = journal.RestoreIntent;
+                    recoveredEntryIntent = journal.RestoreIntent;
                     ownedHyperBoostTransitionId = journal.TransitionId;
                     ownedHyperBoostJournal = journal;
                     ownedHyperBoostJournalSha256 = journalLoad.Sha256;
@@ -9576,6 +9588,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // The unexpected exit discarded in-memory temporary overrides that may have produced the
+            // journaled entry intent. Reinstate it, as the user-authorized retry does, only when the
+            // recovery actually wrote it: full AC and a confirmed state exactly matching that intent.
+            // A battery/USB-C or blocked exit writes a different intent and must not be masked.
+            if (recoveredEntryIntent is not null
+                && Automation.PowerSource == PowerSource.PluggedIn
+                && GetStatus().ConfirmedState is { HyperBoostActive: false } restored
+                && ConfirmedStateMatchesRecoveredIntent(restored, recoveredEntryIntent))
+            {
+                RestoreRecoveredHyperBoostIntentInAutomation(recoveredEntryIntent);
+                AdvanceFanDesiredRevision();
+                ServiceStatusSnapshot recoveredStatus = GetStatus();
+                PublishIfChanged(recoveredStatus with
+                {
+                    DesiredState = Automation.Resolve(restored),
+                    PerformanceOverride = Automation.PerformanceOverride,
+                    FanOverride = Automation.FanOverride,
+                    FanControlOverride = Automation.FanControlOverride,
+                });
+            }
+
             if (!unexpectedExitRecoveryPending
                 || unexpectedExitRecoveryDeferredForUserConfiguration)
             {

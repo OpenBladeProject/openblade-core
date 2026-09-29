@@ -23680,6 +23680,96 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PadlessHyperBoost_UnexpectedExitReinstatesEntryIntentLostWithTemporaryOverrides()
+    {
+        // The entry intent came from a temporary override that the unexpected exit discarded;
+        // after recovery the desired state must match the restored hardware instead of reporting drift.
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Performance,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.FromLegacy(FanMode.Automatic)),
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context, active: true);
+        context.Runtime.Initialize(
+            await context.Store.LoadAsync(CancellationToken.None),
+            PowerSource.PluggedIn,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.NotEqual(PerformancePreset.Performance, context.Runtime.GetStatus().DesiredState.Performance.Value);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+
+        // Published immediately, without waiting for another observation.
+        ServiceStatusSnapshot immediate = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PerformancePreset.Performance, immediate.DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Automatic, immediate.DesiredState.Fans.Value);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Performance, status.DesiredState.Performance.Value);
+        Assert.Empty(status.ExternalChanges);
+        Assert.False(status.WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PadlessHyperBoost_UnexpectedExitOnBatteryNeverReinstatesUnwrittenEntryIntent()
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore
+        {
+            Journal = new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.OwnedConfirmed,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Performance,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.FromLegacy(FanMode.Maximum)),
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialize: false,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
+                CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context, active: true);
+        context.Runtime.Initialize(
+            await context.Store.LoadAsync(CancellationToken.None),
+            PowerSource.Battery,
+            PersistentOverrideState.Empty,
+            recoveringUnexpectedExit: true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.NotEqual(FanMode.Maximum, status.DesiredState.Fans.Value);
+        Assert.Null(status.FanOverride);
+        Assert.NotEqual(PerformancePreset.Performance, status.DesiredState.Performance.Value);
+    }
+    [Fact]
     public async Task PadlessHyperBoost_UnexpectedExitDoesNotRestorePendingJournal()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore
