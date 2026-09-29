@@ -96,7 +96,7 @@ public sealed class CpuTuningIpcTests
         Assert.Equal(CpuTuningPendingBoot.Requested, actual.Result!.CpuTuning!.PendingBoot);
         Assert.Equal(65000U, actual.Result.CpuTuning.SavedConfiguration!.PowerLimitMilliwatts);
         Assert.Null(actual.Result.CpuTuning.LiveState!.UniformCurveOptimizerValue);
-        Assert.Equal(95001U, actual.Result.CpuTuning.LiveState.PowerLimits.Message33Milliwatts);
+        Assert.Equal(95001U, actual.Result.CpuTuning.LiveState.PowerLimits!.Message33Milliwatts);
     }
 
     [Fact]

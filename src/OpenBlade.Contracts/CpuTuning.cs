@@ -132,10 +132,12 @@ public sealed record CpuLivePowerLimits(
 }
 
 public sealed record CpuLiveState(
-    CpuLivePowerLimits PowerLimits,
+    CpuLivePowerLimits? PowerLimits,
     IReadOnlyList<CpuCoreCurveOptimizerValue> CoreValues)
 {
-    public bool IsWellFormed => PowerLimits is { IsWellFormed: true }
+    // A confirmed CO vector does not imply any known PPT value. Query-only
+    // backends can report CO independently while power-limit readback is absent.
+    public bool IsWellFormed => (PowerLimits is null or { IsWellFormed: true })
         && CpuCurveOptimizerState.AreCoreValuesWellFormed(CoreValues)
         && CoreValues.All(value => value.Value is >= short.MinValue and <= short.MaxValue);
 

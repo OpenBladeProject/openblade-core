@@ -5,8 +5,8 @@ namespace OpenBlade.Protocol;
 
 internal sealed record CpuQueryIoctlReply(bool Success, byte[] Bytes);
 
-// Only an admitted service-owned adapter may implement this boundary. No Windows
-// adapter or automatic driver provisioning is supplied by the query engine.
+// A separately attended Windows adapter implements this boundary. Production
+// native invocation remains blocked; the engine never provisions a driver.
 internal interface IRz090528CpuQueryIoctl
 {
     CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength);
@@ -31,8 +31,8 @@ internal sealed record Rz090528CpuLiveQueryResult(CpuLiveQueryStatus Status,
 /// <summary>
 /// Query-only Strix wire engine. Production admission, CPU family/build/signature
 /// checks, running-driver checks and competing-controller checks belong to the
-/// service. Invoke on one worker thread; this bounded synchronous engine is not
-/// wired to native access and has no default adapter.
+/// service. Invoke on one worker thread; this bounded synchronous engine is
+/// connected to native access only through a separately attended validation path.
 /// Mailbox queries require PCI transport writes; they are not passive inspection.
 /// Saved configuration and PPT limits are deliberately absent from the result.
 /// </summary>

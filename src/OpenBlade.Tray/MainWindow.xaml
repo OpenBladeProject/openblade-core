@@ -647,6 +647,61 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    DataContext="{Binding CpuTuning}" Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsVisible}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock x:Uid="MainWindow_CpuTuningTitle" Text="CPU tuning" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="{Binding SavedSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding LiveSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding PendingBootSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding AvailabilitySummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_CpuTuningTargetLabel" Text="Target" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding TargetLabel}" Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Uid="MainWindow_CpuTuningTarget" Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      AutomationProperties.Name="CPU tuning target"
+                                                      IsOn="{Binding LiveNow, Mode=TwoWay}" IsEnabled="{Binding CanRefresh}" />
+                                    </Grid>
+                                    <CheckBox x:Uid="MainWindow_CpuTuningInstalledBackend" Content="Inspect the already installed AMD stack"
+                                              IsChecked="{Binding UseInstalledBackend, Mode=TwoWay}" IsEnabled="{Binding CanRefresh}" />
+                                    <TextBlock x:Uid="MainWindow_CpuTuningInstalledHint" Text="Optional inspection never installs a driver or enables CPU writes."
+                                               Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <CheckBox x:Uid="MainWindow_CpuTuningManagePower" Content="Manage CPU PPT (45–95 W)"
+                                                  IsChecked="{Binding ManagePower, Mode=TwoWay}" IsEnabled="{Binding CanEditPower}" />
+                                        <NumberBox x:Uid="MainWindow_CpuTuningPowerValue" Grid.Column="1" Width="120" Minimum="45" Maximum="95"
+                                                   SmallChange="1" LargeChange="5" SpinButtonPlacementMode="Compact"
+                                                   Value="{Binding PowerLimitWatts, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                   IsEnabled="{Binding CanEditPowerValue}" AutomationProperties.Name="CPU PPT watts" />
+                                    </Grid>
+                                    <CheckBox x:Uid="MainWindow_CpuTuningManageCurve" Content="Manage Curve Optimizer"
+                                              IsChecked="{Binding ManageCurve, Mode=TwoWay}" IsEnabled="{Binding CanEditCurve}" />
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <CheckBox x:Uid="MainWindow_CpuTuningCurveEnabled" Content="Enable Curve Optimizer (off applies 0)"
+                                                  IsChecked="{Binding CurveEnabled, Mode=TwoWay}" IsEnabled="{Binding CanEditCurve}" />
+                                        <NumberBox x:Uid="MainWindow_CpuTuningCurveValue" Grid.Column="1" Width="120" Minimum="-30" Maximum="-1"
+                                                   SmallChange="1" LargeChange="5" SpinButtonPlacementMode="Compact"
+                                                   Value="{Binding CurveValue, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                   IsEnabled="{Binding CanEditCurveValue}" AutomationProperties.Name="Curve Optimizer value" />
+                                    </Grid>
+                                    <TextBlock x:Uid="MainWindow_CpuTuningUnmanagedHint" Text="Unchecked controls remain unmanaged. Saved firmware values do not describe the running CPU."
+                                               Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button x:Uid="MainWindow_CpuTuningRefresh" Content="Refresh" Command="{Binding RefreshCommand}" />
+                                        <Button Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
+                                        <Button x:Uid="MainWindow_CpuTuningRestore" Content="Restore prior values" Command="{Binding RestoreCommand}"
+                                                Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding CanRestore}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding OperationMessage}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">
                                 <Grid ColumnSpacing="20">

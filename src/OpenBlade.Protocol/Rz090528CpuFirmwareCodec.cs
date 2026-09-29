@@ -12,6 +12,7 @@ internal static class Rz090528CpuFirmwareCodec
     public const uint CurveOptimizerFunction = 0x0005000A;
     public const int SavedConfigurationLength = 800;
     public const int ObservedCoreCount = 12;
+    public const int SavedCoreSlotCount = 16;
 
     public static byte[] EncodePowerLimit(int watts)
     {
@@ -87,7 +88,7 @@ internal sealed class Rz090528SavedCpuConfiguration
 
     public int? GetCoreCurveOptimizer(int core)
     {
-        if (core is < 0 or >= Rz090528CpuFirmwareCodec.ObservedCoreCount)
+        if (core is < 0 or >= Rz090528CpuFirmwareCodec.SavedCoreSlotCount)
         {
             throw new ArgumentOutOfRangeException(nameof(core));
         }

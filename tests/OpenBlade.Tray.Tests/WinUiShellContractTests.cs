@@ -211,7 +211,7 @@ public sealed class WinUiShellContractTests
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
 
         Assert.Equal(
-            5,
+            6,
             CountOccurrences(
                 powerModeCard,
                 "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
@@ -221,6 +221,14 @@ public sealed class WinUiShellContractTests
                 powerModeCard,
                 "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.DoesNotContain("SettingsEmphasizedSubcardStyle", powerModeCard, StringComparison.Ordinal);
+        XElement cpuCard = XDocument.Parse(xaml).Descendants().Single(element =>
+            Attribute(element, "DataContext") == "{Binding CpuTuning}");
+        Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", Attribute(cpuCard, "Style"));
+        XElement cpuTarget = UidElement(XDocument.Parse(xaml), "ToggleSwitch", "MainWindow_CpuTuningTarget");
+        Assert.Equal("Grid", cpuTarget.Parent?.Name.LocalName);
+        Assert.Equal("1", Attribute(cpuTarget, "Grid.Column"));
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(cpuTarget, "Style"));
+        Assert.Equal("{Binding LiveNow, Mode=TwoWay}", Attribute(cpuTarget, "IsOn"));
     }
 
     [Fact]
@@ -1558,7 +1566,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(5, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(1, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);

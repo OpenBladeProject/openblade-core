@@ -5,6 +5,15 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class CpuTuningTests
 {
     [Fact]
+    public void ConfirmedCurveVectorDoesNotRequireInventedPowerReadback()
+    {
+        var live = new CpuLiveState(null, [new(0, -1), new(2, -1)]);
+        Assert.True(live.IsWellFormed);
+        Assert.Null(live.PowerLimits);
+        Assert.Equal(-1, live.UniformCurveOptimizerValue);
+    }
+
+    [Fact]
     public void DisabledOptimizerPreservesRememberedNegativeValueButEffectiveValueIsZero()
     {
         var settings = new CpuCurveOptimizerSettings(false, -17);

@@ -6,6 +6,18 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528CpuFirmwareCodecTests
 {
     [Fact]
+    public void SavedSlotsRetainPhysicalIdsBeyondTheActiveCoreCount()
+    {
+        byte[] bytes = new byte[800];
+        bytes[0xC0] = 2;
+        bytes[0xC4 + 15] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(0x104 + 15 * 2), 7);
+        var baseline = Rz090528CpuFirmwareCodec.DecodeSaved(bytes);
+        Assert.Equal(-7, baseline.GetCoreCurveOptimizer(15));
+        Assert.Throws<ArgumentOutOfRangeException>(() => baseline.GetCoreCurveOptimizer(16));
+    }
+
+    [Fact]
     public void PowerLimitUsesFullLittleEndianMilliwattsArgument()
     {
         Assert.Equal(new byte[] { 1, 0, 5, 0, 0x18, 0x73, 1, 0 }, Rz090528CpuFirmwareCodec.EncodePowerLimit(95));
