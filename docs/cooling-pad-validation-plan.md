@@ -117,7 +117,7 @@ The response is the complete 22-byte report descriptor, independently hashed
 and decoded. It declares one unnumbered constant Feature item: size 8 bits,
 count 90. There is no Report ID item. Windows' inventoried 91-byte buffer thus
 requires prefix zero; historical prefix `05` is not declared. This resolves
-framing choice, while actual OpenBlade Windows feature I/O remains unvalidated.
+framing choice; actual OpenBlade Windows feature I/O was unvalidated at that stage.
 Capture stopped gracefully, OpenBlade restarted, and raw root traffic remains
 private. BIOS versions are evidence provenance and do not gate validation.
 
@@ -161,23 +161,23 @@ Keep raw PCAP, process traces, instance IDs, serials, and local paths private.
 
 ## Decision after capture
 
-The next manual gate is competing-controller absence for the prepared, single
-`00/84:0000` query in
-[draft PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624).
-Save current vendor service states and preferred
-Auto/full-brightness/static-green settings. The operator exits Synapse and
-temporarily stops only the guard-reported competing vendor services through
-Windows Services. The agent does not stop them automatically. Current blockers
-include AppEngine, Razer Elevation Service and Razer Game Manager Service 3.
-USBPcap must be stopped, and fresh exact-model/SKU, pad revision and control
-geometry checks must pass. BIOS versions are provenance only.
+The single `00/84:0000` query in
+[draft PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624)
+has completed successfully on build `37011fd6`. The operator exited Synapse and
+explicitly authorized stopping only Razer Elevation Service and Razer Game
+Manager Service 3. Fresh exact-device and controller checks passed with USBPcap
+inactive. One Windows prefix-zero exchange returned raw `0000`, validated by
+the shared session, without a setter, fallback ID or retry. The operator
+reported normal unchanged behavior. At the user's explicit request, Synapse
+and both services remain stopped. BIOS versions are provenance only.
 
-The developer command accepts only captured raw results `0000` or `0300`,
-with no laptop Driver/Normal meaning, fan-state or ownership claim. It performs
-one bounded exchange, with no setter, fallback ID or retry after ambiguity.
-Reopen the vendor controller and restore its saved service states/settings,
-then confirm normal physical behavior. Actual Windows feature-I/O success
-requires this trial; safe OpenBlade handback remains a separate gate.
+This establishes actual Windows feature I/O for the observed raw query,
+without laptop Driver/Normal semantics, fan-state, RPM or ownership claims.
+The next write work must first review a complete accessory restoration contract
+using the captured `00/04` lifecycle candidates. Any direct mode-transition or
+fan trial needs an attended, saved-state, bounded plan with explicit physical
+confirmation and safe recovery. The historical standalone Auto failure still
+blocks presumed release; no new setter is authorized by query success.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
