@@ -253,7 +253,7 @@ public sealed class WindowsRz090528CpuQueryAdapterTests
             Failure == "host" ? "other" : "Blade 16 - RZ09-0528",
             Failure == "sku" ? "other" : "RZ09-05289EN4", "2.02"), null);
         public CpuQueryProcessorIdentity ReadProcessor() => new(Failure == "vendor" ? "other" : "AuthenticAMD",
-            Failure == "family" ? 0x19 : 0x1A, Failure == "model" ? 0x30 : 0x20, Failure == "stepping" ? 0 : 1);
+            Failure == "family" ? 0x19 : 0x1A, Failure == "model" ? 0x20 : 0x24, Failure == "stepping" ? 1 : 0);
         public bool ControllersAbsent() => Failure != "controllers";
         public IDisposable PinBackendFiles()
         {

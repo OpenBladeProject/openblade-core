@@ -104,7 +104,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         return host.Failure is null && host.Evidence is
         { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }
             && ExactUsb(readFreshUsbIdentity())
-            && cpu is { Vendor: "AuthenticAMD", Family: 0x1A, Model: >= 0x20 and <= 0x2F, Stepping: 1 }
+            && cpu is { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
             && platform.ControllersAbsent()
             && Rz090528InstalledCpuBackendInspector.Evaluate(platform.ReadBackend()).Availability
                 == CpuTuningBackendAvailability.Available;
