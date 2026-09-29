@@ -132,6 +132,12 @@
             InstallArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;"
             RepairArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;"
             UninstallArgument="--progress-pipe &quot;[OpenBladeSetupProgressPipe]&quot;" />
+        <!-- Burn discards setup's stderr; its per-package log keeps a quiet failure diagnosable. -->
+        <CommandLine
+            Condition="WixBundleLog_OpenBladeSetup"
+            InstallArgument="--log &quot;[WixBundleLog_OpenBladeSetup]&quot;"
+            RepairArgument="--log &quot;[WixBundleLog_OpenBladeSetup]&quot;"
+            UninstallArgument="--log &quot;[WixBundleLog_OpenBladeSetup]&quot;" />
         <Payloads Include="!(bindpath.OpenBladeBundle)\**">
           <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />
         </Payloads>

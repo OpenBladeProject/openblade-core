@@ -32,6 +32,12 @@ if (InstalledUninstallBootstrapper.IsInstalledUninstallInvocation(effectiveArgum
 }
 
 bool isUninstallRelay = InstalledUninstallBootstrapper.IsRelayExecutable(executablePath, paths);
+_ = SetupCommandParser.TryParseInvocation(
+    effectiveArguments,
+    out SetupInvocation invocation);
+// Burn discards stderr, so bundle-managed runs also record their outcome in the package log.
+var log = new SetupLog(invocation.LogPath);
+log.Write($"Started: {invocation.Command} (bundle-managed: {invocation.BundleManaged})");
 try
 {
     if (isUninstallRelay)
@@ -39,16 +45,14 @@ try
         await InstalledUninstallBootstrapper.WaitForInstalledParentExitAsync(CancellationToken.None);
     }
 
-    _ = SetupCommandParser.TryParseInvocation(
-        effectiveArguments,
-        out SetupInvocation invocation);
 #if OPENBLADE_LOCAL_DEV_DEPLOYMENT
     string enrolledUserSid = LocalDevEnrollmentUser.ReadEnrolledAccountSid();
 #else
     string? enrolledUserSid = null;
 #endif
-    using ISetupProgressReporter progress = SetupProgressReporter.Create(
-        invocation.ProgressPipeName);
+    using ISetupProgressReporter progress = new LoggingSetupProgressReporter(
+        SetupProgressReporter.Create(invocation.ProgressPipeName),
+        log);
     int exitCode = await new SetupCommandRunner(
         new WindowsSetupPlatform(new WindowsSetupPlatformOptions(
             Paths: paths,
@@ -57,6 +61,7 @@ try
             CurrentUserSid: enrolledUserSid)),
         progress)
         .RunAsync(effectiveArguments, CancellationToken.None);
+    log.Write($"Finished with exit code {exitCode}.");
     if ((interactiveRequested || interactiveRelay) && exitCode == 0)
     {
         UninstallUserInterface.ShowSuccess();
@@ -66,6 +71,7 @@ try
 }
 catch (Exception exception)
 {
+    log.WriteFailure(exception);
     if (interactiveRequested || interactiveRelay)
     {
         UninstallUserInterface.ShowFailure(exception.Message);

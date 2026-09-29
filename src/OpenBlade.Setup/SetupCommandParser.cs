@@ -12,7 +12,8 @@ public readonly record struct SetupInvocation(
     bool BundleManaged,
     bool RecoverOrphanedBundle = false,
     string? ProgressPipeName = null,
-    string? BundleOwnerId = null);
+    string? BundleOwnerId = null,
+    string? LogPath = null);
 
 public static class SetupCommandParser
 {
@@ -33,13 +34,15 @@ public static class SetupCommandParser
                 allowPurge: false,
                 out _,
                 out string? installProgressPipe,
-                out string? installBundleOwnerId))
+                out string? installBundleOwnerId,
+                out string? installLogPath))
         {
             invocation = new(
                 SetupCommand.Install,
                 BundleManaged: true,
                 ProgressPipeName: installProgressPipe,
-                BundleOwnerId: installBundleOwnerId);
+                BundleOwnerId: installBundleOwnerId,
+                LogPath: installLogPath);
             return true;
         }
 
@@ -62,13 +65,15 @@ public static class SetupCommandParser
                 allowPurge: true,
                 out bool purge,
                 out string? uninstallProgressPipe,
-                out string? uninstallBundleOwnerId))
+                out string? uninstallBundleOwnerId,
+                out string? uninstallLogPath))
         {
             invocation = new(
                 purge ? SetupCommand.UninstallAndPurge : SetupCommand.Uninstall,
                 BundleManaged: true,
                 ProgressPipeName: uninstallProgressPipe,
-                BundleOwnerId: uninstallBundleOwnerId);
+                BundleOwnerId: uninstallBundleOwnerId,
+                LogPath: uninstallLogPath);
             return true;
         }
 
@@ -109,11 +114,13 @@ public static class SetupCommandParser
         bool allowPurge,
         out bool purge,
         out string? progressPipeName,
-        out string? bundleOwnerId)
+        out string? bundleOwnerId,
+        out string? logPath)
     {
         purge = false;
         progressPipeName = null;
         bundleOwnerId = null;
+        logPath = null;
         if (arguments.Count < 2
             || !string.Equals(arguments[0], command, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(
@@ -154,6 +161,18 @@ public static class SetupCommandParser
                 && Guid.TryParseExact(arguments[index + 1], "D", out Guid parsedBundleOwnerId))
             {
                 bundleOwnerId = parsedBundleOwnerId.ToString("D");
+                index += 2;
+                continue;
+            }
+
+            // The Burn-allocated package log; only a fully qualified path is accepted.
+            if (logPath is null
+                && string.Equals(option, "--log", StringComparison.OrdinalIgnoreCase)
+                && index + 1 < arguments.Count
+                && !string.IsNullOrWhiteSpace(arguments[index + 1])
+                && Path.IsPathFullyQualified(arguments[index + 1]))
+            {
+                logPath = arguments[index + 1];
                 index += 2;
                 continue;
             }
