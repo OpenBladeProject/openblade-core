@@ -4,6 +4,40 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Evidence reviewed against product `8c0ebe95` and captures
 `4f2bf1565c7557439760db7e45104bb1e8b62bfd` on 2026-09-29.
 
+## Completed exploratory sequence on 2026-09-29
+
+Following a separately reviewed raw `0300 -> 0000` restoration, the full attended
+trial completed from developer source `1c19debf8b712667822093dc2f9e428e4ff54171`.
+Typed results confirm raw `0000 -> 0300 -> 0000`, exact Medium `01012C` and Auto
+`000600` setter acknowledgements, and all three separate physical confirmations.
+The operator reported normal Medium, return to quiet Auto, and normal unchanged
+final behavior, with full-brightness static-green lighting and no red/sleep.
+No Synapse/service restart, lighting setter, demand update, power cycle or retry
+occurred during this completed attempt. Vendor software remains stopped.
+
+The result is typed evidence and operator observation, without independent PCAP
+or retained native report traces. It establishes one physically successful fixed
+sequence on this host; it does not establish RPM/firmware state readback, causal
+mode semantics, ownership or production handback. Prior vendor recovery may have
+left state not excluded by this experiment. Preserve the earlier negative Auto
+release and both incomplete attempts. Next prepare offline lifecycle, controller
+conflict, disconnect and shutdown/crash recovery cases before any further
+attended lifecycle trial. Accessory production admission remains closed.
+## Earlier incomplete exploratory attempts on 2026-09-29
+
+The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
+and Medium `01012C`. The operator observed Medium and normal unchanged green
+lighting, but the 180-second confirmation expired before the reply reached the
+command during conversation compaction. No Auto or raw-mode restoration was
+sent. This incomplete experiment does not establish either failure or success
+of the proposed Auto restoration.
+
+The operator recovered physical Auto through Synapse and confirmed normal green
+lighting after exit. A new expressly requested attempt then read raw `0300` and
+stopped before every setter because its required baseline is `0000`. Physical
+Auto recovery and raw-mode restoration are separate observations. The bounded
+raw-mode restoration and subsequent full trial are recorded above. Neither
+attempt establishes fan readback, ownership, handback or production admission.
 ## Current scope
 
 Laptop HyperBoost has shipped independently: RZ09-0581 padless support and
