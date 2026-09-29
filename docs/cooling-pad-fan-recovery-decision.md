@@ -4,6 +4,51 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Related: [developer validation PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624)
 and [evidence PR #33](https://github.com/OpenBladeProject/openblade-captures/pull/33).
 
+## Live attempts on 2026-09-29
+
+The first attended execution from reviewed source `45a4aa6e` reached raw `0300`
+and acknowledged Medium Fixed `01012C`. The operator observed Medium and later
+confirmed normal unchanged green lighting. The 180-second physical-confirmation
+wait expired while the coordinating conversation was compacted, before that
+reply was submitted. The command stopped at `fixedPhysicalConfirmation` with
+`OperatorTimeout`; it sent neither Auto nor raw-mode restoration. This is an
+incomplete attended experiment, not evidence of an abnormal physical response.
+
+The operator restored Auto through Synapse and confirmed normal green lighting
+after normal exit. A separately requested new attempt used the same reviewed
+build. It read raw `0300` and stopped with `BaselineNot0000` before any setter.
+Vendor-assisted physical Auto recovery therefore did not establish raw `0000`
+in this session. Both Razer services were subsequently stopped as authorized.
+
+A bounded raw-mode restoration path is being prepared for independent review.
+It must preserve both original results, check the current raw value before a
+single `0000` setter, confirm the exact echo and readback, and obtain a separate
+physical check. It must send no fan or lighting command and perform no vendor
+restart. Further fan execution requires that restoration and a fresh baseline.
+Production, fan-state, ownership and handback admission remain closed.
+## Bounded raw-mode restoration command
+
+The separate developer command restores raw control state after the incomplete
+fan trial. It does not recover or confirm a fan setting:
+
+```powershell
+dotnet run --project src/OpenBlade.Capture --no-build -- restore-rz09-0528-cooling-pad-control-state --confirm-target RZ09-05289EN4:1532:0F43:0200:0300-0000
+```
+
+Exact arguments are checked before native construction. The existing strict
+model/SKU, pad revision, geometry and competing-controller guards apply. Three
+transactions are reserved before access. A fresh raw `0300` permits one
+`00/04:0000` setter, its exact acknowledgement, then a `00/84` readback of `0000`.
+A fresh `0000` skips the setter. Unknown replies and any exchange failure stop
+further writes. A separate attended physical confirmation is required in both
+cases. Exchanges, observation and disposal retain their three-second,
+180-second and five-second bounds; there are no retries or finally writes.
+
+This command sends no fan or lighting setter and performs no process or service
+operation. The user's current instruction forbids agent-initiated Synapse use.
+Raw restoration and physical normal behavior do not establish fan-state,
+ownership, handback or production semantics. Preserve both incomplete results
+and the recovery result before starting any fresh full fan trial.
 ## Current decision
 
 No complete independently reversible fan contract is established. The successful
@@ -149,11 +194,11 @@ If full power cycling is required, it is a manual action; restore the saved
 preferred settings through the authorized vendor recovery and confirm the outcome.
 If the experiment succeeds, leave vendor software stopped as requested.
 
-No fan hardware trial has run yet. Test-double success validates control flow
-only, not device restoration. The known negative Auto release remains evidence.
+The live attempts above are incomplete. Test-double success validates control
+flow only, not device restoration. The known negative Auto release remains evidence.
 
 CLI preparation verification: all 585 Capture tests and three architecture tests
 passed, including 48 exploratory-runner cases and 22 CLI-admission cases.
 Independent review passed for exact argument admission, deferred native factory,
 strict pad identity/controller checks, JSON/prompt separation and stopped-write
-behavior. No fan hardware execution or recovery has been performed.
+behavior. The live attempts and vendor-assisted recovery are recorded above.

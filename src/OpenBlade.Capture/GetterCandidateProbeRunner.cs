@@ -29,6 +29,10 @@ internal static class GetterCandidateProbeFactory
         => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
             TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
 
+    internal static CoolingPadControlStateRecoveryRunner CreateCoolingPadControlStateRecoveryWindows()
+        => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
+            TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
+
     private static IValidationActorFactory CreateCoolingPadActorFactory()
     {
         var native = new WindowsHidNative();
