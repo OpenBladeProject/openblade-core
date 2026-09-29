@@ -6,6 +6,23 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void FanTemperatureToggleKeepsProgrammaticSynchronizationOutOfCommitPath()
+    {
+        XDocument document = XDocument.Parse(
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XElement toggle = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "Toggled") == "OnManualFanCurveSettingChanged");
+        Assert.Equal("{Binding UseHigherFanTemperature, Mode=OneWay}", Attribute(toggle, "IsOn"));
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        int start = source.IndexOf("private async void OnManualFanCurveSettingChanged", StringComparison.Ordinal);
+        int end = source.IndexOf("private async Task CommitFanControlAsync", start, StringComparison.Ordinal);
+        string handler = source[start..end];
+        Assert.Contains("SetUseHigherFanTemperatureAsync(toggle.IsOn)", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("await CommitFanControlAsync()", handler, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FirmwareVersionsSectionHidesWhenEveryFirmwareRowIsHidden()
     {
         XDocument document = XDocument.Parse(

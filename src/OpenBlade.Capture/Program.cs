@@ -4,6 +4,81 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0].Equals(
+    Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Loaded60Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.NoLoad60Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.UsbCName, StringComparison.OrdinalIgnoreCase)
+    || args.Length > 0 && args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
+{
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancel = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        cancellation.Cancel();
+    };
+    Console.CancelKeyPress += cancel;
+    try
+    {
+        if (args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.UsbCName, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessBatteryBoundaryValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token,
+                Rz090528PadlessBatteryBoundaryValidationCommand.UsbC);
+        }
+        if (args[0].Equals(Rz090528PadlessBatteryBoundaryValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessBatteryBoundaryValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+        }
+        foreach (var variant in new[] { Rz090528PadlessLoadedHyperBoostValidationCommand.Loaded60, Rz090528PadlessLoadedHyperBoostValidationCommand.NoLoad60 })
+        {
+            if (args[0].Equals(variant.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return await Rz090528PadlessLoadedHyperBoostValidationCommand.RunWindowsAsync(
+                    args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token, variant);
+            }
+        }
+        if (args[0].Equals(Rz090528PadlessLoadedHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessLoadedHyperBoostValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+        }
+        if (args[0].Equals(Rz090528StockLoadBaselineCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528StockLoadBaselineCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, Console.Error, cancellation.Token);
+        }
+        if (args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
+            || args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528PadlessHyperBoostValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, cancellation.Token,
+                args[0].Equals(Rz090528PadlessHyperBoostValidationCommand.NoLoadName, StringComparison.OrdinalIgnoreCase));
+        }
+        if (args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return await Rz090528HyperBoostGpuValidationCommand.RunWindowsAsync(
+                args.Skip(1).ToArray(), Console.Out, cancellation.Token);
+        }
+
+        return await Rz090528HyperBoostValidationCommand.RunAsync(
+            args.Skip(1).ToArray(),
+            () => Rz090528HyperBoostValidation.CreateWindows(
+                Rz090528HyperBoostValidationCommand.IsIsolated),
+            Console.Out, cancellation.Token);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancel;
+    }
+}
+
 if (args.Length == 1 && args[0].Equals("target", StringComparison.OrdinalIgnoreCase))
 {
     Console.WriteLine($"Model: {TargetBladeDevice.Model}");
@@ -158,10 +233,12 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out);
 }
 
-if (args.Length == 2 && args[0].Equals(
+if ((args.Length == 2 || (args.Length == 3 && args[2] is "--ui-step" or "--mode-matrix")) && args[0].Equals(
     "validate-rz09-0528-02c6-gpu-clock-offsets",
     StringComparison.OrdinalIgnoreCase))
 {
+    bool uiStep = args.Length == 3;
+    bool modeMatrix = uiStep && args[2] == "--mode-matrix";
     bool confirmationMatched = args[1].Equals(
         GpuClockOffsetValidationEnvironment.Confirmation,
         StringComparison.Ordinal);
@@ -172,30 +249,61 @@ if (args.Length == 2 && args[0].Equals(
         GpuClockOffsetValidationEnvironment.IsSynapseInactive();
     bool serviceInactive =
         GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    bool tuningToolsInactive = GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive();
     Console.WriteLine($"ConfirmationMatched={confirmationMatched}");
     Console.WriteLine($"ExactHost={exactHost}");
     Console.WriteLine($"ExactDevice={exactDevice}");
     Console.WriteLine($"SynapseInactive={synapseInactive}");
     Console.WriteLine($"OpenBladeServiceInactive={serviceInactive}");
+    Console.WriteLine($"GpuTuningToolsInactive={tuningToolsInactive}");
     if (!confirmationMatched
         || !exactHost
         || !exactDevice
         || !synapseInactive
-        || !serviceInactive)
+        || !serviceInactive
+        || !tuningToolsInactive)
     {
         Console.WriteLine("MutationAttempted=False");
         Console.WriteLine("Success=False");
         return 2;
     }
 
+    if (modeMatrix)
+    {
+        IProductionBatteryPortFactory matrixFactory = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+        HidSessionResult<IProductionBatteryPort> matrixOpened = await matrixFactory.OpenAsync(CancellationToken.None);
+        if (matrixOpened.Failure is not null || matrixOpened.Value is null)
+        {
+            if (matrixOpened.Value is not null)
+            {
+                await matrixOpened.Value.DisposeAsync();
+            }
+            Console.WriteLine($"MatrixOpenFailure={matrixOpened.Failure}");
+            return 2;
+        }
+        await using IProductionBatteryPort matrixPort = matrixOpened.Value;
+        return await Rz090528GpuModeMatrixCommand.RunAsync(
+            matrixPort, new NvidiaNvmlGpuClockOffsetValidationController(),
+            new NvidiaNvapiGpuClockOffsetProbe(),
+            static () => GpuClockOffsetValidationEnvironment.IsExactHost()
+                && GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection()
+                && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
+                && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive()
+                && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive(),
+            Console.Out);
+    }
+
     return GpuClockOffsetValidationCommand.Run(
         new NvidiaNvmlGpuClockOffsetValidationController(),
         Console.Out,
+        uiStep ? GpuClockOffsetValidationPlan.Rz090528UiStep : GpuClockOffsetValidationPlan.Rz090528,
         static () =>
             GpuClockOffsetValidationEnvironment.IsExactHost()
             && GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection()
             && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
-            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive());
+            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive()
+            && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive(),
+        uiStep ? new NvidiaNvapiGpuClockOffsetProbe() : null);
 }
 
 if (args.Length == 2 && args[0].Equals(
@@ -1966,6 +2074,28 @@ if (args.Length > 0 && args[0].Equals(
 
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.NoLoadName} " +
+    $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation}:60S:BASELINE-PLUS-10C " +
+    $"--confirm-pad-disconnected {Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation} " +
+    $"--plan-sha256 {Rz090528PadlessNoLoadValidation.PlanSha256}");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528StockLoadBaselineCommand.Name} " +
+    $"--confirm-target {Rz090528StockLoadBaselineCommand.Confirmation} " +
+    $"--plan-sha256 {Rz090528StockLoadBaseline.PlanSha256} --workload-exe <absolute-path-to-3DMarkSteelNomad.exe>");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528PadlessHyperBoostValidationCommand.Name} " +
+    $"--confirm-target {Rz090528PadlessHyperBoostValidationCommand.Confirmation} " +
+    $"--confirm-pad-disconnected {Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation} " +
+    $"--plan-sha256 {Rz090528PadlessHyperBoostValidation.PlanSha256}");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528HyperBoostGpuValidationCommand.Name} " +
+    $"--confirm-target {Rz090528HyperBoostGpuValidationCommand.Confirmation} " +
+    $"--confirm-pad-ready {Rz090528HyperBoostValidationCommand.PadConfirmation}");
+Console.WriteLine(
+    $"  OpenBlade.Capture {Rz090528HyperBoostValidationCommand.Name} " +
+    $"--confirm-target {Rz090528HyperBoostValidationCommand.Confirmation} " +
+    $"--confirm-pad-ready {Rz090528HyperBoostValidationCommand.PadConfirmation}");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0581-02e0-bios-4.00-hyperboost-pad-absent " +
     "--confirm-target " +

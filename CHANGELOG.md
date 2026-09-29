@@ -5,8 +5,19 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+
 ### Fixed
 
+- Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Prevent fan-editor synchronization from creating a temporary fan override without a changed selection. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Keep the restored performance and fan settings after OpenBlade recovers HyperBoost from an unexpected service stop on full-power AC, instead of reporting them as external changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Recognize the supported cooling pad when its auxiliary input interfaces report a different revision. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
+- Recognize Fn+P on the supported Blade 16 (2025) RZ09-0528 and clear held-key state across connection, session, and power changes. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Restore GPU offsets when a driver call changes a value before returning an error, and report uncertainty if restoration cannot be confirmed. ([#588](https://github.com/OpenBladeProject/openblade-core/pull/588))
 - Hide the HyperBoost unavailable warning on battery and USB-C power; show it again when full-power AC returns. ([#589](https://github.com/OSSBlade/openblade-core/pull/589))
 

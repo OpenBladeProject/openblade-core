@@ -23,6 +23,9 @@ internal sealed class TrustedFixtureHashRegistry
     public static TrustedFixtureHashRegistry HyperBoostProduction { get; } =
         FromSha256Hex(HyperBoostProductionApprovedSha256Hashes);
 
+    internal static TrustedFixtureHashRegistry Rz090528HyperBoostProduction { get; } =
+        FromSha256Hex(["96B8E86248A1CEEBE7D76A3C49CFCE536CBE084F5D8CE3AC85CE1D9075F91C81"]);
+
     public static TrustedFixtureHashRegistry FromSha256Hex(IEnumerable<string> sha256Hashes)
     {
         ArgumentNullException.ThrowIfNull(sha256Hashes);

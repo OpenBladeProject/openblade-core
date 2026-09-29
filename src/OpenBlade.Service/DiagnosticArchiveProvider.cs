@@ -343,7 +343,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         DiagnosticBundle bundle = new(
             versions,
             CreateDeviceIdentity(status),
-            CreateCapabilities(status.Capabilities),
+            CreateCapabilities(
+                status.Capabilities,
+                RazerBladeModelCatalog.Find(status.Firmware?.ModelNumber)?.ModelNumber),
             CreateConfiguration(status, capabilityDiagnostics, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
@@ -381,7 +383,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     }
 
     private static IReadOnlyDictionary<string, bool> CreateCapabilities(
-        DeviceCapabilities? capabilities)
+        DeviceCapabilities? capabilities,
+        string? modelNumber)
     {
         capabilities ??= DeviceCapabilities.Unavailable();
         var result = new SortedDictionary<string, bool>(StringComparer.Ordinal);
@@ -441,7 +444,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.HyperBoostWithoutCoolingPadAccess
                 == DeviceFeatureAccess.ReadWrite;
         HyperBoostWithoutCoolingPadEvidenceGates evidence =
-            HyperBoostWithoutCoolingPadEvidenceGates.Current;
+            HyperBoostWithoutCoolingPadEvidenceGates.ForModel(modelNumber)
+            ?? default;
         result["performance.hyperBoost.withoutCoolingPad.gate.immediateNoLoad"] =
             evidence.ImmediateNoLoadApplyReadbackRestoreValidated;
         result["performance.hyperBoost.withoutCoolingPad.gate.sustainedNoLoad"] =

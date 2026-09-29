@@ -17,6 +17,12 @@ $requiredScriptFragments = @(
     '-p:SourceRevision=$revision',
     'OpenBlade.Service.dll',
     'Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json',
+    'Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json',
+    "[ValidateSet('RZ09-0581', 'RZ09-0528')]",
+    "$Model = 'RZ09-0581'",
+    'Resolve-OpenBladeBuildIdentity',
+    '-Channel Nightly',
+    '-p:IncludeSourceRevisionInInformationalVersion=false',
     'serviceAssemblySha256',
     'admissionManifestSha256',
     'padless-hyperboost-lifecycle-validation-build.json'

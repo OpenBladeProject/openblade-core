@@ -953,6 +953,13 @@ type sealed class OpenBlade.Contracts.HyperBoostBaseModeCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Balanced { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Performance { get; init; }
   property OpenBlade.Contracts.DeviceFeatureAccess Silent { get; init; }
+type static class OpenBlade.Contracts.HyperBoostCapabilityPolicy
+  method static System.Boolean IsDirectEntryBase(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent, OpenBlade.Contracts.PerformancePreset mode)
+  method static System.Boolean IsWritable(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Boolean RequiresCoolingPad(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> EntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities, System.Boolean coolingPadPresent)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> PadPresentEntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities)
+  method static System.Nullable<OpenBlade.Contracts.PerformancePreset> PadlessEntryBaseMode(OpenBlade.Contracts.DeviceCapabilities capabilities)
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteProtocol51ReadOnlyServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)

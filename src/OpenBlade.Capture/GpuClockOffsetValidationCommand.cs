@@ -19,6 +19,16 @@ internal sealed record GpuClockOffsetValidationPlan(
     int AdjacentStepMegahertz,
     GpuClockOffsetValidationSettings? RequiredBaseline = null)
 {
+    internal bool RequiresIndependentReadback { get; init; }
+
+    internal static GpuClockOffsetValidationPlan Rz090528UiStep { get; } = new(
+        "RZ09-0528 1532:02C6 UI step",
+        "NVIDIA GeForce RTX 5090 Laptop GPU",
+        -15, 15, -15, 15, 5, new(0, 0))
+    {
+        RequiresIndependentReadback = true,
+    };
+
     internal static GpuClockOffsetValidationPlan Rz090528 { get; } = new(
         "RZ09-0528 1532:02C6",
         "NVIDIA GeForce RTX 5090 Laptop GPU",
@@ -161,7 +171,8 @@ internal static class GpuClockOffsetValidationCommand
         IGpuClockOffsetValidationController controller,
         TextWriter output,
         GpuClockOffsetValidationPlan plan,
-        Func<bool>? mutationAllowed = null)
+        Func<bool>? mutationAllowed = null,
+        IGpuClockOffsetProbe? independentProbe = null)
     {
         ArgumentNullException.ThrowIfNull(controller);
         ArgumentNullException.ThrowIfNull(output);
@@ -178,10 +189,29 @@ internal static class GpuClockOffsetValidationCommand
         bool restored = false;
         string? failure = null;
 
+        void ConfirmIndependent(GpuClockOffsetCapabilities observed, string phase)
+        {
+            if (!plan.RequiresIndependentReadback)
+            {
+                return;
+            }
+            GpuClockOffsetCapabilities independent = independentProbe?.Query()
+                ?? throw new InvalidOperationException("Independent NVAPI readback is required.");
+            ValidateBaseline(independent, plan with { RequiredBaseline = null });
+            output.WriteLine($"Nvapi{phase}={Format(independent)}");
+            if (independent.DeviceName != observed.DeviceName
+                || independent.Core.CurrentMegahertz != observed.Core.CurrentMegahertz
+                || independent.Memory.CurrentMegahertz != observed.Memory.CurrentMegahertz)
+            {
+                throw new InvalidOperationException($"NVAPI and NVML disagree at {phase}.");
+            }
+        }
+
         try
         {
             baseline = controller.Query();
             ValidateBaseline(baseline, plan);
+            ConfirmIndependent(baseline, "Baseline");
             target = new(
                 ChooseAdjacent(
                     baseline.Core.CurrentMegahertz,
@@ -202,6 +232,7 @@ internal static class GpuClockOffsetValidationCommand
             controller.Set(target.Value);
             applied = true;
             appliedState = controller.Query();
+            ConfirmIndependent(appliedState, "Applied");
             readBack = Matches(appliedState, target.Value);
             if (!readBack)
             {
@@ -221,8 +252,14 @@ internal static class GpuClockOffsetValidationCommand
                     baseline.Memory.CurrentMegahertz);
                 try
                 {
+                    if (plan.RequiresIndependentReadback && !mutationAllowed())
+                    {
+                        throw new InvalidOperationException(
+                            "The controller-isolation checks changed before restoration.");
+                    }
                     controller.Set(saved);
                     restoredState = controller.Query();
+                    ConfirmIndependent(restoredState, "Restored");
                     restored = Matches(restoredState, saved);
                     if (!restored)
                     {
@@ -338,6 +375,13 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     private const int PerformanceStateZero = 0;
     private const int NvmlMemoryOffsetMultiplier = 2;
     private readonly INvidiaNvmlGpuClockOffsetValidationApi api;
+    private readonly Func<bool>? mutationAllowed;
+    private readonly bool restoreOnFailure;
+
+    internal NvidiaNvmlGpuClockOffsetValidationController(Func<bool> mutationAllowed)
+        : this(NvidiaNvmlGpuClockOffsetValidationApi.Instance, mutationAllowed, restoreOnFailure: false)
+    {
+    }
 
     internal NvidiaNvmlGpuClockOffsetValidationController()
         : this(NvidiaNvmlGpuClockOffsetValidationApi.Instance)
@@ -345,10 +389,13 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     }
 
     internal NvidiaNvmlGpuClockOffsetValidationController(
-        INvidiaNvmlGpuClockOffsetValidationApi api)
+        INvidiaNvmlGpuClockOffsetValidationApi api, Func<bool>? mutationAllowed = null,
+        bool restoreOnFailure = true)
     {
         ArgumentNullException.ThrowIfNull(api);
         this.api = api;
+        this.mutationAllowed = mutationAllowed;
+        this.restoreOnFailure = restoreOnFailure;
     }
 
     public GpuClockOffsetCapabilities Query()
@@ -390,6 +437,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             NvmlValidationClockOffset core = CreateWrite(
                 NvmlValidationClockType.Graphics,
                 settings.CoreMegahertz);
+            RequireMutationAllowed(device);
             coreMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref core),
@@ -398,6 +446,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             NvmlValidationClockOffset memory = CreateWrite(
                 NvmlValidationClockType.Memory,
                 settings.MemoryMegahertz);
+            RequireMutationAllowed(device);
             memoryMayHaveChanged = true;
             EnsureSuccess(
                 api.SetClockOffsets(device, ref memory),
@@ -415,7 +464,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         }
         catch (Exception exception)
         {
-            bool restored = prior is not null
+            bool restored = restoreOnFailure && prior is not null
                 && TryRestore(
                     device,
                     prior.Value,
@@ -439,9 +488,9 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
     private nint OpenFirstDevice()
     {
         EnsureSuccess(api.GetDeviceCount(out uint count), "enumerate NVIDIA GPUs");
-        if (count == 0)
+        if (count != 1)
         {
-            throw new InvalidOperationException("NVIDIA NVML did not report a GPU.");
+            throw new InvalidOperationException("Exactly one NVIDIA GPU is required.");
         }
 
         EnsureSuccess(
@@ -507,6 +556,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         {
             if (restoreCore)
             {
+                RequireMutationAllowed(device);
                 NvmlValidationClockOffset core = CreateWrite(
                     NvmlValidationClockType.Graphics,
                     prior.CoreMegahertz);
@@ -516,6 +566,7 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
             }
             if (restoreMemory)
             {
+                RequireMutationAllowed(device);
                 NvmlValidationClockOffset memory = CreateWrite(
                     NvmlValidationClockType.Memory,
                     prior.MemoryMegahertz);
@@ -531,6 +582,14 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationController
         catch
         {
             return false;
+        }
+    }
+
+    private void RequireMutationAllowed(nint device)
+    {
+        if (mutationAllowed is not null && (QueryCapabilities(device).DeviceName != GpuClockOffsetValidationPlan.Rz090528UiStep.ExpectedDeviceName || !mutationAllowed()))
+        {
+            throw new InvalidOperationException("The guarded GPU transaction is no longer eligible.");
         }
     }
 
@@ -606,6 +665,75 @@ internal sealed class NvidiaNvmlGpuClockOffsetValidationApi
     private NvidiaNvmlGpuClockOffsetValidationApi()
     {
     }
+
+    internal static string ReadDriverVersion()
+    {
+        if (NvmlInit() != 0)
+        {
+            return string.Empty;
+        }
+        try
+        {
+            // NVIDIA documents an 80-byte buffer, including its terminator:
+            // https://docs.nvidia.com/deploy/nvml-api/api/group__nvmlSystemQueries.html
+            var version = new StringBuilder(80);
+            return NvmlSystemGetDriverVersion(version, 80) == 0 ? version.ToString() : string.Empty;
+        }
+        finally
+        {
+            _ = NvmlShutdown();
+        }
+    }
+
+    internal static uint? ReadExactRz090528GpuUtilization()
+    {
+        if (NvmlInit() != 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (NvmlDeviceGetCount(out uint count) != 0 || count != 1
+                || NvmlDeviceGetHandleByIndex(0, out nint device) != 0)
+            {
+                return null;
+            }
+
+            var name = new StringBuilder(96);
+            if (NvmlDeviceGetName(device, name, 96) != 0
+                || name.ToString() != GpuClockOffsetValidationPlan.Rz090528UiStep.ExpectedDeviceName)
+            {
+                return null;
+            }
+
+            return NvmlDeviceGetUtilizationRates(device, out var value) == 0 && value.Gpu <= 100
+                ? value.Gpu : null;
+        }
+        finally { _ = NvmlShutdown(); }
+    }
+
+    internal static StockGpuTelemetry ReadExactRz090528GpuTelemetry() => StockGpuTelemetryReader.Read(
+        Instance,
+        handle => { int status = NvmlDeviceGetUtilizationRates(handle, out var value); return (status, value.Gpu); },
+        handle => { int status = NvmlDeviceGetTemperature(handle, 0, out uint value); return (status, value); });
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlDeviceGetTemperature", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int NvmlDeviceGetTemperature(nint device, uint sensor, out uint temperature);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NvmlUtilization
+    {
+        internal uint Gpu;
+        internal uint Memory;
+    }
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlDeviceGetUtilizationRates", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int NvmlDeviceGetUtilizationRates(nint device, out NvmlUtilization utilization);
+
+    [DllImport("nvml.dll", EntryPoint = "nvmlSystemGetDriverVersion",
+        CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern int NvmlSystemGetDriverVersion(StringBuilder version, uint length);
 
     public int Initialize() => NvmlInit();
 

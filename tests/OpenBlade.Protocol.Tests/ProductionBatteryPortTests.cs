@@ -6,6 +6,97 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ProductionBatteryPortTests
 {
     [Fact]
+    public void HyperBoostCommandSet_RequiresEveryWritableRestorationWithoutInventingBalancedAliases()
+    {
+        DeviceCommandCatalog enable = Catalog(
+            Fixture(ProductionBatteryPort.HyperBoostEnableFirstAction, 0x0D, 2, [1, 1, 7, 0]),
+            Fixture(ProductionBatteryPort.HyperBoostEnableSecondAction, 0x0D, 2, [1, 2, 7, 0]));
+        DeviceCommandCatalog performance = Catalog(
+            Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 0x0D, 2, [1, 1, 2, 0]),
+            Fixture(ProductionBatteryPort.PerformanceBoostSecondAction, 0x0D, 2, [1, 2, 2, 0]));
+        var modes = new HyperBoostBaseModeCapabilities(
+            DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite);
+        Assert.True(ProductionBatteryPort.HasHyperBoostCommandSet(enable, performance, modes));
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(enable, DeviceCommandCatalog.Empty, modes));
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(enable, performance,
+            modes with { Balanced = DeviceFeatureAccess.ReadWrite }));
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(enable, performance,
+            modes with { Silent = DeviceFeatureAccess.ReadWrite }));
+        Assert.False(ProductionBatteryPort.HasHyperBoostCommandSet(enable, performance, null));
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, DeviceFeatureAccess.ObservedOnly)]
+    [InlineData(true, DeviceFeatureAccess.ObservedOnly)]
+    public async Task PadRequiredPerformance_SecondChannelEligibilityFailureIsIndeterminateAndNeverReplayed(
+        bool padLost, DeviceFeatureAccess? padlessAccess)
+    {
+        var pad = new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact);
+        var session = new ScriptedSession(
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
+            Success([0x11, 0x11]), Success([1, 1, 7, 0]), Success([0, 0]))
+        {
+            BeforeResult = (count, _) =>
+            {
+                if (padLost && count == 4)
+                {
+                    pad.State = CoolingPadConnectionState.Absent;
+                }
+            },
+        };
+        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session, pad, padlessAccess);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Single(session.Commands, command => command.CommandId == 0x02);
+        int count = session.Commands.Count;
+        await Assert.ThrowsAnyAsync<Exception>(() => port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Equal(count, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel()
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
+            Success([0x11, 0x11]), Success([1, 1, 7, 0]),
+            Success([0x11, 0x11]), Success([1, 2, 7, 0]),
+            Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
+            Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]),
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]));
+        var pad = new FixedHyperBoostEligibilitySource(CoolingPadConnectionState.PresentExact);
+        await using ProductionBatteryPort port = CreatePadRequiredPerformancePort(session, pad);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Performance, default);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x8C));
+        pad.State = CoolingPadConnectionState.Absent;
+        await port.SetHyperBoostAsync(false, PerformancePreset.Performance, default);
+        Assert.Equal(new[] { "01010700", "01020700", "01010200", "01020200" },
+            session.Commands.Where(command => command.CommandId == 2).Select(command => Convert.ToHexString(command.Arguments.Span)));
+        int count = session.Commands.Count;
+        await Assert.ThrowsAnyAsync<Exception>(() => port.SetHyperBoostAsync(true, PerformancePreset.Balanced, default));
+        Assert.Equal(count, session.Commands.Count);
+    }
+
+    private static ProductionBatteryPort CreatePadRequiredPerformancePort(
+        ScriptedSession session, IHyperBoostEligibilitySource pad,
+        DeviceFeatureAccess? padlessAccess = null) => new(
+            session,
+            Catalog(Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 0x0D, 2, [1, 1, 2, 0]),
+                Fixture(ProductionBatteryPort.PerformanceBoostSecondAction, 0x0D, 2, [1, 2, 2, 0])),
+            AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: padlessAccess,
+            hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            hyperBoostCatalog: Catalog(
+                Fixture(ProductionBatteryPort.HyperBoostEnableFirstAction, 0x0D, 2, [1, 1, 7, 0]),
+                Fixture(ProductionBatteryPort.HyperBoostEnableSecondAction, 0x0D, 2, [1, 2, 7, 0])),
+            hyperBoostEligibility: pad);
+
+    [Fact]
     public async Task AdapterPowerQuery_WithoutCodeControlledEvidenceReturnsUnknownWithoutIo()
     {
         var session = new ScriptedSession(Success([0x07, 0x11]));
@@ -1985,7 +2076,8 @@ public sealed class ProductionBatteryPortTests
     private sealed class FixedHyperBoostEligibilitySource(
         CoolingPadConnectionState state) : IHyperBoostEligibilitySource
     {
-        public CoolingPadConnectionState ObserveCoolingPad() => state;
+        internal CoolingPadConnectionState State { get; set; } = state;
+        public CoolingPadConnectionState ObserveCoolingPad() => State;
     }
 
     private sealed class CancelAfterFirstWriteSession(CancellationTokenSource cancellation)

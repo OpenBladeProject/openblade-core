@@ -20,7 +20,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
             new NvidiaGpuClockOffsetController(api).Query();
 
         Assert.NotNull(actual);
-        Assert.Equal("Test NVIDIA GPU", actual.DeviceName);
+        Assert.Equal("NVIDIA GeForce RTX 5090 Laptop GPU", actual.DeviceName);
         Assert.Equal(new GpuClockOffsetRange(-1000, 1000, 75), actual.Core);
         Assert.Equal(new GpuClockOffsetRange(-1000, 3000, 150), actual.Memory);
         Assert.Equal(1, api.InitializeCalls);
@@ -147,6 +147,49 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         }
     }
 
+    [Theory]
+    [InlineData(0, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void UnadmittedGpu_QueryIsUnavailableAndSetRejectsWithoutWrites(
+        int count,
+        string name)
+    {
+        var api = new FakeNvmlApi
+        {
+            DeviceCount = checked((uint)count),
+            DeviceName = name,
+        };
+        var controller = new NvidiaGpuClockOffsetController(api);
+
+        Assert.Null(controller.Query());
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            controller.Set(new GpuClockOffsetSettings(5, 5)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+        Assert.Equal(2, api.ShutdownCalls);
+    }
+
+    [Theory]
+    [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
+    [InlineData(1, "NVIDIA GeForce RTX 5080 Laptop GPU")]
+    public void Set_RechecksGpuTargetAfterSuccessfulQuery(int count, string name)
+    {
+        var api = new FakeNvmlApi();
+        var controller = new NvidiaGpuClockOffsetController(api);
+        Assert.NotNull(controller.Query());
+        api.DeviceCount = checked((uint)count);
+        api.DeviceName = name;
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            controller.Set(new GpuClockOffsetSettings(5, 5)));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(api.Writes);
+        Assert.Equal(2, api.ShutdownCalls);
+    }
+
     private sealed class FakeNvmlApi : INvidiaNvmlClockOffsetApi
     {
         public int InitializeStatus { get; init; }
@@ -154,6 +197,10 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         public int InitializeCalls { get; private set; }
 
         public int ShutdownCalls { get; private set; }
+
+        public uint DeviceCount { get; set; } = 1;
+
+        public string DeviceName { get; set; } = "NVIDIA GeForce RTX 5090 Laptop GPU";
 
         public int CoreCurrent { get; set; }
 
@@ -181,7 +228,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public int GetDeviceCount(out uint count)
         {
-            count = 1;
+            count = DeviceCount;
             return 0;
         }
 
@@ -193,7 +240,7 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public int GetDeviceName(nint device, StringBuilder name, uint length)
         {
-            name.Append("Test NVIDIA GPU");
+            name.Append(DeviceName);
             return 0;
         }
 

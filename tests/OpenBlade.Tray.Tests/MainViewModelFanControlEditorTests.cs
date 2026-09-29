@@ -5,6 +5,69 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Theory]
+    [InlineData(FanMode.Automatic, true)]
+    [InlineData(FanMode.ManualCurve, true)]
+    [InlineData(FanMode.ManualCurve, false)]
+    public async Task FanControlEditor_ProgrammaticToggleSynchronizationDoesNotCreateOverride(FanMode mode, bool hotter)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var settings = new FanControlSettings(mode, 3000,
+            new ManualFanCurve(ManualFanCurve.Default.Cpu, ManualFanCurve.Default.Gpu, hotter));
+        var status = CreateStatus(verified: true, blocked: false);
+        await PushAsync(client, dispatcher, status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Fans = new(mode, SettingValueSource.PowerProfile),
+                FanControl = settings,
+            },
+            ConfirmedState = status.ConfirmedState! with { Fans = mode },
+        });
+
+        await viewModel.SetUseHigherFanTemperatureAsync(viewModel.UseHigherFanTemperature);
+
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Null(client.FanOverride);
+        Assert.Equal(hotter, viewModel.UseHigherFanTemperature);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FanControlEditor_ChangedToggleCommitsOnceAndFailureRestoresEditor(bool failed)
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new(failed ? ControlOperationStatus.Failed : ControlOperationStatus.Applied, "Test"),
+        };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var status = CreateStatus(verified: true, blocked: false);
+        await PushAsync(client, dispatcher, status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Fans = new(FanMode.ManualCurve, SettingValueSource.PowerProfile),
+                FanControl = new(FanMode.ManualCurve, 3000, ManualFanCurve.Default),
+            },
+            ConfirmedState = status.ConfirmedState! with { Fans = FanMode.ManualCurve },
+        });
+
+        await viewModel.SetUseHigherFanTemperatureAsync(false);
+        // Rebinding after success or rejection must not send a second request.
+        await viewModel.SetUseHigherFanTemperatureAsync(viewModel.UseHigherFanTemperature);
+
+        Assert.Equal(1, client.MutationCalls);
+        Assert.False(client.LastFanControlSettings!.ManualCurve.UseHigherTemperatureForBoth);
+        Assert.Equal(FanMode.ManualCurve, client.LastFanControlSettings.Mode);
+        Assert.Equal(failed, viewModel.UseHigherFanTemperature);
+    }
+
     [Fact]
     public async Task FanControlEditor_EditsNotifyChangedBindingsBeforeSettings()
     {

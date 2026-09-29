@@ -35,8 +35,8 @@ Available controls vary by model. See the
 ## Features
 
 - Power modes, automatic or fixed fan speeds,
-  custom fan curves, and NVIDIA GPU clock offsets. HyperBoost is available on
-  the Blade 16 (2026) without the Razer cooling pad.
+  custom fan curves, and NVIDIA GPU clock offsets. HyperBoost works without the
+  Razer cooling pad on both supported laptops.
 - Charge limits, battery health, and separate settings for each
   power source.
 - Keyboard and lid-logo effects, reactive lighting, mute indicators,

@@ -5,6 +5,42 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class GpuClockOffsetValidationCommandTests
 {
+    [Theory]
+    [InlineData(1, false, 1)]
+    [InlineData(2, false, 2)]
+    [InlineData(0, true, 2)]
+    public void CombinedNativeFailureNeverAttemptsRollback(int failWrite, bool mismatch, int writes)
+    {
+        var api = new FakeApi { FailWriteAt = failWrite, MismatchAfterWrites = mismatch };
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => true, restoreOnFailure: false);
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Equal(writes, api.Writes.Count);
+    }
+
+    [Fact]
+    public void GuardLossBeforeSecondNativeWritePreventsMemoryAndRollbackWrites()
+    {
+        var api = new FakeApi();
+        int guards = 0;
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => ++guards == 1);
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Single(api.Writes);
+        Assert.Equal(5, api.CoreCurrent);
+        Assert.Equal(0, api.MemoryCurrent);
+    }
+
+    [Fact]
+    public void PartialNativeFailureRetainsGuardedBackendRollback()
+    {
+        var api = new FakeApi { FailFirstMemoryWrite = true };
+        int guards = 0;
+        var controller = new NvidiaNvmlGpuClockOffsetValidationController(api, () => { guards++; return true; });
+        Assert.Throws<InvalidOperationException>(() => controller.Set(new(5, 5)));
+        Assert.Equal(4, guards);
+        Assert.Equal(0, api.CoreCurrent);
+        Assert.Equal(0, api.MemoryCurrent);
+    }
+
     [Fact]
     public void Run_AppliesAdjacentValuesReadsBackAndRestores()
     {
@@ -173,6 +209,105 @@ public sealed class GpuClockOffsetValidationCommandTests
         Assert.Equal(1, api.ShutdownCalls);
     }
 
+    [Fact]
+    public void Run_UiStepConfirmsBothApisAndRestoresWithFreshGuards()
+    {
+        var controller = new FakeController();
+        var probe = new IndependentProbe(controller);
+        var output = new StringWriter();
+        int guards = 0;
+        int result = GpuClockOffsetValidationCommand.Run(
+            controller, output, GpuClockOffsetValidationPlan.Rz090528UiStep,
+            () => { guards++; return true; }, probe);
+
+        Assert.Equal(0, result);
+        Assert.Equal(2, guards);
+        Assert.Equal(3, probe.Calls);
+        Assert.Equal([new(5, 5), new GpuClockOffsetValidationSettings(0, 0)], controller.Writes);
+        Assert.Contains("NvapiApplied=Core=5;Memory=5", output.ToString());
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void Run_UiStepIndependentFailureRejectsAndRestores(int failureCall, bool throwFailure)
+    {
+        var controller = new FakeController();
+        var probe = new IndependentProbe(controller) { FailureCall = failureCall, ThrowFailure = throwFailure };
+        var output = new StringWriter();
+        int result = GpuClockOffsetValidationCommand.Run(
+            controller, output, GpuClockOffsetValidationPlan.Rz090528UiStep,
+            independentProbe: probe);
+
+        Assert.Equal(2, result);
+        Assert.Equal(new(0, 0), controller.Current);
+        Assert.Equal(failureCall == 1 ? 0 : 2, controller.Writes.Count);
+        Assert.Contains("Success=False", output.ToString());
+        Assert.Contains(failureCall == 2 ? "Restored=True" : "Restored=False", output.ToString());
+    }
+
+    [Fact]
+    public void Run_UiStepRejectsMissingProbeNonzeroBaselineAndChangedGuards()
+    {
+        foreach (int scenario in new[] { 0, 1, 2 })
+        {
+            var controller = new FakeController { Current = new(scenario == 1 ? 1 : 0, 0) };
+            var output = new StringWriter();
+            int result = GpuClockOffsetValidationCommand.Run(
+                controller, output, GpuClockOffsetValidationPlan.Rz090528UiStep,
+                () => scenario != 2, scenario == 0 ? null : new IndependentProbe(controller));
+            Assert.Equal(2, result);
+            Assert.Empty(controller.Writes);
+        }
+    }
+
+    [Fact]
+    public void Run_UiStepStopsRestorationWhenIsolationChanges()
+    {
+        var controller = new FakeController();
+        var output = new StringWriter();
+        int guards = 0;
+        Assert.Equal(2, GpuClockOffsetValidationCommand.Run(
+            controller, output, GpuClockOffsetValidationPlan.Rz090528UiStep,
+            () => ++guards == 1, new IndependentProbe(controller)));
+        Assert.Single(controller.Writes);
+        Assert.Contains("Restored=False", output.ToString());
+        Assert.Contains("checks changed before restoration", output.ToString());
+    }
+
+    [Fact]
+    public void Controller_RejectsMultipleGpusBeforeSelectingOne()
+    {
+        var api = new FakeApi { DeviceCount = 2 };
+        Assert.Throws<InvalidOperationException>(() => new NvidiaNvmlGpuClockOffsetValidationController(api).Query());
+        Assert.Equal(0, api.OpenCalls);
+        Assert.Empty(api.Writes);
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    private sealed class IndependentProbe(FakeController controller) : IGpuClockOffsetProbe
+    {
+        internal int Calls { get; private set; }
+        internal int FailureCall { get; init; }
+        internal bool ThrowFailure { get; init; }
+        public GpuClockOffsetCapabilities Query()
+        {
+            Calls++;
+            GpuClockOffsetCapabilities value = controller.Query();
+            if (Calls != FailureCall)
+            {
+                return value;
+            }
+            if (ThrowFailure)
+            {
+                throw new InvalidOperationException("scripted independent probe failure");
+            }
+            return value with { Memory = value.Memory with { CurrentMegahertz = 1 } };
+        }
+    }
+
     private sealed class FakeController : IGpuClockOffsetValidationController
     {
         private int setCalls;
@@ -213,7 +348,11 @@ public sealed class GpuClockOffsetValidationCommandTests
 
     private sealed class FakeApi : INvidiaNvmlGpuClockOffsetValidationApi
     {
+        internal uint DeviceCount { get; init; } = 1;
+        internal int OpenCalls { get; private set; }
         internal bool FailFirstMemoryWrite { get; set; }
+        internal int FailWriteAt { get; init; }
+        internal bool MismatchAfterWrites { get; init; }
 
         internal int CoreCurrent { get; set; }
 
@@ -239,12 +378,13 @@ public sealed class GpuClockOffsetValidationCommandTests
 
         public int GetDeviceCount(out uint count)
         {
-            count = 1;
+            count = DeviceCount;
             return 0;
         }
 
         public int GetDeviceHandleByIndex(uint index, out nint device)
         {
+            OpenCalls++;
             device = new nint(1);
             return 0;
         }
@@ -268,6 +408,10 @@ public sealed class GpuClockOffsetValidationCommandTests
             info.CurrentMegahertz = info.Type == NvmlValidationClockType.Graphics
                 ? CoreCurrent
                 : MemoryCurrent;
+            if (MismatchAfterWrites && Writes.Count >= 2)
+            {
+                info.CurrentMegahertz = 0;
+            }
             return 0;
         }
 
@@ -290,6 +434,10 @@ public sealed class GpuClockOffsetValidationCommandTests
             else
             {
                 MemoryCurrent = info.CurrentMegahertz;
+            }
+            if (Writes.Count == FailWriteAt)
+            {
+                return 3;
             }
             return 0;
         }

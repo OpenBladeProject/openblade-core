@@ -64,6 +64,11 @@ internal sealed class ValidationRunContext
     private int nextTransactionId = 1;
     private ActorLease? activeActorLease;
 
+    internal int RemainingTransactions
+    {
+        get { lock (sync) { return MaximumTransactionId - nextTransactionId + 1; } }
+    }
+
     public bool TryAllocateTransaction(out byte transactionId)
     {
         lock (sync)

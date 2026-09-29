@@ -40,7 +40,6 @@ public sealed class Rz090528CoverageContractTests
         "performance.ac.cpuPowerLimitWatts=Captured",
         "performance.ac.cpuVoltageOptimizer=Captured",
         "performance.ac.gpuClockOffsetUiPolicy=Captured",
-        "performance.ac.gpuClockOffsets=QueryValidated",
         "performance.ac.gpuOverclockToggle=Captured",
         "performance.battery.presets=Captured",
         "performance.battery.readback=QueryValidated",
@@ -55,7 +54,6 @@ public sealed class Rz090528CoverageContractTests
         "specialKeys.functionLayerReports=Captured",
         "specialKeys.m1PageUp=Captured",
         "specialKeys.m2PageDown=Captured",
-        "specialKeys.performanceKey=Captured",
     ];
 
     [Fact]
@@ -86,9 +84,9 @@ public sealed class Rz090528CoverageContractTests
                 group => group.Count(),
                 StringComparer.Ordinal);
 
-        Assert.Equal(72, counts["ProductionAdmitted"]);
-        Assert.Equal(8, counts["QueryValidated"]);
-        Assert.Equal(41, counts["Captured"]);
+        Assert.Equal(74, counts["ProductionAdmitted"]);
+        Assert.Equal(7, counts["QueryValidated"]);
+        Assert.Equal(40, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(5, counts["Absent"]);
@@ -104,7 +102,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("c1a551d", source.GetProperty("revision").GetString());
+        Assert.Equal("c4ec5f6", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());

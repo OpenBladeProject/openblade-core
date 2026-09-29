@@ -61,6 +61,7 @@ public sealed record PerformanceFanSetterValidationResult(
     bool ManualRecoveryRequired,
     PerformanceFanValidationFailure Failure)
 {
+    internal PerformanceFanThermalPair? ObserverFailureReconciliation { get; init; }
     internal bool FullPowerAdapterConfirmed { get; init; }
 
     internal OpenBlade.Contracts.AdapterPowerState InitialAdapterPowerState
@@ -245,6 +246,19 @@ internal interface IHyperBoostAdapterTransitionValidationRunner
         CancellationToken cancellationToken);
 }
 
+internal enum ExactHyperBoostValidationStage { Baseline, Candidate, Restored }
+
+internal delegate Task<bool> ExactHyperBoostValidationObserver(
+    ExactHyperBoostValidationStage stage, Func<CancellationToken, Task<bool>> guard,
+    CancellationToken cancellationToken);
+
+// A validation session that can re-admit an observer's external (non-HID) write, such as a GPU offset.
+internal interface IExactExternalWriteGuard
+{
+    Task<bool> ValidateExternalWriteAsync(
+        ValidationRunContext context, TimeSpan timeout, CancellationToken token);
+}
+
 internal sealed class PerformanceFanSetterValidationRunner
     : IPerformanceFanSetterValidationRunner,
       IHyperBoostAdapterTransitionValidationRunner,
@@ -276,6 +290,10 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly IHyperBoostExternalWorkloadSource? externalWorkloadSource;
     private readonly ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan;
     private readonly ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan;
+    private readonly ExactHyperBoostValidationObserver? exactObserver;
+    private readonly Rz090528PadlessNoLoadValidation? padlessNoLoad;
+    private readonly Rz090528PadlessLoadedValidation? padlessLoaded;
+    private readonly Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary;
     private int started;
 
     internal PerformanceFanSetterValidationRunner(
@@ -293,7 +311,11 @@ internal sealed class PerformanceFanSetterValidationRunner
         IHyperBoostThermalTelemetrySource? thermalTelemetrySource = null,
         IHyperBoostExternalWorkloadSource? externalWorkloadSource = null,
         ReviewedHyperBoostAdapterTransitionPlan? adapterTransitionPlan = null,
-        ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null)
+        ReviewedHyperBoostPowerSourceBoundaryPlan? powerSourceBoundaryPlan = null,
+        ExactHyperBoostValidationObserver? exactObserver = null,
+        Rz090528PadlessNoLoadValidation? padlessNoLoad = null,
+        Rz090528PadlessLoadedValidation? padlessLoaded = null,
+        Rz090528PadlessBatteryBoundaryValidation? padlessBatteryBoundary = null)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -364,6 +386,25 @@ internal sealed class PerformanceFanSetterValidationRunner
         this.externalWorkloadSource = externalWorkloadSource;
         this.adapterTransitionPlan = adapterTransitionPlan;
         this.powerSourceBoundaryPlan = powerSourceBoundaryPlan;
+        this.exactObserver = exactObserver;
+        if (padlessNoLoad is not null && (exactObserver is not null || safetyGate is not null || sustainedPlan is not null))
+        {
+            throw new ArgumentException("The exact padless no-load experiment requires its own composition.");
+        }
+
+        if (padlessLoaded is not null && (padlessNoLoad is not null || exactObserver is not null || safetyGate is not null || sustainedPlan is not null || adapterTransitionPlan is not null || powerSourceBoundaryPlan is not null))
+        {
+            throw new ArgumentException("The exact loaded experiment requires its own composition.");
+        }
+        if (padlessBatteryBoundary is not null && (padlessNoLoad is not null || padlessLoaded is not null
+            || exactObserver is not null || safetyGate is not null || sustainedPlan is not null
+            || adapterTransitionPlan is not null || powerSourceBoundaryPlan is not null))
+        {
+            throw new ArgumentException("The exact battery-boundary experiment requires its own composition.");
+        }
+        this.padlessBatteryBoundary = padlessBatteryBoundary;
+        this.padlessLoaded = padlessLoaded;
+        this.padlessNoLoad = padlessNoLoad;
     }
 
     public Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -534,6 +575,34 @@ internal sealed class PerformanceFanSetterValidationRunner
                 }
             }
 
+            if (!await ObserveExactStageAsync(ExactHyperBoostValidationStage.Baseline,
+                context, actor.Session, state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.ToResult();
+            }
+
+            if (padlessNoLoad is not null && (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession baselineSession
+                || !await padlessNoLoad.PrepareAsync(baselineSession, cancellationToken).ConfigureAwait(false)))
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
+                return state.ToResult();
+            }
+            if (padlessLoaded is not null && (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession entryLoadedSession
+                || !await padlessLoaded.PrepareAsync(entryLoadedSession, cancellationToken).ConfigureAwait(false)))
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
+                return state.ToResult();
+            }
+            if (padlessBatteryBoundary is not null && (target != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || actor.Session is not IRz090528BatteryBoundarySource boundaryEntry
+                || !await padlessBatteryBoundary.PrepareAsync(boundaryEntry, cancellationToken).ConfigureAwait(false)))
+            {
+                state.Failure = PerformanceFanValidationFailure.BaselineReadFailed;
+                return state.ToResult();
+            }
+            padlessLoaded?.MarkApplyStarted();
             state.ApplyAttempted = true;
             IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
             for (int index = 0; index < applyPayloads.Count; index++)
@@ -593,6 +662,7 @@ internal sealed class PerformanceFanSetterValidationRunner
 
             state.Candidate = candidate.Pair;
             state.CandidateConfirmed = candidate.State == ExpectedState(target);
+            if (state.CandidateConfirmed) { padlessLoaded?.MarkCandidateConfirmed(); }
             if (!state.CandidateConfirmed)
             {
                 state.Failure = PerformanceFanValidationFailure.CandidateTargetMismatch;
@@ -677,6 +747,75 @@ internal sealed class PerformanceFanSetterValidationRunner
                 }
             }
 
+            if (exactObserver is not null && (!state.CandidateConfirmed ||
+                !await ObserveExactStageAsync(ExactHyperBoostValidationStage.Candidate,
+                    context, actor.Session, state, cancellationToken).ConfigureAwait(false)))
+            {
+                state.ManualRecoveryRequired = true;
+                return state.ToResult();
+            }
+
+            if (padlessNoLoad is not null)
+            {
+                if (!state.CandidateConfirmed || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession dwellSession)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+                Rz090528NoLoadResult observed = await padlessNoLoad.RunAsync(dwellSession, cancellationToken).ConfigureAwait(false);
+                if (!observed.Completed)
+                {
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
+                }
+
+                if (!observed.PermitKnownStateRestore)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+            }
+
+            if (padlessLoaded is not null)
+            {
+                if (!state.CandidateConfirmed || actor.Session is not Rz090528PadlessHyperBoostValidation.GuardedSession loadedSession)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+                Rz090528LoadedResult observed = await padlessLoaded.RunAsync(loadedSession, cancellationToken).ConfigureAwait(false);
+                if (!observed.Completed) { state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed; }
+                if (!observed.PermitKnownStateRestore)
+                {
+                    state.ManualRecoveryRequired = true;
+                    return state.ToResult();
+                }
+            }
+
+            if (padlessBatteryBoundary is not null)
+            {
+                if (!state.CandidateConfirmed || actor.Session is not IRz090528BatteryBoundarySource boundarySource)
+                {
+                    state.ManualRecoveryRequired = true;
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
+                    return state.ToResult();
+                }
+                Rz090528BatteryBoundaryDecision decision = await padlessBatteryBoundary.RunAsync(
+                    boundarySource, cancellationToken).ConfigureAwait(false);
+                if (!decision.TransitionPassed) { state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed; }
+                if (decision.AlreadyPerformance && decision.Pair == baseline.Pair)
+                {
+                    // Firmware restored the saved pair; do not claim a restoration setter.
+                    state.Restoration = decision.Pair;
+                    state.Restored = true;
+                }
+                else if (!decision.PermitRestore || decision.AlreadyPerformance)
+                {
+                    state.ManualRecoveryRequired = true;
+                    state.Failure = PerformanceFanValidationFailure.SustainedValidationFailed;
+                    return state.ToResult();
+                }
+            }
+
             // Restoration starts only after both candidate channels have been read
             // successfully. A failed or mismatched paired read is indeterminate and
             // deliberately requires manual recovery instead of another write.
@@ -717,11 +856,19 @@ internal sealed class PerformanceFanSetterValidationRunner
 
                 state.Restoration = restoration.Pair;
                 state.Restored = restoration.Pair == baseline.Pair;
+                if (state.Restored) { padlessLoaded?.MarkRestorationReadback(); }
                 if (!state.Restored)
                 {
                     state.ManualRecoveryRequired = true;
                     state.Failure = PerformanceFanValidationFailure.RestorationMismatch;
                 }
+            }
+
+            if (state.Restored && !await ObserveExactStageAsync(
+                ExactHyperBoostValidationStage.Restored, context, actor.Session,
+                state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.ToResult();
             }
 
             if (state.Restored
@@ -792,6 +939,58 @@ internal sealed class PerformanceFanSetterValidationRunner
                     cleanupDrainTimeout,
                     pendingDisposals).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task<bool> ObserveExactStageAsync(
+        ExactHyperBoostValidationStage stage, ValidationRunContext context,
+        IRazerCommandSession session, RunState state, CancellationToken token)
+    {
+        if (exactObserver is null)
+        {
+            return true;
+        }
+
+        async Task<bool> Guard(CancellationToken cancellation)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (session is not IExactExternalWriteGuard exact
+                || !await exact.ValidateExternalWriteAsync(context, exchangeTimeout, cancellation).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            PairRead pair = await ReadPairAsync(context, session, cancellation,
+                allowHyperBoost: stage == ExactHyperBoostValidationStage.Candidate).ConfigureAwait(false);
+            return pair.Success && pair.State == (stage == ExactHyperBoostValidationStage.Candidate
+                ? ThermalModeState.HyperBoostObserved : ThermalModeState.PerformanceAutomatic);
+        }
+        try
+        {
+            if (state.TargetForObserver != PerformanceFanValidationTarget.HyperBoostFromPerformance
+                || !await Guard(token).ConfigureAwait(false)
+                || !await exactObserver(stage, Guard, token).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException();
+            }
+
+            return true;
+        }
+        catch
+        {
+            state.Failure = token.IsCancellationRequested
+                ? PerformanceFanValidationFailure.Canceled
+                : PerformanceFanValidationFailure.SustainedValidationFailed;
+            state.ManualRecoveryRequired = true;
+            // The observer may have changed GPU offsets. Do not attempt cleanup writes.
+            try
+            {
+                PairRead observed = await ReadPairAsync(context, session, CancellationToken.None,
+                    allowHyperBoost: true).ConfigureAwait(false);
+                state.ObserverFailureReconciliation = observed.Pair;
+            }
+            catch { }
+            return false;
         }
     }
 
@@ -1816,6 +2015,8 @@ internal sealed class PerformanceFanSetterValidationRunner
 
     private sealed class RunState(PerformanceFanValidationTarget target)
     {
+        internal PerformanceFanValidationTarget TargetForObserver => target;
+        internal PerformanceFanThermalPair? ObserverFailureReconciliation { get; set; }
         internal PerformanceFanThermalPair? Baseline { get; set; }
         internal PerformanceFanThermalPair? Candidate { get; set; }
         internal FanRpmReadings? CandidateFanRpm { get; set; }
@@ -1873,6 +2074,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             Failure)
         {
             FullPowerAdapterConfirmed = FullPowerAdapterConfirmed,
+            ObserverFailureReconciliation = ObserverFailureReconciliation,
             InitialAdapterPowerState = InitialAdapterPowerState,
             CoolingPadAbsentConfirmed = CoolingPadAbsentConfirmed,
             CoolingPadPresentConfirmed = CoolingPadPresentConfirmed,

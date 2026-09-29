@@ -359,6 +359,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Boolean get_SupportsMcuVersionQuery()
   method virtual System.Boolean get_SupportsRz090581CapabilityDiagnosticsQuery()
   method virtual System.Boolean get_SupportsStartupAnimationQuery()
+  method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Boolean requiresCoolingPad, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.Rz090581CapabilityDiagnostics> QueryRz090581CapabilityDiagnosticsAsync(System.Threading.CancellationToken cancellationToken)

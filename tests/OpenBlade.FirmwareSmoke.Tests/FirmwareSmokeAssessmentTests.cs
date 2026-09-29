@@ -188,6 +188,30 @@ public sealed class FirmwareSmokeAssessmentTests
                     == "capabilities.hyper-boost-without-cooling-pad").Outcome);
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("ObservedOnly", true)]
+    [InlineData("ReadWrite", true)]
+    [InlineData("ReadOnly", false)]
+    public void Rz090528PadlessAccessAllowsOnlyAdmittedReadWriteOrValidationObservedOnly(
+        string? access, bool passes)
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.6.0.0") with
+        {
+            TargetModel = "RZ09-0528",
+        };
+        snapshot = snapshot with
+        {
+            Capabilities = snapshot.Capabilities with { HyperBoostWithoutCoolingPadAccess = access },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+        Assert.Equal(
+            passes ? FirmwareSmokeOutcome.Passed : FirmwareSmokeOutcome.Failed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.hyper-boost-without-cooling-pad").Outcome);
+    }
     [Fact]
     public void Rz090581FirmwareUsesModelScopedHyperBoostCapability()
     {
@@ -216,9 +240,10 @@ public sealed class FirmwareSmokeAssessmentTests
             Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
-                HyperBoostAccess = null,
-                HyperBoostWithoutCoolingPadAccess = null,
-                HyperBoostBaseModes = null,
+                HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite.ToString(),
+                HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
+                    DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite),
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
                 LightingEffects =
                 [
@@ -269,7 +294,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 GpuOverclock = new GpuOverclockCapabilities(
                     new DeviceNumericRange(-1000, 400, null),
                     new DeviceNumericRange(-1000, 3000, null),
-                    DeviceFeatureAccess.ObservedOnly)
+                    DeviceFeatureAccess.ReadWrite)
                 {
                     SupportsEnableDisable = true,
                 },
@@ -329,11 +354,12 @@ public sealed class FirmwareSmokeAssessmentTests
 
         FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
 
-        Assert.Null(snapshot.Capabilities.HyperBoostAccess);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite.ToString(), snapshot.Capabilities.HyperBoostAccess);
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.hyper-boost").Outcome);
-        foreach (DeviceFeatureAccess unsupportedAccess in Enum.GetValues<DeviceFeatureAccess>())
+        foreach (DeviceFeatureAccess unsupportedAccess in Enum.GetValues<DeviceFeatureAccess>()
+            .Where(access => access != DeviceFeatureAccess.ReadWrite))
         {
             FirmwareSmokeReport unsupportedHyperBoostReport = FirmwareSmokeAssessment.ValidateBaseline(
                 snapshot with
