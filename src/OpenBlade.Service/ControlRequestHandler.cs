@@ -195,6 +195,15 @@ public sealed class ControlRequestHandler
                     set.Lifetime,
                     stillControlsSession,
                     cancellationToken)),
+            ObserveCpuTuningRequest observe => Result(request.RequestId,
+                await runtime.ObserveCpuTuningAsync(observe.UseInstalledBackend,
+                    stillControlsSession, cancellationToken)),
+            SetCpuTuningRequest set => Result(request.RequestId,
+                await runtime.SetCpuTuningAsync(set.Target, set.Settings,
+                    stillControlsSession, cancellationToken)),
+            RestoreCpuTuningRequest restore => Result(request.RequestId,
+                await runtime.RestoreCpuTuningAsync(restore.Target,
+                    stillControlsSession, cancellationToken)),
             ValidatePadlessHyperBoostLifecycleRequest validate => Result(
                 request.RequestId,
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(

@@ -546,7 +546,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -1133,7 +1133,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(59, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

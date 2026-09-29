@@ -16,6 +16,9 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
     // performance write when the authoritative HyperBoost restoration is unknown.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PerformancePreset? HyperBoostRestoredPerformance { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CpuTuningStatus? CpuTuning { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
@@ -26,6 +29,9 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetGpuClockTuningRequest), "setGpuClockTuning")]
+[JsonDerivedType(typeof(SetCpuTuningRequest), "setCpuTuning")]
+[JsonDerivedType(typeof(ObserveCpuTuningRequest), "observeCpuTuning")]
+[JsonDerivedType(typeof(RestoreCpuTuningRequest), "restoreCpuTuning")]
 [JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
 [JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
 [JsonDerivedType(typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift")]
@@ -113,6 +119,25 @@ public sealed record SetGpuClockTuningRequest(
     Guid RequestId,
     GpuClockTuningSettings Value,
     OverrideLifetime Lifetime)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    CpuTuningTarget Target,
+    CpuTuningSettings Settings)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ObserveCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    bool UseInstalledBackend)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record RestoreCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    CpuTuningTarget Target)
     : ServiceRequest(Version, RequestId);
 
 public enum PadlessHyperBoostLifecycleScenario
@@ -454,6 +479,9 @@ public sealed record ServiceStatusSnapshot(
     public IReadOnlyList<string>? HyperBoostBlockingControllers { get; init; }
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CpuTuningStatus? CpuTuning { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

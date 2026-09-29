@@ -242,9 +242,11 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   ctor (OpenBlade.Contracts.ControlOperationStatus Status, System.String Message)
   method OpenBlade.Contracts.ControlOperationResult <Clone>$()
   method OpenBlade.Contracts.ControlOperationStatus get_Status()
+  method OpenBlade.Contracts.CpuTuningStatus get_CpuTuning()
   method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_HyperBoostRestoredPerformance()
   method System.String get_Message()
   method System.Void Deconstruct(out OpenBlade.Contracts.ControlOperationStatus Status, out System.String Message)
+  method System.Void set_CpuTuning(OpenBlade.Contracts.CpuTuningStatus value)
   method System.Void set_HyperBoostRestoredPerformance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_Message(System.String value)
   method System.Void set_Status(OpenBlade.Contracts.ControlOperationStatus value)
@@ -255,6 +257,7 @@ type sealed class OpenBlade.Contracts.ControlOperationResult
   method static System.Boolean op_Inequality(OpenBlade.Contracts.ControlOperationResult left, OpenBlade.Contracts.ControlOperationResult right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.ControlOperationResult other)
   property OpenBlade.Contracts.ControlOperationStatus Status { get; init; }
+  property OpenBlade.Contracts.CpuTuningStatus CpuTuning { get; init; }
   property System.Nullable<OpenBlade.Contracts.PerformancePreset> HyperBoostRestoredPerformance { get; init; }
   property System.String Message { get; init; }
 type enum OpenBlade.Contracts.ControlOperationStatus
@@ -1492,6 +1495,22 @@ type sealed class OpenBlade.Contracts.ManualOverride<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ManualOverride<T> other)
   property OpenBlade.Contracts.OverrideLifetime Lifetime { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.ObserveCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ObserveCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean UseInstalledBackend)
+  method System.Boolean get_UseInstalledBackend()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean UseInstalledBackend)
+  method System.Void set_UseInstalledBackend(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ObserveCpuTuningRequest left, OpenBlade.Contracts.ObserveCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ObserveCpuTuningRequest left, OpenBlade.Contracts.ObserveCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.ObserveCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ObserveCpuTuningRequest other)
+  property System.Boolean UseInstalledBackend { get; init; }
 type sealed class OpenBlade.Contracts.ObserveStateRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ObserveStateRequest>
@@ -1534,7 +1553,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 58
+  field const System.Int32 ProtocolVersion = 59
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1918,6 +1937,22 @@ type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ResolvedSetting<T> other)
   property OpenBlade.Contracts.SettingValueSource Source { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.RestoreCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.RestoreCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CpuTuningTarget Target)
+  method OpenBlade.Contracts.CpuTuningTarget get_Target()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CpuTuningTarget Target)
+  method System.Void set_Target(OpenBlade.Contracts.CpuTuningTarget value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.RestoreCpuTuningRequest left, OpenBlade.Contracts.RestoreCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.RestoreCpuTuningRequest left, OpenBlade.Contracts.RestoreCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.RestoreCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.RestoreCpuTuningRequest other)
+  property OpenBlade.Contracts.CpuTuningTarget Target { get; init; }
 type struct OpenBlade.Contracts.RgbColor
   interface System.IEquatable<OpenBlade.Contracts.RgbColor>
   ctor (System.Byte Red, System.Byte Green, System.Byte Blue)
@@ -2083,6 +2118,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
+  method OpenBlade.Contracts.CpuTuningStatus get_CpuTuning()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method OpenBlade.Contracts.DeviceObservationReason get_ObservationReason()
@@ -2135,6 +2171,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
   method System.Void set_ControllerDetectionWarning(System.String value)
+  method System.Void set_CpuTuning(OpenBlade.Contracts.CpuTuningStatus value)
   method System.Void set_DesiredState(OpenBlade.Contracts.DesiredDeviceState value)
   method System.Void set_DeviceVerified(System.Boolean value)
   method System.Void set_DisplayBrightnessHidAvailability(OpenBlade.Contracts.DisplayBrightnessHidAvailability value)
@@ -2177,6 +2214,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
   property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
+  property OpenBlade.Contracts.CpuTuningStatus CpuTuning { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
   property OpenBlade.Contracts.DeviceObservationReason ObservationReason { get; init; }
@@ -2258,6 +2296,25 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetCpuTuningRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCpuTuningRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CpuTuningTarget Target, OpenBlade.Contracts.CpuTuningSettings Settings)
+  method OpenBlade.Contracts.CpuTuningSettings get_Settings()
+  method OpenBlade.Contracts.CpuTuningTarget get_Target()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CpuTuningTarget Target, out OpenBlade.Contracts.CpuTuningSettings Settings)
+  method System.Void set_Settings(OpenBlade.Contracts.CpuTuningSettings value)
+  method System.Void set_Target(OpenBlade.Contracts.CpuTuningTarget value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCpuTuningRequest left, OpenBlade.Contracts.SetCpuTuningRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCpuTuningRequest left, OpenBlade.Contracts.SetCpuTuningRequest right)
+  method virtual OpenBlade.Contracts.SetCpuTuningRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCpuTuningRequest other)
+  property OpenBlade.Contracts.CpuTuningSettings Settings { get; init; }
+  property OpenBlade.Contracts.CpuTuningTarget Target { get; init; }
 type sealed class OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest>

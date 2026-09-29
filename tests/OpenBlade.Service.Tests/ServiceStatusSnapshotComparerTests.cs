@@ -6,6 +6,45 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceStatusSnapshotComparerTests
 {
     [Fact]
+    public void CpuStatusComparesValuesAcrossNewCoreCollectionsAndDetectsIndependentStateChanges()
+    {
+        var backend = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly,
+            CpuTuningBackendAvailability.Available);
+        var saved = new CpuSavedConfiguration(65000, 2, 2,
+            new(CpuCurveOptimizerMode.PerCore, null, [new(0, -1), new(2, -5)]));
+        var live = new CpuLiveState(new(65, null, null), [new(0, -1), new(2, -5)]);
+        var cpu = new CpuTuningStatus(saved, live, backend, backend, CpuTuningPendingBoot.Requested, true);
+        var baseline = CreateStatus() with { CpuTuning = cpu };
+        var reconstructed = baseline with
+        {
+            CpuTuning = cpu with
+            {
+                SavedConfiguration = saved with
+                {
+                    CurveOptimizer = saved.CurveOptimizer! with
+                    {
+                        CoreValues = saved.CurveOptimizer.CoreValues.ToList(),
+                    },
+                },
+                LiveState = live with { CoreValues = live.CoreValues.ToList() },
+            },
+        };
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline, reconstructed));
+        foreach (var changed in new[]
+        {
+            cpu with { PendingBoot = CpuTuningPendingBoot.Unknown },
+            cpu with { RestorePending = false },
+            cpu with { SavedConfiguration = saved with { PowerMode = 255 } },
+            cpu with { LiveState = live with { CoreValues = [new(0, -1), new(2, -6)] } },
+            cpu with { Live = backend with { Availability = CpuTuningBackendAvailability.Unavailable } },
+        })
+        {
+            Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with { CpuTuning = changed }));
+        }
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with { CpuTuning = null }));
+    }
+
+    [Fact]
     public void Equivalent_ReconstructedCollectionsCompareByContent()
     {
         ServiceStatusSnapshot baseline = CreateStatus();
