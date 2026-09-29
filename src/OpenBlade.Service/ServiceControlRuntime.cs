@@ -5659,7 +5659,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Pad-less HyperBoost on this laptop starts from Silent, Balanced or Performance.");
+                    "Pad-less HyperBoost on this laptop starts directly from the current AC mode; refresh the laptop state and try again.");
             }
 
             transitionIntent = enabled
@@ -5917,7 +5917,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         (stepCoordinator, cancellationToken) => stepCoordinator
                             .ApplyPerformancePreservingGpuClockManagementOutcomeAsync(
                                 requestedBaseMode,
-                                customPerformance: null,
+                                // A Custom base keeps its entry-time CPU/GPU levels.
+                                customPerformance: requestedBaseMode == PerformancePreset.Custom
+                                    ? transitionIntent?.CustomPerformance
+                                    : null,
                                 cancellationToken),
                         token)
                     .ConfigureAwait(false);
@@ -6756,14 +6759,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             == GpuClockOffsetSettings.Default
         && desired.GpuClockTuning?.Enabled != true;
 
-    // Direct pad-less entry: the confirmed and selected mode is the base, with no custom performance.
+    // Direct pad-less entry: the confirmed and selected mode is the base; from Custom, the
+    // confirmed CPU/GPU levels must also match the selected ones so exit restores them exactly.
     internal static bool IsDirectPadlessEntry(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState desired,
         PerformancePreset baseMode) =>
         confirmed.Performance == baseMode
         && desired.Performance.Value == baseMode
-        && desired.CustomPerformance is null;
+        && (baseMode == PerformancePreset.Custom
+            ? desired.CustomPerformance is not null
+                && confirmed.CustomPerformance == desired.CustomPerformance
+            : desired.CustomPerformance is null);
 
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
         ServiceStatusSnapshot current,

@@ -27871,6 +27871,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         };
     }
 
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task BothPadPathHyperBoost_EntersDirectlyFromCustomAndRestoresItsLevels(
+        CoolingPadConnectionState state,
+        bool requiresCoolingPad)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigureBothPadPathHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            HyperBoostBaseModes = context.Device.Capabilities.HyperBoostBaseModes! with
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ControlOperationResult selected = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(PerformancePreset.Custom, OverrideLifetime.Persistent, CustomPerformanceSettings.Default),
+            CancellationToken.None);
+        Assert.True(selected.Status == ControlOperationStatus.Applied, selected.Message);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        Assert.Equal((PerformancePreset.Custom, FanMode.Automatic), Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+        Assert.Equal(PerformancePreset.Custom, journal.Journal!.BaseMode);
+        Assert.Equal(requiresCoolingPad, journal.Journal.RequiresCoolingPad);
+        Assert.Equal(CustomPerformanceSettings.Default, journal.Journal.RestoreIntent.CustomPerformance);
+
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None);
+
+        Assert.True(disabled.Status == ControlOperationStatus.Applied, disabled.Message);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Null(journal.Journal);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
     private static async Task SelectPerformanceAsync(TestContext context)
     {
         ControlOperationResult selected = await context.Runtime.SetPerformanceOverrideAsync(

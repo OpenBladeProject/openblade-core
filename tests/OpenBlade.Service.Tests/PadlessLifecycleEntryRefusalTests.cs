@@ -16,7 +16,10 @@ public sealed class PadlessLifecycleEntryRefusalTests
         "RZ09-0581", PerformancePreset.Balanced, new string('B', 64), Closed);
 
     private static ConfirmedDeviceState Confirmed(PerformancePreset? performance, FanMode fans) =>
-        new(performance, fans, new ConfirmedBatteryState(true, 80, false), Lighting: null);
+        new(performance, fans, new ConfirmedBatteryState(true, 80, false), Lighting: null)
+        {
+            CustomPerformance = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+        };
 
     private static DesiredDeviceState Desired(PerformancePreset performance, FanMode fans,
         GpuClockTuningSettings? tuning = null) =>
@@ -92,7 +95,8 @@ public sealed class PadlessLifecycleEntryRefusalTests
     [InlineData(PerformancePreset.Balanced, PerformancePreset.Balanced, true)]
     [InlineData(PerformancePreset.Performance, PerformancePreset.Performance, true)]
     [InlineData(PerformancePreset.Balanced, PerformancePreset.Performance, false)]
-    [InlineData(PerformancePreset.Custom, PerformancePreset.Custom, false)]
+    [InlineData(PerformancePreset.Custom, PerformancePreset.Custom, true)]
+    [InlineData(PerformancePreset.Custom, PerformancePreset.Performance, false)]
     public void DirectPadlessEntry_StartsFromTheConfirmedAndSelectedMode(
         PerformancePreset current, PerformancePreset baseMode, bool direct)
     {
@@ -103,6 +107,18 @@ public sealed class PadlessLifecycleEntryRefusalTests
             Confirmed(current, FanMode.Automatic),
             Desired(current, FanMode.Automatic, new GpuClockTuningSettings(true, GpuClockOffsetSettings.Default)),
             baseMode));
+    }
+
+    [Fact]
+    public void DirectPadlessEntryFromCustom_RequiresTheSelectedLevelsToBeConfirmed()
+    {
+        ConfirmedDeviceState confirmed = Confirmed(PerformancePreset.Custom, FanMode.Automatic) with
+        {
+            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+        };
+
+        Assert.False(ServiceControlRuntime.IsDirectPadlessEntry(
+            confirmed, Desired(PerformancePreset.Custom, FanMode.Automatic), PerformancePreset.Custom));
     }
 
     [Fact]

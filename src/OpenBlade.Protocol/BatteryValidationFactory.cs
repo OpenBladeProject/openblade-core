@@ -594,7 +594,10 @@ public static class BatteryValidationFactory
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ReadWrite,
                 DeviceFeatureAccess.ReadWrite,
-                DeviceFeatureAccess.ReadWrite),
+                DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
             hyperBoostCatalog: hyperBoostCatalog,
             hyperBoostEligibility: new WindowsHyperBoostEligibilitySource(native),
             allowPadlessHyperBoostLifecycleValidation: allowPadlessLifecycleValidation,

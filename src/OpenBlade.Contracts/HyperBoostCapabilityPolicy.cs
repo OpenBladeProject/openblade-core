@@ -46,6 +46,7 @@ public static class HyperBoostCapabilityPolicy
         PerformancePreset mode) =>
         EntryBaseMode(capabilities, coolingPadPresent) is not null
         && mode is PerformancePreset.Silent or PerformancePreset.Balanced or PerformancePreset.Performance
+            or PerformancePreset.Custom
         && (capabilities.HyperBoostBaseModes?.AccessFor(mode)
             ?? (mode == PerformancePreset.Balanced ? capabilities.HyperBoostAccess : null))
             == DeviceFeatureAccess.ReadWrite;

@@ -42,7 +42,11 @@ public sealed class HyperBoostCapabilityPolicyTests
             Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: true, mode));
             Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: false, mode));
         }
+        // Custom is direct only where it is separately admitted.
         Assert.False(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528, coolingPadPresent: false, PerformancePreset.Custom));
+        DeviceCapabilities rz0528Custom = rz0528 with { HyperBoostBaseModes = rz0528.HyperBoostBaseModes! with { Custom = RW } };
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528Custom, coolingPadPresent: false, PerformancePreset.Custom));
+        Assert.True(HyperBoostCapabilityPolicy.IsDirectEntryBase(rz0528Custom, coolingPadPresent: true, PerformancePreset.Custom));
 
         // RZ09-0581 shape: pad-less Balanced only; no pad-present path.
         DeviceCapabilities rz0581 = Create(padless: RW, silent: Observed, balanced: RW, performance: Observed);

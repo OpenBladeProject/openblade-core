@@ -903,7 +903,10 @@ public static class FirmwareSmokeAssessment
             RazerBladeModelCatalog.Rz090528ModelNumber => new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ReadWrite,
                     DeviceFeatureAccess.ReadWrite,
-                    DeviceFeatureAccess.ReadWrite),
+                    DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            },
             _ => null,
         };
 

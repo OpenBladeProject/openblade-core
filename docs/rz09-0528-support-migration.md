@@ -54,7 +54,7 @@ production support merely because a neighboring model implements it.
 | Battery | Protection off, 50–80% limits in 5% steps, limit query, and temporary-full-charge query/enable/cancel |
 | AC performance | Balanced, Silent, Performance, Custom, exact admitted CPU/GPU combinations, and readback |
 | GPU tuning | Enable/disable and core/memory offsets through NVIDIA NVML, with independent NVAPI validation on the exact model |
-| HyperBoost | Direct entry from Silent, Balanced or Performance with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration to the starting mode; Custom still switches to Performance first with the pad |
+| HyperBoost | Direct entry from Silent, Balanced, Performance or Custom with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration to the starting mode, including Custom CPU/GPU levels |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
 | Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
@@ -231,11 +231,13 @@ from Silent (mode 5) and Balanced (mode 0) as well as Performance (mode 2), so
 HyperBoost enters directly from the current one of these modes and restores it
 on exit, with or without the pad. Pad-less entry uses the full-power adapter
 (`FullPower280W`, value `1111`), a fresh exact pad-absence observation and
-competing-controller checks, and never switches the performance mode first;
-from Custom it is refused. A separate pad-less round trip confirmed +5/+5 MHz
-GPU offsets applied during HyperBoost and held through entry and exit, with both
-NVML and NVAPI returning to zero, so GPU tuning stays available with or without
-the pad. With the pad, Custom still switches to Performance first. A fresh
+competing-controller checks, and never switches the performance mode first.
+Custom (mode 4) enters the same way; exit writes the Custom pair and the
+service re-applies the saved CPU/GPU levels, confirmed on the installed build
+with CPU Medium and GPU High on both pad paths. A separate pad-less round trip
+confirmed +5/+5 MHz GPU offsets applied during HyperBoost and held through entry
+and exit, with both NVML and NVAPI returning to zero, so GPU tuning stays
+available with or without the pad. A fresh
 pad observation selects and journals the path at entry; the port submits only
 under that path and rechecks it before every command, so a pad change
 mid-transition blocks or becomes indeterminate instead of switching paths.

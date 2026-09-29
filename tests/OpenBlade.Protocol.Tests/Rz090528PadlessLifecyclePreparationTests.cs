@@ -217,6 +217,24 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
     }
 
     [Theory]
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.PresentExact)]
+    public async Task AdmittedProductionEntersFromCustomAndRestoresTheCustomPair(CoolingPadConnectionState state)
+    {
+        var session = new Session { InitialMode = 4 };
+        await using var port = Create(session, new Pad { State = state }, padlessAdmitted: true,
+            baseModes: new(DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite)
+            {
+                Custom = DeviceFeatureAccess.ReadWrite,
+            });
+
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, default);
+        await port.SetHyperBoostAsync(false, PerformancePreset.Custom, default);
+
+        Assert.Equal(new[] { "01010700", "01020700", "01010400", "01020400" }, session.Writes);
+    }
+
+    [Theory]
     [InlineData(CoolingPadConnectionState.Absent, CoolingPadConnectionState.PresentExact)]
     [InlineData(CoolingPadConnectionState.PresentExact, CoolingPadConnectionState.Absent)]
     public async Task AdmittedProductionLocksTheEntryPadPathForEveryCommand(
@@ -324,7 +342,8 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
         CapturedCommandFixture Fixture(string action, byte channel, byte mode) => new(target, action, 0x0D, 0x02,
             [1, channel, mode, 0], true, true, true, true, true);
         var performance = DeviceCommandCatalog.Create(target,
-            [Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 1, 2), Fixture(ProductionBatteryPort.PerformanceBoostSecondAction, 2, 2)]);
+            [Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 1, 2), Fixture(ProductionBatteryPort.PerformanceBoostSecondAction, 2, 2),
+             Fixture(ProductionBatteryPort.PerformanceCustomFirstAction, 1, 4), Fixture(ProductionBatteryPort.PerformanceCustomSecondAction, 2, 4)]);
         var hyperBoost = DeviceCommandCatalog.Create(target,
             [Fixture(ProductionBatteryPort.HyperBoostEnableFirstAction, 1, 7), Fixture(ProductionBatteryPort.HyperBoostEnableSecondAction, 2, 7)]);
         return new(session, performance, BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence(),
@@ -364,6 +383,7 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
             byte[] response;
             if (command.CommandId == 0x8C) { PowerQueries++; response = FullPower ? [0x11, 0x11] : [0x07, 0x11]; }
             else if (command.CommandId == 0x82) { response = [1, input[1], modes.GetValueOrDefault(input[1], InitialMode), 0]; }
+            else if (command.CommandId == 0x87) { response = [1, input[1], 1]; }
             else if (command.CommandId == 2)
             {
                 BeforeWrite?.Invoke();
