@@ -770,6 +770,9 @@ internal sealed class ProductionBatteryPort :
                 ([PerformanceSilentFirstAction, PerformanceSilentSecondAction], catalog),
             PerformancePreset.Performance =>
                 ([PerformanceBoostFirstAction, PerformanceBoostSecondAction], catalog),
+            // The Custom mode pair; the service then re-applies the saved CPU/GPU levels.
+            PerformancePreset.Custom =>
+                ([PerformanceCustomFirstAction, PerformanceCustomSecondAction], catalog),
             // Models without a dedicated HyperBoost restore pair restore Balanced directly.
             _ when !HasPair(hyperBoostCatalog, HyperBoostRestoreFirstAction, HyperBoostRestoreSecondAction) =>
                 ([PerformanceBalancedFirstAction, PerformanceBalancedSecondAction], catalog),
@@ -1386,6 +1389,7 @@ internal sealed class ProductionBatteryPort :
         PerformancePreset[] writable = new[]
         {
             PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance,
+            PerformancePreset.Custom,
         }.Where(mode => baseModes.AccessFor(mode) == DeviceFeatureAccess.ReadWrite).ToArray();
         return HasPair(hyperBoostCatalog, HyperBoostEnableFirstAction, HyperBoostEnableSecondAction)
             && writable.Length > 0
@@ -1405,6 +1409,8 @@ internal sealed class ProductionBatteryPort :
                 HasPair(catalog, PerformanceBalancedFirstAction, PerformanceBalancedSecondAction),
             PerformancePreset.Performance =>
                 HasPair(catalog, PerformanceBoostFirstAction, PerformanceBoostSecondAction),
+            PerformancePreset.Custom =>
+                HasPair(catalog, PerformanceCustomFirstAction, PerformanceCustomSecondAction),
             _ => false,
         };
 

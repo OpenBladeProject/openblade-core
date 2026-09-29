@@ -88,7 +88,8 @@ public sealed class Rz090528BatteryValidationFactoryTests
             DeviceFeatureAccess.ReadWrite,
             factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
         Assert.Equal(new HyperBoostBaseModeCapabilities(
-            DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite),
+            DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite)
+        { Custom = DeviceFeatureAccess.ReadWrite },
             factory.Capabilities.HyperBoostBaseModes);
         Assert.Equal([50, 55, 60, 65, 70, 75, 80], factory.Capabilities.ChargeLimits);
         Assert.Equal(

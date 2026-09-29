@@ -170,18 +170,23 @@ public sealed record HyperBoostBaseModeCapabilities(
     DeviceFeatureAccess Balanced,
     DeviceFeatureAccess Performance)
 {
+    // Direct entry from and restoration to Custom; null where it has not been admitted.
+    public DeviceFeatureAccess? Custom { get; init; }
+
     public DeviceFeatureAccess? AccessFor(PerformancePreset preset) => preset switch
     {
         PerformancePreset.Silent => Silent,
         PerformancePreset.Balanced => Balanced,
         PerformancePreset.Performance => Performance,
+        PerformancePreset.Custom => Custom,
         _ => null,
     };
 
     internal bool IsWellFormed =>
         Enum.IsDefined(Silent)
         && Enum.IsDefined(Balanced)
-        && Enum.IsDefined(Performance);
+        && Enum.IsDefined(Performance)
+        && (Custom is null || Enum.IsDefined(Custom.Value));
 }
 
 public sealed record DeviceCapabilities(
