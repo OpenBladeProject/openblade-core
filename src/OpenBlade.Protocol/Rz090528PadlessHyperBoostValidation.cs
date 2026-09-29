@@ -7,7 +7,8 @@ namespace OpenBlade.Protocol;
 internal sealed class Rz090528PadlessHyperBoostValidation(
     IValidationActorFactory actors, ICoolingPadDiscoverySource pads, Func<bool> isolated,
     Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null,
-    Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null)
+    Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null,
+    ExactHyperBoostValidationObserver? observer = null)
     : IPerformanceFanSetterValidationRunner
 {
     internal const string PlanSha256 = "53436C5DE5B19301FFDDA9EB3670DA62F6440B9CA5168A81878FE58386DB8CD1";
@@ -74,7 +75,8 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
 
     internal static Rz090528PadlessHyperBoostValidation CreateWindows(Func<bool> isolated,
         Rz090528PadlessNoLoadValidation? noLoad = null, Rz090528PadlessLoadedValidation? loaded = null,
-        Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null)
+        Rz090528PadlessBatteryBoundaryValidation? batteryBoundary = null, Func<bool>? batteryReadIsolation = null,
+        ExactHyperBoostValidationObserver? observer = null)
     {
         if (batteryBoundary is not null && batteryReadIsolation is null)
         {
@@ -93,7 +95,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
             TimeSpan.FromMilliseconds(20));
         return new(factory, new WindowsHyperBoostEligibilitySource(native),
             () => identity.ReadExactIdentity().Failure is null && isolated(), noLoad, loaded, batteryBoundary,
-            batteryReadIsolation is null ? null : () => identity.ReadExactIdentity().Failure is null && batteryReadIsolation());
+            batteryReadIsolation is null ? null : () => identity.ReadExactIdentity().Failure is null && batteryReadIsolation(), observer);
     }
 
     public async Task<PerformanceFanSetterValidationResult> RunAsync(
@@ -149,7 +151,7 @@ internal sealed class Rz090528PadlessHyperBoostValidation(
                     () => HardwareOpened = true, () => DisposalConfirmed = true,
                     batteryBoundary is null ? null : batteryReadIsolation ?? (() => false), batteryBoundary is not null,
                     baseMode.Value), TimeProvider.System,
-                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded, padlessBatteryBoundary: batteryBoundary);
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), padlessNoLoad: noLoad, padlessLoaded: loaded, padlessBatteryBoundary: batteryBoundary, exactObserver: observer);
             innerRunStarted = true;
             PerformanceFanSetterValidationResult result = await runner.RunAsync(target, token).ConfigureAwait(false);
             return Complete(result);

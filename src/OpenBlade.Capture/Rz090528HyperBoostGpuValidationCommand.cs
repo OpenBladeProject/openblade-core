@@ -10,14 +10,20 @@ internal static class Rz090528HyperBoostGpuValidationCommand
     internal const string Name = "validate-rz09-0528-02c6-hyperboost-gpu";
     internal const string Confirmation = "RZ09-0528:02C6:BIOS-2.02:RTX5090:617.14:GPU-5:RESTORE-ZERO";
 
-    internal static Task<int> RunWindowsAsync(string[] arguments, TextWriter output, CancellationToken token) =>
-        RunAsync(arguments,
-            observer => Rz090528HyperBoostValidation.CreateWindows(
-                () => Rz090528HyperBoostValidationCommand.IsIsolated()
-                    && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive()
-                    && ReadDriverVersion() == "617.14", observer),
+    internal static Task<int> RunWindowsAsync(string[] arguments, TextWriter output, CancellationToken token)
+    {
+        static bool Isolated() => Rz090528HyperBoostValidationCommand.IsIsolated()
+            && GpuClockOffsetValidationEnvironment.AreGpuTuningToolsInactive()
+            && ReadDriverVersion() == "617.14";
+        // --padless runs the same GPU scenarios through the pad-absence-guarded validator.
+        bool padless = arguments.Contains("--padless");
+        return RunAsync(arguments,
+            observer => padless
+                ? Rz090528PadlessHyperBoostValidation.CreateWindows(Isolated, observer: observer)
+                : Rz090528HyperBoostValidation.CreateWindows(Isolated, observer),
             guard => new NvidiaNvmlGpuClockOffsetValidationController(guard),
             new NvidiaNvapiGpuClockOffsetProbe(), ReadDriverVersion, output, token);
+    }
 
     internal static async Task<int> RunAsync(string[] arguments,
         Func<ExactHyperBoostValidationObserver, IPerformanceFanSetterValidationRunner> createRunner,
@@ -25,7 +31,9 @@ internal static class Rz090528HyperBoostGpuValidationCommand
         IGpuClockOffsetProbe independent, Func<string> driverVersion,
         TextWriter output, CancellationToken token)
     {
-        if (!arguments.SequenceEqual(new[] { "--confirm-target", Confirmation,
+        bool padless = arguments.SequenceEqual(new[] { "--confirm-target", Confirmation,
+            "--confirm-pad-disconnected", Rz090528PadlessHyperBoostValidationCommand.AttendedConfirmation, "--padless" });
+        if (!padless && !arguments.SequenceEqual(new[] { "--confirm-target", Confirmation,
             "--confirm-pad-ready", Rz090528HyperBoostValidationCommand.PadConfirmation }))
         {
             await output.WriteLineAsync("Requires the exact target and attended cooling-pad confirmations; Performance/Automatic and zero GPU offsets are required.");
@@ -160,7 +168,9 @@ internal static class Rz090528HyperBoostGpuValidationCommand
             Target = "RZ09-0528 1532:02C6 BIOS 2.02 / RTX 5090 Laptop / driver 617.14",
             ProductionCombinationAdmitted = false,
             RequiredBaseline = "Performance/Automatic; GPU core=0, memory=0",
-            AttendedCoolingPadFanReadyAcknowledged = true,
+            Padless = padless,
+            AttendedCoolingPadFanReadyAcknowledged = !padless,
+            AttendedPadUsbAndPowerDisconnectedAcknowledged = padless,
             GpuWriteAttempted = gpuWriteAttempted,
             Observations = observations,
             ThermalResults = results,
