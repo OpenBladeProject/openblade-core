@@ -312,7 +312,7 @@ public sealed class CoolingPadFanExploratoryTrialTests
     }
 
     [Fact]
-    public void Prototype_HasNoNativeFactoryOrCliEntry()
+    public void Runner_KeepsNativeCallsAndLaptopSemanticsInApprovedComposition()
     {
         string? root = AppContext.BaseDirectory;
         while (root is not null && !File.Exists(Path.Combine(root, "OpenBlade.slnx")))
@@ -324,10 +324,6 @@ public sealed class CoolingPadFanExploratoryTrialTests
         Assert.DoesNotContain("WindowsHid", source);
         Assert.DoesNotContain("DeviceModeProtocol", source);
         Assert.DoesNotContain("Bios", source, StringComparison.OrdinalIgnoreCase);
-        foreach (string file in new[] { "Program.cs", "GetterCandidateProbeRunner.cs" })
-        {
-            Assert.DoesNotContain("CoolingPadFanExploratoryTrial", File.ReadAllText(Path.Combine(root, "src/OpenBlade.Capture", file)));
-        }
     }
 
     private static Task<CoolingPadFanExploratoryTrialResult> Run(CoolingPadFanExploratoryTrialRunner runner,

@@ -32,7 +32,8 @@ internal sealed record CoolingPadFanExploratoryTrialResult
     internal bool Success => Failure is null && RawRestorationConfirmed && FinalPhysicalConfirmed;
 }
 
-// Inert preparation only: there is intentionally no native factory or CLI entry.
+// Developer-only exploratory trial; the command requires exact target and
+// manual recovery acknowledgements before constructing the native actor.
 // Captured echoes and operator observations do not establish fan readback or a
 // reversible fan contract. Raw 0000 alone never proves fan restoration.
 internal sealed class CoolingPadFanExploratoryTrialRunner

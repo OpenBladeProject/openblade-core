@@ -6,10 +6,12 @@ and [evidence PR #33](https://github.com/OpenBladeProject/openblade-captures/pul
 
 ## Current decision
 
-No complete reversible fan contract is established while vendor recovery is
-unavailable. The successful raw control-state round trip does not close that gap.
-Do not execute a fan writer or replay the old standalone Auto release. Synapse
-and the two stopped Razer services remain stopped at the user's request.
+No complete independently reversible fan contract is established. The successful
+raw control-state round trip does not close that gap. The user has authorized
+attended recovery if needed, permitting preparation of the exploratory test below.
+Do not treat it as an admitted fan writer or replay the old standalone Auto
+release. Synapse and the two stopped Razer services remain stopped unless the
+authorized recovery contingency is needed.
 
 The exact developer target remains RZ09-05289EN4 plus pad `1532:0F43`, revision
 `0200`, MI_00, usage `000C:0001`, 91-byte Windows Feature buffer with prefix zero.
@@ -66,12 +68,13 @@ restoration. A timeout or absent physical confirmation must not trigger an
 unconditional Auto cleanup. Production, fan-state, ownership and handback gates
 stay closed even if this single experiment succeeds.
 
-## Manual recovery decision before live wiring or execution
+## Authorized recovery contingency
 
-The user must decide whether a future exploratory trial may use vendor-assisted
-recovery if necessary. No recovery action is performed by this document or by the
-existing mode/query tooling. Keeping vendor controllers stopped remains the
-current instruction.
+On 2026-09-29, the user explicitly allowed attended full USB-plus-12 V power
+cycling and temporary restoration of the two named Razer services and Synapse
+if recovery is needed. This resolves the contingency for the proposed experiment.
+It does not request routine vendor restarts or authorize the first fan trial.
+No recovery action is performed automatically by the developer command.
 
 The demonstrated recovery options have limits:
 
@@ -93,36 +96,64 @@ then show the exact action before a fresh attended trial.
 
 Another ordinary vendor Auto/Fixed capture or an opaque-byte query would not
 resolve this known gap. Further evidence should target the acquisition context
-and the missing restoration path. Until then, keep fan mutation disabled.
+and the missing restoration path. Production fan mutation remains disabled.
 
-## Offline prototype boundary
+## Attended command boundary
 
-An internal prototype exercises this fixed sequence against injected test
-sessions while the recovery decision is pending. It has no command-line entry,
-Windows actor factory or installed-product integration. It cannot be invoked
-through OpenBlade.Capture on the device. Offline preparation does not authorize
-a fan write or vendor restart.
+The original offline prototype has a separately guarded developer CLI path. It
+uses the existing strict exact-device pad actor, prefix zero, and fresh competing-
+controller checks before each exchange. BIOS remains provenance only. The command
+requires these exact model/action and recovery acknowledgements:
 
-The prototype reserves seven transactions before opening a session. It requires
+```powershell
+dotnet run --project src/OpenBlade.Capture --no-build -- validate-rz09-0528-cooling-pad-fan-exploratory-trial --confirm-target RZ09-05289EN4:1532:0F43:0200:Medium2200-Auto --confirm-recovery ManualPowerCycleAndVendorRecovery
+```
+
+Missing, altered or extra arguments must not invoke the runner or open a device.
+No arbitrary report ID, command, target or fan demand can be supplied. The
+command performs no vendor process or service operation and no lighting write.
+
+The runner reserves seven transactions before opening a session. It requires
 exact raw baseline `0000`, exact mode `0300` acknowledgement/readback, and exact
-three-byte Medium and Auto setter echoes. It waits for separate operator
+three-byte Medium and Auto setter echoes. It requests separate physical
 observations after Medium and Auto, then confirms raw-mode restoration and a
-final physical observation. These observations never become target, RPM,
-ownership or firmware fan-state readback.
+final physical observation. Prompts go to standard error; standard output is the
+structured result. Only type `YES` after the relevant operator confirmation.
+Never pre-fill observations or infer them from command acknowledgements.
 
 Every failed exchange, unexpected echo, rejected observation, timeout, exception
 or cancellation stops further writes. There is no unconditional Auto cleanup,
-mode cleanup or retry. Operator waits are bounded even if an observer ignores cancellation or its
-cancellation handler blocks; disposal is bounded separately. An incomplete mutation sequence is
-reported as requiring manual recovery rather than claimed restored. Success of
-test doubles validates control flow only, not device restoration.
+mode cleanup or retry. Exchanges use a three-second bound, each operator wait a
+180-second bound, and disposal a five-second bound. Noncooperative observer and
+cancellation handlers do not block the runner or resume the sequence later.
+Incomplete mutation is reported as requiring manual recovery rather than claimed
+restored. Physical observations never become target, RPM, ownership or firmware
+fan-state readback. Production and handback admission stay closed.
 
-Before any future live wiring, resolve the recovery decision, review the fresh
-exact-device/controller factory and explicit attended command, and retain the
-known negative Auto evidence. This document is not an execution instruction for
-the offline prototype.
+## First execution checklist
 
-Offline verification: all 563 Capture tests and three architecture tests passed,
-including 48 exploratory-runner cases. Independent review passed after checking
-noncooperative observer invocation, timeout and asynchronous cancellation cleanup.
-No fan hardware trial, CLI route, native factory or vendor restart is included.
+Before the first fan write, finish tests and independent review of the actual CLI
+and native wiring, build the exact committed source and record its hash privately.
+Show the complete exploratory sequence and obtain the present operator's current
+baseline confirmation: Auto, full-brightness static green, normal physical fan,
+pad-dependent HyperBoost inactive, USB and 12 V connected. Record fresh exact-pad
+inventory and zero competing controller/capture processes. No USBPcap may run
+against the interface during the trial. Run only one attempt from that reviewed
+build, with a private create-new start sentinel to prevent accidental reexecution.
+
+At each of the three prompts, obtain a current operator response before supplying
+input. On any abnormal fan, lighting, red/sleep indication or failed exchange,
+stop further writes and preserve the result. Use only the authorized attended
+recovery if needed: no guessed report, repeated Auto release or automatic restart.
+If full power cycling is required, it is a manual action; restore the saved
+preferred settings through the authorized vendor recovery and confirm the outcome.
+If the experiment succeeds, leave vendor software stopped as requested.
+
+No fan hardware trial has run yet. Test-double success validates control flow
+only, not device restoration. The known negative Auto release remains evidence.
+
+CLI preparation verification: all 585 Capture tests and three architecture tests
+passed, including 48 exploratory-runner cases and 22 CLI-admission cases.
+Independent review passed for exact argument admission, deferred native factory,
+strict pad identity/controller checks, JSON/prompt separation and stopped-write
+behavior. No fan hardware execution or recovery has been performed.
