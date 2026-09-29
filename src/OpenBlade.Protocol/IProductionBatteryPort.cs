@@ -68,6 +68,14 @@ public interface IProductionBatteryPort : IAsyncDisposable
         CancellationToken cancellationToken) =>
         SetHyperBoostAsync(enabled, cancellationToken);
 
+    // Submits only under the journaled cooling-pad path; an entry never selects the other path.
+    Task SetHyperBoostAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        bool requiresCoolingPad,
+        CancellationToken cancellationToken) =>
+        SetHyperBoostAsync(enabled, baseMode, cancellationToken);
+
     Task SetCustomPerformanceAsync(
         CustomPerformanceSettings value,
         CancellationToken cancellationToken);

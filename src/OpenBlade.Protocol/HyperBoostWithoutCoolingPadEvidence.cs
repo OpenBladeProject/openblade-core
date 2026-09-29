@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
@@ -94,6 +95,16 @@ internal readonly record struct HyperBoostWithoutCoolingPadEvidenceGates(
 
     internal static HyperBoostWithoutCoolingPadEvidenceGates Current =>
         HyperBoostWithoutCoolingPadAdmissionSource.ReadGates();
+
+    // Each exact model has its own admission manifest; an unknown model has none.
+    internal static HyperBoostWithoutCoolingPadEvidenceGates? ForModel(string? modelNumber) =>
+        modelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber => Current,
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                Rz090528HyperBoostWithoutCoolingPadAdmissionSource.ReadGates(),
+            _ => null,
+        };
 
     internal static HyperBoostWithoutCoolingPadEvidenceGates UniformForTest(
         bool admitted) => new(

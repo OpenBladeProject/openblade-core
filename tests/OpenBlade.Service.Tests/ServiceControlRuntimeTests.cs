@@ -27855,6 +27855,181 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         };
     }
 
+    // RZ09-0528 shape once pad-less writes are admitted: both pad paths use the Performance transition.
+    private static void ConfigureBothPadPathHyperBoost(TestContext context)
+    {
+        ConfigurePadRequiredHyperBoost(context);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+            GpuOverclock = new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ReadWrite),
+        };
+    }
+
+    private static async Task SelectPerformanceAsync(TestContext context)
+    {
+        ControlOperationResult selected = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.True(selected.Status == ControlOperationStatus.Applied, selected.Message);
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    public async Task BothPadPathHyperBoost_JournalsThePathObservedAtEntry(
+        CoolingPadConnectionState state,
+        bool requiresCoolingPad)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigureBothPadPathHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await SelectPerformanceAsync(context);
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        Assert.Equal((PerformancePreset.Performance, FanMode.Automatic), Assert.Single(context.Device.HyperBoostEntryStates));
+        Assert.Equal(requiresCoolingPad, journal.Journal!.RequiresCoolingPad);
+        Assert.Equal(requiresCoolingPad, Assert.Single(context.Device.HyperBoostJournaledPadPaths));
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.BaseMode);
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None);
+        Assert.True(disabled.Status == ControlOperationStatus.Applied, disabled.Message);
+        Assert.Null(journal.Journal);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Ambiguous)]
+    [InlineData(CoolingPadConnectionState.ObservationFailed)]
+    public async Task BothPadPathHyperBoost_RejectsAnUnconfirmedPadWithoutWriting(CoolingPadConnectionState state)
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigureBothPadPathHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await SelectPerformanceAsync(context);
+        int before = context.Device.TotalSetterCalls;
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, enabled.Status);
+        Assert.Contains("confirming that no target cooling-pad device is present", enabled.Message, StringComparison.Ordinal);
+        Assert.Equal(before, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task BothPadPathHyperBoost_OnlyThePadPathBridgesFromAnotherBaseline(
+        CoolingPadConnectionState state,
+        bool admitted)
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigureBothPadPathHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        int before = context.Device.TotalSetterCalls;
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+
+        if (admitted)
+        {
+            Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+        }
+        else
+        {
+            Assert.Equal(ControlOperationStatus.Blocked, enabled.Status);
+            Assert.Contains("starts only from Performance", enabled.Message, StringComparison.Ordinal);
+            Assert.Equal(before, context.Device.TotalSetterCalls);
+        }
+    }
+
+    [Fact]
+    public async Task BothPadPathHyperBoost_AmbiguousPadIsNotReportedAsReady()
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Ambiguous));
+        ConfigureBothPadPathHyperBoost(context);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            PadlessHyperBoostEligibilityState.Unknown,
+            context.Runtime.GetStatus().PadlessHyperBoostEligibility);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task BothPadPathHyperBoost_PadlessEntryRequiresGpuTuningOff(
+        CoolingPadConnectionState state,
+        bool admitted)
+    {
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigureBothPadPathHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await SelectPerformanceAsync(context);
+        ControlOperationResult tuned = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+        Assert.True(tuned.Status == ControlOperationStatus.Applied, tuned.Message);
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+
+        Assert.Equal(admitted ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked, enabled.Status);
+        Assert.Equal(hyperBoostWrites + (admitted ? 1 : 0), context.Device.HyperBoostSetCalls);
+        if (!admitted)
+        {
+            Assert.Contains("GPU clock tuning off", enabled.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, false)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    public async Task BothPadPathHyperBoost_GpuTuningCannotTurnOnDuringPadlessSession(
+        CoolingPadConnectionState state,
+        bool admitted)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(state),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigureBothPadPathHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await SelectPerformanceAsync(context);
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);
+        Assert.True(enabled.Status == ControlOperationStatus.Applied, enabled.Message);
+
+        ControlOperationResult on = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+        ControlOperationResult off = await context.Runtime.SetGpuClockTuningAsync(
+            new GpuClockTuningSettings(false, new GpuClockOffsetSettings(125, 500)),
+            OverrideLifetime.Persistent, static () => true, CancellationToken.None);
+
+        Assert.Equal(admitted ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked, on.Status);
+        if (!admitted)
+        {
+            Assert.Contains("cannot be turned on during pad-less HyperBoost", on.Message, StringComparison.Ordinal);
+        }
+        Assert.True(off.Status == ControlOperationStatus.Applied, off.Message);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
     [Fact]
     public async Task PadRequiredHyperBoost_PadLossDuringBaselineBlocksEnableAndRestoresIntent()
     {
@@ -29462,6 +29637,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 enabled,
                 baseMode,
                 cancellationToken);
+
+        public List<bool> HyperBoostJournaledPadPaths { get; } = [];
+
+        Task ISingleAttemptThermalDevice.SetHyperBoostOnceAsync(
+            bool enabled,
+            PerformancePreset baseMode,
+            bool requiresCoolingPad,
+            CancellationToken cancellationToken)
+        {
+            HyperBoostJournaledPadPaths.Add(requiresCoolingPad);
+            return SetHyperBoostAsync(enabled, baseMode, cancellationToken);
+        }
 
         public Task SetPerformanceAsync(
             PerformancePreset value,

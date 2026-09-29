@@ -582,7 +582,13 @@ public static class BatteryValidationFactory
             },
             Rz090528CommandSessionGate.Shared,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
-            hyperBoostWithoutCoolingPadAccess: allowPadlessLifecycleValidation ? DeviceFeatureAccess.ObservedOnly : null,
+            // Production admits pad-less writes only through the exact 2025 admission manifest;
+            // the developer lifecycle composition keeps its separate validation-only path.
+            hyperBoostWithoutCoolingPadAccess: allowPadlessLifecycleValidation
+                ? DeviceFeatureAccess.ObservedOnly
+                : Rz090528HyperBoostWithoutCoolingPadAdmissionSource.ReadGates().WriteAdmitted
+                    ? DeviceFeatureAccess.ReadWrite
+                    : null,
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
                 DeviceFeatureAccess.ObservedOnly,
                 DeviceFeatureAccess.ObservedOnly,

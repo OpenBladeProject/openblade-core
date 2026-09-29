@@ -121,7 +121,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
             Access: DeviceFeatureAccess.ReadWrite,
         }
         && battery.HyperBoostAccess == DeviceFeatureAccess.ReadWrite
-        && battery.HyperBoostWithoutCoolingPadAccess is null
+        && battery.HyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
         && battery.HyperBoostBaseModes == new HyperBoostBaseModeCapabilities(
             DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite)
         && battery.ObservedPowerSourceBehaviors.SequenceEqual(PowerSourceBehaviors)

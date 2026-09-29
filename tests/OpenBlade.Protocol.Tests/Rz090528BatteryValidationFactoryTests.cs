@@ -84,7 +84,9 @@ public sealed class Rz090528BatteryValidationFactoryTests
         var productionFactory = Assert.IsType<ProductionBatteryFactory>(factory);
 
         Assert.Equal(DeviceFeatureAccess.ReadWrite, factory.Capabilities.HyperBoostAccess);
-        Assert.Null(factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            factory.Capabilities.HyperBoostWithoutCoolingPadAccess);
         Assert.Equal(new HyperBoostBaseModeCapabilities(
             DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
             factory.Capabilities.HyperBoostBaseModes);

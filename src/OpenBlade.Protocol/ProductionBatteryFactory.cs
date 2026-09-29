@@ -117,11 +117,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 || this.hyperBoostWithoutCoolingPadAccess is not
                     (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
                 || this.hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
-                    && this.hyperBoostBaseModes?.Balanced
-                        != DeviceFeatureAccess.ReadWrite))
+                    && this.hyperBoostBaseModes?.Balanced != DeviceFeatureAccess.ReadWrite
+                    && this.hyperBoostBaseModes?.Performance != DeviceFeatureAccess.ReadWrite))
         {
             throw new UnvalidatedCommandException(
-                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+                "HyperBoost without the cooling pad requires exact bounded evidence, a writable direct base mode, and access no broader than overall HyperBoost.");
         }
         if (this.hyperBoostAccess == DeviceFeatureAccess.ReadWrite
             && (!ProductionBatteryPort.HasHyperBoostCommandSet(

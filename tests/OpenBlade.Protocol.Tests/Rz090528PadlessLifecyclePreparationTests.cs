@@ -202,10 +202,123 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
         Assert.True(session.NativeGateRefused);
     }
 
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent)]
+    [InlineData(CoolingPadConnectionState.PresentExact)]
+    public async Task AdmittedProductionUsesThePerformancePairOnEitherPadPath(CoolingPadConnectionState state)
+    {
+        var session = new Session();
+        await using var port = Create(session, new Pad { State = state }, padlessAdmitted: true);
+
+        await port.SetHyperBoostAsync(true, PerformancePreset.Performance, default);
+        await port.SetHyperBoostAsync(false, PerformancePreset.Performance, default);
+
+        Assert.Equal(new[] { "01010700", "01020700", "01010200", "01020200" }, session.Writes);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.Absent, CoolingPadConnectionState.PresentExact)]
+    [InlineData(CoolingPadConnectionState.PresentExact, CoolingPadConnectionState.Absent)]
+    public async Task AdmittedProductionLocksTheEntryPadPathForEveryCommand(
+        CoolingPadConnectionState entry,
+        CoolingPadConnectionState changed)
+    {
+        var pad = new Pad { State = entry };
+        var session = new Session { AfterFirstWrite = () => pad.State = changed };
+        await using var port = Create(session, pad, padlessAdmitted: true);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Single(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(true, CoolingPadConnectionState.Absent)]
+    [InlineData(false, CoolingPadConnectionState.PresentExact)]
+    public async Task AdmittedProductionSubmitsOnlyUnderTheJournaledPadPath(
+        bool requiresCoolingPad,
+        CoolingPadConnectionState observed)
+    {
+        var session = new Session();
+        await using var port = Create(session, new Pad { State = observed }, padlessAdmitted: true);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetHyperBoostAsync(true, PerformancePreset.Performance, requiresCoolingPad, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(true, CoolingPadConnectionState.PresentExact)]
+    [InlineData(false, CoolingPadConnectionState.Absent)]
+    public async Task AdmittedProductionAppliesUnderTheMatchingJournaledPadPath(
+        bool requiresCoolingPad,
+        CoolingPadConnectionState observed)
+    {
+        var session = new Session();
+        await using var port = Create(session, new Pad { State = observed }, padlessAdmitted: true);
+
+        await port.SetHyperBoostAsync(true, PerformancePreset.Performance, requiresCoolingPad, default);
+
+        Assert.Equal(new[] { "01010700", "01020700" }, session.Writes);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadConnectionState.ObservationFailed)]
+    [InlineData(CoolingPadConnectionState.Ambiguous)]
+    public async Task AdmittedProductionRejectsAnUnconfirmedPadState(CoolingPadConnectionState state)
+    {
+        var session = new Session();
+        await using var port = Create(session, new Pad { State = state }, padlessAdmitted: true);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Empty(session.Writes);
+    }
+
+    [Fact]
+    public async Task AdmittedProductionNeverComposesAnUncapturedBalancedEntry()
+    {
+        var session = new Session();
+        await using var port = Create(session, new Pad(), padlessAdmitted: true);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => port.SetHyperBoostAsync(true, PerformancePreset.Balanced, default));
+        Assert.Empty(session.Writes);
+    }
+
+    [Fact]
+    public async Task AdmittedProductionRequiresTheFullPowerAdapter()
+    {
+        var session = new Session { FullPower = false };
+        await using var port = Create(session, new Pad(), padlessAdmitted: true);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => port.SetHyperBoostAsync(true, PerformancePreset.Performance, default));
+        Assert.Empty(session.Writes);
+    }
+
     private static HostIdentityReadResult Identity(string model, string sku, string bios) =>
         new(new("Razer", "Blade 16 - " + model, sku, bios), null, HostFirmwareCompatibility.Tested);
 
-    private static ProductionBatteryPort Create(Session session, Pad pad)
+    [Fact]
+    public void PadlessWriteAccessRequiresAWritableDirectBaseMode()
+    {
+        Assert.Throws<UnvalidatedCommandException>(() => Create(
+            new Session(),
+            new Pad(),
+            padlessAdmitted: true,
+            baseModes: new(DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly)));
+    }
+
+    private static ProductionBatteryPort Create(
+        Session session,
+        Pad pad,
+        bool padlessAdmitted = false,
+        HyperBoostBaseModeCapabilities? baseModes = null)
     {
         var target = new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02");
         CapturedCommandFixture Fixture(string action, byte channel, byte mode) => new(target, action, 0x0D, 0x02,
@@ -217,9 +330,11 @@ public sealed class Rz090528PadlessLifecyclePreparationTests
         return new(session, performance, BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence(),
             new ValidationRunContext(), TimeSpan.FromSeconds(1),
             admittedAdapterPowerStates: new HashSet<AdapterPowerState> { AdapterPowerState.FullPower280W },
-            hyperBoostAccess: DeviceFeatureAccess.ReadWrite, hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ObservedOnly,
-            hyperBoostBaseModes: new(DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
-            hyperBoostCatalog: hyperBoost, hyperBoostEligibility: pad, allowPadlessHyperBoostLifecycleValidation: true,
+            hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
+            hyperBoostWithoutCoolingPadAccess: padlessAdmitted ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
+            hyperBoostBaseModes: baseModes
+                ?? new(DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
+            hyperBoostCatalog: hyperBoost, hyperBoostEligibility: pad, allowPadlessHyperBoostLifecycleValidation: !padlessAdmitted,
             padlessHyperBoostLifecycleBaseMode: PerformancePreset.Performance);
     }
 

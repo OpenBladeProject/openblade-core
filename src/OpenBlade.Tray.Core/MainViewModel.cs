@@ -2779,15 +2779,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         || Capabilities.HyperBoostWithoutCoolingPadAccess is not null;
 
     public bool IsHyperBoostWritable =>
-        HyperBoostCapabilityPolicy.EntryBaseMode(Capabilities) is not null;
+        HyperBoostCapabilityPolicy.IsWritable(Capabilities);
 
     private bool HyperBoostRequiresCoolingPad =>
         HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities);
 
-    private bool HyperBoostPadReady => latestStatus?.PadlessHyperBoostEligibility
-        == (HyperBoostRequiresCoolingPad
-            ? PadlessHyperBoostEligibilityState.CoolingPadPresent
-            : PadlessHyperBoostEligibilityState.CoolingPadAbsent);
+    private bool HyperBoostPadPresentPathAdmitted =>
+        HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(Capabilities) is not null;
+
+    private bool HyperBoostPadlessPathAdmitted =>
+        HyperBoostCapabilityPolicy.PadlessEntryBaseMode(Capabilities) is not null;
+
+    private bool HyperBoostPadReady => latestStatus?.PadlessHyperBoostEligibility switch
+    {
+        PadlessHyperBoostEligibilityState.CoolingPadPresent => HyperBoostPadPresentPathAdmitted,
+        PadlessHyperBoostEligibilityState.CoolingPadAbsent => HyperBoostPadlessPathAdmitted,
+        _ => false,
+    };
 
     public bool HyperBoostActive
     {
@@ -2950,18 +2958,20 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return TrayText.Get("Connect the supported cooling pad before enabling HyperBoost.");
             }
 
-            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && status.PadlessHyperBoostEligibility
-                == PadlessHyperBoostEligibilityState.CoolingPadPresent)
+            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && !HyperBoostPadPresentPathAdmitted
+                && status.PadlessHyperBoostEligibility == PadlessHyperBoostEligibilityState.CoolingPadPresent)
             {
                 return TrayText.Get(
                     "Disconnect the cooling pad before enabling HyperBoost.");
             }
 
-            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && status.PadlessHyperBoostEligibility
-                != PadlessHyperBoostEligibilityState.CoolingPadAbsent)
+            if (!HyperBoostActive && !HyperBoostRequiresCoolingPad && !HyperBoostPadReady)
             {
-                return TrayText.Get(
-                    "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.");
+                return HyperBoostPadPresentPathAdmitted
+                    ? TrayText.Get(
+                        "The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.")
+                    : TrayText.Get(
+                        "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost.");
             }
 
             return TrayText.Get(
@@ -2979,8 +2989,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 PadlessHyperBoostEligibilityState.CoolingPadAbsent => TrayText.Get(
                     "Improves thermal performance so key components can sustain higher power limits."),
+                PadlessHyperBoostEligibilityState.CoolingPadPresent when HyperBoostPadPresentPathAdmitted => TrayText.Get(
+                    "Improves thermal performance so key components can sustain higher power limits."),
                 PadlessHyperBoostEligibilityState.CoolingPadPresent => TrayText.Get(
                     "Disconnect the cooling pad before enabling HyperBoost."),
+                _ when HyperBoostPadPresentPathAdmitted => TrayText.Get(
+                    "The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost."),
                 _ => TrayText.Get(
                     "Cooling-pad absence could not be confirmed. Refresh the laptop state before enabling HyperBoost."),
             }

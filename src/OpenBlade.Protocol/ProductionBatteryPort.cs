@@ -267,11 +267,11 @@ internal sealed class ProductionBatteryPort :
                 || hyperBoostWithoutCoolingPadAccess is not
                     (DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite)
                 || hyperBoostWithoutCoolingPadAccess == DeviceFeatureAccess.ReadWrite
-                    && hyperBoostBaseModes?.Balanced
-                        != DeviceFeatureAccess.ReadWrite))
+                    && hyperBoostBaseModes?.Balanced != DeviceFeatureAccess.ReadWrite
+                    && hyperBoostBaseModes?.Performance != DeviceFeatureAccess.ReadWrite))
         {
             throw new UnvalidatedCommandException(
-                "HyperBoost without the cooling pad requires exact bounded evidence, writable Balanced admission, and access no broader than overall HyperBoost.");
+                "HyperBoost without the cooling pad requires exact bounded evidence, a writable direct base mode, and access no broader than overall HyperBoost.");
         }
         if (allowPadlessHyperBoostLifecycleValidation
             && (hyperBoostAccess != DeviceFeatureAccess.ReadWrite
@@ -675,6 +675,19 @@ internal sealed class ProductionBatteryPort :
             allowPadlessLifecycleValidation: false,
             cancellationToken);
 
+    public Task SetHyperBoostAsync(
+        bool enabled,
+        PerformancePreset baseMode,
+        bool requiresCoolingPad,
+        CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
+            enabled,
+            baseMode,
+            allowPadlessLifecycleValidation: false,
+            cancellationToken,
+            requiresCoolingPad
+                ? CoolingPadConnectionState.PresentExact
+                : CoolingPadConnectionState.Absent);
+
     Task IPadlessHyperBoostLifecycleValidationPort
         .EnablePadlessHyperBoostLifecycleValidationAsync(
             CancellationToken cancellationToken) => SetHyperBoostCoreAsync(
@@ -687,7 +700,8 @@ internal sealed class ProductionBatteryPort :
         bool enabled,
         PerformancePreset baseMode,
         bool allowPadlessLifecycleValidation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CoolingPadConnectionState? journaledPadState = null)
     {
         bool lifecycleValidation = enabled
             && allowPadlessLifecycleValidation
@@ -713,6 +727,10 @@ internal sealed class ProductionBatteryPort :
         (IReadOnlyList<string> actions, DeviceCommandCatalog commandCatalog) = enabled
             ? ([HyperBoostEnableFirstAction, HyperBoostEnableSecondAction], hyperBoostCatalog)
             : RestoreHyperBoostTarget(baseMode);
+        // The journaled pad path, or else the first eligibility observation, locks the pad
+        // state for the whole transition. Where both a pad-present and a pad-less path are
+        // admitted, no command may proceed under the other path.
+        CoolingPadConnectionState? entryPadState = enabled ? journaledPadState : null;
         return ExecuteThermalSettersAsync(
             actions,
             state => state.HyperBoostActive == enabled
@@ -731,16 +749,20 @@ internal sealed class ProductionBatteryPort :
             cancellationToken,
             commandCatalog: commandCatalog,
             validateEligibility: enabled
-                ? token => ValidateHyperBoostEligibilityAsync(
+                ? async token => entryPadState = await ValidateHyperBoostEligibilityAsync(
                     baseMode,
                     lifecycleValidation,
-                    token)
+                    entryPadState,
+                    token).ConfigureAwait(false)
                 : null,
             revalidateEligibilityPerCommand: enabled
-                && HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities)
-                && baseMode == PerformancePreset.Performance,
-            requiredPadStatePerCommand: lifecycleValidation
-                ? CoolingPadConnectionState.Absent : CoolingPadConnectionState.PresentExact);
+                && baseMode == PerformancePreset.Performance
+                && (HyperBoostCapabilityPolicy.RequiresCoolingPad(Capabilities)
+                    || HyperBoostCapabilityPolicy.PadlessEntryBaseMode(Capabilities)
+                        == PerformancePreset.Performance),
+            requiredPadStatePerCommand: () => entryPadState
+                ?? (lifecycleValidation
+                    ? CoolingPadConnectionState.Absent : CoolingPadConnectionState.PresentExact));
     }
 
     private (IReadOnlyList<string> Actions, DeviceCommandCatalog Catalog)
@@ -1528,7 +1550,7 @@ internal sealed class ProductionBatteryPort :
         IReadOnlyList<string>? hyperBoostExitActions = null,
         DeviceCommandCatalog? hyperBoostExitCatalog = null,
         bool revalidateEligibilityPerCommand = false,
-        CoolingPadConnectionState requiredPadStatePerCommand = CoolingPadConnectionState.PresentExact)
+        Func<CoolingPadConnectionState>? requiredPadStatePerCommand = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1643,7 +1665,8 @@ internal sealed class ProductionBatteryPort :
                     await ExecuteThermalCommandAsync(command, cancellationToken,
                         revalidateEligibilityPerCommand
                             ? () => hyperBoostEligibility?.ObserveCoolingPad()
-                                == requiredPadStatePerCommand
+                                == (requiredPadStatePerCommand?.Invoke()
+                                    ?? CoolingPadConnectionState.PresentExact)
                             : null)
                         .ConfigureAwait(false);
 
@@ -1755,9 +1778,10 @@ internal sealed class ProductionBatteryPort :
             exchangeTimeout,
             cancellationToken);
 
-    private async Task ValidateHyperBoostEligibilityAsync(
+    private async Task<CoolingPadConnectionState> ValidateHyperBoostEligibilityAsync(
         PerformancePreset baseMode,
         bool allowPadlessLifecycleValidation,
+        CoolingPadConnectionState? lockedPadState,
         CancellationToken cancellationToken)
     {
         CoolingPadConnectionState padState;
@@ -1775,9 +1799,13 @@ internal sealed class ProductionBatteryPort :
             && this.allowPadlessHyperBoostLifecycleValidation
             && padlessHyperBoostLifecycleBaseMode == PerformancePreset.Performance;
         bool padPresentEligibility = !exactPerformanceLifecycle && padState == CoolingPadConnectionState.PresentExact;
+        if (lockedPadState is { } locked && padState != locked)
+        {
+            throw KnownNotApplied(
+                "The cooling-pad state changed during the HyperBoost transition.");
+        }
         bool padAbsentEligibility = padState == CoolingPadConnectionState.Absent
-            && (baseMode == PerformancePreset.Balanced && Capabilities.HyperBoostWithoutCoolingPadAccess
-                    == DeviceFeatureAccess.ReadWrite
+            && (HyperBoostCapabilityPolicy.PadlessEntryBaseMode(Capabilities) == baseMode
                 || allowPadlessLifecycleValidation
                     && this.allowPadlessHyperBoostLifecycleValidation
                     && baseMode == padlessHyperBoostLifecycleBaseMode
@@ -1824,6 +1852,7 @@ internal sealed class ProductionBatteryPort :
             throw KnownNotApplied(
                 "HyperBoost requires a confirmed admitted full-power adapter.");
         }
+        return padState;
     }
 
     private static bool IsTransientHyperBoostAdapterReadFailure(

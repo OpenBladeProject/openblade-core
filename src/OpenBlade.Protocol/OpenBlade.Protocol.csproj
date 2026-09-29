@@ -71,6 +71,7 @@
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_StockLoadBaselinePlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_StockLoadBaselinePlan.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoadedPlan.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessLifecyclePreparation.json" />
+    <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_HyperBoostWithoutCoolingPadAdmission.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_HyperBoostWithoutCoolingPadAdmission.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessBatteryBoundaryPlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessBatteryBoundaryPlan.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessUsbCBoundaryPlan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessUsbCBoundaryPlan.json" />
     <EmbeddedResource Include="Fixtures\Rz09_0528_02c6_2_02_PadlessHyperBoostLoaded60Plan.json" LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0528_02c6_2_02_PadlessHyperBoostLoaded60Plan.json" />

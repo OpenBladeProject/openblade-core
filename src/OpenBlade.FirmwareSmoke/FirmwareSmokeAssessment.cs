@@ -881,13 +881,14 @@ public static class FirmwareSmokeAssessment
             _ => "Unavailable",
         };
 
-    // RZ09-0528 production keeps pad-less HyperBoost unavailable; its reviewed developer lifecycle-validation
-    // service reports ObservedOnly. ReadWrite is never expected for it until its lifecycle gates are admitted.
+    // RZ09-0528 production admits pad-less HyperBoost through its exact 2025 admission manifest; its reviewed
+    // developer lifecycle-validation service keeps the separate ObservedOnly validation path.
     private static string[] ExpectedHyperBoostWithoutCoolingPadAccess(
         string modelNumber) => RazerBladeModelCatalog.Find(modelNumber)?.ModelNumber switch
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber => [DeviceFeatureAccess.ReadWrite.ToString()],
-            RazerBladeModelCatalog.Rz090528ModelNumber => ["Unavailable", DeviceFeatureAccess.ObservedOnly.ToString()],
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                [DeviceFeatureAccess.ReadWrite.ToString(), DeviceFeatureAccess.ObservedOnly.ToString()],
             _ => ["Unavailable"],
         };
 

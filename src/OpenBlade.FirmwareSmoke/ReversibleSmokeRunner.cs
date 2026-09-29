@@ -72,14 +72,11 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         }
 
         bool padAbsentAdmitted =
-            baseMode == PerformancePreset.Balanced
-            && capabilities.HyperBoostWithoutCoolingPadAccess
-                == DeviceFeatureAccess.ReadWrite
+            HyperBoostCapabilityPolicy.PadlessEntryBaseMode(capabilities) == baseMode
             && original.PadlessHyperBoostEligibility
                 == PadlessHyperBoostEligibilityState.CoolingPadAbsent;
-        bool padPresentAdmitted = baseMode == PerformancePreset.Performance
-            && HyperBoostCapabilityPolicy.RequiresCoolingPad(capabilities)
-            && HyperBoostCapabilityPolicy.EntryBaseMode(capabilities) == baseMode
+        bool padPresentAdmitted =
+            HyperBoostCapabilityPolicy.PadPresentEntryBaseMode(capabilities) == baseMode
             && original.PadlessHyperBoostEligibility
                 == PadlessHyperBoostEligibilityState.CoolingPadPresent;
         if (!padAbsentAdmitted && !padPresentAdmitted)

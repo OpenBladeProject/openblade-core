@@ -189,10 +189,11 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Theory]
-    [InlineData(null, true)]
+    [InlineData(null, false)]
     [InlineData("ObservedOnly", true)]
-    [InlineData("ReadWrite", false)]
-    public void Rz090528PadlessAccessAllowsOnlyUnavailableOrValidationObservedOnly(
+    [InlineData("ReadWrite", true)]
+    [InlineData("ReadOnly", false)]
+    public void Rz090528PadlessAccessAllowsOnlyAdmittedReadWriteOrValidationObservedOnly(
         string? access, bool passes)
     {
         FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.6.0.0") with
@@ -240,7 +241,7 @@ public sealed class FirmwareSmokeAssessmentTests
             Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
             {
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite.ToString(),
-                HyperBoostWithoutCoolingPadAccess = null,
+                HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite.ToString(),
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
                     DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ObservedOnly, DeviceFeatureAccess.ReadWrite),
                 PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],

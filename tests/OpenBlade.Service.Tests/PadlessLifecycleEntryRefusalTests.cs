@@ -68,6 +68,25 @@ public sealed class PadlessLifecycleEntryRefusalTests
                 new GpuClockTuningSettings(true, GpuClockOffsetSettings.Default))));
     }
 
+    [Theory]
+    [InlineData(0, 0, true)]
+    [InlineData(5, 0, false)]
+    [InlineData(0, -5, false)]
+    public void CapturedPerformanceEntry_RequiresZeroConfirmedGpuOffsets(int core, int memory, bool captured)
+    {
+        ConfirmedDeviceState confirmed = Confirmed(PerformancePreset.Performance, FanMode.Automatic) with
+        {
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "NVIDIA GeForce RTX 5090 Laptop GPU",
+                new GpuClockOffsetRange(-1000, 400, core),
+                new GpuClockOffsetRange(-1000, 3000, memory)),
+        };
+        DesiredDeviceState desired = Desired(PerformancePreset.Performance, FanMode.Automatic);
+
+        Assert.Equal(captured, ServiceControlRuntime.IsCapturedPerformancePadlessEntry(confirmed, desired));
+        Assert.Equal(captured, ServiceControlRuntime.PadlessLifecycleEntryRefusal(Rz090528, confirmed, desired) is null);
+    }
+
     [Fact]
     public void BalancedTargetKeepsItsExistingEntryPolicy()
     {
