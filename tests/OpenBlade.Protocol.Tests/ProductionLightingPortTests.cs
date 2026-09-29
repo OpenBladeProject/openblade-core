@@ -155,9 +155,7 @@ public sealed class ProductionLightingPortTests
             DeviceFeatureAccess.ReadWrite,
             capabilities.SpecialKeyBindingsAccess);
         Assert.Equal(
-            SpecialKeySlotSet.M3
-                | SpecialKeySlotSet.M4
-                | SpecialKeySlotSet.M5,
+            SpecialKeySlotSet.All,
             capabilities.WritableSpecialKeySlots);
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,

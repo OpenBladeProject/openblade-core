@@ -219,7 +219,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             SupportsKeyboardBrightness = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             WritableSpecialKeySlots =
-            SpecialKeySlotSet.M3
+            SpecialKeySlotSet.M1
+            | SpecialKeySlotSet.M2
+            | SpecialKeySlotSet.M3
             | SpecialKeySlotSet.M4
             | SpecialKeySlotSet.M5,
             LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,

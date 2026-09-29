@@ -3,7 +3,7 @@ using OpenBlade.Tray;
 namespace OpenBlade.SessionAgent;
 
 /// <summary>
-/// Recognizes the exact RZ09-0581 M1 and M2 keyboard packets that Windows Raw
+/// Recognizes the exact RZ09-0581 and RZ09-0528 M1 and M2 keyboard packets that Windows Raw
 /// Input exposes instead of the report-ID-01 HID packets present in USB
 /// captures. The shared pressed state also prevents a duplicate trigger if a
 /// future Windows input path exposes both representations.
@@ -30,7 +30,7 @@ internal static class SpecialKeyRawKeyboardState
         int index = (int)slot;
         if (!keyDown
             || !functionKeyPressed
-            || deviceKind != RazerBladeInputDeviceKind.Rz09_0581)
+            || !SpecialKeyKeyboardSuppressionState.SupportsDevice(deviceKind))
         {
             keyPressed[index] = false;
             return false;

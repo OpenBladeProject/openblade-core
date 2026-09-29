@@ -58,7 +58,7 @@ production support merely because a neighboring model implements it.
 | HyperBoost | Direct entry from Silent, Balanced, Performance or Custom with the exact cooling pad or, on the full-power adapter, without it; paired mode-7 readback and restoration to the starting mode, including Custom CPU/GPU levels |
 | Fans and sensors | Automatic, fixed `2000–5000 RPM`, Maximum, host-rendered manual curves, fan RPM query, and exact Windows CPU thermal-zone reading |
 | Keyboard behavior | Function-key primary mode, Gaming mode, startup animation, Normal/Driver device mode, and their admitted getters |
-| Special keys | Exact PID `02C6` M3 Gaming, M4 Performance, M5 microphone-mute mappings, and Fn+P performance cycling |
+| Special keys | Exact PID `02C6` M1 (Fn+Page Up) and M2 (Fn+Page Down) bindings from the reported Fn state plus the Page Up/Down edge, which is suppressed only while a custom binding owns the slot; M3 Gaming, M4 Performance, M5 microphone-mute mappings; and Fn+P performance cycling |
 | Power source | Full-power barrel AC, USB-C power classes, battery classification, and admitted transition/readback leaves recorded by the ledger |
 | Display | Refresh modes, Dynamic Refresh Rate, Variable Refresh Rate range, HDR, and SDR color profiles through Windows APIs |
 | Ownership | Windows Dynamic Lighting delegation, zero-write delegation policy, external-change detection, and explicit reclaim behavior at their ledger statuses |
@@ -81,8 +81,6 @@ groups are:
   a Synapse-delivered proprietary kernel-driver dependency;
 - effect parameter combinations, native effect/matrix readback, and remaining
   spatial key-map coverage;
-- M1 and M2 discrimination and suppression; Fn+P is admitted through the
-  captured composite Fn-state and P input while M3–M5 retain their mappings;
 - cooling-pad HyperBoost sustained thermal and remaining lifecycle validation;
 - cold boot, sign-in, sleep/resume, and device reconnect.
 
