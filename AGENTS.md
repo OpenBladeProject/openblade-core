@@ -149,6 +149,12 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 ## Hardware and capture safety
 
 - Treat all uncaptured write commands as unsafe and unsupported.
+- Keep validation proportionate. When the vendor software already offers a
+  transition and OpenBlade would send only captured commands, test it directly
+  through OpenBlade's typed, reversible path instead of first requiring new
+  vendor captures, annotations, or lifecycle studies. Add evidence steps only
+  for a concrete risk, such as an uncaptured command, an unrecoverable state,
+  or an unexplained readback.
 - Read/query first. For a new write, save prior confirmed state, show the exact
   action, apply one value, read it back, and restore it.
 - Explicit approval for unattended hardware validation extends only to
