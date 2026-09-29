@@ -73,6 +73,26 @@ Capture stopped gracefully and OpenBlade restarted without errors. After
 capture, the operator selected Auto again for quietness. That preference is
 preserved; it is outside the captured restoration evidence.
 
+A second attended session captured normal Synapse exit and reopening from
+Auto. The operator noticed no fan or lighting change and confirmed unchanged
+Auto, full brightness and static green after reopening. Exit correlates with
+one acknowledged `00/04:0000`; startup includes acknowledged `00/04:0300`,
+two `00/84` queries returning `0300`, and two acknowledged Auto commands.
+These are accessory-specific control-state candidates with unassigned meaning.
+
+No complete Razer report occurs for 133.52 seconds between exit acknowledgement
+and startup. Three snapshots found zero AppEngine processes, while three vendor
+services remained running. Lighting frames pause for 137.77 seconds, then carry
+a brief green intensity ramp before steady full-green updates. That encoded
+ramp was not reported as a physical fade. All 173 complete bodies pass checksum
+validation; capture stopped gracefully and OpenBlade restarted without errors.
+Serial-bearing startup replies remain private.
+
+Application exit does not establish independent firmware ownership, and the
+observed mode-family pair is not an admitted OpenBlade release. The historical
+negative standalone Auto result remains relevant. Both sessions are vendor
+observations, with all OpenBlade accessory mutation gates closed.
+
 The bounded vendor-baseline procedure is:
 
 1. The operator confirms the pad is powered, its fan behaves normally, Synapse
@@ -113,15 +133,19 @@ Keep raw PCAP, process traces, instance IDs, serials, and local paths private.
 
 ## Decision after capture
 
-The next attended capture should observe vendor-controller relinquishment from
-the current normal Auto baseline: the operator exits Synapse normally while
-physical fan/lighting behavior and remaining vendor processes/services are
-recorded, then restores the vendor controller and confirms the saved settings.
-Do not automatically stop vendor services or treat a closed window as proof
-that the producer has stopped. Keep USB and 12 V recovery accessible. Record
-the remaining controllers rather than claiming autonomous operation while one
-may still own the pad. Verify user-mode report framing read-only before
-preparing a direct typed trial.
+The next attended vendor capture should repeat normal exit/reopen from Fixed
+Medium 2200 to determine whether the complete lifecycle sequence differs from
+Auto. Record physical behavior and remaining controllers, then use Synapse to
+restore the operator's preferred Auto and full-brightness static-green state.
+Keep USB and 12 V recovery accessible. Vendor services stay under operator
+control; their continued presence prevents a claim of independent ownership.
+
+Separately establish Windows user-mode feature-report framing from read-only
+descriptor/API evidence before preparing any device query. Then prepare an
+exact-device, bounded query-only check of the captured `00/84` contract. Record
+its raw result without assigning laptop Driver/Normal semantics. The wire
+report ID alone does not authorize trying guessed user-mode IDs. Review a
+complete restoration contract before preparing a direct typed write trial.
 
 First determine whether Auto requires continued host demand and which complete
 vendor transition returns control safely. If autonomous pad operation or an
