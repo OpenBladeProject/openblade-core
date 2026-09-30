@@ -16,7 +16,7 @@ host-demand path, rather than inferring thermal regulation from quiet behavior.
 The combination and restoration from a host-demand starting state are
 experimental. Reasserting Medium before the known Medium-to-quiet transition
 is not proof that all hidden firmware state is normalized. The demand is
-configured2200, not measured2200RPM. No changing-temperature curve, additional
+configured 2200, not measured 2200 RPM. No changing-temperature curve, additional
 getter, range sweep, timer loop, process lifecycle or USB experiment is added.
 
 ## Preconditions and fixed sequence
@@ -73,3 +73,29 @@ output is not committed; publish a sanitized annotation only after the actual
 outcome and final physical observation. A planned sequence is not execution
 or independent packet-count evidence. Production fan-state/RPM, ownership,
 handback and host-managed temperature tracking remain unvalidated.
+
+## Completed attended result
+
+One trial from exact reviewed source `7a6472d0` completed with exit zero on
+2026-09-29 Pacific. All nine logical exchanges completed according to typed
+result flags and reviewed source: raw `0000 -> 0300`, captured vendor entry,
+configured 2200 demand, reasserted Medium, captured quiet selection, and original
+raw `0000` restoration/query. The operator confirmed normal demand response,
+normal Medium, achieved preferred quiet behavior, and final quiet/green behavior
+without flashing-red or sleep. The fresh initial baseline also passed.
+
+Typed output was 2,799 bytes, SHA-256
+`9CCA1AEA250D64A1FE0148C6E0F1EF54F1B7BE6B04A35CB0A47C93D1E1C25C7A`.
+No retry, Synapse/service action, lighting command or power cycle occurred.
+No manual recovery was required. This supplies one physical-positive demand
+and compound restoration observation on this exact host/pad, not a general
+restoration guarantee. The result's previously-validated flag describes the
+pre-trial evidence, not a failure of the completed observation.
+
+No independent packet trace was collected: the fixed sequence list alone is
+planned traffic, while completion rests on the result flags and reviewed source.
+Operator journal-save timestamps may follow actual confirmation submission.
+Configured2200 is not measured RPM. Temperature response, full target range,
+cadence, independent fan-state/RPM, ownership and production handback remain
+unvalidated. No further lifecycle trial is added by this result. Synapse and
+Razer services remain stopped.
