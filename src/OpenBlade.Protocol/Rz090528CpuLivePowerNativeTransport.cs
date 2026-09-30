@@ -52,16 +52,15 @@ internal sealed record CpuLivePowerTrustedRange(uint Selector, uint MinimumMilli
     uint MaximumMilliwatts, uint StepMilliwatts)
 {
     internal bool AllowsOperation(CpuLivePowerNativeRequest request, uint capability, CpuLivePowerFusedCap cap) =>
-        Allows(request.Command, capability, cap)
-        && (request.Purpose != CpuLivePowerCommandPurpose.Forward || Allows(request.ImmediateReverse, capability, cap))
-        && request.OriginalRestores.All(command => Allows(command, capability, cap));
+        CpuLivePowerCapability.TryDecode(capability) is { } decoded && AllowsCommand(request.Command, decoded, cap)
+        && (request.Purpose != CpuLivePowerCommandPurpose.Forward || AllowsCommand(request.ImmediateReverse, decoded, cap))
+        && request.OriginalRestores.All(command => AllowsCommand(command, decoded, cap));
 
-    private bool Allows(CpuLivePowerCommand command, uint capability, CpuLivePowerFusedCap cap) =>
+    internal bool AllowsCommand(CpuLivePowerCommand command, CpuLivePowerCapability capability, CpuLivePowerFusedCap cap) =>
         Selector == 0x50001 && MinimumMilliwatts <= MaximumMilliwatts
         && MaximumMilliwatts <= CpuLivePowerValue.MaximumMilliwatts && StepMilliwatts == 1
         && command.Milliwatts >= MinimumMilliwatts && command.Milliwatts <= MaximumMilliwatts
-        // Exact vendor AA160 skips its fused comparison only for 82 output bit1.
-        && ((capability & 2) != 0 || command.Milliwatts <= cap.Milliwatts);
+        && capability.AllowsUnderFusedCap(command, cap);
 }
 
 // No concrete implementation exists. The provider must independently admit

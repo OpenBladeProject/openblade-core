@@ -105,6 +105,19 @@ internal sealed class CpuLivePowerFusedCap
     }
 }
 
+// Decoded candidate data only. This never attests a fresh 82 invocation or
+// authorizes mutation. Exact vendor AA160 applies its fused ceiling only when
+// capability82 bit1 (DAT_1801161fb) is clear; every other admission still applies.
+internal sealed class CpuLivePowerCapability
+{
+    private CpuLivePowerCapability(uint rawValue) => RawValue = rawValue;
+    internal uint RawValue { get; }
+    internal bool AppliesFusedCeiling => (RawValue & 2) == 0;
+    internal static CpuLivePowerCapability? TryDecode(uint rawValue) => rawValue == uint.MaxValue ? null : new(rawValue);
+    internal bool AllowsUnderFusedCap(CpuLivePowerCommand command, CpuLivePowerFusedCap cap) =>
+        !AppliesFusedCeiling || command.Milliwatts <= cap.Milliwatts;
+}
+
 internal readonly record struct CpuLivePowerCommand
 {
     private CpuLivePowerCommand(CpuLivePowerLimit limit, uint milliwatts) { Limit = limit; Milliwatts = milliwatts; }
@@ -129,21 +142,25 @@ internal readonly record struct CpuLivePowerCommand
 }
 
 internal sealed record CpuLivePowerTarget(CpuLivePowerLimit Limit, int WholeWatts);
-internal enum CpuLivePowerPlanStatus { Prepared, Unchanged, InvalidBaseline, InvalidTarget, InvalidCap, AdmissionDenied }
+internal enum CpuLivePowerPlanStatus { Prepared, Unchanged, InvalidBaseline, InvalidTarget, InvalidCap, AdmissionDenied, InvalidCapability, InvalidRange }
 internal sealed record CpuLivePowerStep(CpuLivePowerCommand Command, CpuLivePowerCommand RestoreCommand,
     CpuLivePowerPair Before, CpuLivePowerPair After);
 internal sealed record CpuLivePowerPlanResult(CpuLivePowerPlanStatus Status, CpuLivePowerSnapshot? Baseline, Rz090528CpuLivePowerPlan? Plan);
 
 internal sealed class Rz090528CpuLivePowerPlan
 {
-    private Rz090528CpuLivePowerPlan(CpuLivePowerSnapshot baseline, CpuLivePowerFusedCap cap, CpuLivePowerStep[] steps)
-    { Baseline = baseline; FusedCap = cap; Steps = Array.AsReadOnly(steps); }
+    private Rz090528CpuLivePowerPlan(CpuLivePowerSnapshot baseline, CpuLivePowerFusedCap cap,
+        CpuLivePowerCapability capability, CpuLivePowerTrustedRange range, CpuLivePowerStep[] steps)
+    { Baseline = baseline; FusedCap = cap; Capability = capability; FirmwareRange = range; Steps = Array.AsReadOnly(steps); }
     internal CpuLivePowerSnapshot Baseline { get; }
     internal CpuLivePowerFusedCap FusedCap { get; }
+    internal CpuLivePowerCapability Capability { get; }
+    internal CpuLivePowerTrustedRange FirmwareRange { get; }
     internal IReadOnlyList<CpuLivePowerStep> Steps { get; }
     internal CpuLivePowerPair Expected => Steps[^1].After;
     internal static CpuLivePowerPlanResult CreateSelective(CpuPmRawSnapshot? observation,
         IReadOnlyList<CpuLivePowerTarget>? targets, CpuLivePowerFusedCap? cap,
+        CpuLivePowerCapability? capability, CpuLivePowerTrustedRange? range,
         Func<CpuLivePowerCommand, CpuLivePowerCommandPurpose, bool>? admit)
     {
         var baseline = CpuLivePowerSnapshot.TryCreate(observation);
@@ -170,14 +187,23 @@ internal sealed class Rz090528CpuLivePowerPlan
             var after = current.With(forward); steps.Add(new(forward, restore, current, after)); current = after;
         }
         if (steps.Count == 0) { return new(CpuLivePowerPlanStatus.Unchanged, baseline, null); }
-        if (cap is null || steps.Any(step => step.Command.Milliwatts > cap.Milliwatts))
+        if (cap is null) { return new(CpuLivePowerPlanStatus.InvalidCap, baseline, null); }
+        if (capability is null) { return new(CpuLivePowerPlanStatus.InvalidCapability, baseline, null); }
+        if (range is null) { return new(CpuLivePowerPlanStatus.InvalidRange, baseline, null); }
+        if (steps.Any(step => !capability.AllowsUnderFusedCap(step.Command, cap)
+            || !capability.AllowsUnderFusedCap(step.RestoreCommand, cap)))
         { return new(CpuLivePowerPlanStatus.InvalidCap, baseline, null); }
+        if (steps.Any(step => !range.AllowsCommand(step.Command, capability, cap)
+            || !range.AllowsCommand(step.RestoreCommand, capability, cap)))
+        { return new(CpuLivePowerPlanStatus.InvalidRange, baseline, null); }
         if (admit is null) { return new(CpuLivePowerPlanStatus.AdmissionDenied, baseline, null); }
         try
         {
             // The restore callback deliberately sees the captured mW value even
             // outside the forward editor range. It must apply independent exact
-            // restore/cap/context authority before any plan is returned.
+            // restore/context authority before any plan is returned. Candidate
+            // capability/cap/range checks above only reject inconsistent plans;
+            // they never supply fresh native permission or original ownership.
             foreach (var step in steps)
             {
                 if (!admit(step.Command, CpuLivePowerCommandPurpose.Forward)
@@ -186,6 +212,6 @@ internal sealed class Rz090528CpuLivePowerPlan
             }
         }
         catch (Exception) { return new(CpuLivePowerPlanStatus.AdmissionDenied, baseline, null); }
-        return new(CpuLivePowerPlanStatus.Prepared, baseline, new(baseline, cap, steps.ToArray()));
+        return new(CpuLivePowerPlanStatus.Prepared, baseline, new(baseline, cap, capability, range, steps.ToArray()));
     }
 }

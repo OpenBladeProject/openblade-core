@@ -9,7 +9,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
     [InlineData(85000u, 0x42AA0001u)]
     [InlineData(80000u, 0x42A00000u)]
     [InlineData(79000u, 0x429E0000u)]
-    public void ObservedFixturesReconstructExactVendorFloatArithmetic(uint milliwatts, uint bits)
+    public void ArithmeticFixturesReconstructExactModelBitsWithoutGrantingAuthority(uint milliwatts, uint bits)
     {
         Assert.True(CpuLivePowerValue.TryFromRawBits(bits, out var observed));
         Assert.Equal(milliwatts, observed.Milliwatts);
@@ -95,7 +95,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
     public void SlowOnlyPlanRestoresItsOwnBaselineAndNeverFlattensFastOrStapm()
     {
         var admitted = new List<(uint, uint, CpuLivePowerCommandPurpose)>();
-        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], Cap(95),
+        var result = Plan(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], Cap(95),
             (command, purpose) => { admitted.Add((command.Message, command.Milliwatts, purpose)); return true; });
         Assert.Equal(CpuLivePowerPlanStatus.Prepared, result.Status);
         var step = Assert.Single(result.Plan!.Steps);
@@ -109,7 +109,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
     [Fact]
     public void MixedFractionalBaselineAndReverseOrderRestoreEveryIndependentField()
     {
-        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply(85001, 79999)),
+        var result = Plan(Raw(Reply(85001, 79999)),
             [new(CpuLivePowerLimit.Slow, 78), new(CpuLivePowerLimit.Fast, 84)], Cap(95), (_, _) => true);
         var plan = result.Plan!; Assert.Equal(2, plan.Steps.Count);
         Assert.Equal(CpuLivePowerLimit.Fast, plan.Steps[0].Command.Limit);
@@ -124,10 +124,10 @@ public sealed class Rz090528CpuLivePowerPlanTests
     public void RestorationOutsideEditorRangeRequiresItsOwnExplicitAdmission()
     {
         var baseline = Raw(Reply(100123, 80000)); bool restoreSeen = false;
-        var denied = Rz090528CpuLivePowerPlan.CreateSelective(baseline, [new(CpuLivePowerLimit.Fast, 90)], Cap(110),
+        var denied = Plan(baseline, [new(CpuLivePowerLimit.Fast, 90)], Cap(110),
             (command, purpose) => { if (purpose == CpuLivePowerCommandPurpose.Restore) { restoreSeen = true; Assert.Equal(100123u, command.Milliwatts); return false; } return true; });
         Assert.True(restoreSeen); Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied, denied.Status); Assert.Null(denied.Plan);
-        var admitted = Rz090528CpuLivePowerPlan.CreateSelective(baseline, [new(CpuLivePowerLimit.Fast, 90)], Cap(110), (_, _) => true);
+        var admitted = Plan(baseline, [new(CpuLivePowerLimit.Fast, 90)], Cap(110), (_, _) => true);
         Assert.Equal(100123u, Assert.Single(admitted.Plan!.Steps).RestoreCommand.Milliwatts);
     }
 
@@ -137,20 +137,20 @@ public sealed class Rz090528CpuLivePowerPlanTests
         foreach (bool throws in new[] { false, true })
         {
             int calls = 0;
-            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()),
+            var result = Plan(Raw(Reply()),
                 [new(CpuLivePowerLimit.Fast, 84), new(CpuLivePowerLimit.Slow, 79)], Cap(95), (_, _) =>
                 { if (++calls != 4) { return true; } if (throws) { throw new FormatException("private exception"); } return false; });
             Assert.Equal(4, calls); Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied, result.Status); Assert.Null(result.Plan);
         }
         Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied,
-            Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Fast, 84)], Cap(95), null).Status);
+            Plan(Raw(Reply()), [new(CpuLivePowerLimit.Fast, 84)], Cap(95), null).Status);
     }
 
     [Fact]
     public void TargetsAreFrozenBeforeAnyAdmissionCallback()
     {
         var targets = new List<CpuLivePowerTarget> { new(CpuLivePowerLimit.Fast, 84), new(CpuLivePowerLimit.Slow, 79) };
-        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), targets, Cap(95), (_, _) => { targets.Clear(); return true; });
+        var result = Plan(Raw(Reply()), targets, Cap(95), (_, _) => { targets.Clear(); return true; });
         Assert.Equal(2, result.Plan!.Steps.Count); Assert.Equal(79000u, result.Plan.Expected.Slow.Milliwatts);
         Assert.Throws<NotSupportedException>(() => ((IList<CpuLivePowerStep>)result.Plan.Steps).Clear());
     }
@@ -160,7 +160,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
     {
         foreach (CpuLivePowerTarget[] targets in new CpuLivePowerTarget[][] { [], [new(CpuLivePowerLimit.Fast, 85), new(CpuLivePowerLimit.Slow, 80)] })
         {
-            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), targets, null, (_, _) => throw new Exception());
+            var result = Plan(Raw(Reply()), targets, null, (_, _) => throw new Exception());
             Assert.Equal(CpuLivePowerPlanStatus.Unchanged, result.Status); Assert.Null(result.Plan); Assert.NotNull(result.Baseline);
         }
     }
@@ -170,7 +170,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
     [InlineData(96)]
     public void EditorRangeIsWholeWattsAndDeniedBeforeAdmission(int watts)
     {
-        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Fast, watts)], Cap(95), (_, _) => throw new Exception());
+        var result = Plan(Raw(Reply()), [new(CpuLivePowerLimit.Fast, watts)], Cap(95), (_, _) => throw new Exception());
         Assert.Equal(CpuLivePowerPlanStatus.InvalidTarget, result.Status); Assert.Null(result.Plan);
     }
 
@@ -180,7 +180,7 @@ public sealed class Rz090528CpuLivePowerPlanTests
         CpuLivePowerTarget[][] cases = [ [new(CpuLivePowerLimit.Fast, 84), new(CpuLivePowerLimit.Fast, 83)],
             [null!], [new((CpuLivePowerLimit)9, 80)], [new(CpuLivePowerLimit.Fast, 84), new(CpuLivePowerLimit.Slow, 79), new(CpuLivePowerLimit.Fast, 83)] ];
         foreach (var targets in cases)
-        { Assert.Equal(CpuLivePowerPlanStatus.InvalidTarget, Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), targets, Cap(95), (_, _) => throw new Exception()).Status); }
+        { Assert.Equal(CpuLivePowerPlanStatus.InvalidTarget, Plan(Raw(Reply()), targets, Cap(95), (_, _) => throw new Exception()).Status); }
     }
 
     [Fact]
@@ -195,14 +195,130 @@ public sealed class Rz090528CpuLivePowerPlanTests
         Assert.Null(CpuLivePowerFusedCap.TryDecode(0, uint.MaxValue));
         foreach (var insufficient in new CpuLivePowerFusedCap?[] { null, Cap(78) })
         {
-            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], insufficient, (_, _) => throw new Exception());
+            var result = Plan(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], insufficient, (_, _) => throw new Exception());
             Assert.Equal(CpuLivePowerPlanStatus.InvalidCap, result.Status); Assert.Null(result.Plan);
         }
         // Correct cap bytes alone never supply even pure-plan admission.
         Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied,
-            Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], cap, null).Status);
+            Plan(Raw(Reply()), [new(CpuLivePowerLimit.Slow, 79)], cap, null).Status);
     }
 
+    [Theory]
+    [InlineData(0u, false)]
+    [InlineData(1u, false)]
+    [InlineData(4u, false)]
+    [InlineData(128u, false)]
+    [InlineData(2u, true)]
+    [InlineData(0xE6u, true)]
+    public void OnlyCapabilityBitOneBypassesFusedCeilingForForwardAndRestore(uint rawCapability, bool bypasses)
+    {
+        // First case exceeds the cap only on restoration; second only on forward.
+        foreach (var (baseline, target) in new[] { (85000u, 70), (70000u, 79) })
+        {
+            int calls = 0;
+            var capability = CpuLivePowerCapability.TryDecode(rawCapability)!;
+            Assert.Equal(rawCapability, capability.RawValue);
+            Assert.Equal(!bypasses, capability.AppliesFusedCeiling);
+            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply(baseline, 70000)),
+                [new(CpuLivePowerLimit.Fast, target)], Cap(71), capability, Range(), (_, _) => { calls++; return true; });
+            Assert.Equal(bypasses ? CpuLivePowerPlanStatus.Prepared : CpuLivePowerPlanStatus.InvalidCap, result.Status);
+            Assert.Equal(bypasses ? 2 : 0, calls);
+            Assert.Equal(bypasses, result.Plan is not null);
+        }
+    }
+
+    [Fact]
+    public void CapabilityBypassRetainsExactUnequalRestorationAndIndependentAdmission()
+    {
+        var capability = CpuLivePowerCapability.TryDecode(2)!; var range = Range();
+        var commands = new List<(CpuLivePowerCommand, CpuLivePowerCommandPurpose)>();
+        var baseline = Raw(Reply(100123, 80765));
+        CpuLivePowerTarget[] targets = [new(CpuLivePowerLimit.Fast, 90), new(CpuLivePowerLimit.Slow, 80)];
+        var result = Rz090528CpuLivePowerPlan.CreateSelective(baseline, targets, Cap(71), capability, range,
+            (command, purpose) => { commands.Add((command, purpose)); return true; });
+        Assert.Equal(CpuLivePowerPlanStatus.Prepared, result.Status);
+        var plan = result.Plan!; Assert.Same(capability, plan.Capability); Assert.Same(range, plan.FirmwareRange);
+        Assert.Equal(4, commands.Count);
+        Assert.Equal((100123u, CpuLivePowerCommandPurpose.Restore), (commands[1].Item1.Milliwatts, commands[1].Item2));
+        Assert.Equal((80765u, CpuLivePowerCommandPurpose.Restore), (commands[3].Item1.Milliwatts, commands[3].Item2));
+        var restored = plan.Expected;
+        foreach (var step in plan.Steps.Reverse()) { restored = restored.With(step.RestoreCommand); Assert.Equal(step.Before, restored); }
+        Assert.Equal(plan.Baseline.Pair, restored);
+        Assert.Equal(Bits(100123), restored.Fast.RawBits); Assert.Equal(Bits(80765), restored.Slow.RawBits);
+        Assert.Equal(Bits(60000), restored.StapmRawBits);
+
+        int calls = 0;
+        var denied = Rz090528CpuLivePowerPlan.CreateSelective(baseline, targets, Cap(71), capability, range, (_, _) => ++calls < 4);
+        Assert.Equal(4, calls); Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied, denied.Status); Assert.Null(denied.Plan);
+        Assert.Equal(CpuLivePowerPlanStatus.AdmissionDenied,
+            Rz090528CpuLivePowerPlan.CreateSelective(baseline, targets, Cap(71), capability, range, null).Status);
+    }
+
+    [Theory]
+    [InlineData(85000u, 89000u)] // Forward 90W exceeds the firmware maximum.
+    [InlineData(100123u, 100000u)] // Only the exact original restore exceeds it.
+    [InlineData(45000u, 100000u)] // Only the exact original restore is below the minimum.
+    public void FirmwareRangeStillChecksForwardAndRestorationWhenFusedCeilingIsBypassed(uint baseline, uint maximum)
+    {
+        int calls = 0;
+        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply(baseline, 80000)),
+            [new(CpuLivePowerLimit.Fast, 90)], Cap(71), CpuLivePowerCapability.TryDecode(2),
+            new(0x50001, 50000, maximum, 1), (_, _) => { calls++; return true; });
+        Assert.Equal(CpuLivePowerPlanStatus.InvalidRange, result.Status); Assert.Null(result.Plan); Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public void LaterSlowRestorationOutsideRangeRejectsBeforeAnyForwardAdmission()
+    {
+        int calls = 0;
+        var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply(85000, 100123)),
+            [new(CpuLivePowerLimit.Fast, 84), new(CpuLivePowerLimit.Slow, 80)], Cap(71), CpuLivePowerCapability.TryDecode(2),
+            new(0x50001, 0, 100000, 1), (_, _) => { calls++; return true; });
+        Assert.Equal(CpuLivePowerPlanStatus.InvalidRange, result.Status); Assert.Null(result.Plan); Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public void ChangedPlanRequiresExplicitCapabilityCapAndSupportedRangeBeforeAdmission()
+    {
+        var capability = CpuLivePowerCapability.TryDecode(2)!;
+        Assert.Null(CpuLivePowerCapability.TryDecode(uint.MaxValue));
+        var cases = new (CpuLivePowerFusedCap?, CpuLivePowerCapability?, CpuLivePowerTrustedRange?, CpuLivePowerPlanStatus)[]
+        {
+            (null, capability, Range(), CpuLivePowerPlanStatus.InvalidCap),
+            (Cap(71), null, Range(), CpuLivePowerPlanStatus.InvalidCapability),
+            (Cap(71), CpuLivePowerCapability.TryDecode(uint.MaxValue), Range(), CpuLivePowerPlanStatus.InvalidCapability),
+            (Cap(71), capability, null, CpuLivePowerPlanStatus.InvalidRange),
+            (Cap(71), capability, new(0x50000, 0, 125000, 1), CpuLivePowerPlanStatus.InvalidRange),
+            (Cap(71), capability, new(0x50001, 0, 125000, 0), CpuLivePowerPlanStatus.InvalidRange),
+            (Cap(71), capability, new(0x50001, 0, 125000, 2), CpuLivePowerPlanStatus.InvalidRange),
+            (Cap(71), capability, new(0x50001, 125000, 0, 1), CpuLivePowerPlanStatus.InvalidRange),
+            (Cap(71), capability, new(0x50001, 0, 1023001, 1), CpuLivePowerPlanStatus.InvalidRange),
+        };
+        foreach (var (cap, candidate, range, expected) in cases)
+        {
+            int calls = 0;
+            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), [new(CpuLivePowerLimit.Fast, 84)],
+                cap, candidate, range, (_, _) => { calls++; return true; });
+            Assert.Equal(expected, result.Status); Assert.Null(result.Plan); Assert.Equal(0, calls);
+        }
+    }
+
+    [Fact]
+    public void NoOpNeedsNeitherCapabilityNorRangeAndGrantsNoPlan()
+    {
+        foreach (CpuLivePowerTarget[] targets in new CpuLivePowerTarget[][] { [], [new(CpuLivePowerLimit.Fast, 85)] })
+        {
+            var result = Rz090528CpuLivePowerPlan.CreateSelective(Raw(Reply()), targets, null, null, null, null);
+            Assert.Equal(CpuLivePowerPlanStatus.Unchanged, result.Status); Assert.Null(result.Plan); Assert.NotNull(result.Baseline);
+        }
+    }
+
+    // Explicit data fixtures preserve the original ceiling-enforced test cases;
+    // neither these candidates nor the pure planner can authorize native writes.
+    private static CpuLivePowerPlanResult Plan(CpuPmRawSnapshot? observation, IReadOnlyList<CpuLivePowerTarget>? targets,
+        CpuLivePowerFusedCap? cap, Func<CpuLivePowerCommand, CpuLivePowerCommandPurpose, bool>? admit) =>
+        Rz090528CpuLivePowerPlan.CreateSelective(observation, targets, cap, CpuLivePowerCapability.TryDecode(0), Range(), admit);
+    private static CpuLivePowerTrustedRange Range() => new(0x50001, 0, 125000, 1);
     private static CpuLivePowerFusedCap Cap(uint watts) => CpuLivePowerFusedCap.TryDecode(watts >> 4, (watts & 15) << 28)!;
     private static uint Bits(uint milliwatts) => BitConverter.SingleToUInt32Bits((float)milliwatts * 0.001f);
     private static void Put(byte[] bytes, int offset, uint word) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), word);

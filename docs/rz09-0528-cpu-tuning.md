@@ -174,9 +174,12 @@ fused cap and fresh firmware range, and requires independent admission for the
 immediate reverse and every remaining original restoration value. Its proof must
 establish that the candidate PM fields represent restorable requested settings;
 integer reconstruction alone does not do that. Physical setter behavior,
-clamping and restoration remain unproved. The existing pure planner still applies
-an unconditional fused-cap restriction and needs separate conditional planning
-integration. No concrete PPT proof or service runtime enables these commands.
+clamping and restoration remain unproved. The pure planner requires explicit
+capability and firmware-range data for changes: capability 82 bit 1 bypasses only
+the fused ceiling, while the firmware range still covers each forward and exact
+restoration value. These inputs supply no freshness or native authority, and
+independent admission remains mandatory. No concrete PPT proof or service runtime
+enables these commands.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.
