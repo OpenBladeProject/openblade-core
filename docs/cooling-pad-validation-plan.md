@@ -54,11 +54,34 @@ normal unchanged green lighting without red/sleep. No vendor recovery, service
 action, retry, lighting setter or power cycle occurred.
 
 This establishes one normal-close/fresh-handle experiment in the same process.
-New-process continuation and crash recovery remain distinct unresolved boundaries;
+At that stage, new-process continuation and crash recovery were unresolved;
 retain the original Auto/raw `0000` baseline and bind future continuation to the
 just-created trial. Firmware fan state/RPM, ownership and production admission
 remain unvalidated. Source verification passed all 657 Capture tests, three
 architecture tests and independent review.
+## Completed normal process-exit/new-process continuity
+
+One attended trial from reviewed developer source `836ae172` completed with
+exit zero. Child 1 acknowledged Medium and received normal fan/green-lighting
+confirmation, completed native disposal and exited zero before child 2 opened.
+The fresh second process read raw `0300`, acknowledged Auto with physical return
+to the original quiet baseline, restored/queried original raw `0000`, received the
+final normal unchanged green-lighting check, disposed and exited zero. The
+supervisor retained original `0000`; intermediate `0300` never replaced it.
+
+All four physical gates passed, no child remained running and no recovery was
+needed. Synapse and Razer services remained stopped. No force-kill, retry,
+lighting/demand mutation or power cycle occurred. Exact-source build passed
+without warnings/errors, with 674 Capture tests, three architecture checks,
+18 actual hardware-free subprocess scenarios, direct-child rejection and
+independent source/result reviews. Typed output and operator observations
+establish this one attended boundary; no independent native trace was collected.
+
+Controlled cancellation, abrupt process loss, interrupted Fixed reconnect,
+sleep/power loss, RPM/independent firmware fan state, ownership and production
+handback remain unvalidated. See draft #624's process-continuity guide and
+capture PR #33. Prepare a separately reviewed interruption/recovery path before
+another attended lifecycle trial.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
