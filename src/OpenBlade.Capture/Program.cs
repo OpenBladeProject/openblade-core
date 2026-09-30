@@ -1688,6 +1688,21 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    CoolingPadHostDemand2200TrialCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadHostDemand2200TrialCommand(
+        (demandConfirmation, fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            new CoolingPadHostDemand2200TrialRunner(
+                static () => new ValidationRunContext(),
+                GetterCandidateProbeFactory.CreateCoolingPadActorFactory(),
+                TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(180))
+            .RunAsync(demandConfirmation, fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     CoolingPadPreferredAutoRecoveryCommand.Name,
     StringComparison.OrdinalIgnoreCase))
 {

@@ -39,7 +39,7 @@ internal static class GetterCandidateProbeFactory
 
     internal static IValidationActorFactory CreateCoolingPadProcessActorFactory() => CreateCoolingPadActorFactory();
 
-    private static IValidationActorFactory CreateCoolingPadActorFactory()
+    internal static IValidationActorFactory CreateCoolingPadActorFactory()
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
