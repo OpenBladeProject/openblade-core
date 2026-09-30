@@ -84,19 +84,20 @@ a developer payload dependency omission and an incorrect topology assumption;
 both were corrected before the successful measurement. This observation does
 not admit production live tuning or prove boot activation.
 
-A separate attended PM observation adapter prepares three complete private table
-samples with fresh identity, power, session and driver-lifetime checks. Its Capture
-command remains unavailable until a live supervisor authority and pinned evidence
-writer are connected. Table fields are research candidates, so they do not supply
-an admitted power-limit value or restoration baseline. No PM table capture or CPU
-mutation follows from the preparation tests.
+The developer PM observation command is connected to a native supervisor,
+parent authority listener, and pinned evidence writer. It requests three idle
+samples with fresh identity, power, session and driver-lifetime checks. The
+reviewed launcher pins the complete payload and binds the actual parent and
+child processes. Cleanup requires confirmed child termination and authority
+revocation before the supervisor removes its own driver registration. Unknown
+completion retains the original processes and evidence without retrying.
 
-The launch validator checks both parent-written records against an independently
-supplied reviewed payload manifest. It pins the complete payload and binds the
-actual child and parent process identities. A retained child handle supports
-terminal-state checks for cleanup; the child cannot release its own pins while
-it is still running. These components have passed fake tests but remain separate
-from the native supervisor launcher.
+An attended run on 2026-09-30 exited successfully. Independent checks confirmed
+that its processes had exited and its temporary driver registration was absent.
+The protected sample files still need inspection before the dataset is considered
+validated. Table fields remain research candidates and do not supply an admitted
+power-limit value or restoration baseline. Production PM invocation remains
+blocked.
 
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
