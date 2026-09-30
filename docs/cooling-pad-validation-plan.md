@@ -182,6 +182,31 @@ telemetry age, stale-data behavior and stop behavior must be explicit; the
 vendor's no-next-point zero edge and laptop-specific thermal rules are not
 adopted. This adds no further lifecycle matrix or BIOS restriction.
 
+## Completed single 2200 host-demand experiment
+
+The developer trial from source `7a6472d0` completed on 2026-09-29 Pacific
+with exit zero. Initial quiet/green behavior and inactive HyperBoost were
+confirmed before native construction. One strict session acquired/queried
+raw `0300`, acknowledged captured vendor `000600` immediately followed by
+configured 2200 demand `01052C`, and received a normal physical-response check.
+It then reasserted Medium with its own physical check, achieved preferred quiet
+behavior, restored/queried original raw `0000`, and passed the final quiet/green
+check. No flashing-red or sleep indication was reported.
+
+All nine logical exchanges and five physical gates completed according to typed
+flags and reviewed source, without independent native packet tracing. No retry,
+Synapse/service action, lighting setter or power cycle occurred, and no manual
+recovery was needed. This supplies one exact-host demand/restoration observation;
+configured 2200 is not measured RPM or evidence of thermal tracking, a fully
+validated range/cadence, ownership or production handback. Access remains
+`ObservedOnly`. Earlier failed reconnect and power-cycle outcomes remain separate.
+
+Private typed output: 2,799 bytes, SHA-256
+`9CCA1AEA250D64A1FE0148C6E0F1EF54F1B7BE6B04A35CB0A47C93D1E1C25C7A`.
+Independent actual-result review passed. Next is an explicit host-evaluated curve
+and telemetry-failure policy using existing temperature sources; no further
+lifecycle matrix is added. See developer draft #624 and capture draft #33.
+
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
