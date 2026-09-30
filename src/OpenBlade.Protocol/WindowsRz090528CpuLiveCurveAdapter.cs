@@ -6,7 +6,7 @@ namespace OpenBlade.Protocol;
 // Opaque, typed access to one retained platform. This object is correlation and
 // resource ownership only: callers must independently supply each query approval
 // or exact-request write proof. It exposes no device, IOCTL or register access.
-internal sealed class WindowsRz090528CpuNativeSession
+internal sealed partial class WindowsRz090528CpuNativeSession
 {
     private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, WindowsRz090528CpuNativeSession> Sessions = new();
     private readonly ICpuQueryWindowsPlatform platform;

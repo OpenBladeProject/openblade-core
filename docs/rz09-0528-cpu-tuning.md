@@ -167,6 +167,16 @@ An opaque typed session gives the service access without exposing raw driver
 handles or commands. All three paths share exclusion before native acquisition;
 uncertain resource or continuity cleanup keeps that platform parked. Construction
 grants no authority, and each path still requires its distinct approval or proof.
+An internal PPT transport now uses the same retained session for one typed fast
+or slow command in milliwatts, with separate PM samples before and after it.
+It checks both raw limit values and STAPM, rechecks the source-mapped conditional
+fused cap and fresh firmware range, and requires independent admission for the
+immediate reverse and every remaining original restoration value. Its proof must
+establish that the candidate PM fields represent restorable requested settings;
+integer reconstruction alone does not do that. Physical setter behavior,
+clamping and restoration remain unproved. The existing pure planner still applies
+an unconditional fused-cap restriction and needs separate conditional planning
+integration. No concrete PPT proof or service runtime enables these commands.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

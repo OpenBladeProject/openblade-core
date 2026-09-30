@@ -228,6 +228,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         try
         {
             if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
+            else if (wire is CpuPowerNativeWire power) { power.BeforeNativeInvoke(code, input); }
             reply = device.Invoke(code, input, outputLength);
         }
         catch { wire.Abort(); throw; }
