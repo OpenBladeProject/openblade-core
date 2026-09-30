@@ -14,19 +14,17 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     internal static ICpuPmParentPassiveSource CreateParentPassiveSource() => new ParentPassiveSource();
     private sealed class ParentPassiveSource : ICpuPmParentPassiveSource
     {
-        private readonly CpuQueryWindowsPlatform shared = new();
-        private readonly PmNativePlatform pm;
-        internal ParentPassiveSource() => pm = new(shared);
+        private readonly CpuQueryWindowsPlatform shared = InstalledPlatform.Value;
         public CpuPmParentPassiveEvidence ReadFresh()
         {
             var host = shared.ReadHost();
             var cpu = shared.ReadProcessor();
-            var package = pm.ReadPackage();
+            var package = shared.ReadPackage();
             bool exact = host.Failure is null && host.Evidence is
             { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4", BiosVersion: "2.02" }
                 && cpu is { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
                 && package.MaximumExtendedLeaf >= 0x80000001 && package.Package == 1;
-            bool usb = ExactUsb(pm.ReadUsb());
+            bool usb = ExactUsb(shared.ReadUsb());
             bool controllers = shared.ControllersAbsent();
             return new(exact, usb, controllers);
         }

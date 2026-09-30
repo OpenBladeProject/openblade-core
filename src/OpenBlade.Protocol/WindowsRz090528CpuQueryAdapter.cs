@@ -57,6 +57,9 @@ internal interface ICpuNativeWireAdmission
 /// </summary>
 internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization
 {
+    private static readonly Lazy<CpuQueryWindowsPlatform> InstalledPlatform = new(() => new());
+    private static readonly Lazy<WindowsRz090528CpuNativeSession> InstalledSession =
+        new(() => WindowsRz090528CpuNativeSession.ForPlatform(InstalledPlatform.Value));
     private readonly ICpuQueryWindowsPlatform platform;
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
     private readonly ICpuNativeWireAdmission wire;
@@ -80,10 +83,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     internal static Rz090528CpuLiveQueryResult QueryProduction(bool useInstalledBackend) =>
         new(CpuLiveQueryStatus.Unavailable, null);
 
+    // Construction performs no native work and grants no query or write authority.
+    // Keep the concrete platform for the process lifetime: recreating a facade
+    // must never discard its outstanding-operation or uncertain-cleanup latch.
+    internal static WindowsRz090528CpuNativeSession GetInstalledNativeSession() => InstalledSession.Value;
+
     internal static Rz090528CpuLiveQueryResult QueryForAttendedValidation(
         CpuQueryAttendedApproval? approval, Func<DeviceIdentity?> readFreshUsbIdentity,
         CancellationToken cancellationToken = default) =>
-        QueryForAttendedValidation(approval, readFreshUsbIdentity, new CpuQueryWindowsPlatform(), cancellationToken);
+        GetInstalledNativeSession().Query(approval, readFreshUsbIdentity, cancellationToken);
 
     internal static Rz090528CpuLiveQueryResult QueryForAttendedValidation(
         CpuQueryAttendedApproval? approval, Func<DeviceIdentity?> readFreshUsbIdentity,
@@ -97,7 +105,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
         cancellationToken.ThrowIfCancellationRequested();
-        var operation = CurveOperations.GetValue(platform, static _ => new());
+        var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveQueryStatus.Busy, null, new(CpuQueryStage.MutexWait, CpuQueryFailureCode.AdmissionDenied)); }
         var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity);
@@ -379,7 +387,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 {
     // The actual native implementation is private: other internal callers cannot
     // obtain its raw device interface and bypass attended admission or wire checks.
-    private sealed class CpuQueryWindowsPlatform : ICpuQueryWindowsPlatform
+    private sealed partial class CpuQueryWindowsPlatform : ICpuQueryWindowsPlatform
     {
         public HostIdentityReadResult ReadHost()
         {

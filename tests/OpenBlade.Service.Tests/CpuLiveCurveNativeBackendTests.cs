@@ -215,6 +215,8 @@ public sealed class CpuLiveCurveNativeBackendTests
             Assert.True(platform.Held); Assert.True(platform.Pinned);
             await AssertAllRefused(backend, provider);
             await AssertAllRefused(new CpuLiveCurveNativeBackend(platform, new Provider()), provider);
+            await AssertAllRefused(new CpuLiveCurveNativeBackend(
+                WindowsRz090528CpuNativeSession.ForPlatform(platform), new Provider()), provider);
             Assert.Equal(1, platform.Setters);
         }
         finally { finish.Set(); }

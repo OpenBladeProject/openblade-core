@@ -22,23 +22,28 @@ internal enum CpuLiveCurveNativeWorkerKind { None, Observation, Admission, Submi
 internal sealed record CpuLiveCurveNativeBackendStatus(bool WorkerOutstanding,
     CpuLiveCurveNativeWorkerKind WorkerKind, bool ScopeInvalid, CpuLiveCurveNativeResult? LastNativeResult);
 
-// Unwired bridge only: callers supply the same persistent platform and an actual
+// Unwired bridge only: callers supply the same retained typed session and an actual
 // trusted provider. Nothing constructs a native platform, creates approval from
 // a bool, provisions a driver, establishes ownership or updates a journal here.
 internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
 {
-    private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, WorkerState> Workers = new();
-    private readonly ICpuQueryWindowsPlatform platform;
+    private static readonly ConditionalWeakTable<WindowsRz090528CpuNativeSession, WorkerState> Workers = new();
+    private readonly WindowsRz090528CpuNativeSession session;
     private readonly ICpuLiveCurveTrustedNativeProvider provider;
     private readonly CpuLiveCurveWriteScope scope = new();
     private readonly WorkerState state;
 
     internal CpuLiveCurveNativeBackend(ICpuQueryWindowsPlatform platform, ICpuLiveCurveTrustedNativeProvider provider)
+        : this(WindowsRz090528CpuNativeSession.ForPlatform(platform), provider)
     {
-        ArgumentNullException.ThrowIfNull(platform);
+    }
+
+    internal CpuLiveCurveNativeBackend(WindowsRz090528CpuNativeSession session, ICpuLiveCurveTrustedNativeProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(provider);
-        this.platform = platform; this.provider = provider;
-        state = Workers.GetValue(platform, static _ => new());
+        this.session = session; this.provider = provider;
+        state = Workers.GetValue(session, static _ => new());
     }
 
     // Read-only lifecycle evidence, not journal/restore authority. The task is
@@ -72,8 +77,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (context is not { IsWellFormed: true }) { return new(null, null); }
         var approval = provider.CreateQueryApproval(context, token);
         if (approval is null || !MatchesFresh(context, token)) { return new(null, null); }
-        var result = WindowsRz090528CpuQueryAdapter.QueryForAttendedValidation(approval,
-            () => ReadBoundUsb(context, token), platform, token);
+        var result = session.Query(approval, () => ReadBoundUsb(context, token), token);
         if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup) { Invalidate(); }
         token.ThrowIfCancellationRequested();
         if (result.Status != CpuLiveQueryStatus.Observed || CpuLiveCurveSnapshot.TryCreate(result.Observation) is null)
@@ -93,8 +97,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (proof is null || !proof.Consume(request) || !MatchesFresh(context, token))
         { return CpuLiveCurveSubmission.NotSubmitted; }
         var boundProof = new ContextBoundProof(request, proof, this, context, token);
-        var result = WindowsRz090528CpuQueryAdapter.ExecuteCurveWithPlatform(request, boundProof,
-            () => ReadBoundUsb(context, token), platform, token);
+        var result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token);
         lock (state) { state.LastNativeResult = result; }
         if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
         if (!MatchesFresh(context, token)) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }

@@ -59,14 +59,14 @@ internal static class WindowsRz090528CpuPmObservationAdapter
         CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples) => new(false, [], [], 0, 0, new(stage, failure), profile: profile);
 }
 
-// Reuse the private native platform and the actual same-thread query lease.
-// This partial does not expose raw device access or alter the original factories.
+// Reuse the retained private native platform, operation gate and same-thread
+// query lease. PM approval and wire admission remain separate from query/CO.
 internal sealed partial class WindowsRz090528CpuQueryAdapter
 {
     internal static CpuPmObservationBatch ObservePmNative(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, CancellationToken token,
         IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null) =>
-        ObservePm(approval, lifetime, new PmNativePlatform(new CpuQueryWindowsPlatform()), new PmClock(), token, metadataReader);
+        ObservePm(approval, lifetime, InstalledPlatform.Value, new PmClock(), token, metadataReader);
 
     internal static CpuPmObservationBatch ObservePm(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
@@ -75,14 +75,26 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null) { return WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples); }
         ArgumentNullException.ThrowIfNull(lifetime); ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
         token.ThrowIfCancellationRequested();
+        // Use the actual persistent platform, never the per-call PmAdapter.
+        // The gate covers notification registration and cleanup as well as IOCTLs.
+        var operation = NativeOperations.GetValue(platform, static _ => new());
+        if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
+        { return WindowsRz090528CpuPmObservationAdapter.Denied(CpuPmObservationStage.Mutex, CpuPmObservationFailure.Busy, approval.Profile); }
         ICpuPmContinuityScope? continuity = null;
+        PmAdapter? adapter = null;
+        bool cleanup = true, unknownFailure = false;
         CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval.Profile);
         try
         {
             if (lifetime() != approval.Lifetime) { return result; }
             // Arm before even constructing/acquiring a native mutex or device.
+            // If registration throws before returning its scope, its resources
+            // cannot be proven released and this platform must stay parked.
+            cleanup = false;
             continuity = platform.ArmContinuity(approval.Lifetime);
-            var adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
+            if (continuity is null) { throw new IOException("PM continuity scope unavailable."); }
+            cleanup = true;
+            adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
             adapter.FullAdmission();
             token.ThrowIfCancellationRequested();
             result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, approval.Profile, metadataReader).Observe(token));
@@ -92,21 +104,32 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         catch (OperationCanceledException) { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.Cancelled); }
         catch (Exception e) when (PmBoundedFailure(e))
         { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
+        catch { unknownFailure = true; throw; }
         finally
         {
-            if (continuity is not null)
+            try
             {
-                try
+                if (continuity is not null)
                 {
-                    continuity.Dispose();
-                    CpuPmContinuityFailure cleanup = continuity.ReadFresh(approval.Lifetime).Failure;
-                    if (cleanup == CpuPmContinuityFailure.UnregisterFailed)
-                    { result = Incomplete(result, CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
-                    else if (result.Complete && cleanup != CpuPmContinuityFailure.Disposed)
-                    { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
+                    // A previous continuity failure can hide a later unregister
+                    // failure. Only explicit clean disposal proves release.
+                    cleanup = false;
+                    try
+                    {
+                        continuity.Dispose();
+                        cleanup = continuity.ReadFresh(approval.Lifetime).Failure == CpuPmContinuityFailure.Disposed;
+                    }
+                    catch (Exception e) when (PmBoundedFailure(e) || e is OperationCanceledException) { }
                 }
-                catch (Exception e) when (PmBoundedFailure(e))
+            }
+            finally
+            {
+                // Includes Acquire cleanup before a lease was returned, and a
+                // cleanup cancellation swallowed by the PM engine's diagnostics.
+                cleanup &= !unknownFailure && adapter?.Transport.cleanupFailed != true;
+                if (!cleanup)
                 { result = Incomplete(result, CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
+                else { Volatile.Write(ref operation.Active, 0); }
             }
         }
         return result;
@@ -309,10 +332,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
         public void DelayOneSecond(CancellationToken token) { token.ThrowIfCancellationRequested(); if (token.WaitHandle.WaitOne(TimeSpan.FromSeconds(1))) { token.ThrowIfCancellationRequested(); } }
     }
-    private sealed class PmNativePlatform(CpuQueryWindowsPlatform shared) : ICpuPmWindowsPlatform
+    private sealed partial class CpuQueryWindowsPlatform : ICpuPmWindowsPlatform
     {
-        public HostIdentityReadResult ReadHost() => shared.ReadHost();
-        public CpuQueryProcessorIdentity ReadProcessor() => shared.ReadProcessor();
         public DeviceIdentity? ReadUsb() => Rz090528CpuFreshUsbIdentity.Read();
         public CpuPmProcessorPackage ReadPackage()
         {
@@ -321,11 +342,6 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             return maximum < 0x80000001 ? new(maximum, -1)
                 : new(maximum, (int)(unchecked((uint)X86Base.CpuId(unchecked((int)0x80000001), 0).Ebx) >> 28));
         }
-        public bool ControllersAbsent() => shared.ControllersAbsent();
-        public IDisposable PinBackendFiles() => shared.PinBackendFiles();
-        public InstalledCpuBackendSnapshot ReadBackend() => shared.ReadBackend();
-        public ICpuQueryDevice OpenExistingDevice() => shared.OpenExistingDevice();
-        public ICpuQueryMutex CreateSharedMutex() => shared.CreateSharedMutex();
         public CpuPmServiceSnapshot ReadService()
         {
             using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + Rz090528InstalledCpuBackendInspector.ServiceName, false);

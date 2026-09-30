@@ -174,6 +174,172 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         Assert.Contains("release", fake.Events); Assert.Contains("unpin", fake.Events);
     }
 
+    [Fact]
+    public async Task BlockedContinuityArmRetainsActualWorkerAndExcludesEveryMailboxPath()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var finish = new ManualResetEventSlim();
+        var fake = new Fake { DuringArm = _ => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
+        Task<CpuPmObservationBatch> worker = Task.Run(() => Run(fake));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await worker.WaitAsync(TimeSpan.FromMilliseconds(1)));
+            Assert.False(worker.IsCompleted);
+            var queryApproval = CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true);
+            var pmApproval = Approval(fake);
+            var request = CurveRequest();
+            var proof = new Proof(request);
+            var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+            Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(queryApproval, fake.ReadUsb).Status);
+            Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, session.ExecuteCurve(request, proof, fake.ReadUsb).Disposition);
+            Assert.Equal(CpuPmObservationFailure.Busy, Run(fake, pmApproval).Diagnostic!.Failure);
+            Assert.Equal(new[] { "continuity-arm" }, fake.Events);
+            Assert.False(queryApproval.Consume());
+            Assert.False(pmApproval.Consume());
+            Assert.True(proof.Consume(request)); // Busy never consumes mutation authority.
+            Assert.False(proof.Consume(request));
+        }
+        finally { finish.Set(); }
+        Assert.True((await worker).Complete);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ActiveQueryAndCurveExcludePmBeforeNotificationRegistration(bool curve)
+    {
+        var fake = new Fake();
+        fake.AfterOpen = f =>
+        {
+            var result = Run(f);
+            Assert.False(result.Complete);
+            Assert.Equal(CpuPmObservationFailure.Busy, result.Diagnostic!.Failure);
+            Assert.DoesNotContain("continuity-arm", f.Events);
+        };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        if (curve)
+        {
+            var request = CurveRequest();
+            Assert.True(session.ExecuteCurve(request, new Proof(request), fake.ReadUsb).CleanupComplete);
+        }
+        else
+        {
+            Assert.Equal(CpuLiveQueryStatus.Observed,
+                session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb).Status);
+        }
+        Assert.Single(fake.Events, value => value == "open");
+        Assert.Contains("release", fake.Events);
+    }
+
+    [Theory]
+    [InlineData("close")]
+    [InlineData("unpin")]
+    [InlineData("unpin-cancel")]
+    [InlineData("acquire-cleanup-cancel")]
+    [InlineData("continuity-dispose")]
+    [InlineData("continuity-dispose-cancel")]
+    [InlineData("continuity-read-cancel")]
+    [InlineData("continuity-unconfirmed")]
+    [InlineData("arm")]
+    [InlineData("arm-cancel")]
+    public void PmUncertainCleanupParksAllPathsEvenWhenCancellationMasksTheFailure(string fault)
+    {
+        var fake = new Fake { ThrowAt = fault };
+        if (fault == "acquire-cleanup-cancel") { fake.AfterOpen = f => f.Failure = "bios"; }
+        var result = Run(fake);
+        Assert.False(result.Complete);
+        Assert.Equal(CpuPmObservationStage.Cleanup, result.Diagnostic!.Stage);
+        Assert.Equal(CpuPmObservationFailure.CleanupFailed, result.Diagnostic.Failure);
+        AssertAllPathsParked(fake);
+    }
+
+    [Theory]
+    [InlineData("arm-unknown")]
+    [InlineData("host-unknown")]
+    [InlineData("continuity-dispose-unknown")]
+    public void UnboundedExceptionsAlsoRetainTheSharedGate(string fault)
+    {
+        var fake = new Fake { ThrowAt = fault };
+        Assert.Throws<NotSupportedException>(() => Run(fake));
+        AssertAllPathsParked(fake);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QueryOrCurveCleanupFailurePreventsPmArming(bool curve)
+    {
+        var fake = new Fake { ThrowAt = "unpin-cancel" };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        if (curve)
+        {
+            fake.Failure = "sku"; // Cleanup fails before Acquire can return a lease.
+            var request = CurveRequest();
+            Assert.False(session.ExecuteCurve(request, new Proof(request), fake.ReadUsb).CleanupComplete);
+        }
+        else
+        {
+            Assert.Throws<OperationCanceledException>(() =>
+                session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb));
+        }
+        Assert.DoesNotContain("continuity-arm", fake.Events);
+        AssertAllPathsParked(fake);
+    }
+
+    [Fact]
+    public void ConfirmedCleanupReleasesPmGateAfterOrdinaryDenialAndAfterSuccess()
+    {
+        var fake = new Fake { Failure = "sku" };
+        Assert.False(Run(fake).Complete);
+        fake.Failure = null;
+        Assert.True(Run(fake).Complete);
+        Assert.True(Run(fake).Complete);
+        Assert.Equal(3, fake.Events.Count(value => value == "continuity-arm"));
+    }
+
+    [Fact]
+    public void GateRemainsHeldWhileNotificationsAreBeingDisposedAfterNativeLeaseRelease()
+    {
+        var fake = new Fake();
+        fake.DuringContinuityDispose = f =>
+        {
+            Assert.False(f.Pinned); Assert.False(f.Locked);
+            AssertAllPathsParked(f);
+        };
+        Assert.True(Run(fake).Complete);
+        Assert.Single(fake.Events, value => value == "continuity-arm");
+    }
+
+    private static void AssertAllPathsParked(Fake fake)
+    {
+        fake.ThrowAt = null; fake.Failure = null; fake.AfterOpen = null;
+        int events = fake.Events.Count, calls = fake.Codes.Count;
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        Assert.Equal(CpuLiveQueryStatus.Busy,
+            session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb).Status);
+        var request = CurveRequest();
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted,
+            session.ExecuteCurve(request, new Proof(request), fake.ReadUsb).Disposition);
+        Assert.Equal(CpuPmObservationFailure.Busy, Run(fake).Diagnostic!.Failure);
+        Assert.Equal(events, fake.Events.Count);
+        Assert.Equal(calls, fake.Codes.Count);
+    }
+
+    private static CpuLiveCurveNativeRequest CurveRequest()
+    {
+        var snapshot = CpuLiveCurveSnapshot.TryCreate(new(0xFF55, 0x005D000B, 0xD50,
+            Enumerable.Range(0, 16).Where(CpuLiveCurveSnapshot.IsEnabled).Select(id => new CpuLiveCoreOffset(id, -1)).ToArray()))!;
+        Assert.True(CpuLiveCurveCommand.TryCreate(0, 0, 0xFF55, out var command));
+        return new(new(), command, CpuLiveCurveCommandPurpose.Forward, snapshot);
+    }
+
+    private sealed class Proof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
+    {
+        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => true;
+        internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest) => new(0x5000A, 0, 50, 1, true);
+    }
+
     private sealed class Fake : ICpuPmWindowsPlatform, ICpuPmObservationClock
     {
         internal CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
@@ -183,7 +349,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal CpuQueryMutexWait Wait = CpuQueryMutexWait.Acquired;
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
-        internal Action<Fake>? AfterOpen, AfterCopy;
+        internal Action<Fake>? AfterOpen, AfterCopy, DuringArm, DuringContinuityDispose;
         internal readonly List<string> Events = [];
         internal readonly List<uint> Codes = [], Commands = [];
         internal readonly List<int> Threads = [];
@@ -191,7 +357,8 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         private uint selected, command;
         internal Fake() => FreshLifetime = Lifetime;
         private void Event(string value) { Events.Add(value); Threads.Add(Environment.CurrentManagedThreadId); }
-        public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Failure == "bios" ? "2.03" : "2.02"), null);
+        public HostIdentityReadResult ReadHost() => ThrowAt == "host-unknown" ? throw new NotSupportedException()
+            : new(new("Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Failure == "bios" ? "2.03" : "2.02"), null);
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, Failure == "stepping" ? 1 : 0);
         public CpuPmProcessorPackage ReadPackage() => new(Failure == "leaf" ? 0x80000000 : 0x80000001, Failure == "package" ? 0 : 1);
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, Failure == "usb" ? (ushort)0x02E0 : (ushort)0x02C6, "2.02");
@@ -206,7 +373,16 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         }
         private CpuPmServiceSnapshot Service() => new(true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, Failure == "start" ? 2 : 3, Failure != "service");
         public CpuPmServiceSnapshot ReadService() { ServiceReads++; return Service(); }
-        public IDisposable PinBackendFiles() { Event("pin"); Assert.True(Locked); Pinned = true; return new Release(() => { Event("unpin"); Pinned = false; if (ThrowAt == "unpin") { throw new IOException(); } }); }
+        public IDisposable PinBackendFiles()
+        {
+            Event("pin"); Assert.True(Locked); Pinned = true;
+            return new Release(() =>
+            {
+                Event("unpin"); Pinned = false;
+                if (ThrowAt == "unpin") { throw new IOException(); }
+                if (ThrowAt is "unpin-cancel" or "acquire-cleanup-cancel") { throw new OperationCanceledException(); }
+            });
+        }
         public ICpuQueryMutex CreateSharedMutex() { Event("mutex-create"); return new Mutex(this); }
         public ICpuQueryDevice OpenExistingDevice()
         {
@@ -215,15 +391,30 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             AfterOpen?.Invoke(this); return new Device(this);
         }
         public ICpuPmContinuityScope ArmContinuity(CpuPmRunOwnedDriverLifetime lifetime)
-        { Event("continuity-arm"); Assert.Equal(Lifetime, lifetime); return new Continuity(this); }
+        {
+            Event("continuity-arm"); Assert.Equal(Lifetime, lifetime); FullBackendReads = 0;
+            DuringArm?.Invoke(this);
+            if (ThrowAt == "arm") { throw new IOException(); }
+            if (ThrowAt == "arm-cancel") { throw new OperationCanceledException(); }
+            if (ThrowAt == "arm-unknown") { throw new NotSupportedException(); }
+            return new Continuity(this);
+        }
         private sealed class Continuity(Fake fake) : ICpuPmContinuityScope
         {
             private readonly Guid session = Guid.NewGuid(); private bool disposed;
-            public CpuPmContinuityEvidence ReadFresh(CpuPmRunOwnedDriverLifetime? lifetime) => new(
+            public CpuPmContinuityEvidence ReadFresh(CpuPmRunOwnedDriverLifetime? lifetime) =>
+                disposed && fake.ThrowAt == "continuity-read-cancel" ? throw new OperationCanceledException() : new(
                 disposed || fake.ContinuityFailure ? CpuPmSessionContinuity.Interrupted : CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime,
-                session, fake.Lifetime.DriverLifetimeId, disposed ? fake.CleanupFailure ? CpuPmContinuityFailure.UnregisterFailed : CpuPmContinuityFailure.Disposed
+                session, fake.Lifetime.DriverLifetimeId, disposed ? fake.CleanupFailure ? CpuPmContinuityFailure.UnregisterFailed
+                    : fake.ThrowAt == "continuity-unconfirmed" ? CpuPmContinuityFailure.PowerChanged : CpuPmContinuityFailure.Disposed
                     : fake.ContinuityFailure ? CpuPmContinuityFailure.PowerChanged : CpuPmContinuityFailure.None);
-            public void Dispose() { fake.Event("continuity-dispose"); disposed = true; }
+            public void Dispose()
+            {
+                fake.Event("continuity-dispose"); fake.DuringContinuityDispose?.Invoke(fake); disposed = true;
+                if (fake.ThrowAt == "continuity-dispose") { throw new IOException(); }
+                if (fake.ThrowAt == "continuity-dispose-cancel") { throw new OperationCanceledException(); }
+                if (fake.ThrowAt == "continuity-dispose-unknown") { throw new NotSupportedException(); }
+            }
         }
         private sealed class Mutex(Fake fake) : ICpuQueryMutex
         {

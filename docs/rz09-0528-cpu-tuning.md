@@ -162,6 +162,11 @@ preserves partial evidence, treats Current as a firmware shadow, and returns a
 range only after confirmed cleanup and independent scope checks. Injected tests
 exercise cancellation, ambiguous submission, range decoding and recovery;
 neither component supplies production trust or enables CPU controls.
+The native factory retains one private platform for query, CO and PM operations.
+An opaque typed session gives the service access without exposing raw driver
+handles or commands. All three paths share exclusion before native acquisition;
+uncertain resource or continuity cleanup keeps that platform parked. Construction
+grants no authority, and each path still requires its distinct approval or proof.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

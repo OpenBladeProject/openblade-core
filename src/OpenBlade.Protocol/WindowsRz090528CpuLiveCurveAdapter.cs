@@ -3,13 +3,40 @@ using System.Runtime.CompilerServices;
 
 namespace OpenBlade.Protocol;
 
+// Opaque, typed access to one retained platform. This object is correlation and
+// resource ownership only: callers must independently supply each query approval
+// or exact-request write proof. It exposes no device, IOCTL or register access.
+internal sealed class WindowsRz090528CpuNativeSession
+{
+    private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, WindowsRz090528CpuNativeSession> Sessions = new();
+    private readonly ICpuQueryWindowsPlatform platform;
+
+    private WindowsRz090528CpuNativeSession(ICpuQueryWindowsPlatform platform) => this.platform = platform;
+
+    // The injected-platform seam shares identity as well as the native latch.
+    // Service worker ownership must survive rewrapping the same platform too.
+    internal static WindowsRz090528CpuNativeSession ForPlatform(ICpuQueryWindowsPlatform platform)
+    {
+        ArgumentNullException.ThrowIfNull(platform);
+        return Sessions.GetValue(platform, static value => new(value));
+    }
+
+    internal Rz090528CpuLiveQueryResult Query(CpuQueryAttendedApproval? approval,
+        Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
+        WindowsRz090528CpuQueryAdapter.QueryForAttendedValidation(approval, readFreshUsbIdentity, platform, token);
+
+    internal CpuLiveCurveNativeResult ExecuteCurve(CpuLiveCurveNativeRequest request,
+        CpuLiveCurveWriteProof? proof, Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
+        WindowsRz090528CpuQueryAdapter.ExecuteCurveWithPlatform(request, proof, readFreshUsbIdentity, platform, token);
+}
+
 internal sealed partial class WindowsRz090528CpuQueryAdapter
 {
-    private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, CurveOperationLatch> CurveOperations = new();
+    private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, NativeOperationLatch> NativeOperations = new();
 
-    // Deliberately NO overload constructing CpuQueryWindowsPlatform. There is no
-    // native factory, Capture command, service or production path until an actual
-    // write-authority/continuity provider and physical validation are reviewed.
+    // The native session factory retains the private platform; this typed gate
+    // still requires an independent trusted write proof. No concrete proof,
+    // Capture command or production composition creates write authority today.
     // All execution is synchronous; callers must retain their actual worker task
     // through termination even if they stop awaiting it. The latch outlives that wait.
     internal static CpuLiveCurveNativeResult ExecuteCurveWithPlatform(CpuLiveCurveNativeRequest request,
@@ -19,7 +46,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readUsb);
-        var latch = CurveOperations.GetValue(platform, static _ => new());
+        var latch = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref latch.Active, 1, 0) != 0)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         var wire = new CpuCurveNativeWire(request);
@@ -88,7 +115,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
     private sealed class CurveAdmissionException : Exception;
 
-    private sealed class CurveOperationLatch { internal int Active; }
+    private sealed class NativeOperationLatch { internal int Active; }
 }
 
 // Separate from CpuQueryWireAdmission: the old approval/profile remains06/5E.
