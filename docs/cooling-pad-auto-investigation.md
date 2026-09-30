@@ -1,7 +1,8 @@
 # Cooling-pad Auto and host-managed curves
 
 Investigated 2026-09-29 Pacific for issue #119. This is read-only synthesis of
-existing August and September evidence, plus Razer's published guide. No device
+existing August and September evidence, installed Synapse module source, and
+Razer's published guide. No device
 reports, workload, Synapse launch, service action or capture was performed.
 
 ## Conclusion
@@ -68,6 +69,41 @@ Smart Fan Curve as responding to CPU/GPU temperatures. This agrees with the
 host-managed interpretation; it does not disclose the default Auto algorithm,
 firmware sensor capabilities, source arbitration or failure behavior.
 
+## Installed module source check
+
+A bounded read-only search found the installed cached pad middleware module
+`6259.9704435af82c7937e70b.js`. Its containing cache file has SHA-256
+`F9E05E2C6C75E415452580892C1248B5359EBA259BE9C1426A8BAA3D9B4C7EB9`.
+This hash identifies the entire local cache file, not an extracted JavaScript
+response body; no cache file, private path or vendor source is committed.
+This is a fresh source inspection, separate from the historical August hashes.
+Independent review confirmed setter, encoder and ordinary loop at zero-based
+UTF-8-decoded text character offsets 1815747, 709876 and 1860401 respectively;
+these are not file byte offsets.
+
+The pad setter's disabled-controller branch calls
+`setThermalFanCoolingMode(6, 0, 0)`. That matches the semantic fields of the
+captured `0D/10:000600` selection. Its Fixed branch instead sends the selected
+preset and scaled target. With HyperBoost inactive, the ordinary temperature
+loop clears its remembered target
+and returns when `fanController.isEnabled` is false, and returns for Fixed.
+When enabled and non-Fixed, it evaluates configured CPU/GPU curve data and sends
+scaled fan demand only when needed. The current source also corroborates the
+strictly-greater-point selection, combined-source maximum and `/50` scaling. The source does not explicitly limit this
+loop to the Smart enum: the recorded enum has Auto, Fixed and Smart values.
+Do not replace the actual enabled/non-Fixed condition with a guessed Smart-only gate.
+A separate HyperBoost branch precedes those ordinary controller gates; this
+finding does not imply that disabling ordinary control stops every demand path.
+
+The pad UI source ties the fan-control toggle to `isEnabled`, but a direct,
+pad-specific default Auto label-to-disabled-state mapping was not established.
+Thus the captured command selects the software controller's disabled path;
+it does not start that host temperature loop. Neither the numeric mode nor
+an enum name establishes a physically stopped fan, an onboard temperature
+source, firmware ownership, or autonomous regulation. The recent observed quiet
+fan after this command remains valid physical evidence. The precise default
+Auto UI policy and the pad's firmware behavior remain unresolved.
+
 ## Consequence for OpenBlade
 
 Preserve three separate concepts: requested policy, acknowledged target demand,
@@ -77,6 +113,15 @@ own fresh laptop telemetry and a host-evaluated curve, with an admitted demand
 encoding and a defined stale-telemetry/stop policy. Fixed control and temperature
 control are separate implementation slices. Existing typed telemetry/curve
 infrastructure should be assessed before adding another scheduler.
+
+Current `OpenBlade.Service/FanCurveControl.cs` already exposes
+`IFanTemperatureSource` and `SafeWindowsFanTemperatureSource` for the admitted
+CPU thermal zone and NVIDIA GPU telemetry. Its `FanCurveCalculator` produces two
+laptop-fan targets using interpolation and laptop emergency thresholds. Reuse
+of the telemetry interface is a plausible integration point; copying that
+calculator, RPM limits or firmware Automatic semantics into the accessory would
+mix separate contracts. The pad needs its own typed single-target policy and
+admitted demand path, not another laptop control implementation.
 
 The immediate work is offline review of the existing host-demand contract and
 its fit with current OpenBlade telemetry. Default Auto's exact algorithm remains
