@@ -4,6 +4,19 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Evidence reviewed against product `8c0ebe95` and captures
 `4f2bf1565c7557439760db7e45104bb1e8b62bfd` on 2026-09-29.
 
+## Latest attended temperature-demand observation
+
+The bounded trial in draft #624 applied one acknowledged configured1150-RPM
+demand. Twelve reads stayedCPU45C/GPUinactive; ten further unchanged targets
+were suppressed. First-demand, interval, Medium and quiet physical checks and
+originalraw0000 restoration/query passed. Final physical confirmation timed
+out, so exit2/OperatorTimeout and incomplete typed sequence remain preserved.
+The user's laterYES separately confirms normal quiet/green behavior after exit;
+it does not change the failed final gate or imply manual recovery was performed.
+No changing-temperature update was exercised. No retry or new control trial is
+needed merely to repair the final flag. Production admission remains closed.
+See [the bounded trial outcome](https://github.com/OpenBladeProject/openblade-core/blob/chore/cooling-pad-mode-query/docs/cooling-pad-temperature-demand-trial.md).
+
 ## Current curve-planning phase
 
 The pure OpenBlade planner is implemented: separate CPU/GPU curves, maximum of
