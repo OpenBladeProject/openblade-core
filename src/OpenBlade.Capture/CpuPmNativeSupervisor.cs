@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
@@ -11,6 +12,7 @@ internal sealed class CpuPmNativeSupervisor
     private static CpuPmNativeSupervisor? processRoot;
     private static int claimed;
     private readonly Guid run;
+    private readonly CpuPmObservationProfile profile;
     private readonly TextWriter output;
     private readonly object logGate = new();
     private CpuPmSupervisorBootstrap? bootstrap;
@@ -26,11 +28,14 @@ internal sealed class CpuPmNativeSupervisor
     private Timer? watchdog;
     private int uncertain;
     private bool driverPossible, launchPossible;
-    private CpuPmNativeSupervisor(Guid run, TextWriter output) { this.run = run; this.output = output; }
-    internal static int Run(Guid run, TextWriter output)
+    private CpuPmNativeSupervisor(Guid run, TextWriter output, CpuPmObservationProfile profile)
+    { this.run = run; this.output = output; this.profile = profile; }
+    internal static int Run(Guid run, TextWriter output) => RunProfile(run, output, CpuPmObservationProfile.IdleThreeSamples);
+    internal static int RunRange(Guid run, TextWriter output) => RunProfile(run, output, CpuPmObservationProfile.RangeSingleSample);
+    private static int RunProfile(Guid run, TextWriter output, CpuPmObservationProfile profile)
     {
         if (run == Guid.Empty || Interlocked.CompareExchange(ref claimed, 1, 0) != 0) { return 2; }
-        var value = new CpuPmNativeSupervisor(run, output); processRoot = value;
+        var value = new CpuPmNativeSupervisor(run, output, profile); processRoot = value;
         return value.Execute();
     }
     private int Execute()
@@ -38,6 +43,7 @@ internal sealed class CpuPmNativeSupervisor
         try
         {
             bootstrap = CpuPmSupervisorBootstrap.Load(run, true, CancellationToken.None);
+            if (bootstrap.Trusted.Profile != profile) { throw new IOException("Reviewed supervisor profile mismatch."); }
             WindowsCpuPmFreshRunTree.Create(run);
             Guid lifetime = Guid.NewGuid(); var clock = new CpuPmAuthorityClock();
             safety = CpuPmParentDriverSafety.CreateNative(bootstrap.Trusted, true, CancellationToken.None)
@@ -60,9 +66,11 @@ internal sealed class CpuPmNativeSupervisor
             launchPossible = true;
             var start = new ProcessStartInfo(Path.Combine(bootstrap.Trusted.PayloadPath, "OpenBlade.Capture.exe"))
             { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = bootstrap.Trusted.PayloadPath };
-            start.ArgumentList.Add(Rz090528CpuPmObservationProbe.Name);
+            start.ArgumentList.Add(profile == CpuPmObservationProfile.RangeSingleSample
+                ? Rz090528CpuPmObservationProbe.RangeName : Rz090528CpuPmObservationProbe.Name);
             start.ArgumentList.Add(Rz090528CpuPmObservationProbe.TransportApproval);
             start.ArgumentList.Add(Rz090528CpuPmObservationProbe.LifetimeApproval);
+            if (profile == CpuPmObservationProfile.RangeSingleSample) { start.ArgumentList.Add(Rz090528CpuPmObservationProbe.RangeApproval); }
             start.ArgumentList.Add(Rz090528CpuPmObservationProbe.RunIdFlag); start.ArgumentList.Add(run.ToString("N"));
             actualChild = Process.Start(start) ?? throw new IOException("Child launch result unavailable.");
             // Root keeps the actual returned Process even if duplicate/bind fails.

@@ -51,9 +51,16 @@ internal static class CpuPmReturnedBatchOutput
             || !Hex(provenance.SourceRevision, 40, upper: false) || !Hex(provenance.PayloadManifestSha256, 64, upper: true)
             || provenance.MonotonicFrequency <= 0) { return null; }
         CpuPmCompletedSample[] samples = batch.CopySamples();
-        if (samples.Length > 3 || batch.Complete && (samples.Length != 3 || batch.Diagnostic is not null)
+        int expectedSamples = batch.Profile switch
+        { CpuPmObservationProfile.IdleThreeSamples => 3, CpuPmObservationProfile.RangeSingleSample => 1, _ => 0 };
+        if (expectedSamples == 0 || samples.Length > expectedSamples
+            || batch.Complete && (samples.Length != expectedSamples || batch.Diagnostic is not null)
             || samples.Length > 0 && (batch.OrientationMask != 0xFF55 || batch.FuseMask != 0xFF55)) { return null; }
+        if (batch.Profile == CpuPmObservationProfile.IdleThreeSamples && batch.RangeObservation is not null
+            || batch.Profile == CpuPmObservationProfile.RangeSingleSample && !ValidRange(batch.RangeObservation, batch.Complete)) { return null; }
         var capEvidence = batch.FusedCap;
+        if (batch.RangeObservation is { } observedRange && (capEvidence?.A0F != observedRange.A0F
+            || capEvidence?.A0B != observedRange.A0B)) { return null; }
         if (capEvidence is not null && (!ValidCapRead(capEvidence.A0F, CpuLivePowerFusedCap.RegisterA0F)
             || !ValidCapRead(capEvidence.A0B, CpuLivePowerFusedCap.RegisterA0B)
             || capEvidence.A0B is not null && (capEvidence.A0F is null
@@ -117,6 +124,7 @@ internal static class CpuPmReturnedBatchOutput
             adapterBatchComplete = batch.Complete,
             cancellationRequested,
             retainedSamples = samples.Length,
+            profile = batch.Profile.ToString(),
             samples = summaries,
             orientationMask = batch.OrientationMask.ToString("X8"),
             fuseMask = batch.FuseMask.ToString("X8"),
@@ -128,6 +136,7 @@ internal static class CpuPmReturnedBatchOutput
                 classification = "SourceMappedCandidateOnly",
                 authority = "NotEstablishedByObservation",
             } : null,
+            rangeObservation = RangeEvidence(batch.RangeObservation),
             diagnostic = batch.Diagnostic is { } diagnostic ? new { stage = diagnostic.Stage.ToString(), failure = diagnostic.Failure.ToString() } : null,
             persistence = "ReturnedBatchOnly",
             samplesBeforeUnreturnedBatch = "Unavailable",
@@ -178,4 +187,76 @@ internal static class CpuPmReturnedBatchOutput
     private static bool ValidCapRead(CpuPmCapRegisterRead? read, uint address) => read is null
         || read.Address == address && read.CapturedUtc != default && read.MonotonicTimestamp >= 0
             && (!read.PostReadAdmissionPassed || read.TransportSucceeded);
+
+    private static bool ValidRange(CpuLivePowerRangeObservation? range, bool complete)
+    {
+        if (range is null) { return !complete; }
+        var reads = new[] { range.A0F, range.A0B, range.A13, range.A90 };
+        uint[] addresses = [CpuLivePowerFusedCap.RegisterA0F, CpuLivePowerFusedCap.RegisterA0B,
+            CpuLivePowerRangeObservation.RegisterA13, CpuLivePowerRangeObservation.RegisterA90];
+        long previous = -1; bool missing = false;
+        for (int index = 0; index < reads.Length; index++)
+        {
+            var read = reads[index];
+            if (read is null) { missing = true; if (complete) { return false; } continue; }
+            if (missing || !ValidCapRead(read, addresses[index]) || read.MonotonicTimestamp < previous
+                || complete && (!read.TransportSucceeded || !read.PostReadAdmissionPassed)) { return false; }
+            previous = read.MonotonicTimestamp;
+        }
+        if (range.Capability is { } capability && (capability.Command != 0x82 || capability.Argument != 0
+            || capability.RawValue.HasValue && (capability.CapturedUtc is null || capability.CapturedUtc == default(DateTimeOffset)
+                || capability.MonotonicTimestamp is null || capability.MonotonicTimestamp < previous)
+            || capability.PostReadAdmissionPassed && (!capability.ResponseAcknowledged || capability.RawValue is null
+                || !capability.ReturnedWordTransportSucceeded))) { return false; }
+        return !complete || range.Capability is
+        {
+            InvocationEntered: true, ResponseAcknowledged: true, RawValue: not null,
+            PostReadAdmissionPassed: true, ReturnedWordTransportSucceeded: true
+        }
+            && CompleteCall(range.QueryVersion) && range.QueryVersion!.Value!.Version == 7
+            && CompleteCall(range.DValues) && CompleteCall(range.MinMax) && range.MinMax!.Value!.Value == 0x50001;
+    }
+    private static bool CompleteCall<T>(CpuLivePowerRangeMetadataCall<T>? call) where T : class =>
+        call is { Value: not null, Status: CpuLivePowerRangeMetadataStatus.Complete, PostAdmissionPassed: true }
+        && call.CapturedUtc != default && call.MonotonicTimestamp >= 0
+        && call.Stages == (CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+            | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed);
+    private static object? CallEvidence<T>(CpuLivePowerRangeMetadataCall<T>? call, object? value) where T : class => call is null ? null : new
+    {
+        status = call.Status.ToString(),
+        stages = call.Stages.ToString(),
+        call.CapturedUtc,
+        call.MonotonicTimestamp,
+        call.HResult,
+        call.PostAdmissionPassed,
+        value,
+        raw = call.Raw is { } raw ? new
+        {
+            returnValueState = raw.ReturnValueState.ToString(),
+            raw.ReturnValue,
+            raw.Version,
+            raw.Id,
+            raw.Current,
+            raw.Length,
+            raw.Min,
+            raw.Max,
+            raw.Stepping,
+            raw.Value,
+            dValuesBuffer = raw.CopyDValuesBuffer()
+        } : null
+    };
+    private static object? RangeEvidence(CpuLivePowerRangeObservation? range) => range is null ? null : new
+    {
+        a0f = CapRead(range.A0F),
+        a0b = CapRead(range.A0B),
+        a13 = CapRead(range.A13),
+        a90 = CapRead(range.A90),
+        capability = range.Capability,
+        queryVersion = CallEvidence(range.QueryVersion, range.QueryVersion?.Value),
+        dValues = CallEvidence(range.DValues, range.DValues?.Value is { } values ? new
+        { values.Id, values.Current, values.Length, values = values.CopyValues() } : null),
+        minMax = CallEvidence(range.MinMax, range.MinMax?.Value),
+        classification = "VendorIntervalEvidenceOnly",
+        authority = "NotEstablishedByObservation",
+    };
 }

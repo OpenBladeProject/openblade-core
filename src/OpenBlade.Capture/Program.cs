@@ -4,11 +4,14 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
-if (args.Length > 0 && args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase))
+if (args.Length > 0 && (args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals(Rz090528CpuPmObservationProbe.RangeName, StringComparison.OrdinalIgnoreCase)))
 {
     // Developer-only observations require the reviewed supervisor bootstrap
     // and fresh live parent authority before constructing a native provider.
-    return await CpuPmAttendedCapture.RunAsync(args.Skip(1).ToArray(), Console.Out, Console.Error);
+    var profile = args[0].Equals(Rz090528CpuPmObservationProbe.RangeName, StringComparison.OrdinalIgnoreCase)
+        ? CpuPmObservationProfile.RangeSingleSample : CpuPmObservationProfile.IdleThreeSamples;
+    return await CpuPmAttendedCapture.RunAsync(args.Skip(1).ToArray(), Console.Out, Console.Error, profile);
 }
 
 if (args.Length > 0 && args[0].Equals(Rz090528CpuLiveQueryProbe.Name, StringComparison.OrdinalIgnoreCase))

@@ -5,10 +5,15 @@ namespace OpenBlade.Capture;
 
 internal static class CpuPmAttendedCapture
 {
-    internal static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error)
+    internal static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error,
+        CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
     {
-        var parsed = Rz090528CpuPmObservationProbe.Parse(args);
-        if (parsed is null) { error.WriteLine("Usage: " + Rz090528CpuPmObservationProbe.Usage); return 2; }
+        var parsed = Rz090528CpuPmObservationProbe.Parse(args, profile);
+        if (parsed is null)
+        {
+            error.WriteLine("Usage: " + (profile == CpuPmObservationProfile.RangeSingleSample
+                ? Rz090528CpuPmObservationProbe.RangeUsage : Rz090528CpuPmObservationProbe.Usage)); return 2;
+        }
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         CpuPmLiveParentAuthority? authority = null;
         bool revokeAttempted = false;
@@ -20,6 +25,8 @@ internal static class CpuPmAttendedCapture
         try
         {
             var bootstrap = CpuPmSupervisorBootstrap.Load(parsed.RunId, false, deadline.Token);
+            if (!Rz090528CpuPmObservationProbe.MatchesReviewedProfile(parsed, bootstrap.Trusted))
+            { throw new IOException("Reviewed capture profile mismatch."); }
             var run = await WindowsCpuPmLaunchStartupWait.LoadAsync(parsed.RunId, bootstrap.Trusted, deadline.Token).ConfigureAwait(false);
             if (run is null || run.ParentIdentity != bootstrap.Record.Supervisor) { throw new IOException("Authenticated capture run unavailable."); }
             var channel = await WindowsCpuPmAuthorityChannel.ConnectChildAsync(parsed.RunId, run.ParentIdentity, deadline.Token).ConfigureAwait(false);
@@ -33,13 +40,14 @@ internal static class CpuPmAttendedCapture
             }
             var lifetime = Fresh();
             if (lifetime is null) { throw new IOException("Fresh owned lifetime unavailable."); }
-            var approval = CpuPmAttendedApproval.Acknowledge(true, true, lifetime);
+            var approval = CpuPmAttendedApproval.Acknowledge(true, true, lifetime, profile);
             var sink = run.CreateWindowsEvidenceSink();
             // Synchronous engine and query mutex remain on this ONE thread for
-            // the entire fixed three-sample observation. No Task.Run or retry.
+            // the entire fixed observation. No Task.Run or retry.
             var provenance = new CpuPmCaptureProvenance(parsed.RunId, run.LifetimeId, bootstrap.Trusted.Source,
                 bootstrap.Trusted.ManifestSha256, Stopwatch.Frequency);
-            var stored = CaptureAndStore(() => WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(approval, Fresh, deadline.Token),
+            var metadata = profile == CpuPmObservationProfile.RangeSingleSample ? new WindowsCpuLivePowerRangeMetadata() : null;
+            var stored = CaptureAndStore(() => WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(approval, Fresh, deadline.Token, metadata),
                 RevokeOnce, provenance, sink, deadline.Token);
             output.WriteLine($"PmObservation={stored.Status}; Samples={stored.VerifiedSamples}; Files={stored.VerifiedFiles}");
             output.WriteLine("LivePptTarget=Unknown; IndependentRestore=Unproven");
@@ -69,7 +77,7 @@ internal static class CpuPmAttendedCapture
             // samples, but never report completion after uncertain authority
             // cleanup. No recapture or disposal retry occurs in this path.
             batch = new(false, batch.CopySamples(), batch.CopyPciRecords(), batch.OrientationMask, batch.FuseMask,
-                new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed), batch.FusedCap);
+                new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed), batch.FusedCap, batch.Profile, batch.RangeObservation);
         }
         // A returned partial/cancelled batch is persisted without new authority.
         // A never-returned native invocation has no batch to persist.

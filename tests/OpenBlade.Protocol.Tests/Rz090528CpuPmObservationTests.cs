@@ -298,9 +298,72 @@ public sealed class Rz090528CpuPmObservationTests
         Assert.False(guard.Allows(Read, input, 24));
     }
 
-    private static CpuPmObservationWireAdmission Discover(bool confirm = true, bool cap = true)
+    [Fact]
+    public void RangeGuardAllowsOneArgumentZeroCapabilityAndOneSampleOnly()
     {
-        var guard = new CpuPmObservationWireAdmission();
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        Transaction(guard, 0x82, 0, 2);
+        Transaction(guard, 6, 0, CpuPmObservationWireAdmission.Version);
+        Transaction(guard, 0x65, 3, 42);
+        Exchange(guard, CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, CopyReply());
+        Transaction(guard, 6, 0, CpuPmObservationWireAdmission.Version);
+        Assert.Equal(1, guard.CopiesInvoked);
+        PrepareTransaction(guard, 0); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 6, 0), 0));
+    }
+
+    [Theory]
+    [InlineData(6u, 0u)]
+    [InlineData(0x65u, 3u)]
+    [InlineData(0x82u, 3u)]
+    public void RangeRequiresCapabilityFirstWithArgumentZero(uint command, uint argument)
+    {
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        PrepareTransaction(guard, argument); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, command, 0), 0));
+        Assert.True(guard.IsPoisoned);
+    }
+
+    [Fact]
+    public void RangeCannotRepeatCapabilityAndDefaultCannotRequestIt()
+    {
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        Transaction(guard, 0x82, 0, 2);
+        PrepareTransaction(guard, 0); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 0x82, 0), 0));
+        guard = Discover(); PrepareTransaction(guard, 0); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 0x82, 0), 0));
+        guard = Discover(); Assert.False(guard.Allows(Write, Words(0, CpuLivePowerRangeObservation.RegisterA13, 0), 0));
+    }
+
+    [Theory]
+    [InlineData(0x03820A90u)]
+    [InlineData(0x03820A14u)]
+    [InlineData(0x03B10A80u)]
+    public void RangeCannotSkipA13OrUseArbitraryRegister(uint address)
+    {
+        var guard = Discover(cap: false, profile: CpuPmObservationProfile.RangeSingleSample);
+        Select(guard, CpuLivePowerFusedCap.RegisterA0F); ReadWord(guard, Pci(0, 0, 0xC8), 5);
+        Select(guard, CpuLivePowerFusedCap.RegisterA0B); ReadWord(guard, Pci(0, 0, 0xC8), 0xF0000000);
+        Assert.False(guard.Allows(Write, Words(0, address, 0), 0));
+    }
+
+    [Fact]
+    public void MetadataArraysAreBoundedAndDefensivelyCopied()
+    {
+        uint[] values = [0, uint.MaxValue];
+        var discrete = new CpuLivePowerRangeDValues(0x50001, 0, 2, values);
+        var raw = new CpuLivePowerRangeMetadataRaw(dValuesBuffer: values);
+        values[0] = 9; discrete.CopyValues()[0] = 10; raw.CopyDValuesBuffer()![0] = 11;
+        Assert.Equal(0u, discrete.CopyValues()[0]); Assert.Equal(0u, raw.CopyDValuesBuffer()![0]);
+        Assert.Throws<ArgumentException>(() => new CpuLivePowerRangeDValues(0x50001, 0, 101, new uint[101]));
+        Assert.Throws<ArgumentException>(() => new CpuLivePowerRangeMetadataRaw(dValuesBuffer: new uint[101]));
+        Assert.Throws<ArgumentException>(() => new CpuLivePowerRangeDValues(0x50001, 0, 1, []));
+    }
+
+    private static CpuPmObservationWireAdmission Discover(bool confirm = true, bool cap = true, CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
+    {
+        var guard = new CpuPmObservationWireAdmission(profile);
         byte[] count = new byte[28];
         BinaryPrimitives.WriteUInt32LittleEndian(count.AsSpan(24), 3);
         Exchange(guard, Enumerate, new byte[28], 28, count);
@@ -322,6 +385,11 @@ public sealed class Rz090528CpuPmObservationTests
             {
                 Select(guard, CpuLivePowerFusedCap.RegisterA0F); ReadWord(guard, Pci(0, 0, 0xC8), 5);
                 Select(guard, CpuLivePowerFusedCap.RegisterA0B); ReadWord(guard, Pci(0, 0, 0xC8), 0xF0000000);
+                if (profile == CpuPmObservationProfile.RangeSingleSample)
+                {
+                    Select(guard, CpuLivePowerRangeObservation.RegisterA13); ReadWord(guard, Pci(0, 0, 0xC8), 0);
+                    Select(guard, CpuLivePowerRangeObservation.RegisterA90); ReadWord(guard, Pci(0, 0, 0xC8), 0);
+                }
             }
         }
         return guard;

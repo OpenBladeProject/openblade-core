@@ -117,6 +117,14 @@ flag and firmware range needs further validation before power-limit writes.
 Each new run uses its own independently pinned preset before launch, preserving
 earlier protected payloads and evidence.
 
+A separate developer range-observation profile reads the capability response,
+four fixed source-mapped SMN registers, one PM table and the two firmware range
+metadata getters. Its command must match a separately reviewed run preset and
+explicit attended approval. Metadata errors retain the completed PM sample and
+copied fields as incomplete evidence. The existing three-sample profile cannot
+invoke these additional queries. This new capture path still needs attended
+validation; its output does not admit power-limit writes or restoration.
+
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
 Boot activation, installed-service IPC validation, and attended live

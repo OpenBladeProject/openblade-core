@@ -13,14 +13,17 @@ internal sealed class CpuPmAttendedApproval
     private readonly long created = Stopwatch.GetTimestamp();
     private int consumed;
     internal CpuPmRunOwnedDriverLifetime Lifetime { get; }
-    private CpuPmAttendedApproval(CpuPmRunOwnedDriverLifetime lifetime) => Lifetime = lifetime;
+    internal CpuPmObservationProfile Profile { get; }
+    private CpuPmAttendedApproval(CpuPmRunOwnedDriverLifetime lifetime, CpuPmObservationProfile profile)
+    { Lifetime = lifetime; Profile = profile; }
     internal static CpuPmAttendedApproval Acknowledge(bool pciTransportAndKernelCopyApproved,
-        bool freshRunOwnedDriverLifetimeApproved, CpuPmRunOwnedDriverLifetime lifetime)
+        bool freshRunOwnedDriverLifetimeApproved, CpuPmRunOwnedDriverLifetime lifetime,
+        CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
     {
-        if (!pciTransportAndKernelCopyApproved || !freshRunOwnedDriverLifetimeApproved
+        if (!Enum.IsDefined(profile) || !pciTransportAndKernelCopyApproved || !freshRunOwnedDriverLifetimeApproved
             || lifetime is not { ConfirmedFreshRunOwned: true } || lifetime.RunId == Guid.Empty || lifetime.DriverLifetimeId == Guid.Empty)
         { throw new ArgumentException("Both scope-specific PM approvals and a run-owned lifetime are required."); }
-        return new(lifetime);
+        return new(lifetime, profile);
     }
     internal bool Consume() => Interlocked.Exchange(ref consumed, 1) == 0 && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2);
 }
@@ -43,14 +46,17 @@ internal static class WindowsRz090528CpuPmObservationAdapter
 {
     internal static CpuPmObservationBatch ObserveProduction(bool useInstalledBackend) => Denied();
     internal static CpuPmObservationBatch ObserveForAttendedValidation(CpuPmAttendedApproval? approval,
-        Func<CpuPmRunOwnedDriverLifetime?> readFreshDriverLifetime, CancellationToken token = default) =>
-        WindowsRz090528CpuQueryAdapter.ObservePmNative(approval, readFreshDriverLifetime, token);
+        Func<CpuPmRunOwnedDriverLifetime?> readFreshDriverLifetime, CancellationToken token = default,
+        IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null) =>
+        WindowsRz090528CpuQueryAdapter.ObservePmNative(approval, readFreshDriverLifetime, token, metadataReader);
     internal static CpuPmObservationBatch ObserveForAttendedValidation(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> readFreshDriverLifetime, ICpuPmWindowsPlatform platform,
-        ICpuPmObservationClock clock, CancellationToken token = default) =>
-        WindowsRz090528CpuQueryAdapter.ObservePm(approval, readFreshDriverLifetime, platform, clock, token);
+        ICpuPmObservationClock clock, CancellationToken token = default,
+        IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null) =>
+        WindowsRz090528CpuQueryAdapter.ObservePm(approval, readFreshDriverLifetime, platform, clock, token, metadataReader);
     internal static CpuPmObservationBatch Denied(CpuPmObservationStage stage = CpuPmObservationStage.Admission,
-        CpuPmObservationFailure failure = CpuPmObservationFailure.AdmissionDenied) => new(false, [], [], 0, 0, new(stage, failure));
+        CpuPmObservationFailure failure = CpuPmObservationFailure.AdmissionDenied,
+        CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples) => new(false, [], [], 0, 0, new(stage, failure), profile: profile);
 }
 
 // Reuse the private native platform and the actual same-thread query lease.
@@ -58,27 +64,28 @@ internal static class WindowsRz090528CpuPmObservationAdapter
 internal sealed partial class WindowsRz090528CpuQueryAdapter
 {
     internal static CpuPmObservationBatch ObservePmNative(CpuPmAttendedApproval? approval,
-        Func<CpuPmRunOwnedDriverLifetime?> lifetime, CancellationToken token) =>
-        ObservePm(approval, lifetime, new PmNativePlatform(new CpuQueryWindowsPlatform()), new PmClock(), token);
+        Func<CpuPmRunOwnedDriverLifetime?> lifetime, CancellationToken token,
+        IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null) =>
+        ObservePm(approval, lifetime, new PmNativePlatform(new CpuQueryWindowsPlatform()), new PmClock(), token, metadataReader);
 
     internal static CpuPmObservationBatch ObservePm(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
-        CancellationToken token)
+        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null)
     {
-        if (approval?.Consume() != true) { return WindowsRz090528CpuPmObservationAdapter.Denied(); }
+        if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null) { return WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples); }
         ArgumentNullException.ThrowIfNull(lifetime); ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
         token.ThrowIfCancellationRequested();
         ICpuPmContinuityScope? continuity = null;
-        CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied();
+        CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval.Profile);
         try
         {
             if (lifetime() != approval.Lifetime) { return result; }
             // Arm before even constructing/acquiring a native mutex or device.
             continuity = platform.ArmContinuity(approval.Lifetime);
-            var adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock);
+            var adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
             adapter.FullAdmission();
             token.ThrowIfCancellationRequested();
-            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock).Observe(token));
+            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, approval.Profile, metadataReader).Observe(token));
             if (continuity.ReadFresh(lifetime()).Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime)
             { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         }
@@ -105,7 +112,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         return result;
     }
     private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage, CpuPmObservationFailure failure) =>
-        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap);
+        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation);
     private static bool PmBoundedFailure(Exception e) => e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
         or InvalidOperationException or System.Security.SecurityException or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException;
 
@@ -125,10 +132,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         private CpuPmCapRegisterRead? rejectedCap;
         internal WindowsRz090528CpuQueryAdapter Transport { get; }
         internal PmAdapter(ICpuPmWindowsPlatform platform, ICpuPmContinuityScope continuity,
-            CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime, ICpuPmObservationClock clock)
+            CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime, ICpuPmObservationClock clock, CpuPmObservationProfile profile)
         {
             this.platform = platform; this.continuity = continuity; this.lifetime = lifetime; this.readLifetime = readLifetime;
-            Transport = new(this, ReadUsb, new PmNativeWire((address, reply) =>
+            Transport = new(this, ReadUsb, new PmNativeWire(profile, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
                     clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)));
         }
@@ -139,9 +146,33 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             // poisoned and grants no following request.
             if (rejectedCap is not { } rejected) { return result; }
             var first = result.FusedCap?.A0F; var second = result.FusedCap?.A0B;
-            if (rejected.Address == CpuLivePowerFusedCap.RegisterA0F) { first = rejected; } else { second = rejected; }
+            if (rejected.Address == CpuLivePowerFusedCap.RegisterA0F) { first = rejected; }
+            else if (rejected.Address == CpuLivePowerFusedCap.RegisterA0B) { second = rejected; }
+            var range = result.RangeObservation;
+            if (range is not null)
+            {
+                range = rejected.Address switch
+                {
+                    CpuLivePowerFusedCap.RegisterA0F => range with { A0F = rejected },
+                    CpuLivePowerFusedCap.RegisterA0B => range with { A0B = rejected },
+                    CpuLivePowerRangeObservation.RegisterA13 => range with { A13 = rejected },
+                    CpuLivePowerRangeObservation.RegisterA90 => range with { A90 = rejected },
+                    0x03B10A88 when range.Capability is not null => range with
+                    {
+                        Capability = range.Capability with
+                        {
+                            RawValue = rejected.RawValue,
+                            CapturedUtc = rejected.CapturedUtc,
+                            MonotonicTimestamp = rejected.MonotonicTimestamp,
+                            ReturnedWordTransportSucceeded = rejected.TransportSucceeded,
+                            PostReadAdmissionPassed = false
+                        }
+                    },
+                    _ => range,
+                };
+            }
             return new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
-                result.Diagnostic, new(first, second));
+                result.Diagnostic, new(first, second), result.Profile, range);
         }
         private void CheckThread()
         { if (Environment.CurrentManagedThreadId != thread) { throw new IOException("PM scope thread changed."); } }
@@ -242,17 +273,21 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             public void Dispose() { if (disposed) { return; } release(); disposed = true; }
         }
     }
-    private sealed class PmNativeWire(Action<uint, CpuQueryIoctlReply> retainRejectedCap) : ICpuNativeWireAdmission
+    private sealed class PmNativeWire(CpuPmObservationProfile profile, Action<uint, CpuQueryIoctlReply> retainRejectedCap) : ICpuNativeWireAdmission
     {
-        private readonly CpuPmObservationWireAdmission wire = new();
-        private uint selectedCap;
+        private readonly CpuPmObservationWireAdmission wire = new(profile);
+        private uint selectedCap, selectedAddress, currentCommand;
         public bool Allows(uint code, byte[] input, int outputLength)
         {
             bool allowed = wire.Allows(code, input, outputLength);
+            if (allowed && code == 0x81112FF8 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input) == 1 && selectedAddress == 0x03B10A20)
+            { currentCommand = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input.AsSpan(4)); }
             if (allowed && code == 0x81112FF8 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input) == 0)
             {
                 uint address = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input.AsSpan(4));
-                selectedCap = address is CpuLivePowerFusedCap.RegisterA0F or CpuLivePowerFusedCap.RegisterA0B ? address : 0;
+                selectedAddress = address;
+                selectedCap = address == 0x03B10A88 && currentCommand == 0x82 ? address : address is CpuLivePowerFusedCap.RegisterA0F or CpuLivePowerFusedCap.RegisterA0B
+                    or CpuLivePowerRangeObservation.RegisterA13 or CpuLivePowerRangeObservation.RegisterA90 ? address : 0;
             }
             return allowed;
         }

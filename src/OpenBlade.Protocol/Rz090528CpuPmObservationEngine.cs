@@ -25,7 +25,7 @@ internal interface ICpuPmObservationClock
     DateTimeOffset UtcNow { get; }
     void DelayOneSecond(CancellationToken cancellationToken);
 }
-internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap }
+internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap, Capability, MetadataVersion, MetadataDValues, MetadataMinMax }
 internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, BudgetExpired, InvalidData, UnsupportedVersion, RequestRejected, ReplyRejected, NativeFailure, CleanupFailed }
 internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure);
 internal sealed record CpuPmCompletedSample(CpuPmRawSnapshot Snapshot, uint RefreshReturnedWord);
@@ -47,7 +47,8 @@ internal sealed class CpuPmObservationBatch
     private readonly byte[] records;
     internal CpuPmObservationBatch(bool complete, IEnumerable<CpuPmCompletedSample> samples,
         byte[] records, uint orientationMask, uint fuseMask, CpuPmObservationDiagnostic? diagnostic,
-        CpuPmFusedCapObservation? fusedCap = null)
+        CpuPmFusedCapObservation? fusedCap = null, CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples,
+        CpuLivePowerRangeObservation? rangeObservation = null)
     {
         Complete = complete;
         this.samples = samples.ToArray();
@@ -55,8 +56,10 @@ internal sealed class CpuPmObservationBatch
         OrientationMask = orientationMask;
         FuseMask = fuseMask;
         Diagnostic = diagnostic;
-        FusedCap = fusedCap;
+        FusedCap = fusedCap; Profile = profile; RangeObservation = rangeObservation;
     }
+    internal CpuPmObservationProfile Profile { get; }
+    internal CpuLivePowerRangeObservation? RangeObservation { get; }
     internal bool Complete { get; }
     internal uint OrientationMask { get; }
     internal uint FuseMask { get; }
@@ -70,11 +73,12 @@ internal sealed class CpuPmObservationBatch
 // thread; no SDK, driver provisioning, setters, workload or native adapter wiring.
 internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioctl,
     IRz090528CpuQuerySynchronization synchronization, ICpuPmObservationSessionAdmission admission,
-    ICpuPmObservationClock clock)
+    ICpuPmObservationClock clock, CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples,
+    IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null)
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
-    private readonly CpuPmObservationWireAdmission wire = new();
+    private readonly CpuPmObservationWireAdmission wire = new(profile);
     private readonly List<CpuPmCompletedSample> samples = [];
     private byte[] records = [];
     private uint orientationMask, fuseMask;
@@ -83,7 +87,14 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private int ownerThread;
     private bool used, readingVersionArgument;
     private CpuPmObservationStage stage;
-    private CpuPmCapRegisterRead? capA0F, capA0B;
+    private CpuPmCapRegisterRead? capA0F, capA0B, capA13, capA90;
+    private CpuPmCapabilityObservation? capability;
+    private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion>? metadataVersion;
+    private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues>? metadataValues;
+    private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax>? metadataMinMax;
+    private bool readingCapabilityArgument;
+    private CpuPmObservationFailure? metadataCheckpointFailure;
+    private int SampleCount => profile == CpuPmObservationProfile.RangeSingleSample ? 1 : 3;
     private uint readingCapAddress;
 
     internal CpuPmObservationBatch Observe(CancellationToken cancellationToken = default)
@@ -98,6 +109,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         {
             stage = CpuPmObservationStage.Admission;
             CheckBoundary(cancellationToken);
+            if (!Enum.IsDefined(profile) || profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+            { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
             stage = CpuPmObservationStage.Mutex;
             lease = synchronization.Acquire(TimeSpan.FromSeconds(20), cancellationToken);
             if (lease is null) { throw new Failure(CpuPmObservationFailure.Busy); }
@@ -116,8 +129,16 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             ReadCap(bus, CpuLivePowerFusedCap.RegisterA0B, cancellationToken);
             if (new CpuPmFusedCapObservation(capA0F, capA0B).Candidate is null)
             { throw new Failure(CpuPmObservationFailure.InvalidData); }
+            if (profile == CpuPmObservationProfile.RangeSingleSample)
+            {
+                ReadCap(bus, CpuLivePowerRangeObservation.RegisterA13, cancellationToken);
+                ReadCap(bus, CpuLivePowerRangeObservation.RegisterA90, cancellationToken);
+                stage = CpuPmObservationStage.Capability;
+                capability = new(0x82, 0, false, false, null, null, null, false);
+                Mailbox(bus, 0x82, 0, cancellationToken);
+            }
             TimeSpan? lastCapture = null;
-            for (int index = 0; index < 3; index++)
+            for (int index = 0; index < SampleCount; index++)
             {
                 if (lastCapture.HasValue)
                 {
@@ -149,6 +170,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 { throw new Failure(CpuPmObservationFailure.InvalidData); }
                 CheckSnapshotBoundary(cancellationToken);
             }
+            if (profile == CpuPmObservationProfile.RangeSingleSample) { ReadMetadata(cancellationToken); }
         }
         catch (Failure failure) { wire.Abort(); diagnostic = new(stage, failure.Code); }
         catch (OperationCanceledException) { wire.Abort(); diagnostic = new(stage, CpuPmObservationFailure.Cancelled); }
@@ -156,7 +178,18 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         { wire.Abort(); diagnostic = new(stage, CpuPmObservationFailure.NativeFailure); }
         finally
         {
-            try { lease?.Dispose(); }
+            try
+            {
+                lease?.Dispose();
+                if (diagnostic is null)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (clock.MonotonicNow < previousClock || clock.MonotonicNow - started >= TimeSpan.FromSeconds(90))
+                    { diagnostic = new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.BudgetExpired); }
+                }
+            }
+            catch (OperationCanceledException)
+            { wire.Abort(); diagnostic = new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.Cancelled); }
             catch (Exception exception) when (IsBoundedFailure(exception))
             { wire.Abort(); diagnostic = new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
         }
@@ -164,8 +197,50 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     }
 
     private CpuPmObservationBatch Batch(CpuPmObservationDiagnostic? diagnostic) =>
-        new(diagnostic is null && samples.Count == 3, samples, records, orientationMask, fuseMask, diagnostic,
-            capA0F is null && capA0B is null ? null : new(capA0F, capA0B));
+        new(diagnostic is null && samples.Count == SampleCount, samples, records, orientationMask, fuseMask, diagnostic,
+            capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, profile == CpuPmObservationProfile.RangeSingleSample
+                ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, metadataValues, metadataMinMax) : null);
+
+    private void ReadMetadata(CancellationToken token)
+    {
+        CheckSnapshotBoundary(token);
+        stage = CpuPmObservationStage.MetadataVersion;
+        metadataVersion = metadataReader!.QueryVersion(() => MetadataCheckpoint(token));
+        CheckMetadata(metadataVersion, token);
+        if (metadataVersion.Value is not { Version: 7 }) { throw new Failure(CpuPmObservationFailure.UnsupportedVersion); }
+        metadataVersion = metadataVersion with { PostAdmissionPassed = true };
+        stage = CpuPmObservationStage.MetadataDValues;
+        metadataValues = metadataReader.GetDValues(() => MetadataCheckpoint(token));
+        CheckMetadata(metadataValues, token);
+        if (metadataValues.Value is not { Id: 0x50001 }) { throw new Failure(CpuPmObservationFailure.InvalidData); }
+        metadataValues = metadataValues with { PostAdmissionPassed = true };
+        stage = CpuPmObservationStage.MetadataMinMax;
+        metadataMinMax = metadataReader.GetMinMaxSteppingValues(() => MetadataCheckpoint(token));
+        CheckMetadata(metadataMinMax, token);
+        if (metadataMinMax.Value is not { Value: 0x50001 }) { throw new Failure(CpuPmObservationFailure.InvalidData); }
+        metadataMinMax = metadataMinMax with { PostAdmissionPassed = true };
+    }
+    private void MetadataCheckpoint(CancellationToken token)
+    {
+        if (metadataCheckpointFailure.HasValue) { throw new IOException("Range metadata admission stopped."); }
+        try { CheckBoundary(token); }
+        catch (Failure failure)
+        {
+            metadataCheckpointFailure = failure.Code;
+            throw new IOException("Range metadata admission stopped.");
+        }
+    }
+    private void CheckMetadata<T>(CpuLivePowerRangeMetadataCall<T> call, CancellationToken token) where T : class
+    {
+        if (metadataCheckpointFailure is { } failure) { throw new Failure(failure); }
+        CheckBoundary(token);
+        const CpuLivePowerRangeMetadataStages complete = CpuLivePowerRangeMetadataStages.InvocationEntered
+            | CpuLivePowerRangeMetadataStages.InvocationReturned | CpuLivePowerRangeMetadataStages.OutputEnumerated
+            | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed;
+        if (call.Status != CpuLivePowerRangeMetadataStatus.Complete || call.Value is null || call.Stages != complete)
+        { throw new Failure(CpuPmObservationFailure.InvalidData); }
+        CpuPmObservationStage current = stage; CheckSnapshotBoundary(token); stage = current;
+    }
 
     private void CheckBoundary(CancellationToken cancellationToken)
     {
@@ -240,8 +315,10 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         WriteRegister(bus, 0, Response, token);
         Poll(bus, token);
         readingVersionArgument = command == 6;
+        readingCapabilityArgument = command == 0x82;
+        if (readingCapabilityArgument && capability is not null) { capability = capability with { ResponseAcknowledged = true }; }
         try { return ReadSmn(bus, Argument, token); }
-        finally { readingVersionArgument = false; }
+        finally { readingVersionArgument = readingCapabilityArgument = false; }
     }
     private void Poll(uint bus, CancellationToken token)
     {
@@ -260,7 +337,12 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         CheckBoundary(token);
         if (!wire.Allows(code, input, outputLength)) { throw new Failure(CpuPmObservationFailure.RequestRejected); }
         CpuQueryIoctlReply reply;
-        try { reply = ioctl.Invoke(code, input, outputLength); }
+        try
+        {
+            if (stage == CpuPmObservationStage.Capability && code == Write && Word(input, 0) == 1 && Word(input, 4) == 0x82 && capability is not null)
+            { capability = capability with { InvocationEntered = true }; }
+            reply = ioctl.Invoke(code, input, outputLength);
+        }
         catch { wire.Abort(); throw; }
         CpuPmCapRegisterRead? capRead = null;
         if (readingCapAddress != 0 && code == Read && reply.Bytes.Length == 24
@@ -270,6 +352,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 clock.MonotonicTimestamp, reply.Success, false);
             RetainCap(capRead);
         }
+        if (readingCapabilityArgument && reply.Bytes.Length == 24 && reply.Bytes.AsSpan(0, 20).SequenceEqual(input) && capability is not null)
+        { capability = capability with { RawValue = Word(reply.Bytes, 20), CapturedUtc = clock.UtcNow, MonotonicTimestamp = clock.MonotonicTimestamp, ReturnedWordTransportSucceeded = reply.Success }; }
         if (!wire.AcceptReply(code, input, outputLength, reply))
         {
             throw new Failure(!reply.Success ? CpuPmObservationFailure.NativeFailure
@@ -279,12 +363,15 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         }
         CheckBoundary(token);
         if (capRead is not null) { RetainCap(capRead with { PostReadAdmissionPassed = true }); }
+        if (readingCapabilityArgument && capability is not null) { capability = capability with { PostReadAdmissionPassed = true }; }
         return (byte[])reply.Bytes.Clone();
     }
     private void RetainCap(CpuPmCapRegisterRead read)
     {
         if (read.Address == CpuLivePowerFusedCap.RegisterA0F) { capA0F = read; }
-        else { capA0B = read; }
+        else if (read.Address == CpuLivePowerFusedCap.RegisterA0B) { capA0B = read; }
+        else if (read.Address == CpuLivePowerRangeObservation.RegisterA13) { capA13 = read; }
+        else if (read.Address == CpuLivePowerRangeObservation.RegisterA90) { capA90 = read; }
     }
     private sealed class Failure(CpuPmObservationFailure code) : Exception { internal CpuPmObservationFailure Code { get; } = code; }
     private static bool IsBoundedFailure(Exception exception) => exception is IOException or UnauthorizedAccessException

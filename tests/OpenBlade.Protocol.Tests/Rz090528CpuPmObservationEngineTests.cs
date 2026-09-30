@@ -297,10 +297,89 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Null(result.FusedCap.Candidate); Assert.Equal(CpuPmObservationFailure.ReplyRejected, result.Diagnostic!.Failure);
     }
 
+    [Fact]
+    public void RangeCapturesFourRegistersOneCapabilityOnePmThenFixedMetadataUnderLease()
+    {
+        var fake = new Fake(); var metadata = new MetadataFake(fake);
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe();
+        Assert.True(result.Complete);
+        Assert.Equal(CpuPmObservationProfile.RangeSingleSample, result.Profile);
+        Assert.Single(result.CopySamples());
+        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6 }, fake.Commands);
+        Assert.Equal(new uint[] { 0x03820A0F, 0x03820A0B, 0x03820A13, 0x03820A90 }, fake.CapSelections);
+        Assert.Equal(new[] { "version", "dvalues", "minmax" }, metadata.Calls);
+        Assert.Equal(0, fake.IdleDelays);
+        Assert.True(result.RangeObservation!.Capability!.InvocationEntered);
+        Assert.True(result.RangeObservation.Capability.ResponseAcknowledged);
+        Assert.True(result.RangeObservation.Capability.PostReadAdmissionPassed);
+        Assert.True(result.RangeObservation.MinMax!.PostAdmissionPassed);
+    }
+
+    [Theory]
+    [InlineData("version", 1)]
+    [InlineData("dvalues", 2)]
+    [InlineData("minmax", 3)]
+    public void MetadataFailureRetainsCompletedPmAndStopsLaterGetters(string fail, int calls)
+    {
+        var fake = new Fake(); var metadata = new MetadataFake(fake) { Fail = fail };
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe();
+        Assert.False(result.Complete); Assert.Single(result.CopySamples());
+        Assert.Equal(calls, metadata.Calls.Count);
+        Assert.Equal(CpuPmObservationFailure.InvalidData, result.Diagnostic!.Failure);
+        Assert.True(result.RangeObservation!.Capability!.PostReadAdmissionPassed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MetadataLateReturnCancellationOrDeadlineRetainsEvidenceAndStops(bool expired)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var fake = new Fake(); var metadata = new MetadataFake(fake);
+        metadata.AfterCall = () => { if (expired) { fake.Now = TimeSpan.FromSeconds(90); } else { cancellation.Cancel(); } };
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe(cancellation.Token);
+        Assert.False(result.Complete); Assert.Single(result.CopySamples());
+        Assert.Single(metadata.Calls); Assert.NotNull(result.RangeObservation!.QueryVersion);
+        Assert.False(result.RangeObservation.QueryVersion!.PostAdmissionPassed);
+        Assert.Equal(expired ? CpuPmObservationFailure.BudgetExpired : CpuPmObservationFailure.Cancelled, result.Diagnostic!.Failure);
+    }
+
+    [Fact]
+    public void IdleProfileNeverInvokesMetadataAndRangeWithoutReaderCannotAcquire()
+    {
+        var fake = new Fake(); var metadata = new MetadataFake(fake);
+        Assert.True(fake.Engine(metadata: metadata).Observe().Complete);
+        Assert.Empty(metadata.Calls); Assert.DoesNotContain(0x82u, fake.Commands);
+        Assert.DoesNotContain(0x03820A13u, fake.CapSelections); Assert.DoesNotContain(0x03820A90u, fake.CapSelections);
+        fake = new Fake();
+        Assert.False(fake.Engine(CpuPmObservationProfile.RangeSingleSample).Observe().Complete);
+        Assert.Equal(0, fake.Acquires); Assert.Empty(fake.Codes);
+    }
+
+    private sealed class MetadataFake(Fake fake) : IRz090528CpuLivePowerRangeMetadataReader
+    {
+        internal string? Fail;
+        internal Action? AfterCall;
+        internal List<string> Calls { get; } = [];
+        private CpuLivePowerRangeMetadataCall<T> Call<T>(string name, T value, Action checkpoint) where T : class
+        {
+            checkpoint(); Assert.True(fake.Leased); Assert.Equal(1, fake.Copies);
+            Assert.Equal(6u, fake.Commands[^1]); Calls.Add(name); AfterCall?.Invoke();
+            return new(value, Fail == name ? CpuLivePowerRangeMetadataStatus.InvalidData : CpuLivePowerRangeMetadataStatus.Complete,
+                CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+                    | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed,
+                fake.UtcNow, fake.MonotonicTimestamp);
+        }
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) => Call("version", new CpuLivePowerRangeVersion(7, false), checkpoint);
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) => Call("dvalues", new CpuLivePowerRangeDValues(0x50001, 0, 2, [80000, 85000]), checkpoint);
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) => Call("minmax", new CpuLivePowerRangeMinMax(0x50001, 0, 0, 125000, 1), checkpoint);
+    }
+
     private sealed class Fake : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization,
         ICpuPmObservationSessionAdmission, ICpuPmObservationClock
     {
         private uint selected, command;
+        internal bool Leased { get; private set; }
         private bool leased, awaitingPostCopySelection;
         private readonly Guid session = Guid.NewGuid(), lifetime = Guid.NewGuid();
         internal string? AdmissionFailure, WireFailure;
@@ -319,7 +398,8 @@ public sealed class Rz090528CpuPmObservationEngineTests
         internal List<uint> Codes { get; } = [];
         internal List<uint> Commands { get; } = [];
         internal List<int> Threads { get; } = [];
-        internal Rz090528CpuPmObservationEngine Engine() => new(this, this, this, this);
+        internal Rz090528CpuPmObservationEngine Engine(CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples,
+            IRz090528CpuLivePowerRangeMetadataReader? metadata = null) => new(this, this, this, this, profile, metadata);
         public TimeSpan MonotonicNow => Now;
         public long MonotonicTimestamp => Now.Ticks;
         public DateTimeOffset UtcNow => DateTimeOffset.UnixEpoch + Now;
@@ -334,7 +414,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
             Acquires++;
             Now += AcquireElapsed;
             if (MutexBusy) { return null; }
-            leased = true;
+            leased = Leased = true;
             Threads.Add(Environment.CurrentManagedThreadId);
             return new Lease(this);
         }
@@ -344,7 +424,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
             {
                 fake.Threads.Add(Environment.CurrentManagedThreadId);
                 fake.Disposals++;
-                fake.leased = false;
+                fake.leased = fake.Leased = false;
                 if (fake.CleanupThrows) { throw new IOException("private cleanup evidence"); }
             }
         }
@@ -391,7 +471,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 if (Word(input, 0) == 0)
                 {
                     selected = Word(input, 4);
-                    if (selected is 0x03820A0F or 0x03820A0B) { CapSelections.Add(selected); }
+                    if (selected is 0x03820A0F or 0x03820A0B or 0x03820A13 or 0x03820A90) { CapSelections.Add(selected); }
                     if (awaitingPostCopySelection && selected == 0x03B10A80)
                     { awaitingPostCopySelection = false; PostCopyResponseSelections++; }
                 }
@@ -410,6 +490,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                     : offset == 0x140 ? WireFailure == "mask" ? 0xFFFFu : 0xFF55u
                     : selected == 0x03820AB0 ? (WireFailure == "fuse" ? ~0xFFFFu : ~0xFF55u) << 5
                     : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
+                    : selected == 0x03820A13 ? 1u : selected == 0x03820A90 ? 4u
                     : selected == 0x03B10A80 ? 1u
                     : selected == 0x03B10A88 ? command == 6 ? WireFailure == "version" || WireFailure == "post-version" && Copies > 0 ? 0x005D000Cu : 0x005D000Bu : 0x12345678u
                     : throw new InvalidOperationException("stale index selection");

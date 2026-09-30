@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
@@ -10,13 +11,17 @@ internal sealed record CpuPmReviewedLaunchBootstrap
 {
     internal string Source { get; }
     internal string ManifestSha256 { get; }
+    internal CpuPmObservationProfile Profile { get; }
     internal string PayloadPath => Path.Combine(PayloadRoot, Source, ManifestSha256);
     internal const string PayloadRoot = @"C:\OpenBlade\validation-archive\cpu-tuning-re\pm-supervisor-payloads";
-    internal CpuPmReviewedLaunchBootstrap(string source, string manifestSha256)
+    internal CpuPmReviewedLaunchBootstrap(string source, string manifestSha256,
+        CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
     {
         if (!CpuPmLaunchSchema.IsHex(source, 40, lower: true) || !CpuPmLaunchSchema.IsHex(manifestSha256, 64, lower: false))
         { throw new ArgumentException("Independent reviewed bootstrap required."); }
-        Source = source; ManifestSha256 = manifestSha256;
+        if (profile is not (CpuPmObservationProfile.IdleThreeSamples or CpuPmObservationProfile.RangeSingleSample))
+        { throw new ArgumentException("Fixed reviewed profile required.", nameof(profile)); }
+        Source = source; ManifestSha256 = manifestSha256; Profile = profile;
     }
 }
 internal sealed record CpuPmLaunchFile(string Name, long Length, string Sha256);

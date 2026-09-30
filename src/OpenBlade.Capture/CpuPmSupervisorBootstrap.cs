@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
@@ -12,8 +13,21 @@ internal static class CpuPmOuterLaunchSchema
     internal static CpuPmReviewedLaunchBootstrap ReadPreset(byte[] bytes)
     {
         using var document = Document(bytes); var root = document.RootElement;
-        Fields(root, "version", "source", "manifest"); Version(root);
-        return new(root.GetProperty("source").GetString()!, root.GetProperty("manifest").GetString()!);
+        if (!root.GetProperty("version").TryGetInt32(out int version)) { throw new InvalidDataException(); }
+        CpuPmObservationProfile profile;
+        if (version == 1)
+        {
+            Fields(root, "version", "source", "manifest");
+            profile = CpuPmObservationProfile.IdleThreeSamples;
+        }
+        else if (version == 2)
+        {
+            Fields(root, "version", "source", "manifest", "profile");
+            if (root.GetProperty("profile").GetString() != "RangeSingleSample") { throw new InvalidDataException(); }
+            profile = CpuPmObservationProfile.RangeSingleSample;
+        }
+        else { throw new InvalidDataException(); }
+        return new(root.GetProperty("source").GetString()!, root.GetProperty("manifest").GetString()!, profile);
     }
     internal static CpuPmOuterLaunchRecord ReadRecord(byte[] bytes)
     {
