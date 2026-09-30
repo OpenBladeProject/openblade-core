@@ -104,16 +104,18 @@ source ([UXTU](https://github.com/JamesCJ60/Universal-x86-Tuning-Utility/blob/ee
 and [RyzenAdj](https://github.com/FlyGoat/RyzenAdj/blob/5775fc3e6dbb25c7030ee2d100a1bdd6e8bf2d0a/lib/api.c#L1470)),
 map command `0x32` to the fast-limit field and `0x33` to the slow-limit
 field. The captured candidates correspond to 85 W and 80 W. Restoration must
-preserve each independently. The fused upper bound comes from separate SMN
-registers and was not part of this capture; neither the full writable range nor
-physical setter readback and restoration has been established.
+preserve each independently. The vendor's fused value comes from separate SMN
+registers and was not part of the initial capture. The full writable range,
+physical setter readback and independent restoration remain unproved.
 
-The developer observation now reads only the two source-mapped fused-cap
-registers, after confirming the exact PCI identities and topology masks. It
-retains raw replies and admission status even when the query fails. The decoded
-cap remains a candidate; this getter has not yet been exercised on hardware.
-Each new run requires its own independently pinned preset before launch, keeping
-earlier protected payloads and evidence intact.
+A subsequent attended query read both source-mapped registers and retained three
+complete PM tables. Independent review verified all 18 exported files and the
+complete driver lifecycle. The registers decode to 71 W, while the tables still
+report 85 W fast and 80 W slow limits. The fused value therefore does not establish
+an unconditional live power ceiling. Its relationship to the vendor capability
+flag and firmware range needs further validation before power-limit writes.
+Each new run uses its own independently pinned preset before launch, preserving
+earlier protected payloads and evidence.
 
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
