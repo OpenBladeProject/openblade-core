@@ -11,8 +11,10 @@ remain below `20`. The counter-reuse objective remains unresolved. Synapse and
 Razer services were stopped afterward and OpenBlade was restored. The saved
 Balanced CPU curve selects 2200 across rounded 40..99.9 degrees C, supporting an
 unchanged-target explanation. Current records do not prove capture-time settings.
-Review the specific stimulus before proposing another run; no repeat is implied
-by the preparation plan below.
+The later separately authorized Quiet/Balanced capture below contains three
+acknowledged demands (2200 -> 1000 -> 2200) and complete captured vendor
+restoration, but no fan-ID reuse. No repeat is implied by either completed run
+or the preparation plan below.
 
 ## What the current evidence supports
 
@@ -153,9 +155,105 @@ attempt after failure. The launcher also rechecks root/address, the same exact
 pad instance/revision and competing-controller absence after the capture-start
 gate, preserving separate initial/start inventories. A mismatch starts no
 recorder and leaves cleanup behind the explicit physical gate.
-The launcher was parsed but never executed; no UAC,
-capture, service change or hardware operation occurred. Successful cleanup is
+During the initial preparation review, the launcher was parsed but never
+executed; no UAC, capture, service change or hardware operation occurred.
+Successful cleanup is
 recorded separately from capture completion and cannot rewrite `TimedOut`.
+
+## Stopped setup and wrapper compatibility
+
+The subsequently approved Quiet/Balanced attempt reached preparation but stopped
+before recording on 2026-09-30. The private launcher enabled strict mode, which
+the unchanged generic wrapper inherited. Its single-address expression unrolled
+to a scalar; reading `.Count` threw before recorder state creation or native
+recorder start. No recorder PCAP/ready/state/ownership file was created and no
+preset selection occurred. The earlier 23 preparation checks did not exercise this
+real-wrapper integration boundary.
+
+The original launcher retained its failure and expired its cleanup gate because
+it could not establish readiness. The operator separately confirmed unchanged
+quiet/green behavior, no red/sleep and inactive HyperBoost, then fully exited
+Synapse. A reviewed cleanup-only attended elevation verified controller absence,
+stopped the two temporary Razer services and restored OpenBlade. Read-only IPC59
+verified installed source `55718fa0` with pad Stop/Stopped/ObservedOnly. This
+reconciliation does not rewrite the failed launcher result or claim captured
+restoration. No OpenBlade pad Feature-report query/control command ran.
+
+The future private launcher now invokes the generic wrapper in a child scope
+with strict mode off, retaining strict mode in the launcher. Three additional
+Windows PowerShell checks invoke the real wrapper with inert fake recorder
+helpers: the original pre-start failure reproduces; the fixed call writes ready
+and graceful terminal state; parent strict mode remains enabled. These and the
+23 preparation checks passed independent review. The generic capture tooling is
+unchanged. This establishes compatibility in the fake integration, not a live
+capture result.
+
+The repaired setup's next UAC request was canceled before its launcher started.
+No new service change, recorder or preset action followed that cancellation.
+The operator subsequently requested reopening; the new elevation is a separate
+attempt, not an automatic privilege retry.
+
+## Completed repaired capture and cleanup
+
+The separately reopened attempt on 2026-09-30 recorded from 21:21:40 to
+21:25:23 UTC and stopped gracefully through the explicit sentinel, before its
+300-second limit. The unchanged wrapper ran successfully through the reviewed
+compatibility scope. Recorder state is `Completed`, with no errors; the elevated
+launcher exited zero and separately recorded completed cleanup.
+
+The observed baseline was Fan Control off with retained Fixed/Medium 2200 RPM;
+the saved underlying Smart preset was Balanced with CPU input. The operator
+confirmed quiet normal operation, full-brightness static-green lighting, no
+red/sleep indication and inactive HyperBoost. Recording covered enabling Fan
+Control, selecting saved Smart Balanced, selecting Quiet (displayed demand 1000),
+and selecting Balanced (later displayed demand 2200). Quiet's physical check
+passed. The Balanced reply arrived after the stimulus deadline and did not
+release more changes. Input-detected guards required fresh observations after
+operator replies. Only three Smart selections occurred; the planned alternation
+was not completed and cannot establish counter reuse.
+
+Restoration began at the three-minute stimulus deadline: retained Fixed/Medium
+2200 and Fan Control off were restored, with Smart Balanced retained. The final
+operator check confirmed preferred quiet behavior, unchanged green lighting,
+no red/sleep and inactive HyperBoost before the stop sentinel. This physical
+confirmation is distinct from packet evidence of restoration commands.
+
+After a separate full tray-exit confirmation, AppEngine and recorder absence
+were verified. The same elevated helper stopped both temporary Razer services
+and restored OpenBlade. Read-only IPC59 reports installed source `55718fa0`,
+verified device identity and pad Stop/Stopped/ObservedOnly with no planned or
+historical demand. No OpenBlade pad Feature query/control command ran, and no
+software installation or version change occurred.
+
+The private PCAP is 11,363 bytes, SHA-256
+`DD872896CB33A642CF7271DF05C912EC16B48953A1C6F92CC71C491884CDB915`.
+It contains 124 raw frames, 71 decoded payload entries and 59 complete 90-byte
+bodies, all checksum-valid without truncation. Seven fan pairs have exact
+transaction/command/length/payload echoes and successful status `02`:
+
+| Request/response frames | Transaction | Command/payload | Configured demand or selection |
+| --- | --- | --- | --- |
+| 15/18 | `15` | `0D/10:01012C` | Fixed Medium 2200 |
+| 23/26 | `16` | `0D/01:01052C` | Demand 2200 |
+| 31/34 | `17` | `0D/01:010514` | Demand 1000 |
+| 57/60 | `18` | `0D/01:01052C` | Demand 2200 |
+| 97/100 | `19` | `0D/10:01012C` | Fixed Medium 2200 |
+| 101/104 | `1A` | `0D/10:01012C` | Fixed Medium 2200 |
+| 107/110 | `1B` | `0D/10:000600` | Vendor Fan Control off |
+
+There are three acknowledged demands and two changed-demand successors, with
+no unmatched or ambiguous fan bodies. Fan IDs `15..1B` are unique; no fan reuse
+occurred. Forty-five unpaired lighting requests include `1F -> 00 -> 01` at
+frames 53/55/61, which cannot establish fan-control counter policy.
+The final off ACK at 21:24:50.532101 UTC precedes the physical restoration marker
+at 21:25:22.939145 UTC and graceful recorder completion at 21:25:23.905718 UTC.
+Thus vendor Fixed/off restoration and its subsequent physical check were within
+recording. This does not validate an OpenBlade standalone off/handback command,
+measured RPM, thermal causality or firmware Auto ownership.
+
+The result supports distinct host-managed Smart demands, but the acknowledged
+counter-boundary objective remains unresolved. Native admission and transaction
+reuse remain closed. No further recording is authorized by this completed attempt.
 
 ## Eventual implementation boundary
 
