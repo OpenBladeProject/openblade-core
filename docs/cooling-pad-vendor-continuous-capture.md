@@ -75,6 +75,18 @@ callback inputs remain possible. Neither the capture-time Balanced point arrays
 nor correlated callback inputs were recorded. Present profile settings alone
 cannot establish past settings.
 
+Subsequent narrow read-only inspection found the current saved Smart configuration
+in the active pad profile: Balanced, CPU input, with CPU points
+`(40,1000), (90,2200), (100,2200)` and GPU
+points `(30,1000), (80,2200), (90,2200)`. The inspected host algorithm selects
+the first point strictly above the current temperature rather than interpolating.
+The saved CPU curve therefore selects 2200 for rounded CPU `40 <= T < 100` degrees C,
+including 85.6. This supports an effective-plateau explanation for an unchanged
+target. The stored records have no record-level timestamps, so they do not prove
+capture-time settings or continuing callback activity. A future separately
+authorized changing-demand experiment needs reviewed curve steps within the
+observed telemetry range before starting the workload.
+
 Preserve this bounded result as inconclusive for counter reuse. Do not infer
 wrapping from lighting or automatically repeat/extend the capture. Inspect the
 saved curve policy and host-loop evidence before proposing another attended run.
