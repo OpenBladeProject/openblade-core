@@ -1688,6 +1688,21 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    CoolingPadCurveTrialCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadCurveTrialCommand(
+        (first, curve, fixedCheck, quiet, final, token) => new CoolingPadCurveTrialRunner(
+            CoolingPadCurvePreviewCommand.ReadWindowsHost,
+            static () => new SafeWindowsFanTemperatureSource(),
+            GetterCandidateProbeFactory.CreateCoolingPadActorFactory,
+            static () => new ValidationRunContext(), TimeProvider.System)
+            .RunAsync(first, curve, fixedCheck, quiet, final, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     CoolingPadCurvePreviewCommand.Name,
     StringComparison.OrdinalIgnoreCase))
 {
