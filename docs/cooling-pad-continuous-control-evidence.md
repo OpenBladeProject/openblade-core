@@ -4,6 +4,14 @@ Native production admission remains closed. The finite service-curve result
 supports acknowledged demand changes and attended restoration, not continuous
 transaction reuse or session renewal.
 
+The subsequently authorized five-minute vendor capture is recorded in
+[the bounded result](cooling-pad-vendor-continuous-capture.md). It contains one
+acknowledged configured-2200 demand and no changed-demand successors; fan IDs
+remain below `20`. The counter-reuse objective remains unresolved. Synapse and
+Razer services were stopped afterward and OpenBlade was restored. Inspect the
+saved curve/host-loop policy before proposing another run; no repeat is implied
+by the preparation plan below.
+
 ## What the current evidence supports
 
 `ValidationRunContext` allocates IDs `01..FF` without reuse. This is a software
@@ -30,8 +38,9 @@ state is not fan-state or firmware-ownership readback.
 
 Prepare one exact-target vendor-controller session spanning an acknowledged
 fan-control counter boundary, with predecessor and successful successors.
-Do not start it under the current instruction to leave Synapse and its services
-stopped. This plan records no new capture or hardware result.
+This was the preparation plan for that bounded capture. Further vendor sessions
+need separate authorization under the restored instruction to leave Synapse and
+its services stopped.
 
 1. Obtain separate authorization for the attended vendor session. Save the actual
    fan mode, preset/curve settings, lighting and OpenBlade process/service state.
