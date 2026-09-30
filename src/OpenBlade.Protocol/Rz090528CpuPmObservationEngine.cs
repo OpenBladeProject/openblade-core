@@ -90,7 +90,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private CpuPmCapRegisterRead? capA0F, capA0B, capA13, capA90;
     private CpuPmCapabilityObservation? capability;
     private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion>? metadataVersion;
-    private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues>? metadataValues;
+    private CpuLivePowerRangeMetadataApplicability metadataApplicability;
     private CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax>? metadataMinMax;
     private bool readingCapabilityArgument;
     private CpuPmObservationFailure? metadataCheckpointFailure;
@@ -131,6 +131,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             { throw new Failure(CpuPmObservationFailure.InvalidData); }
             if (profile == CpuPmObservationProfile.RangeSingleSample)
             {
+                metadataApplicability = CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001;
                 ReadCap(bus, CpuLivePowerRangeObservation.RegisterA13, cancellationToken);
                 ReadCap(bus, CpuLivePowerRangeObservation.RegisterA90, cancellationToken);
                 stage = CpuPmObservationStage.Capability;
@@ -196,10 +197,14 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         return Batch(diagnostic);
     }
 
-    private CpuPmObservationBatch Batch(CpuPmObservationDiagnostic? diagnostic) =>
-        new(diagnostic is null && samples.Count == SampleCount, samples, records, orientationMask, fuseMask, diagnostic,
-            capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, profile == CpuPmObservationProfile.RangeSingleSample
-                ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, metadataValues, metadataMinMax) : null);
+    private CpuPmObservationBatch Batch(CpuPmObservationDiagnostic? diagnostic)
+    {
+        CpuLivePowerRangeObservation? range = profile == CpuPmObservationProfile.RangeSingleSample
+            ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, null, metadataMinMax, metadataApplicability) : null;
+        return new(diagnostic is null && samples.Count == SampleCount && (range is null || range.MetadataComplete),
+            samples, records, orientationMask, fuseMask, diagnostic,
+            capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, range);
+    }
 
     private void ReadMetadata(CancellationToken token)
     {
@@ -209,11 +214,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         CheckMetadata(metadataVersion, token);
         if (metadataVersion.Value is not { Version: 7 }) { throw new Failure(CpuPmObservationFailure.UnsupportedVersion); }
         metadataVersion = metadataVersion with { PostAdmissionPassed = true };
-        stage = CpuPmObservationStage.MetadataDValues;
-        metadataValues = metadataReader.GetDValues(() => MetadataCheckpoint(token));
-        CheckMetadata(metadataValues, token);
-        if (metadataValues.Value is not { Id: 0x50001 }) { throw new Failure(CpuPmObservationFailure.InvalidData); }
-        metadataValues = metadataValues with { PostAdmissionPassed = true };
+        // This exact firmware's PPT entry is OBIT type One. Getdvalues only
+        // matches type Zero and is deliberately not part of this fixed profile.
         stage = CpuPmObservationStage.MetadataMinMax;
         metadataMinMax = metadataReader.GetMinMaxSteppingValues(() => MetadataCheckpoint(token));
         CheckMetadata(metadataMinMax, token);

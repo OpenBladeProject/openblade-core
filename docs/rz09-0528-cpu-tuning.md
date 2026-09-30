@@ -118,12 +118,20 @@ Each new run uses its own independently pinned preset before launch, preserving
 earlier protected payloads and evidence.
 
 A separate developer range-observation profile reads the capability response,
-four fixed source-mapped SMN registers, one PM table and the two firmware range
-metadata getters. Its command must match a separately reviewed run preset and
+four fixed source-mapped SMN registers, one PM table and the continuous min/max
+firmware getter. The exact firmware describes PPT as a continuous-range entry;
+its discrete-value getter returns an empty packet for this selector. The command
+must match a separately reviewed run preset and
 explicit attended approval. Metadata errors retain the completed PM sample and
 copied fields as incomplete evidence. The existing three-sample profile cannot
-invoke these additional queries. This new capture path still needs attended
-validation; its output does not admit power-limit writes or restoration.
+invoke these additional queries.
+
+The first attended range run retained the four register reads, capability
+response and one PM table, then stopped at the empty discrete-value response.
+Independent review verified the exported bytes, timing and complete owned driver
+cleanup. The firmware trace explains that response, and the capture now selects
+the continuous getter directly. The corrected metadata path still needs attended
+validation; these observations do not admit power-limit writes or restoration.
 
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.

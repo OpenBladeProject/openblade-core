@@ -191,6 +191,7 @@ internal static class CpuPmReturnedBatchOutput
     private static bool ValidRange(CpuLivePowerRangeObservation? range, bool complete)
     {
         if (range is null) { return !complete; }
+        if (!Enum.IsDefined(range.MetadataApplicability)) { return false; }
         var reads = new[] { range.A0F, range.A0B, range.A13, range.A90 };
         uint[] addresses = [CpuLivePowerFusedCap.RegisterA0F, CpuLivePowerFusedCap.RegisterA0B,
             CpuLivePowerRangeObservation.RegisterA13, CpuLivePowerRangeObservation.RegisterA90];
@@ -214,7 +215,8 @@ internal static class CpuPmReturnedBatchOutput
             PostReadAdmissionPassed: true, ReturnedWordTransportSucceeded: true
         }
             && CompleteCall(range.QueryVersion) && range.QueryVersion!.Value!.Version == 7
-            && CompleteCall(range.DValues) && CompleteCall(range.MinMax) && range.MinMax!.Value!.Value == 0x50001;
+            && range.MetadataApplicability == CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001
+            && range.DValues is null && CompleteCall(range.MinMax) && range.MinMax!.Value!.Value == 0x50001;
     }
     private static bool CompleteCall<T>(CpuLivePowerRangeMetadataCall<T>? call) where T : class =>
         call is { Value: not null, Status: CpuLivePowerRangeMetadataStatus.Complete, PostAdmissionPassed: true }
@@ -252,6 +254,7 @@ internal static class CpuPmReturnedBatchOutput
         a13 = CapRead(range.A13),
         a90 = CapRead(range.A90),
         capability = range.Capability,
+        metadataApplicability = range.MetadataApplicability.ToString(),
         queryVersion = CallEvidence(range.QueryVersion, range.QueryVersion?.Value),
         dValues = CallEvidence(range.DValues, range.DValues?.Value is { } values ? new
         { values.Id, values.Current, values.Length, values = values.CopyValues() } : null),

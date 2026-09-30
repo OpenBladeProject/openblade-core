@@ -307,18 +307,20 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Single(result.CopySamples());
         Assert.Equal(new uint[] { 0x82, 6, 0x65, 6 }, fake.Commands);
         Assert.Equal(new uint[] { 0x03820A0F, 0x03820A0B, 0x03820A13, 0x03820A90 }, fake.CapSelections);
-        Assert.Equal(new[] { "version", "dvalues", "minmax" }, metadata.Calls);
+        Assert.Equal(new[] { "version", "minmax" }, metadata.Calls);
         Assert.Equal(0, fake.IdleDelays);
         Assert.True(result.RangeObservation!.Capability!.InvocationEntered);
         Assert.True(result.RangeObservation.Capability.ResponseAcknowledged);
         Assert.True(result.RangeObservation.Capability.PostReadAdmissionPassed);
         Assert.True(result.RangeObservation.MinMax!.PostAdmissionPassed);
+        Assert.Null(result.RangeObservation.DValues);
+        Assert.Equal(CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001, result.RangeObservation.MetadataApplicability);
+        Assert.True(result.RangeObservation.MetadataComplete);
     }
 
     [Theory]
     [InlineData("version", 1)]
-    [InlineData("dvalues", 2)]
-    [InlineData("minmax", 3)]
+    [InlineData("minmax", 2)]
     public void MetadataFailureRetainsCompletedPmAndStopsLaterGetters(string fail, int calls)
     {
         var fake = new Fake(); var metadata = new MetadataFake(fake) { Fail = fail };
@@ -327,6 +329,29 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Equal(calls, metadata.Calls.Count);
         Assert.Equal(CpuPmObservationFailure.InvalidData, result.Diagnostic!.Failure);
         Assert.True(result.RangeObservation!.Capability!.PostReadAdmissionPassed);
+    }
+
+    [Fact]
+    public void IncompleteMinMaxRetainsItsActualRawFieldsAndUnknownApplicabilityCannotComplete()
+    {
+        var fake = new Fake(); var metadata = new MetadataFake(fake) { Fail = "minmax" };
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe();
+        Assert.False(result.Complete); Assert.Single(result.CopySamples());
+        var range = result.RangeObservation!;
+        Assert.Equal(CpuLivePowerRangeReturnValueState.Absent, range.MinMax!.Raw!.ReturnValueState);
+        Assert.Equal(125000u, range.MinMax.Raw.Max);
+        Assert.False(range.MinMax.PostAdmissionPassed); Assert.Null(range.DValues);
+        fake = new Fake(); metadata = new MetadataFake(fake);
+        range = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe().RangeObservation!;
+        Assert.True(range.MetadataComplete);
+        Assert.False((range with { MetadataApplicability = CpuLivePowerRangeMetadataApplicability.Unknown }).MetadataComplete);
+        Assert.False(new CpuLivePowerRangeObservation(range.A0F, range.A0B, range.A13, range.A90, range.Capability,
+            range.QueryVersion, null, range.MinMax).MetadataComplete);
+        Assert.False((range with
+        {
+            DValues = new(new(0x50001, 0, 0, []), CpuLivePowerRangeMetadataStatus.Complete,
+            range.MinMax!.Stages, default, 0, PostAdmissionPassed: true)
+        }).MetadataComplete);
     }
 
     [Theory]
@@ -365,13 +390,16 @@ public sealed class Rz090528CpuPmObservationEngineTests
         {
             checkpoint(); Assert.True(fake.Leased); Assert.Equal(1, fake.Copies);
             Assert.Equal(6u, fake.Commands[^1]); Calls.Add(name); AfterCall?.Invoke();
-            return new(value, Fail == name ? CpuLivePowerRangeMetadataStatus.InvalidData : CpuLivePowerRangeMetadataStatus.Complete,
+            return new(Fail == name ? null : value, Fail == name ? CpuLivePowerRangeMetadataStatus.InvalidData : CpuLivePowerRangeMetadataStatus.Complete,
                 CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
                     | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed,
-                fake.UtcNow, fake.MonotonicTimestamp);
+                fake.UtcNow, fake.MonotonicTimestamp, Raw: name == "minmax"
+                    ? new(returnValue: Fail != name ? true : null, value: 0x50001, current: 0, min: 0, max: 125000, stepping: 1,
+                        returnValueState: Fail == name ? CpuLivePowerRangeReturnValueState.Absent : CpuLivePowerRangeReturnValueState.PresentBoolean) : null);
         }
         public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) => Call("version", new CpuLivePowerRangeVersion(7, false), checkpoint);
-        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) => Call("dvalues", new CpuLivePowerRangeDValues(0x50001, 0, 2, [80000, 85000]), checkpoint);
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) =>
+            throw new InvalidOperationException("The pinned type-One PPT entry has no discrete getter acquisition.");
         public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) => Call("minmax", new CpuLivePowerRangeMinMax(0x50001, 0, 0, 125000, 1), checkpoint);
     }
 

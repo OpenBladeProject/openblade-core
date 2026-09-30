@@ -2,6 +2,9 @@ namespace OpenBlade.Protocol;
 
 internal enum CpuPmObservationProfile { IdleThreeSamples, RangeSingleSample }
 internal enum CpuLivePowerRangeReturnValueState { NotRead, Absent, PresentBoolean, WrongType, Unreadable }
+// Pinned SSDA-AOD PPT entry 0x50001 is OBIT type One: it has continuous
+// min/max metadata; the type-Zero discrete getter cannot match this entry.
+internal enum CpuLivePowerRangeMetadataApplicability { Unknown, SourceMappedContinuousTypeOnePpt50001 }
 internal enum CpuLivePowerRangeMetadataStatus { Complete, InvalidData, NativeFailure, DisposalFailed }
 [Flags]
 internal enum CpuLivePowerRangeMetadataStages
@@ -44,8 +47,16 @@ internal sealed record CpuLivePowerRangeObservation(CpuPmCapRegisterRead? A0F, C
     CpuPmCapRegisterRead? A13, CpuPmCapRegisterRead? A90, CpuPmCapabilityObservation? Capability,
     CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion>? QueryVersion,
     CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues>? DValues,
-    CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax>? MinMax)
+    CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax>? MinMax,
+    CpuLivePowerRangeMetadataApplicability MetadataApplicability = CpuLivePowerRangeMetadataApplicability.Unknown)
 {
+    internal bool MetadataComplete => MetadataApplicability == CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001
+        && DValues is null && QueryVersion is { Value: { Version: 7 } } version && CompleteCall(version)
+        && MinMax is { Value: { Value: 0x50001 } } minMax && CompleteCall(minMax);
+    private static bool CompleteCall<T>(CpuLivePowerRangeMetadataCall<T> call) where T : class =>
+        call.Status == CpuLivePowerRangeMetadataStatus.Complete && call.PostAdmissionPassed
+        && call.Stages == (CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+            | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead | CpuLivePowerRangeMetadataStages.Disposed);
     internal const uint RegisterA13 = 0x03820A13, RegisterA90 = 0x03820A90;
 }
 
