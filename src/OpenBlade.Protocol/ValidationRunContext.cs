@@ -64,6 +64,17 @@ internal sealed class ValidationRunContext
     private int nextTransactionId = 1;
     private ActorLease? activeActorLease;
 
+    internal CoolingPadDeveloperCounterPolicy CreateCoolingPadDeveloperCounterPolicy()
+    {
+        lock (sync)
+        {
+            if (nextTransactionId != 1 || activeActorLease is not null)
+            { throw new InvalidOperationException("CounterPolicyRequiresFreshContext"); }
+            nextTransactionId = MaximumTransactionId + 1;
+            return new CoolingPadDeveloperCounterPolicy();
+        }
+    }
+
     internal int RemainingTransactions
     {
         get { lock (sync) { return MaximumTransactionId - nextTransactionId + 1; } }

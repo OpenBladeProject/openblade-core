@@ -5,6 +5,85 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class CoolingPadDemandSessionTests
 {
+    [Theory]
+    [InlineData(WindowsServiceState.Running)]
+    [InlineData(WindowsServiceState.StartPending)]
+    [InlineData(WindowsServiceState.ContinuePending)]
+    [InlineData(WindowsServiceState.Other)]
+    public void DeveloperCounter_ServiceAbsenceIsFreshAndScoped(WindowsServiceState state)
+    {
+        var running = new WindowsServiceSnapshot("OpenBlade", "OpenBlade", state);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes([]), new Services([running]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => true).Check().Safe);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes(["OpenBlade.Service"]), new Services([]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => true).Check().Safe);
+        Assert.True(new CoolingPadSessionFactory.PadAccessGuard(new Processes([]), new Services([]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => true).Check().Safe);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes(null), new Services([]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => true).Check().Safe);
+        var vendor = new WindowsServiceSnapshot("RazerService", "Razer", state);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes([]), new Services([vendor]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => true).Check().Safe);
+    }
+
+    [Fact]
+    public void DeveloperCounter_RequiresRecognizableCurrentApphostAndSoleCurrentPid()
+    {
+        const string apphost = @"C:\build\OpenBlade.Capture.exe";
+        Assert.True(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(apphost, 123, () => [123]));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(apphost, 123, () => [123, 456]));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(apphost, 123, () => [456]));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(apphost, 123, () => []));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(apphost, 123, () => throw new InvalidOperationException()));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(@"C:\dotnet.exe", 123, () => [123]));
+        Assert.False(CoolingPadSessionFactory.CounterProcessAdmissionAllowed(null, 123, () => [123]));
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes([]), new Services([]),
+            requireOpenBladeServiceAbsent: true).Check().Safe);
+        int observations = 0;
+        var fresh = new CoolingPadSessionFactory.PadAccessGuard(new Processes([]), new Services([]),
+            requireOpenBladeServiceAbsent: true, developerProcessAllowed: () => ++observations == 1);
+        Assert.True(fresh.Check().Safe);
+        Assert.False(fresh.Check().Safe);
+    }
+
+    [Fact]
+    public async Task DeveloperCounter_UsesSequentialClaimsAndKeepsRestorationCapacityAfterNormalExhaustion()
+    {
+        var context = new ValidationRunContext();
+        var counter = context.CreateCoolingPadDeveloperCounterPolicy();
+        Assert.False(context.TryAllocateTransaction(out _));
+        Assert.Throws<InvalidOperationException>(() => context.CreateCoolingPadDeveloperCounterPolicy());
+        var fake = new Session();
+        await using var port = new CoolingPadDemandSession(new(fake, new BatteryCommandClient(fake, TimeSpan.FromSeconds(3))),
+            context, TimeProvider.System, new(), developerCounter: counter);
+        Assert.Empty(counter.Snapshot());
+        await port.QueryRawControlStateAsync(default);
+        await port.AcquireAsync(() => true, default);
+        await port.QueryRawControlStateAsync(default);
+        await port.EnterDemandAsync(new(2200), () => true, default);
+        for (int i = 1; i <= 33; i++)
+        { Assert.True((await port.UpdateDemandAsync(new(i % 2 == 1 ? 1000 : 2200), () => true, default)).Acknowledged); }
+        Assert.False((await port.UpdateDemandAsync(new(1000), () => true, default)).Attempted);
+        Assert.Equal(39, fake.Ids.Count);
+        Assert.True((await port.ReassertMediumAsync(() => true, default)).Acknowledged);
+        Assert.True((await port.ReassertQuietAsync(() => true, default)).Acknowledged);
+        Assert.True((await port.RestoreRawControlStateAsync(() => true, default)).Acknowledged);
+        Assert.Equal(43, fake.Ids.Count);
+        Assert.Equal(Enumerable.Range(1, 43).Select(x => (byte)(x % 31)), fake.Ids);
+        Assert.All(counter.Snapshot(), x => Assert.True(x.Acknowledged && x.OutcomeAvailable));
+        Assert.Equal(new byte[] { 9, 10, 11, 12 }, fake.Ids.TakeLast(4));
+    }
+
+    [Fact]
+    public void DeveloperCounter_DefaultAssignmentAndOrdinaryAllocatorRemainNonzero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TransactionIdAssignment.Valid(0));
+        var context = new ValidationRunContext();
+        for (int i = 1; i <= 255; i++) { Assert.True(context.TryAllocateTransaction(out byte id)); Assert.Equal(i, id); }
+        Assert.False(context.TryAllocateTransaction(out _));
+        Assert.Throws<InvalidOperationException>(() => context.CreateCoolingPadDeveloperCounterPolicy());
+    }
+
     [Fact]
     public async Task ProductionFactory_IsClosedAndCanceledDeveloperOpenDoesNotCreateActors()
     {

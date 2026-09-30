@@ -25,7 +25,8 @@ public interface ICoolingPadDemandSession : IAsyncDisposable
 }
 
 internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationRunContext context,
-    TimeProvider clock, PendingDisposalRegistry pending, Action? fullyDisposed = null) : ICoolingPadDemandSession
+    TimeProvider clock, PendingDisposalRegistry pending, Action? fullyDisposed = null,
+    CoolingPadDeveloperCounterPolicy? developerCounter = null) : ICoolingPadDemandSession
 {
     private readonly SemaphoreSlim serial = new(1);
     private volatile bool stopped;
@@ -36,9 +37,9 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     private bool restorationStarted;
     private bool mediumAcknowledged;
     private bool quietAcknowledged;
-    // Never wrap IDs. With five startup exchanges and four reserved restoration
+    // Ordinary policy never wraps IDs. With five startup exchanges and four reserved restoration
     // exchanges, a fresh context has at most 246 demand updates (extra queries consume IDs).
-    private readonly byte[]? restorationIds = ReserveRestoration(context);
+    private readonly byte[]? restorationIds = developerCounter is null ? ReserveRestoration(context) : [];
 
     private static byte[]? ReserveRestoration(ValidationRunContext context)
     {
@@ -125,7 +126,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
             if (!baselineSaved || !acquired || !entered || restorationStarted || restorationIds is not { } ids)
             { return Rejected(); }
             restorationStarted = true;
-            var write = await Write(Echo(0x0D, 0x10, [0x01, 0x01, 0x2C]), ids[2],
+            var write = await Write(Echo(0x0D, 0x10, [0x01, 0x01, 0x2C]), RestorationId(ids, 2),
                 submissionAllowed, cancellationToken).ConfigureAwait(false);
             mediumAcknowledged = write.Acknowledged && write.Fault is null;
             return write;
@@ -136,7 +137,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
         {
             if (!baselineSaved || !acquired || !entered || !mediumAcknowledged || quietAcknowledged
                 || restorationIds is not { } ids) { return Rejected(); }
-            var write = await Write(Echo(0x0D, 0x10, [0x00, 0x06, 0x00]), ids[3],
+            var write = await Write(Echo(0x0D, 0x10, [0x00, 0x06, 0x00]), RestorationId(ids, 3),
                 submissionAllowed, cancellationToken).ConfigureAwait(false);
             quietAcknowledged = write.Acknowledged && write.Fault is null;
             return write;
@@ -147,9 +148,9 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
         {
             if (!baselineSaved || !acquired || restorationStarted && !quietAcknowledged
                 || restorationIds is not { } ids) { return Rejected(); }
-            var write = await Write(Echo(0x00, 0x04, [0x00, 0x00]), ids[0], submissionAllowed, cancellationToken).ConfigureAwait(false);
+            var write = await Write(Echo(0x00, 0x04, [0x00, 0x00]), RestorationId(ids, 0), submissionAllowed, cancellationToken).ConfigureAwait(false);
             if (!write.Acknowledged) { return write; }
-            var query = await QueryCore(cancellationToken, ids[1]).ConfigureAwait(false);
+            var query = await QueryCore(cancellationToken, RestorationId(ids, 1)).ConfigureAwait(false);
             stopped = true;
             return query.Fault is null && query.State == CoolingPadRawControlState.Raw0000
                 ? write : write with { Fault = query.Fault ?? CoolingPadSessionFault.Rejected };
@@ -164,9 +165,23 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
         finally { serial.Release(); }
     }
 
+    private byte RestorationId(byte[] ids, int index)
+    {
+        if (developerCounter is null) { return ids[index]; }
+        if (!developerCounter.Reserve(1, restoration: true))
+        { stopped = true; throw new InvalidOperationException("RestorationBudgetExhausted"); }
+        return 0;
+    }
+
     private bool Reserve(int count, out byte[] ids)
     {
         ids = new byte[count];
+        if (developerCounter is not null)
+        {
+            bool allowed = !budgetExhausted && developerCounter.Reserve(count, restoration: false);
+            if (!allowed) { budgetExhausted = true; }
+            return allowed;
+        }
         if (budgetExhausted || restorationIds is null || context.RemainingTransactions < count)
         {
             budgetExhausted = true;
@@ -232,8 +247,18 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     {
         // Also isolate a synchronous guard/implementation before it returns its Task.
         Task<HidSessionResult<ReadOnlyMemory<byte>>> operation = Task.Run(async () =>
-            await actor.Session.ExecuteAsync(command, () => TransactionIdAssignment.Valid(id),
-                TimeSpan.FromSeconds(3), token).ConfigureAwait(false), CancellationToken.None);
+        {
+            int sequence = 0;
+            var response = await actor.Session.ExecuteAsync(command, () =>
+            {
+                if (developerCounter is null) { return TransactionIdAssignment.Valid(id); }
+                var assigned = developerCounter.Assign(command);
+                sequence = assigned.Sequence;
+                return assigned.Assignment;
+            }, TimeSpan.FromSeconds(3), token).ConfigureAwait(false);
+            if (sequence != 0) { developerCounter!.Complete(sequence, response); }
+            return response;
+        }, CancellationToken.None);
         try
         {
             return await operation.WaitAsync(TimeSpan.FromSeconds(3), clock, token).ConfigureAwait(false);
