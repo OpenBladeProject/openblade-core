@@ -1,7 +1,7 @@
 # Cooling-pad fan restoration across normal process exit
 
 Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues/119).
-The same-process handle continuity trial succeeded. This next attended developer
+The same-process handle continuity trial succeeded. This attended developer
 experiment isolates normal process exit and a new process before any abrupt-stop
 or crash test. No process is force-terminated as part of preparation or execution.
 
@@ -89,4 +89,32 @@ at Medium, restored quiet Auto and the final restored baseline. Each wait is
 bounded to 180 seconds; an absent or negative reply stops further writes.
 Run `OpenBlade.Capture.exe selftest-cooling-pad-fan-process-continuity` for the
 hardware-free subprocess checks. That path uses simulated actors exclusively.
-Independent source review passed, alongside 674 Capture tests, three architecture checks and 18 actual hardware-free subprocess scenarios plus direct-child rejection. These checks establish process/channel behavior only. No live trial is armed.
+Independent source review passed, alongside 674 Capture tests, three architecture checks and 18 actual hardware-free subprocess scenarios plus direct-child rejection. Those hardware-free checks establish process/channel behavior only. The separate attended result is recorded below.
+## Completed attended result
+
+One trial from reviewed source `836ae17265bcc6131ca9f8da0e282b18c87ad63f`
+completed with exit zero on 2026-09-29 Pacific. The original physical quiet Auto
+and raw `0000` baseline was retained. Child 1 acknowledged Medium `01012C`,
+received physical confirmation of normal Medium/full-brightness static-green
+lighting, completed native disposal and exited normally with code zero before
+child 2 opened. Child 2 freshly read intermediate raw `0300`, acknowledged Auto
+`000600`, received physical quiet-baseline confirmation, restored and queried
+original raw `0000`, then received the final unchanged normal-green confirmation,
+completed disposal and exited zero. All four physical gates were accepted.
+
+No child remained running and no recovery was required. A separate post-trial
+host inventory found zero Capture/AppEngine/USBPcap processes and zero active
+Razer services. Synapse and the named services stayed stopped. No lighting setter,
+demand update, retry, force-kill, vendor action or power cycle occurred.
+
+The private typed output is 2,476 bytes; SHA-256:
+`FFD073093B6E9ED91496E3A9E969EEB3BDC836031D60B5BB4F024E35EBC34AC2`.
+Independent result/source review passed. The evidence is typed command output and
+operator observations, without an independently sniffed native packet trace.
+Sanitized evidence belongs in capture PR #33.
+
+Normal process-exit/new-process continuity is now established for this single
+attended trial. Controlled interruption/cancellation and abrupt process loss are
+separate remaining boundaries; their continuation must freshly admit the exact
+pad, preserve the original baseline and stop on ambiguity. Do not reuse saved
+process receipts to authorize a later restoration.
