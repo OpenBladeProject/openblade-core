@@ -149,6 +149,18 @@ minimal captured command sequence and keep requested intent separate from
 confirmed observations; no further lifecycle trials are being added here.
 See draft #624’s recovery decision and the preferred-Auto annotation in capture
 PR #33. Synapse and Razer services remain stopped.
+## Auto interpretation after offline investigation
+
+The recorded quiet Auto outcome confirms the captured selection and physical
+quietness, not temperature-responsive operation. August middleware observations
+support a host-evaluated Smart Fan Curve using laptop CPU/GPU temperatures and
+scaled target demand, with unchanged-target suppression. Default Auto is a
+separate UI action whose exact algorithm remains unresolved; neither silence
+on the wire nor quiet operation proves autonomous pad regulation. No OpenBlade
+pad temperature loop was exercised in these trials. See
+[the investigation](https://github.com/OpenBladeProject/openblade-core/blob/chore/cooling-pad-mode-query/docs/cooling-pad-auto-investigation.md).
+Further hardware/lifecycle work remains paused. Production admission is unchanged.
+
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
