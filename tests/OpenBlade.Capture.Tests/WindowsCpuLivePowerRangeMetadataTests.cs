@@ -64,6 +64,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         Assert.Equal(new uint[] { 0, 85000, 80000 }, result.Value.CopyValues());
         var minmax = ReadMinMax(Envelope(MinMax())).Value!;
         Assert.Equal(0u, minmax.Current); Assert.Equal(0u, minmax.Min); Assert.Equal(0u, minmax.Stepping);
+        Assert.False(minmax.MissingReturnValueCompatibility);
     }
 
     [Fact]
@@ -184,6 +185,93 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         reader.QueryVersion(() => { }); reader.GetDValues(() => { }); reader.GetMinMaxSteppingValues(() => { });
         Assert.Equal(new (string, uint?)[] { ("QueryVersion", null), ("Getdvalues", 0x50001), ("GetMinMaxSteppingValues", 0x50001) }, methods);
     }
+
+    [Theory]
+    [InlineData(0u, 0u, 125000u, 1u)] // Attended r6 raw tuple; Current is a shadow, not measured watts.
+    [InlineData(70000u, 10000u, 150000u, 10u)]
+    public void MissingMinMaxAcknowledgementIsSingleUseProfileCandidate(uint current, uint min, uint max, uint step)
+    {
+        var version = new Object([Pair("version", 7u)]);
+        var output = MissingMinMax(current, min, max, step);
+        int opens = 0;
+        var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 ? version : output), () => ExactHost());
+        var q = reader.QueryVersion(() => { });
+        var result = reader.GetMinMaxSteppingValues(() => { });
+        Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
+        Assert.Equal(new CpuLivePowerRangeMinMax(0x50001, current, min, max, step, true), result.Value);
+        Assert.Null(result.Raw!.ReturnValue); Assert.Equal(CpuLivePowerRangeReturnValueState.Absent, result.Raw.ReturnValueState);
+        Assert.False(result.PostAdmissionPassed);
+        Assert.False(new CpuLivePowerRangeObservation(null, null, null, null, null, q, null, result,
+            CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001).MetadataComplete);
+        Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value);
+    }
+
+    [Theory]
+    [InlineData("bios")]
+    [InlineData("no-identity")]
+    [InlineData("no-version")]
+    [InlineData("version")]
+    [InlineData("version-cleanup")]
+    [InlineData("intervening")]
+    [InlineData("enumeration")]
+    [InlineData("duplicate")]
+    [InlineData("case")]
+    [InlineData("false")]
+    [InlineData("null")]
+    [InlineData("unreadable")]
+    [InlineData("step")]
+    [InlineData("interval")]
+    [InlineData("current")]
+    [InlineData("cleanup")]
+    [InlineData("post-revocation")]
+    [InlineData("unknown")]
+    [InlineData("wrong-type")]
+    public void MissingAcknowledgementEligibilityCannotSurviveFailureOrBroadenThePackage(string fault)
+    {
+        var version = new Object([Pair("version", fault == "version" ? 8u : 7u)]) { FailDispose = fault == "version-cleanup" };
+        var pack = (Object)MissingMinMax().Fields[0].Value!;
+        if (fault == "duplicate") { pack = pack with { Duplicate = "Min" }; }
+        if (fault == "unknown") { pack = pack with { Extra = "unexpected" }; }
+        if (fault == "wrong-type") { pack = pack with { Fields = pack.Fields.Select(field => field.Key == "Current" ? Pair("Current", 0) : field).ToArray() }; }
+        if (fault == "case") { pack = pack with { Omit = "Min", Extra = "min" }; }
+        if (fault == "step") { pack = (Object)MissingMinMax(step: 0).Fields[0].Value!; }
+        if (fault == "interval") { pack = (Object)MissingMinMax(min: 125001).Fields[0].Value!; }
+        if (fault == "current") { pack = (Object)MissingMinMax(current: 125001).Fields[0].Value!; }
+        var output = new Object([Pair("pack", pack)]) { FailEnumeration = fault == "enumeration", FailDispose = fault == "cleanup" };
+        if (fault == "false") { output = Envelope(pack, false); }
+        if (fault == "null") { output = Envelope(pack, null); }
+        if (fault == "unreadable") { output = Envelope(pack) with { FailRead = "ReturnValue" }; }
+        int opens = 0;
+        var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 && fault != "no-version" ? version : output),
+            fault == "no-identity" ? null : () => ExactHost(fault == "bios" ? "2.03" : "2.02"));
+        if (fault != "no-version") { reader.QueryVersion(() => { }); }
+        if (fault == "intervening") { reader.GetDValues(() => { }); }
+        var result = reader.GetMinMaxSteppingValues(() =>
+        { if (fault == "post-revocation" && output.Disposed) { throw new OperationCanceledException(); } });
+        Assert.Null(result.Value); Assert.NotEqual(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
+        Assert.False(result.PostAdmissionPassed);
+    }
+
+    [Fact]
+    public void ConstructionDoesNotReadIdentityAndFreshIdentityRevocationCannotReuseVersion()
+    {
+        int identities = 0, opens = 0; bool revoked = false;
+        var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0
+            ? new Object([Pair("version", 7u)]) : MissingMinMax()),
+            () => { identities++; return ExactHost(revoked ? "2.03" : "2.02"); });
+        Assert.Equal(0, identities); Assert.Equal(0, opens);
+        Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, reader.QueryVersion(() => { }).Status);
+        revoked = true;
+        Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value); Assert.Equal(1, opens);
+        revoked = false;
+        Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value);
+    }
+
+    private static HostIdentityReadResult ExactHost(string bios = "2.02") =>
+        new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", bios), null);
+    private static Object MissingMinMax(uint current = 0, uint min = 0, uint max = 125000, uint step = 1) =>
+        new([Pair("pack", new Object([Pair("Current", current), Pair("Min", min), Pair("Max", max),
+            Pair("Stepping", step), Pair("Value", 0x50001u)]))]);
 
     private static CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> ReadVersion(Object value) =>
         new WindowsCpuLivePowerRangeMetadata(_ => new Session(value)).QueryVersion(() => { });

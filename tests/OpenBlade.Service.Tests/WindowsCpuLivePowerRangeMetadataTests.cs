@@ -20,6 +20,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, version.Status);
         Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, minMax.Status);
         Assert.Equal(new CpuLivePowerRangeMinMax(0x50001, 400, 200000, 0, 0), minMax.Value);
+        Assert.False(minMax.Value!.MissingReturnValueCompatibility);
         Assert.Equal(new[] { "version", "minmax" }, sessions.SelectMany(session => session.Calls));
         Assert.All(sessions, session => Assert.True(session.Disposed));
         Assert.True(sessions[0].Version.Disposed); Assert.True(sessions[1].MinMax.Disposed); Assert.True(sessions[1].Pack.Disposed);
@@ -56,7 +57,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     [InlineData("null")]
     [InlineData("uint")]
     [InlineData("unreadable")]
-    public void MinMaxAlwaysRequiresActualBooleanTrue(string fault)
+    public void MinMaxWithoutCompletedVersionRequiresActualBooleanTrue(string fault)
     {
         var session = new Session(); ChangeReturn(session.MinMax, fault);
         var result = Reader(session).GetMinMaxSteppingValues(() => { });
@@ -206,6 +207,80 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         var result = await actual.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(CpuLivePowerRangeMetadataStatus.NativeFailure, result.Status);
         Assert.True(result.Stages.HasFlag(CpuLivePowerRangeMetadataStages.Disposed)); Assert.True(session.Disposed); Assert.True(session.MinMax.Disposed);
+    }
+
+    [Theory]
+    [InlineData(0u, 0u, 125000u, 1u)] // Raw r6 fixture: zero Current is not a measured/effective zero-watt limit.
+    [InlineData(70000u, 10000u, 150000u, 10u)]
+    public void MissingMinMaxAcknowledgementRemainsCandidateWithExplicitProvenance(uint current, uint min, uint max, uint step)
+    {
+        var sessions = new List<Session>();
+        var reader = new WindowsCpuLivePowerRangeMetadata(Context(), new Scope(), _ =>
+        {
+            var session = new Session(); sessions.Add(session);
+            session.Version.Values.Remove("ReturnValue"); session.MinMax.Values.Remove("ReturnValue");
+            session.Pack.Values["Current"] = current; session.Pack.Values["Min"] = min;
+            session.Pack.Values["Max"] = max; session.Pack.Values["Stepping"] = step; return session;
+        });
+        var q = reader.QueryVersion(() => { }); var result = reader.GetMinMaxSteppingValues(() => { });
+        Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
+        Assert.Equal(new CpuLivePowerRangeMinMax(0x50001, current, min, max, step, true), result.Value);
+        Assert.Equal(CompleteStages, result.Stages); Assert.False(result.PostAdmissionPassed);
+        Assert.Null(result.Raw!.ReturnValue); Assert.Equal(CpuLivePowerRangeReturnValueState.Absent, result.Raw.ReturnValueState);
+        Assert.False(new CpuLivePowerRangeObservation(null, null, null, null, null, q, null, result,
+            CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001).MetadataComplete);
+        Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value);
+        Assert.All(sessions, session => Assert.True(session.Disposed));
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("version-cleanup")]
+    [InlineData("version-post-revocation")]
+    [InlineData("intervening")]
+    [InlineData("false")]
+    [InlineData("null")]
+    [InlineData("uint")]
+    [InlineData("unreadable")]
+    [InlineData("enumeration")]
+    [InlineData("pack-enumeration")]
+    [InlineData("duplicate")]
+    [InlineData("case")]
+    [InlineData("step")]
+    [InlineData("interval")]
+    [InlineData("current")]
+    [InlineData("cleanup")]
+    [InlineData("post-revocation")]
+    [InlineData("unknown")]
+    [InlineData("wrong-type")]
+    public void MissingAcknowledgementCannotUseFailedVersionOrMalformedRevokedOutput(string fault)
+    {
+        var version = new Session(); var minmax = new Session(); var scope = new Scope();
+        minmax.MinMax.Values.Remove("ReturnValue");
+        if (fault == "version") { version.Version.Values["version"] = 8u; }
+        if (fault == "version-cleanup") { version.OnDispose = () => throw new IOException(); }
+        if (fault == "version-post-revocation") { version.OnDispose = () => scope.Current = false; }
+        if (fault is "false" or "null" or "uint" or "unreadable" or "enumeration")
+        { minmax.MinMax.Values["ReturnValue"] = true; ChangeReturn(minmax.MinMax, fault); }
+        if (fault == "pack-enumeration") { minmax.Pack.ThrowEnumeration = true; }
+        if (fault == "duplicate") { minmax.Pack.ExtraName = "Min"; }
+        if (fault == "unknown") { minmax.Pack.Values["unexpected"] = 0u; }
+        if (fault == "wrong-type") { minmax.Pack.Values["Current"] = 0; }
+        if (fault == "case") { minmax.Pack.Values.Remove("Min"); minmax.Pack.Values["min"] = 0u; }
+        if (fault == "step") { minmax.Pack.Values["Stepping"] = 0u; }
+        if (fault == "interval") { minmax.Pack.Values["Min"] = 125001u; }
+        if (fault == "current") { minmax.Pack.Values["Current"] = 125001u; }
+        if (fault == "cleanup") { minmax.OnDispose = () => throw new IOException(); }
+        if (fault == "post-revocation") { minmax.OnDispose = () => scope.Current = false; }
+        int opens = 0;
+        var reader = new WindowsCpuLivePowerRangeMetadata(Context(), scope, _ => opens++ == 0 ? version : minmax);
+        reader.QueryVersion(() => { }); scope.Current = true;
+        if (fault == "intervening") { Assert.Throws<NotSupportedException>(() => reader.GetDValues(() => { })); }
+        var result = reader.GetMinMaxSteppingValues(() => { });
+        Assert.Null(result.Value); Assert.NotEqual(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
+        Assert.False(result.PostAdmissionPassed);
+        scope.Current = true; minmax.OnDispose = null;
+        Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value);
     }
 
     private const CpuLivePowerRangeMetadataStages CompleteStages = CpuLivePowerRangeMetadataStages.InvocationEntered

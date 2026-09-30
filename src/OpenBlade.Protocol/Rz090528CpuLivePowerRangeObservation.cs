@@ -31,7 +31,9 @@ internal sealed class CpuLivePowerRangeDValues
     internal uint Length { get; }
     internal uint[] CopyValues() => (uint[])values.Clone();
 }
-internal sealed record CpuLivePowerRangeMinMax(uint Value, uint Current, uint Min, uint Max, uint Stepping);
+// Compatibility is candidate provenance, not an acknowledgement, units or range authority.
+internal sealed record CpuLivePowerRangeMinMax(uint Value, uint Current, uint Min, uint Max, uint Stepping,
+    bool MissingReturnValueCompatibility = false);
 // Three fixed getter operations only. The checkpoint must run after synchronous
 // invocation, property enumeration and disposal before the reader continues.
 internal interface IRz090528CpuLivePowerRangeMetadataReader

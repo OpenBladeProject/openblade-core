@@ -196,7 +196,21 @@ interpretation and range admission remain independent provider requirements.
 A Service-owned fixed metadata reader now decodes version 7 and continuous
 selector 50001, preserving partial evidence and actual disposal outcomes.
 Missing version acknowledgement compatibility requires the exact BIOS 2.02
-scope; MinMax still requires Boolean true. Its Current remains a firmware shadow,
+scope; MinMax accepts Boolean true or narrowly classified missing-acknowledgement
+compatibility after this reader actually completes version 7, all getter stages,
+cleanup and fresh local admission on the exact BIOS 2.02 profile. That eligibility
+is consumed before the next continuous `50001` getter; an intervening getter or
+failure cannot reuse it. Compatibility requires complete exact enumeration of all
+five UInt32 fields, selector `50001`, an ordered interval, nonzero stepping and
+Current within that interval. Its explicit `MissingReturnValueCompatibility`
+provenance preserves raw `Absent`/null acknowledgement; it does not invent true.
+The enclosing PM engine must still perform and record its separate fresh
+post-admission before metadata can be complete. The attended r6 driverless read
+completed both invocations and cleanup and returned Current 0, Min 0, Max 125000,
+Stepping 1 and Value `50001`, with no ReturnValue. The old strict reader therefore
+reported incomplete metadata. Offline replay tests cover the revised rule;
+that physical run did not execute or verify the revised readers. Current remains
+a firmware shadow,
 and decoded bounds do not establish units, requested-state mapping or authority.
 The optional already-installed driver path still needs separately admitted
 production observation and lifetime evidence. No concrete PPT provider, proof

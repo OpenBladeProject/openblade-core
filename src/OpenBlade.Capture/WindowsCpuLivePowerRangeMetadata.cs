@@ -9,23 +9,77 @@ namespace OpenBlade.Capture;
 internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRangeMetadataReader
 {
     private readonly Func<Action, IWindowsCpuRangeWmiSession> open;
-    internal WindowsCpuLivePowerRangeMetadata() : this(NativeSession.Open) { }
-    internal WindowsCpuLivePowerRangeMetadata(Func<Action, IWindowsCpuRangeWmiSession> open) => this.open = open;
+    private readonly Func<HostIdentityReadResult>? readIdentity;
+    internal WindowsCpuLivePowerRangeMetadata() : this(NativeSession.Open, ReadNativeIdentity) { }
+    internal WindowsCpuLivePowerRangeMetadata(Func<Action, IWindowsCpuRangeWmiSession> open,
+        Func<HostIdentityReadResult>? readIdentity = null)
+    { this.open = open; this.readIdentity = readIdentity; }
+    private static HostIdentityReadResult ReadNativeIdentity()
+    {
+        var registry = new WindowsRegistryValueSource();
+        return new WindowsHostIdentitySource(registry, new RuntimeWindowsPlatformEvidenceSource(registry),
+            WindowsHostIdentitySource.Rz090528Identity).ReadExactIdentity();
+    }
 
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) =>
-        Read("QueryVersion", null, WindowsCpuRangeMetadataDecoder.Version, checkpoint);
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) =>
-        Read("Getdvalues", 0x50001, WindowsCpuRangeMetadataDecoder.DValues, checkpoint);
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) =>
-        Read("GetMinMaxSteppingValues", 0x50001, WindowsCpuRangeMetadataDecoder.MinMax, checkpoint);
+    private readonly object sequenceGate = new();
+    private bool completedVersion;
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            completedVersion = false;
+            var result = Read("QueryVersion", null, WindowsCpuRangeMetadataDecoder.Version, checkpoint, readIdentity is not null);
+            completedVersion = readIdentity is not null && result.Value?.Version == 7 && LocallyComplete(result);
+            return result;
+        }
+    }
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            bool eligible = completedVersion;
+            completedVersion = false; // Consume before opening or invoking, including failed calls.
+            var result = Read("GetMinMaxSteppingValues", 0x50001,
+                (output, check) => WindowsCpuRangeMetadataDecoder.MinMax(output, check, eligible), checkpoint, eligible);
+            return result.Value is { MissingReturnValueCompatibility: true } && !LocallyComplete(result)
+                ? result with { Value = null } : result;
+        }
+    }
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            completedVersion = false;
+            return Read("Getdvalues", 0x50001, WindowsCpuRangeMetadataDecoder.DValues, checkpoint);
+        }
+    }
+    // Local checkpoints and actual cleanup only. The engine separately stamps
+    // PostAdmissionPassed after fresh session admission; this never stamps it.
+    private static bool LocallyComplete<T>(CpuLivePowerRangeMetadataCall<T> result) where T : class =>
+        result.Status == CpuLivePowerRangeMetadataStatus.Complete && result.Stages ==
+        (CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+        | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead
+        | CpuLivePowerRangeMetadataStages.Disposed);
 
     private CpuLivePowerRangeMetadataCall<T> Read<T>(string method, uint? id,
-        Func<IWindowsCpuRangeWmiObject, Action, T?> decode, Action checkpoint) where T : class
+        Func<IWindowsCpuRangeWmiObject, Action, T?> decode, Action checkpoint, bool requireCompatibilityIdentity = false) where T : class
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
         void CheckBoundary()
         {
-            try { checkpoint(); }
+            try
+            {
+                checkpoint();
+                if (requireCompatibilityIdentity)
+                {
+                    var identity = readIdentity!();
+                    var expected = WindowsHostIdentitySource.Rz090528Identity;
+                    if (identity.Failure is not null || identity.Evidence is not { } host
+                        || host.Manufacturer != expected.Manufacturer || host.ProductName != expected.ProductName
+                        || host.Sku != expected.Sku || host.BiosVersion != "2.02")
+                    { throw new InvalidOperationException("Power range profile identity changed."); }
+                }
+            }
             catch (Exception exception) { throw new BoundaryFailure(exception.HResult); }
         }
         T? value = null;
@@ -215,23 +269,31 @@ internal static class WindowsCpuRangeMetadataDecoder
             || values.Length > 100 || length != values.Length) { return null; }
         return new(id, current, length, values);
     }
-    internal static CpuLivePowerRangeMinMax? MinMax(IWindowsCpuRangeWmiObject output, Action checkpoint)
+    internal static CpuLivePowerRangeMinMax? MinMax(IWindowsCpuRangeWmiObject output, Action checkpoint, bool completedVersion)
     {
-        var pack = Package(output, ["Current", "Max", "Min", "Stepping", "Value"], checkpoint);
+        var pack = PackageFields(output, ["Current", "Max", "Min", "Stepping", "Value"], checkpoint);
         if (pack is null || pack["Current"] is not uint current || pack["Max"] is not uint max
             || pack["Min"] is not uint min || pack["Stepping"] is not uint stepping
             || pack["Value"] is not uint value || value != 0x50001) { return null; }
-        return new(value, current, min, max, stepping);
+        bool compatible = completedVersion && output.Raw?.ReturnValueState == CpuLivePowerRangeReturnValueState.Absent
+            && min <= max && stepping > 0 && current >= min && current <= max;
+        return output.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true }
+            || compatible ? new(value, current, min, max, stepping, compatible) : null;
     }
     private static Dictionary<string, object?>? Package(IWindowsCpuRangeWmiObject output, string[] expected, Action checkpoint)
+    {
+        var decoded = PackageFields(output, expected, checkpoint);
+        return output.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true }
+            ? decoded : null;
+    }
+    private static Dictionary<string, object?>? PackageFields(IWindowsCpuRangeWmiObject output, string[] expected, Action checkpoint)
     {
         var fields = Fields(output, ["ReturnValue", "pack"], ["pack"], checkpoint);
         if (fields is null || fields["pack"] is not IWindowsCpuRangeWmiObject pack)
         { return null; }
         try
         {
-            var decoded = Fields(pack, expected, expected, checkpoint);
-            return fields.TryGetValue("ReturnValue", out var ack) && ack is true ? decoded : null;
+            return Fields(pack, expected, expected, checkpoint);
         }
         finally
         {

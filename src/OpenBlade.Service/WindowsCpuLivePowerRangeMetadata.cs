@@ -47,12 +47,45 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
         Func<Action, IWindowsCpuPowerRangeSession> open, CancellationToken token = default)
     { this.context = context; this.scope = scope; this.open = open; this.token = token; }
 
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) =>
-        Read(static (session, check, entered) => session.QueryVersion(check, entered), DecodeVersion, checkpoint);
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) =>
-        Read(static (session, check, entered) => session.GetPowerMinMax(check, entered), DecodeMinMax, checkpoint);
-    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) =>
-        throw new NotSupportedException("The continuous PPT 50001 profile has no discrete getter.");
+    private readonly object sequenceGate = new();
+    private bool completedVersion;
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            completedVersion = false;
+            var result = Read(static (session, check, entered) => session.QueryVersion(check, entered), DecodeVersion, checkpoint);
+            completedVersion = result.Value?.Version == 7 && LocallyComplete(result);
+            return result;
+        }
+    }
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            bool eligible = completedVersion;
+            completedVersion = false; // Consume before opening or invoking, including failed calls.
+            var result = Read(static (session, check, entered) => session.GetPowerMinMax(check, entered),
+                (output, check, decoded) => DecodeMinMax(output, check, decoded, eligible), checkpoint);
+            return result.Value is { MissingReturnValueCompatibility: true } && !LocallyComplete(result)
+                ? result with { Value = null } : result;
+        }
+    }
+    public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint)
+    {
+        lock (sequenceGate)
+        {
+            completedVersion = false;
+            throw new NotSupportedException("The continuous PPT 50001 profile has no discrete getter.");
+        }
+    }
+    // Local checkpoints and actual cleanup only. The engine separately stamps
+    // PostAdmissionPassed after fresh session admission; this never stamps it.
+    private static bool LocallyComplete<T>(CpuLivePowerRangeMetadataCall<T> result) where T : class =>
+        result.Status == CpuLivePowerRangeMetadataStatus.Complete && result.Stages ==
+        (CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+        | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead
+        | CpuLivePowerRangeMetadataStages.Disposed);
 
     private CpuLivePowerRangeMetadataCall<T> Read<T>(
         Func<IWindowsCpuPowerRangeSession, Action, Action, IWindowsCpuPowerRangeObject?> invoke,
@@ -134,22 +167,21 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
                 || decoded.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true })
             ? new(version, decoded.Raw.ReturnValueState == CpuLivePowerRangeReturnValueState.Absent) : null;
     }
-    private static CpuLivePowerRangeMinMax? DecodeMinMax(IWindowsCpuPowerRangeObject output, Action check, Decoded decoded)
+    private static CpuLivePowerRangeMinMax? DecodeMinMax(IWindowsCpuPowerRangeObject output, Action check, Decoded decoded, bool completedVersion)
     {
         var header = Fields(output, ["ReturnValue", "pack"], check, decoded, final: false);
         if (header is null || !header.TryGetValue("pack", out var embedded) || embedded is not IWindowsCpuPowerRangeObject pack) { return null; }
         // Decode candidates even with a declined acknowledgement to retain raw
         // evidence. The owning output must dispose all embedded objects.
         var fields = Fields(pack, ["Current", "Min", "Max", "Stepping", "Value"], check, decoded, final: true);
-        return fields is not null && fields.Count == 5
-            && decoded.Raw is
-            {
-                ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true,
-                Current: uint current, Min: uint min, Max: uint max, Stepping: uint step, Value: 0x50001
-            }
-            ? new(0x50001, current, min, max, step) : null;
-        // Current is a shadow; neither interval ordering nor mW/step semantics
-        // are inferred here. The independently trusted provider must admit them.
+        if (fields is null || fields.Count != 5 || decoded.Raw is not
+            { Current: uint current, Min: uint min, Max: uint max, Stepping: uint step, Value: 0x50001 }) { return null; }
+        bool compatible = completedVersion && decoded.Raw.ReturnValueState == CpuLivePowerRangeReturnValueState.Absent
+            && min <= max && step > 0 && current >= min && current <= max;
+        return decoded.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true }
+            || compatible ? new(0x50001, current, min, max, step, compatible) : null;
+        // Geometry only constrains missing-ACK compatibility. Current is a shadow;
+        // neither units nor requested state are established by these candidates.
     }
     private static Dictionary<string, object?>? Fields(IWindowsCpuPowerRangeObject output, string[] allowed,
         Action check, Decoded decoded, bool final)
