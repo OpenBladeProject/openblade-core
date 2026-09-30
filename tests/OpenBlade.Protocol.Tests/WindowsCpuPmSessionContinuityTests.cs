@@ -7,6 +7,61 @@ public sealed class WindowsCpuPmSessionContinuityTests
     private static CpuPmRunOwnedDriverLifetime Lifetime() => new(Guid.NewGuid(), Guid.NewGuid(), true);
 
     [Fact]
+    public async Task DelayedActualInitialAcIsAwaitedWithExactlyOneRegistration()
+    {
+        using var registered = new ManualResetEventSlim();
+        var fake = new Fake { InitialPower = false, PowerRegistered = registered.Set }; var lifetime = Lifetime();
+        var pending = Task.Factory.StartNew(() => WindowsCpuPmSessionContinuity.Arm(fake, lifetime), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(registered.Wait(TimeSpan.FromSeconds(5))); Thread.Sleep(25);
+            Assert.False(pending.IsCompleted); fake.Power!(Ac());
+            using var scope = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(CpuPmContinuityFailure.None, scope.ReadFresh(lifetime).Failure);
+            Assert.Equal(new[] { "suspend", "power" }, fake.Registered);
+        }
+        finally { fake.Power?.Invoke(Ac()); using var final = await pending.WaitAsync(TimeSpan.FromSeconds(5)); }
+    }
+
+    [Theory]
+    [InlineData("dc")]
+    [InlineData("suspend")]
+    [InlineData("malformed")]
+    [InlineData("session")]
+    [InlineData("gap")]
+    public async Task FailureWhileWaitingCannotBeRepairedByInitialAc(string fault)
+    {
+        using var registered = new ManualResetEventSlim();
+        var fake = new Fake { InitialPower = false, PowerRegistered = registered.Set }; var lifetime = Lifetime();
+        var pending = Task.Factory.StartNew(() => WindowsCpuPmSessionContinuity.Arm(fake, lifetime), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(registered.Wait(TimeSpan.FromSeconds(5))); Thread.Sleep(25);
+            switch (fault)
+            {
+                case "dc": fake.Power!(Ac() with { Source = 1 }); break;
+                case "suspend": fake.Suspend!(18); break;
+                case "malformed": fake.Power!(Ac() with { DataLength = 3 }); break;
+                case "session": fake.Reading = fake.Reading with { SessionId = 99 }; break;
+                case "gap": fake.Reading = fake.Reading with { TickMilliseconds = 1250 }; break;
+            }
+            fake.Power!(Ac()); using var scope = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            var expected = fault switch
+            {
+                "dc" => CpuPmContinuityFailure.PowerChanged,
+                "suspend" => CpuPmContinuityFailure.SuspendResume,
+                "malformed" => CpuPmContinuityFailure.MalformedNotification,
+                "session" => CpuPmContinuityFailure.SessionChanged,
+                _ => CpuPmContinuityFailure.ClockGap
+            };
+            Assert.Equal(expected, scope.ReadFresh(lifetime).Failure); Assert.Equal(2, fake.Registered.Count); Assert.Equal(2, fake.Unregistered.Count);
+        }
+        finally { fake.Power?.Invoke(Ac()); using var final = await pending.WaitAsync(TimeSpan.FromSeconds(5)); }
+    }
+
+    [Fact]
     public void SynchronousInitialAcIsInitializationAndScopeIdentityIsStable()
     {
         var fake = new Fake(); var lifetime = Lifetime();
@@ -57,10 +112,13 @@ public sealed class WindowsCpuPmSessionContinuityTests
     public void MissingInitialNotificationCannotBeRepairedByALateOne()
     {
         var fake = new Fake { InitialPower = false }; var lifetime = Lifetime();
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         using var scope = WindowsCpuPmSessionContinuity.Arm(fake, lifetime);
+        Assert.True(elapsed.Elapsed >= WindowsCpuPmSessionContinuity.InitialPowerWaitBudget - TimeSpan.FromMilliseconds(25));
         fake.Power!(Ac());
         Assert.Equal(CpuPmContinuityFailure.InitialPowerUnknown, scope.ReadFresh(lifetime).Failure);
         Assert.Equal(2, fake.Unregistered.Count);
+        Assert.Equal(2, fake.Registered.Count);
     }
 
     [Fact]
@@ -216,6 +274,7 @@ public sealed class WindowsCpuPmSessionContinuityTests
         internal Action<CpuPmPowerNotification>? Power;
         internal Action<uint>? Suspend;
         internal Action? DuringRead;
+        internal Action? PowerRegistered;
         internal Action<Action<CpuPmPowerNotification>>? DuringPowerRegistration;
         internal Action<Action<uint>>? DuringSuspendRegistration;
         internal List<string> Registered = [], Unregistered = [];
@@ -229,6 +288,7 @@ public sealed class WindowsCpuPmSessionContinuityTests
             if (RegistrationFault == "throw") { throw new IOException(); }
             if (InitialPower) { callback(Ac()); }
             DuringPowerRegistration?.Invoke(callback);
+            PowerRegistered?.Invoke();
             return RegistrationFault == "power" ? 5u : 0;
         }
         public uint UnregisterPower(nint handle) { Unregistered.Add("power"); if (UnregisterThrows) { throw new IOException(); } return UnregisterStatus; }

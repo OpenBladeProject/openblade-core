@@ -99,7 +99,7 @@ internal sealed class Rz090528InstalledCpuBackendInspector
 
 internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBackendSnapshotSource
 {
-    public InstalledCpuBackendSnapshot Read()
+    internal static IReadOnlyList<CpuBackendFileMetadata> ReadFileMetadata()
     {
         var files = new List<CpuBackendFileMetadata>();
         foreach (string path in Rz090528InstalledCpuBackendInspector.ExpectedHashes.Keys)
@@ -113,6 +113,12 @@ internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBa
             (bool valid, string signer) = ReadSignature(path);
             files.Add(new(path, hash, valid, signer));
         }
+        return files.AsReadOnly();
+    }
+
+    public InstalledCpuBackendSnapshot Read()
+    {
+        var files = ReadFileMetadata();
 
         using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
             @"SYSTEM\CurrentControlSet\Services\" + Rz090528InstalledCpuBackendInspector.ServiceName,

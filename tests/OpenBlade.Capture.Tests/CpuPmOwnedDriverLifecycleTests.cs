@@ -272,6 +272,28 @@ public sealed class CpuPmOwnedDriverLifecycleTests
         Assert.False(other.Lifecycle.BeginChildLaunch(CancellationToken.None));
     }
 
+    [Fact]
+    public void LiveProofUsesCheapSafetyButCannotAuthorizeAnyLifecycleMutation()
+    {
+        var f = new Fixture(); f.Active(); int full = f.Safety.FullReads;
+        f.Safety.DenyFull = true;
+        Assert.True(f.Lifecycle.ReadFresh(Run, Lifetime)!.Admits(Run, Lifetime));
+        Assert.Equal(full, f.Safety.FullReads); Assert.True(f.Safety.ProofReads > 0);
+        f.Child.State = CpuPmChildState.Terminal;
+        Assert.Equal(CpuPmDriverCleanup.Refused, f.Lifecycle.Cleanup(CancellationToken.None));
+        Assert.Equal(0, f.Driver.Stops); Assert.Equal(0, f.Driver.Deletes);
+        var fresh = new Fixture(); fresh.Safety.DenyFull = true;
+        Assert.False(fresh.Lifecycle.PrepareAndStart(CancellationToken.None));
+        Assert.Equal(0, fresh.Platform.Creates); Assert.Equal(0, fresh.Safety.ProofReads);
+    }
+    [Fact]
+    public void CheapSafetyDenialStopsAuthorityAndInitialMetadataCannotGrantOwnership()
+    {
+        var initial = new Fixture(); Assert.Null(initial.Lifecycle.ReadFresh(Run, Lifetime));
+        var f = new Fixture(); f.Active(); f.Safety.DenyProof = true;
+        Assert.Null(f.Lifecycle.ReadFresh(Run, Lifetime));
+        Assert.Equal(0, f.Driver.Stops); Assert.Equal(0, f.Driver.Deletes);
+    }
     private sealed class Fixture
     {
         internal readonly Clock Clock = new(); internal readonly Safety Safety = new(); internal readonly Journal Journal = new();
@@ -289,7 +311,12 @@ public sealed class CpuPmOwnedDriverLifecycleTests
     {
         internal CpuPmDriverSafetySnapshot Current = new(true, true, true, true, true, true, true);
         internal bool Retained; internal int Releases;
-        public CpuPmDriverSafetySnapshot ReadFresh() => Current;
+        internal int FullReads, ProofReads;
+        internal bool DenyFull, DenyProof;
+        public CpuPmDriverSafetySnapshot ReadFresh()
+        { FullReads++; return DenyFull ? new(false, false, false, false, false, false, false) : Current; }
+        public CpuPmDriverProofSafetySnapshot ReadFreshProof()
+        { ProofReads++; return new(Current.Admits && !DenyProof, Current.VendorAndPayloadPinsHeld, Current.AcPower && Current.LocalActiveDefaultSession, Current.TrustedOperatorPremiseAccepted); }
         public void RetainUntilVerifiedCleanup(CpuPmOwnedDriverLifecycle owner) => Retained = true;
         public void ReleaseAfterVerifiedCleanup() { Releases++; Retained = false; }
     }

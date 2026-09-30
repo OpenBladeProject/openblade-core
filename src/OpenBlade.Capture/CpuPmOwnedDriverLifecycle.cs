@@ -37,9 +37,17 @@ internal sealed record CpuPmDriverOwnerTag
 }
 internal sealed record CpuPmDriverLifecycleRecord(int Sequence, CpuPmDriverEvent Event, CpuPmDriverOwnerTag Owner);
 internal interface ICpuPmDriverJournal { bool AppendAndFlush(CpuPmDriverLifecycleRecord record); }
+// Safety-only evidence for an already-owned live driver. This type cannot admit
+// lifecycle mutations, and cannot establish driver ownership by itself.
+internal sealed record CpuPmDriverProofSafetySnapshot(bool InitialFullAdmission, bool VendorAndPayloadPinsHeld,
+    bool OwnerContinuity, bool TrustedOperatorPremiseAccepted)
+{
+    internal bool Admits => InitialFullAdmission && VendorAndPayloadPinsHeld && OwnerContinuity && TrustedOperatorPremiseAccepted;
+}
 internal interface ICpuPmDriverSafety
 {
     CpuPmDriverSafetySnapshot ReadFresh();
+    CpuPmDriverProofSafetySnapshot ReadFreshProof();
     // Must root this owner AND all its host/payload/driver pins until explicit
     // verified cleanup. Cancellation, lost pipe or an unreturned call never frees them.
     void RetainUntilVerifiedCleanup(CpuPmOwnedDriverLifecycle owner);
@@ -180,8 +188,8 @@ internal sealed class CpuPmOwnedDriverLifecycle : ICpuPmOwnedDriverProofSource
         {
             if (Volatile.Read(ref revoked) != 0 || runId != owner.Run || lifetimeId != owner.Lifetime
                 || phase != CpuPmDriverPhase.ChildBound || successfulStarts != 1 || !absenceObserved || !retained
-                || !ChildIs(CpuPmChildState.Running) || !Owned(CpuPmDriverState.Running, owner.Value, CancellationToken.None)
-                || !ChildIs(CpuPmChildState.Running) || !Guard(CancellationToken.None)) { Fail(); return null; }
+                || !ChildIs(CpuPmChildState.Running) || !OwnedForProof()
+                || !ChildIs(CpuPmChildState.Running) || !ProofGuard()) { Fail(); return null; }
             return new(owner.Run, owner.Lifetime, true, true, successfulStarts, true, true, true, true, true, true, true);
         }
         catch (Exception) { Fail(); return null; }
@@ -246,6 +254,19 @@ internal sealed class CpuPmOwnedDriverLifecycle : ICpuPmOwnedDriverProofSource
         var value = driver.ReadFresh();
         return value.Owned(tag) && value.State == state && Guard(token);
     }
+    private bool OwnedForProof()
+    {
+        if (!ProofGuard() || driver is null) { return false; }
+        var value = driver.ReadFresh();
+        return value.Owned(owner.Value) && value.State == CpuPmDriverState.Running && ProofGuard();
+    }
+    private bool ProofGuard()
+    {
+        if (Volatile.Read(ref blocked) != 0 || Volatile.Read(ref revoked) != 0 || !ClockValid()) { return false; }
+        return safety.ReadFreshProof().Admits && Volatile.Read(ref blocked) == 0 && Volatile.Read(ref revoked) == 0 && ClockValid();
+    }
+    // Only full admission can precede Create/Tag/Start/Stop/Delete or durable
+    // lifecycle progress. Cheap proof safety has no route into this guard.
     private bool Guard(CancellationToken token)
     {
         if (Volatile.Read(ref blocked) != 0 || (!cleanupMode && Volatile.Read(ref revoked) != 0) || token.IsCancellationRequested || !ClockValid()) { return false; }

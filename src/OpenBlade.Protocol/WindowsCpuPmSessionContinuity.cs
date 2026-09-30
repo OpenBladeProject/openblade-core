@@ -31,10 +31,11 @@ internal interface ICpuPmContinuityPlatform
 
 // One-use, synchronous scope for a future separately attended adapter only.
 // Nothing in the production service or existing query factory constructs it.
-internal sealed class WindowsCpuPmSessionContinuity : IDisposable
+internal sealed partial class WindowsCpuPmSessionContinuity : IDisposable
 {
     internal static readonly Guid AcDcSource = new("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
     internal const uint PowerSettingChange = 0x8013;
+    internal static readonly TimeSpan InitialPowerWaitBudget = TimeSpan.FromSeconds(1);
     private readonly object gate = new();
     private readonly ICpuPmContinuityPlatform platform;
     private readonly CpuPmRunOwnedDriverLifetime? lifetime;
@@ -43,6 +44,7 @@ internal sealed class WindowsCpuPmSessionContinuity : IDisposable
     private CpuPmContinuityFailure failure;
     private nint powerHandle, suspendHandle;
     private bool initialPower, armed, disposed;
+    private long initialPowerTimestamp;
 
     private WindowsCpuPmSessionContinuity(ICpuPmContinuityPlatform platform, CpuPmRunOwnedDriverLifetime? lifetime)
     { this.platform = platform; this.lifetime = lifetime; }
@@ -72,8 +74,7 @@ internal sealed class WindowsCpuPmSessionContinuity : IDisposable
             if (status != 0 || powerHandle == 0) { Interrupt(CpuPmContinuityFailure.RegistrationFailed); return; }
             lock (gate)
             {
-                if (!initialPower) { Fail(CpuPmContinuityFailure.InitialPowerUnknown); }
-                armed = failure == CpuPmContinuityFailure.None;
+                armed = WaitForInitialPower();
             }
             _ = ReadFresh(lifetime);
         }
@@ -85,6 +86,29 @@ internal sealed class WindowsCpuPmSessionContinuity : IDisposable
             lock (gate) { failed = !armed || failure != CpuPmContinuityFailure.None; }
             if (failed) { ReleaseRegistrations(); }
         }
+    }
+
+    // Microsoft promises a current-value callback after registration, not that
+    // it completes before registration returns. Wait only for that real callback;
+    // never re-register, synthesize AC, clear a failure, or extend this deadline.
+    // https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powersettingregisternotification
+    // Caller holds gate; Monitor.Wait releases it for the native callback.
+    private bool WaitForInitialPower()
+    {
+        long started = Stopwatch.GetTimestamp();
+        while (failure == CpuPmContinuityFailure.None && !disposed)
+        {
+            if (initialPower)
+            {
+                if (initialPowerTimestamp > started && Stopwatch.GetElapsedTime(started, initialPowerTimestamp) >= InitialPowerWaitBudget)
+                { Fail(CpuPmContinuityFailure.InitialPowerUnknown); return false; }
+                return true;
+            }
+            TimeSpan remaining = InitialPowerWaitBudget - Stopwatch.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero) { Fail(CpuPmContinuityFailure.InitialPowerUnknown); return false; }
+            _ = Monitor.Wait(gate, remaining);
+        }
+        return false;
     }
 
     internal CpuPmContinuityEvidence ReadFresh(CpuPmRunOwnedDriverLifetime? freshLifetime)
@@ -133,7 +157,8 @@ internal sealed class WindowsCpuPmSessionContinuity : IDisposable
         armed && !disposed && failure == CpuPmContinuityFailure.None ? CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime
             : failure == CpuPmContinuityFailure.None ? CpuPmSessionContinuity.Unknown : CpuPmSessionContinuity.Interrupted,
         sessionId, lifetime?.DriverLifetimeId ?? Guid.Empty, failure);
-    private void Fail(CpuPmContinuityFailure reason) { if (failure == CpuPmContinuityFailure.None) { failure = reason; } }
+    private void Fail(CpuPmContinuityFailure reason)
+    { if (failure == CpuPmContinuityFailure.None) { failure = reason; } Monitor.PulseAll(gate); }
     private void Interrupt(CpuPmContinuityFailure reason) { lock (gate) { Fail(reason); } }
 
     private void PowerChanged(CpuPmPowerNotification notification)
@@ -147,7 +172,9 @@ internal sealed class WindowsCpuPmSessionContinuity : IDisposable
                     || notification.DataLength != 4 || notification.Source is null)
                 { Fail(CpuPmContinuityFailure.MalformedNotification); return; }
                 if (notification.Source != 0) { Fail(CpuPmContinuityFailure.PowerChanged); return; }
+                if (!initialPower) { initialPowerTimestamp = Stopwatch.GetTimestamp(); }
                 initialPower = true; // first current-value callback is initialization
+                Monitor.PulseAll(gate);
             }
         }
         catch { /* Never unwind across a native callback boundary. */ }
