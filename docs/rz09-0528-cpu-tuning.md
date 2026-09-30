@@ -152,6 +152,16 @@ checks fresh capability and range evidence, and records possible submission befo
 the driver call. Forward edits also require the exact immediate reverse to fit
 that range. Uncertain cleanup blocks later operations on the retained platform.
 Only fake tests supply its write proof; no production factory or provider exists.
+An unwired service backend now connects that transport to the live transaction.
+It retains the actual native worker across caller cancellation and excludes
+replacement operations on the same platform until completion. Cleanup uncertainty
+invalidates that scope. Its private proof wrapper rechecks fresh context under
+the native lease. A separate fixed CO metadata reader accepts only version 7 and
+selector 5000A with strict unsigned fields and confirmed acknowledgement. It
+preserves partial evidence, treats Current as a firmware shadow, and returns a
+range only after confirmed cleanup and independent scope checks. Injected tests
+exercise cancellation, ambiguous submission, range decoding and recovery;
+neither component supplies production trust or enables CPU controls.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.
