@@ -93,3 +93,52 @@ its purpose remains unknown. This attempt supports one steady-temperature
 measured RPM, ownership, full range and changing-temperature response remain
 unvalidated. Preserve the timeout rather than rerunning merely to obtain a
 successful final flag.
+## Follow-up recovery and observed demand change on 2026-09-30
+
+A separate attempt from source389a1db0 stopped at its first physical timeout
+with exit2 after acknowledged configured1500 demand. It had read/acquired0300,
+but sent no follow-up demand, Medium, quiet or raw-restoration command. A later
+raw-only recovery acknowledged and queried0000, then also exited2 at its
+physical timeout. The user's late normal/unchanged reply is a separate physical
+observation; both original timeout results remain unchanged.
+
+The reviewed preferred-quiet recovery from source68d6cdb9 then completed with
+exit0. It freshly required0000 and used the unchanged seven-command
+Medium-to-quiet sequence. Initial normal/green/HyperBoost-inactive, Medium,
+quiet and final quiet checks all passed, with original0000 restoration/query.
+The ten-minute operator windows changed no native deadline or command bytes.
+No Synapse/service restart, retry or power cycle occurred. The private2522-byte
+recovery result has SHA-256
+`0A2F9C288541ED2D4D3A2D9C6B12EC1B510515573DF90F22592ACB1E6C1E2774`.
+
+A new bounded temperature-demand attempt from that same source ran from
+2026-09-30T08:11:56Z to08:33:00Z and completed with exit0. Steel Nomad was
+restarted through user-authorized Computer Use before the trial. The twelve
+reads kept the EC-backed CPU input at45C; GPU was54C in preflight/initial
+readings and44C in all ten follow-ups, with GpuInactive=false throughout.
+Configured1600 demand was acknowledged initially, then1350 demand on the first
+follow-up. Nine unchanged1350 plans were suppressed. All five post-native
+physical checks passed, as did quiet recovery and original0000 restoration/query.
+No further recovery was needed. The private9449-byte result has SHA-256
+`7E6A4617DF4D14363AD5A0802B90B39845E52E5439C47D58A050C1C65D5DF3A8`.
+
+This observes one temperature-driven demand reduction, supported by exact echoes
+and normal physical reports. It does not measure fan RPM or establish thermal
+response, an upward update, GPU power-off, sustained regulation, full-range
+validation or production ownership/handback. The first physical pause held1600;
+the temperature reduction need not have occurred within the sampling interval.
+Benchmark UI context is not an independently timed load trace. Typed results and
+reviewed source infer ten logical exchanges; no independent packet trace exists.
+
+The first post-exit inventory briefly recorded one Capture process. A subsequent
+read-only host inspection found none and no process was modified; do not claim
+that the earlier inventory was zero or infer ownership of the transient process.
+Razer services remained stopped. Capture source tests787/787, recovery-wrapper
+focused21/21, clean build and independent review passed before these runs.
+
+For interpretation, GpuInactive is an activity-source classification: an available
+150ms Windows GPU-engine snapshot with no qualifying non-System workload above
+0.1 percent. It is not proof of GPU power-off. NVML temperature failures produce
+missing active-GPU input and block plans, rather than being labeled inactive.
+The latest successful attempt used active-GPU readings throughout. CPU45C is the
+EC/TZRZ input, not independently measured CPU-core temperature.
