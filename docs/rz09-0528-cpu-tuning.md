@@ -147,6 +147,11 @@ a valid counter. A reviewed normal-token diagnostic observed short-term equality
 between separate processes; reboot and power-transition continuity remain unproved.
 Fake-backend tests cover these paths; native mutation
 and a trustworthy boot-continuity source remain unadmitted.
+An internal CO transport reuses the query session for full before/after vectors,
+checks fresh capability and range evidence, and records possible submission before
+the driver call. Forward edits also require the exact immediate reverse to fit
+that range. Uncertain cleanup blocks later operations on the retained platform.
+Only fake tests supply its write proof; no production factory or provider exists.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

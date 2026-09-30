@@ -117,16 +117,6 @@ internal static class CpuQueryPciTopology
 internal sealed class Rz090528CpuLiveQuery(
     IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization)
 {
-    private const uint EnumeratePci = 0x81112F18;
-    private const uint ReadPci = 0x81112F24;
-    private const uint WriteSmnRegister = 0x81112FF8;
-    private const uint ResponseAddress = 0x03B10A80;
-    private const uint ArgumentAddress = 0x03B10A88;
-    private const uint MessageAddress = 0x03B10A20;
-    private const int MaximumPciRecords = 256 * 32 * 8;
-    private const int MaximumPolls = 1000;
-    private CpuQueryStage stage;
-
     internal Rz090528CpuLiveQueryResult Query(DeviceIdentity identity,
         CancellationToken cancellationToken = default)
     {
@@ -144,67 +134,89 @@ internal sealed class Rz090528CpuLiveQuery(
                 new(CpuQueryStage.MutexWait, CpuQueryFailureCode.Timeout));
         }
 
-        try
+        var session = new Rz090528CpuMailboxSession(ioctl, synchronization);
+        try { return new(CpuLiveQueryStatus.Observed, session.Observe(cancellationToken)); }
+        catch (Rz090528CpuMailboxSession.QueryFailure failure)
         {
-            var bus = DiscoverBus(cancellationToken);
-            stage = CpuQueryStage.PciIdentity;
-            if (ReadPciWord(bus, 0, 0, 0, cancellationToken) != CpuQueryPciTopology.RootId
-                || ReadPciWord(bus, 0x18, 0, 0, cancellationToken) != CpuQueryPciTopology.NodeId)
-            {
-                throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
-            }
-            // The exact SDK obtains orientation from this BDF. Confirm its identity
-            // independently, then compare the orientation to the separate fuse mask.
-            if (ReadPciWord(0, 0x18, 1, 0, cancellationToken) != CpuQueryPciTopology.OrientationId)
-            {
-                throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
-            }
-
-            stage = CpuQueryStage.CoreMask;
-            var mask = ReadPciWord(0, 0x18, 1, 0x140, cancellationToken);
-            stage = CpuQueryStage.FuseMask;
-            var fusedMask = ~(ReadSmn(bus, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
-            if ((mask & 0xFFFF0000) != 0 || BitOperations.PopCount(mask) != 12 || mask != fusedMask)
-            {
-                throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
-            }
-
-            stage = CpuQueryStage.PmVersion;
-            var version = QueryMailbox(bus, QueryCommand.PmVersion, 0, cancellationToken);
-            var length = version switch
-            {
-                0x005D0008 => 0xD54,
-                0x005D0009 => 0xD58,
-                0x005D000A => 0xD60,
-                0x005D000B => 0xD50,
-                0x005D000C => 0xD68,
-                _ => throw new QueryFailure(CpuLiveQueryStatus.UnsupportedVersion),
-            };
-            stage = CpuQueryStage.CoreOffset;
-            var offsets = new List<CpuLiveCoreOffset>(12);
-            for (var physicalId = 0; physicalId < 16; physicalId++)
-            {
-                if ((mask & (1u << physicalId)) == 0)
-                {
-                    continue;
-                }
-
-                var argument = (uint)(((physicalId / 8) << 8) | (physicalId % 8)) << 20;
-                var value = QueryMailbox(bus, QueryCommand.CoreOffset, argument, cancellationToken);
-                offsets.Add(new(physicalId, unchecked((short)(value & 0xFFFF))));
-            }
-            return new(CpuLiveQueryStatus.Observed, new(mask, version, length, offsets.AsReadOnly()));
-        }
-        catch (QueryFailure failure)
-        {
-            return new(failure.Status, null, new(stage, failure.Failure, failure.NativeErrorCode, failure.Operation));
+            return new(failure.Status, null, new(session.Stage, failure.Failure, failure.NativeErrorCode, failure.Operation));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException
             or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException)
         {
-            return new(CpuLiveQueryStatus.Unavailable, null, CpuQueryDiagnostic.FromException(stage, exception));
+            return new(CpuLiveQueryStatus.Unavailable, null, CpuQueryDiagnostic.FromException(session.Stage, exception));
         }
+    }
+
+}
+
+// One synchronous, lease-owned session shared by getter and exact per-core CO operations.
+// The raw PCI/SMN/mailbox helpers remain private.
+internal sealed class Rz090528CpuMailboxSession(
+    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization)
+{
+    private const uint EnumeratePci = 0x81112F18;
+    private const uint ReadPci = 0x81112F24;
+    private const uint WriteSmnRegister = 0x81112FF8;
+    private const uint ResponseAddress = 0x03B10A80;
+    private const uint ArgumentAddress = 0x03B10A88;
+    private const uint MessageAddress = 0x03B10A20;
+    private const int MaximumPciRecords = 256 * 32 * 8;
+    private const int MaximumPolls = 1000;
+    private CpuQueryStage stage;
+    private uint? bus;
+    internal CpuQueryStage Stage => stage;
+
+    internal Rz090528CpuLiveObservation Observe(CancellationToken cancellationToken)
+    {
+        bus ??= DiscoverBus(cancellationToken);
+        stage = CpuQueryStage.PciIdentity;
+        if (ReadPciWord(bus.Value, 0, 0, 0, cancellationToken) != CpuQueryPciTopology.RootId
+            || ReadPciWord(bus.Value, 0x18, 0, 0, cancellationToken) != CpuQueryPciTopology.NodeId)
+        {
+            throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
+        }
+        // The exact SDK obtains orientation from this BDF. Confirm its identity
+        // independently, then compare the orientation to the separate fuse mask.
+        if (ReadPciWord(0, 0x18, 1, 0, cancellationToken) != CpuQueryPciTopology.OrientationId)
+        {
+            throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
+        }
+
+        stage = CpuQueryStage.CoreMask;
+        var mask = ReadPciWord(0, 0x18, 1, 0x140, cancellationToken);
+        stage = CpuQueryStage.FuseMask;
+        var fusedMask = ~(ReadSmn(bus.Value, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
+        if ((mask & 0xFFFF0000) != 0 || BitOperations.PopCount(mask) != 12 || mask != fusedMask)
+        {
+            throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
+        }
+
+        stage = CpuQueryStage.PmVersion;
+        var version = QueryMailbox(bus.Value, QueryCommand.PmVersion, 0, cancellationToken);
+        var length = version switch
+        {
+            0x005D0008 => 0xD54,
+            0x005D0009 => 0xD58,
+            0x005D000A => 0xD60,
+            0x005D000B => 0xD50,
+            0x005D000C => 0xD68,
+            _ => throw new QueryFailure(CpuLiveQueryStatus.UnsupportedVersion),
+        };
+        stage = CpuQueryStage.CoreOffset;
+        var offsets = new List<CpuLiveCoreOffset>(12);
+        for (var physicalId = 0; physicalId < 16; physicalId++)
+        {
+            if ((mask & (1u << physicalId)) == 0)
+            {
+                continue;
+            }
+
+            var argument = (uint)(((physicalId / 8) << 8) | (physicalId % 8)) << 20;
+            var value = QueryMailbox(bus.Value, QueryCommand.CoreOffset, argument, cancellationToken);
+            offsets.Add(new(physicalId, unchecked((short)(value & 0xFFFF))));
+        }
+        return new(mask, version, length, offsets.AsReadOnly());
     }
 
     private uint DiscoverBus(CancellationToken cancellationToken)
@@ -259,8 +271,13 @@ internal sealed class Rz090528CpuLiveQuery(
         WriteRegister(bus, 1, value, cancellationToken);
     }
 
-    // No caller-supplied raw message API: only the two statically verified getters.
-    private enum QueryCommand : uint { PmVersion = 0x06, CoreOffset = 0x5E }
+    // Typed entry points only. The distinct wire gate is required for capability/setter.
+    internal uint ReadCurveCapability(CancellationToken token) =>
+        QueryMailbox(bus ?? throw new InvalidOperationException("Discovery required."), QueryCommand.Capability, 0, token);
+
+    internal void SubmitCurve(CpuLiveCurveCommand command, CancellationToken token) =>
+        QueryMailbox(bus ?? throw new InvalidOperationException("Discovery required."), QueryCommand.SetCoreOffset, command.EncodeArgument(), token);
+    private enum QueryCommand : uint { PmVersion = 0x06, CoreOffset = 0x5E, Capability = 0x82, SetCoreOffset = 0x53 }
 
     private uint QueryMailbox(uint bus, QueryCommand command, uint argument,
         CancellationToken cancellationToken)
@@ -284,7 +301,8 @@ internal sealed class Rz090528CpuLiveQuery(
         }
 
         WriteSmn(bus, ResponseAddress, 0, cancellationToken);
-        WriteSmn(bus, ArgumentAddress, argument, cancellationToken);
+        // Vendor capability82 has no input argument; preserve that exact shape.
+        if (command != QueryCommand.Capability) { WriteSmn(bus, ArgumentAddress, argument, cancellationToken); }
         WriteSmn(bus, MessageAddress, (uint)command, cancellationToken);
         // Select once; all subsequent data reads are protected by the same lease.
         WriteRegister(bus, 0, ResponseAddress, cancellationToken);
@@ -293,7 +311,7 @@ internal sealed class Rz090528CpuLiveQuery(
             var response = ReadPciWord(bus, 0, 0, 0xC8, cancellationToken);
             if (response == 1)
             {
-                return ReadSmn(bus, ArgumentAddress, cancellationToken);
+                return command == QueryCommand.SetCoreOffset ? 0 : ReadSmn(bus, ArgumentAddress, cancellationToken);
             }
 
             if (response != 0)
@@ -354,7 +372,7 @@ internal sealed class Rz090528CpuLiveQuery(
         _ => throw new InvalidOperationException("Unknown CPU query operation."),
     };
 
-    private sealed class QueryFailure(CpuLiveQueryStatus status, CpuQueryFailureCode? failure = null,
+    internal sealed class QueryFailure(CpuLiveQueryStatus status, CpuQueryFailureCode? failure = null,
         int? nativeErrorCode = null, CpuQueryOperation? operation = null) : Exception
     {
         internal CpuLiveQueryStatus Status { get; } = status;

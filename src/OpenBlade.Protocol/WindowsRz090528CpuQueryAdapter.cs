@@ -61,7 +61,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
     private readonly ICpuNativeWireAdmission wire;
     private ICpuQueryDevice? device;
-    private int ownerThread;
+    private int ownerThread, acquiring;
+    private bool cleanupFailed;
     private CpuQueryStage stage = CpuQueryStage.InitialUsbIdentity;
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity)
@@ -96,6 +97,9 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
         cancellationToken.ThrowIfCancellationRequested();
+        var operation = CurveOperations.GetValue(platform, static _ => new());
+        if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
+        { return new(CpuLiveQueryStatus.Busy, null, new(CpuQueryStage.MutexWait, CpuQueryFailureCode.AdmissionDenied)); }
         var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity);
         try
         {
@@ -115,6 +119,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 exception is QueryAdmissionDeniedException
                     ? new(adapter.stage, CpuQueryFailureCode.AdmissionDenied)
                     : CpuQueryDiagnostic.FromException(adapter.stage, exception));
+        }
+        finally
+        {
+            // Preserve the shared getter/setter exclusion if any resource release
+            // failed, including cleanup while Acquire was still unwinding.
+            if (!adapter.cleanupFailed) { Volatile.Write(ref operation.Active, 0); }
         }
     }
 
@@ -141,14 +151,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 
     public IDisposable? Acquire(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (timeout != TimeSpan.FromSeconds(20) || ownerThread != 0)
+        if (timeout != TimeSpan.FromSeconds(20) || Interlocked.CompareExchange(ref acquiring, 1, 0) != 0)
         { throw new InvalidOperationException("Invalid CPU query lease."); }
         stage = CpuQueryStage.MutexCreate;
-        var mutex = platform.CreateSharedMutex();
+        ICpuQueryMutex? mutex = null;
         bool acquired = false;
         IDisposable? files = null;
         try
         {
+            mutex = platform.CreateSharedMutex();
             stage = CpuQueryStage.MutexWait;
             var wait = mutex.Wait(timeout, cancellationToken);
             if (wait == CpuQueryMutexWait.Timeout) { return null; }
@@ -185,8 +196,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 try { Cleanup(() => files?.Dispose()); }
                 finally
                 {
-                    try { if (acquired) { Cleanup(mutex.Release); } }
-                    finally { Cleanup(() => mutex?.Dispose()); }
+                    try { if (acquired) { Cleanup(() => mutex!.Release()); } }
+                    finally { try { Cleanup(() => mutex?.Dispose()); } finally { if (ownerThread == 0) { Volatile.Write(ref acquiring, 0); } } }
                 }
             }
         }
@@ -197,7 +208,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         // Successful cleanup must preserve the admission stage that failed.
         // A cleanup exception has its own stage even before a lease exists.
         try { release(); }
-        catch { stage = CpuQueryStage.Cleanup; throw; }
+        catch { cleanupFailed = true; stage = CpuQueryStage.Cleanup; throw; }
     }
 
     public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
@@ -205,7 +216,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         CheckThread();
         if (device is null || !wire.Allows(code, input, outputLength))
         { return new(false, [], CpuQueryFailureCode.WireRequestRejected); }
-        var reply = device.Invoke(code, input, outputLength);
+        CpuQueryIoctlReply reply;
+        try
+        {
+            if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
+            reply = device.Invoke(code, input, outputLength);
+        }
+        catch { wire.Abort(); throw; }
         if (wire.AcceptReply(code, input, outputLength, reply)) { return reply; }
         return !reply.Success ? reply
             : new(false, [], reply.Bytes.Length != outputLength
@@ -237,14 +254,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             { throw new InvalidOperationException("CPU query lease must be released on its owning thread."); }
             disposed = true;
             adapter.stage = CpuQueryStage.Cleanup;
-            try { adapter.device?.Dispose(); }
-            finally
+            try
             {
-                adapter.device = null;
-                adapter.ownerThread = 0;
-                try { files.Dispose(); }
-                finally { try { mutex.Release(); } finally { mutex.Dispose(); } }
+                try { adapter.device?.Dispose(); }
+                finally
+                {
+                    adapter.device = null;
+                    adapter.ownerThread = 0;
+                    try { files.Dispose(); }
+                    finally { try { mutex.Release(); } finally { try { mutex.Dispose(); } finally { Volatile.Write(ref adapter.acquiring, 0); } } }
+                }
             }
+            catch { adapter.cleanupFailed = true; throw; }
         }
     }
 
