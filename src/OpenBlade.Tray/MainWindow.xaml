@@ -646,7 +646,7 @@
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}"
+                            <Border x:Name="CpuTuningCard" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     DataContext="{Binding CpuTuning}" Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsVisible}">
                                 <StackPanel Spacing="12">

@@ -97,5 +97,12 @@ Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.
 
+The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic
+CPU states at two card widths. It checks saved/live separation, unknown live PPT,
+pending boot changes, editing and restoration availability, and control bounds.
+It writes screenshots to the private validation archive without connecting to
+the service or sending CPU commands. These fixtures do not establish hardware
+admission or validate the installed application.
+
 Tracked in [issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622)
 and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).
