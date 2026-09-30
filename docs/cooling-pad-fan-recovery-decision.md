@@ -286,3 +286,11 @@ No Synapse/service action, power cycle, retry or additional lifecycle test occur
 in this sequence. The earlier failed reconnect and unsuccessful power cycle remain
 separate records. Raw mode, independent fan-state/RPM and ownership are distinct;
 production admission remains closed. Further lifecycle expansion is paused.
+
+## Meaning of the observed quiet Auto outcome
+
+The captured Auto selection and quiet physical outcome do not establish
+temperature-responsive regulation. August evidence supports host-managed Smart
+Fan Curve, while default Auto remains distinct and unresolved. See
+[the Auto investigation](cooling-pad-auto-investigation.md). No pad temperature
+loop was exercised during the recovery, and production admission is unchanged.
