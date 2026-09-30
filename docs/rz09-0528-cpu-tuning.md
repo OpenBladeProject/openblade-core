@@ -108,6 +108,13 @@ preserve each independently. The fused upper bound comes from separate SMN
 registers and was not part of this capture; neither the full writable range nor
 physical setter readback and restoration has been established.
 
+The developer observation now reads only the two source-mapped fused-cap
+registers, after confirming the exact PCI identities and topology masks. It
+retains raw replies and admission status even when the query fails. The decoded
+cap remains a candidate; this getter has not yet been exercised on hardware.
+Each new run requires its own independently pinned preset before launch, keeping
+earlier protected payloads and evidence intact.
+
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
 Boot activation, installed-service IPC validation, and attended live

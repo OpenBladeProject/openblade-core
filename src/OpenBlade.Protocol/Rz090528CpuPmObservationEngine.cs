@@ -25,17 +25,29 @@ internal interface ICpuPmObservationClock
     DateTimeOffset UtcNow { get; }
     void DelayOneSecond(CancellationToken cancellationToken);
 }
-internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission }
+internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap }
 internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, BudgetExpired, InvalidData, UnsupportedVersion, RequestRejected, ReplyRejected, NativeFailure, CleanupFailed }
 internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure);
 internal sealed record CpuPmCompletedSample(CpuPmRawSnapshot Snapshot, uint RefreshReturnedWord);
+
+// Returned transport evidence only: a candidate is never fresh write authority.
+// Retain a shaped reply even when its contents or post-read admission fail.
+internal sealed record CpuPmCapRegisterRead(uint Address, uint RawValue, DateTimeOffset CapturedUtc,
+    long MonotonicTimestamp, bool TransportSucceeded, bool PostReadAdmissionPassed);
+internal sealed record CpuPmFusedCapObservation(CpuPmCapRegisterRead? A0F, CpuPmCapRegisterRead? A0B)
+{
+    internal CpuLivePowerFusedCap? Candidate => A0F is { Address: CpuLivePowerFusedCap.RegisterA0F, TransportSucceeded: true, PostReadAdmissionPassed: true } first
+        && A0B is { Address: CpuLivePowerFusedCap.RegisterA0B, TransportSucceeded: true, PostReadAdmissionPassed: true } second
+        ? CpuLivePowerFusedCap.TryDecode(first.RawValue, second.RawValue) : null;
+}
 
 internal sealed class CpuPmObservationBatch
 {
     private readonly CpuPmCompletedSample[] samples;
     private readonly byte[] records;
     internal CpuPmObservationBatch(bool complete, IEnumerable<CpuPmCompletedSample> samples,
-        byte[] records, uint orientationMask, uint fuseMask, CpuPmObservationDiagnostic? diagnostic)
+        byte[] records, uint orientationMask, uint fuseMask, CpuPmObservationDiagnostic? diagnostic,
+        CpuPmFusedCapObservation? fusedCap = null)
     {
         Complete = complete;
         this.samples = samples.ToArray();
@@ -43,11 +55,13 @@ internal sealed class CpuPmObservationBatch
         OrientationMask = orientationMask;
         FuseMask = fuseMask;
         Diagnostic = diagnostic;
+        FusedCap = fusedCap;
     }
     internal bool Complete { get; }
     internal uint OrientationMask { get; }
     internal uint FuseMask { get; }
     internal CpuPmObservationDiagnostic? Diagnostic { get; }
+    internal CpuPmFusedCapObservation? FusedCap { get; }
     internal CpuPmCompletedSample[] CopySamples() => (CpuPmCompletedSample[])samples.Clone();
     internal byte[] CopyPciRecords() => (byte[])records.Clone();
 }
@@ -69,6 +83,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private int ownerThread;
     private bool used, readingVersionArgument;
     private CpuPmObservationStage stage;
+    private CpuPmCapRegisterRead? capA0F, capA0B;
+    private uint readingCapAddress;
 
     internal CpuPmObservationBatch Observe(CancellationToken cancellationToken = default)
     {
@@ -95,6 +111,11 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             orientationMask = ReadPci(0, 0x18, 1, 0x140, cancellationToken);
             fuseMask = ~(ReadSmn(bus, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
             if (orientationMask != 0xFF55 || fuseMask != orientationMask) { throw new Failure(CpuPmObservationFailure.InvalidData); }
+            stage = CpuPmObservationStage.FusedCap;
+            ReadCap(bus, CpuLivePowerFusedCap.RegisterA0F, cancellationToken);
+            ReadCap(bus, CpuLivePowerFusedCap.RegisterA0B, cancellationToken);
+            if (new CpuPmFusedCapObservation(capA0F, capA0B).Candidate is null)
+            { throw new Failure(CpuPmObservationFailure.InvalidData); }
             TimeSpan? lastCapture = null;
             for (int index = 0; index < 3; index++)
             {
@@ -143,7 +164,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     }
 
     private CpuPmObservationBatch Batch(CpuPmObservationDiagnostic? diagnostic) =>
-        new(diagnostic is null && samples.Count == 3, samples, records, orientationMask, fuseMask, diagnostic);
+        new(diagnostic is null && samples.Count == 3, samples, records, orientationMask, fuseMask, diagnostic,
+            capA0F is null && capA0B is null ? null : new(capA0F, capA0B));
 
     private void CheckBoundary(CancellationToken cancellationToken)
     {
@@ -199,6 +221,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         Exchange(Write, Words(index, value, bus), 0, token);
     private uint ReadSmn(uint bus, uint address, CancellationToken token)
     { WriteRegister(bus, 0, address, token); return ReadPci(bus, 0, 0, 0xC8, token); }
+    private void ReadCap(uint bus, uint address, CancellationToken token)
+    {
+        WriteRegister(bus, 0, address, token);
+        readingCapAddress = address;
+        try { ReadPci(bus, 0, 0, 0xC8, token); }
+        finally { readingCapAddress = 0; }
+    }
     private void WriteSmn(uint bus, uint address, uint value, CancellationToken token)
     { WriteRegister(bus, 0, address, token); WriteRegister(bus, 1, value, token); }
     private uint Mailbox(uint bus, uint command, uint argument, CancellationToken token)
@@ -233,6 +262,14 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         CpuQueryIoctlReply reply;
         try { reply = ioctl.Invoke(code, input, outputLength); }
         catch { wire.Abort(); throw; }
+        CpuPmCapRegisterRead? capRead = null;
+        if (readingCapAddress != 0 && code == Read && reply.Bytes.Length == 24
+            && reply.Bytes.AsSpan(0, 20).SequenceEqual(input))
+        {
+            capRead = new(readingCapAddress, Word(reply.Bytes, 20), clock.UtcNow,
+                clock.MonotonicTimestamp, reply.Success, false);
+            RetainCap(capRead);
+        }
         if (!wire.AcceptReply(code, input, outputLength, reply))
         {
             throw new Failure(!reply.Success ? CpuPmObservationFailure.NativeFailure
@@ -241,7 +278,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                     ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected);
         }
         CheckBoundary(token);
+        if (capRead is not null) { RetainCap(capRead with { PostReadAdmissionPassed = true }); }
         return (byte[])reply.Bytes.Clone();
+    }
+    private void RetainCap(CpuPmCapRegisterRead read)
+    {
+        if (read.Address == CpuLivePowerFusedCap.RegisterA0F) { capA0F = read; }
+        else { capA0B = read; }
     }
     private sealed class Failure(CpuPmObservationFailure code) : Exception { internal CpuPmObservationFailure Code { get; } = code; }
     private static bool IsBoundedFailure(Exception exception) => exception is IOException or UnauthorizedAccessException

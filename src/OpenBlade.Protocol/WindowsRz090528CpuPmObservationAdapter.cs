@@ -75,10 +75,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             if (lifetime() != approval.Lifetime) { return result; }
             // Arm before even constructing/acquiring a native mutex or device.
             continuity = platform.ArmContinuity(approval.Lifetime);
-            var adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime);
+            var adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock);
             adapter.FullAdmission();
             token.ThrowIfCancellationRequested();
-            result = new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock).Observe(token);
+            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock).Observe(token));
             if (continuity.ReadFresh(lifetime()).Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime)
             { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         }
@@ -105,7 +105,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         return result;
     }
     private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage, CpuPmObservationFailure failure) =>
-        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure));
+        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap);
     private static bool PmBoundedFailure(Exception e) => e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
         or InvalidOperationException or System.Security.SecurityException or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException;
 
@@ -122,12 +122,26 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         private DeviceIdentity? usb;
         private IReadOnlyList<CpuBackendFileMetadata>? files;
         private bool pinned, leased, abandoned;
+        private CpuPmCapRegisterRead? rejectedCap;
         internal WindowsRz090528CpuQueryAdapter Transport { get; }
         internal PmAdapter(ICpuPmWindowsPlatform platform, ICpuPmContinuityScope continuity,
-            CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime)
+            CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime, ICpuPmObservationClock clock)
         {
             this.platform = platform; this.continuity = continuity; this.lifetime = lifetime; this.readLifetime = readLifetime;
-            Transport = new(this, ReadUsb, new PmNativeWire());
+            Transport = new(this, ReadUsb, new PmNativeWire((address, reply) =>
+                rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
+                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)));
+        }
+        internal CpuPmObservationBatch PreserveRejectedCap(CpuPmObservationBatch result)
+        {
+            // The shared query adapter intentionally strips rejected reply bytes.
+            // Retain that one cap word as evidence only; its native guard stays
+            // poisoned and grants no following request.
+            if (rejectedCap is not { } rejected) { return result; }
+            var first = result.FusedCap?.A0F; var second = result.FusedCap?.A0B;
+            if (rejected.Address == CpuLivePowerFusedCap.RegisterA0F) { first = rejected; } else { second = rejected; }
+            return new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
+                result.Diagnostic, new(first, second));
         }
         private void CheckThread()
         { if (Environment.CurrentManagedThreadId != thread) { throw new IOException("PM scope thread changed."); } }
@@ -228,11 +242,28 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             public void Dispose() { if (disposed) { return; } release(); disposed = true; }
         }
     }
-    private sealed class PmNativeWire : ICpuNativeWireAdmission
+    private sealed class PmNativeWire(Action<uint, CpuQueryIoctlReply> retainRejectedCap) : ICpuNativeWireAdmission
     {
         private readonly CpuPmObservationWireAdmission wire = new();
-        public bool Allows(uint code, byte[] input, int outputLength) => wire.Allows(code, input, outputLength);
-        public bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply) => wire.AcceptReply(code, input, outputLength, reply);
+        private uint selectedCap;
+        public bool Allows(uint code, byte[] input, int outputLength)
+        {
+            bool allowed = wire.Allows(code, input, outputLength);
+            if (allowed && code == 0x81112FF8 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input) == 0)
+            {
+                uint address = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(input.AsSpan(4));
+                selectedCap = address is CpuLivePowerFusedCap.RegisterA0F or CpuLivePowerFusedCap.RegisterA0B ? address : 0;
+            }
+            return allowed;
+        }
+        public bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply)
+        {
+            bool accepted = wire.AcceptReply(code, input, outputLength, reply);
+            if (!accepted && selectedCap != 0 && code == 0x81112F24 && input.Length == 20
+                && outputLength == 24 && reply.Bytes.Length == 24 && reply.Bytes.AsSpan(0, 20).SequenceEqual(input))
+            { retainRejectedCap(selectedCap, reply); }
+            return accepted;
+        }
         public void Abort() => wire.Abort();
     }
     private sealed class PmClock : ICpuPmObservationClock

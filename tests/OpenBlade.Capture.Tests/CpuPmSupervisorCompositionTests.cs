@@ -141,7 +141,9 @@ public sealed class CpuPmSupervisorCompositionTests
             Assert.True(CpuPmRawSnapshot.TryCreate(0x005D000B, new(true, reply), DateTimeOffset.UnixEpoch.AddSeconds(index), index * 1000L, out var snapshot));
             return new CpuPmCompletedSample(snapshot!, 0x12345678);
         }).ToArray();
-        var batch = new CpuPmObservationBatch(true, samples, [], 0xFF55, 0xFF55, null); int captures = 0, revokes = 0;
+        var cap = new CpuPmFusedCapObservation(new(0x03820A0F, 5, DateTimeOffset.UnixEpoch, 0, true, true),
+            new(0x03820A0B, 0xF0000000, DateTimeOffset.UnixEpoch, 0, true, true));
+        var batch = new CpuPmObservationBatch(true, samples, [], 0xFF55, 0xFF55, null, cap); int captures = 0, revokes = 0;
         var sink = new Sink(() => Assert.Equal(1, revokes));
         var result = CpuPmAttendedCapture.CaptureAndStore(() => { captures++; return batch; },
             () => { revokes++; throw new IOException("private/authority/path"); },
@@ -157,6 +159,7 @@ public sealed class CpuPmSupervisorCompositionTests
         using var json = JsonDocument.Parse(report);
         Assert.Equal("Cleanup", json.RootElement.GetProperty("diagnostic").GetProperty("stage").GetString());
         Assert.Equal("CleanupFailed", json.RootElement.GetProperty("diagnostic").GetProperty("failure").GetString());
+        Assert.Equal(95u, json.RootElement.GetProperty("fusedCap").GetProperty("candidateWatts").GetUInt32());
         Assert.DoesNotContain("private/authority/path", Encoding.UTF8.GetString(report));
         Assert.True(batch.Complete); // original immutable returned batch is untouched
     }

@@ -53,6 +53,12 @@ internal static class CpuPmReturnedBatchOutput
         CpuPmCompletedSample[] samples = batch.CopySamples();
         if (samples.Length > 3 || batch.Complete && (samples.Length != 3 || batch.Diagnostic is not null)
             || samples.Length > 0 && (batch.OrientationMask != 0xFF55 || batch.FuseMask != 0xFF55)) { return null; }
+        var capEvidence = batch.FusedCap;
+        if (capEvidence is not null && (!ValidCapRead(capEvidence.A0F, CpuLivePowerFusedCap.RegisterA0F)
+            || !ValidCapRead(capEvidence.A0B, CpuLivePowerFusedCap.RegisterA0B)
+            || capEvidence.A0B is not null && (capEvidence.A0F is null
+                || capEvidence.A0B.MonotonicTimestamp < capEvidence.A0F.MonotonicTimestamp))
+            || batch.Complete && capEvidence?.Candidate is null) { return null; }
         var files = new List<CpuPmEvidenceFile>();
         var summaries = new List<object>();
         long? previous = null;
@@ -114,6 +120,14 @@ internal static class CpuPmReturnedBatchOutput
             samples = summaries,
             orientationMask = batch.OrientationMask.ToString("X8"),
             fuseMask = batch.FuseMask.ToString("X8"),
+            fusedCap = batch.FusedCap is { } cap ? new
+            {
+                a0f = CapRead(cap.A0F),
+                a0b = CapRead(cap.A0B),
+                candidateWatts = cap.Candidate?.Watts,
+                classification = "SourceMappedCandidateOnly",
+                authority = "NotEstablishedByObservation",
+            } : null,
             diagnostic = batch.Diagnostic is { } diagnostic ? new { stage = diagnostic.Stage.ToString(), failure = diagnostic.Failure.ToString() } : null,
             persistence = "ReturnedBatchOnly",
             samplesBeforeUnreturnedBatch = "Unavailable",
@@ -152,4 +166,16 @@ internal static class CpuPmReturnedBatchOutput
 
     private static bool Hex(string? value, int length, bool upper) => value is not null && value.Length == length
         && value.All(c => c is >= '0' and <= '9' || (upper ? c is >= 'A' and <= 'F' : c is >= 'a' and <= 'f'));
+    private static object? CapRead(CpuPmCapRegisterRead? read) => read is null ? null : new
+    {
+        address = read.Address.ToString("X8"),
+        rawValue = read.RawValue.ToString("X8"),
+        read.CapturedUtc,
+        read.MonotonicTimestamp,
+        read.TransportSucceeded,
+        read.PostReadAdmissionPassed,
+    };
+    private static bool ValidCapRead(CpuPmCapRegisterRead? read, uint address) => read is null
+        || read.Address == address && read.CapturedUtc != default && read.MonotonicTimestamp >= 0
+            && (!read.PostReadAdmissionPassed || read.TransportSucceeded);
 }

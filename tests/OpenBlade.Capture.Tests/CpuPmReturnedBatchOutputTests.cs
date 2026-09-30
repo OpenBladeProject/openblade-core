@@ -128,7 +128,60 @@ public sealed class CpuPmReturnedBatchOutputTests
 
     private static CpuPmObservationBatch Batch(int count, bool complete) => new(complete,
         Enumerable.Range(0, count).Select(i => Sample(i)), [], count == 0 ? 0 : 0xFF55u, count == 0 ? 0 : 0xFF55u,
-        complete ? null : new(CpuPmObservationStage.Copy, CpuPmObservationFailure.NativeFailure));
+        complete ? null : new(CpuPmObservationStage.Copy, CpuPmObservationFailure.NativeFailure), Cap());
+    private static CpuPmFusedCapObservation Cap() => new(
+        new(0x03820A0F, 5, DateTimeOffset.UnixEpoch, 0, true, true),
+        new(0x03820A0B, 0xF0000000, DateTimeOffset.UnixEpoch, 0, true, true));
+
+    [Fact]
+    public void CompleteCandidateAndRawRegisterStampsAreWrittenWithoutAuthorityClaim()
+    {
+        var evidence = CpuPmReturnedBatchOutput.Prepare(Provenance(), Batch(3, true), false)!;
+        Assert.Equal(10, evidence.Files.Count);
+        using var json = JsonDocument.Parse(evidence.Files.Last().CopyBytes());
+        var cap = json.RootElement.GetProperty("fusedCap");
+        Assert.Equal(95u, cap.GetProperty("candidateWatts").GetUInt32());
+        Assert.Equal("NotEstablishedByObservation", cap.GetProperty("authority").GetString());
+        Assert.Equal("03820A0F", cap.GetProperty("a0f").GetProperty("address").GetString());
+        Assert.Equal("00000005", cap.GetProperty("a0f").GetProperty("rawValue").GetString());
+        Assert.Equal("F0000000", cap.GetProperty("a0b").GetProperty("rawValue").GetString());
+        Assert.Equal(DateTimeOffset.UnixEpoch, cap.GetProperty("a0b").GetProperty("capturedUtc").GetDateTimeOffset());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PartialOrRejectedCapReplyPersistsWithNoCandidate(bool secondReturned)
+    {
+        var cap = new CpuPmFusedCapObservation(Cap().A0F,
+            secondReturned ? Cap().A0B! with { RawValue = uint.MaxValue, PostReadAdmissionPassed = false } : null);
+        var batch = new CpuPmObservationBatch(false, [], [], 0xFF55, 0xFF55,
+            new(CpuPmObservationStage.FusedCap, CpuPmObservationFailure.ReplyRejected), cap);
+        var sink = new Sink(); var result = CpuPmReturnedBatchOutput.Write(CpuPmReturnedBatchOutput.Prepare(Provenance(), batch, true), sink);
+        Assert.Equal(CpuPmCaptureWriteStatus.StoredIncomplete, result.Status); Assert.Equal(1, result.VerifiedFiles);
+        using var json = JsonDocument.Parse(sink.Files["capture-result.json"]);
+        var saved = json.RootElement.GetProperty("fusedCap");
+        Assert.Equal(JsonValueKind.Null, saved.GetProperty("candidateWatts").ValueKind);
+        if (secondReturned) { Assert.Equal("FFFFFFFF", saved.GetProperty("a0b").GetProperty("rawValue").GetString()); }
+        else { Assert.Equal(JsonValueKind.Null, saved.GetProperty("a0b").ValueKind); }
+        Assert.Equal("FusedCap", json.RootElement.GetProperty("diagnostic").GetProperty("stage").GetString());
+    }
+
+    [Fact]
+    public void InconsistentCapMetadataCannotClaimCompleteOutput()
+    {
+        var valid = Cap();
+        CpuPmFusedCapObservation?[] bad = [null, new(valid.A0F, null), new(null, valid.A0B),
+            new(valid.A0F! with { Address = 0x123 }, valid.A0B),
+            new(valid.A0F! with { CapturedUtc = default }, valid.A0B),
+            new(valid.A0F! with { MonotonicTimestamp = 1 }, valid.A0B),
+            new(valid.A0F! with { TransportSucceeded = false }, valid.A0B)];
+        foreach (var cap in bad)
+        {
+            var batch = new CpuPmObservationBatch(true, Batch(3, true).CopySamples(), [], 0xFF55, 0xFF55, null, cap);
+            Assert.Null(CpuPmReturnedBatchOutput.Prepare(Provenance(), batch, false));
+        }
+    }
     private static CpuPmCompletedSample Sample(int index, uint bits = 0x3F800000)
     {
         byte[] reply = new byte[0xD54]; BinaryPrimitives.WriteUInt32LittleEndian(reply, 0xD50);

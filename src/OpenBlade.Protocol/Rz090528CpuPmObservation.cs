@@ -15,6 +15,9 @@ internal sealed class CpuPmObservationWireAdmission
     private uint? bus;
     private bool enumerated, failed, root, node, orientation, ready, cleared, argumentWritten;
     private bool versionConfirmed, copyPermit, postVersionRequired;
+    private bool orientationMaskConfirmed, fuseMaskConfirmed;
+    private int capProgress;
+    private uint capA0F;
     private int copies, polls, operations;
     private (uint Code, byte[] Input, int Output)? pending;
 
@@ -50,6 +53,20 @@ internal sealed class CpuPmObservationWireAdmission
                     && input.AsSpan(28).IndexOfAnyExcept((byte)0) < 0;
         }
         if (!bus.HasValue) { return false; }
+        // Once the exact masks are confirmed, no other operation can interrupt
+        // the one fixed selector/read pair for A0F followed by A0B.
+        if (fuseMaskConfirmed && capProgress < 4)
+        {
+            if (capProgress is 0 or 2)
+            {
+                return code == Write && input.Length == 12 && outputLength == 0
+                    && Word(input, 0) == 0 && Word(input, 8) == bus
+                    && Word(input, 4) == (capProgress == 0 ? CpuLivePowerFusedCap.RegisterA0F : CpuLivePowerFusedCap.RegisterA0B);
+            }
+            return code == Read && input.Length == 20 && outputLength == 24
+                && Word(input, 0) == bus && Word(input, 4) == 0 && Word(input, 8) == 0
+                && Word(input, 12) == 0xC8 && Word(input, 16) == 4;
+        }
         if (code == Copy)
         {
             return root && node && orientation && versionConfirmed && copyPermit && copies < 3
@@ -65,15 +82,15 @@ internal sealed class CpuPmObservationWireAdmission
                     || b == 0 && d == 0x18 && f == 1;
             }
             if (!root || !node || !orientation) { return false; }
-            if (b == 0 && d == 0x18 && f == 1 && offset == 0x140) { return command == 0; }
+            if (b == 0 && d == 0x18 && f == 1 && offset == 0x140) { return command == 0 && !orientationMaskConfirmed; }
             return b == bus && d == 0 && f == 0 && offset == 0xC8
-                && (selected == Fuse && command == 0 || selected == Response && ++polls <= 1000
+                && (selected == Fuse && command == 0 && orientationMaskConfirmed && !fuseMaskConfirmed || selected == Response && capProgress == 4 && ++polls <= 1000
                     || selected == Argument && command != 0 && ready);
         }
         if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus
             || !root || !node || !orientation) { return false; }
         uint index = Word(input, 0), value = Word(input, 4);
-        if (index == 0) { return value is Fuse or Response or Argument or Message; }
+        if (index == 0) { return value == Fuse ? orientationMaskConfirmed && !fuseMaskConfirmed : capProgress == 4 && value is Response or Argument or Message; }
         if (index != 1) { return false; }
         return selected switch
         {
@@ -111,7 +128,24 @@ internal sealed class CpuPmObservationWireAdmission
         {
             if (!reply.Bytes.AsSpan(0, 20).SequenceEqual(input)) { Abort(); return false; }
             uint value = Word(reply.Bytes, 20);
-            if (Word(input, 12) == 0)
+            if (fuseMaskConfirmed && capProgress is 1 or 3)
+            {
+                if (value == uint.MaxValue) { Abort(); return false; }
+                if (capProgress == 1) { capA0F = value; }
+                else if (CpuLivePowerFusedCap.TryDecode(capA0F, value) is null) { Abort(); return false; }
+                capProgress++;
+            }
+            else if (Word(input, 12) == 0x140)
+            {
+                if (value != 0xFF55) { Abort(); return false; }
+                orientationMaskConfirmed = true;
+            }
+            else if (Word(input, 12) == 0xC8 && selected == Fuse)
+            {
+                if ((~(value >> 5) & 0xFFFF) != 0xFF55) { Abort(); return false; }
+                fuseMaskConfirmed = true;
+            }
+            else if (Word(input, 12) == 0)
             {
                 uint d = Word(input, 4), f = Word(input, 8);
                 if (d == 0) { root = value == CpuQueryPciTopology.RootId; }
@@ -141,7 +175,11 @@ internal sealed class CpuPmObservationWireAdmission
         else if (code == Write)
         {
             uint value = Word(input, 4);
-            if (Word(input, 0) == 0) { selected = value; }
+            if (Word(input, 0) == 0)
+            {
+                selected = value;
+                if (fuseMaskConfirmed && capProgress is 0 or 2) { capProgress++; }
+            }
             else if (selected == Response) { cleared = true; ready = false; argumentWritten = false; polls = 0; }
             else if (selected == Argument) { argument = value; argumentWritten = true; }
             else if (selected == Message) { command = value; cleared = argumentWritten = ready = false; polls = 0; }

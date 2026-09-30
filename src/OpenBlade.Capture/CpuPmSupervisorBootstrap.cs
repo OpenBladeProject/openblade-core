@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace OpenBlade.Capture;
@@ -64,7 +65,6 @@ internal static class CpuPmOuterLaunchSchema
 internal sealed class CpuPmSupervisorBootstrap
 {
     internal const string FixedRoot = @"C:\OpenBlade\validation-archive\cpu-tuning-re\pm-supervisor-bootstrap";
-    internal const string PresetPath = FixedRoot + @"\reviewed-preset.json";
     private static CpuPmSupervisorBootstrap? processRoot;
     private static int claimed;
     private readonly WindowsCpuPmLaunchFiles files = new();
@@ -78,13 +78,29 @@ internal sealed class CpuPmSupervisorBootstrap
         var result = new CpuPmSupervisorBootstrap(); processRoot = result;
         result.Initialize(run, isSupervisor, token); return result;
     }
-    private void Initialize(Guid run, bool isSupervisor, CancellationToken token)
+    internal static (ICpuPmLaunchFilePin Pin, CpuPmReviewedLaunchBootstrap Preset) LoadRunPreset(
+        ICpuPmLaunchFiles files, Guid run, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
+        if (run == Guid.Empty) { throw new IOException("Bootstrap run unavailable."); }
         CpuPmAuthenticatedChildRun.PinAncestors(files, FixedRoot); files.PinDirectory(FixedRoot, true, true);
-        var preset = files.PinFile(PresetPath, CpuPmLaunchSchema.RecordLimit, true);
-        Trusted = CpuPmOuterLaunchSchema.ReadPreset(preset.ReadBounded(CpuPmLaunchSchema.RecordLimit));
+        token.ThrowIfCancellationRequested();
         string directory = Path.Combine(FixedRoot, run.ToString("N")); files.PinDirectory(directory, true, false);
+        token.ThrowIfCancellationRequested();
+        var pin = files.PinFile(Path.Combine(directory, "reviewed-preset.json"), CpuPmLaunchSchema.RecordLimit, true);
+        files.AssertAllPins(); token.ThrowIfCancellationRequested();
+        byte[] bytes = pin.ReadBounded(CpuPmLaunchSchema.RecordLimit);
+        if (bytes.Length != pin.Length || Convert.ToHexString(SHA256.HashData(bytes)) != pin.Sha256)
+        { throw new IOException("Bootstrap preset bytes mismatch."); }
+        files.AssertAllPins(); token.ThrowIfCancellationRequested();
+        var preset = CpuPmOuterLaunchSchema.ReadPreset(bytes);
+        files.AssertAllPins(); token.ThrowIfCancellationRequested();
+        return (pin, preset);
+    }
+    private void Initialize(Guid run, bool isSupervisor, CancellationToken token)
+    {
+        var (preset, trusted) = LoadRunPreset(files, run, token); Trusted = trusted;
+        string directory = Path.Combine(FixedRoot, run.ToString("N"));
         string path = Path.Combine(directory, "bootstrap.json"); var wait = Stopwatch.StartNew();
         while (!File.Exists(path))
         {

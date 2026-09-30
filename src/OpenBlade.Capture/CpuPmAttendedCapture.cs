@@ -69,7 +69,7 @@ internal static class CpuPmAttendedCapture
             // samples, but never report completion after uncertain authority
             // cleanup. No recapture or disposal retry occurs in this path.
             batch = new(false, batch.CopySamples(), batch.CopyPciRecords(), batch.OrientationMask, batch.FuseMask,
-                new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed));
+                new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed), batch.FusedCap);
         }
         // A returned partial/cancelled batch is persisted without new authority.
         // A never-returned native invocation has no batch to persist.

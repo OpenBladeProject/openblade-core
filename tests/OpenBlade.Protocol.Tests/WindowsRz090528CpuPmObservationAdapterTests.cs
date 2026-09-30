@@ -143,6 +143,9 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         var fake = new Fake { CleanupFailure = true }; var result = Run(fake);
         Assert.False(result.Complete); Assert.Equal(3, result.CopySamples().Length);
         Assert.Equal(CpuPmObservationFailure.CleanupFailed, result.Diagnostic!.Failure);
+        Assert.Equal(95u, result.FusedCap!.Candidate!.Watts);
+        Assert.Equal(5u, result.FusedCap.A0F!.RawValue);
+        Assert.Equal(0xF0000000u, result.FusedCap.A0B!.RawValue);
     }
 
     [Fact]
@@ -153,6 +156,24 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             Approval(fake), () => fake.Lifetime, fake, fake, canceled.Token)); Assert.Empty(fake.Events);
     }
 
+    [Theory]
+    [InlineData(0xFFFFFFFFu, 0u, 10)]
+    [InlineData(5u, 0xFFFFFFFFu, 12)]
+    [InlineData(0u, 0u, 12)]
+    public void InnerNativeGuardRejectionStillPreservesExactCapReplyWithoutRetry(uint first, uint second, int frames)
+    {
+        var fake = new Fake { CapFirst = first, CapSecond = second };
+        var result = Run(fake);
+        Assert.False(result.Complete); Assert.Equal(CpuPmObservationStage.FusedCap, result.Diagnostic!.Stage);
+        Assert.Equal(frames, fake.Codes.Count); Assert.Empty(fake.Commands); Assert.Empty(result.CopySamples());
+        Assert.Equal(first, result.FusedCap!.A0F!.RawValue);
+        var rejected = frames == 10 ? result.FusedCap.A0F : result.FusedCap.A0B!;
+        Assert.True(rejected.TransportSucceeded); Assert.False(rejected.PostReadAdmissionPassed);
+        Assert.Null(result.FusedCap.Candidate);
+        if (frames == 12) { Assert.Equal(second, rejected.RawValue); Assert.True(result.FusedCap.A0F.PostReadAdmissionPassed); }
+        Assert.Contains("release", fake.Events); Assert.Contains("unpin", fake.Events);
+    }
+
     private sealed class Fake : ICpuPmWindowsPlatform, ICpuPmObservationClock
     {
         internal CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
@@ -161,6 +182,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal bool Pinned, Locked, ContinuityFailure, CleanupFailure;
         internal CpuQueryMutexWait Wait = CpuQueryMutexWait.Acquired;
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays;
+        internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal Action<Fake>? AfterOpen, AfterCopy;
         internal readonly List<string> Events = [];
         internal readonly List<uint> Codes = [], Commands = [];
@@ -237,7 +259,8 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             {
                 input.CopyTo(reply, 0); uint d = Word(input, 4), f = Word(input, 8), offset = Word(input, 12);
                 uint value = offset == 0 ? d == 0 ? CpuQueryPciTopology.RootId : f == 0 ? CpuQueryPciTopology.NodeId : CpuQueryPciTopology.OrientationId
-                    : offset == 0x140 ? 0xFF55u : selected == 0x03820AB0 ? ~0xFF55u << 5 : selected == 0x03B10A80 ? 1u
+                    : offset == 0x140 ? 0xFF55u : selected == 0x03820AB0 ? ~0xFF55u << 5
+                    : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond : selected == 0x03B10A80 ? 1u
                     : selected == 0x03B10A88 ? command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
                 Put(reply, 20, value);
             }

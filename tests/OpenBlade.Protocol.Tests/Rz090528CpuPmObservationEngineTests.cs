@@ -31,6 +31,10 @@ public sealed class Rz090528CpuPmObservationEngineTests
         // index read would fail, so full success proves every post-copy reselection.
         Assert.Equal(3, fake.PostCopyResponseSelections);
         Assert.Equal(6, fake.SnapshotChecks);
+        Assert.Equal(95u, result.FusedCap!.Candidate!.Watts);
+        Assert.Equal(new uint[] { 0x03820A0F, 0x03820A0B }, fake.CapSelections);
+        Assert.True(result.FusedCap.A0F!.PostReadAdmissionPassed);
+        Assert.True(result.FusedCap.A0B!.PostReadAdmissionPassed);
     }
 
     [Theory]
@@ -235,6 +239,64 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Equal(1, fake.Disposals);
     }
 
+    [Theory]
+    [InlineData(9, 0)]
+    [InlineData(10, 1)]
+    [InlineData(11, 1)]
+    [InlineData(12, 2)]
+    public void EachCapTransportFailureStopsAtThatFrameAndPreservesOnlyReturnedWords(int frame, int retained)
+    {
+        var fake = new Fake { FailFrame = frame };
+        var result = fake.Engine().Observe();
+        Assert.False(result.Complete); Assert.Equal(CpuPmObservationStage.FusedCap, result.Diagnostic!.Stage);
+        Assert.Equal(frame, fake.Codes.Count); Assert.Empty(fake.Commands); Assert.Equal(1, fake.Disposals);
+        Assert.Equal(retained, (result.FusedCap?.A0F is null ? 0 : 1) + (result.FusedCap?.A0B is null ? 0 : 1));
+        Assert.Null(result.FusedCap?.Candidate);
+        if (frame is 10 or 12) { Assert.False((frame == 10 ? result.FusedCap!.A0F : result.FusedCap!.A0B)!.TransportSucceeded); }
+    }
+
+    [Theory]
+    [InlineData("cancel", 10)]
+    [InlineData("budget", 10)]
+    [InlineData("drift", 10)]
+    [InlineData("cancel", 12)]
+    [InlineData("budget", 12)]
+    [InlineData("drift", 12)]
+    public void CapReturnedBeforePostReadLossRetainsRawWordButCannotGrantNextIo(string failure, int stopFrame)
+    {
+        using var cancellation = new CancellationTokenSource(); var fake = new Fake();
+        fake.OnInvoke = frame =>
+        {
+            if (frame != stopFrame) { return; }
+            if (failure == "cancel") { cancellation.Cancel(); }
+            if (failure == "budget") { fake.Now = TimeSpan.FromSeconds(90); }
+            if (failure == "drift") { fake.AdmissionFailure = "continuity"; }
+        };
+        var result = fake.Engine().Observe(cancellation.Token);
+        Assert.False(result.Complete); Assert.Equal(stopFrame, fake.Codes.Count); Assert.Empty(fake.Commands);
+        Assert.Equal(5u, result.FusedCap!.A0F!.RawValue); Assert.True(result.FusedCap.A0F.TransportSucceeded);
+        var last = stopFrame == 10 ? result.FusedCap.A0F : result.FusedCap.A0B!;
+        Assert.False(last.PostReadAdmissionPassed); Assert.Null(result.FusedCap.Candidate);
+        if (stopFrame == 10) { Assert.Null(result.FusedCap.A0B); }
+        else { Assert.True(result.FusedCap.A0F.PostReadAdmissionPassed); Assert.Equal(0xF0000000u, last.RawValue); }
+        Assert.Equal(fake.Now.Ticks, last.MonotonicTimestamp);
+        Assert.Equal(DateTimeOffset.UnixEpoch + fake.Now, last.CapturedUtc);
+    }
+
+    [Theory]
+    [InlineData(0xFFFFFFFFu, 0u, 10)]
+    [InlineData(5u, 0xFFFFFFFFu, 12)]
+    [InlineData(0u, 0u, 12)]
+    public void InvalidCapIsRetainedButStopsBeforeAnyMailbox(uint first, uint second, int frames)
+    {
+        var fake = new Fake { CapFirst = first, CapSecond = second };
+        var result = fake.Engine().Observe();
+        Assert.False(result.Complete); Assert.Equal(frames, fake.Codes.Count); Assert.Empty(fake.Commands);
+        Assert.Equal(first, result.FusedCap!.A0F!.RawValue);
+        if (frames == 12) { Assert.Equal(second, result.FusedCap.A0B!.RawValue); }
+        Assert.Null(result.FusedCap.Candidate); Assert.Equal(CpuPmObservationFailure.ReplyRejected, result.Diagnostic!.Failure);
+    }
+
     private sealed class Fake : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization,
         ICpuPmObservationSessionAdmission, ICpuPmObservationClock
     {
@@ -250,6 +312,9 @@ public sealed class Rz090528CpuPmObservationEngineTests
         internal Func<bool>? OnSnapshotCheck;
         internal int SnapshotChecks;
         internal int ProbesAfterIdle;
+        internal int FailFrame;
+        internal uint CapFirst = 5, CapSecond = 0xF0000000;
+        internal List<uint> CapSelections { get; } = [];
         internal Action<int>? OnInvoke;
         internal List<uint> Codes { get; } = [];
         internal List<uint> Commands { get; } = [];
@@ -326,6 +391,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 if (Word(input, 0) == 0)
                 {
                     selected = Word(input, 4);
+                    if (selected is 0x03820A0F or 0x03820A0B) { CapSelections.Add(selected); }
                     if (awaitingPostCopySelection && selected == 0x03B10A80)
                     { awaitingPostCopySelection = false; PostCopyResponseSelections++; }
                 }
@@ -343,6 +409,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 uint value = offset == 0 ? d == 0 ? CpuQueryPciTopology.RootId : f == 0 ? CpuQueryPciTopology.NodeId : CpuQueryPciTopology.OrientationId
                     : offset == 0x140 ? WireFailure == "mask" ? 0xFFFFu : 0xFF55u
                     : selected == 0x03820AB0 ? (WireFailure == "fuse" ? ~0xFFFFu : ~0xFF55u) << 5
+                    : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
                     : selected == 0x03B10A80 ? 1u
                     : selected == 0x03B10A88 ? command == 6 ? WireFailure == "version" || WireFailure == "post-version" && Copies > 0 ? 0x005D000Cu : 0x005D000Bu : 0x12345678u
                     : throw new InvalidOperationException("stale index selection");
@@ -365,7 +432,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 if (WireFailure == "length") { return new(true, reply[..^1]); }
             }
             else { throw new InvalidOperationException("unapproved IOCTL"); }
-            return new(true, reply);
+            return new(Codes.Count != FailFrame, reply);
         }
         private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
         private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);

@@ -233,7 +233,72 @@ public sealed class Rz090528CpuPmObservationTests
         Transaction(guard, 0x65, 3, 42);
         return guard;
     }
-    private static CpuPmObservationWireAdmission Discover(bool confirm = true)
+    [Fact]
+    public void CapReadsAreExactlyFourOrderedOperationsAfterBothMasks()
+    {
+        var guard = Discover(cap: false);
+        Select(guard, CpuLivePowerFusedCap.RegisterA0F);
+        ReadWord(guard, Pci(0, 0, 0xC8), 5);
+        Select(guard, CpuLivePowerFusedCap.RegisterA0B);
+        ReadWord(guard, Pci(0, 0, 0xC8), 0xF0000000);
+        Assert.False(guard.Allows(Write, Words(0, CpuLivePowerFusedCap.RegisterA0F, 0), 0));
+        Assert.True(guard.IsPoisoned);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0x03820A0Bu)] // B cannot precede F.
+    [InlineData(0, 0, 0x03820A10u)] // No arbitrary address.
+    [InlineData(0, 0, 0x03B10A80u)] // Mailbox cannot skip the cap.
+    [InlineData(1, 1, 0u)] // Cap data write forbidden.
+    [InlineData(1, 0, 0x03820A0Fu)] // Selector cannot repeat before read.
+    [InlineData(2, 0, 0x03820A0Fu)] // First completed read cannot repeat.
+    [InlineData(3, 1, 0u)]
+    public void WrongCapSequenceAndDataWritesPoison(int completed, uint index, uint value)
+    {
+        var guard = Discover(cap: false);
+        if (completed >= 1) { Select(guard, CpuLivePowerFusedCap.RegisterA0F); }
+        if (completed >= 2) { ReadWord(guard, Pci(0, 0, 0xC8), 5); }
+        if (completed >= 3) { Select(guard, CpuLivePowerFusedCap.RegisterA0B); }
+        Assert.False(guard.Allows(Write, Words(index, value, 0), 0));
+        Assert.True(guard.IsPoisoned);
+        Assert.False(guard.Allows(Write, Words(0, CpuLivePowerFusedCap.RegisterA0F, 0), 0));
+    }
+
+    [Theory]
+    [InlineData(0xFFFFFFFFu, 0u)]
+    [InlineData(5u, 0xFFFFFFFFu)]
+    [InlineData(0u, 0u)]
+    public void SentinelOrZeroCapRepliesPoisonWithoutMailbox(uint first, uint second)
+    {
+        var guard = Discover(cap: false); byte[] request = Pci(0, 0, 0xC8);
+        Select(guard, CpuLivePowerFusedCap.RegisterA0F);
+        Assert.True(guard.Allows(Read, request, 24));
+        bool accepted = guard.AcceptReply(Read, request, 24, new(true, ReadReply(request, first)));
+        if (first != uint.MaxValue)
+        {
+            Assert.True(accepted); Select(guard, CpuLivePowerFusedCap.RegisterA0B);
+            Assert.True(guard.Allows(Read, request, 24));
+            accepted = guard.AcceptReply(Read, request, 24, new(true, ReadReply(request, second)));
+        }
+        Assert.False(accepted); Assert.True(guard.IsPoisoned);
+        Assert.False(guard.Allows(Write, Words(0, Response, 0), 0));
+    }
+
+    [Fact]
+    public void CapCannotBeginWithoutBothExactMaskRepliesOrContinueAfterMalformedRead()
+    {
+        var guard = Discover(false);
+        ReadWord(guard, Pci(0, 0, 0), CpuQueryPciTopology.RootId);
+        ReadWord(guard, Pci(0x18, 0, 0), CpuQueryPciTopology.NodeId);
+        ReadWord(guard, Pci(0x18, 1, 0), CpuQueryPciTopology.OrientationId);
+        Assert.False(guard.Allows(Write, Words(0, CpuLivePowerFusedCap.RegisterA0F, 0), 0));
+        guard = Discover(cap: false); Select(guard, CpuLivePowerFusedCap.RegisterA0F);
+        byte[] input = Pci(0, 0, 0xC8); Assert.True(guard.Allows(Read, input, 24));
+        Assert.False(guard.AcceptReply(Read, input, 24, new(true, new byte[23])));
+        Assert.False(guard.Allows(Read, input, 24));
+    }
+
+    private static CpuPmObservationWireAdmission Discover(bool confirm = true, bool cap = true)
     {
         var guard = new CpuPmObservationWireAdmission();
         byte[] count = new byte[28];
@@ -250,6 +315,14 @@ public sealed class Rz090528CpuPmObservationTests
             ReadWord(guard, Pci(0, 0, 0), CpuQueryPciTopology.RootId);
             ReadWord(guard, Pci(0x18, 0, 0), CpuQueryPciTopology.NodeId);
             ReadWord(guard, Pci(0x18, 1, 0), CpuQueryPciTopology.OrientationId);
+            ReadWord(guard, Pci(0x18, 1, 0x140), 0xFF55);
+            Select(guard, 0x03820AB0);
+            ReadWord(guard, Pci(0, 0, 0xC8), ~0xFF55u << 5);
+            if (cap)
+            {
+                Select(guard, CpuLivePowerFusedCap.RegisterA0F); ReadWord(guard, Pci(0, 0, 0xC8), 5);
+                Select(guard, CpuLivePowerFusedCap.RegisterA0B); ReadWord(guard, Pci(0, 0, 0xC8), 0xF0000000);
+            }
         }
         return guard;
     }
