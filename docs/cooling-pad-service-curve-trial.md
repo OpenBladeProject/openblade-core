@@ -4,7 +4,7 @@ This developer Capture command exercises the same `CoolingPadControlRuntime`
 and typed `CoolingPadProtocolPortFactory` used by the service composition. The
 installed service's default pad factory remains closed. The command does not
 use service IPC, start workloads, restart services, or invoke Synapse. This
-document specifies a trial; it records no live result.
+document specifies the trial and records its bounded attended result below.
 
 This exercises the core coordinator, planner and Protocol adapter. It does not
 exercise the outer `ServiceControlRuntime` admission for low power, active user
@@ -88,3 +88,48 @@ resume planning or writes. `resourceCleanupCompleted` means the managed cleanup
 path completed; it is not an independent proof of native `FullyDisposed`.
 Any incomplete trial after construction conservatively requests manual
 attention. No lifecycle or USB trial is part of this command.
+
+## Attended result, 2026-09-30
+
+Published source `37b51016c9276e41a834955d77e34e10c5ac6370` completed this
+trial with exit zero on the exact target. The private typed result is
+129,672 bytes, SHA-256
+`C317FE00F1B96EB8D2DAAC5E27D7CDAE784643A3528FFA6E57BB50C60D14D237`.
+It records 62 temperature readings, 30 warm and 30 cool maintenance decisions,
+14 acknowledged configured demands and 47 unchanged-demand suppressions.
+CPU EC/TZRZ remained 45°C; active GPU NVML readings ranged from 50°C to 75°C,
+starting at 68°C and ending at 50°C. The demand sequence was
+1900, 2100, 1950, 1900, 1850, 1800, 1750, 1700, 1650, 1600, 1550, 1500,
+1550 and 1500 RPM. These are configured demands, not measured fan RPM.
+
+The operator confirmed the initial physical state and all five subsequent
+physical gates. Medium, preferred quiet and original raw0000 restoration/query
+were acknowledged; their physical confirmations passed. Cleanup completed,
+the source was disposed, submission was known and no manual recovery was
+required. The final historical demand acknowledgement remains 1500; it does
+not describe the fan after the separate preferred-quiet command.
+
+User-authorized Computer Use started the operator-configured windowed Steel
+Nomad run. The warm gate was released after its rendering window appeared;
+the cool gate was released after both UI inventory and process inspection
+showed the rendering process absent. Workload completion could precede the
+end of the nominal warm interval. The workload context is not a timed load
+trace or proof of sustained warming. No benchmark result was uploaded.
+
+The 20 recorded typed operations imply 23 successful logical exchanges from
+reviewed source, including internal acquisition and restoration queries.
+There is no independent packet trace. No lighting setter, Synapse or Razer
+service restart, USB change, power cycle or automatic recovery occurred.
+Post-exit inspection found no Capture controller process.
+
+An earlier attempt on the same source stopped at initial telemetry admission
+with unavailable GPU telemetry and no typed pad operations. It remains a
+separate failure. Subsequent exact-build counter diagnostics and finite
+temperature-only previews succeeded, including ten windowed workload samples;
+they do not establish the precise cause of that earlier missing sample.
+
+This result supports finite host-planned demand changes and attended
+restoration through the core coordinator/adapter. Outer installed-service
+admission, continuous transaction management, measured RPM, thermal causality,
+firmware Auto regulation, full configured range and production control remain
+unproven. Lighting support remains separate outstanding work.

@@ -69,10 +69,11 @@ Contracts changes require a coordinated installation rather than a tray-only
 patch. Product version advances from 0.23.0 to 0.24.0 for the new visible
 settings/status capability; this version does not admit native pad writes.
 
-The next hardware validation is the finite service-curve trial described in
-[the attended guide](cooling-pad-service-curve-trial.md). It must exercise this
-coordinator and adapter, preserve source/build identity, and record actual
-acknowledgements and operator observations. A warm-up/cool-down result does not
+The finite service-curve trial from source `37b51016` completed with exit zero:
+60 maintenance decisions, 14 acknowledged configured demands and explicit
+attended restoration. Source/build identity, actual acknowledgements, operator
+observations and the preceding separate telemetry failure are recorded in
+[the attended guide](cooling-pad-service-curve-trial.md). This result does not
 independently establish RPM, thermal causality or firmware Auto regulation.
 
 The trial exercises the core coordinator and adapter, not the outer installed
