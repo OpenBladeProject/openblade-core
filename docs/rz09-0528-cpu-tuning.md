@@ -193,6 +193,11 @@ and backend replacement cannot release that worker or clear cleanup uncertainty.
 Its typed read-only observation facade preserves the existing attended
 RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
 interpretation and range admission remain independent provider requirements.
+A Service-owned fixed metadata reader now decodes version 7 and continuous
+selector 50001, preserving partial evidence and actual disposal outcomes.
+Missing version acknowledgement compatibility requires the exact BIOS 2.02
+scope; MinMax still requires Boolean true. Its Current remains a firmware shadow,
+and decoded bounds do not establish units, requested-state mapping or authority.
 The optional already-installed driver path still needs separately admitted
 production observation and lifetime evidence. No concrete PPT provider, proof
 factory or service runtime enables these commands.
