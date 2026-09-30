@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -27,11 +26,10 @@ internal sealed record CpuLiveCurveNativeBackendStatus(bool WorkerOutstanding,
 // a bool, provisions a driver, establishes ownership or updates a journal here.
 internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
 {
-    private static readonly ConditionalWeakTable<WindowsRz090528CpuNativeSession, WorkerState> Workers = new();
     private readonly WindowsRz090528CpuNativeSession session;
     private readonly ICpuLiveCurveTrustedNativeProvider provider;
     private readonly CpuLiveCurveWriteScope scope = new();
-    private readonly WorkerState state;
+    private readonly CpuNativeWorkerCoordinator state;
 
     internal CpuLiveCurveNativeBackend(ICpuQueryWindowsPlatform platform, ICpuLiveCurveTrustedNativeProvider provider)
         : this(WindowsRz090528CpuNativeSession.ForPlatform(platform), provider)
@@ -43,15 +41,15 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(provider);
         this.session = session; this.provider = provider;
-        state = Workers.GetValue(session, static _ => new());
+        state = CpuNativeWorkerCoordinator.ForSession(session);
     }
 
     // Read-only lifecycle evidence, not journal/restore authority. The task is
     // the actual worker, not the cancellation-sensitive task returned to callers.
-    internal Task? OutstandingWorker { get { lock (state) { return state.Active; } } }
+    internal Task? OutstandingWorker => state.OutstandingWorker;
     internal CpuLiveCurveNativeBackendStatus Status
     {
-        get { lock (state) { return new(state.Active is not null, state.Kind, state.Invalid, state.LastNativeResult); } }
+        get { var status = state.Status; return new(status.WorkerOutstanding, (CpuLiveCurveNativeWorkerKind)status.Kind, status.Invalid, status.CurveResult); }
     }
 
     public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token) =>
@@ -98,7 +96,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         { return CpuLiveCurveSubmission.NotSubmitted; }
         var boundProof = new ContextBoundProof(request, proof, this, context, token);
         var result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token);
-        lock (state) { state.LastNativeResult = result; }
+        state.Record(result);
         if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
         if (!MatchesFresh(context, token)) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
         token.ThrowIfCancellationRequested();
@@ -129,51 +127,10 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         Enum.IsDefined(purpose) && CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
             CpuLiveCurveSnapshot.SupportedMask, out var decoded) && decoded == command
         && (purpose != CpuLiveCurveCommandPurpose.Forward || command.Offset is >= -30 and <= 0);
-    private void Invalidate() { lock (state) { state.Invalid = true; } }
+    private void Invalidate() => state.Invalidate();
 
-    private Task<T> Start<T>(CpuLiveCurveNativeWorkerKind kind, Func<CancellationToken, T> work, T refused, CancellationToken token)
-    {
-        if (token.IsCancellationRequested) { return Task.FromCanceled<T>(token); }
-        Task<T> worker;
-        CancellationTokenSource linked;
-        lock (state)
-        {
-            if (state.Invalid || state.Active is not null) { return Task.FromResult(refused); }
-            linked = CancellationTokenSource.CreateLinkedTokenSource(token);
-            state.Kind = kind;
-            if (kind == CpuLiveCurveNativeWorkerKind.Submission) { state.LastNativeResult = null; }
-            // Never pass the token to Task.Run: even a queued/cancelled worker
-            // must execute its terminal path while the operation remains owned.
-            worker = Task.Run(() =>
-            {
-                try { linked.Token.ThrowIfCancellationRequested(); return work(linked.Token); }
-                catch (Exception)
-                {
-                    // A getter may throw cancellation from failed native cleanup;
-                    // without a normal result its cleanup cannot be inferred.
-                    Invalidate(); return refused;
-                }
-            });
-            state.Active = worker;
-        }
-        var terminal = worker.ContinueWith(completed =>
-        {
-            // This continuation runs only once the actual worker is terminal.
-            // Observe faults even if every caller stopped awaiting long ago.
-            _ = completed.Exception;
-            linked.Dispose();
-            lock (state)
-            {
-                if (completed.IsFaulted || completed.IsCanceled) { state.Invalid = true; }
-                if (ReferenceEquals(state.Active, completed)) { state.Active = null; state.Kind = CpuLiveCurveNativeWorkerKind.None; }
-            }
-            return completed.Status == TaskStatus.RanToCompletion ? completed.Result : refused;
-        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        // Cancellation ends only this wait. It cannot clear Active, release pins,
-        // dispose linked cancellation, replace the worker or permit another call.
-        return terminal.WaitAsync(token);
-    }
-
+    private Task<T> Start<T>(CpuLiveCurveNativeWorkerKind kind, Func<CancellationToken, T> work, T refused, CancellationToken token) =>
+        state.Start(CpuNativeWorkerFamily.Curve, (CpuNativeWorkerKind)kind, work, refused, token);
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
@@ -185,12 +142,5 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             var range = source.ReadFreshRange(exactRequest);
             return IsCurrent(exactRequest) ? range : null;
         }
-    }
-    private sealed class WorkerState
-    {
-        internal Task? Active;
-        internal CpuLiveCurveNativeWorkerKind Kind;
-        internal bool Invalid;
-        internal CpuLiveCurveNativeResult? LastNativeResult;
     }
 }

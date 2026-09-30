@@ -70,23 +70,30 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
     internal static CpuPmObservationBatch ObservePm(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
-        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null)
+        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null) =>
+        ObservePmScope(approval, lifetime, platform, clock, token, metadataReader).Batch;
+
+    private static CpuLivePowerNativeObservationResult ObservePmScope(CpuPmAttendedApproval? approval,
+        Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
+        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader)
     {
-        if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null) { return WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples); }
+        if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples), true, true); }
         ArgumentNullException.ThrowIfNull(lifetime); ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
         token.ThrowIfCancellationRequested();
         // Use the actual persistent platform, never the per-call PmAdapter.
         // The gate covers notification registration and cleanup as well as IOCTLs.
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
-        { return WindowsRz090528CpuPmObservationAdapter.Denied(CpuPmObservationStage.Mutex, CpuPmObservationFailure.Busy, approval.Profile); }
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(CpuPmObservationStage.Mutex, CpuPmObservationFailure.Busy, approval.Profile), true, true); }
         ICpuPmContinuityScope? continuity = null;
         PmAdapter? adapter = null;
+        var metadata = metadataReader is null ? null : new PmMetadataCleanup(metadataReader);
         bool cleanup = true, unknownFailure = false;
         CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval.Profile);
         try
         {
-            if (lifetime() != approval.Lifetime) { return result; }
+            if (lifetime() != approval.Lifetime) { throw new IOException("PM lifetime admission denied."); }
             // Arm before even constructing/acquiring a native mutex or device.
             // If registration throws before returning its scope, its resources
             // cannot be proven released and this platform must stay parked.
@@ -97,7 +104,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
             adapter.FullAdmission();
             token.ThrowIfCancellationRequested();
-            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, approval.Profile, metadataReader).Observe(token));
+            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, approval.Profile, metadata).Observe(token));
             if (continuity.ReadFresh(lifetime()).Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime)
             { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         }
@@ -126,13 +133,33 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             {
                 // Includes Acquire cleanup before a lease was returned, and a
                 // cleanup cancellation swallowed by the PM engine's diagnostics.
-                cleanup &= !unknownFailure && adapter?.Transport.cleanupFailed != true;
+                cleanup &= !unknownFailure && adapter?.Transport.cleanupFailed != true && metadata?.CleanupComplete != false;
                 if (!cleanup)
                 { result = Incomplete(result, CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
                 else { Volatile.Write(ref operation.Active, 0); }
             }
         }
-        return result;
+        return new(result, true, cleanup);
+    }
+    private static bool MetadataDisposed<T>(CpuLivePowerRangeMetadataCall<T> call) where T : class =>
+        call.Status != CpuLivePowerRangeMetadataStatus.DisposalFailed
+            && (call.Stages & CpuLivePowerRangeMetadataStages.Disposed) != 0;
+    // Track actual invocation/return, including an exception before the engine
+    // can retain a result. Missing disposal evidence never releases the latch.
+    private sealed class PmMetadataCleanup(IRz090528CpuLivePowerRangeMetadataReader reader) : IRz090528CpuLivePowerRangeMetadataReader
+    {
+        internal bool CleanupComplete { get; private set; } = true;
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) => Track(() => reader.QueryVersion(checkpoint));
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) => Track(() => reader.GetDValues(checkpoint));
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) => Track(() => reader.GetMinMaxSteppingValues(checkpoint));
+        private CpuLivePowerRangeMetadataCall<T> Track<T>(Func<CpuLivePowerRangeMetadataCall<T>> read) where T : class
+        {
+            bool prior = CleanupComplete; CleanupComplete = false;
+            var result = read();
+            if (result is null) { throw new IOException("PM metadata result unavailable."); }
+            CleanupComplete = prior && MetadataDisposed(result);
+            return result;
+        }
     }
     private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage, CpuPmObservationFailure failure) =>
         new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation);

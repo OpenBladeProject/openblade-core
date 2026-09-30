@@ -187,9 +187,15 @@ persistence outcomes retain uncertainty across restart; late completion cannot
 advance the journal. Fake tests cover this orchestration.
 Both live ownership observers persist confirmed drift, so returning values do
 not restore permission after restart. Unavailable observations preserve the
-existing journal. A native observation backend and shared actual-worker
-coordination remain separate work; no concrete
-PPT proof or service runtime enables these commands.
+existing journal. An unwired PPT backend now uses the same retained Service
+worker as CO, including provider callbacks before native acquisition. Cancellation
+and backend replacement cannot release that worker or clear cleanup uncertainty.
+Its typed read-only observation facade preserves the existing attended
+RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
+interpretation and range admission remain independent provider requirements.
+The optional already-installed driver path still needs separately admitted
+production observation and lifetime evidence. No concrete PPT provider, proof
+factory or service runtime enables these commands.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.
