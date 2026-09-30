@@ -141,7 +141,11 @@ original 12-core baseline separately from the current operation. Restoration
 covers every remaining owned change, including changes from earlier edits, and
 each reverse command requires independent admission. Ambiguous submission,
 drift, or malformed recovery data blocks further edits. Earlier journal schemas
-remain blocked in place. Fake-backend tests cover these paths; native mutation
+remain blocked in place. Live recovery represents the loader sequence with an
+explicit source and nullable unsigned counter, rather than a boot GUID. Zero is
+a valid counter. A reviewed normal-token diagnostic observed short-term equality
+between separate processes; reboot and power-transition continuity remain unproved.
+Fake-backend tests cover these paths; native mutation
 and a trustworthy boot-continuity source remain unadmitted.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding

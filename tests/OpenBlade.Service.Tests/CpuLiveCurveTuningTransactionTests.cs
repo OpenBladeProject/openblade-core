@@ -193,9 +193,45 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Single(backend.Sent);
     }
 
+    [Fact]
+    public async Task ZeroLoaderSequenceSupportsVerifiedEditAndRestorationWithFakeBackend()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 0 } };
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.ApplySelectiveAsync([new(0, 0)], default)).Outcome);
+        Assert.Equal(0u, store.Journal!.Context.BootSequence.Sequence);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await new CpuLiveCurveTuningTransaction(backend, store).RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal.State);
+        Assert.Equal(2, backend.Sent.Count);
+    }
+
+    [Theory]
+    [InlineData("missing-sequence")]
+    [InlineData("unknown-source")]
+    [InlineData("undefined-source")]
+    public async Task UnknownLoaderSequenceCannotPrepareOrSubmitAnEdit(string fault)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var sequence = backend.Context.BootSequence;
+        sequence = fault switch
+        {
+            "missing-sequence" => sequence with { Sequence = null },
+            "unknown-source" => sequence with { Source = CpuLiveCurveBootSequenceSource.Unknown },
+            _ => sequence with { Source = (CpuLiveCurveBootSequenceSource)999 },
+        };
+        backend.Context = backend.Context with { BootSequence = sequence };
+        var result = await new CpuLiveCurveTuningTransaction(backend, store).ApplySelectiveAsync([new(0, 0)], default);
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        Assert.Equal(0, store.Writes); Assert.Null(store.Journal);
+        Assert.Empty(backend.Admissions); Assert.Empty(backend.Sent);
+    }
+
     [Theory]
     [InlineData("boot")]
     [InlineData("unknown-boot")]
+    [InlineData("unknown-boot-source")]
+    [InlineData("undefined-boot-source")]
     [InlineData("backend")]
     [InlineData("bios")]
     [InlineData("unselected-core")]
@@ -203,8 +239,11 @@ public sealed class CpuLiveCurveTuningTransactionTests
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
         await new CpuLiveCurveTuningTransaction(backend, store).ApplySelectiveAsync([new(0, 0)], default);
-        if (fault == "boot") { backend.Context = backend.Context with { BootId = Guid.NewGuid() }; }
-        if (fault == "unknown-boot") { backend.Context = backend.Context with { BootId = Guid.Empty }; }
+        if (fault == "boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 43 } }; }
+        if (fault == "unknown-boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = null } }; }
+        if (fault == "unknown-boot-source") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Source = CpuLiveCurveBootSequenceSource.Unknown } }; }
+        if (fault == "undefined-boot-source") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Source = (CpuLiveCurveBootSequenceSource)999 } }; }
+        if (fault == "boot") { Assert.True(backend.Context.IsWellFormed); }
         if (fault == "backend") { backend.Context = backend.Context with { Backend = backend.Context.Backend with { DriverSha256 = "other" } }; }
         if (fault == "bios") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "2.03" } }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
@@ -212,7 +251,10 @@ public sealed class CpuLiveCurveTuningTransactionTests
         int writes = store.Writes;
         Assert.Equal(CpuLiveCurveRecovery.Blocked, (await transaction.ObserveOwnershipAsync(default)).Recovery);
         Assert.Equal(writes, store.Writes); // reconciliation is read-only
-        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.RestoreAsync(default)).Outcome);
+        var result = await transaction.RestoreAsync(default);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, result.Outcome);
+        if (fault is "boot" or "unknown-boot-source" or "undefined-boot-source")
+        { Assert.Equal(CpuLiveCurveBlockReason.ContextMismatch, result.Reason); }
         Assert.Single(backend.Sent); Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State);
     }
 
@@ -369,7 +411,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         await transaction.ApplySelectiveAsync([new(0, 0)], default);
         var original = store.Journal!.OriginalBaseline;
-        if (fault == "boot") { backend.Context = backend.Context with { BootId = Guid.NewGuid() }; }
+        if (fault == "boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 43 } }; }
         if (fault == "context") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "other" } }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.ApplySelectiveAsync([new(8, -2)], default)).Outcome);
@@ -446,5 +488,6 @@ public sealed class CpuLiveCurveTuningTransactionTests
     internal static CpuLiveCurveContext ContextFixture() => new(new("RZ09-0528", 0x1532, 0x02C6, "2.02"), 0xFF55, 0x005D000B, 0xD50,
         new(Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DriverPath],
             Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Platform.dll"],
-            Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Device.dll"]), Guid.NewGuid());
+            Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Device.dll"]),
+        new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42));
 }

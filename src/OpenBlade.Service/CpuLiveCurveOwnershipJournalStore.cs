@@ -12,16 +12,25 @@ internal sealed record CpuLiveCurveBackendIdentity(string DriverSha256, string P
         && DeviceSha256 == Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Device.dll"];
 }
 
-// BootId must be supplied by a trusted fresh backend, never fabricated from a
-// timestamp or recovered from this journal. There is no native provider here.
+internal enum CpuLiveCurveBootSequenceSource { Unknown, WindowsKuserSharedData }
+
+// Shape only: this record neither proves boot/CPU continuity nor grants native
+// authority. A trusted fresh backend must validate the source and power-transition
+// continuity, including observation gaps. There is no native provider here.
+internal sealed record CpuLiveCurveBootSequence(CpuLiveCurveBootSequenceSource Source, uint? Sequence)
+{
+    internal bool IsWellFormed => Source == CpuLiveCurveBootSequenceSource.WindowsKuserSharedData
+        && Sequence.HasValue; // Zero is a valid loader sequence; null is unknown.
+}
+
 internal sealed record CpuLiveCurveContext(DeviceIdentity Identity, uint EnabledCoreMask,
-    uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, Guid BootId)
+    uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
     internal bool IsWellFormed => CpuSavedTuningPlan.IsExactIdentity(Identity)
         && EnabledCoreMask == CpuLiveCurveSnapshot.SupportedMask
         && PmVersion == CpuLiveCurveSnapshot.SupportedPmVersion
         && PmTableLength == CpuLiveCurveSnapshot.SupportedPmLength
-        && Backend is { IsPinned: true } && BootId != Guid.Empty;
+        && Backend is { IsPinned: true } && BootSequence is { IsWellFormed: true };
 }
 
 internal enum CpuLiveCurveOwnershipState { Prepared, PossibleSubmission, OwnedVerified, Restored, Blocked }
@@ -68,7 +77,7 @@ internal sealed class CpuLiveCurveOwnershipJournal
     {
         get
         {
-            if (SchemaVersion != 2 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
+            if (SchemaVersion != 3 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
                 || UpdatedAtUtc == default || !Enum.IsDefined(State) || Steps.Count > 12
                 || CompletedSteps < 0 || CompletedSteps > Steps.Count
                 || Snapshot(OriginalBaseline) is not { } original || !original.CoreOffsets.SequenceEqual(OriginalBaseline)
@@ -120,7 +129,7 @@ internal sealed class CpuLiveCurveOwnershipJournal
 
     internal static CpuLiveCurveOwnershipJournal Prepare(CpuLiveCurveContext context, Rz090528CpuLiveCurvePlan plan,
         CpuLiveCurveOwnershipJournal? owned = null) =>
-        new(2, owned?.TransactionId ?? Guid.NewGuid(), context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
+        new(3, owned?.TransactionId ?? Guid.NewGuid(), context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
             plan.Baseline.CoreOffsets,
             plan.Steps.Select(step => new CpuLiveCurveStoredStep(step.Command.PhysicalCoreId,
                 step.RestoreCommand.Offset, step.Command.Offset)).ToArray(), plan.Baseline.CoreOffsets,

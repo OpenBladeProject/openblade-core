@@ -11,6 +11,24 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     private string JournalPath => Path.Combine(directory, "live-co.json");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(uint.MaxValue)]
+    public async Task KnownLoaderSequenceRoundTripsWithoutBecomingAGuid(uint sequence)
+    {
+        var context = CpuLiveCurveTuningTransactionTests.ContextFixture() with
+        { BootSequence = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, sequence) };
+        var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
+        Assert.True(context.IsWellFormed);
+        Assert.NotNull(await store.TryWriteAsync(null, Create(context), default));
+        var loaded = await new CpuLiveCurveOwnershipJournalStore(JournalPath).LoadAsync(default);
+        Assert.False(loaded.Invalid); Assert.Equal(3, loaded.Journal!.SchemaVersion);
+        Assert.Equal(context, loaded.Journal.Context);
+        Assert.Equal(sequence, loaded.Journal.Context.BootSequence.Sequence);
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(JournalPath))!;
+        Assert.False(json["context"]!.AsObject().ContainsKey("bootId"));
+    }
+
     [Fact]
     public async Task PendingSignedBaselineAndExactContextSurviveRestart()
     {
@@ -81,6 +99,12 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     [InlineData("target-positive")]
     [InlineData("duplicate-core")]
     [InlineData("unknown-boot")]
+    [InlineData("missing-boot-sequence")]
+    [InlineData("missing-boot-source")]
+    [InlineData("unknown-boot-source")]
+    [InlineData("undefined-boot-source")]
+    [InlineData("null-boot")]
+    [InlineData("missing-boot")]
     [InlineData("backend")]
     [InlineData("bios")]
     [InlineData("missing-field")]
@@ -106,7 +130,13 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
             case "step-order": node["steps"]![0]!["physicalCoreId"] = 15; break;
             case "target-positive": node["steps"]![0]!["after"] = 1; break;
             case "duplicate-core": node["originalBaseline"]![0]!["physicalCoreId"] = 2; break;
-            case "unknown-boot": node["context"]!["bootId"] = Guid.Empty; break;
+            case "unknown-boot": node["context"]!["bootSequence"]!["sequence"] = null; break;
+            case "missing-boot-sequence": node["context"]!["bootSequence"]!.AsObject().Remove("sequence"); break;
+            case "missing-boot-source": node["context"]!["bootSequence"]!.AsObject().Remove("source"); break;
+            case "unknown-boot-source": node["context"]!["bootSequence"]!["source"] = (int)CpuLiveCurveBootSequenceSource.Unknown; break;
+            case "undefined-boot-source": node["context"]!["bootSequence"]!["source"] = 999; break;
+            case "null-boot": node["context"]!["bootSequence"] = null; break;
+            case "missing-boot": node["context"]!.AsObject().Remove("bootSequence"); break;
             case "backend": node["context"]!["backend"]!["driverSha256"] = "other"; break;
             case "bios": node["context"]!["identity"]!["biosVersion"] = "2.03"; break;
             case "missing-field": node.AsObject().Remove("restoring"); break;
@@ -156,7 +186,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         var original = Create();
         var baseline = original.OriginalBaseline.ToArray(); var operation = original.OperationBaseline.ToArray();
         var expected = original.Expected.ToArray(); var steps = original.Steps.ToArray();
-        var journal = new CpuLiveCurveOwnershipJournal(2, original.TransactionId, original.Context, baseline, operation, steps, expected,
+        var journal = new CpuLiveCurveOwnershipJournal(3, original.TransactionId, original.Context, baseline, operation, steps, expected,
             original.State, original.CompletedSteps, original.Restoring, original.UpdatedAtUtc);
         baseline[0] = new(0, 9); operation[0] = new(0, 9); expected[0] = new(0, 9); steps[0] = new(0, 9, 0);
         Assert.True(journal.IsWellFormed); Assert.Equal(original.OriginalBaseline, journal.OriginalBaseline);
@@ -168,31 +198,41 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.False(File.Exists(JournalPath));
     }
 
-    [Fact]
-    public async Task LegacyGuidJournalIsRetainedAndCannotBeAdoptedOrRestored()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task LegacyGuidJournalIsRetainedAndCannotBeAdoptedOrRestored(int schema)
     {
         var legacy = JsonNode.Parse(JsonSerializer.Serialize(Create(), JsonOptions))!.AsObject();
-        legacy["schemaVersion"] = 1;
-        legacy["baseline"] = legacy["originalBaseline"]!.DeepClone();
-        legacy.Remove("originalBaseline"); legacy.Remove("operationBaseline");
+        legacy["schemaVersion"] = schema;
+        legacy["context"]!.AsObject().Remove("bootSequence");
+        legacy["context"]!["bootId"] = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        if (schema == 1)
+        {
+            legacy["baseline"] = legacy["originalBaseline"]!.DeepClone();
+            legacy.Remove("originalBaseline"); legacy.Remove("operationBaseline");
+        }
         Directory.CreateDirectory(directory);
         string json = legacy.ToJsonString();
         await File.WriteAllTextAsync(JournalPath, json);
         var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
         var backend = new CpuLiveCurveTuningTransactionTests.FakeBackend(new());
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.True((await store.LoadAsync(default)).Invalid);
         Assert.Equal(CpuLiveCurveBlockReason.InvalidJournal, (await transaction.RestoreAsync(default)).Reason);
         Assert.Equal(CpuLiveCurveBlockReason.InvalidJournal, (await transaction.ApplySelectiveAsync([new(0, 0)], default)).Reason);
         Assert.Equal(0, backend.Reads); Assert.Empty(backend.Sent);
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(JournalPath)));
+        Assert.Null(await store.TryWriteAsync(hash, Create(), default));
         Assert.Equal(json, await File.ReadAllTextAsync(JournalPath));
     }
 
-    private static CpuLiveCurveOwnershipJournal Create()
+    private static CpuLiveCurveOwnershipJournal Create(CpuLiveCurveContext? context = null)
     {
         var cores = CpuLiveCurveTuningTransactionTests.ValuesFixture();
         cores[0] = new(0, short.MinValue); cores[1] = new(2, short.MaxValue);
         var plan = Rz090528CpuLiveCurvePlan.CreateAllCore(new(0xFF55, 0x005D000B, 0xD50, cores), new(true, -2), (_, _) => true).Plan!;
-        return CpuLiveCurveOwnershipJournal.Prepare(CpuLiveCurveTuningTransactionTests.ContextFixture(), plan);
+        return CpuLiveCurveOwnershipJournal.Prepare(context ?? CpuLiveCurveTuningTransactionTests.ContextFixture(), plan);
     }
 
     public void Dispose() { if (Directory.Exists(directory)) { Directory.Delete(directory, recursive: true); } }
