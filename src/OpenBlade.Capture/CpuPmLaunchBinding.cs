@@ -232,13 +232,13 @@ internal sealed class CpuPmAuthenticatedChildRun : ICpuPmAuthenticatedCaptureRun
         catch (Exception) { return null; }
         finally { if (!retained) { try { processes.Dispose(); } finally { files.Dispose(); } } }
     }
-    private static void PinAncestors(ICpuPmLaunchFiles files, string final)
+    internal static void PinAncestors(ICpuPmLaunchFiles files, string final)
     {
         var parents = new Stack<string>();
         for (string? path = Path.GetDirectoryName(final); path is not null; path = Path.GetDirectoryName(path)) { parents.Push(path); }
         while (parents.Count > 0) { files.PinDirectory(parents.Pop(), false, false); }
     }
-    private static void ValidatePayload(ICpuPmLaunchFiles files, string root, IReadOnlyList<CpuPmLaunchFile> manifest, CancellationToken token)
+    internal static void ValidatePayload(ICpuPmLaunchFiles files, string root, IReadOnlyList<CpuPmLaunchFile> manifest, CancellationToken token)
     {
         var expected = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["manifest.json"] = false };
         foreach (var file in manifest)

@@ -141,7 +141,7 @@ internal sealed class WindowsCpuPmCaptureEvidenceFiles : ICpuPmCaptureEvidenceFi
     {
         if (stream.Length != length || Convert.ToHexString(SHA256.HashData(stream)) != hash) { throw Denied(); }
     }
-    private static void VerifyShape(SafeFileHandle handle, string path, bool directory)
+    internal static void VerifyShape(SafeFileHandle handle, string path, bool directory)
     {
         if (handle.IsClosed || handle.IsInvalid || GetFileType(handle) != 1 || !GetFileInformationByHandle(handle, out var info)
             || (info.Attributes & 0x400) != 0 || ((info.Attributes & 0x10) != 0) != directory
@@ -150,7 +150,7 @@ internal sealed class WindowsCpuPmCaptureEvidenceFiles : ICpuPmCaptureEvidenceFi
         uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
         if (length == 0 || length >= buffer.Capacity || !string.Equals(buffer.ToString(), @"\\?\" + path, StringComparison.OrdinalIgnoreCase)) { throw Denied(); }
     }
-    private static void VerifyPrivateAcl(SafeFileHandle handle, bool requireProtected = false)
+    internal static void VerifyPrivateAcl(SafeFileHandle handle, bool requireProtected = false)
     {
         // Security descriptor is obtained from the held handle, never a path lookup.
         if (GetSecurityInfo(handle, 1, 5, out _, out _, out _, out _, out IntPtr descriptor) != 0) { throw Denied(); }
