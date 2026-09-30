@@ -30,6 +30,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
         // Successful copy intentionally clears the fake's native SMN index. A stale
         // index read would fail, so full success proves every post-copy reselection.
         Assert.Equal(3, fake.PostCopyResponseSelections);
+        Assert.Equal(6, fake.SnapshotChecks);
     }
 
     [Theory]
@@ -173,7 +174,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
         {
             // The interval boundary has passed; cancel inside the fresh probe
             // immediately before the next mailbox exchange, after sample one.
-            if (fake.IdleDelays == 1 && ++fake.ProbesAfterIdle == 3)
+            if (fake.IdleDelays == 1 && ++fake.ProbesAfterIdle == 4)
             {
                 callsAtCancellation = fake.Codes.Count;
                 cancellation.Cancel();
@@ -189,6 +190,51 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Equal(1, fake.Disposals);
     }
 
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 1)]
+    [InlineData(3, 1)]
+    public void FullSnapshotAdmissionFailureStopsAndRetainsOnlyCompletedSamples(int boundary, int retained)
+    {
+        var fake = new Fake();
+        int callsAtFailure = -1;
+        fake.OnSnapshotCheck = () =>
+        {
+            if (fake.SnapshotChecks != boundary) { return true; }
+            callsAtFailure = fake.Codes.Count;
+            return false;
+        };
+        var result = fake.Engine().Observe();
+        Assert.False(result.Complete);
+        Assert.Equal(CpuPmObservationStage.SnapshotAdmission, result.Diagnostic!.Stage);
+        Assert.Equal(CpuPmObservationFailure.AdmissionDenied, result.Diagnostic.Failure);
+        Assert.Equal(callsAtFailure, fake.Codes.Count);
+        Assert.Equal(retained, result.CopySamples().Length);
+        Assert.Equal(1, fake.Disposals);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SlowOrCancelledFullSnapshotProbeCannotGrantAnotherIoctl(bool cancel)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var fake = new Fake();
+        int callsAtProbe = -1;
+        fake.OnSnapshotCheck = () =>
+        {
+            callsAtProbe = fake.Codes.Count;
+            if (cancel) { cancellation.Cancel(); } else { fake.Now = TimeSpan.FromSeconds(90); }
+            return true;
+        };
+        var result = fake.Engine().Observe(cancellation.Token);
+        Assert.False(result.Complete);
+        Assert.Equal(cancel ? CpuPmObservationFailure.Cancelled : CpuPmObservationFailure.BudgetExpired, result.Diagnostic!.Failure);
+        Assert.Equal(callsAtProbe, fake.Codes.Count);
+        Assert.Empty(result.CopySamples());
+        Assert.Equal(1, fake.Disposals);
+    }
+
     private sealed class Fake : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization,
         ICpuPmObservationSessionAdmission, ICpuPmObservationClock
     {
@@ -201,6 +247,8 @@ public sealed class Rz090528CpuPmObservationEngineTests
         internal TimeSpan Now, AcquireElapsed;
         internal Action? AfterCopy;
         internal Action? OnReadFresh;
+        internal Func<bool>? OnSnapshotCheck;
+        internal int SnapshotChecks;
         internal int ProbesAfterIdle;
         internal Action<int>? OnInvoke;
         internal List<uint> Codes { get; } = [];
@@ -250,6 +298,11 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 AdmissionFailure != "controllers",
                 AdmissionFailure == "continuity" ? CpuPmSessionContinuity.Interrupted : CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime,
                 session, lifetime);
+        }
+        public bool ValidateSnapshotBoundary()
+        {
+            SnapshotChecks++;
+            return OnSnapshotCheck?.Invoke() ?? true;
         }
         public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
         {

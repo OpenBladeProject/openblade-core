@@ -16,6 +16,7 @@ internal sealed record CpuPmSessionEvidence(DeviceIdentity UsbIdentity, HostIden
 internal interface ICpuPmObservationSessionAdmission
 {
     CpuPmSessionEvidence ReadFresh();
+    bool ValidateSnapshotBoundary();
 }
 internal interface ICpuPmObservationClock
 {
@@ -24,7 +25,7 @@ internal interface ICpuPmObservationClock
     DateTimeOffset UtcNow { get; }
     void DelayOneSecond(CancellationToken cancellationToken);
 }
-internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup }
+internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission }
 internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, BudgetExpired, InvalidData, UnsupportedVersion, RequestRejected, ReplyRejected, NativeFailure, CleanupFailed }
 internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure);
 internal sealed record CpuPmCompletedSample(CpuPmRawSnapshot Snapshot, uint RefreshReturnedWord);
@@ -106,6 +107,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                     if (clock.MonotonicNow - lastCapture.Value < TimeSpan.FromSeconds(1))
                     { throw new Failure(CpuPmObservationFailure.InvalidData); }
                 }
+                CheckSnapshotBoundary(cancellationToken);
                 stage = CpuPmObservationStage.Version;
                 Mailbox(bus, 6, 0, cancellationToken);
                 stage = CpuPmObservationStage.Refresh;
@@ -124,6 +126,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 samples.Add(new(snapshot!, refresh));
                 if (snapshot!.Validity != CpuPmRawSnapshotValidity.ValidCandidateObservation)
                 { throw new Failure(CpuPmObservationFailure.InvalidData); }
+                CheckSnapshotBoundary(cancellationToken);
             }
         }
         catch (Failure failure) { wire.Abort(); diagnostic = new(stage, failure.Code); }
@@ -169,6 +172,14 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         { throw new Failure(CpuPmObservationFailure.BudgetExpired); }
         previousClock = now;
         cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private void CheckSnapshotBoundary(CancellationToken cancellationToken)
+    {
+        stage = CpuPmObservationStage.SnapshotAdmission;
+        CheckBoundary(cancellationToken);
+        if (!admission.ValidateSnapshotBoundary()) { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+        CheckBoundary(cancellationToken);
     }
 
     private uint Discover(CancellationToken token)

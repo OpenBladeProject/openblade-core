@@ -43,6 +43,13 @@ internal interface ICpuQueryWindowsPlatform
     ICpuQueryMutex CreateSharedMutex();
 }
 
+internal interface ICpuNativeWireAdmission
+{
+    bool Allows(uint code, byte[] input, int outputLength);
+    bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply);
+    void Abort();
+}
+
 /// <summary>
 /// Separately attended validation only. This uses PCI transport writes even for
 /// getters. It never starts/provisions a driver or loads an AMD SDK DLL. Production
@@ -52,15 +59,20 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 {
     private readonly ICpuQueryWindowsPlatform platform;
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
-    private readonly CpuQueryWireAdmission wire = new();
+    private readonly ICpuNativeWireAdmission wire;
     private ICpuQueryDevice? device;
     private int ownerThread;
     private CpuQueryStage stage = CpuQueryStage.InitialUsbIdentity;
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity)
+        : this(platform, readFreshUsbIdentity, new CpuQueryWireAdmission()) { }
+
+    private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity,
+        ICpuNativeWireAdmission wire)
     {
         this.platform = platform;
         this.readFreshUsbIdentity = readFreshUsbIdentity;
+        this.wire = wire;
     }
 
     // An installed-backend checkbox is passive inspection permission only.
@@ -242,7 +254,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 // Defense in depth at the native boundary: exact schemas, discovered D0F0 bus,
 // fixed index addresses, bounded config reads and only 06/5E mailbox commands.
 // No arbitrary PCI write, SMN address, PM-cache F08, refresh, MSR or tuning setter.
-internal sealed class CpuQueryWireAdmission
+internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
     private const uint Fuse = 0x03820AB0, Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
@@ -250,6 +262,11 @@ internal sealed class CpuQueryWireAdmission
     private uint? bus;
     private bool enumerated, failed, responseReady, cleared, argumentWritten;
     private bool rootConfirmed, nodeConfirmed, orientationConfirmed;
+
+    bool ICpuNativeWireAdmission.Allows(uint code, byte[] input, int outputLength) => Allows(code, input, outputLength);
+    bool ICpuNativeWireAdmission.AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply) =>
+        AcceptReply(code, input, outputLength, reply);
+    void ICpuNativeWireAdmission.Abort() => failed = true;
 
     internal bool Allows(uint code, byte[] input, int outputLength)
     {
