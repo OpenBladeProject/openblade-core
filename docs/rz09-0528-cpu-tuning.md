@@ -93,7 +93,7 @@ mutation follows from the preparation tests.
 
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
-Boot activation, validation of the service recovery workflow, and attended live
+Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.
 
