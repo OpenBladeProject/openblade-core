@@ -10,6 +10,8 @@ internal sealed record PadProcessResult(bool Success, string? Failure, string? O
     bool MutationPermitted, IReadOnlyList<string> Evidence, IReadOnlyList<int> ChildProcessIds,
     bool ChildStillRunning)
 {
+    public PadUsbReconnectObservation? UsbReconnect { get; init; }
+    public string? RawIntermediate { get; init; }
     public bool ManualRecoveryRequired => MutationPermitted && !Success;
     public bool ProductionAdmitted => false;
     public bool FanStateConfirmed => false;
@@ -27,24 +29,30 @@ internal static class CoolingPadFanProcessContinuityCommand
     internal const string CooperativeSelfTestName = "selftest-cooling-pad-fan-cooperative-cancellation";
     internal const string CooperativeChildName = "__cooling-pad-fan-cooperative-child";
     internal const string CooperativeFakeChildName = "__cooling-pad-fan-cooperative-fake-child";
+    internal const string UsbName = "validate-rz09-0528-cooling-pad-fan-fixed-usb-reconnect";
+    internal const string UsbSelfTestName = "selftest-cooling-pad-fan-fixed-usb-reconnect";
+    internal const string UsbChildName = "__cooling-pad-fan-usb-reconnect-child";
+    internal const string UsbFakeChildName = "__cooling-pad-fan-usb-reconnect-fake-child";
     internal const string ExactTarget = "RZ09-05289EN4:1532:0F43:0200:Medium2200-NormalExitNewProcess-Auto";
     internal const string CooperativeTarget = "RZ09-05289EN4:1532:0F43:0200:Medium2200-CooperativeCancel-NewProcess-Auto";
+    internal const string UsbTarget = "RZ09-05289EN4:1532:0F43:0200:Medium2200-NormalExit-UsbOnlyReconnect5s-Auto";
     internal const string ExactRecovery = "ManualPowerCycleOnly";
     internal static readonly TimeSpan MessageTimeout = TimeSpan.FromSeconds(15);
     internal static readonly TimeSpan PhysicalTimeout = TimeSpan.FromSeconds(180);
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
 
     internal static bool Admitted(IReadOnlyList<string> args, PadProcessTrial trial = PadProcessTrial.NormalExit) => args.Count == 4
-        && args[0] == "--confirm-target" && args[1] == (trial == PadProcessTrial.NormalExit ? ExactTarget : CooperativeTarget)
+        && args[0] == "--confirm-target" && args[1] == TargetFor(trial)
         && args[2] == "--confirm-recovery" && args[3] == ExactRecovery;
 
     internal static async Task<int> RunAsync(IReadOnlyList<string> args, TextReader input,
         TextWriter output, TextWriter prompts, CancellationToken token, PadProcessTrial trial = PadProcessTrial.NormalExit)
     {
         bool cooperative = trial == PadProcessTrial.CooperativeCancellation;
+        bool usb = trial == PadProcessTrial.UsbOnlyReconnect;
         if (!Admitted(args, trial))
         {
-            await prompts.WriteLineAsync($"Usage: OpenBlade.Capture {(cooperative ? CooperativeName : Name)} --confirm-target {(cooperative ? CooperativeTarget : ExactTarget)} --confirm-recovery {ExactRecovery}").ConfigureAwait(false);
+            await prompts.WriteLineAsync($"Usage: OpenBlade.Capture {NameFor(trial)} --confirm-target {TargetFor(trial)} --confirm-recovery {ExactRecovery}").ConfigureAwait(false);
             return 1;
         }
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -55,8 +63,12 @@ internal static class CoolingPadFanProcessContinuityCommand
             {
                 "baselinePhysical" => "Confirm the pad is at the quiet Auto baseline, with full normal green lighting and no red sleep, before this trial starts.",
                 "fixedPhysical" when cooperative => "Confirm vendor Medium 2200 physically responded with full normal green lighting and no red sleep. YES allows the planned child work-token cancellation between HID operations and orderly disposal/exit.",
+                "fixedPhysical" when usb => "Confirm vendor Medium 2200 physically responded with full normal green lighting and no red sleep. YES allows orderly disposal/exit; wait for the separate USB disconnect instruction.",
                 "fixedPhysical" => "Confirm vendor Medium 2200 physically responded with full normal green lighting and no red sleep. YES allows normal child exit followed by the new-process Auto step.",
                 "postCancellationPhysical" => "After the child canceled, disposed and exited, confirm Medium still behaves normally with full normal green lighting and no red sleep. YES permits the new-process Auto step.",
+                "disconnectUsbOnly" => "Child 1 has fully disposed and exited normally. Disconnect ONLY USB now; keep 12 V connected. Type YES after USB is disconnected and 12 V remains connected. Keep USB disconnected until the separate reconnect instruction.",
+                "reconnectUsbSamePort" => "USB absence has been observed for at least five seconds. Reconnect the SAME pad's USB to the SAME port now, retaining 12 V throughout. Type YES only after doing so.",
+                "postReconnectPhysical" => "Confirm Medium still behaves normally after USB reconnect, with full normal green lighting and no red sleep. YES permits a fresh read-only raw query; Auto is allowed only if it returns 0300.",
                 "autoPhysical" => "Confirm the fan returned to the ORIGINAL quiet physical baseline with full normal green lighting and no red sleep.",
                 _ => "Confirm the fan remains at the original quiet baseline with full normal green lighting and no red sleep.",
             };
@@ -71,15 +83,21 @@ internal static class CoolingPadFanProcessContinuityCommand
     internal static string SerializeResult(PadProcessResult result, PadProcessTrial trial)
     {
         bool cooperative = trial == PadProcessTrial.CooperativeCancellation;
+        bool usb = trial == PadProcessTrial.UsbOnlyReconnect;
         return JsonSerializer.Serialize(new
         {
             schemaVersion = 1,
-            command = cooperative ? CooperativeName : Name,
+            command = NameFor(trial),
             device = new { model = "RZ09-0528", sku = "RZ09-05289EN4", vendorId = "1532", productId = "0F43", revision = "0200", interfaceNumber = "00", usagePage = "000C", usage = "0001", featureReportByteLength = 91, reportPrefix = "00" },
             biosIsCaptureProvenanceOnly = true,
             readOnly = false,
             exploratory = true,
-            continuityBoundary = cooperative ? "cooperative-cancellation-between-HID-operations-and-new-process" : "normal-process-exit-and-new-process",
+            continuityBoundary = usb ? "normal-process-exit-then-fixed-usb-only-reconnect-and-new-process"
+                : cooperative ? "cooperative-cancellation-between-HID-operations-and-new-process" : "normal-process-exit-and-new-process",
+            fixedUsbOnlyReconnectTested = usb && result.Success,
+            activeHandleDisconnectTested = false,
+            powerLossTested = false,
+            powerAndSamePadSamePortAreOperatorProvenanceOnly = usb,
             cooperativeCancellationTested = cooperative && result.Success,
             cancellationWorkKind = cooperative ? "developer-armed-idle-wait" : null,
             productionWorkLoopCancellationTested = false,
@@ -105,6 +123,7 @@ internal static class CoolingPadFanProcessContinuityCommand
         Action<Task<int>>? observeLateLaunch = null, PadProcessTrial trial = PadProcessTrial.NormalExit)
     {
         var state = new PadProcessState(trial);
+        PadUsbReconnectObservation? usbObservation = null;
         List<int> children = [];
         bool childStillRunning = false;
         string? failure = null;
@@ -127,7 +146,8 @@ internal static class CoolingPadFanProcessContinuityCommand
                 Task<Process> launching = Task.Run(async () =>
                 {
                     if (fake && fault == "delayed-launch") { await Task.Delay(1000).ConfigureAwait(false); }
-                    return StartChild(build, fake, pipeName, nonce, role, role == 1 ? fault : "none", trial);
+                    return StartChild(build, fake, pipeName, nonce, role,
+                        role == 1 || trial == PadProcessTrial.UsbOnlyReconnect ? fault : "none", trial);
                 });
                 using var child = await AwaitChildLaunchAsync(launching,
                     fake && fault == "delayed-launch" ? TimeSpan.FromMilliseconds(100) : MessageTimeout,
@@ -193,6 +213,18 @@ internal static class CoolingPadFanProcessContinuityCommand
                     token.ThrowIfCancellationRequested();
                     state.ConfirmPostCancellationPhysical();
                 }
+                if (trial == PadProcessTrial.UsbOnlyReconnect && role == 1)
+                {
+                    // This observer enumerates paths only, never a HID command
+                    // session. Exact admission belongs to fresh child 2.
+                    usbObservation = fake
+                        ? await new PadUsbReconnectFake(fault).RunAsync(confirm, token).ConfigureAwait(false)
+                        : await new CoolingPadUsbReconnectBoundary(WindowsHidEnumerator.CreateCoolingPadPhysicalPresenceSource())
+                            .RunAsync(confirm, token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    if (!usbObservation.Success) { throw new IOException(usbObservation.Failure ?? "UsbBoundaryRejected"); }
+                    state.ConfirmUsbReconnect(usbObservation);
+                }
             }
         }
         catch (PadProcessLaunchUncertainException)
@@ -200,7 +232,8 @@ internal static class CoolingPadFanProcessContinuityCommand
         catch (OperationCanceledException) { failure = token.IsCancellationRequested ? "Canceled" : "PhaseTimeout"; }
         catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; }
         return new(state.Success && failure is null, failure, state.OriginalBaseline,
-            state.MutationPermitted, state.Evidence.ToArray(), children.ToArray(), childStillRunning);
+            state.MutationPermitted, state.Evidence.ToArray(), children.ToArray(), childStillRunning)
+        { UsbReconnect = usbObservation, RawIntermediate = state.RawIntermediate };
     }
 
     private static Process StartChild(PadProcessBuild build, bool fake, string pipe,
@@ -208,8 +241,7 @@ internal static class CoolingPadFanProcessContinuityCommand
     {
         var start = new ProcessStartInfo(build.AppHost)
         { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(build.AppHost)! };
-        start.ArgumentList.Add(trial == PadProcessTrial.CooperativeCancellation
-            ? fake ? CooperativeFakeChildName : CooperativeChildName : fake ? FakeChildName : ChildName);
+        start.ArgumentList.Add(ChildFor(trial, fake));
         start.ArgumentList.Add(pipe);
         start.ArgumentList.Add(nonce);
         start.ArgumentList.Add(role.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -344,14 +376,18 @@ internal static class CoolingPadFanProcessContinuityCommand
                 else if (step.Physical) { result = "YES"; }
                 else
                 {
-                    var response = await actor!.Session.ExecuteAsync(step.Spec(),
+                    bool reconnectQuery = trial == PadProcessTrial.UsbOnlyReconnect && step.Name == "intermediate";
+                    var response = await actor!.Session.ExecuteAsync(step.Spec(reconnectQuery),
                         () => TransactionIdAssignment.Valid(checked((byte)step.Transaction)),
                         TimeSpan.FromSeconds(3), phase.Token).ConfigureAwait(false);
-                    if (response.Failure is not null || Convert.ToHexString(response.Value.Span) != step.Result)
+                    string observed = Convert.ToHexString(response.Value.Span);
+                    if (response.Failure is not null || (observed != step.Result && !(reconnectQuery && observed == "0000")))
                     { throw new IOException("Exchange rejected: " + (response.Failure?.ToString() ?? "UnexpectedPayload")); }
-                    result = Convert.ToHexString(response.Value.Span);
+                    result = observed;
                 }
                 await channel.WriteAsync($"DONE:{role}:{step.Name}:{result}", phase.Token).ConfigureAwait(false);
+                if (trial == PadProcessTrial.UsbOnlyReconnect && step.Name == "intermediate" && result != "0300")
+                { return 2; }
             }
             using var completion = Deadline(token, MessageTimeout);
             await channel.WriteAsync(fault == "normal-receipt" ? $"COMPLETE:{role}:FullyDisposed"
@@ -387,10 +423,38 @@ internal static class CoolingPadFanProcessContinuityCommand
     }
     private static string Hello(bool fake, int role, string nonce, string digest, PadProcessTrial trial) =>
         $"HELLO:1:{(fake ? "fake" : "live")}:{role}:{nonce}:{digest}"
-        + (trial == PadProcessTrial.CooperativeCancellation ? ":cooperative-cancellation" : "");
+        + TrialSuffix(trial);
     private static string Admission(int role, string nonce, string digest, PadProcessTrial trial) =>
         $"ADMIT:{role}:{nonce}:{digest}"
-        + (trial == PadProcessTrial.CooperativeCancellation ? ":cooperative-cancellation" : "");
+        + TrialSuffix(trial);
+    private static string TrialSuffix(PadProcessTrial trial) => trial switch
+    {
+        PadProcessTrial.NormalExit => "",
+        PadProcessTrial.CooperativeCancellation => ":cooperative-cancellation",
+        PadProcessTrial.UsbOnlyReconnect => ":fixed-usb-only-reconnect",
+        _ => throw new InvalidDataException("Unknown trial."),
+    };
+    private static string NameFor(PadProcessTrial trial) => trial switch
+    {
+        PadProcessTrial.NormalExit => Name,
+        PadProcessTrial.CooperativeCancellation => CooperativeName,
+        PadProcessTrial.UsbOnlyReconnect => UsbName,
+        _ => throw new InvalidDataException("Unknown trial."),
+    };
+    private static string TargetFor(PadProcessTrial trial) => trial switch
+    {
+        PadProcessTrial.NormalExit => ExactTarget,
+        PadProcessTrial.CooperativeCancellation => CooperativeTarget,
+        PadProcessTrial.UsbOnlyReconnect => UsbTarget,
+        _ => throw new InvalidDataException("Unknown trial."),
+    };
+    internal static string ChildFor(PadProcessTrial trial, bool fake) => trial switch
+    {
+        PadProcessTrial.NormalExit => fake ? FakeChildName : ChildName,
+        PadProcessTrial.CooperativeCancellation => fake ? CooperativeFakeChildName : CooperativeChildName,
+        PadProcessTrial.UsbOnlyReconnect => fake ? UsbFakeChildName : UsbChildName,
+        _ => throw new InvalidDataException("Unknown trial."),
+    };
     private static CancellationTokenSource Deadline(CancellationToken token, TimeSpan timeout)
     {
         var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);

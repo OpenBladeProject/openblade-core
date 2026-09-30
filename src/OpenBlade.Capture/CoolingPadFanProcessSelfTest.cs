@@ -9,6 +9,8 @@ internal sealed class PadProcessFakeFactory(int role, string fault) : IValidatio
 {
     public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context)
     {
+        if (role == 2 && fault == "usb-identity-failure")
+        { return ValueTask.FromResult(new HidSessionResult<ValidationActor>(null, HidSessionFailureKind.IdentityBlocked)); }
         if (!context.TryAcquireActor(out var lease)) { throw new InvalidOperationException("Fake actor lease failed."); }
         var session = new FakeSession(role, fault, lease);
         return ValueTask.FromResult(new HidSessionResult<ValidationActor>(new(session, new UnusedBattery()), null));
@@ -30,6 +32,13 @@ internal sealed class PadProcessFakeFactory(int role, string fault) : IValidatio
                 || assignTransactionId() != TransactionIdAssignment.Valid(checked((byte)expected.Transaction)))
             { throw new InvalidOperationException("Fake exchange/transaction rejected."); }
             string result = fault == "wrong-baseline" && expected.Name == "baseline" ? "0300" : expected.Result;
+            if (role == 2 && expected.Name == "intermediate")
+            {
+                if (fault == "usb-raw-zero") { result = "0000"; }
+                if (fault == "usb-raw-other") { result = "0100"; }
+                if (fault == "usb-raw-failure")
+                { return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.NativeIoFailure)); }
+            }
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(Convert.FromHexString(result), null));
         }
         public ValueTask DisposeAsync()
@@ -53,7 +62,13 @@ internal static class PadProcessSelfTest
     {
         // All actual subprocesses in this harness use FakeChildName. A live
         // native factory is unreachable from every injected-fault scenario.
-        string[] scenarios = trial == PadProcessTrial.CooperativeCancellation
+        string[] scenarios = trial == PadProcessTrial.UsbOnlyReconnect
+            ? ["none", "wrong-trial", "stale-nonce", "wrong-build", "wrong-pid", "early-receipt", "nonzero-exit",
+                "close-failure", "incomplete-close", "channel-loss", "usb-premature-reconnect", "usb-observation-failure",
+                "usb-no-absence", "usb-no-reconnect", "usb-disconnect-refusal", "usb-reconnect-refusal", "usb-physical-refusal",
+                "usb-cancel-disconnect", "usb-cancel-reconnect", "usb-cancel-physical",
+                "usb-raw-zero", "usb-raw-other", "usb-raw-failure", "usb-identity-failure"]
+            : trial == PadProcessTrial.CooperativeCancellation
             ? ["none", "wrong-trial", "stale-nonce", "wrong-build", "wrong-pid", "wrong-phase", "early-receipt",
                 "cancellation-not-observed", "normal-receipt", "zero-after-cancel", "nonzero-exit",
                 "cancel-channel-loss", "close-failure", "incomplete-close", "delayed-exit", "hung-exit",
@@ -69,17 +84,24 @@ internal static class PadProcessSelfTest
                 (step, _) =>
                 {
                     if (scenario == "supervisor-cancel-before" && step == "fixedPhysical"
-                        || scenario == "supervisor-cancel-after" && step == "postCancellationPhysical")
+                        || scenario == "supervisor-cancel-after" && step == "postCancellationPhysical"
+                        || scenario == "usb-cancel-disconnect" && step == "disconnectUsbOnly"
+                        || scenario == "usb-cancel-reconnect" && step == "reconnectUsbSamePort"
+                        || scenario == "usb-cancel-physical" && step == "postReconnectPhysical")
                     { supervisorCancellation.Cancel(); }
                     return Task.FromResult(!(scenario == "operator-refusal" && step == "fixedPhysical"
-                        || scenario == "post-cancel-refusal" && step == "postCancellationPhysical"));
+                        || scenario == "post-cancel-refusal" && step == "postCancellationPhysical"
+                        || scenario == "usb-disconnect-refusal" && step == "disconnectUsbOnly"
+                        || scenario == "usb-reconnect-refusal" && step == "reconnectUsbSamePort"
+                        || scenario == "usb-physical-refusal" && step == "postReconnectPhysical"));
                 }, supervisorCancellation.Token, observation => lateExit = observation, trial).ConfigureAwait(false);
             bool passed = scenario == "none"
                 ? result.Success && result.ChildProcessIds.Count == 2 && result.OriginalBaseline == "0000"
                     && result.Evidence.IndexOf($"EXIT:1:{PadProcessSequence.ExitCode(1, trial)}") < result.Evidence.IndexOf("DONE:2:open:opened")
                     && result.Evidence.Contains("DONE:2:intermediate:0300")
                     && result.Evidence.Contains("DONE:2:restore:0000")
-                : !result.Success && result.ChildProcessIds.Count == (scenario == "delayed-launch" ? 0 : 1);
+                : !result.Success && result.ChildProcessIds.Count == (scenario == "delayed-launch" ? 0
+                    : scenario.StartsWith("usb-raw-", StringComparison.Ordinal) || scenario == "usb-identity-failure" ? 2 : 1);
             if (scenario == "delayed-launch")
             {
                 passed &= result.ChildStillRunning && !result.MutationPermitted;
@@ -109,13 +131,28 @@ internal static class PadProcessSelfTest
                 passed &= observed >= 0 && observed < closed && closed < exited && exited < physical && physical < reopened;
             }
             if (scenario.StartsWith("supervisor-cancel-", StringComparison.Ordinal)) { passed &= result.Failure == "Canceled"; }
+            if (scenario.StartsWith("usb-cancel-", StringComparison.Ordinal)) { passed &= result.Failure == "Canceled"; }
+            if (trial == PadProcessTrial.UsbOnlyReconnect && scenario == "none")
+            {
+                int exited = result.Evidence.IndexOf("EXIT:1:0");
+                int physical = result.Evidence.IndexOf("PHYSICAL:postReconnect:YES");
+                int reopened = result.Evidence.IndexOf("DONE:2:open:opened");
+                passed &= result.UsbReconnect?.Success == true && exited >= 0 && exited < physical && physical < reopened
+                    && result.Evidence.Contains("READ:2:intermediate:0300");
+            }
+            if (scenario.StartsWith("usb-raw-", StringComparison.Ordinal) || scenario == "usb-identity-failure")
+            {
+                passed &= !result.Evidence.Contains("PERMIT:2:auto") && result.OriginalBaseline == "0000";
+                if (scenario == "usb-raw-zero")
+                { passed &= result.RawIntermediate == "0000" && result.Evidence.Contains("READ:2:intermediate:0000"); }
+                else { passed &= result.RawIntermediate is null; }
+            }
             await output.WriteLineAsync($"{(passed ? "PASS" : "FAIL")} {scenario}: children={result.ChildProcessIds.Count}; failure={result.Failure ?? "none"}").ConfigureAwait(false);
             if (!passed) { return 2; }
         }
         var start = new ProcessStartInfo(PadProcessBuild.Read().AppHost)
         { UseShellExecute = false, CreateNoWindow = true };
-        start.ArgumentList.Add(trial == PadProcessTrial.CooperativeCancellation
-            ? CoolingPadFanProcessContinuityCommand.CooperativeChildName : CoolingPadFanProcessContinuityCommand.ChildName);
+        start.ArgumentList.Add(CoolingPadFanProcessContinuityCommand.ChildFor(trial, false));
         using var direct = await CoolingPadFanProcessContinuityCommand.AwaitChildLaunchAsync(
             Task.Run(() => Process.Start(start) ?? throw new IOException("Direct-child test launch failed.")),
             TimeSpan.FromSeconds(5), token, PendingDisposalRegistry.Shared).ConfigureAwait(false);
@@ -130,5 +167,43 @@ internal static class PadProcessSelfTest
     {
         for (int i = 0; i < source.Count; i++) { if (source[i] == value) { return i; } }
         return -1;
+    }
+}
+
+// Hardware-free sampled presence and virtual elapsed time for subprocess tests.
+// The production branch constructs only the passive Windows path enumerator.
+internal sealed class PadUsbReconnectFake(string fault) : TimeProvider, ICoolingPadPhysicalPresenceSource
+{
+    private int stage;
+    private long timestamp;
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+    public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+    public CoolingPadPhysicalPresenceObservation Observe()
+    {
+        int current = Volatile.Read(ref stage);
+        if (current == 0) { return CoolingPadPhysicalPresenceObservation.Present; }
+        if (fault == "usb-observation-failure") { return CoolingPadPhysicalPresenceObservation.ObservationFailed; }
+        if (current == 1)
+        {
+            return fault == "usb-no-absence" || fault == "usb-premature-reconnect" && GetTimestamp() >= TimeSpan.TicksPerSecond
+                ? CoolingPadPhysicalPresenceObservation.Present : CoolingPadPhysicalPresenceObservation.Absent;
+        }
+        return fault == "usb-no-reconnect" ? CoolingPadPhysicalPresenceObservation.Absent : CoolingPadPhysicalPresenceObservation.Present;
+    }
+    internal Task<PadUsbReconnectObservation> RunAsync(Func<string, CancellationToken, Task<bool>> confirm, CancellationToken token)
+    {
+        var boundary = new CoolingPadUsbReconnectBoundary(this, this, (duration, ct) =>
+        {
+            ct.ThrowIfCancellationRequested();
+            Interlocked.Add(ref timestamp, duration.Ticks);
+            return Task.CompletedTask;
+        });
+        return boundary.RunAsync(async (name, ct) =>
+        {
+            bool confirmed = await confirm(name, ct).ConfigureAwait(false);
+            if (confirmed && name == "disconnectUsbOnly") { Volatile.Write(ref stage, 1); }
+            if (confirmed && name == "reconnectUsbSamePort") { Volatile.Write(ref stage, 2); }
+            return confirmed;
+        }, token);
     }
 }

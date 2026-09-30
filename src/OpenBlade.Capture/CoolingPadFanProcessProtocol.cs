@@ -17,15 +17,17 @@ internal sealed record PadProcessStep(string Name, string Result, int Transactio
     byte Class = 0, byte Command = 0, string Arguments = "", bool Mutation = false,
     bool Physical = false)
 {
-    internal RazerCommandSpec Spec()
+    internal RazerCommandSpec Spec(bool observeKnownIntermediate = false)
     {
         byte[] expected = Convert.FromHexString(Result);
         return new(Class, Command, Convert.FromHexString(Arguments), expected.Length,
-            payload => payload.Span.SequenceEqual(expected));
+            payload => observeKnownIntermediate && Name == "intermediate"
+                ? payload.Length == 2 && payload.Span[1] == 0 && payload.Span[0] is 0 or 3
+                : payload.Span.SequenceEqual(expected));
     }
 }
 
-internal enum PadProcessTrial { NormalExit, CooperativeCancellation }
+internal enum PadProcessTrial { NormalExit, CooperativeCancellation, UsbOnlyReconnect }
 
 internal static class PadProcessSequence
 {
@@ -75,7 +77,9 @@ internal sealed class PadProcessState(PadProcessTrial trial = PadProcessTrial.No
     private bool exited;
     private bool firstExited;
     private bool postCancellationPhysical;
+    private bool usbReconnectConfirmed;
     internal string? OriginalBaseline { get; private set; }
+    internal string? RawIntermediate { get; private set; }
     internal bool MutationPermitted { get; private set; }
     internal bool Success { get; private set; }
     internal List<string> Evidence { get; } = [];
@@ -84,7 +88,9 @@ internal sealed class PadProcessState(PadProcessTrial trial = PadProcessTrial.No
     {
         Require((role == 0 && nextRole == 1)
             || (role == 1 && firstExited && OriginalBaseline == "0000" && nextRole == 2
-                && (trial == PadProcessTrial.NormalExit || postCancellationPhysical)));
+                && (trial == PadProcessTrial.NormalExit
+                    || trial == PadProcessTrial.CooperativeCancellation && postCancellationPhysical
+                    || trial == PadProcessTrial.UsbOnlyReconnect && usbReconnectConfirmed)));
         role = nextRole;
         index = 0;
         receipt = false;
@@ -115,6 +121,12 @@ internal sealed class PadProcessState(PadProcessTrial trial = PadProcessTrial.No
     {
         Require(awaitingResult && permitted);
         var step = PadProcessSequence.ForRole(role, trial)[index];
+        if (trial == PadProcessTrial.UsbOnlyReconnect && role == 2 && step.Name == "intermediate"
+            && frame is "DONE:2:intermediate:0000" or "DONE:2:intermediate:0300")
+        {
+            RawIntermediate = frame[^4..];
+            Evidence.Add("READ:2:intermediate:" + RawIntermediate);
+        }
         Require(frame == $"DONE:{role}:{step.Name}:{step.Result}");
         if (role == 1 && step.Name == "baseline") { OriginalBaseline = step.Result; }
         Evidence.Add(frame);
@@ -141,6 +153,14 @@ internal sealed class PadProcessState(PadProcessTrial trial = PadProcessTrial.No
             && !postCancellationPhysical);
         postCancellationPhysical = true;
         Evidence.Add("PHYSICAL:postCancellation:YES");
+    }
+    internal void ConfirmUsbReconnect(PadUsbReconnectObservation observation)
+    {
+        Require(trial == PadProcessTrial.UsbOnlyReconnect && role == 1 && firstExited
+            && !usbReconnectConfirmed && OriginalBaseline == "0000" && observation.Success);
+        usbReconnectConfirmed = true;
+        Evidence.Add("USB:observed-absence-at-least-five-seconds");
+        Evidence.Add("PHYSICAL:postReconnect:YES");
     }
     private static void Require(bool condition)
     {
