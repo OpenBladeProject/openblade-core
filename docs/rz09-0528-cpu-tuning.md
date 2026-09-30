@@ -36,8 +36,10 @@ A later attended test of the actual service transaction stopped before submittin
 a command. A read-only diagnostic found that the COM getter returned output but
 omitted the `ReturnValue` property exposed by the CIM helper. The decoder now
 distinguishes confirmed absence from property-read errors for this exact provider;
-version 7 and command payload checks remain mandatory. The corrected getter and
-service apply/recovery cycle still require attended validation.
+version 7 and command payload checks remain mandatory. A subsequent attended
+getter passed with exactly one output property: UInt32 version 7. All eight full
+saved-pair checks matched the original baseline. The service apply/recovery cycle
+still requires attended validation.
 
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
