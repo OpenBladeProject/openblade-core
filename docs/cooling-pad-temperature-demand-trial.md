@@ -59,4 +59,37 @@ receipt; retain that limitation when interpreting typed outcomes.
 
 Preparation validation: 23 focused trial tests and all 777 Capture tests passed.
 Capture build had zero warnings/errors; independent static source review passed.
-No live trial has been run at this preparation stage.
+The preparation checks above preceded the live attempt recorded below.
+## Live attempt spanning 2026-09-29/30
+
+Source `389a1db0` ran from 2026-09-30T06:51:37Z to 07:02:26Z. All twelve
+sensor readings reported CPU 45 C and an explicitly inactive GPU. One configured
+1150-RPM demand was acknowledged and physically reported normal; all ten further
+plans were unchanged and suppressed. Thus this attempt did not exercise a
+changing-temperature demand update or establish thermal tracking.
+
+First-demand, finite-interval, Medium and quiet-restoration physical checks
+passed. Original raw `0000` restoration and query also passed. The last physical
+check exceeded its operator timeout: the process exited 2 with
+`finalPhysicalConfirmation/OperatorTimeout`, `finalPhysicalConfirmed=false`,
+`trialSequenceCompleted=false` and conservative `manualRecoveryRequired=true`.
+The subsequent user reply confirmed quiet normal fan behavior, full-brightness
+static-green lighting and no flashing-red/sleep indication after process exit.
+Record that as a separate late observation; it does not alter the typed result
+or establish that manual recovery was performed. No recovery action was taken.
+
+The private 9535-byte JSON has SHA-256
+`B150C9812B35496CAB0419920B729B1223F941E77DD9E87040CCC01C6A3CDDBF`.
+Result flags and reviewed source support nine logical exchanges without an
+independent native packet trace. Source disposal was confirmed by the result;
+actor disposal remains bounded best-effort. No Synapse/service restart, lighting
+setter, workload, retry or power cycle was performed by this trial.
+
+Post-exit inventory found no active Razer services. A separate supervised Capture
+process appeared after this trial had exited; it was not stopped or used here.
+Do not claim a clean global process inventory or run another control trial while
+its purpose remains unknown. This attempt supports one steady-temperature
+1150-demand observation and later normal quiet behavior; production admission,
+measured RPM, ownership, full range and changing-temperature response remain
+unvalidated. Preserve the timeout rather than rerunning merely to obtain a
+successful final flag.
