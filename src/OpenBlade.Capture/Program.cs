@@ -4,6 +4,21 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.ChildName or CoolingPadFanProcessContinuityCommand.FakeChildName)
+{
+    return await CoolingPadFanProcessContinuityCommand.ChildAsync(
+        args[0] == CoolingPadFanProcessContinuityCommand.FakeChildName, args.Skip(1).ToArray(), CancellationToken.None);
+}
+if (args.Length == 1 && args[0] == CoolingPadFanProcessContinuityCommand.SelfTestName)
+{
+    return await PadProcessSelfTest.RunAsync(Console.Out, CancellationToken.None);
+}
+if (args.Length > 0 && args[0] == CoolingPadFanProcessContinuityCommand.Name)
+{
+    return await CoolingPadFanProcessContinuityCommand.RunAsync(args.Skip(1).ToArray(), Console.In,
+        Console.Out, Console.Error, CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)

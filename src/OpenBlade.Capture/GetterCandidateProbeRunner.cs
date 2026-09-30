@@ -37,6 +37,8 @@ internal static class GetterCandidateProbeFactory
         => new(static () => new ValidationRunContext(), CreateCoolingPadActorFactory(),
             TimeProvider.System, ExchangeTimeout, CleanupTimeout, TimeSpan.FromSeconds(180));
 
+    internal static IValidationActorFactory CreateCoolingPadProcessActorFactory() => CreateCoolingPadActorFactory();
+
     private static IValidationActorFactory CreateCoolingPadActorFactory()
     {
         var native = new WindowsHidNative();
