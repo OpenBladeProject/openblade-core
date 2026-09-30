@@ -1696,9 +1696,9 @@ if (args.Length > 0 && args[0].Equals(
             CoolingPadCurvePreviewCommand.ReadWindowsHost,
             static () => new SafeWindowsFanTemperatureSource(),
             GetterCandidateProbeFactory.CreateCoolingPadActorFactory,
-            static () => new ValidationRunContext(), TimeProvider.System)
+            static () => new ValidationRunContext(), TimeProvider.System, physicalTimeout: TimeSpan.FromMinutes(10))
             .RunAsync(first, curve, fixedCheck, quiet, final, token),
-        Console.In, Console.Out, Console.Error);
+        Console.In, Console.Out, Console.Error, initialConfirmationTimeout: TimeSpan.FromMinutes(10));
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
@@ -1733,9 +1733,12 @@ if (args.Length > 0 && args[0].Equals(
 {
     var command = new CoolingPadPreferredAutoRecoveryCommand(
         (fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
-            GetterCandidateProbeFactory.CreateCoolingPadFanExploratoryTrialWindows().RunAsync(
-                fixedConfirmation, autoConfirmation, finalConfirmation, token),
-        Console.In, Console.Out, Console.Error);
+            new CoolingPadFanExploratoryTrialRunner(
+                static () => new ValidationRunContext(), GetterCandidateProbeFactory.CreateCoolingPadActorFactory(),
+                TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5),
+                operatorTimeout: TimeSpan.FromMinutes(10)).RunAsync(
+                    fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error, initialConfirmationTimeout: TimeSpan.FromMinutes(10));
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 

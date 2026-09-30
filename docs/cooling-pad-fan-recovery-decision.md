@@ -4,6 +4,29 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Related: [developer validation PR #624](https://github.com/OpenBladeProject/openblade-core/pull/624)
 and [evidence PR #33](https://github.com/OpenBladeProject/openblade-captures/pull/33).
 
+## Current developer recovery options
+
+The preferred-quiet recovery wrapper accepts either its original CurrentMedium
+acknowledgement or the exact CurrentHostDemand1500-ReassertPreferredQuietAuto
+history acknowledgement for the same model/SKU and pad. The latter asks for
+normal current fan/green lighting/no red-sleep and inactive HyperBoost; it does
+not assert current Medium, measured RPM or firmware fan readback. History is
+operator context only and no saved journal authorizes writes.
+
+Both options use the same seven captured commands with a fresh raw0000
+prerequisite, strict exact-device/controller admission, Medium confirmation,
+quiet confirmation and original raw0000 restoration/query plus final physical
+confirmation. Failure or cancellation stops later writes; there are no retries
+or firmware cleanup writes. Raw-mode-only recovery is a separate operation and
+does not itself restore quiet fan behavior.
+
+The preferred-quiet recovery and temperature-demand CLI routes now allow finite
+ten-minute initial/physical operator waits to accommodate conversation latency.
+Native exchange and cleanup bounds stay three and five seconds. During operator
+pauses the previous target persists; longer waits do not establish continuous
+thermal control or production support. This supersedes historical next-step
+proposals below; further lifecycle expansion remains paused.
+
 ## Completed attended fan experiment
 
 After the bounded raw recovery, a fresh trial on 2026-09-29 completed from source

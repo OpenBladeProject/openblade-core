@@ -29,16 +29,21 @@ public sealed class CoolingPadPreferredAutoRecoveryCommandTests
     }
 
     [Theory]
-    [InlineData("NO\n")]
-    [InlineData("yes\n")]
-    [InlineData("")]
-    public async Task InitialPhysicalRefusalOrEofPreventsNativeRunnerConstruction(string response)
+    [InlineData("NO\n", false)]
+    [InlineData("NO\n", true)]
+    [InlineData("yes\n", false)]
+    [InlineData("yes\n", true)]
+    [InlineData("", false)]
+    [InlineData("", true)]
+    public async Task InitialPhysicalRefusalOrEofPreventsNativeRunnerConstruction(string response, bool fromHostDemand)
     {
         int calls = 0;
         var output = new StringWriter();
         var command = new CoolingPadPreferredAutoRecoveryCommand((_, _, _, _) =>
         { calls++; throw new InvalidOperationException(); }, new StringReader(response), output, new StringWriter());
-        Assert.Equal(2, await command.RunAsync(Admission, default));
+        var admission = Admission;
+        if (fromHostDemand) { admission[1] = CoolingPadPreferredAutoRecoveryCommand.ExactHostDemand1500TargetConfirmation; }
+        Assert.Equal(2, await command.RunAsync(admission, default));
         Assert.Equal(0, calls);
         using var json = JsonDocument.Parse(output.ToString());
         Assert.False(json.RootElement.GetProperty("nativeRunnerInvoked").GetBoolean());
@@ -48,8 +53,10 @@ public sealed class CoolingPadPreferredAutoRecoveryCommandTests
         Assert.Equal("unconfirmed", json.RootElement.GetProperty("initialPhysicalState").GetString());
     }
 
-    [Fact]
-    public async Task StartingMediumAndRequestedQuietAutoRemainSeparateInPromptsAndOutput()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartingStateAndRequestedQuietAutoRemainSeparateInPromptsAndOutput(bool fromHostDemand)
     {
         var input = new CountingReader("YES\nYES\nYES\nYES\n");
         var output = new StringWriter();
@@ -72,15 +79,35 @@ public sealed class CoolingPadPreferredAutoRecoveryCommandTests
                 RawRestorationConfirmed = true,
                 FinalPhysicalConfirmed = true,
             };
-        }, input, output, prompts);
-        Assert.Equal(0, await command.RunAsync(Admission, default));
+        }, input, output, prompts, initialConfirmationTimeout: TimeSpan.FromMinutes(10));
+        var admission = Admission;
+        if (fromHostDemand) { admission[1] = CoolingPadPreferredAutoRecoveryCommand.ExactHostDemand1500TargetConfirmation; }
+        Assert.Equal(0, await command.RunAsync(admission, default));
         Assert.Equal(1, calls);
         Assert.Equal(4, input.ReadCount);
         Assert.Contains("requested preferred quiet Auto", prompts.ToString());
         Assert.DoesNotContain("returned to the quiet physical baseline", prompts.ToString());
         using var json = JsonDocument.Parse(output.ToString());
         var root = json.RootElement;
-        Assert.Equal("operator-confirmed-Medium-normal-green-no-red-sleep", root.GetProperty("initialPhysicalState").GetString());
+        Assert.Contains("finite: 10 minutes", prompts.ToString());
+        if (fromHostDemand)
+        {
+            Assert.Contains("INITIAL_CURRENT_FAN_CONFIRM", prompts.ToString());
+            Assert.Contains("HyperBoost inactive", prompts.ToString());
+            Assert.DoesNotContain("currently runs Medium", prompts.ToString());
+            Assert.Equal("operator-confirmed-normal-current-fan-green-no-red-sleep-HyperBoost-inactive",
+                root.GetProperty("initialPhysicalState").GetString());
+            Assert.Equal(1500, root.GetProperty("previousConfiguredDemandRpm").GetInt32());
+        }
+        else
+        {
+            Assert.Contains("INITIAL_MEDIUM_CONFIRM", prompts.ToString());
+            Assert.Contains("currently runs Medium", prompts.ToString());
+            Assert.Equal("operator-confirmed-Medium-normal-green-no-red-sleep", root.GetProperty("initialPhysicalState").GetString());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("previousConfiguredDemandRpm").ValueKind);
+        }
+        Assert.False(root.GetProperty("previousConfiguredDemandIsFirmwareReadback").GetBoolean());
+        Assert.False(root.GetProperty("measuredRpmConfirmed").GetBoolean());
         Assert.Equal("preferred-quiet-Auto-normal-green-no-red-sleep", root.GetProperty("requestedPhysicalTarget").GetString());
         Assert.True(root.GetProperty("preferredAutoPhysicalConfirmed").GetBoolean());
         Assert.True(root.GetProperty("preferredAutoFinalPhysicalConfirmed").GetBoolean());
@@ -150,6 +177,37 @@ public sealed class CoolingPadPreferredAutoRecoveryCommandTests
         Assert.Equal("runnerResultUnavailable", root.GetProperty("failurePhase").GetString());
         Assert.Equal("NativeIoFailure", root.GetProperty("failure").GetString());
         Assert.False(root.GetProperty("requestedRecoverySequenceCompleted").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("query", false)]
+    [InlineData("acquire", true)]
+    [InlineData("fixed", true)]
+    [InlineData("auto", true)]
+    [InlineData("restore", true)]
+    [InlineData("acknowledged", false)]
+    public async Task ReturnedWriteAttemptsWithoutAcknowledgementRemainUnknown(string stage, bool expectedUnknown)
+    {
+        var result = new CoolingPadFanExploratoryTrialResult
+        {
+            ModeAcquireAttempted = stage is "acquire" or "acknowledged",
+            ModeAcquireAcknowledged = stage == "acknowledged",
+            FixedAttempted = stage == "fixed",
+            AutoAttempted = stage == "auto",
+            ModeRestoreAttempted = stage == "restore",
+            FailurePhase = stage,
+            Failure = "NativeIoFailure",
+        };
+        var output = new StringWriter();
+        var command = new CoolingPadPreferredAutoRecoveryCommand((_, _, _, _) => Task.FromResult(result),
+            new StringReader("YES\n"), output, new StringWriter());
+        var admission = Admission;
+        admission[1] = CoolingPadPreferredAutoRecoveryCommand.ExactHostDemand1500TargetConfirmation;
+        Assert.Equal(2, await command.RunAsync(admission, default));
+        using var json = JsonDocument.Parse(output.ToString());
+        Assert.Equal(expectedUnknown, json.RootElement.GetProperty("submissionStateUnknown").GetBoolean());
+        Assert.False(json.RootElement.GetProperty("runnerResultUnavailable").GetBoolean());
+        Assert.Equal(JsonValueKind.Object, json.RootElement.GetProperty("result").ValueKind);
     }
 
     [Fact]

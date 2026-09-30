@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace OpenBlade.Capture;
 
-// Reuses the verified single-session sequence. Starting physical Medium and
+// Reuses the verified single-session sequence. Starting physical state and
 // requested quiet Auto are separate observations; raw 0000 is not a fan getter.
 internal sealed class CoolingPadPreferredAutoRecoveryCommand(
     Func<Func<CancellationToken, Task<bool>>, Func<CancellationToken, Task<bool>>,
@@ -14,18 +14,20 @@ internal sealed class CoolingPadPreferredAutoRecoveryCommand(
 {
     internal const string Name = "recover-rz09-0528-cooling-pad-preferred-auto";
     internal const string ExactTargetConfirmation = "RZ09-05289EN4:1532:0F43:0200:CurrentMedium-ReassertPreferredQuietAuto";
+    internal const string ExactHostDemand1500TargetConfirmation = "RZ09-05289EN4:1532:0F43:0200:CurrentHostDemand1500-ReassertPreferredQuietAuto";
     internal const string ExactRecoveryConfirmation = "ManualPowerCycleOnly";
     private static readonly JsonSerializerOptions JsonOptions = new()
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 
     internal async Task<int> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        if (arguments.Count != 4 || arguments[0] != "--confirm-target" || arguments[1] != ExactTargetConfirmation
+        if (arguments.Count != 4 || arguments[0] != "--confirm-target" || (arguments[1] != ExactTargetConfirmation && arguments[1] != ExactHostDemand1500TargetConfirmation)
             || arguments[2] != "--confirm-recovery" || arguments[3] != ExactRecoveryConfirmation)
         {
-            await prompts.WriteLineAsync($"Usage: OpenBlade.Capture {Name} --confirm-target {ExactTargetConfirmation} --confirm-recovery {ExactRecoveryConfirmation}").ConfigureAwait(false);
+            await prompts.WriteLineAsync($"Usage: OpenBlade.Capture {Name} --confirm-target <{ExactTargetConfirmation}|{ExactHostDemand1500TargetConfirmation}> --confirm-recovery {ExactRecoveryConfirmation}").ConfigureAwait(false);
             return 1;
         }
+        bool fromHostDemand1500 = arguments[1] == ExactHostDemand1500TargetConfirmation;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var registration = (registerCancellation ?? ConsoleCancellation.Register)(() => ConsoleCancellation.Cancel(cancellation));
         bool initialConfirmed = false;
@@ -37,9 +39,11 @@ internal sealed class CoolingPadPreferredAutoRecoveryCommand(
             // Reuse the existing isolated, bounded physical-observer helper.
             // The native runner delegate is not invoked until this succeeds.
             initialConfirmed = await CoolingPadFanProcessContinuityCommand.ConfirmAsync(
-                (_, token) => ConfirmAsync("INITIAL_MEDIUM_CONFIRM",
-                    "Confirm the pad currently runs Medium with full normal green lighting and no red sleep. The requested destination is your preferred quiet Auto; this command will reassert the captured Medium-to-Auto sequence.", token),
-                "initialMedium", cancellation.Token, initialConfirmationTimeout).ConfigureAwait(false);
+                (_, token) => ConfirmAsync(fromHostDemand1500 ? "INITIAL_CURRENT_FAN_CONFIRM" : "INITIAL_MEDIUM_CONFIRM",
+                    fromHostDemand1500
+                        ? "Following the recorded acknowledged configured 1500 demand and raw0000 recovery, confirm the current fan behaves normally with full normal green lighting, no red sleep and HyperBoost inactive. This history does not measure current RPM or establish Medium. The requested destination is preferred quiet Auto; the captured sequence first reasserts Medium."
+                        : "Confirm the pad currently runs Medium with full normal green lighting and no red sleep. The requested destination is your preferred quiet Auto; this command will reassert the captured Medium-to-Auto sequence.", token),
+                fromHostDemand1500 ? "initialCurrentFan" : "initialMedium", cancellation.Token, initialConfirmationTimeout).ConfigureAwait(false);
             if (!initialConfirmed)
             {
                 result = result with { FailurePhase = "initialPhysicalConfirmation", Failure = "OperatorRejected" };
@@ -73,12 +77,23 @@ internal sealed class CoolingPadPreferredAutoRecoveryCommand(
             purpose = "reassert-requested-preferred-Auto",
             device = new { model = "RZ09-0528", sku = "RZ09-05289EN4", vendorId = "1532", productId = "0F43", revision = "0200", interfaceNumber = "00", usagePage = "000C", usage = "0001", featureReportByteLength = 91, reportPrefix = "00" },
             biosIsCaptureProvenanceOnly = true,
-            initialPhysicalState = initialConfirmed ? "operator-confirmed-Medium-normal-green-no-red-sleep" : "unconfirmed",
+            initialPhysicalState = initialConfirmed
+                ? fromHostDemand1500 ? "operator-confirmed-normal-current-fan-green-no-red-sleep-HyperBoost-inactive"
+                    : "operator-confirmed-Medium-normal-green-no-red-sleep"
+                : "unconfirmed",
+            previousConfiguredDemandRpm = fromHostDemand1500 ? (int?)1500 : null,
+            previousConfiguredDemandIsFirmwareReadback = false,
+            initialStateProvenance = "operator-confirmation-and-selected-recovery-history",
+            measuredRpmConfirmed = false,
             requestedPhysicalTarget = "preferred-quiet-Auto-normal-green-no-red-sleep",
             initialPhysicalObservationConfirmed = initialConfirmed,
             nativeRunnerInvoked = runnerInvoked,
             runnerResultUnavailable = runnerInvoked && !runnerResultAvailable,
-            submissionStateUnknown = runnerInvoked && !runnerResultAvailable,
+            submissionStateUnknown = runnerInvoked && !runnerResultAvailable
+                || result.ModeAcquireAttempted && !result.ModeAcquireAcknowledged
+                || result.FixedAttempted && !result.FixedAcknowledged
+                || result.AutoAttempted && !result.AutoAcknowledged
+                || result.ModeRestoreAttempted && !result.ModeRestoreAcknowledged,
             manualRecoveryRequired = runnerInvoked && !runnerResultAvailable || result.ManualRecoveryRequired,
             failurePhase = result.FailurePhase,
             failure = result.Failure,
@@ -111,6 +126,7 @@ internal sealed class CoolingPadPreferredAutoRecoveryCommand(
     {
         token.ThrowIfCancellationRequested();
         await prompts.WriteLineAsync($"{stage}: {observation}").ConfigureAwait(false);
+        await prompts.WriteLineAsync($"Operator confirmation wait is finite: {(initialConfirmationTimeout ?? TimeSpan.FromSeconds(180)).TotalMinutes} minutes.").ConfigureAwait(false);
         await prompts.WriteLineAsync("Type YES only if confirmed; any other answer or EOF stops further writes. Manual power cycling may still be needed; no automatic or vendor recovery.").ConfigureAwait(false);
         return string.Equals((await input.ReadLineAsync(token).ConfigureAwait(false))?.Trim(), "YES", StringComparison.Ordinal);
     }
