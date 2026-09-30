@@ -43,6 +43,22 @@ establish recovery from interruption while Fixed is active, crash, sleep or
 power loss, nor independent fan state/ownership or production admission. Prepare
 those distinct cases with explicit interruption state and recovery before any
 new attended action. See draft #624's USB reconnect checklist and capture #33.
+## Completed handle continuity
+
+The attended same-process continuity trial from developer source `1baf4d6a`
+completed with exit zero. Medium and normal green lighting were physically
+confirmed before the first actor closed completely. A fresh exact-device session
+then read raw `0300`, acknowledged Auto with physical return to quiet behavior,
+and restored/read-back the original raw `0000`. The final physical check confirmed
+normal unchanged green lighting without red/sleep. No vendor recovery, service
+action, retry, lighting setter or power cycle occurred.
+
+This establishes one normal-close/fresh-handle experiment in the same process.
+New-process continuation and crash recovery remain distinct unresolved boundaries;
+retain the original Auto/raw `0000` baseline and bind future continuation to the
+just-created trial. Firmware fan state/RPM, ownership and production admission
+remain unvalidated. Source verification passed all 657 Capture tests, three
+architecture tests and independent review.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
