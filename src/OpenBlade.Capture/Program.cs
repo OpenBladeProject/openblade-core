@@ -4,6 +4,22 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.CooperativeChildName or CoolingPadFanProcessContinuityCommand.CooperativeFakeChildName)
+{
+    return await CoolingPadFanProcessContinuityCommand.ChildAsync(
+        args[0] == CoolingPadFanProcessContinuityCommand.CooperativeFakeChildName, args.Skip(1).ToArray(), CancellationToken.None,
+        PadProcessTrial.CooperativeCancellation);
+}
+if (args.Length == 1 && args[0] == CoolingPadFanProcessContinuityCommand.CooperativeSelfTestName)
+{
+    return await PadProcessSelfTest.RunAsync(Console.Out, CancellationToken.None, PadProcessTrial.CooperativeCancellation);
+}
+if (args.Length > 0 && args[0] == CoolingPadFanProcessContinuityCommand.CooperativeName)
+{
+    return await CoolingPadFanProcessContinuityCommand.RunAsync(args.Skip(1).ToArray(), Console.In,
+        Console.Out, Console.Error, CancellationToken.None, PadProcessTrial.CooperativeCancellation);
+}
+
 if (args.Length > 0 && args[0] is CoolingPadFanProcessContinuityCommand.ChildName or CoolingPadFanProcessContinuityCommand.FakeChildName)
 {
     return await CoolingPadFanProcessContinuityCommand.ChildAsync(

@@ -25,11 +25,13 @@ internal sealed record PadProcessStep(string Name, string Result, int Transactio
     }
 }
 
+internal enum PadProcessTrial { NormalExit, CooperativeCancellation }
+
 internal static class PadProcessSequence
 {
-    internal static IReadOnlyList<PadProcessStep> ForRole(int role) => role switch
+    internal static IReadOnlyList<PadProcessStep> ForRole(int role, PadProcessTrial trial = PadProcessTrial.NormalExit) => role switch
     {
-        1 => First,
+        1 => trial == PadProcessTrial.CooperativeCancellation ? CanceledFirst : First,
         2 => Second,
         _ => throw new InvalidDataException("Invalid child role."),
     };
@@ -54,9 +56,16 @@ internal static class PadProcessSequence
         new("finalPhysical", "YES", Physical: true),
         new("close", "FullyDisposed"),
     ];
+    private static readonly PadProcessStep[] CanceledFirst =
+        [.. First.Take(First.Length - 1), new("cancelWork", "ObservedCancellation"), First[^1]];
+    internal static string Receipt(int role, PadProcessTrial trial) =>
+        trial == PadProcessTrial.CooperativeCancellation && role == 1
+            ? "CANCELED:1:ObservedCancellation:FullyDisposed" : $"COMPLETE:{role}:FullyDisposed";
+    internal static int ExitCode(int role, PadProcessTrial trial) =>
+        trial == PadProcessTrial.CooperativeCancellation && role == 1 ? 4 : 0;
 }
 
-internal sealed class PadProcessState
+internal sealed class PadProcessState(PadProcessTrial trial = PadProcessTrial.NormalExit)
 {
     private int role;
     private int index;
@@ -65,6 +74,7 @@ internal sealed class PadProcessState
     private bool receipt;
     private bool exited;
     private bool firstExited;
+    private bool postCancellationPhysical;
     internal string? OriginalBaseline { get; private set; }
     internal bool MutationPermitted { get; private set; }
     internal bool Success { get; private set; }
@@ -73,7 +83,8 @@ internal sealed class PadProcessState
     internal void Begin(int nextRole)
     {
         Require((role == 0 && nextRole == 1)
-            || (role == 1 && firstExited && OriginalBaseline == "0000" && nextRole == 2));
+            || (role == 1 && firstExited && OriginalBaseline == "0000" && nextRole == 2
+                && (trial == PadProcessTrial.NormalExit || postCancellationPhysical)));
         role = nextRole;
         index = 0;
         receipt = false;
@@ -83,7 +94,7 @@ internal sealed class PadProcessState
     internal PadProcessStep Request(string frame)
     {
         Require(role != 0 && !awaitingResult && !receipt);
-        var steps = PadProcessSequence.ForRole(role);
+        var steps = PadProcessSequence.ForRole(role, trial);
         Require(index < steps.Count);
         var step = steps[index];
         Require(frame == $"READY:{role}:{step.Name}");
@@ -95,7 +106,7 @@ internal sealed class PadProcessState
     }
     internal void Permit(PadProcessStep step)
     {
-        Require(awaitingResult && !permitted && step == PadProcessSequence.ForRole(role)[index]);
+        Require(awaitingResult && !permitted && step == PadProcessSequence.ForRole(role, trial)[index]);
         permitted = true;
         MutationPermitted |= step.Mutation;
         Evidence.Add($"PERMIT:{role}:{step.Name}");
@@ -103,7 +114,7 @@ internal sealed class PadProcessState
     internal void Complete(string frame)
     {
         Require(awaitingResult && permitted);
-        var step = PadProcessSequence.ForRole(role)[index];
+        var step = PadProcessSequence.ForRole(role, trial)[index];
         Require(frame == $"DONE:{role}:{step.Name}:{step.Result}");
         if (role == 1 && step.Name == "baseline") { OriginalBaseline = step.Result; }
         Evidence.Add(frame);
@@ -112,17 +123,24 @@ internal sealed class PadProcessState
     }
     internal void Receipt(string frame)
     {
-        Require(!awaitingResult && !receipt && index == PadProcessSequence.ForRole(role).Count
-            && frame == $"COMPLETE:{role}:FullyDisposed");
+        Require(!awaitingResult && !receipt && index == PadProcessSequence.ForRole(role, trial).Count
+            && frame == PadProcessSequence.Receipt(role, trial));
         receipt = true;
     }
     internal void Exited(int exitCode)
     {
-        Require(receipt && !exited && exitCode == 0);
+        Require(receipt && !exited && exitCode == PadProcessSequence.ExitCode(role, trial));
         exited = true;
         if (role == 1) { firstExited = true; }
         else { Success = true; }
-        Evidence.Add($"EXIT:{role}:0");
+        Evidence.Add($"EXIT:{role}:{exitCode}");
+    }
+    internal void ConfirmPostCancellationPhysical()
+    {
+        Require(trial == PadProcessTrial.CooperativeCancellation && role == 1 && firstExited
+            && !postCancellationPhysical);
+        postCancellationPhysical = true;
+        Evidence.Add("PHYSICAL:postCancellation:YES");
     }
     private static void Require(bool condition)
     {
