@@ -105,6 +105,27 @@ production work-loop cancellation, in-flight HID cancellation, abrupt process
 loss, interrupted Fixed reconnect, sleep/power loss, independent fan-state/RPM,
 ownership and production handback remain unvalidated. See draft #624's
 cooperative cancellation guide and capture PR #33.
+## Fixed USB reconnect: conditional restoration stopped
+
+The attended trial from source `0a204045` completed the first child’s Medium,
+physical check, full disposal and exit zero, then sampled 5,113.7454 ms of USB
+absence and observed reconnection. The operator confirmed Medium/green remained
+normal. The fresh second process read raw `0000`, so the trial exited `2` before
+Auto, raw restoration or reacquisition. No child remained running. This observed
+the USB boundary but did not complete restoration. No immediately pre-USB raw
+query after Fixed was collected, so causally attributing the value to USB reset
+is unsupported. Raw mode alone is not fan-state readback.
+
+A separate full USB+12 V power cycle returned to Medium with the same lighting,
+according to the operator; quiet Auto was not recovered. Synapse and services
+stayed stopped. Independent result/privacy review passed; all 59 evidence-toolkit
+suites passed before the recovery-outcome-only update, and its focused check
+passed afterward. Production and broader lifecycle claims remain closed.
+
+Further lifecycle expansion is paused. The next narrow recovery reasserts the
+already verified acquisition/Medium/Auto sequence from fresh present Medium,
+keeping desired quiet Auto separate from initial physical state and raw mode.
+See draft #624’s recovery decision and capture PR #33.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
