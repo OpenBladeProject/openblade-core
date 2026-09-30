@@ -1,8 +1,16 @@
-# Cooling-pad continuous-control evidence gap
+# Cooling-pad continuous-control evidence and remaining gaps
 
 Native production admission remains closed. The finite service-curve result
 supports acknowledged demand changes and attended restoration, not continuous
 transaction reuse or session renewal.
+
+The later ten-minute vendor trace below establishes acknowledged `0D/01`
+demands across `1E -> 00`, followed by successful `01`, `02` and further demands.
+It does not show an identical fan request ID twice within the recording,
+independently instrument allocator lifetime, or validate native OpenBlade reuse.
+Production admission remains closed. Its final selection exceeded the stimulus
+deadline, recording timed out gracefully, and physical confirmation followed
+timeout; successful cleanup does not rewrite those outcomes.
 
 The subsequently authorized five-minute vendor capture is recorded in
 [the bounded result](cooling-pad-vendor-continuous-capture.md). It contains one
@@ -317,6 +325,81 @@ Feature query/control command, measured-RPM test or software install occurred.
 Native admission, standalone handback and continuous demand reuse remain closed.
 Further recording requires separate authorization; this attempt cannot extend
 or restart automatically.
+
+## Ten-minute capture: demand boundary and successors
+
+The operator separately approved one fresh 600-second vendor recording, at most
+35 existing CPU Quiet1000/Balanced2200 selections, a 480-second stimulus deadline
+and 120 seconds reserved for restoration. A distinct scope acknowledgement
+prevented using the old 300-second target. The minimally changed private launcher
+and unchanged cleanup flow passed four scope checks, the original 23 preparation
+checks and three inert real-wrapper checks under Windows PowerShell, with
+independent review. These establish software preparation, not live endurance.
+The 480-second/35-selection limits were external operator instructions.
+
+UAC/setup, baseline and lighting inspection, and the operator's physical preflight
+preceded recording. No preset mutation occurred during preparation. The saved
+baseline was Fan Control off, retained Fixed/Medium 2200, Smart Balanced with CPU
+input and full-brightness static green. After recording began, a user-input guard
+blocked the initial click without submission; fresh observation and activation
+preceded the actual input. CPU selection was confirmed by a fresh screenshot
+after scrolling; no offscreen selector click was attempted in this run.
+
+Twenty-seven Smart selections displayed alternating 2200/1000 demands, with CPU
+readings in the scoped range. Fresh observations were saved after each change;
+they are UI demand context, not measured RPM or packet ACKs. The final Balanced
+selection at 22:06:39.443 UTC was approximately 483.709 seconds after readiness,
+and its observation at 485.0 seconds. Both exceeded the 480-second stimulus
+deadline. Fixed and off-restoration refreshes followed at 514.4 and 530.5 seconds.
+This overrun is preserved; no complete compliance with the approved stimulus
+deadline is claimed. Further stimulus did not occur.
+
+The recorder reached its 600-second bound and stopped gracefully at
+22:08:36.474815 UTC on 2026-09-30, with status `TimedOut` and no recorder errors.
+The operator confirmed restored quiet/green behavior, no red/sleep and inactive
+HyperBoost; the physical marker was saved at 22:08:40.427887 UTC, approximately
+3.953 seconds after recorder termination. The subsequently created stop sentinel
+did not cause that stop. This remains post-capture physical observation.
+
+The private PCAP is 34,241 bytes, SHA-256
+`EB69F85D6EC57512E7C809885F1FD10D207F0438CD58099CFD0EA89033731C96`.
+It contains 370 raw frames, 218 decoded payload entries and 182 complete
+90-byte bodies, all checksum-valid without truncation. All 31 fan pairs have
+exact transaction/command/length/payload echoes and successful status `02`,
+with no unmatched or ambiguous fan reports. Twenty-seven `0D/01` demand ACKs
+establish 26 changed successors, alternating 2200/1000 and ending at 2200.
+The demand boundary and immediate successors are:
+
+| Request/response frames | Transaction | Command/payload | Configured demand |
+| --- | --- | --- | --- |
+| 111/114 | `1D` | `0D/01:010514` | 1000 |
+| 117/120 | `1E` | `0D/01:01052C` | 2200 |
+| 127/130 | `00` | `0D/01:010514` | 1000 |
+| 135/138 | `01` | `0D/01:01052C` | 2200 |
+| 143/146 | `02` | `0D/01:010514` | 1000 |
+
+Further demand ACKs continue through `11`: seventeen demand successors follow
+`00`. The complete fan request sequence is `15..1E, 00..14`, each value once.
+It supports the source candidate's `1E -> 00` boundary and continued vendor
+demand acceptance. No identical fan request ID repeats within this trace, and
+no independent allocator-object instrumentation excludes an internal reset.
+It is not proof of indefinite control, native Windows transport reuse or
+cross-epoch/reacquisition safety. Lighting has 120 unpaired requests and four
+independent wraps; they do not establish fan policy or lighting admission.
+
+Vendor Fixed restoration is acknowledged at frames 325/328 and 329/332;
+off `000600` at 339/342 is acknowledged at 22:07:24.927978 UTC, before timeout.
+Captured restoration commands and the subsequent physical observation are
+distinct; neither admits an OpenBlade standalone off/handback command.
+After separate full tray-exit confirmation, controller/recorder absence was
+verified and the same elevated helper completed cleanup with exit zero.
+`cleanupCompleted=true` and `captureCompleted=false` preserve the graceful
+timeout and its error. OpenBlade is running; both temporary Razer services are
+stopped. Read-only IPC59 verifies unchanged installed `55718fa0`, verified host
+identity and pad Stop/Stopped/ObservedOnly with no planned/historical demand.
+No OpenBlade pad Feature query/control command or software install occurred.
+Raw packets and vendor source remain private; no further recording is authorized
+by this completed attempt.
 
 ## Eventual implementation boundary
 
