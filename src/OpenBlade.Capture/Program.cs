@@ -1688,6 +1688,16 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    CoolingPadCurvePreviewCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadCurvePreviewCommand(
+        CoolingPadCurvePreviewCommand.ReadWindowsHost,
+        static () => new SafeWindowsFanTemperatureSource(), Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     CoolingPadHostDemand2200TrialCommand.Name,
     StringComparison.OrdinalIgnoreCase))
 {
