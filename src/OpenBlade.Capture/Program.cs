@@ -6,8 +6,9 @@ using OpenBlade.Service;
 
 if (args.Length > 0 && args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase))
 {
-    // The pure PM command has no native provider or lifetime authority yet.
-    return Rz090528CpuPmObservationProbe.RunUnavailable(args.Skip(1).ToArray(), Console.Out, Console.Error);
+    // Developer-only observations require the reviewed supervisor bootstrap
+    // and fresh live parent authority before constructing a native provider.
+    return await CpuPmAttendedCapture.RunAsync(args.Skip(1).ToArray(), Console.Out, Console.Error);
 }
 
 if (args.Length > 0 && args[0].Equals(Rz090528CpuLiveQueryProbe.Name, StringComparison.OrdinalIgnoreCase))
