@@ -40,23 +40,28 @@ internal sealed class CoolingPadServiceCurveTrialRunner
     private readonly TimeProvider clock;
     private readonly Func<CancellationToken, Task> delay;
     private readonly TimeSpan operatorTimeout;
+    private readonly ICoolingPadMutationEvidenceStore evidenceStore;
     private int started;
 
     internal CoolingPadServiceCurveTrialRunner(Func<IFanTemperatureSource>? createSource = null,
         Func<ICoolingPadControlPortFactory>? createPorts = null, TimeProvider? clock = null,
-        Func<CancellationToken, Task>? delay = null, TimeSpan? operatorTimeout = null)
+        Func<CancellationToken, Task>? delay = null, TimeSpan? operatorTimeout = null,
+        ICoolingPadMutationEvidenceStore? evidenceStore = null)
     {
         this.createSource = createSource ?? (() => new SafeWindowsFanTemperatureSource());
         this.createPorts = createPorts ?? CoolingPadDeveloperValidation.CreatePortFactory;
         this.clock = clock ?? TimeProvider.System;
         this.delay = delay ?? (token => Task.Delay(TimeSpan.FromSeconds(2), this.clock, token));
         this.operatorTimeout = operatorTimeout ?? TimeSpan.FromMinutes(10);
+        this.evidenceStore = evidenceStore ?? new CoolingPadMutationEvidenceStore(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade"));
     }
 
     internal static CoolingPadServiceCurveTrialRunner ForTesting(Func<IFanTemperatureSource> source,
         Func<CancellationToken, Task<CoolingPadSessionOpenResult>> open,
         Func<CancellationToken, Task>? delay = null, TimeSpan? operatorTimeout = null) =>
-        new(source, () => new CoolingPadProtocolPortFactory(open), delay: delay ?? (_ => Task.CompletedTask), operatorTimeout: operatorTimeout);
+        new(source, () => new CoolingPadProtocolPortFactory(open), delay: delay ?? (_ => Task.CompletedTask),
+            operatorTimeout: operatorTimeout, evidenceStore: new InMemoryCoolingPadMutationEvidenceStore());
 
     internal async Task<CoolingPadServiceCurveTrialResult> RunAsync(
         Func<string, CancellationToken, Task<bool>> confirm, CancellationToken token)
@@ -92,7 +97,7 @@ internal sealed class CoolingPadServiceCurveTrialRunner
             source = await opening.WaitAsync(TimeSpan.FromSeconds(5), clock, token).ConfigureAwait(false);
             if (source is not IDisposable) { throw new InvalidOperationException("SourceMustBeDisposable"); }
             phase = "initialServiceAdmission";
-            runtime = new CoolingPadControlRuntime(new RecordingFactory(createPorts(), operations),
+            runtime = new CoolingPadControlRuntime(evidenceStore, new RecordingFactory(createPorts(), operations),
                 new RecordingSource(source, readings, clock), clock);
             await runtime.ApplySettingsAsync(Settings, token).ConfigureAwait(false);
             var initial = await runtime.ResumeAsync(token).ConfigureAwait(false);

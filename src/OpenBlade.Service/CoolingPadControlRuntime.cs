@@ -82,16 +82,27 @@ public sealed class CoolingPadControlRuntime
     private long runningGeneration;
     private Func<bool> epochAdmission = () => true;
     private int retainedMutationEvidence;
+    private readonly ICoolingPadMutationEvidenceStore evidenceStore;
+    private CoolingPadMutationEvidenceSnapshot? armedEvidence;
+    private int evidenceUnavailable;
 
     // Resource release and Stop do not undo a setter. This is session-local
     // evidence for cross-feature admission, not a fan-state or ownership claim.
-    internal bool HasRetainedMutationEvidence => Volatile.Read(ref retainedMutationEvidence) != 0;
+    internal bool HasRetainedMutationEvidence => Volatile.Read(ref retainedMutationEvidence) != 0
+        || Volatile.Read(ref evidenceUnavailable) != 0 || Volatile.Read(ref armedEvidence) is not null;
 
     public CoolingPadControlRuntime(ICoolingPadControlPortFactory? factory = null,
         IFanTemperatureSource? temperatures = null, TimeProvider? clock = null,
         Func<FanTemperatureReadings, bool>? isGpuInactivityTrustworthy = null,
         Func<bool>? writeAdmission = null)
+        : this(new InMemoryCoolingPadMutationEvidenceStore(), factory, temperatures, clock, isGpuInactivityTrustworthy, writeAdmission) { }
+
+    internal CoolingPadControlRuntime(ICoolingPadMutationEvidenceStore evidenceStore,
+        ICoolingPadControlPortFactory? factory = null, IFanTemperatureSource? temperatures = null,
+        TimeProvider? clock = null, Func<FanTemperatureReadings, bool>? isGpuInactivityTrustworthy = null,
+        Func<bool>? writeAdmission = null)
     {
+        this.evidenceStore = evidenceStore ?? throw new ArgumentNullException(nameof(evidenceStore));
         this.factory = factory ?? new UnavailableCoolingPadControlPortFactory();
         this.temperatures = temperatures;
         this.clock = clock ?? TimeProvider.System;
@@ -100,6 +111,18 @@ public sealed class CoolingPadControlRuntime
     }
 
     public CoolingPadControlStatus GetStatus() => Volatile.Read(ref status);
+
+    // Fresh load also notices a separately attended developer process. This is
+    // not cross-process exclusion between independent hardware controllers.
+    internal async Task<bool> HasBlockingMutationEvidenceAsync(CancellationToken token)
+    {
+        try
+        {
+            var loaded = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
+            return HasRetainedMutationEvidence || loaded.BlocksAdmission;
+        }
+        catch { return true; }
+    }
 
     public async Task<CoolingPadControlStatus> ApplySettingsAsync(CoolingPadControlSettings settings, CancellationToken token)
     {
@@ -162,6 +185,10 @@ public sealed class CoolingPadControlRuntime
             { return Pause(CoolingPadControlPauseReason.DeviceUnavailable); }
             if (temperatureRead is { IsCompleted: false })
             { return Pause(CoolingPadControlPauseReason.TelemetryUnavailable); }
+            var evidence = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
+            if (evidence.BlocksAdmission || Volatile.Read(ref evidenceUnavailable) != 0)
+            { return Pause(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            armedEvidence = null;
             revoked = false;
             runningGeneration = requestedGeneration;
             epochAdmission = sessionAdmission ?? (() => true);
@@ -273,6 +300,11 @@ public sealed class CoolingPadControlRuntime
             result = result with { RawRestorationConfirmed = true };
             await Observe("finalPhysicalConfirmation").ConfigureAwait(false);
             result = result with { FinalPhysicalConfirmed = true };
+            phase = "persistAttendedResolution";
+            var resolved = await EvidenceAsync(evidenceToken => evidenceStore.ResolveAsync(armedEvidence!, evidenceToken), token).ConfigureAwait(false);
+            if (resolved.Invalid || resolved.Evidence?.MutationMayHaveOccurred != false)
+            { throw new InvalidDataException("Pad evidence resolution was not confirmed."); }
+            armedEvidence = null;
             Volatile.Write(ref retainedMutationEvidence, 0);
         }
         catch (Exception exception)
@@ -357,6 +389,22 @@ public sealed class CoolingPadControlRuntime
     private async Task<T> PortAsync<T>(Func<Task<T>> operation, CancellationToken token, bool mayWrite = true)
     {
         if (!Allowed(token)) { throw new OperationCanceledException(token); }
+        if (mayWrite)
+        {
+            var current = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
+            if (current.Invalid || Volatile.Read(ref evidenceUnavailable) != 0)
+            { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            if (armedEvidence is null)
+            {
+                armedEvidence = await EvidenceAsync(evidenceToken => evidenceStore.ArmAsync(current, evidenceToken), token).ConfigureAwait(false);
+            }
+            else if (current != armedEvidence)
+            { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            if (armedEvidence.Invalid || armedEvidence.Evidence?.MutationMayHaveOccurred != true)
+            { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            // A completed or late journal operation never revives revoked admission.
+            if (!Allowed(token)) { throw new OperationCanceledException(token); }
+        }
         var pending = Task.Run(operation, CancellationToken.None);
         portOperation = pending;
         Retain(pending);
@@ -370,6 +418,36 @@ public sealed class CoolingPadControlRuntime
             }
             throw;
         }
+    }
+
+    private async Task<T> EvidenceAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var cancellation = new CancellationTokenSource();
+        Task cancellationCompleted = Task.CompletedTask;
+        var pending = Task.Run(() => operation(cancellation.Token), CancellationToken.None);
+        Retain(pending);
+        try
+        {
+            var result = await pending.WaitAsync(PortTimeout, clock, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch
+        {
+            Volatile.Write(ref evidenceUnavailable, 1);
+            cancellationCompleted = cancellation.CancelAsync();
+            Retain(cancellationCompleted);
+            throw;
+        }
+        finally { Retain(DisposeEvidenceCancellationAsync(pending, cancellationCompleted, cancellation)); }
+    }
+
+    private static async Task DisposeEvidenceCancellationAsync(Task pending, Task cancellationCompleted, CancellationTokenSource cancellation)
+    {
+        try { await Task.WhenAll(pending, cancellationCompleted).ConfigureAwait(false); }
+        catch { }
+        finally { cancellation.Dispose(); }
     }
 
     private async Task RequireRawAsync(CoolingPadRawControlState expected, CancellationToken token)

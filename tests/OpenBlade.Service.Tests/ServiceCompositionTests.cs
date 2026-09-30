@@ -30,6 +30,7 @@ public sealed class ServiceCompositionTests
             using ServiceProvider provider = services.BuildServiceProvider();
             var journalStore = Assert.IsType<HyperBoostOwnershipJournalStore>(
                 provider.GetRequiredService<IHyperBoostOwnershipJournalStore>());
+            Assert.IsType<CoolingPadMutationEvidenceStore>(provider.GetRequiredService<ICoolingPadMutationEvidenceStore>());
             var journal = new HyperBoostOwnershipJournal(
                 HyperBoostOwnershipJournalState.OwnedConfirmed,
                 PerformancePreset.Balanced,

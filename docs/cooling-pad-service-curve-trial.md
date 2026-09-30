@@ -13,6 +13,16 @@ remain inactive throughout, and each physical/phase prompt repeats that operator
 requirement. The trial cannot grant production admission or validate installed
 service control.
 
+Future runs also require access to the protected machine-local mutation store
+and separately established exclusive hardware control. The runner now uses the
+fixed ProgramData store, arms it before possible mutation and resolves only
+after complete attended restoration. Unresolved or invalid evidence blocks a
+fresh run; it never authorizes recovery. A fresh store load does not serialize
+an installed service's HyperBoost transition against a separately starting
+Capture process. Arrange service/controller exclusivity before a new trial;
+the command does not stop them automatically. This prerequisite does not change
+the source-bound completed result below, which predates the durable store.
+
 Use a reviewed build on the exact RZ09-05289EN4 host and 1532:0F43 rev0200 pad:
 
 ```powershell

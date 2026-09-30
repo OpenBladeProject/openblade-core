@@ -10,7 +10,41 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceControlRuntimeTests : IDisposable
 {
     [Fact]
-    public async Task HyperBoostBeginRevokesPadAcquireBeforeMutationAndRequiresExplicitResumeAfterExit()
+    public async Task HyperBoostFreshEntryLoadsEvidenceArmedAfterServiceInitializationButExitRemainsAvailable()
+    {
+        var evidence = new InMemoryCoolingPadMutationEvidenceStore();
+        var context = CreateContext(true, coolingPadEvidenceStore: evidence,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(default);
+        await evidence.ArmAsync(await evidence.LoadAsync(default), default);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetHyperBoostAsync(true, default)).Status);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { HyperBoostActive = true };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetHyperBoostAsync(false, default)).Status);
+        Assert.True((await evidence.LoadAsync(default)).BlocksAdmission);
+    }
+
+    [Fact]
+    public async Task InvalidPadEvidenceDoesNotPreventInitializationOrHyperBoostExit()
+    {
+        var evidence = new CoolingPadMutationEvidenceStore(Path.Combine(directory, "unavailable-pad-state"));
+        var context = CreateContext(true, coolingPadEvidenceStore: evidence,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(default);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetHyperBoostAsync(true, default)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { HyperBoostActive = true };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetHyperBoostAsync(false, default)).Status);
+    }
+
+    [Fact]
+    public async Task HyperBoostBeginRevokesPadAcquireBeforeMutationAndRetainsPrearmedBarrier()
     {
         var pad = new AdmissionRacePadFactory();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -27,19 +61,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         release.TrySetResult();
         Assert.Equal(ControlOperationStatus.Blocked, (await resume.WaitAsync(TimeSpan.FromSeconds(5))).Status);
         ControlOperationResult enteredHyperBoost = await hyperBoost.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(enteredHyperBoost.Status == ControlOperationStatus.Applied, enteredHyperBoost.Message);
+        Assert.True(enteredHyperBoost.Status == ControlOperationStatus.Blocked, enteredHyperBoost.Message);
         Assert.Equal(0, pad.Ports[0].Writes);
         Assert.True(pad.Ports[0].Disposed);
         Assert.Equal(desired, context.Runtime.GetStatus().CoolingPadControl!.Requested);
         Assert.True(context.Runtime.GetStatus().CoolingPadControl!.ResumeRequired);
         Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
         Assert.Single(pad.Ports);
-        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetHyperBoostAsync(false, default)).Status);
         await context.Runtime.MaintainCoolingPadControlAsync(default);
         Assert.Single(pad.Ports);
         pad.BeforeAcquire = null;
-        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
-        Assert.Equal(2, pad.Ports.Count);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        Assert.Single(pad.Ports);
         await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default);
     }
 
@@ -104,8 +137,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
         await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default);
         ControlOperationResult result = await context.Runtime.SetHyperBoostAsync(true, default);
-        Assert.Equal(attempted ? ControlOperationStatus.Blocked : ControlOperationStatus.Applied, result.Status);
-        Assert.Equal(attempted ? 0 : 1, context.Device.HyperBoostSetCalls);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(attempted, context.Runtime.GetStatus().CoolingPadControl!.SubmissionStateUnknown);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
     }
 
     [Fact]
@@ -132,7 +166,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task CanceledHyperBoostWaitStillRevokesOldPadEpochWithoutBlockingFreshExplicitResume()
+    public async Task CanceledHyperBoostWaitStillRevokesOldPadEpochAndPreservesPrearmedEvidence()
     {
         var pad = new AdmissionRacePadFactory();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -152,7 +186,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
         Assert.Equal(0, pad.Ports[0].Writes);
         pad.BeforeAcquire = null;
-        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        Assert.Single(pad.Ports);
         await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default);
     }
 
@@ -28580,7 +28615,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        ICoolingPadControlPortFactory? coolingPadPortFactory = null)
+        ICoolingPadControlPortFactory? coolingPadPortFactory = null,
+        ICoolingPadMutationEvidenceStore? coolingPadEvidenceStore = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -28679,7 +28715,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
-            coolingPadPortFactory: coolingPadPortFactory);
+            coolingPadPortFactory: coolingPadPortFactory,
+            coolingPadEvidenceStore: coolingPadEvidenceStore);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides

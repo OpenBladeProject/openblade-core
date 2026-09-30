@@ -4,7 +4,24 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Evidence reviewed against product `8c0ebe95` and captures
 `4f2bf1565c7557439760db7e45104bb1e8b62bfd` on 2026-09-29.
 
-## Latest completed temperature-driven demand change
+## Current service preparation, 2026-09-30
+
+The finite core service-curve trial from source `37b51016` completed with exit
+zero: 60 maintenance decisions, 14 acknowledged configured demands, 47 suppressed
+repeats and complete attended Medium/quiet/raw0000 restoration. The source-bound
+result and limits are recorded in [the attended guide](cooling-pad-service-curve-trial.md).
+
+Source `e00b7a82` is broker-installed and independently reviewed. Its outer-service
+coordination rejects pad writes queued across HyperBoost transitions and retains
+runtime-local mutation evidence after Stop; HyperBoost entry is blocked while
+that evidence remains unresolved, while exit remains available. Native production
+admission is still closed. The next software patch adds protected write-ahead
+evidence across restart and generation/hash-checked attended resolution; its
+review and installation are separate from the completed hardware trial.
+Continuous transaction renewal and lighting remain outstanding. These statements supersede the
+historical next-step proposals below; further lifecycle expansion stays paused.
+
+## Earlier completed temperature-driven demand change
 
 The attended bounded trial from source68d6cdb9 completed with exit0 on2026-09-30.
 Active-GPU readings changed54C to44C: configured1600 demand and then1350 demand

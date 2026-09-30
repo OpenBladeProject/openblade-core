@@ -798,7 +798,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        ICoolingPadControlPortFactory? coolingPadPortFactory = null)
+        ICoolingPadControlPortFactory? coolingPadPortFactory = null,
+        ICoolingPadMutationEvidenceStore? coolingPadEvidenceStore = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -824,7 +825,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
-        coolingPadControl = new(coolingPadPortFactory, temperatures: this.fanTemperatureSource, clock: this.timeProvider,
+        coolingPadControl = new(coolingPadEvidenceStore ?? new InMemoryCoolingPadMutationEvidenceStore(), coolingPadPortFactory, temperatures: this.fanTemperatureSource, clock: this.timeProvider,
             writeAdmission: () => CoolingPadAdmissionReason(includeSession: false) == CoolingPadControlPauseReason.None);
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
@@ -5575,7 +5576,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.HyperBoostActive, token).ConfigureAwait(false);
                 PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
             }
-            if (enabled && coolingPadControl.HasRetainedMutationEvidence)
+            if (enabled && await coolingPadControl.HasBlockingMutationEvidenceAsync(token).ConfigureAwait(false))
             {
                 return new(ControlOperationStatus.Blocked,
                     "HyperBoost is blocked because a cooling-pad setter may remain effective. Stopping updates did not restore fan behavior; explicit attended resolution is required.");

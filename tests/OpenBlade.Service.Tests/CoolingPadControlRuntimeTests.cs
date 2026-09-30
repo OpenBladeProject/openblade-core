@@ -4,6 +4,155 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CoolingPadControlRuntimeTests
 {
+    [Fact]
+    public async Task WriteAheadEvidenceSurvivesStopAndBlocksRestartBeforePortOpen()
+    {
+        var store = new EvidenceStore();
+        var h = new Harness(evidenceStore: store);
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        Assert.Equal(0, store.Arms);
+        h.Factory.Configure = port => port.BeforeAcquire = () => Assert.True(store.Current.BlocksAdmission);
+        Assert.Equal(CoolingPadControlState.Running, (await h.Runtime.ResumeAsync(default)).State);
+        Assert.Equal(1, store.Arms);
+        await h.Runtime.StopAsync(default);
+        var restarted = new Harness(evidenceStore: store);
+        await restarted.Runtime.ApplySettingsAsync(Fixed, default);
+        Assert.Equal(CoolingPadControlPauseReason.ExplicitResumeRequired, (await restarted.Runtime.ResumeAsync(default)).PauseReason);
+        Assert.Empty(restarted.Factory.Ports);
+        Assert.True(await restarted.Runtime.HasBlockingMutationEvidenceAsync(default));
+    }
+
+    [Theory]
+    [InlineData("load")]
+    [InlineData("arm")]
+    public async Task EvidenceFailureCannotDispatchASetter(string failure)
+    {
+        var store = new EvidenceStore { FailLoad = failure == "load", FailArm = failure == "arm" };
+        var h = new Harness(evidenceStore: store);
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        Assert.NotEqual(CoolingPadControlState.Running, (await h.Runtime.ResumeAsync(default)).State);
+        Assert.All(h.Factory.Ports, port => Assert.All(port.Log, item => Assert.Equal("query", item)));
+        Assert.True(await h.Runtime.HasBlockingMutationEvidenceAsync(default));
+    }
+
+    [Fact]
+    public async Task WriteAheadReplacementReadbackFailureRetainsDurableBarrierWithoutDispatchingSetter()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "OpenBlade.PadCommitTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        try
+        {
+            bool failCommittedReadback = true;
+            var store = new CoolingPadMutationEvidenceStore(path, (candidate, _) =>
+            {
+                // The JSON path first exists after the atomic replacement. Fail
+                // that post-commit verification, not preparation or the write.
+                if (failCommittedReadback && candidate.EndsWith(CoolingPadMutationEvidenceStore.FileName, StringComparison.Ordinal))
+                { throw new IOException("Injected post-replacement verification failure."); }
+            }, _ => { });
+            var h = new Harness(evidenceStore: store);
+            await h.Runtime.ApplySettingsAsync(Fixed, default);
+            var outcome = await h.Runtime.ResumeAsync(default);
+            Assert.Equal(CoolingPadControlState.Paused, outcome.State);
+            Assert.False(outcome.SubmissionStateUnknown);
+            Assert.Equal(new[] { "query" }, h.Port.Log);
+            Assert.True(h.Port.Disposed);
+            failCommittedReadback = false;
+            var reloaded = await store.LoadAsync(default);
+            Assert.True(reloaded.BlocksAdmission);
+            Assert.True(await h.Runtime.HasBlockingMutationEvidenceAsync(default));
+            var restarted = new Harness(evidenceStore: new CoolingPadMutationEvidenceStore(path, (_, _) => { }, _ => { }));
+            await restarted.Runtime.ApplySettingsAsync(Fixed, default);
+            Assert.Equal(CoolingPadControlPauseReason.ExplicitResumeRequired, (await restarted.Runtime.ResumeAsync(default)).PauseReason);
+            Assert.Empty(restarted.Factory.Ports);
+        }
+        finally { Directory.Delete(path, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LateArmAfterCancellationOrTimeoutNeverDispatches(bool cancel)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new EvidenceStore { BeforeArm = () => { entered.TrySetResult(); return release.Task; } };
+        var h = new Harness(evidenceStore: store);
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        using var cancellation = new CancellationTokenSource();
+        Task<CoolingPadControlStatus> resume = h.Runtime.ResumeAsync(cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (cancel) { cancellation.Cancel(); }
+        Assert.NotEqual(CoolingPadControlState.Running, (await resume.WaitAsync(TimeSpan.FromSeconds(6))).State);
+        release.TrySetResult();
+        await store.Armed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(new[] { "query" }, h.Port.Log);
+        Assert.True(h.Port.Disposed);
+        Assert.True(await h.Runtime.HasBlockingMutationEvidenceAsync(default));
+        Assert.NotEqual(CoolingPadControlState.Running, (await h.Runtime.ResumeAsync(default)).State);
+        Assert.Single(h.Factory.Ports);
+    }
+
+    [Fact]
+    public async Task PreNativeRejectionRetainsPrearmedEvidenceWithoutClaimingSubmission()
+    {
+        var store = new EvidenceStore();
+        var h = new Harness(evidenceStore: store);
+        h.Factory.Configure = port => port.RejectAcquire = true;
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        var result = await h.Runtime.ResumeAsync(default);
+        Assert.False(result.SubmissionStateUnknown);
+        Assert.True(store.Current.BlocksAdmission);
+        Assert.DoesNotContain("acquire", h.Port.Log);
+        await h.Runtime.StopAsync(default);
+        Assert.True(await h.Runtime.HasBlockingMutationEvidenceAsync(default));
+    }
+
+    [Fact]
+    public async Task ResolutionFailureKeepsDurableBarrierDespiteAllPhysicalConfirmations()
+    {
+        var store = new EvidenceStore { FailResolve = true };
+        var h = new Harness(evidenceStore: store);
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        await h.Runtime.ResumeAsync(default);
+        var result = await h.Runtime.RestoreForDeveloperValidationAsync((_, _) => Task.FromResult(true), default);
+        Assert.True(result.FinalPhysicalConfirmed);
+        Assert.False(result.Completed);
+        Assert.Equal("persistAttendedResolution", result.FailurePhase);
+        Assert.True(store.Current.BlocksAdmission);
+        Assert.True(await h.Runtime.HasBlockingMutationEvidenceAsync(default));
+    }
+
+    [Fact]
+    public async Task CompleteAttendedResolutionAllowsCleanRestartWithoutReplayingIntent()
+    {
+        var store = new EvidenceStore();
+        var h = new Harness(evidenceStore: store);
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        await h.Runtime.ResumeAsync(default);
+        Assert.True((await h.Runtime.RestoreForDeveloperValidationAsync((_, _) => Task.FromResult(true), default)).Completed);
+        Assert.False(store.Current.BlocksAdmission);
+        var restarted = new Harness(evidenceStore: store);
+        Assert.Equal(CoolingPadControlMode.Stop, restarted.Runtime.GetStatus().Requested.Mode);
+        Assert.False(await restarted.Runtime.HasBlockingMutationEvidenceAsync(default));
+        Assert.Empty(restarted.Factory.Ports);
+        await restarted.Runtime.ApplySettingsAsync(Fixed, default);
+        Assert.Equal(CoolingPadControlState.Running, (await restarted.Runtime.ResumeAsync(default)).State);
+        Assert.Equal(2, store.Arms);
+    }
+
+    [Fact]
+    public async Task ClosedFactoryAndStagedIntentNeverArmEvidence()
+    {
+        var store = new EvidenceStore();
+        var runtime = new CoolingPadControlRuntime(store);
+        await runtime.ApplySettingsAsync(Fixed, default);
+        Assert.Equal(CoolingPadControlPauseReason.AdmissionClosed, (await runtime.ResumeAsync(default)).PauseReason);
+        Assert.Equal(0, store.Arms);
+        Assert.False(store.Current.BlocksAdmission);
+        Assert.False(await runtime.HasBlockingMutationEvidenceAsync(default));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -97,7 +246,7 @@ public sealed class CoolingPadControlRuntimeTests
     [InlineData(CoolingPadPortFault.Disconnected, CoolingPadControlPauseReason.DeviceUnavailable)]
     [InlineData(CoolingPadPortFault.ControllerConflict, CoolingPadControlPauseReason.ControllerConflict)]
     [InlineData(CoolingPadPortFault.SubmissionUnknown, CoolingPadControlPauseReason.SubmissionUnknown)]
-    public async Task SessionFaultDoesNotReplayAndRequiresFreshRawZeroOnExplicitResume(CoolingPadPortFault fault, CoolingPadControlPauseReason reason)
+    public async Task SessionFaultDoesNotReplayAndUnresolvedEvidenceBlocksExplicitResume(CoolingPadPortFault fault, CoolingPadControlPauseReason reason)
     {
         var h = new Harness();
         await h.Runtime.ApplySettingsAsync(Curve, default);
@@ -115,11 +264,11 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Single(h.Factory.Ports);
         Assert.Equal(reads, h.Source.Reads);
         h.Factory.InitialRaw = CoolingPadRawControlState.Raw0300;
-        Assert.Equal(CoolingPadControlPauseReason.SessionChanged, (await h.Runtime.ResumeAsync(default)).PauseReason);
-        Assert.Equal(new[] { "query" }, h.Port.Log);
+        Assert.Equal(CoolingPadControlPauseReason.ExplicitResumeRequired, (await h.Runtime.ResumeAsync(default)).PauseReason);
+        Assert.Single(h.Factory.Ports);
         h.Factory.InitialRaw = CoolingPadRawControlState.Raw0000;
-        Assert.Equal(CoolingPadControlState.Running, (await h.Runtime.ResumeAsync(default)).State);
-        Assert.Equal(3, h.Factory.Ports.Count);
+        Assert.Equal(CoolingPadControlState.Paused, (await h.Runtime.ResumeAsync(default)).State);
+        Assert.Single(h.Factory.Ports);
     }
 
     [Theory]
@@ -299,10 +448,11 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Equal(5, oldPort.Log.Count);
         Assert.True(oldPort.Disposed);
         Assert.Equal(CoolingPadControlPauseReason.ExplicitResumeRequired, h.Runtime.GetStatus().PauseReason);
-        // Failure of the old generation also revokes the queued Resume; a fresh request is required.
+        // Fresh session authorization cannot erase unresolved mutation evidence either.
         await h.Runtime.ResumeAsync(default, () => true);
-        Assert.Equal(CoolingPadControlState.Running, h.Runtime.GetStatus().State);
-        Assert.Equal(1350, h.Runtime.GetStatus().LastAcknowledgedDemand!.Value.Rpm);
+        Assert.Equal(CoolingPadControlState.Paused, h.Runtime.GetStatus().State);
+        Assert.Equal(1600, h.Runtime.GetStatus().LastAcknowledgedDemand!.Value.Rpm);
+        Assert.Single(h.Factory.Ports);
         Assert.Equal(5, oldPort.Log.Count);
     }
 
@@ -349,7 +499,8 @@ public sealed class CoolingPadControlRuntimeTests
         internal readonly Clock Clock = new();
         internal CoolingPadControlRuntime Runtime { get; }
         internal Port Port => Factory.Ports[^1];
-        internal Harness(bool trustedInactive = false) => Runtime = new(Factory, Source, Clock, _ => trustedInactive);
+        internal Harness(bool trustedInactive = false, ICoolingPadMutationEvidenceStore? evidenceStore = null) =>
+            Runtime = new(evidenceStore ?? new InMemoryCoolingPadMutationEvidenceStore(), Factory, Source, Clock, _ => trustedInactive);
     }
     private sealed class Clock : TimeProvider
     {
@@ -399,12 +550,16 @@ public sealed class CoolingPadControlRuntimeTests
         internal Func<Task>? AfterUpdate;
         internal Func<bool>? PendingAdmission;
         internal CoolingPadWriteResult? NextWrite;
+        internal Action? BeforeAcquire;
+        internal bool RejectAcquire;
         private static CoolingPadWriteResult Ack => new(true, true);
         private static CoolingPadWriteResult Denied => new(false, false, CoolingPadPortFault.Rejected);
         public Task<CoolingPadQueryResult> QueryControlStateAsync(CancellationToken token)
         { Log.Add("query"); return Task.FromResult(new CoolingPadQueryResult(Raw)); }
         public Task<CoolingPadWriteResult> AcquireAsync(Func<bool> allowed, CancellationToken token)
         {
+            BeforeAcquire?.Invoke();
+            if (RejectAcquire) { return Task.FromResult(Denied); }
             if (!allowed()) { return Task.FromResult(Denied); }
             Log.Add("acquire"); Raw = CoolingPadRawControlState.Raw0300; return Task.FromResult(Ack);
         }
@@ -436,5 +591,29 @@ public sealed class CoolingPadControlRuntimeTests
         { Assert.True(allowed()); Log.Add("quiet"); return Task.FromResult(Ack); }
         public Task<CoolingPadWriteResult> RestoreRawAsync(Func<bool> allowed, CancellationToken token)
         { Assert.True(allowed()); Log.Add("restore"); Raw = CoolingPadRawControlState.Raw0000; return Task.FromResult(Ack); }
+    }
+
+    private sealed class EvidenceStore : ICoolingPadMutationEvidenceStore
+    {
+        private readonly InMemoryCoolingPadMutationEvidenceStore inner = new();
+        internal CoolingPadMutationEvidenceSnapshot Current => inner.LoadAsync(default).GetAwaiter().GetResult();
+        internal bool FailLoad, FailArm, FailResolve;
+        internal int Arms;
+        internal Func<Task>? BeforeArm;
+        internal TaskCompletionSource Armed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<CoolingPadMutationEvidenceSnapshot> LoadAsync(CancellationToken token) =>
+            FailLoad ? Task.FromException<CoolingPadMutationEvidenceSnapshot>(new IOException()) : inner.LoadAsync(token);
+        public async Task<CoolingPadMutationEvidenceSnapshot> ArmAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token)
+        {
+            Arms++;
+            if (FailArm) { throw new IOException(); }
+            if (BeforeArm is not null) { await BeforeArm(); }
+            // Deliberately non-cooperative completion tests the caller's one-way timeout boundary.
+            var result = await inner.ArmAsync(expected, default);
+            Armed.TrySetResult();
+            return result;
+        }
+        public Task<CoolingPadMutationEvidenceSnapshot> ResolveAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token) =>
+            FailResolve ? Task.FromException<CoolingPadMutationEvidenceSnapshot>(new IOException()) : inner.ResolveAsync(expected, token);
     }
 }

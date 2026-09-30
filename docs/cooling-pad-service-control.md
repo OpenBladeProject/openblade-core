@@ -56,22 +56,36 @@ cannot run after the session has become uncertain or been disposed.
 Outer service coordination closes pad admission before a HyperBoost transition
 waits for either control gate. Pad Resume and maintenance serialize with laptop
 operations; a queued Resume from an older HyperBoost admission epoch is rejected.
-A private retained-mutation flag survives Stop, pause and resource disposal.
-An attempted setter or uncertain submission establishes it; requested settings
-or observed metadata alone do not. HyperBoost entry remains blocked while that
-evidence is unresolved. HyperBoost exit remains available for laptop recovery.
-Only the complete explicit developer restoration with all physical checks clears
-the flag. This bookkeeping is not persistent fan-state readback or proof of
-firmware ownership; service IPC and native production admission are unchanged.
+A protected machine-local record is armed before a possible native setter.
+It means mutation may have occurred, including when a later guard prevents
+submission; requested settings and observed metadata alone do not arm it.
+Stop, pause, disposal and restart do not clear it. Unresolved or invalid evidence
+blocks fresh pad Resume and HyperBoost entry; HyperBoost exit remains available
+for laptop recovery. Entry reloads the record rather than trusting cached state.
+Only complete explicit attended restoration with every physical check permits
+generation/hash-checked resolution. If replacement commits but later readback
+fails, the current runtime stays blocked; a restart may read that committed
+resolution. The record is neither fan-state readback nor authority to recover.
+Service IPC and native production admission are unchanged.
+
+The finite developer Capture runner uses the same fixed protected store.
+Its operator must have storage access and establish exclusive hardware control
+separately. Fresh loads do not serialize HyperBoost transitions across processes;
+the store does not stop the installed service or coordinate device ownership.
 
 Native exchange waits and disposal are bounded. Late operations remain owned
 until actual completion, and a pending or failed disposal blocks replacement.
 Every native SET has fresh exact metadata/controller checks and revocation
 checks before and after the caller's admission predicate. No retry follows
 uncertain submission. Four transaction IDs are reserved for explicit developer
-restoration; this finite validation session allows at most 246 demand updates
-and does not recycle IDs. Continuous production transaction management remains
+restoration. The generic session allows at most 246 subsequent demand updates;
+the service path's additional startup query leaves at most 245. Neither recycles
+IDs. Continuous production transaction management remains
 a separate admission prerequisite.
+The byte-wide allocation ceiling is a software limit, not a validated pad
+counter width. The successful trial remained below ID `1F`; vendor lighting
+rollover does not establish acknowledged fan-control rollover. See the
+[continuous-control evidence gap](cooling-pad-continuous-control-evidence.md).
 
 Service IPC advances from 58 to 59 for the typed settings and Resume requests.
 Protocol51 read-only compatibility and inactive-session projections omit pad
