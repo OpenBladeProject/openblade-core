@@ -81,6 +81,11 @@ public sealed class CoolingPadControlRuntime
     private long revocationGeneration;
     private long runningGeneration;
     private Func<bool> epochAdmission = () => true;
+    private int retainedMutationEvidence;
+
+    // Resource release and Stop do not undo a setter. This is session-local
+    // evidence for cross-feature admission, not a fan-state or ownership claim.
+    internal bool HasRetainedMutationEvidence => Volatile.Read(ref retainedMutationEvidence) != 0;
 
     public CoolingPadControlRuntime(ICoolingPadControlPortFactory? factory = null,
         IFanTemperatureSource? temperatures = null, TimeProvider? clock = null,
@@ -268,6 +273,7 @@ public sealed class CoolingPadControlRuntime
             result = result with { RawRestorationConfirmed = true };
             await Observe("finalPhysicalConfirmation").ConfigureAwait(false);
             result = result with { FinalPhysicalConfirmed = true };
+            Volatile.Write(ref retainedMutationEvidence, 0);
         }
         catch (Exception exception)
         {
@@ -355,7 +361,15 @@ public sealed class CoolingPadControlRuntime
         portOperation = pending;
         Retain(pending);
         try { return await pending.WaitAsync(PortTimeout, clock, token).ConfigureAwait(false); }
-        catch { if (mayWrite) { status = status with { SubmissionStateUnknown = true }; } throw; }
+        catch
+        {
+            if (mayWrite)
+            {
+                Volatile.Write(ref retainedMutationEvidence, 1);
+                status = status with { SubmissionStateUnknown = true };
+            }
+            throw;
+        }
     }
 
     private async Task RequireRawAsync(CoolingPadRawControlState expected, CancellationToken token)
@@ -367,6 +381,7 @@ public sealed class CoolingPadControlRuntime
 
     private void RequireWrite(CoolingPadWriteResult result)
     {
+        if (result.Attempted) { Volatile.Write(ref retainedMutationEvidence, 1); }
         if (result.Attempted && !result.Acknowledged) { status = status with { SubmissionStateUnknown = true }; }
         if (result.Fault is { } fault) { throw new ControlFailure(Map(fault)); }
         if (!result.Attempted || !result.Acknowledged)

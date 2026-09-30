@@ -53,6 +53,17 @@ firmware handback. The attended developer trial has a separate explicit
 Medium-to-quiet restoration sequence on the same still-owned session; it
 cannot run after the session has become uncertain or been disposed.
 
+Outer service coordination closes pad admission before a HyperBoost transition
+waits for either control gate. Pad Resume and maintenance serialize with laptop
+operations; a queued Resume from an older HyperBoost admission epoch is rejected.
+A private retained-mutation flag survives Stop, pause and resource disposal.
+An attempted setter or uncertain submission establishes it; requested settings
+or observed metadata alone do not. HyperBoost entry remains blocked while that
+evidence is unresolved. HyperBoost exit remains available for laptop recovery.
+Only the complete explicit developer restoration with all physical checks clears
+the flag. This bookkeeping is not persistent fan-state readback or proof of
+firmware ownership; service IPC and native production admission are unchanged.
+
 Native exchange waits and disposal are bounded. Late operations remain owned
 until actual completion, and a pending or failed disposal blocks replacement.
 Every native SET has fresh exact metadata/controller checks and revocation

@@ -4,6 +4,27 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CoolingPadControlRuntimeTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RetainedMutationEvidenceClearsOnlyAfterCompleteAttendedRestoration(bool finalConfirmed)
+    {
+        var h = new Harness();
+        await h.Runtime.ApplySettingsAsync(Fixed, default);
+        Assert.False(h.Runtime.HasRetainedMutationEvidence);
+        await h.Runtime.ResumeAsync(default);
+        Assert.True(h.Runtime.HasRetainedMutationEvidence);
+        var restored = await h.Runtime.RestoreForDeveloperValidationAsync((stage, _) =>
+        {
+            Assert.True(h.Runtime.HasRetainedMutationEvidence);
+            return Task.FromResult(stage != "finalPhysicalConfirmation" || finalConfirmed);
+        }, default);
+        Assert.Equal(finalConfirmed, restored.Completed);
+        Assert.Equal(!finalConfirmed, h.Runtime.HasRetainedMutationEvidence);
+        await h.Runtime.StopAsync(default);
+        Assert.Equal(!finalConfirmed, h.Runtime.HasRetainedMutationEvidence);
+    }
+
     [Fact]
     public async Task StopWhileAdmissionPredicateWaitsPreventsLateSet()
     {
@@ -43,6 +64,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.True(staged.ResumeRequired);
         Assert.Equal(CoolingPadControlPauseReason.AdmissionClosed, (await runtime.ResumeAsync(default)).PauseReason);
         Assert.Equal(0, source.Reads);
+        Assert.False(runtime.HasRetainedMutationEvidence);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, runtime.GetStatus().Access);
     }
 
@@ -366,7 +388,7 @@ public sealed class CoolingPadControlRuntimeTests
             return new CoolingPadPortOpenResult(port);
         }
     }
-    private sealed class Port : ICoolingPadControlPort
+    private sealed class Port : ICoolingPadControlPort, ICoolingPadDeveloperRestorationPort
     {
         internal readonly List<string> Log = [];
         internal CoolingPadRawControlState Raw;
@@ -408,5 +430,11 @@ public sealed class CoolingPadControlRuntimeTests
             Disposed = true;
             return ValueTask.CompletedTask;
         }
+        public Task<CoolingPadWriteResult> ReassertMediumAsync(Func<bool> allowed, CancellationToken token)
+        { Assert.True(allowed()); Log.Add("medium"); return Task.FromResult(Ack); }
+        public Task<CoolingPadWriteResult> ReassertQuietAsync(Func<bool> allowed, CancellationToken token)
+        { Assert.True(allowed()); Log.Add("quiet"); return Task.FromResult(Ack); }
+        public Task<CoolingPadWriteResult> RestoreRawAsync(Func<bool> allowed, CancellationToken token)
+        { Assert.True(allowed()); Log.Add("restore"); Raw = CoolingPadRawControlState.Raw0000; return Task.FromResult(Ack); }
     }
 }
