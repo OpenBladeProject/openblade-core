@@ -161,6 +161,27 @@ pad temperature loop was exercised in these trials. See
 [the investigation](https://github.com/OpenBladeProject/openblade-core/blob/chore/cooling-pad-mode-query/docs/cooling-pad-auto-investigation.md).
 Further hardware/lifecycle work remains paused. Production admission is unchanged.
 
+## Typed host-demand preparation
+
+The next implementation slice represents vendor-observed pad capabilities and
+configured target demand independently from laptop fan control. The pad demand
+format is `0D/01:[01,05,rpm/50]`; laptop fan targets use a different channel and
+scale. Vendor configuration supports 500 through 3200 in steps of 50, but this
+range is software-observed and is not fully physically validated on either host.
+
+Preparation is pure validation and encoding: no actor, native transport,
+production registration, service request, automatic acquisition/release, or
+background loop is introduced. Configured demand cannot stand in for measured
+RPM, active fan state, an acknowledgement, or ownership. Access stays
+`ObservedOnly`; the historical Auto-associated `000600` command is not appended
+as a presumed release or preamble.
+
+The subsequent attended step must validate the host-demand command on the exact
+RZ09-05289EN4/pad pair before a temperature-driven loop is wired. Curve policy,
+telemetry age, stale-data behavior and stop behavior must be explicit; the
+vendor's no-next-point zero edge and laptop-specific thermal rules are not
+adopted. This adds no further lifecycle matrix or BIOS restriction.
+
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
