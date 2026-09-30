@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Prepare cooling-pad fixed-demand and host-curve settings with separate requested, planned and acknowledged values; hardware control remains under validation. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))

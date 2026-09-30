@@ -1386,4 +1386,43 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Проверьте политику производительности и вентиляторов</value></data>
   <data name="Review policy" xml:space="preserve"><value>Проверьте политику</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Ознакомьтесь с новым режимом по умолчанию. Восстановление останется приостановленным, пока вы не выберете «Понятно».</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>Управление охлаждающей подставкой проходит проверку. В этой сборке управление оборудованием не включено.</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>Фиксированная заданная скорость</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>Кривая на компьютере</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>Обновление заданной скорости с компьютера работает.</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>Обновления с компьютера приостановлены. Проверьте подставку перед возобновлением.</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>Обновления с компьютера остановлены. Подставка может сохранить последнюю заданную скорость.</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>Остановить обновления</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>Результат команды неизвестен. Дальнейшие обновления приостановлены.</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>Не удалось завершить запрос к охлаждающей подставке. Обновите её состояние перед повторной попыткой.</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>Обновления приостановлены: показания температуры недоступны или устарели. Последняя заданная скорость может оставаться активной.</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Подключите поддерживаемую охлаждающую подставку перед включением HyperBoost.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>Для HyperBoost поддерживаемая охлаждающая подставка должна оставаться подключённой.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
+  </data>
 </root>

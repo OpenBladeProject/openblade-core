@@ -10,6 +10,55 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceControlRuntimeTests : IDisposable
 {
     [Fact]
+    public async Task DisposeClosesPadWithNonDisposableTemperatureSource()
+    {
+        var factory = new DisposalPadFactory();
+        var context = CreateContext(true, coolingPadPortFactory: factory);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1500)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        Assert.False(factory.Port.Disposed);
+        context.Runtime.Dispose();
+        await factory.Port.Disposal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(factory.Port.Disposed);
+        Assert.Equal(2, factory.Port.Writes);
+    }
+
+    [Fact]
+    public async Task CoolingPadSettingsAreTransientAndDefaultCompositionCannotWrite()
+    {
+        TestContext context = CreateContext(true);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int before = context.Device.TotalSetterCalls;
+        var settings = new CoolingPadControlSettings(CoolingPadControlMode.FixedDemand, new(1500));
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await context.Runtime.SetCoolingPadControlAsync(settings, () => true, default)).Status);
+        Assert.Equal(settings, context.Runtime.GetStatus().CoolingPadControl!.Requested);
+        Assert.True(context.Runtime.GetStatus().CoolingPadControl!.ResumeRequired);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        await context.Runtime.MaintainCoolingPadControlAsync(default);
+        Assert.Equal(before, context.Device.TotalSetterCalls);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, context.Runtime.GetStatus().CoolingPadControl!.Access);
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default)).Status);
+        Assert.Equal(CoolingPadControlState.Stopped, context.Runtime.GetStatus().CoolingPadControl!.State);
+    }
+
+    [Fact]
+    public async Task CoolingPadSessionRejectionCannotReplaceRequestedIntent()
+    {
+        TestContext context = CreateContext(true);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.SetCoolingPadControlAsync(
+                new(CoolingPadControlMode.FixedDemand, new(1500)), () => false, default)).Status);
+        Assert.Equal(CoolingPadControlMode.Stop, context.Runtime.GetStatus().CoolingPadControl!.Requested.Mode);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.ResumeCoolingPadControlAsync(() => false, default)).Status);
+    }
+
+    [Fact]
     public async Task PadlessLifecycle_NormalBuildRejectsRequestWithoutDeviceWrites()
     {
         TestContext context = CreateContext(true,
@@ -28357,7 +28406,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        ICoolingPadControlPortFactory? coolingPadPortFactory = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -28455,7 +28505,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
-            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
+            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
+            coolingPadPortFactory: coolingPadPortFactory);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -28610,6 +28661,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     Path.Combine(userRoot, "manual-overrides.json")),
                 configurations[userSid.Value],
                 PersistentOverrideState.Empty));
+        }
+    }
+
+    private sealed class DisposalPadFactory : ICoolingPadControlPortFactory
+    {
+        internal DisposalPadPort Port { get; } = new();
+        public Task<CoolingPadPortOpenResult> OpenAsync(CancellationToken token) =>
+            Task.FromResult(new CoolingPadPortOpenResult(Port));
+    }
+
+    private sealed class DisposalPadPort : ICoolingPadControlPort
+    {
+        internal bool Disposed;
+        internal int Writes;
+        internal TaskCompletionSource Disposal { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private OpenBlade.Service.CoolingPadRawControlState raw;
+        public Task<CoolingPadQueryResult> QueryControlStateAsync(CancellationToken token) => Task.FromResult(new CoolingPadQueryResult(raw));
+        public Task<OpenBlade.Service.CoolingPadWriteResult> AcquireAsync(Func<bool> allowed, CancellationToken token)
+        {
+            Assert.True(allowed());
+            raw = OpenBlade.Service.CoolingPadRawControlState.Raw0300;
+            Writes++;
+            return Task.FromResult(new OpenBlade.Service.CoolingPadWriteResult(true, true));
+        }
+        public Task<CoolingPadEntryResult> EnterDemandAsync(CoolingPadConfiguredRpmDemand demand, Func<bool> allowed, CancellationToken token)
+        {
+            Assert.True(allowed());
+            Writes++;
+            return Task.FromResult(new CoolingPadEntryResult(new(true, true), new(true, true)));
+        }
+        public Task<OpenBlade.Service.CoolingPadWriteResult> SetDemandAsync(CoolingPadConfiguredRpmDemand demand, Func<bool> allowed, CancellationToken token) => throw new InvalidOperationException("Unexpected update.");
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            Disposal.TrySetResult();
+            return ValueTask.CompletedTask;
         }
     }
 

@@ -1386,4 +1386,43 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Review thermal control policy</value></data>
   <data name="Review policy" xml:space="preserve"><value>Review policy</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Review the new default. Restoration stays paused until you select Got it.</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>Cooling-pad control is being validated. Hardware control is not enabled in this build.</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>Fixed demand</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>Host curve</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>Host demand updates are running.</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>Host updates are paused. Check the pad before resuming.</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>Host updates are stopped. The pad may retain its last demand.</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>Stop updates</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>The command outcome is unknown. Further updates are paused.</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>The cooling-pad request could not be completed. Refresh its status before trying again.</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>Updates paused because temperature readings are unavailable or too old. The last demand may remain active.</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Connect the supported cooling pad before enabling HyperBoost.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost requires the supported cooling pad to stay connected.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
+  </data>
 </root>

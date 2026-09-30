@@ -90,6 +90,15 @@ public interface IServiceClient : IServiceStatusWatcher
         FanControlSettings? settings,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetCoolingPadControlAsync(
+        CoolingPadControlSettings settings,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+
+    Task<ControlOperationResult> ResumeCoolingPadControlAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);

@@ -220,6 +220,14 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             },
             token);
 
+    public Task<ControlOperationResult> SetCoolingPadControlAsync(
+        CoolingPadControlSettings settings,
+        CancellationToken token) => SendMutationAsync(
+            new SetCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
+
+    public Task<ControlOperationResult> ResumeCoolingPadControlAsync(CancellationToken token) =>
+        SendMutationAsync(new ResumeCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
+
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => SendMutationAsync(

@@ -8,6 +8,7 @@ public sealed partial class MainViewModel
         ServiceStatusSnapshot left,
         ServiceStatusSnapshot right) =>
         left.DeviceVerified == right.DeviceVerified
+        && left.CoolingPadControl == right.CoolingPadControl
         && left.ControlAccess == right.ControlAccess
         && left.WritesBlocked == right.WritesBlocked
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending

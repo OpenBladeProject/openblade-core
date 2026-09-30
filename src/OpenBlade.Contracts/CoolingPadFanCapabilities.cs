@@ -27,6 +27,7 @@ public sealed class CoolingPadFanCapabilities
 /// </summary>
 public readonly record struct CoolingPadConfiguredRpmDemand
 {
+    [System.Text.Json.Serialization.JsonConstructor]
     public CoolingPadConfiguredRpmDemand(int rpm)
     {
         if (!CoolingPadFanCapabilities.Observed.VendorConfiguredDemandRpm.Supports(rpm))

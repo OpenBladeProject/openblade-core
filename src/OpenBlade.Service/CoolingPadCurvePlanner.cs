@@ -2,40 +2,6 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
-public readonly record struct CoolingPadCurvePoint(
-    int TemperatureCelsius,
-    CoolingPadConfiguredRpmDemand Demand);
-
-/// <summary>Immutable caller-provided policy; not a saved or vendor preset.</summary>
-public sealed class CoolingPadDemandCurve
-{
-    public CoolingPadDemandCurve(IEnumerable<CoolingPadCurvePoint> points)
-    {
-        ArgumentNullException.ThrowIfNull(points);
-        CoolingPadCurvePoint[] copy = points.Take(11).ToArray();
-        if (copy.Length is < 2 or > 10)
-        {
-            throw new ArgumentException("A curve requires two through ten points.", nameof(points));
-        }
-
-        for (int i = 0; i < copy.Length; i++)
-        {
-            CoolingPadCurvePoint point = copy[i];
-            if (point.TemperatureCelsius is < 0 or > 115
-                || !point.Demand.IsWellFormed
-                || i > 0 && (point.TemperatureCelsius <= copy[i - 1].TemperatureCelsius
-                    || point.Demand.Rpm < copy[i - 1].Demand.Rpm))
-            {
-                throw new ArgumentException("Invalid temperature or demand curve.", nameof(points));
-            }
-        }
-
-        Points = Array.AsReadOnly(copy);
-    }
-
-    public IReadOnlyList<CoolingPadCurvePoint> Points { get; }
-}
-
 public enum CoolingPadCurveDecisionReason
 {
     DemandPlanned,

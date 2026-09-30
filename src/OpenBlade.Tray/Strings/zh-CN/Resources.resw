@@ -1993,4 +1993,55 @@
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_ButtonResumeUpdates.Content" xml:space="preserve">
+    <value>恢复更新</value>
+  </data>
+  <data name="MainWindow_ButtonUseSettings.Content" xml:space="preserve">
+    <value>使用这些设置</value>
+  </data>
+  <data name="MainWindow_ComboBoxCoolingPadControlMode.AccessibleName" xml:space="preserve">
+    <value>散热底座控制模式</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU 曲线目标转速</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU 曲线温度</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU 曲线目标转速</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU 曲线温度</value>
+  </data>
+  <data name="MainWindow_SliderCoolingPadConfiguredDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>散热底座设定目标转速</value>
+  </data>
+  <data name="MainWindow_TextBlockCPUCurveTemperatureCDemandRPM.Text" xml:space="preserve">
+    <value>CPU 曲线：温度 °C / 目标转速 RPM</value>
+  </data>
+  <data name="MainWindow_TextBlockConfiguredDemandRPM.Text" xml:space="preserve">
+    <value>设定目标转速（RPM）</value>
+  </data>
+  <data name="MainWindow_TextBlockCoolingPad.Text" xml:space="preserve">
+    <value>散热底座</value>
+  </data>
+  <data name="MainWindow_TextBlockGPUCurveTemperatureCDemandRPM.Text" xml:space="preserve">
+    <value>GPU 曲线：温度 °C / 目标转速 RPM</value>
+  </data>
+  <data name="MainWindow_TextBlockLastAcknowledgedDemand.Text" xml:space="preserve">
+    <value>最近确认接收的目标转速：</value>
+  </data>
+  <data name="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable.Text" xml:space="preserve">
+    <value>无法获取实测风扇转速。</value>
+  </data>
+  <data name="MainWindow_TextBlockRequestedDemand.Text" xml:space="preserve">
+    <value>请求的目标转速：</value>
+  </data>
+  <data name="MainWindow_TextBlockSettingsLastForThisServiceSessionStop.Text" xml:space="preserve">
+    <value>设置仅在本次服务运行期间有效。停止更新后，底座可能仍保留最后的目标转速。</value>
+  </data>
+  <data name="MainWindow_CoolingPadPlannedDemand.Text" xml:space="preserve">
+    <value>计算的目标转速：</value>
+  </data>
 </root>

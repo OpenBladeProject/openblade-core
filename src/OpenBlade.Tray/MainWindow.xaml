@@ -1025,6 +1025,66 @@
                             </Border>
                             </StackPanel>
                         </Border>
+                        <Border x:Name="CoolingPadControlCard" Style="{StaticResource SettingsGroupStyle}" Margin="0,12,0,0"
+                                DataContext="{Binding CoolingPadControl}"
+                                Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsVisible}">
+                            <StackPanel Spacing="12" Padding="16">
+                                <TextBlock x:Uid="MainWindow_TextBlockCoolingPad" Text="Cooling pad" Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="{Binding StatusText}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                <local:ResponsiveChoiceSelector x:Uid="MainWindow_ComboBoxCoolingPadControlMode" x:Name="CoolingPadModeSelector"
+                                          ItemsSource="{Binding ModeOptions}" DisplayMemberPath="Label"
+                                          CompactMinWidth="180" ExpandedMinWindowWidth="800"
+                                          SelectedItem="{Binding SelectedMode, Mode=TwoWay}"
+                                          IsEnabled="{Binding IsConnected}" AccessibleName="Cooling-pad control mode" />
+                                <StackPanel Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsFixed}">
+                                    <TextBlock x:Uid="MainWindow_TextBlockConfiguredDemandRPM" Text="Configured demand (RPM)" />
+                                    <Slider x:Uid="MainWindow_SliderCoolingPadConfiguredDemand" Minimum="500" Maximum="3200" StepFrequency="50" SnapsTo="StepValues"
+                                            Value="{Binding FixedDemand, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                            IsEnabled="{Binding IsConnected}" AutomationProperties.Name="Cooling-pad configured demand" />
+                                    <TextBlock Text="{Binding FixedDemand}" />
+                                </StackPanel>
+                                <StackPanel Spacing="8" Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsCurve}">
+                                    <TextBlock x:Uid="MainWindow_TextBlockCPUCurveTemperatureCDemandRPM" Text="CPU curve — temperature °C / demand RPM" />
+                                    <ItemsControl ItemsSource="{Binding CpuPoints}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                                    <NumberBox x:Uid="MainWindow_NumberBoxCPUCurveTemperature" Value="{Binding Temperature, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="0" Maximum="115" Width="110" AutomationProperties.Name="CPU curve temperature" />
+                                                    <NumberBox x:Uid="MainWindow_NumberBoxCPUCurveDemand" Value="{Binding Demand, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="500" Maximum="3200" SmallChange="50" Width="130" AutomationProperties.Name="CPU curve demand" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Uid="MainWindow_TextBlockGPUCurveTemperatureCDemandRPM" Text="GPU curve — temperature °C / demand RPM" />
+                                    <ItemsControl ItemsSource="{Binding GpuPoints}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                                    <NumberBox x:Uid="MainWindow_NumberBoxGPUCurveTemperature" Value="{Binding Temperature, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="0" Maximum="115" Width="110" AutomationProperties.Name="GPU curve temperature" />
+                                                    <NumberBox x:Uid="MainWindow_NumberBoxGPUCurveDemand" Value="{Binding Demand, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="500" Maximum="3200" SmallChange="50" Width="130" AutomationProperties.Name="GPU curve demand" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Uid="MainWindow_ButtonUseSettings" Content="Use settings" Command="{Binding ApplyCommand}" />
+                                    <Button x:Uid="MainWindow_ButtonResumeUpdates" Content="Resume updates" Command="{Binding ResumeCommand}" />
+                                </StackPanel>
+                                <TextBlock x:Uid="MainWindow_TextBlockSettingsLastForThisServiceSessionStop" Text="Settings last for this service session. The pad may retain its last demand after updates stop." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock x:Uid="MainWindow_TextBlockRequestedDemand" Text="Requested demand:" /><TextBlock Text="{Binding RequestedText}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock x:Uid="MainWindow_CoolingPadPlannedDemand" Text="Planned demand:" /><TextBlock Text="{Binding PlannedText}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock x:Uid="MainWindow_TextBlockLastAcknowledgedDemand" Text="Last acknowledged demand:" /><TextBlock Text="{Binding AcknowledgedText}" />
+                                </StackPanel>
+                                <TextBlock x:Uid="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable" Text="Measured fan speed is unavailable." Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
                         </StackPanel>
             </DataTemplate>
             <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainViewModel">

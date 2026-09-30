@@ -8,6 +8,31 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ServiceClientTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CoolingPadRequestsTransmitIntentOrResumeWithoutInferredApplication(bool resume)
+    {
+        string pipeName = NewPipeName();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var settings = new CoolingPadControlSettings(CoolingPadControlMode.FixedDemand, new(1500));
+        var expected = new ControlOperationResult(ControlOperationStatus.Stored, "Intent staged; explicit resume required.");
+        Task server = RunServerAsync(pipeName, request =>
+        {
+            if (resume) { Assert.IsType<ResumeCoolingPadControlRequest>(request); }
+            else { Assert.Equal(settings, Assert.IsType<SetCoolingPadControlRequest>(request).Settings); }
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
+            Assert.NotEqual(Guid.Empty, request.RequestId);
+            return new ServiceResponse(OpenBladeIpc.ProtocolVersion, request.RequestId, true, null, null, expected);
+        }, timeout.Token);
+        await using var client = new ServiceClient(pipeName);
+        ControlOperationResult actual = resume
+            ? await client.ResumeCoolingPadControlAsync(timeout.Token)
+            : await client.SetCoolingPadControlAsync(settings, timeout.Token);
+        await server;
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public async Task ReportSessionPowerTransitionAsync_PreservesIdentityAndCompletionResult()
     {

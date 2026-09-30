@@ -1386,4 +1386,43 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>查看性能与风扇控制策略</value></data>
   <data name="Review policy" xml:space="preserve"><value>查看策略</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>请查看新的默认设置。在你选择“知道了”之前，恢复会保持暂停。</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>散热底座控制正在验证中。此版本尚未启用硬件控制。</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>固定目标转速</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>主机风扇曲线</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>主机目标转速更新正在运行。</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>主机更新已暂停。恢复前请检查底座。</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>主机更新已停止。底座可能仍保留最后的目标转速。</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>停止更新</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>命令结果未知。后续更新已暂停。</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>无法完成散热底座请求。重试前请刷新其状态。</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>温度读数不可用或已过期，更新已暂停。最后的目标转速可能仍然生效。</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>启用 HyperBoost 前，请连接支持的散热底座。</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost 需要支持的散热底座保持连接。</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>无法确认散热底座连接。启用 HyperBoost 前，请刷新笔记本状态。</value>
+  </data>
 </root>

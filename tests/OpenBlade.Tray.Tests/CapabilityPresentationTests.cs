@@ -444,7 +444,15 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(27, animated.Length);
+        Assert.Equal(30, animated.Length);
+        XElement padCard = NamedElement(document, "Border", "CoolingPadControlCard");
+        Assert.Equal("{Binding CoolingPadControl}", Attribute(padCard, "DataContext"));
+        Assert.Equal("{Binding IsVisible}", Attribute(padCard, "AnimatedVisibility.IsVisible"));
+        Assert.Equal(
+            new[] { "{Binding IsFixed}", "{Binding IsCurve}" },
+            padCard.Descendants()
+                .Select(element => Attribute(element, "AnimatedVisibility.IsVisible"))
+                .Where(binding => binding is not null));
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -1075,7 +1083,7 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(25, usages.Length);
+        Assert.Equal(26, usages.Length);
         Assert.All(usages, usage =>
         {
             Assert.NotNull(Attribute(usage, "ItemsSource"));
@@ -1096,7 +1104,11 @@ public sealed class CapabilityPresentationTests
                 "{Binding ",
                 StringComparison.Ordinal) == true)
             .ToArray();
-        Assert.Equal(5, runtimeBoundUsages.Length);
+        Assert.Equal(6, runtimeBoundUsages.Length);
+        XElement padMode = NamedElement(mainWindow, "ResponsiveChoiceSelector", "CoolingPadModeSelector");
+        Assert.Equal("{Binding SelectedMode, Mode=TwoWay}", Attribute(padMode, "SelectedItem"));
+        Assert.Equal("{Binding ModeOptions}", Attribute(padMode, "ItemsSource"));
+        Assert.Null(Attribute(padMode, "SelectionChanged"));
         XElement[] immediateUsages = new[]
             {
                 "DashboardPerformanceSelector",
@@ -1108,7 +1120,8 @@ public sealed class CapabilityPresentationTests
             .Select(name => NamedElement(mainWindow, "ResponsiveChoiceSelector", name))
             .ToArray();
         Assert.Equal(
-            runtimeBoundUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
+            runtimeBoundUsages.Where(usage => usage != padMode)
+                .OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
             immediateUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal));
         Assert.All(immediateUsages, usage =>
         {

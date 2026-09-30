@@ -6,6 +6,24 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceStatusSnapshotComparerTests
 {
     [Fact]
+    public void Equivalent_CoolingPadAcknowledgementChangePublishes()
+    {
+        var status = CreateStatus() with
+        {
+            CoolingPadControl = new(CoolingPadControlSettings.Stopped,
+                CoolingPadControlState.Paused, CoolingPadControlPauseReason.TelemetryUnavailable,
+                LastAcknowledgedDemand: new(1600)),
+        };
+        var changed = status with
+        {
+            CoolingPadControl = status.CoolingPadControl! with { LastAcknowledgedDemand = new(1350) },
+        };
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(status, changed));
+        Assert.True(ServiceStatusSnapshotComparer.Equivalent(status,
+            status with { CoolingPadControl = status.CoolingPadControl! with { } }));
+    }
+
+    [Fact]
     public void Equivalent_ReconstructedCollectionsCompareByContent()
     {
         ServiceStatusSnapshot baseline = CreateStatus();

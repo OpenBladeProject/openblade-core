@@ -4,6 +4,20 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0].Equals(CoolingPadServiceCurveTrialCommand.Name, StringComparison.OrdinalIgnoreCase))
+{
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancel = (_, eventArgs) => { eventArgs.Cancel = true; cancellation.Cancel(); };
+    Console.CancelKeyPress += cancel;
+    try
+    {
+        return await CoolingPadServiceCurveTrialCommand.RunAsync(args.Skip(1).ToArray(),
+            (confirm, token) => new CoolingPadServiceCurveTrialRunner().RunAsync(confirm, token),
+            CoolingPadServiceCurveTrialCommand.ConfirmConsoleAsync, Console.Out, cancellation.Token);
+    }
+    finally { Console.CancelKeyPress -= cancel; }
+}
+
 if (args.Length > 0 && args[0].Equals(
     Rz090528HyperBoostValidationCommand.Name, StringComparison.OrdinalIgnoreCase)
     || args.Length > 0 && args[0].Equals(Rz090528HyperBoostGpuValidationCommand.Name, StringComparison.OrdinalIgnoreCase)

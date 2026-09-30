@@ -582,6 +582,7 @@ public sealed class ServiceFanCurveLoop(
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(Interval);
+        int padTicks = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -597,6 +598,24 @@ public sealed class ServiceFanCurveLoop(
                 catch (Exception exception)
                 {
                     logger.LogWarning(exception, "Manual fan-curve maintenance failed.");
+                }
+                // Attempt pad maintenance every second timer tick. Awaited laptop
+                // work can delay it; failures in either path stay isolated.
+                if (++padTicks == 2)
+                {
+                    padTicks = 0;
+                    try
+                    {
+                        await runtime.MaintainCoolingPadControlAsync(stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.LogWarning(exception, "Cooling-pad demand maintenance failed.");
+                    }
                 }
             }
         }

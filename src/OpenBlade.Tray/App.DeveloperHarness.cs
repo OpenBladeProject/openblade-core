@@ -609,9 +609,11 @@ public partial class App
                 "profiles-wide",
                 StringComparison.Ordinal);
             bool captureProfilesVariant = captureNarrowProfiles || captureWideProfiles;
+            bool captureCoolingPad = string.Equals(requestedPage, "cooling-pad", StringComparison.Ordinal);
             if (!string.IsNullOrWhiteSpace(requestedPage)
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
+                && !captureCoolingPad
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -620,7 +622,7 @@ public partial class App
                 throw new InvalidOperationException(
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
-            IEnumerable<string> destinations = captureProfilesVariant
+            IEnumerable<string> destinations = captureProfilesVariant || captureCoolingPad
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -655,9 +657,16 @@ public partial class App
                     ? "settings"
                     : captureProfilesVariant
                         ? "profiles"
-                        : destination;
+                        : captureCoolingPad
+                            ? "laptop"
+                            : destination;
                 snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                 await WaitForSnapshotLayoutAsync();
+                if (captureCoolingPad)
+                {
+                    await CaptureCoolingPadCardAsync(snapshotMainWindow, resolvedDirectory);
+                    continue;
+                }
                 if (string.Equals(
                     destination,
                     "settings-appearance",
@@ -953,6 +962,56 @@ public partial class App
         int Height,
         byte[] Pixels);
 
+    private static async Task CaptureCoolingPadCardAsync(MainWindow window, string directory)
+    {
+        // This window uses the snapshot client; no service or device is opened.
+        window.SelectLocalizationSnapshotPage("laptop");
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var status = new ServiceStatusSnapshot(1, false, true, [], null, [], "Snapshot",
+            DeviceCapabilities.Unavailable(), null, profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            CoolingPadControl = new(new(CoolingPadControlMode.FixedDemand, new(1600)),
+                CoolingPadControlState.Unavailable, CoolingPadControlPauseReason.AdmissionClosed,
+                PlannedDemand: new(1350), LastAcknowledgedDemand: new(1500))
+            { Connection = CoolingPadConnectionState.PresentExact },
+        };
+        CoolingPadControlViewModel editor = window.ViewModel.CoolingPadControl;
+        editor.Update(status, true);
+        await WaitForSnapshotLayoutAsync();
+        XamlBorder card = FindPerformanceSmokeDescendant<XamlBorder>(window.Content, "CoolingPadControlCard")
+            ?? throw new InvalidOperationException("Cooling-pad snapshot card was not rendered.");
+        var parent = VisualTreeHelper.GetParent(card) as XamlStackPanel
+            ?? throw new InvalidOperationException("Cooling-pad snapshot card host was not found.");
+        // Isolate the actual rendered card so the laptop scroll viewport cannot crop it.
+        // Keep its real view model and resource-resolved styles; invoke no UI commands.
+        parent.Children.Remove(card);
+        card.DataContext = editor;
+        card.Margin = new Thickness(16);
+        card.VerticalAlignment = VerticalAlignment.Top;
+        var host = new XamlGrid { Background = new SolidColorBrush(Microsoft.UI.Colors.White) };
+        host.Children.Add(card);
+        window.Content = host;
+        double scale = host.XamlRoot?.RasterizationScale ?? 1;
+        window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(760 * scale), (int)(1120 * scale)));
+        foreach (CoolingPadControlMode mode in new[] { CoolingPadControlMode.FixedDemand, CoolingPadControlMode.HostCurve })
+        {
+            editor.SelectedMode = editor.ModeOptions.Single(option => option.Mode == mode);
+            await WaitForSnapshotLayoutAsync();
+            RequireResponsiveSelector(card.ActualWidth > 0 && card.ActualHeight > 0
+                && card.ActualHeight + card.Margin.Top + card.Margin.Bottom <= host.ActualHeight,
+                "Cooling-pad card must fit completely inside its snapshot host.");
+            RequireResponsiveSelector(!editor.ResumeCommand.CanExecute(null),
+                "Observed-only snapshot must not admit Resume.");
+            await SaveSnapshotAsync(card, Path.Combine(directory, $"cooling-pad-{mode}.png"));
+        }
+    }
+
     private static async Task RunPerformanceRowLayoutSmokeAsync(
         string smokeReportPath,
         bool captureSnapshots = false)
@@ -1134,6 +1193,10 @@ public partial class App
             PowerSource.PluggedIn, null, null, null, null, false)
         {
             PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            CoolingPadControl = new(new(CoolingPadControlMode.FixedDemand, new(1600)),
+                CoolingPadControlState.Unavailable, CoolingPadControlPauseReason.AdmissionClosed,
+                PlannedDemand: new(1350), LastAcknowledgedDemand: new(1500))
+            { Connection = CoolingPadConnectionState.PresentExact },
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus",

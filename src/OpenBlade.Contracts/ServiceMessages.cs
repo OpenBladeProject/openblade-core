@@ -32,6 +32,8 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
+[JsonDerivedType(typeof(SetCoolingPadControlRequest), "setCoolingPadControl")]
+[JsonDerivedType(typeof(ResumeCoolingPadControlRequest), "resumeCoolingPadControl")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
@@ -175,6 +177,15 @@ public sealed record SetFanOverrideRequest(
 {
     public FanControlSettings? Settings { get; init; }
 }
+
+public sealed record SetCoolingPadControlRequest(
+    int Version,
+    Guid RequestId,
+    CoolingPadControlSettings Settings)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ResumeCoolingPadControlRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
 
 public sealed record SetLightingOverrideRequest(
     int Version,
@@ -438,6 +449,8 @@ public sealed record ServiceStatusSnapshot(
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 
     public FanControlSettings? FanControlOverride { get; init; }
+
+    public CoolingPadControlStatus? CoolingPadControl { get; init; }
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
 

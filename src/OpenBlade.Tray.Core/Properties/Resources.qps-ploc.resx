@@ -1476,4 +1476,43 @@
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve">
     <value>[!! Révíéw thé néw défáúlt. Réstórátíón stáýs páúséd úntíl ýóú séléct Gót ít. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>[!! Cóólíng-pád cóntról ís béíng válídátéd. Hárdwáré cóntról ís nót énábléd ín thís búíld. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>[!! Fíxéd démánd ~~~~ !!]</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>[!! Hóst cúrvé ~~~~ !!]</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>[!! Hóst démánd úpdátés áré rúnníng. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>[!! Hóst úpdátés áré páúséd. Chéck thé pád béfóré résúmíng. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>[!! Hóst úpdátés áré stóppéd. Thé pád máý rétáín íts lást démánd. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>[!! Stóp úpdátés ~~~~ !!]</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>[!! Thé cómmánd óútcómé ís únknówn. Fúrthér úpdátés áré páúséd. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád réqúést cóúld nót bé cómplétéd. Réfrésh íts státús béfóré trýíng ágáín. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>[!! Úpdátés páúséd bécáúsé témpérátúré réádíngs áré únáváíláblé ór tóó óld. Thé lást démánd máý rémáín áctívé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>[!! Cónnéct thé súppórtéd cóólíng pád béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>[!! HýpérBóóst réqúírés thé súppórtéd cóólíng pád tó stáý cónnéctéd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád cónnéctíón cóúld nót bé cónfírméd. Réfrésh thé láptóp státé béfóré énáblíng HýpérBóóst. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>
