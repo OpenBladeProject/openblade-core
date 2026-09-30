@@ -90,6 +90,7 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
     private sealed class WindowsCpuSavedFirmwareCommandInvoker : ICpuSavedFirmwareCommandInvoker
     {
         private static readonly TimeSpan OperationDeadline = TimeSpan.FromSeconds(10);
+        private const bool PinnedMissingReturnValueCompatibility = true;
 
         public async Task<CpuSavedTuningSubmission> SendAsync(CpuSavedTuningCommand command,
             Func<bool> freshAdmission, CancellationToken token)
@@ -145,8 +146,13 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
                     using ManagementBaseObject? version = instance.InvokeMethod("QueryVersion", null,
                         new InvokeMethodOptions { Timeout = OperationDeadline });
                     token.ThrowIfCancellationRequested();
-                    if (version?["ReturnValue"] is not true || version["version"] is not uint apiVersion
-                        || apiVersion != 7 || !CheckFreshAdmission(freshAdmission, token))
+                    // This invoker is reachable only through the exact model,
+                    // USB and BIOS 2.02 admission above. Enumerated absence is
+                    // distinct from a failed property read; never swallow a
+                    // provider error as successful missing-return compatibility.
+                    if (!WindowsSavedCpuWmiOutput.AcceptReturnValue(WindowsSavedCpuWmiOutput.Read(version, "ReturnValue"), PinnedMissingReturnValueCompatibility)
+                        || !WindowsSavedCpuWmiOutput.AcceptVersion(WindowsSavedCpuWmiOutput.Read(version, "version"))
+                        || !CheckFreshAdmission(freshAdmission, token))
                     { return CpuSavedTuningSubmission.NotSubmitted; }
                     using ManagementBaseObject input = instance.GetMethodParameters("RunCommand");
                     input["Inbuf"] = command.Encode();
@@ -159,13 +165,13 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
                     // Acknowledgement is strictly typed, as in the attended
                     // firmware helper. Missing fields or provider errors remain
                     // ambiguous; the transaction always performs full readback.
-                    if (result?["ReturnValue"] is not true
-                        || result["Outbuf"] is not ManagementBaseObject output)
+                    if (!WindowsSavedCpuWmiOutput.AcceptReturnValue(WindowsSavedCpuWmiOutput.Read(result, "ReturnValue"), PinnedMissingReturnValueCompatibility)
+                        || WindowsSavedCpuWmiOutput.Read(result, "Outbuf") is not
+                        { State: CpuSavedWmiPropertyState.Present, Value: ManagementBaseObject output })
                     { return CpuSavedTuningSubmission.Unknown; }
                     using (output)
                     {
-                        return output["result"] is byte[] { Length: > 0 and <= 4096 } bytes
-                            && bytes[0] == 0
+                        return WindowsSavedCpuWmiOutput.AcceptCommandResult(WindowsSavedCpuWmiOutput.Read(output, "result"))
                                 ? CpuSavedTuningSubmission.Acknowledged : CpuSavedTuningSubmission.Unknown;
                     }
                 }
