@@ -6,6 +6,29 @@ started from restored quiet Auto. Neither establishes that a fresh handle can
 restore Auto after the Fixed session closes. This developer-only attended test
 isolates that gap before a separate process-exit or crash experiment.
 
+## Completed attended result on 2026-09-29
+
+The trial completed from reviewed source
+`1baf4d6a5644652202d609a20511524afe13ed88`, with exit zero. Original raw `0000`
+was acquired as `0300`; Medium was acknowledged and physically confirmed normal.
+The first actor's disposal completed with the fully disposed disposition before
+fresh opening. The new session read intermediate raw `0300`, acknowledged Auto,
+and restored/read-back the original `0000`. All three physical checks passed:
+normal Medium, quiet Auto, and normal unchanged final behavior with full-brightness
+static-green lighting and no red/sleep.
+
+No retry, vendor/service action, power cycle, demand update or lighting setter
+occurred. Synapse and both named Razer services remained stopped. Evidence is a
+hashed typed result and separate operator observations, without an independent
+PCAP or native report trace. Command sequence metadata is the planned sequence;
+typed stage flags and reviewed source establish completion of the eight exchanges.
+
+This establishes one same-process handle continuity result. Normal process exit
+and new-process continuation, abrupt process death, interrupted Fixed reconnect,
+sleep, power loss, firmware fan-state/RPM, ownership and production handback remain
+unvalidated. Preserve the original baseline and bind any future continuation to
+its exact just-created trial; fresh raw `0300` is never the original state to
+restore.
 ## Fixed sequence
 
 1. Fresh exact-host/pad/controller checks and query raw `0000`; save that original
@@ -76,5 +99,4 @@ or substitute an unbound continuation command during this experiment.
 
 Implementation verification: all 657 Capture tests and three architecture tests
 passed, including 46 continuity cases. Independent source, native-wiring and
-documentation review passed, with a warning-free build. No live continuity trial
-has been armed or executed.
+documentation review passed, with a warning-free build. The completed attended result is recorded above.
