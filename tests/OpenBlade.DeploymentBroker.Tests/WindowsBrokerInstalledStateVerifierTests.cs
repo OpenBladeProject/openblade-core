@@ -1,4 +1,5 @@
 using OpenBlade.DeploymentBroker;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.DeploymentBroker.Tests;
 
@@ -48,6 +49,65 @@ public sealed class WindowsBrokerInstalledStateVerifierTests : IDisposable
 
         Assert.Equal("0.20.7", state.Version);
         Assert.Equal(productVersion, state.ProductVersion);
+    }
+
+    [Theory]
+    [InlineData("0.23.0-nightly.12+b6a964e4", "0.23.0")]
+    [InlineData("1.2.3-nightly.1+0123abcd", "1.2.3")]
+    [InlineData("65535.65535.65535-nightly.65535+abcdef09", "65535.65535.65535")]
+    public void CreateInstalledState_NormalizesOnlyNightlyBaselineAndPreservesExactIdentity(string product, string baseline)
+    {
+        string hash = new('c', 64);
+        var state = WindowsBrokerInstalledStateVerifier.CreateInstalledState(product, product, hash);
+        Assert.Equal(baseline, state.Version);
+        Assert.Equal(product, state.ProductVersion);
+        Assert.Equal(hash, state.PayloadSha256);
+        Assert.Equal(state, WindowsBrokerInstalledStateVerifier.CreateInstalledState(product, product, hash));
+    }
+
+    [Theory]
+    [InlineData("0.23.0-nightly.0+b6a964e4")]
+    [InlineData("0.23.0-nightly.012+b6a964e4")]
+    [InlineData("0.23.0-nightly.65536+b6a964e4")]
+    [InlineData("0.23.0-nightly.+12+b6a964e4")]
+    [InlineData("00.23.0-nightly.12+b6a964e4")]
+    [InlineData("0.23.0.0-nightly.12+b6a964e4")]
+    [InlineData("65536.23.0-nightly.12+b6a964e4")]
+    [InlineData("0.23.0-Nightly.12+b6a964e4")]
+    [InlineData("0.23.0-preview.12+b6a964e4")]
+    [InlineData("0.23.0-nightly.12")]
+    [InlineData("0.23.0-nightly.12+B6A964E4")]
+    [InlineData("0.23.0-nightly.12+b6a964e")]
+    [InlineData("0.23.0-nightly.12+b6a964e4extra")]
+    [InlineData("0.23.0-nightly.12+b6a964ez")]
+    [InlineData("0.23.0-nightly.12+b6a964e4+extra")]
+    public void CreateInstalledState_RejectsUnknownOrNoncanonicalNightlyIdentity(string product)
+    {
+        Assert.Throws<InvalidDataException>(() => WindowsBrokerInstalledStateVerifier.CreateInstalledState(product, product, new string('c', 64)));
+        Assert.Throws<InvalidDataException>(() => WindowsBrokerInstalledStateVerifier.CreateInstalledState("0.23.0-nightly.12+b6a964e4", product, new string('c', 64)));
+    }
+
+    [Fact]
+    public void CreateInstalledState_MixedNightlyBaselineStillBindsBothExactMembers()
+    {
+        const string service = "0.23.0-nightly.12+b6a964e4";
+        var split = WindowsBrokerInstalledStateVerifier.CreateInstalledState(service, "0.24.0-nightly.1+0123abcd", new string('c', 64));
+        var differentRevision = WindowsBrokerInstalledStateVerifier.CreateInstalledState(service, "0.24.0-nightly.2+0123abcd", new string('c', 64));
+        Assert.Equal("0.23.0", split.Version);
+        Assert.StartsWith("mixed:", split.ProductVersion, StringComparison.Ordinal);
+        Assert.DoesNotContain('+', split.ProductVersion);
+        Assert.NotEqual(split.ProductVersion, differentRevision.ProductVersion);
+    }
+
+    [Fact]
+    public void NightlyBaselineCannotMasqueradeAsSignedTarget()
+    {
+        const string product = "0.23.0-nightly.12+b6a964e4";
+        var state = WindowsBrokerInstalledStateVerifier.CreateInstalledState(product, product, new string('c', 64));
+        Assert.False(WindowsBrokerInstalledStateVerifier.MatchesSignedBuildIdentity(state.ProductVersion, state.Version, "b6a964e4"));
+        Assert.False(WindowsBrokerInstalledStateVerifier.MatchesSignedBuildIdentity(state.ProductVersion, "65535.1.2.3", new string('a', 40)));
+        var invalidTarget = DeploymentPolicyTests.CreateManifest("65535.1.2.3") with { Version = "0.23.0-nightly.12" };
+        Assert.Throws<OpenBladeReleaseVerificationException>(() => OpenBladeReleaseManifestCodec.SerializeCanonical(invalidTarget));
     }
 
     [Fact]

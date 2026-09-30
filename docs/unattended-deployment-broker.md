@@ -165,6 +165,14 @@ release versions on that enrolled machine. Returning the machine to a Stable or
 Nightly installation is therefore an attended maintenance action; this tool is
 not a transparent release-channel switcher.
 
+The installed baseline may be a canonical OpenBlade Nightly build. Its base
+version is used for upgrade bookkeeping; the complete Nightly build identity
+and payload hash remain the rollback baseline. Signed target acceptance still
+requires the exact LocalDev version and source revision. An older enrolled
+broker that rejects a Nightly baseline needs an attended broker replacement
+through `uninstall` and `install`; changing the payload cannot repair that
+protected broker.
+
 For the exact RZ09-0581 thermal external-drift validation tracked in issue
 #354, the same script accepts the explicit
 `-ThermalExternalDriftValidation` switch together with an empty external

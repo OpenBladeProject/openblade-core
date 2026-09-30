@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using OpenBlade.Deployment;
 
@@ -345,20 +346,20 @@ public sealed class WindowsBrokerInstalledStateVerifier(
         string payloadSha256)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(payloadSha256);
+        string serviceVersion = NormalizeVersion(serviceProductVersion);
+        string trayVersion = NormalizeVersion(trayProductVersion);
         if (string.Equals(
             serviceProductVersion,
             trayProductVersion,
             StringComparison.OrdinalIgnoreCase))
         {
             return new BrokerInstalledState(
-                NormalizeVersion(serviceProductVersion),
+                serviceVersion,
                 serviceProductVersion,
                 payloadSha256);
         }
 
         // Both members must still be canonical, exactly as one identity must be.
-        string serviceVersion = NormalizeVersion(serviceProductVersion);
-        string trayVersion = NormalizeVersion(trayProductVersion);
         string marker = "mixed:" + Convert.ToHexString(
             SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(
@@ -378,6 +379,26 @@ public sealed class WindowsBrokerInstalledStateVerifier(
     private static string NormalizeVersion(string? value)
     {
         string candidate = (value ?? string.Empty).Split('+', 2)[0];
+        // BuildIdentity.ps1 emits base-nightly.<1..65535>+<eight lowercase hex>.
+        // Only installed-baseline bookkeeping uses the base version. Keep the
+        // exact product identity and payload hash for target/rollback checks.
+        int nightly = candidate.IndexOf("-nightly.", StringComparison.Ordinal);
+        if (nightly > 0
+            && Version.TryParse(candidate[..nightly], out Version? nightlyBase)
+            && nightlyBase.Revision < 0
+            && nightlyBase.Major <= ushort.MaxValue
+            && nightlyBase.Minor <= ushort.MaxValue
+            && nightlyBase.Build is >= 0 and <= ushort.MaxValue
+            && string.Equals(nightlyBase.ToString(3), candidate[..nightly], StringComparison.Ordinal)
+            && int.TryParse(candidate[(nightly + 9)..], NumberStyles.None, CultureInfo.InvariantCulture, out int revision)
+            && revision is > 0 and <= ushort.MaxValue
+            && string.Equals(revision.ToString(CultureInfo.InvariantCulture), candidate[(nightly + 9)..], StringComparison.Ordinal)
+            && value is not null && value.Length == candidate.Length + 9
+            && value[(candidate.Length + 1)..].All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f'))
+        {
+            return nightlyBase.ToString(3);
+        }
+
         if (OpenBladeReleaseManifestCodec.IsCanonicalLocalDevVersion(candidate))
         {
             return candidate;
@@ -401,7 +422,7 @@ public sealed class WindowsBrokerInstalledStateVerifier(
         throw new InvalidDataException("The installed OpenBlade version is unavailable or noncanonical.");
     }
 
-    private static bool MatchesSignedBuildIdentity(
+    internal static bool MatchesSignedBuildIdentity(
         string productVersion,
         string expectedVersion,
         string expectedSourceRevision)
