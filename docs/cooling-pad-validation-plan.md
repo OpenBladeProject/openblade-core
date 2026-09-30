@@ -122,10 +122,33 @@ stayed stopped. Independent result/privacy review passed; all 59 evidence-toolki
 suites passed before the recovery-outcome-only update, and its focused check
 passed afterward. Production and broader lifecycle claims remain closed.
 
-Further lifecycle expansion is paused. The next narrow recovery reasserts the
-already verified acquisition/Medium/Auto sequence from fresh present Medium,
-keeping desired quiet Auto separate from initial physical state and raw mode.
-See draft #624’s recovery decision and capture PR #33.
+Further lifecycle expansion is paused. The narrow recovery below supersedes
+previous next-trial proposals in this historical plan.
+
+## Completed requested preferred-Auto recovery
+
+The separately attended recovery from reviewed source `248ec506` completed with
+exit zero. Starting from physically normal Medium, the unchanged seven-command
+core queried raw `0000`, acquired/queried `0300`, reasserted captured Medium,
+applied captured Auto, then restored/queried initial raw `0000`. The operator
+confirmed normal Medium, achieved preferred quiet Auto, and final unchanged quiet
+Auto/full-brightness static-green lighting without flashing-red or sleep.
+
+This intentionally achieved requested quiet Auto rather than restoring initial
+physical Medium. Raw control mode remains separate from physical fan behavior.
+Completion is supported by typed result flags and reviewed source, without an
+independent native packet trace. No Synapse, service restart, power cycle,
+lighting setter or retry occurred in this sequence. The earlier stopped USB
+trial and unsuccessful manual power-cycle recovery remain separate history.
+
+Exact-source build passed with zero warnings/errors, all 708 Capture tests and
+all 60 evidence-toolkit scripts passed, and independent source/result/privacy
+review passed. Production fan/lighting, independent fan-state/RPM, ownership and
+handback admission remain closed. Next implementation work should use the
+minimal captured command sequence and keep requested intent separate from
+confirmed observations; no further lifecycle trials are being added here.
+See draft #624’s recovery decision and the preferred-Auto annotation in capture
+PR #33. Synapse and Razer services remain stopped.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
