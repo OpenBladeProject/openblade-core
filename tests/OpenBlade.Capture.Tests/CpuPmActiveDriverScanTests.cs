@@ -5,6 +5,14 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class CpuPmActiveDriverScanTests
 {
+    [Fact]
+    public void DocumentedDefaultProvenanceSurvivesAdapterAndAmdNameStillBlocksAbsence()
+    {
+        var record = Assert.Single(new WindowsCpuPmDeviceDriverSource(new Inventory { Fault = "default-amd" }).ReadAll());
+        Assert.Equal(OpenBlade.Protocol.CpuServiceImageProvenance.DefaultDriverPath, record.ImageProvenance);
+        var result = CpuPmActiveDriverScan.Read(new Source([record]));
+        Assert.True(result.Complete); Assert.Equal(1, result.MatchingActiveDrivers);
+    }
     [Theory]
     [InlineData(5)]
     [InlineData(234)]
@@ -63,7 +71,11 @@ public sealed class CpuPmActiveDriverScanTests
             const int offset = 112;
             nint name = Fault == "pointer" ? buffer - 2 : buffer + offset;
             if (Fault == "unterminated") { Marshal.Copy(Enumerable.Repeat((byte)65, 514).ToArray(), 0, buffer + offset, 514); }
-            else { Marshal.Copy(System.Text.Encoding.Unicode.GetBytes("Other\0"), 0, buffer + offset, 12); }
+            else
+            {
+                byte[] bytesValue = System.Text.Encoding.Unicode.GetBytes((Fault == "default-amd" ? "AMDRyzenMasterDriverRenamed" : "Other") + "\0");
+                Marshal.Copy(bytesValue, 0, buffer + offset, bytesValue.Length);
+            }
             var entry = new WindowsCpuPmDeviceDriverSource.NativeEntry { Name = name, DisplayName = name, Type = 1, State = 4 };
             Marshal.StructureToPtr(entry, buffer, false);
             if (Fault == "duplicate") { Marshal.StructureToPtr(entry, buffer + 56, false); }
@@ -80,6 +92,9 @@ public sealed class CpuPmActiveDriverScanTests
         }
         public IReadOnlyList<CpuPmRegistryDriver> ReadRegistryDrivers() => Fault switch
         {
+            "default-amd" => [new("AMDRyzenMasterDriverRenamed", 1,
+                OpenBlade.Protocol.CpuServiceInventory.DefaultDriverPath("AMDRyzenMasterDriverRenamed", 1, true, "", @"C:\Windows"))
+                { ImageProvenance = OpenBlade.Protocol.CpuServiceImageProvenance.DefaultDriverPath }],
             "registry-error" => throw new IOException(),
             "query-hidden" => [new("Other", 1, "other.sys"), new("Hidden", 1, "hidden.sys")],
             "adapter" => [new("Other", 4, "other.sys")],
