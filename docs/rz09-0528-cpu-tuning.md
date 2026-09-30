@@ -38,8 +38,11 @@ omitted the `ReturnValue` property exposed by the CIM helper. The decoder now
 distinguishes confirmed absence from property-read errors for this exact provider;
 version 7 and command payload checks remain mandatory. A subsequent attended
 getter passed with exactly one output property: UInt32 version 7. All eight full
-saved-pair checks matched the original baseline. The service apply/recovery cycle
-still requires attended validation.
+saved-pair checks matched the original baseline. The subsequent attended cycle
+using the actual service classes saved zero, verified both copies, and restored
+the original −1 value through journal reconciliation in a new process. Both
+800-byte copies restored exactly and the journal reached `Restored`. This test
+did not exercise installed-service IPC or establish boot activation.
 
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
