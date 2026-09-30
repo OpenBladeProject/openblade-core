@@ -139,8 +139,9 @@ The first attended range run retained the four register reads, capability
 response and one PM table, then stopped at the empty discrete-value response.
 Independent review verified the exported bytes, timing and complete owned driver
 cleanup. The firmware trace explains that response, and the capture now selects
-the continuous getter directly. The corrected metadata path still needs attended
-validation; these observations do not admit power-limit writes or restoration.
+the continuous getter directly. The published continuous metadata reader subsequently passed attended
+validation, described below. These observations do not admit power-limit writes
+or restoration.
 
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
@@ -226,7 +227,17 @@ sequence. Current remains a firmware shadow,
 and decoded bounds do not establish units, requested-state mapping or authority.
 The optional already-installed driver path still needs separately admitted
 production observation and lifetime evidence. No concrete PPT provider, proof
-factory or service runtime enables these commands.
+factory enables these commands in default composition.
+
+The service runtime now dispatches injected live backends through retained CO
+and PPT transactions. Each operation has admission tied to its initiating
+session and power generation; later requests cannot renew an expired operation.
+Uncertain submission or journal persistence blocks both live features, including
+when a failed journal write leaves no entry on disk. Saved recovery remains
+separate. Fake-backend tests cover observation, edits and exact restoration.
+Default composition still supplies no native provider. Combined CO/PPT requests
+remain blocked, and a PPT-only result cannot publish live measurements under the
+current contract, which requires a complete CO vector.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

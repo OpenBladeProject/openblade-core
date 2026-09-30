@@ -21,15 +21,25 @@ public sealed partial class ServiceControlRuntime
                     "CPU observation requires the active session and verified supported laptop.");
             }
 
+            long liveGeneration = lowPowerGate.Generation;
             CpuTuningStatus observation = await cpuTuningController.ObserveAsync(useInstalledBackend, token)
                 .ConfigureAwait(false);
-            if (!stillControlsSession() || lowPowerGate.IsActive)
+            if (useInstalledBackend && cpuTuningController.HasLiveBackend)
+            {
+                CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration), token).ConfigureAwait(false);
+                observation = MergeLiveCpuStatus(observation, live);
+            }
+            if (!stillControlsSession() || lowPowerGate.IsActive
+                || useInstalledBackend && cpuTuningController.HasLiveBackend
+                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration))
             {
                 return new(ControlOperationStatus.Blocked, "The CPU observation session changed.");
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return new(ControlOperationStatus.Stored,
-                "Saved CPU configuration was inspected. Live CPU settings remain unconfirmed.")
+                observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
+                    : "Saved configuration and live CPU observations were inspected.")
             {
                 CpuTuning = observation,
             };
@@ -79,7 +89,26 @@ public sealed partial class ServiceControlRuntime
         try
         {
             ServiceStatusSnapshot current = GetStatus();
-            if (target != CpuTuningTarget.FirmwareNextBoot || !cpuTuningController.HasSavedBackend
+            if (target == CpuTuningTarget.LiveNow)
+            {
+                if (!cpuTuningController.HasLiveBackend || !CpuMutationSafetyAvailable(current, stillControlsSession)
+                    || !CpuFeaturesAdmitted(current.Capabilities, settings, restoring))
+                {
+                    return new(ControlOperationStatus.Blocked, "Live CPU tuning requires an admitted backend and fresh full-power session.")
+                    { CpuTuning = current.CpuTuning };
+                }
+                long generation = lowPowerGate.Generation;
+                ControlOperationResult live = await cpuTuningController.MutateLiveAsync(settings, restoring,
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation), token).ConfigureAwait(false);
+                if (live.CpuTuning is { } liveStatus)
+                {
+                    var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
+                    PublishStatusUpdate(status => status with { CpuTuning = merged });
+                    live = live with { CpuTuning = merged };
+                }
+                return live;
+            }
+            if (!cpuTuningController.HasSavedBackend
                 || !CpuMutationSafetyAvailable(current, stillControlsSession)
                 || !CpuFeaturesAdmitted(current.Capabilities, settings, restoring))
             {
@@ -109,6 +138,8 @@ public sealed partial class ServiceControlRuntime
                     SavedConfiguration = observed.SavedConfiguration ?? previous?.SavedConfiguration,
                     LiveState = previous?.LiveState,
                     Live = previous?.Live ?? observed.Live,
+                    LiveRecovery = previous?.LiveRecovery,
+                    RestorePending = observed.RestorePending || HasCpuRecovery(previous?.LiveRecovery),
                 };
                 PublishStatusUpdate(status => status with { CpuTuning = observed });
                 result = result with { CpuTuning = observed };
@@ -128,6 +159,32 @@ public sealed partial class ServiceControlRuntime
         }
         finally { operationGate.Release(); }
     }
+
+    private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (lowPowerGate.Generation != generation || !CpuMutationSafetyAvailable(current, stillControlsSession)
+            || (features & CpuTuningFeatures.CurveOptimizer) != 0
+                && current.Capabilities?.CpuVoltageOptimizer?.Access != DeviceFeatureAccess.ReadWrite
+            || (features & CpuTuningFeatures.PowerLimit) != 0
+                && current.Capabilities?.CpuPowerLimit?.Access != DeviceFeatureAccess.ReadWrite) { return false; }
+        ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
+        return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
+            && powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn
+            && deviceProvider.TryGetVerifiedDevice(out _)
+            && lowPowerGate.Generation == generation && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
+    }
+
+    private static CpuTuningStatus MergeLiveCpuStatus(CpuTuningStatus? previous, CpuTuningStatus live) => live with
+    {
+        SavedConfiguration = previous?.SavedConfiguration,
+        Firmware = previous?.Firmware ?? live.Firmware,
+        FirmwareRecovery = previous?.FirmwareRecovery,
+        PendingBoot = previous?.PendingBoot ?? CpuTuningPendingBoot.Unknown,
+        RestorePending = live.RestorePending || HasCpuRecovery(previous?.FirmwareRecovery),
+    };
+    private static bool HasCpuRecovery(CpuTuningRecoveryStatus? recovery) =>
+        recovery is { State: CpuTuningRecoveryState.RestoreReady or CpuTuningRecoveryState.Blocked, Features: not CpuTuningFeatures.None };
 
     private bool CpuMutationSafetyAvailable(ServiceStatusSnapshot current, Func<bool> stillControlsSession) =>
         stillControlsSession() && !lowPowerGate.IsActive && !thermalConvergenceShutdown

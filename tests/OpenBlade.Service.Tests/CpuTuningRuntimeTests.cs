@@ -160,18 +160,200 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.False(result.CpuTuning!.RestorePending);
     }
 
+    [Fact]
+    public async Task LiveCurveUsesRetainedOwnershipAndRestoresWithoutPowerAuthority()
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        var context = await CreateContextAsync(powerAdmitted: false, live: live);
+        var first = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, first.Status);
+        Assert.Equal(-2, first.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
+        Assert.Null(first.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer), first.CpuTuning.LiveRecovery);
+        var original = live.CurveStore!.Journal!.OriginalBaseline;
+        await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -3)), () => true, default);
+        Assert.Equal(original, live.CurveStore.Journal!.OriginalBaseline);
+        var restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(-1, restored.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
+        Assert.Equal(CpuTuningRecoveryState.None, restored.CpuTuning.LiveRecovery!.State);
+        Assert.False(restored.CpuTuning.RestorePending);
+        Assert.False(restored.CpuTuning.Live.CanWrite);
+        Assert.Equal(0, context.Source.Calls);
+    }
+
+    [Fact]
+    public async Task LivePowerRestoresBothExactFractionalOriginalsWithoutInventingCurveState()
+    {
+        var live = new LiveFixture(curve: false, power: true);
+        var original = live.Power!.Pair;
+        var context = await CreateContextAsync(live: live);
+        var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.Equal(45000u, live.Power.Pair.Fast.Milliwatts);
+        Assert.Equal(45000u, live.Power.Pair.Slow.Milliwatts);
+        Assert.Equal(original.StapmRawBits, live.Power.Pair.StapmRawBits);
+        Assert.Null(applied.CpuTuning!.LiveState);
+        Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.PowerLimit), applied.CpuTuning.LiveRecovery);
+        var restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(original, live.Power.Pair);
+        Assert.Equal(4, live.Power.Sent.Count);
+        Assert.Equal(CpuLivePowerOwnershipState.Restored, live.PowerStore!.Journal!.State);
+        Assert.False(restored.CpuTuning!.RestorePending);
+    }
+
+    [Fact]
+    public async Task CombinedIntentAndSecondOwnedFamilyAreRefusedBeforeTheirNativeCalls()
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(live: live);
+        var combined = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, combined.Status);
+        Assert.Equal(0, live.Curve!.Reads); Assert.Equal(0, live.Power!.Reads);
+        await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);
+        var second = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, second.Status);
+        Assert.Equal(0, live.Power.Reads); Assert.Empty(live.Power.Sent);
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default)).Status);
+    }
+
+    [Fact]
+    public async Task LiveObservationRequiresExplicitInstalledChoiceAndCannotAdmitWrites()
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(live: live);
+        await context.Runtime.ObserveCpuTuningAsync(false, () => true, default);
+        Assert.Equal(0, live.Curve!.Reads); Assert.Equal(0, live.Power!.Reads);
+        var observed = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, observed.Status);
+        Assert.True(observed.CpuTuning!.IsWellFormed);
+        Assert.Equal(-1, observed.CpuTuning.LiveState!.UniformCurveOptimizerValue);
+        Assert.Equal(live.Power.Pair.Fast.Milliwatts, observed.CpuTuning.LiveState.PowerLimits!.Message32Milliwatts);
+        Assert.Equal(live.Power.Pair.Slow.Milliwatts, observed.CpuTuning.LiveState.PowerLimits.Message33Milliwatts);
+        Assert.Null(observed.CpuTuning.LiveState.PowerLimits.EffectiveWatts);
+        Assert.False(observed.CpuTuning.Live.CanWrite);
+        Assert.Equal(CpuTuningRecoveryState.None, observed.CpuTuning.LiveRecovery!.State);
+        Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent);
+    }
+
+    [Fact]
+    public async Task SuspendAndResumeInsideAdmissionCannotReviveTheOriginalRuntimeLease()
+    {
+        var live = new LiveFixture(curve: false, power: true);
+        var context = await CreateContextAsync(live: live);
+        live.Power!.Admit = (_, _) => { context.Gate.Enter(); context.Gate.Exit(); return true; };
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(live.Power.Sent); Assert.Null(live.PowerStore!.Journal);
+        Assert.False(result.CpuTuning!.RestorePending);
+    }
+
+    [Fact]
+    public async Task CancelledPendingPowerSenderBlocksBothFamiliesAndLateCompletionCannotRestoreAuthority()
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(live: live);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<CpuLivePowerSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        live.Power!.OnSend = _ => { entered.SetResult(); return release.Task; };
+        using var cancellation = new CancellationTokenSource();
+        Task<ControlOperationResult> pending = context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(45, null), () => true, cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); cancellation.Cancel();
+        Assert.Equal(ControlOperationStatus.Failed, (await pending.WaitAsync(TimeSpan.FromSeconds(5))).Status);
+        Assert.Equal(CpuLivePowerOwnershipState.PossibleSubmission, live.PowerStore!.Journal!.State);
+        int reads = live.Power.Reads;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(null, new(true, -2)), () => true, default)).Status);
+        await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(0, live.Curve!.Reads); Assert.Equal(reads, live.Power.Reads);
+        release.SetResult(CpuLivePowerSubmission.Acknowledged);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default)).Status);
+        Assert.Equal(CpuLivePowerOwnershipState.PossibleSubmission, live.PowerStore.Journal.State);
+        Assert.Single(live.Power.Sent); Assert.Empty(live.Curve.Sent);
+    }
+
+    [Fact]
+    public async Task SavedAndLiveRecoveryRemainSeparateWhenEitherTargetChanges()
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        var context = await CreateContextAsync(admittedSavedBackend: true, live: live);
+        await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, new(null, new(false, -1)), () => true, default);
+        var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);
+        Assert.Equal(CpuTuningPendingBoot.Requested, applied.CpuTuning!.PendingBoot);
+        Assert.Equal(CpuTuningRecoveryState.RestoreReady, applied.CpuTuning.FirmwareRecovery!.State);
+        var savedRestore = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, () => true, default);
+        Assert.Equal(CpuTuningRecoveryState.None, savedRestore.CpuTuning!.FirmwareRecovery!.State);
+        Assert.Equal(CpuTuningRecoveryState.RestoreReady, savedRestore.CpuTuning.LiveRecovery!.State);
+        Assert.True(savedRestore.CpuTuning.RestorePending);
+        Assert.Equal(-2, savedRestore.CpuTuning.LiveState!.UniformCurveOptimizerValue);
+        var liveRestore = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, liveRestore.Status);
+        Assert.False(liveRestore.CpuTuning!.RestorePending);
+        Assert.Equal(2, context.Source.Submissions);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedInitialPrepareRetainsFamilyUncertaintyAcrossLiveOperationsButNotSaved(bool curveFailure)
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(admittedSavedBackend: true, live: live);
+        if (curveFailure) { live.CurveStore!.FailWrite = 1; }
+        else { live.PowerStore!.FailWrite = 1; }
+        var failed = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            curveFailure ? new(null, new(true, -2)) : new(45, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, failed.Status);
+        Assert.Null(live.CurveStore!.Journal); Assert.Null(live.PowerStore!.Journal);
+        var feature = curveFailure ? CpuTuningFeatures.CurveOptimizer : CpuTuningFeatures.PowerLimit;
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, feature), failed.CpuTuning!.LiveRecovery);
+        Assert.True(failed.CpuTuning.RestorePending);
+        Assert.True(failed.CpuTuning.IsWellFormed);
+        int curveReads = live.Curve!.Reads, powerReads = live.Power!.Reads;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(null, new(true, -2)), () => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(45, null), () => true, default)).Status);
+        var observed = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, feature), observed.CpuTuning!.LiveRecovery);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default)).Status);
+        Assert.Equal(curveReads, live.Curve.Reads); Assert.Equal(powerReads, live.Power.Reads);
+        Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent);
+        var saved = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -1)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, saved.Status);
+        Assert.Equal(1, context.Source.Submissions);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, feature), saved.CpuTuning!.LiveRecovery);
+    }
+    private sealed class LiveFixture
+    {
+        internal readonly CpuLiveCurveTuningTransactionTests.MemoryStore? CurveStore;
+        internal readonly CpuLiveCurveTuningTransactionTests.FakeBackend? Curve;
+        internal readonly CpuLivePowerTuningTransactionTests.MemoryStore? PowerStore;
+        internal readonly CpuLivePowerTuningTransactionTests.FakeBackend? Power;
+        internal LiveFixture(bool curve, bool power)
+        {
+            if (curve) { CurveStore = new(); Curve = new(CurveStore); }
+            if (power) { PowerStore = new(); Power = new(PowerStore); }
+        }
+    }
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
-        bool admittedSavedBackend = false, bool powerAdmitted = true)
+        bool admittedSavedBackend = false, bool powerAdmitted = true, LiveFixture? live = null)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
         BatteryConfiguration configuration = await store.LoadAsync(CancellationToken.None);
+        bool writable = admittedSavedBackend || live is not null;
         var device = new BatteryTestDevice();
         device.Capabilities = device.Capabilities with
         {
-            CpuPowerLimit = supported ? new(new(45, 95, 1), admittedSavedBackend && powerAdmitted
+            CpuPowerLimit = supported ? new(new(45, 95, 1), writable && powerAdmitted
                 ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly) : null,
-            CpuVoltageOptimizer = admittedSavedBackend ? new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) : null,
+            CpuVoltageOptimizer = writable ? new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) : null,
         };
         var provider = new FakeProvider(device) { Available = verified };
         var source = new FakeObservationSource();
@@ -180,15 +362,15 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         var hub = new FakeHub();
         var runtime = new ServiceControlRuntime(store,
             new PersistentOverrideStore(Path.Combine(directory, "overrides.json")),
-            new FakePowerState { Power = admittedSavedBackend ? PowerSource.PluggedIn : PowerSource.Battery },
+            new FakePowerState { Power = writable ? PowerSource.PluggedIn : PowerSource.Battery },
             hub, provider, new DiagnosticHistory(), gate,
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
-            cpuTuningController: admittedSavedBackend
-                ? new CpuTuningController(source, new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")),
-                    safety => new FakeSavedBackend(source, safety))
-                : new CpuTuningController(source));
-        runtime.Initialize(configuration, admittedSavedBackend ? PowerSource.PluggedIn : PowerSource.Battery);
+            cpuTuningController: new CpuTuningController(source,
+                admittedSavedBackend ? new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")) : null,
+                admittedSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,
+                live?.Curve, live?.CurveStore, live?.Power, live?.PowerStore));
+        runtime.Initialize(configuration, writable ? PowerSource.PluggedIn : PowerSource.Battery);
         await runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(verified, runtime.GetStatus().DeviceVerified);
         return new(runtime, device, provider, source, gate, hub);
