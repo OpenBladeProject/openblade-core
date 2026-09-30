@@ -82,6 +82,29 @@ sleep/power loss, RPM/independent firmware fan state, ownership and production
 handback remain unvalidated. See draft #624's process-continuity guide and
 capture PR #33. Prepare a separately reviewed interruption/recovery path before
 another attended lifecycle trial.
+## Completed cooperative idle-wait cancellation
+
+One attended developer trial from reviewed source `587a6f1a` completed with
+supervisor exit zero. Following acknowledged/physically confirmed Medium,
+child 1 positively observed cancellation of its deliberately armed idle wait,
+fully disposed and exited with expected code `4`. A separate post-exit physical
+check confirmed normal Medium/full-brightness static-green lighting before the
+fresh second process opened once. It queried `0300`, acknowledged Auto with
+physical quiet-baseline confirmation, restored/queried the supervisor's original
+`0000`, then passed the final unchanged normal-green check, disposed and exited
+zero. All five physical gates passed; no child remained running or recovery was
+needed. No Synapse/service action, force-kill, retry, lighting/demand setter or
+power cycle occurred; vendor software remains stopped.
+
+Exact-source build passed without warnings/errors, all 683 Capture tests and
+three architecture checks passed, and actual hardware-free subprocess checks
+passed 19 cooperative plus 18 normal-exit scenarios and direct-child rejection.
+Independent source and actual-result reviews passed. Typed output and operator
+observations establish this narrow developer idle-wait cancellation result;
+production work-loop cancellation, in-flight HID cancellation, abrupt process
+loss, interrupted Fixed reconnect, sleep/power loss, independent fan-state/RPM,
+ownership and production handback remain unvalidated. See draft #624's
+cooperative cancellation guide and capture PR #33.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
