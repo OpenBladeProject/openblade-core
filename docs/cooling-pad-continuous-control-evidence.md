@@ -15,6 +15,10 @@ The later separately authorized Quiet/Balanced capture below contains three
 acknowledged demands (2200 -> 1000 -> 2200) and complete captured vendor
 restoration, but no fan-ID reuse. No repeat is implied by either completed run
 or the preparation plan below.
+Another separately approved repeated-preset capture observed acknowledged
+`1E -> 00` during vendor Fixed/off restoration. Its seven demand ACKs remain
+below that transition; no fan ID repeats within the trace and no fan commands
+follow `00`. The demand-boundary objective therefore remains incomplete.
 
 ## What the current evidence supports
 
@@ -254,6 +258,65 @@ measured RPM, thermal causality or firmware Auto ownership.
 The result supports distinct host-managed Smart demands, but the acknowledged
 counter-boundary objective remains unresolved. Native admission and transaction
 reuse remain closed. No further recording is authorized by this completed attempt.
+
+## Repeated-preset capture: observed restoration boundary
+
+The operator separately approved another 300-second recording with at most
+35 selections, a 180-second stimulus limit and only preflight/final physical
+reply gates while watching throughout. The repeated stimulus was restricted to
+the captured CPU Quiet1000/Balanced2200 pair and rounded `50 <= T < 85` degrees C.
+UAC, baseline/lighting inspection and the initial physical check preceded
+recording; no preset mutation occurred during preparation.
+
+Recording ran from 21:39:59 to 21:43:59 UTC on 2026-09-30 and stopped gracefully
+through the sentinel with no errors. Seven Smart selections completed. The
+initial Smart expansion and an offscreen CPU-selector click rejected without
+input required fresh observation and scrolling; CPU was then visibly selected.
+Root/UI observation latency also limited the sequence. The last stimulus was
+at 171.551 seconds; the first restoration refresh was at 180.6 seconds, and
+the off-restoration refresh at 191.422 seconds. These timings are retained,
+without claiming that all 35 selections or restoration by 180 seconds completed.
+No intermediate physical reply was used to release further actions.
+
+The private PCAP is 13,409 bytes, SHA-256
+`D0FC39E5C88562BB2612EAA610D2F71CF63E8D93547CD568828B0515AA2216C9`.
+It contains 146 raw frames and 70 complete 90-byte bodies, all checksum-valid.
+Eleven fan pairs have exact echoes and successful status `02`:
+
+| Request/response frames | Transaction | Command/payload |
+| --- | --- | --- |
+| 13/16 | `15` | `0D/10:01012C` |
+| 21/24 | `16` | `0D/01:01052C` |
+| 53/56 | `17` | `0D/01:010514` |
+| 63/66 | `18` | `0D/01:01052C` |
+| 79/82 | `19` | `0D/01:010514` |
+| 87/90 | `1A` | `0D/01:01052C` |
+| 95/98 | `1B` | `0D/01:010514` |
+| 105/108 | `1C` | `0D/01:01052C` |
+| 111/114 | `1D` | `0D/10:01012C` |
+| 115/118 | `1E` | `0D/10:01012C` |
+| 125/128 | `00` | `0D/10:000600` |
+
+Seven demand ACKs establish six changed-demand successors, with no unmatched
+or ambiguous fan reports. The observed `1E -> 00` is across vendor Fixed/off
+restoration, not `0D/01` demand updates. No fan ID value repeats within the trace
+and no fan commands follow `00`. This supports the source allocator's boundary
+candidate, but does not establish uninterrupted demand reuse or successors after
+the boundary. Forty-eight lighting requests are unpaired; their independent
+`1F -> 00 -> 01` at frames 51/57/59 does not change that conclusion.
+
+Vendor off ACK at 21:43:10.500213 UTC precedes the final physical restoration
+marker at 21:43:58.987665 UTC and graceful completion at 21:43:59.879648 UTC.
+The operator confirmed preferred quiet/green behavior, no red/sleep and inactive
+HyperBoost, then separately confirmed full tray exit. Controller/recorder absence
+was verified before the same elevation completed cleanup with exit zero.
+OpenBlade is running and both temporary Razer services are stopped. Read-only
+IPC59 verifies unchanged installed source `55718fa0` and pad
+Stop/Stopped/ObservedOnly, with no planned or historical demand. No OpenBlade pad
+Feature query/control command, measured-RPM test or software install occurred.
+Native admission, standalone handback and continuous demand reuse remain closed.
+Further recording requires separate authorization; this attempt cannot extend
+or restart automatically.
 
 ## Eventual implementation boundary
 
