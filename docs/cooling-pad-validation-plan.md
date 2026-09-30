@@ -4,6 +4,24 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Evidence reviewed against product `8c0ebe95` and captures
 `4f2bf1565c7557439760db7e45104bb1e8b62bfd` on 2026-09-29.
 
+## Latest completed temperature-driven demand change
+
+The attended bounded trial from source68d6cdb9 completed with exit0 on2026-09-30.
+Active-GPU readings changed54C to44C: configured1600 demand and then1350 demand
+were acknowledged, followed by nine unchanged-target suppressions. CPU's EC/TZRZ
+input stayed45C. All five post-native physical checks, quiet restoration and
+originalraw0000 restoration/query passed. This is one observed demand reduction,
+not measured fan RPM, thermal response or sustained regulation. Earlier first-
+check and final-check timeouts remain separate evidence; no result was rewritten.
+The preceding preferred-quiet recovery also completed with exit0. Synapse and
+Razer services stayed stopped. No retry, power cycle or lighting setter occurred.
+
+Production admission remains closed. Interpret GpuInactive as the Windows
+activity-source classification, not proof of GPU power-off. Further lifecycle
+expansion stays paused; integrate only explicit host policy and confirmed typed
+outcomes into the service design, preserving requested intent separately.
+See [the detailed follow-up](https://github.com/OpenBladeProject/openblade-core/blob/chore/cooling-pad-mode-query/docs/cooling-pad-temperature-demand-trial.md).
+
 ## Latest attended temperature-demand observation
 
 The bounded trial in draft #624 applied one acknowledged configured1150-RPM
