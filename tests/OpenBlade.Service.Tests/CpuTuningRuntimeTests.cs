@@ -188,12 +188,22 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         var live = new LiveFixture(curve: false, power: true);
         var original = live.Power!.Pair;
         var context = await CreateContextAsync(live: live);
+        var observed = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, observed.Status);
+        Assert.True(observed.CpuTuning!.IsWellFormed);
+        Assert.Empty(observed.CpuTuning.LiveState!.CoreValues);
+        Assert.Equal(new(null, original.Fast.Milliwatts, original.Slow.Milliwatts), observed.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(observed.CpuTuning, context.Runtime.GetStatus().CpuTuning);
+        Assert.False(observed.CpuTuning.Live.CanWrite);
         var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, null), () => true, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
         Assert.Equal(45000u, live.Power.Pair.Fast.Milliwatts);
         Assert.Equal(45000u, live.Power.Pair.Slow.Milliwatts);
         Assert.Equal(original.StapmRawBits, live.Power.Pair.StapmRawBits);
-        Assert.Null(applied.CpuTuning!.LiveState);
+        Assert.True(applied.CpuTuning!.IsWellFormed);
+        Assert.Empty(applied.CpuTuning.LiveState!.CoreValues);
+        Assert.Equal(new(null, 45000, 45000), applied.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(applied.CpuTuning, context.Runtime.GetStatus().CpuTuning);
         Assert.Equal(new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.PowerLimit), applied.CpuTuning.LiveRecovery);
         var restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default);
         Assert.Equal(ControlOperationStatus.Stored, restored.Status);
@@ -201,6 +211,11 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(4, live.Power.Sent.Count);
         Assert.Equal(CpuLivePowerOwnershipState.Restored, live.PowerStore!.Journal!.State);
         Assert.False(restored.CpuTuning!.RestorePending);
+        Assert.True(restored.CpuTuning.IsWellFormed);
+        Assert.Empty(restored.CpuTuning.LiveState!.CoreValues);
+        Assert.Null(restored.CpuTuning.LiveState.UniformCurveOptimizerValue);
+        Assert.Equal(new(null, original.Fast.Milliwatts, original.Slow.Milliwatts), restored.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(restored.CpuTuning, context.Runtime.GetStatus().CpuTuning);
     }
 
     [Fact]

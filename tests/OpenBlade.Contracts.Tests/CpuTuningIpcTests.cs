@@ -127,11 +127,13 @@ public sealed class CpuTuningIpcTests
         await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task ClosedVersionRejectsFormer58RatherThanTreatingCpuOperationsAsCompatible()
+    [Theory]
+    [InlineData(58)]
+    [InlineData(59)]
+    public async Task ClosedVersionRejectsFormerPeersRatherThanTreatingCpuOperationsAsCompatible(int version)
     {
         using MemoryStream stream = Frame($$"""
-            {"operation":"observeCpuTuning","version":58,"requestId":"{{Guid.NewGuid()}}","useInstalledBackend":false}
+            {"operation":"observeCpuTuning","version":{{version}},"requestId":"{{Guid.NewGuid()}}","useInstalledBackend":false}
             """);
         await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -174,7 +176,9 @@ public sealed class CpuTuningIpcTests
         {
             cpu => cpu["pendingBoot"] = 99,
             cpu => cpu["live"]!["availability"] = 99,
-            cpu => cpu["liveState"]!["coreValues"] = new JsonArray(),
+            cpu => cpu["liveState"]!["coreValues"] = null,
+            cpu => { cpu["liveState"]!["coreValues"] = new JsonArray(); cpu["liveState"]!["powerLimits"] = null; },
+            cpu => { cpu["liveState"]!["coreValues"] = new JsonArray(); cpu["liveState"]!["powerLimits"]!["effectiveWatts"] = -1; },
         })
         {
             JsonObject copy = root.DeepClone().AsObject();
@@ -222,6 +226,38 @@ public sealed class CpuTuningIpcTests
         using MemoryStream projected = new();
         await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(projected,
             new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, snapshot), CancellationToken.None);
+        Assert.DoesNotContain("cpuTuning", Encoding.UTF8.GetString(projected.ToArray()));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerOnlyObservationRoundTripsWithoutInventingCurveOrEffectiveWatts(bool statusEvent)
+    {
+        CpuTuningStatus status = ValidStatus() with { LiveState = new(new(null, 85123, 80765), []) };
+        ServiceServerFrame frame = statusEvent
+            ? new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, Snapshot() with { CpuTuning = status })
+            : ResultResponse(new(ControlOperationStatus.Stored, "Observed") { CpuTuning = status });
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None);
+        string json = Encoding.UTF8.GetString(stream.ToArray(), 4, checked((int)stream.Length - 4));
+        stream.Position = 0;
+        ServiceServerFrame actual = await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None);
+        CpuLiveState live = (actual is ServiceStatusEvent update ? update.Status.CpuTuning
+            : Assert.IsType<ServiceResponse>(actual).Result!.CpuTuning)!.LiveState!;
+        Assert.True(live.IsWellFormed);
+        Assert.Empty(live.CoreValues);
+        Assert.Null(live.UniformCurveOptimizerValue);
+        Assert.Equal(new(null, 85123, 80765), live.PowerLimits);
+
+        JsonObject old = JsonNode.Parse(json)!.AsObject();
+        old["version"] = 59;
+        using MemoryStream formerVersion = Frame(old.ToJsonString());
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(formerVersion, CancellationToken.None));
+
+        using MemoryStream projected = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(projected, frame, CancellationToken.None);
         Assert.DoesNotContain("cpuTuning", Encoding.UTF8.GetString(projected.ToArray()));
     }
 

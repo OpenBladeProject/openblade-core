@@ -73,9 +73,22 @@ public sealed class CpuTuningTests
     }
 
     [Fact]
-    public void EmptyDuplicateAndOversizedCoreBaselinesAreRejected()
+    public void UnknownCurveRequiresIndependentPowerObservation()
     {
-        Assert.False(new CpuLiveState(new(65, null, null), []).IsWellFormed);
+        var powerOnly = new CpuLiveState(new(null, 85123, 80765), []);
+        Assert.True(powerOnly.IsWellFormed);
+        Assert.Null(powerOnly.UniformCurveOptimizerValue);
+        Assert.True(new CpuLiveState(new(65, null, null), []).IsWellFormed);
+        Assert.True(new CpuLiveState(null, [new(0, -1)]).IsWellFormed);
+        Assert.False(new CpuLiveState(null, []).IsWellFormed);
+        Assert.False(new CpuLiveState(new(null, null, null), []).IsWellFormed);
+        Assert.False(new CpuLiveState(new(double.NaN, 85123, 80765), []).IsWellFormed);
+        Assert.False(new CpuLiveState(new(null, 85123, 80765), null!).IsWellFormed);
+    }
+
+    [Fact]
+    public void PresentDuplicateAndOversizedCoreBaselinesAreRejected()
+    {
         Assert.False(new CpuLiveState(new(65, null, null), [new(0, -1), new(0, -2)]).IsWellFormed);
         Assert.False(new CpuLiveState(new(65, null, null), [new(0, -1), new(64, -2)]).IsWellFormed);
         Assert.False(new CpuLiveState(new(65, null, null),

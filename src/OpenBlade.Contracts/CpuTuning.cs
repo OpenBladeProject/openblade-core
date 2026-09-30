@@ -135,14 +135,17 @@ public sealed record CpuLiveState(
     CpuLivePowerLimits? PowerLimits,
     IReadOnlyList<CpuCoreCurveOptimizerValue> CoreValues)
 {
-    // A confirmed CO vector does not imply any known PPT value. Query-only
-    // backends can report CO independently while power-limit readback is absent.
+    // Each family may be observed independently. An empty vector means CO is
+    // unknown; a present vector must retain every observed physical core.
     public bool IsWellFormed => (PowerLimits is null or { IsWellFormed: true })
-        && CpuCurveOptimizerState.AreCoreValuesWellFormed(CoreValues)
+        && CoreValues is not null
+        && (CoreValues.Count == 0 ? PowerLimits is not null
+            : CpuCurveOptimizerState.AreCoreValuesWellFormed(CoreValues))
         && CoreValues.All(value => value.Value is >= short.MinValue and <= short.MaxValue);
 
-    // Null means mixed or invalid, never an average or the first core's value.
+    // Null means unknown, mixed or invalid, never an average or first-core fallback.
     public int? UniformCurveOptimizerValue => IsWellFormed
+        && CoreValues.Count > 0
         && CoreValues.All(value => value.Value == CoreValues[0].Value)
             ? CoreValues[0].Value
             : null;

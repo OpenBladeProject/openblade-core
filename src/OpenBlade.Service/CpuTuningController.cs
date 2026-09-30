@@ -324,11 +324,11 @@ internal sealed class CpuTuningController
         CpuTuningRecoveryState recovery, CpuTuningFeatures features)
     {
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
-        // The existing public live DTO requires a complete CO vector. A power-only
-        // result still reports recovery, but cannot fabricate that vector or watts.
-        CpuLiveState? live = curve is null ? null : new(power is null ? null
+        // Publish only the independently observed families. Raw fast/slow limits
+        // do not establish effective watts or any CO values.
+        CpuLiveState? live = curve is null && power is null ? null : new(power is null ? null
             : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts),
-            curve.CoreOffsets.Select(core => new CpuCoreCurveOptimizerValue(core.PhysicalCoreId, core.Offset)).ToArray());
+            curve?.CoreOffsets.Select(core => new CpuCoreCurveOptimizerValue(core.PhysicalCoreId, core.Offset)).ToArray() ?? []);
         return new(null, live, unavailable, unavailable with
         { Availability = curve is not null || power is not null ? CpuTuningBackendAvailability.Available : CpuTuningBackendAvailability.Unavailable },
             CpuTuningPendingBoot.Unknown, features != CpuTuningFeatures.None)

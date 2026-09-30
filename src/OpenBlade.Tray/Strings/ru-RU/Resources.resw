@@ -2014,4 +2014,17 @@
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Настройка CPU</value></data>
+  <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve"><value>Цель применения</value></data>
+  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>Проверить уже установленный стек драйверов AMD</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Эта необязательная проверка не устанавливает драйверы и не разрешает запись настроек CPU.</value></data>
+  <data name="MainWindow_CpuTuningManagePower.Content" xml:space="preserve"><value>Управлять PPT CPU (45–95 Вт)</value></data>
+  <data name="MainWindow_CpuTuningPowerValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>PPT CPU в ваттах</value></data>
+  <data name="MainWindow_CpuTuningManageCurve.Content" xml:space="preserve"><value>Управлять Curve Optimizer</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.Content" xml:space="preserve"><value>Включить Curve Optimizer (при выключении применяется 0)</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Значение Curve Optimizer</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Неотмеченные параметры не управляются. Сохранённые значения прошивки не отражают текущее состояние CPU.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения</value></data>
+  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Цель применения настроек CPU</value></data>
 </root>

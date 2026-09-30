@@ -235,9 +235,13 @@ session and power generation; later requests cannot renew an expired operation.
 Uncertain submission or journal persistence blocks both live features, including
 when a failed journal write leaves no entry on disk. Saved recovery remains
 separate. Fake-backend tests cover observation, edits and exact restoration.
+The IPC 60 status contract also permits PPT-only observations. These retain the
+independent fast and slow limits in milliwatts and report CO as unknown. The tray
+displays each limit separately, including fractional watts; it does not average
+them into an effective value. Older IPC 59 peers cannot read this expanded status
+contract, so deployment must update Service, Session Agent and Tray together.
 Default composition still supplies no native provider. Combined CO/PPT requests
-remain blocked, and a PPT-only result cannot publish live measurements under the
-current contract, which requires a complete CO vector.
+remain blocked.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

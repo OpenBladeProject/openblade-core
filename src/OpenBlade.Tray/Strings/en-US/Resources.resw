@@ -2014,17 +2014,43 @@ OpenBlade did not retry any stop request.</value>
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
-  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU tuning</value></data>
-  <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve"><value>Target</value></data>
-  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>Inspect the already installed AMD stack</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Optional inspection never installs a driver or enables CPU writes.</value></data>
-  <data name="MainWindow_CpuTuningManagePower.Content" xml:space="preserve"><value>Manage CPU PPT (45–95 W)</value></data>
-  <data name="MainWindow_CpuTuningPowerValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU PPT watts</value></data>
-  <data name="MainWindow_CpuTuningManageCurve.Content" xml:space="preserve"><value>Manage Curve Optimizer</value></data>
-  <data name="MainWindow_CpuTuningCurveEnabled.Content" xml:space="preserve"><value>Enable Curve Optimizer (off applies 0)</value></data>
-  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Curve Optimizer value</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Unchecked controls remain unmanaged. Saved firmware values do not describe the running CPU.</value></data>
-  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Refresh</value></data>
-  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Restore prior values</value></data>
-  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU tuning target</value></data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>CPU tuning</value>
+  </data>
+  <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve">
+    <value>Target</value>
+  </data>
+  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve">
+    <value>Inspect the already installed AMD stack</value>
+  </data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve">
+    <value>Optional inspection never installs a driver or enables CPU writes.</value>
+  </data>
+  <data name="MainWindow_CpuTuningManagePower.Content" xml:space="preserve">
+    <value>Manage CPU PPT (45–95 W)</value>
+  </data>
+  <data name="MainWindow_CpuTuningPowerValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU PPT watts</value>
+  </data>
+  <data name="MainWindow_CpuTuningManageCurve.Content" xml:space="preserve">
+    <value>Manage Curve Optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.Content" xml:space="preserve">
+    <value>Enable Curve Optimizer (off applies 0)</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Curve Optimizer value</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>Unchecked controls remain unmanaged. Saved firmware values do not describe the running CPU.</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>Restore prior values</value>
+  </data>
+  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU tuning target</value>
+  </data>
 </root>

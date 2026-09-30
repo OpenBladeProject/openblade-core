@@ -80,13 +80,15 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public string SavedSummary => status?.SavedConfiguration is { IsWellFormed: true } saved
         ? TrayText.Format("Saved firmware: PPT {0} W ({1}); CO {2}.",
             saved.PowerLimitMilliwatts / 1000.0,
-            TrayText.Get(saved.CustomPowerLimitEnabled switch { true => "enabled", false => "disabled", _ => "unknown" }),
+            TrayText.Get(saved.CustomPowerLimitEnabled switch { true => "enabled", false => "disabled", _ => "Unknown" }),
             DescribeCurve(saved.CurveOptimizer))
         : TrayText.Get("Saved firmware: unknown.");
     public string LiveSummary => status?.LiveState is { IsWellFormed: true } live
         ? TrayText.Format("Measured live: PPT {0}; CO {1}.",
-            live.PowerLimits?.EffectiveWatts is { } watts ? TrayText.Format("{0} W", watts) : TrayText.Get("unknown"),
-            live.UniformCurveOptimizerValue is { } curve ? curve.ToString(System.Globalization.CultureInfo.CurrentCulture) : TrayText.Get("mixed per-core values"))
+            DescribePower(live.PowerLimits),
+            live.CoreValues.Count == 0 ? TrayText.Get("Unknown")
+                : live.UniformCurveOptimizerValue is { } curve
+                    ? curve.ToString(System.Globalization.CultureInfo.CurrentCulture) : TrayText.Get("mixed per-core values"))
         : TrayText.Get("Measured live: unknown.");
 
     public void UpdateStatus(CpuTuningStatus? value, DeviceCapabilities? deviceCapabilities)
@@ -125,8 +127,20 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         finally { busy = false; Notify(nameof(OperationMessage)); NotifyState(); }
     }
 
+    private static string DescribePower(CpuLivePowerLimits? power)
+    {
+        string effective = power?.EffectiveWatts is { } watts ? TrayText.Format("{0} W", watts) : TrayText.Get("Unknown");
+        return power is { Message32Milliwatts: not null } or { Message33Milliwatts: not null }
+            ? TrayText.Format("effective {0}, fast {1}, slow {2}", effective,
+                DescribeMilliwatts(power.Message32Milliwatts), DescribeMilliwatts(power.Message33Milliwatts))
+            : effective;
+    }
+
+    private static string DescribeMilliwatts(uint? milliwatts) => milliwatts is { } value
+        ? TrayText.Format("{0:0.###} W", value / 1000m) : TrayText.Get("Unknown");
+
     private static string DescribeCurve(CpuCurveOptimizerState? curve) => curve is not { IsWellFormed: true }
-        ? TrayText.Get("unknown") : curve.Mode == CpuCurveOptimizerMode.AllCore
+        ? TrayText.Get("Unknown") : curve.Mode == CpuCurveOptimizerMode.AllCore
             ? curve.AllCoreValue!.Value.ToString(System.Globalization.CultureInfo.CurrentCulture)
             : curve.CoreValues.All(core => core.Value == curve.CoreValues[0].Value)
                 ? curve.CoreValues[0].Value.ToString(System.Globalization.CultureInfo.CurrentCulture)

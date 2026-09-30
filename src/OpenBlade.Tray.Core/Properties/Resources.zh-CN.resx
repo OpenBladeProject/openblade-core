@@ -1386,4 +1386,26 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>查看性能与风扇控制策略</value></data>
   <data name="Review policy" xml:space="preserve"><value>查看策略</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>请查看新的默认设置。在你选择“知道了”之前，恢复会保持暂停。</value></data>
+  <data name="effective {0}, fast {1}, slow {2}" xml:space="preserve"><value>有效值 {0}，快速限制 {1}，慢速限制 {2}</value></data>
+  <data name="{0:0.###} W" xml:space="preserve"><value>{0:0.###} 瓦</value></data>
+  <data name="Live now" xml:space="preserve"><value>当前运行状态</value></data>
+  <data name="Next boot" xml:space="preserve"><value>下次启动</value></data>
+  <data name="Apply now" xml:space="preserve"><value>立即应用</value></data>
+  <data name="Save for next boot" xml:space="preserve"><value>保存并在下次启动时应用</value></data>
+  <data name="Next boot: change requested; running values are separate." xml:space="preserve"><value>下次启动：已请求更改；当前运行值与此独立。</value></data>
+  <data name="Next boot: no change pending." xml:space="preserve"><value>下次启动：无待应用的更改。</value></data>
+  <data name="Next boot: pending state unknown." xml:space="preserve"><value>下次启动：待应用状态未知。</value></data>
+  <data name="CPU tuning backend available." xml:space="preserve"><value>CPU 调节后端可用。</value></data>
+  <data name="CPU tuning is observed only. Writes require an admitted backend and verified readback." xml:space="preserve"><value>CPU 调节目前仅可查看。写入需要获准的后端，并验证回读结果。</value></data>
+  <data name="Saved firmware: PPT {0} W ({1}); CO {2}." xml:space="preserve"><value>固件已保存：PPT {0} 瓦（{1}）；CO {2}。</value></data>
+  <data name="enabled" xml:space="preserve"><value>已启用</value></data>
+  <data name="disabled" xml:space="preserve"><value>已禁用</value></data>
+  <data name="Saved firmware: unknown." xml:space="preserve"><value>固件已保存：未知。</value></data>
+  <data name="Measured live: PPT {0}; CO {1}." xml:space="preserve"><value>当前实测：PPT {0}；CO {1}。</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>各核心数值不同</value></data>
+  <data name="Measured live: unknown." xml:space="preserve"><value>当前实测：未知。</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU 调节请求失败：{0}</value></data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>启用 HyperBoost 前，请连接受支持的散热底座。</value></data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>无法确认散热底座的连接状态。启用 HyperBoost 前，请刷新笔记本电脑状态。</value></data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>使用 HyperBoost 时，受支持的散热底座必须保持连接。</value></data>
 </root>

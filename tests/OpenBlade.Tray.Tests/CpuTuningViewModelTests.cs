@@ -170,9 +170,36 @@ public sealed class CpuTuningViewModelTests
             LiveState = new(null, [new(0, -10), new(1, -11)]),
             PendingBoot = CpuTuningPendingBoot.Requested,
         }, Capabilities(DeviceFeatureAccess.ObservedOnly));
-        Assert.Contains("PPT unknown", vm.LiveSummary);
+        Assert.Contains("PPT Unknown", vm.LiveSummary);
         Assert.Contains("mixed", vm.LiveSummary);
         Assert.Contains("requested", vm.PendingBootSummary);
+    }
+
+    [Theory]
+    [InlineData("en-US", "85.123", "80.765")]
+    [InlineData("de-DE", "85,123", "80,765")]
+    public void IndependentFractionalPowerLimitsKeepCurveAndEffectiveWattsUnknown(string culture, string fast, string slow)
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        using var language = TrayLocalization.BeginTemporaryLanguageOverride("en-US");
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo(culture);
+            var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+            vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly) with
+            {
+                LiveState = new(new(null, 85123, 80765), []),
+            }, Capabilities(DeviceFeatureAccess.ObservedOnly));
+            Assert.Equal($"Measured live: PPT effective Unknown, fast {fast} W, slow {slow} W; CO Unknown.", vm.LiveSummary);
+            Assert.False(vm.CanApply);
+            Assert.False(vm.CanRestore);
+            vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly) with
+            {
+                LiveState = new(new(65, 45000, null), [new(0, -1)]),
+            }, Capabilities(DeviceFeatureAccess.ObservedOnly));
+            Assert.Equal("Measured live: PPT effective 65 W, fast 45 W, slow Unknown; CO -1.", vm.LiveSummary);
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
     }
 
     [Fact]

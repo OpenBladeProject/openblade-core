@@ -2014,4 +2014,43 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>[!! https://example.com ~~ !!]</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>[!! CPÚ túníng ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve">
+    <value>[!! Tárgét ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve">
+    <value>[!! Ínspéct thé álréádý ínstálléd ÁMD stáck ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve">
+    <value>[!! Óptíónál ínspéctíón névér ínstálls á drívér ór énáblés CPÚ wrítés. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningManagePower.Content" xml:space="preserve">
+    <value>[!! Mánágé CPÚ PPT (45–95 W) ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningPowerValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ PPT wátts ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningManageCurve.Content" xml:space="preserve">
+    <value>[!! Mánágé Cúrvé Óptímízér ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.Content" xml:space="preserve">
+    <value>[!! Énáblé Cúrvé Óptímízér (óff ápplíés 0) ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Cúrvé Óptímízér válúé ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>[!! Únchéckéd cóntróls rémáín únmánágéd. Sávéd fírmwáré válúés dó nót déscríbé thé rúnníng CPÚ. ~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>[!! Réfrésh ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>[!! Réstóré príór válúés ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ túníng tárgét ~~~~~~ !!]</value>
+  </data>
 </root>
