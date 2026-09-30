@@ -12,6 +12,8 @@ public sealed class ProvisionerContractTests
     [InlineData()]
     [InlineData("INSTALL")]
     [InlineData("install", "extra")]
+    [InlineData("repair", "extra")]
+    [InlineData("REPAIR")]
     public async Task RunAsync_RejectsAnythingExceptExactFixedVerb(params string[] args) =>
         Assert.Equal(64, await DevelopmentDeploymentProvisioner.RunAsync(args, CancellationToken.None));
 

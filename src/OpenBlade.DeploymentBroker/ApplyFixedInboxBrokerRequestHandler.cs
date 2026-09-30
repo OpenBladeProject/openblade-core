@@ -603,7 +603,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             or OpenBladeReleaseVerificationException)
         {
             logger.LogWarning(exception, "The unattended deployment failed closed before installer execution.");
-            bool cleaned = TryCleanPreflightState(request.RequestId, stagingCreated);
+            bool cleaned = await TryCleanPreflightStateAsync(request.RequestId, stagingCreated).ConfigureAwait(false);
             await RecordTransitionAsync(
                 request.RequestId,
                 cleaned ? BrokerTransitionKind.RollbackVerified : BrokerTransitionKind.Ambiguous,
@@ -772,7 +772,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         {
             try
             {
-                paths.DeleteRequestStagingDirectory(request.RequestId);
+                await paths.DeleteRequestStagingDirectoryAsync(request.RequestId, CancellationToken.None).ConfigureAwait(false);
                 stagingCreated = false;
             }
             catch (Exception exception) when (exception is
@@ -873,7 +873,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             cancellationToken).ConfigureAwait(false);
     }
 
-    private bool TryCleanPreflightState(Guid requestId, bool stagingCreated)
+    private async Task<bool> TryCleanPreflightStateAsync(Guid requestId, bool stagingCreated)
     {
         if (!stagingCreated)
         {
@@ -882,7 +882,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
 
         try
         {
-            paths.DeleteRequestStagingDirectory(requestId);
+            await paths.DeleteRequestStagingDirectoryAsync(requestId, CancellationToken.None).ConfigureAwait(false);
             return true;
         }
         catch (Exception exception) when (exception is

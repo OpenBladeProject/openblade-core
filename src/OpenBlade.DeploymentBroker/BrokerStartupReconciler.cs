@@ -153,6 +153,7 @@ public sealed class BrokerStartupReconciler(
             || state.TargetSourceRevision is null
             || state.ManifestSha256 is null
             || state.SigningKeyId is null
+            || !string.Equals(state.SigningKeyId, enrollment.DevelopmentSigningKeyId, StringComparison.Ordinal)
             || !state.TargetSequence.HasValue)
         {
             return false;
@@ -192,7 +193,7 @@ public sealed class BrokerStartupReconciler(
 
         try
         {
-            paths.DeleteRequestStagingDirectory(state.RequestId);
+            await paths.DeleteRequestStagingDirectoryAsync(state.RequestId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException)
@@ -223,9 +224,8 @@ public sealed class BrokerStartupReconciler(
         }
         catch (IOException)
         {
-            if (!await durableRecords.MatchesExistingTerminalReportAsync(
-                report,
-                cancellationToken).ConfigureAwait(false))
+            if (!await durableRecords.MatchesExistingTerminalReportAsync(report, cancellationToken).ConfigureAwait(false)
+                && !await durableRecords.TryRecordReconciliationAsync(report, state, cancellationToken).ConfigureAwait(false))
             {
                 return false;
             }

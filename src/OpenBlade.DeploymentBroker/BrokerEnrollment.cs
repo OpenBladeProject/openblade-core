@@ -18,9 +18,15 @@ public sealed record BrokerEnrollment(
 public sealed class BrokerPaths
 {
     public const string EnrollmentFileName = "enrollment.json";
+    internal const int CleanupAttempts = 6;
+    private readonly Func<TimeSpan, CancellationToken, Task> cleanupDelay;
+    private readonly Action<string> deleteDirectory;
 
-    internal BrokerPaths(string rootDirectory, bool applyProductionAcl, string? inboxDirectory = null)
+    internal BrokerPaths(string rootDirectory, bool applyProductionAcl, string? inboxDirectory = null,
+        Func<TimeSpan, CancellationToken, Task>? cleanupDelay = null, Action<string>? deleteDirectory = null)
     {
+        this.cleanupDelay = cleanupDelay ?? Task.Delay;
+        this.deleteDirectory = deleteDirectory ?? (path => Directory.Delete(path, recursive: true));
         RootDirectory = Path.GetFullPath(rootDirectory);
         ApplyProductionAcl = applyProductionAcl;
         EnrollmentPath = Path.Combine(RootDirectory, EnrollmentFileName);
@@ -121,7 +127,26 @@ public sealed class BrokerPaths
             }
         }
 
-        Directory.Delete(fullPath, recursive: true);
+        deleteDirectory(fullPath);
+    }
+
+    internal async Task DeleteRequestStagingDirectoryAsync(Guid requestId, CancellationToken token)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                // Revalidate the exact path, ACLs and every reparse check on each attempt.
+                DeleteRequestStagingDirectory(requestId);
+                return;
+            }
+            catch (IOException exception) when (attempt < CleanupAttempts
+                && exception.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021))
+            {
+                await cleanupDelay(TimeSpan.FromSeconds(1), token).ConfigureAwait(false);
+            }
+        }
     }
 
     internal void EnsureDirectory(string path)

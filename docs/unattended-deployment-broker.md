@@ -173,6 +173,28 @@ broker that rejects a Nightly baseline needs an attended broker replacement
 through `uninstall` and `install`; changing the payload cannot repair that
 protected broker.
 
+For a broker source fix at the same semantic version, the provisioner also
+accepts the attended `repair` verb. It requires the package to match the
+existing enrollment's policy, key, account and broker version, verifies the
+fixed service configuration, and replaces only the protected broker/client
+executables. It preserves enrollment, receipts, replay state, journals and
+unresolved requests. Repair temporarily disables only the broker to prevent a
+concurrent start during replacement; verified success restores demand-start
+and leaves it stopped. Failure leaves it disabled for attended follow-up; if
+stop cannot be confirmed, repair reports that uncertainty and copies nothing.
+The next demand start after successful repair can
+therefore reconcile an existing request through the broker's own checks. A
+version or trust change still requires explicit re-enrollment.
+
+After a confirmed installer exit, staging cleanup retries only Windows sharing
+or lock violations for a bounded interval, with fresh path and protection checks.
+It never reruns or terminates the installer. If an indeterminate result already
+exists, startup recovery preserves it and writes a separate immutable
+reconciliation receipt bound to that report and the in-flight state. Fresh
+installed identity/health or exact rollback verification, installer absence and
+completed staging cleanup are required before resolving the request. Conflicting
+evidence leaves the request unresolved.
+
 For the exact RZ09-0581 thermal external-drift validation tracked in issue
 #354, the same script accepts the explicit
 `-ThermalExternalDriftValidation` switch together with an empty external
