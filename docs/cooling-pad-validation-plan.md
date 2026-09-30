@@ -4,6 +4,24 @@ Tracking: [issue #119](https://github.com/OpenBladeProject/openblade-core/issues
 Evidence reviewed against product `8c0ebe95` and captures
 `4f2bf1565c7557439760db7e45104bb1e8b62bfd` on 2026-09-29.
 
+## Current curve-planning phase
+
+The pure OpenBlade planner is implemented: separate CPU/GPU curves, maximum of
+independent demands, endpoint clamping and upward 50-RPM interpolation. Missing,
+invalid, stale or stopped input produces no demand, not zero or fan handback.
+A finite read-only preview in draft #624 completed five real telemetry readings:
+CPU 45 C, inactive GPU, planned configured demand 1150 RPM. No pad commands were
+sent. This is an illustrative policy, not Synapse's preset or measured RPM.
+
+Planner focused tests passed 17/17. Full Service passed 1978/1979 under sandbox;
+the sole existing named-pipe ACL failure passed on the host. Preview focused
+14/14 and full Capture 754/754 passed, with clean build and independent review.
+See [the preview guide](https://github.com/OpenBladeProject/openblade-core/blob/chore/cooling-pad-mode-query/docs/cooling-pad-curve-preview.md).
+
+This phase supersedes historical next-trial proposals below. Further lifecycle
+expansion stays paused. Next control work needs a bounded attended demand trial;
+production admission and physical full-range validation remain closed.
+
 ## Completed exploratory sequence on 2026-09-29
 
 Following a separately reviewed raw `0300 -> 0000` restoration, the full attended
