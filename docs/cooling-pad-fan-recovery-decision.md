@@ -265,5 +265,24 @@ accepts no saved continuation receipt, command bytes or device path. Unexpected
 mode, failed acknowledgements, cancellation or rejected physical observations
 stop further writes. No retry, firmware cleanup in `finally`, vendor restart or
 new lifecycle machinery is introduced. Synapse and Razer services remain stopped.
-Independent source/tests/documentation review passed, with all 708 Capture tests passing. Exact committed-source build and missing-ack rejection precede execution. No preferred-Auto
-recovery attempt has yet started.
+Independent source/tests/documentation review passed, with all 708 Capture tests passing. Exact committed-source build and missing-ack rejection precede execution. The preferred-Auto
+recovery outcome is recorded below.
+The attended recovery from reviewed source
+`248ec506ed606f6b14bd9667bd80ee2ca2a55995` completed with exit zero on
+2026-09-29 Pacific. Initial normal Medium was confirmed separately from the
+requested quiet Auto. The unchanged seven-command runner acknowledged acquisition
+and Medium, received physical Medium confirmation, acknowledged Auto with physical
+achievement of preferred quiet behavior, then restored/queried raw `0000` and
+received the final normal unchanged full-brightness static-green confirmation.
+All flags and physical checks passed; no further recovery was required.
+
+Private typed output: 2,283 bytes, SHA-256
+`BF86D90201FE261E21EC87D858950070DF38EC61D04D1E52013604D64F765372`.
+Independent actual-result review passed. Result flags and reviewed source support
+the seven completed logical exchanges; the fixed sequence list alone is not
+completion evidence or independent native packet tracing. Operator journal-save
+timestamps can follow completion and are not reply-submission timestamps.
+No Synapse/service action, power cycle, retry or additional lifecycle test occurred
+in this sequence. The earlier failed reconnect and unsuccessful power cycle remain
+separate records. Raw mode, independent fan-state/RPM and ownership are distinct;
+production admission remains closed. Further lifecycle expansion is paused.
