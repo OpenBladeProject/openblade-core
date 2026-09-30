@@ -92,14 +92,23 @@ child processes. Cleanup requires confirmed child termination and authority
 revocation before the supervisor removes its own driver registration. Unknown
 completion retains the original processes and evidence without retrying.
 
-An attended run on 2026-09-30 exited successfully. Independent checks confirmed
-that its processes had exited and its temporary driver registration was absent.
-The protected sample files still need inspection before the dataset is considered
-validated. Table fields remain research candidates and do not supply an admitted
-power-limit value or restoration baseline. Production PM invocation remains
-blocked.
+An attended run on 2026-09-30 retained three complete private tables for version
+`0x005D000B`. Independent review verified reply and payload bytes, file hashes,
+provenance, timing, and the complete driver lifecycle journal. Separate checks
+confirmed process termination and temporary driver-registration absence. This
+validates the capture path; table fields do not yet supply an admitted power-limit
+value or restoration baseline. Production PM invocation remains blocked.
 
-Live power-limit readback and restoration of both independent limit values remain
+The vendor parser and command implementation, corroborated by primary upstream
+source ([UXTU](https://github.com/JamesCJ60/Universal-x86-Tuning-Utility/blob/eeb43042883bc9a80847999b2957b6ded86938a9/Universal%20x86%20Tuning%20Utility/Scripts/AMD%20Backend/RyzenSmu.cs#L224)
+and [RyzenAdj](https://github.com/FlyGoat/RyzenAdj/blob/5775fc3e6dbb25c7030ee2d100a1bdd6e8bf2d0a/lib/api.c#L1470)),
+map command `0x32` to the fast-limit field and `0x33` to the slow-limit
+field. The captured candidates correspond to 85 W and 80 W. Restoration must
+preserve each independently. The fused upper bound comes from separate SMN
+registers and was not part of this capture; neither the full writable range nor
+physical setter readback and restoration has been established.
+
+Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
