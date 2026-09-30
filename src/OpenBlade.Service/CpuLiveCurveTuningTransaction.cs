@@ -174,7 +174,7 @@ internal sealed class CpuLiveCurveTuningTransaction
         if (loaded.Journal is null or { State: CpuLiveCurveOwnershipState.Restored })
         { return new(CpuLiveCurveOutcome.Unchanged, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, snapshot); }
         if (!Matches(loaded.Journal, observed, loaded.Journal.Expected, out snapshot))
-        { return Blocked(MismatchReason(loaded.Journal, observed), snapshot); }
+        { return await BlockJournalAsync(loaded.Journal, loaded.Sha256!, MismatchReason(loaded.Journal, observed), snapshot).ConfigureAwait(false); }
         return new(CpuLiveCurveOutcome.Blocked, CpuLiveCurveRecovery.RestoreReady, CpuLiveCurveBlockReason.None, snapshot);
     }
 

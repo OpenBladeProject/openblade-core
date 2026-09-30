@@ -178,8 +178,18 @@ clamping and restoration remain unproved. The pure planner requires explicit
 capability and firmware-range data for changes: capability 82 bit 1 bypasses only
 the fused ceiling, while the firmware range still covers each forward and exact
 restoration value. These inputs supply no freshness or native authority, and
-independent admission remains mandatory. No concrete PPT proof or service runtime
-enables these commands.
+independent admission remains mandatory. An unwired service transaction and
+durable CAS journal now preserve the first exact Fast/Slow/STAPM pair across
+repeated edits and partial restoration. Each step requires fresh full-pair
+comparison and independent forward, immediate-reverse and original-restore
+admission before its pending marker is flushed. Unknown submission, readback or
+persistence outcomes retain uncertainty across restart; late completion cannot
+advance the journal. Fake tests cover this orchestration.
+Both live ownership observers persist confirmed drift, so returning values do
+not restore permission after restart. Unavailable observations preserve the
+existing journal. A native observation backend and shared actual-worker
+coordination remain separate work; no concrete
+PPT proof or service runtime enables these commands.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

@@ -250,10 +250,13 @@ public sealed class CpuLiveCurveTuningTransactionTests
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         int writes = store.Writes;
         Assert.Equal(CpuLiveCurveRecovery.Blocked, (await transaction.ObserveOwnershipAsync(default)).Recovery);
-        Assert.Equal(writes, store.Writes); // reconciliation is read-only
+        bool confirmedDrift = fault is "boot" or "unselected-core";
+        Assert.Equal(writes + (confirmedDrift ? 1 : 0), store.Writes);
+        if (confirmedDrift) { Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State); }
         var result = await transaction.RestoreAsync(default);
         Assert.Equal(CpuLiveCurveOutcome.Blocked, result.Outcome);
-        if (fault is "boot" or "unknown-boot-source" or "undefined-boot-source")
+        if (confirmedDrift) { Assert.Equal(CpuLiveCurveBlockReason.StateChanged, result.Reason); }
+        if (fault is "unknown-boot-source" or "undefined-boot-source")
         { Assert.Equal(CpuLiveCurveBlockReason.ContextMismatch, result.Reason); }
         Assert.Single(backend.Sent); Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State);
     }
@@ -418,6 +421,30 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Equal(original, store.Journal!.OriginalBaseline); Assert.Single(backend.Sent);
         Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.RestoreAsync(default)).Outcome);
         Assert.Single(backend.Sent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ObservedDriftRemainsBlockedAfterValuesReturnAndRestart(bool contextDrift)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        await transaction.ApplySelectiveAsync([new(0, 0)], default);
+        var expected = backend.Values.ToArray(); var context = backend.Context;
+        var original = store.Journal!.OriginalBaseline;
+        if (contextDrift) { backend.Context = context with { BootSequence = context.BootSequence with { Sequence = 43 } }; }
+        else { backend.Values[11] = new(15, -9); }
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.ObserveOwnershipAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State);
+        Assert.Equal(original, store.Journal.OriginalBaseline);
+        backend.Values = expected; backend.Context = context;
+        int reads = backend.Reads, writes = store.Writes;
+        var restarted = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.ApplySelectiveAsync([new(8, -2)], default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.ObserveOwnershipAsync(default)).Outcome);
+        Assert.Equal(reads, backend.Reads); Assert.Equal(writes, store.Writes); Assert.Single(backend.Sent);
     }
 
     [Fact]
