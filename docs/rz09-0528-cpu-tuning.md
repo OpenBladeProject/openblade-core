@@ -135,6 +135,14 @@ validation; these observations do not admit power-limit writes or restoration.
 
 Admitted live power-limit readback and independent restoration remain
 unresolved. A curve-only observation therefore reports unknown power limits.
+The unwired live curve transaction now permits repeated edits after a fresh
+complete observation matches its owned state. Its bounded journal keeps the
+original 12-core baseline separately from the current operation. Restoration
+covers every remaining owned change, including changes from earlier edits, and
+each reverse command requires independent admission. Ambiguous submission,
+drift, or malformed recovery data blocks further edits. Earlier journal schemas
+remain blocked in place. Fake-backend tests cover these paths; native mutation
+and a trustworthy boot-continuity source remain unadmitted.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

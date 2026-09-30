@@ -39,12 +39,14 @@ internal sealed class CpuLiveCurveOwnershipJournal
 {
     [JsonConstructor]
     public CpuLiveCurveOwnershipJournal(int schemaVersion, Guid transactionId, CpuLiveCurveContext context,
-        IReadOnlyList<CpuLiveCoreOffset> baseline, IReadOnlyList<CpuLiveCurveStoredStep> steps,
+        IReadOnlyList<CpuLiveCoreOffset> originalBaseline, IReadOnlyList<CpuLiveCoreOffset> operationBaseline,
+        IReadOnlyList<CpuLiveCurveStoredStep> steps,
         IReadOnlyList<CpuLiveCoreOffset> expected, CpuLiveCurveOwnershipState state, int completedSteps,
         bool restoring, DateTimeOffset updatedAtUtc)
     {
         SchemaVersion = schemaVersion; TransactionId = transactionId; Context = context;
-        Baseline = Array.AsReadOnly(baseline?.ToArray() ?? []);
+        OriginalBaseline = Array.AsReadOnly(originalBaseline?.ToArray() ?? []);
+        OperationBaseline = Array.AsReadOnly(operationBaseline?.ToArray() ?? []);
         Steps = Array.AsReadOnly(steps?.ToArray() ?? []);
         Expected = Array.AsReadOnly(expected?.ToArray() ?? []);
         State = state; CompletedSteps = completedSteps; Restoring = restoring; UpdatedAtUtc = updatedAtUtc;
@@ -53,7 +55,8 @@ internal sealed class CpuLiveCurveOwnershipJournal
     public int SchemaVersion { get; }
     public Guid TransactionId { get; }
     public CpuLiveCurveContext Context { get; }
-    public IReadOnlyList<CpuLiveCoreOffset> Baseline { get; }
+    public IReadOnlyList<CpuLiveCoreOffset> OriginalBaseline { get; }
+    public IReadOnlyList<CpuLiveCoreOffset> OperationBaseline { get; }
     public IReadOnlyList<CpuLiveCurveStoredStep> Steps { get; }
     public IReadOnlyList<CpuLiveCoreOffset> Expected { get; }
     public CpuLiveCurveOwnershipState State { get; }
@@ -65,25 +68,34 @@ internal sealed class CpuLiveCurveOwnershipJournal
     {
         get
         {
-            if (SchemaVersion != 1 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
-                || UpdatedAtUtc == default || !Enum.IsDefined(State) || Steps.Count is < 1 or > 12
+            if (SchemaVersion != 2 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
+                || UpdatedAtUtc == default || !Enum.IsDefined(State) || Steps.Count > 12
                 || CompletedSteps < 0 || CompletedSteps > Steps.Count
-                || Snapshot(Baseline) is not { } baseline || !baseline.CoreOffsets.SequenceEqual(Baseline)
+                || Snapshot(OriginalBaseline) is not { } original || !original.CoreOffsets.SequenceEqual(OriginalBaseline)
+                || Snapshot(OperationBaseline) is not { } baseline || !baseline.CoreOffsets.SequenceEqual(OperationBaseline)
                 || Snapshot(Expected) is not { } expected || !expected.CoreOffsets.SequenceEqual(Expected)) { return false; }
+            // Values different from the original can only originate from the
+            // bounded forward editor. Original signed16 values remain intact.
+            if (OperationBaseline.Where((core, index) => core.Offset != OriginalBaseline[index].Offset)
+                .Any(core => core.Offset is < -30 or > 0)
+                || Restoring && !OperationBaseline.SequenceEqual(OriginalBaseline)
+                || Steps.Count == 0 && State != CpuLiveCurveOwnershipState.Restored) { return false; }
             int previousId = -1;
             foreach (var step in Steps)
             {
                 if (step is null || !CpuLiveCurveSnapshot.IsEnabled(step.PhysicalCoreId) || step.PhysicalCoreId <= previousId
                     || step.After is < -30 or > 0 || step.Before == step.After
-                    || Baseline.Single(core => core.PhysicalCoreId == step.PhysicalCoreId).Offset != step.Before) { return false; }
+                    || OperationBaseline.Single(core => core.PhysicalCoreId == step.PhysicalCoreId).Offset != step.Before) { return false; }
                 previousId = step.PhysicalCoreId;
             }
             if (!ExpectedAt(CompletedSteps).CoreOffsets.SequenceEqual(Expected)) { return false; }
             return State switch
             {
                 CpuLiveCurveOwnershipState.Prepared => CompletedSteps == 0 && !Restoring,
-                CpuLiveCurveOwnershipState.OwnedVerified => CompletedSteps > 0,
-                CpuLiveCurveOwnershipState.Restored => CompletedSteps == 0 && Restoring,
+                CpuLiveCurveOwnershipState.OwnedVerified => CompletedSteps > 0
+                    && (CompletedSteps < Steps.Count || !Expected.SequenceEqual(OriginalBaseline)),
+                CpuLiveCurveOwnershipState.Restored => Expected.SequenceEqual(OriginalBaseline)
+                    && (Restoring ? CompletedSteps == 0 : CompletedSteps == Steps.Count),
                 CpuLiveCurveOwnershipState.PossibleSubmission => Restoring ? CompletedSteps > 0 : CompletedSteps < Steps.Count,
                 CpuLiveCurveOwnershipState.Blocked => true,
                 _ => false,
@@ -97,20 +109,32 @@ internal sealed class CpuLiveCurveOwnershipJournal
 
     internal CpuLiveCurveSnapshot ExpectedAt(int completed)
     {
-        var snapshot = Snapshot(Baseline) ?? throw new InvalidDataException("Invalid live CO baseline.");
+        var snapshot = Snapshot(OperationBaseline) ?? throw new InvalidDataException("Invalid live CO operation baseline.");
         foreach (var step in Steps.Take(completed)) { snapshot = snapshot.WithOffset(step.Command(restoring: false)); }
         return snapshot;
     }
 
     internal CpuLiveCurveOwnershipJournal Progress(CpuLiveCurveOwnershipState state, int completed, bool restoring) =>
-        new(SchemaVersion, TransactionId, Context, Baseline, Steps, ExpectedAt(completed).CoreOffsets,
+        new(SchemaVersion, TransactionId, Context, OriginalBaseline, OperationBaseline, Steps, ExpectedAt(completed).CoreOffsets,
             state, completed, restoring, DateTimeOffset.UtcNow);
 
-    internal static CpuLiveCurveOwnershipJournal Prepare(CpuLiveCurveContext context, Rz090528CpuLiveCurvePlan plan) =>
-        new(1, Guid.NewGuid(), context, plan.Baseline.CoreOffsets,
+    internal static CpuLiveCurveOwnershipJournal Prepare(CpuLiveCurveContext context, Rz090528CpuLiveCurvePlan plan,
+        CpuLiveCurveOwnershipJournal? owned = null) =>
+        new(2, owned?.TransactionId ?? Guid.NewGuid(), context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
+            plan.Baseline.CoreOffsets,
             plan.Steps.Select(step => new CpuLiveCurveStoredStep(step.Command.PhysicalCoreId,
                 step.RestoreCommand.Offset, step.Command.Offset)).ToArray(), plan.Baseline.CoreOffsets,
             CpuLiveCurveOwnershipState.Prepared, 0, false, DateTimeOffset.UtcNow);
+
+    internal CpuLiveCurveOwnershipJournal ArmRestoration()
+    {
+        var steps = OriginalBaseline.Zip(Expected)
+            .Where(pair => pair.First.Offset != pair.Second.Offset)
+            .Select(pair => new CpuLiveCurveStoredStep(pair.First.PhysicalCoreId, pair.First.Offset, pair.Second.Offset)).ToArray();
+        return new(SchemaVersion, TransactionId, Context, OriginalBaseline, OriginalBaseline, steps, Expected,
+            steps.Length == 0 ? CpuLiveCurveOwnershipState.Restored : CpuLiveCurveOwnershipState.OwnedVerified,
+            steps.Length, true, DateTimeOffset.UtcNow);
+    }
 }
 
 internal sealed record CpuLiveCurveJournalLoadResult(CpuLiveCurveOwnershipJournal? Journal, bool Invalid, string? Sha256);

@@ -24,14 +24,14 @@ internal enum CpuLiveCurveRecovery { None, RestoreReady, Blocked }
 internal enum CpuLiveCurveBlockReason
 {
     None, InvalidJournal, PendingSubmission, ContextMismatch, ObservationUnavailable,
-    StateChanged, InvalidTarget, AdmissionDenied, JournalUnavailable, ExistingOwnership,
+    StateChanged, InvalidTarget, AdmissionDenied, JournalUnavailable,
 }
 internal sealed record CpuLiveCurveTransactionResult(CpuLiveCurveOutcome Outcome,
     CpuLiveCurveRecovery Recovery, CpuLiveCurveBlockReason Reason, CpuLiveCurveSnapshot? Observation);
 
 // Unwired transaction logic: there is no native backend or production entrypoint.
-// Repeated owned edits are deliberately blocked until their bounded update and
-// recovery protocol is implemented; the original baseline is never replaced.
+// Each owned edit replaces only the bounded operation; the original baseline
+// remains immutable until every owned core is verified back at its original.
 internal sealed class CpuLiveCurveTuningTransaction
 {
     private readonly ICpuLiveCurveBackend backend;
@@ -68,10 +68,13 @@ internal sealed class CpuLiveCurveTuningTransaction
         {
             var loaded = await LoadAsync(token).ConfigureAwait(false);
             if (loaded.Invalid) { return Blocked(CpuLiveCurveBlockReason.InvalidJournal); }
-            if (loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored })
-            { return await ObserveCoreAsync(loaded, token, applying: true).ConfigureAwait(false); }
+            if (loaded.Journal is { State: CpuLiveCurveOwnershipState.PossibleSubmission or CpuLiveCurveOwnershipState.Blocked })
+            { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
+            var owned = loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } ? loaded.Journal : null;
+            if (owned is not null && !Matches(owned, observed, owned.Expected, out baseline))
+            { return await BlockJournalAsync(owned, loaded.Sha256!, MismatchReason(owned, observed), baseline).ConfigureAwait(false); }
             var context = observed!.Context!;
             var frozen = new Rz090528CpuLiveObservation(CpuLiveCurveSnapshot.SupportedMask,
                 CpuLiveCurveSnapshot.SupportedPmVersion, CpuLiveCurveSnapshot.SupportedPmLength, baseline!.CoreOffsets);
@@ -79,7 +82,10 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (targets is null) { return Blocked(CpuLiveCurveBlockReason.InvalidTarget, baseline); }
             var shape = Rz090528CpuLiveCurvePlan.CreateSelective(frozen, targets, null);
             if (shape.Status == CpuLiveCurvePlanStatus.Unchanged)
-            { return new(CpuLiveCurveOutcome.Unchanged, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, baseline); }
+            {
+                return new(CpuLiveCurveOutcome.Unchanged, owned is null ? CpuLiveCurveRecovery.None : CpuLiveCurveRecovery.RestoreReady,
+                    CpuLiveCurveBlockReason.None, baseline);
+            }
             if (shape.Status != CpuLiveCurvePlanStatus.AdmissionDenied) { return Blocked(CpuLiveCurveBlockReason.InvalidTarget, baseline); }
 
             var admitted = new HashSet<(CpuLiveCurveCommand, CpuLiveCurveCommandPurpose)>();
@@ -98,7 +104,20 @@ internal sealed class CpuLiveCurveTuningTransaction
             var plan = Rz090528CpuLiveCurvePlan.CreateSelective(frozen, targets,
                 (command, purpose) => admitted.Contains((command, purpose))).Plan;
             if (plan is null) { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, baseline); }
-            var journal = CpuLiveCurveOwnershipJournal.Prepare(context, plan);
+            // The immediate reverse is not necessarily the original restore.
+            // Admit originals for prior owned cores and every newly changed
+            // core, including a core whose target happens to be its original.
+            var originals = owned?.OriginalBaseline ?? baseline!.CoreOffsets;
+            foreach (var original in originals)
+            {
+                if (baseline!.CoreOffsets.Single(core => core.PhysicalCoreId == original.PhysicalCoreId).Offset == original.Offset
+                    && !plan.Steps.Any(step => step.Command.PhysicalCoreId == original.PhysicalCoreId)) { continue; }
+                _ = CpuLiveCurveCommand.TryCreate(original.PhysicalCoreId, original.Offset,
+                    CpuLiveCurveSnapshot.SupportedMask, out var restore);
+                if (!await AdmitAsync(context, restore, CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
+                { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, baseline); }
+            }
+            var journal = CpuLiveCurveOwnershipJournal.Prepare(context, plan, owned);
             string? hash = await WriteAsync(loaded.Sha256, journal, token).ConfigureAwait(false);
             if (hash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, baseline); }
             return await ExecuteAsync(journal, hash, restoring: false, token).ConfigureAwait(false);
@@ -118,19 +137,19 @@ internal sealed class CpuLiveCurveTuningTransaction
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             if (!Matches(journal, observed, journal.Expected, out var snapshot))
             { return await BlockJournalAsync(journal, loaded.Sha256!, MismatchReason(journal, observed), snapshot).ConfigureAwait(false); }
-            if (journal.State == CpuLiveCurveOwnershipState.Prepared)
-            {
-                var restored = journal.Progress(CpuLiveCurveOwnershipState.Restored, 0, restoring: true);
-                return await WriteAsync(loaded.Sha256, restored, token).ConfigureAwait(false) is null
-                    ? Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot)
-                    : new(CpuLiveCurveOutcome.Verified, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, snapshot);
-            }
-            foreach (var step in journal.Steps.Take(journal.CompletedSteps).Reverse())
+            var restoration = journal.ArmRestoration();
+            foreach (var step in restoration.Steps.Reverse())
             {
                 if (!await AdmitAsync(journal.Context, step.Command(true), CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
                 { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
             }
-            return await ExecuteAsync(journal, loaded.Sha256!, restoring: true, token).ConfigureAwait(false);
+            // Persist the complete original restoration before any setter.
+            // Prepared may already own changes made by earlier operations.
+            string? hash = await WriteAsync(loaded.Sha256, restoration, token).ConfigureAwait(false);
+            if (hash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot); }
+            if (restoration.State == CpuLiveCurveOwnershipState.Restored)
+            { return new(CpuLiveCurveOutcome.Verified, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, snapshot); }
+            return await ExecuteAsync(restoration, hash, restoring: true, token).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
@@ -143,7 +162,7 @@ internal sealed class CpuLiveCurveTuningTransaction
     }
 
     private async Task<CpuLiveCurveTransactionResult> ObserveCoreAsync(CpuLiveCurveJournalLoadResult loaded,
-        CancellationToken token, bool applying = false)
+        CancellationToken token)
     {
         if (loaded.Invalid) { return Blocked(CpuLiveCurveBlockReason.InvalidJournal); }
         // A pending sender might still run. Do not start another native getter
@@ -156,8 +175,7 @@ internal sealed class CpuLiveCurveTuningTransaction
         { return new(CpuLiveCurveOutcome.Unchanged, CpuLiveCurveRecovery.None, CpuLiveCurveBlockReason.None, snapshot); }
         if (!Matches(loaded.Journal, observed, loaded.Journal.Expected, out snapshot))
         { return Blocked(MismatchReason(loaded.Journal, observed), snapshot); }
-        return new(CpuLiveCurveOutcome.Blocked, CpuLiveCurveRecovery.RestoreReady,
-            applying ? CpuLiveCurveBlockReason.ExistingOwnership : CpuLiveCurveBlockReason.None, snapshot);
+        return new(CpuLiveCurveOutcome.Blocked, CpuLiveCurveRecovery.RestoreReady, CpuLiveCurveBlockReason.None, snapshot);
     }
 
     private async Task<CpuLiveCurveTransactionResult> ExecuteAsync(CpuLiveCurveOwnershipJournal journal, string hash,
@@ -196,13 +214,16 @@ internal sealed class CpuLiveCurveTuningTransaction
             observed = await ObserveAsync(token).ConfigureAwait(false);
             if (!Matches(journal, observed, journal.ExpectedAt(completed).CoreOffsets, out snapshot)
                 || token.IsCancellationRequested) { return Uncertain(snapshot); }
-            var verified = journal.Progress(completed == 0 ? CpuLiveCurveOwnershipState.Restored
+            bool finished = restoring ? completed == 0 : completed == journal.Steps.Count;
+            var verified = journal.Progress(finished && snapshot!.CoreOffsets.SequenceEqual(journal.OriginalBaseline)
+                ? CpuLiveCurveOwnershipState.Restored
                 : CpuLiveCurveOwnershipState.OwnedVerified, completed, restoring);
             string? verifiedHash = await WriteAsync(pendingHash, verified, token).ConfigureAwait(false);
             if (verifiedHash is null) { return Uncertain(snapshot); }
             journal = verified; hash = verifiedHash;
         }
-        return new(CpuLiveCurveOutcome.Verified, restoring ? CpuLiveCurveRecovery.None : CpuLiveCurveRecovery.RestoreReady,
+        return new(CpuLiveCurveOutcome.Verified, journal.State == CpuLiveCurveOwnershipState.Restored
+            ? CpuLiveCurveRecovery.None : CpuLiveCurveRecovery.RestoreReady,
             CpuLiveCurveBlockReason.None, snapshot);
     }
 
