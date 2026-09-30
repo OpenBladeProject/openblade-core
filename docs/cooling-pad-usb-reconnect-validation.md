@@ -6,6 +6,30 @@ observation. It tests persistence of the restored quiet Auto baseline when USB
 is disconnected with 12 V retained. It sends no pad setter and does not test
 interruption during Fixed, process crash, sleep or power loss.
 
+## Completed result on 2026-09-29
+
+The passive check completed using the reviewed source
+`1c19debf8b712667822093dc2f9e428e4ff54171`. Fresh inventory before and after the
+operator-reported USB-only reconnect matched the exact pad and control geometry.
+Both separate read-only sessions returned raw `0000`, with transport success
+and exit zero. No session or path was reused across reconnection.
+
+The operator confirmed the quiet Auto/full-brightness static-green baseline,
+inactive pad-dependent HyperBoost, then reported "reconnected, no changes".
+The final post-query reply was "Still normal and unchanged", confirming normal
+quiet Auto and unchanged green lighting without red/sleep. The five-second gap
+and retained 12 V follow the attended instruction; no independent timing or
+power sensor is available.
+
+No setter, retry, Synapse action, service action, USBPcap capture or recovery
+occurred during this check. Evidence is typed query output, fresh metadata and
+operator observation, without independent packet tracing. One launcher parse
+error executed no commands and was corrected before the post-reconnect inventory
+or query; it was not a device failure or repeated hardware exchange.
+
+This establishes one powered-pad passive USB reconnect from the restored quiet
+baseline. Fixed interruption, process crash, sleep, power loss, independent fan
+state/ownership and production admission remain unvalidated.
 ## Exact scope and preflight
 
 Use exact RZ09-05289EN4 and pad 1532:0F43 revision `0200`, MI_00 usage `000C:0001`,
