@@ -75,4 +75,28 @@ observations in actual subprocesses. Preparation checks passed 697 Capture tests
 three architecture checks and 24 hardware-free USB subprocess scenarios plus
 direct-child rejection. The cooperative 19 and normal-exit 18 subprocess scenarios plus direct invocation also passed. These checks accessed no pad. Independent source/tests/documentation review passed;
 exact committed-source rebuild and host checks precede the physical baseline.
-No Fixed USB-reconnect trial is armed or completed.
+The attended result below stopped before restoration.
+## Attended result: restoration blocked
+
+The trial from reviewed source `0a204045757ffa8f628fb9033b8d575b85f4e8df`
+exited `2`. Medium was acknowledged and physically normal, and child 1 fully
+disposed and exited zero before USB-only disconnect. Passive samples spanned
+5,113.7454 ms of absence; the operator reported retained 12 V and reconnection to
+the same port. Post-reconnect physical Medium/full-green remained normal.
+The fresh second process then queried raw `0000`, so the conditional gate stopped
+before Auto, raw restoration or reacquisition. No child remained running.
+
+This observed the USB boundary but did not complete the restoration trial.
+Raw `0000` matching the original mode does not establish physical Auto recovery.
+There was no immediately pre-USB raw query after the Fixed setter, so the result
+does not establish that reconnect caused the raw-state change. Do not require
+raw `0300` to persist across reconnect as an assumed fan-control contract.
+
+The private typed output is 3,179 bytes, SHA-256:
+`6DA25C5ED64A7AAE23D3D6957D203F962702B203F20712F505C2582DA42EDD23`.
+Independent source/result review confirmed the fail-stop. An attended full
+USB+12 V power cycle followed after all Capture processes exited. The operator
+reported that the pad returned to Medium with the same lighting; quiet Auto was
+not recovered. Synapse and Razer services remained stopped. The next recovery
+uses a fresh explicit preferred-Auto request and the previously verified captured
+acquisition/Medium/Auto sequence, without replaying a saved continuation receipt.
