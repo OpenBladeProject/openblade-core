@@ -32,6 +32,13 @@ unexpected changes, or a failed mirror check block further commands. Explicit
 restoration proceeds in reverse order and verifies every byte. These paths are
 covered by fake-backend tests; production command admission remains disabled.
 
+A later attended test of the actual service transaction stopped before submitting
+a command. A read-only diagnostic found that the COM getter returned output but
+omitted the `ReturnValue` property exposed by the CIM helper. The decoder now
+distinguishes confirmed absence from property-read errors for this exact provider;
+version 7 and command payload checks remain mandatory. The corrected getter and
+service apply/recovery cycle still require attended validation.
+
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
 unmanaged power limit, and saved recovery cannot enable a live restore. Missing,
@@ -71,6 +78,13 @@ function separately before its SMN transport writes. Earlier attempts identified
 a developer payload dependency omission and an incorrect topology assumption;
 both were corrected before the successful measurement. This observation does
 not admit production live tuning or prove boot activation.
+
+A separate attended PM observation adapter prepares three complete private table
+samples with fresh identity, power, session and driver-lifetime checks. Its Capture
+command remains unavailable until a live supervisor authority and pinned evidence
+writer are connected. Table fields are research candidates, so they do not supply
+an admitted power-limit value or restoration baseline. No PM table capture or CPU
+mutation follows from the preparation tests.
 
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
