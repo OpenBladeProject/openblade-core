@@ -91,6 +91,13 @@ writer are connected. Table fields are research candidates, so they do not suppl
 an admitted power-limit value or restoration baseline. No PM table capture or CPU
 mutation follows from the preparation tests.
 
+The launch validator checks both parent-written records against an independently
+supplied reviewed payload manifest. It pins the complete payload and binds the
+actual child and parent process identities. A retained child handle supports
+terminal-state checks for cleanup; the child cannot release its own pins while
+it is still running. These components have passed fake tests but remain separate
+from the native supervisor launcher.
+
 Live power-limit readback and restoration of both independent limit values remain
 unresolved. A curve-only observation therefore reports unknown power limits.
 Boot activation, installed-service IPC validation, and attended live
