@@ -28,6 +28,21 @@ left state not excluded by this experiment. Preserve the earlier negative Auto
 release and both incomplete attempts. Next prepare offline lifecycle, controller
 conflict, disconnect and shutdown/crash recovery cases before any further
 attended lifecycle trial. Accessory production admission remains closed.
+## Completed passive USB reconnect
+
+After the successful fan trial and normal-exit check, one attended USB-only
+reconnect from quiet Auto completed with 12 V retained by instruction. Fresh
+exact-pad metadata and separate guarded read-only sessions before and after
+returned raw `0000`, with exit zero. The operator reported no fan/lighting change
+and confirmed normal quiet Auto/full-brightness static-green behavior after the
+query. No setter, vendor action, retry or recovery occurred. Timing and retained
+power are operator/instruction provenance, not independently instrumented facts.
+
+This establishes one passive reconnect from the restored baseline. It does not
+establish recovery from interruption while Fixed is active, crash, sleep or
+power loss, nor independent fan state/ownership or production admission. Prepare
+those distinct cases with explicit interruption state and recovery before any
+new attended action. See draft #624's USB reconnect checklist and capture #33.
 ## Earlier incomplete exploratory attempts on 2026-09-29
 
 The reviewed developer trial in draft #624 acknowledged raw `0300` acquisition
