@@ -4,6 +4,12 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase))
+{
+    // The pure PM command has no native provider or lifetime authority yet.
+    return Rz090528CpuPmObservationProbe.RunUnavailable(args.Skip(1).ToArray(), Console.Out, Console.Error);
+}
+
 if (args.Length > 0 && args[0].Equals(Rz090528CpuLiveQueryProbe.Name, StringComparison.OrdinalIgnoreCase))
 {
     using var cancellation = new CancellationTokenSource();
@@ -2252,6 +2258,7 @@ Console.WriteLine(
     " RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
 Console.WriteLine($"  OpenBlade.Capture {Rz090528CpuLiveQueryProbe.Usage}");
+Console.WriteLine($"  OpenBlade.Capture {Rz090528CpuPmObservationProbe.Usage} (unavailable: live-parent authority required)");
 Console.WriteLine("    Attended native CO/PM query; PCI transport writes require a present operator. " +
     "Fresh loaded driver provenance is an operator acknowledgement, not machine attestation.");
 return args.Length == 0 ? 0 : 1;
