@@ -1688,6 +1688,18 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    CoolingPadPreferredAutoRecoveryCommand.Name,
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new CoolingPadPreferredAutoRecoveryCommand(
+        (fixedConfirmation, autoConfirmation, finalConfirmation, token) =>
+            GetterCandidateProbeFactory.CreateCoolingPadFanExploratoryTrialWindows().RunAsync(
+                fixedConfirmation, autoConfirmation, finalConfirmation, token),
+        Console.In, Console.Out, Console.Error);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     CoolingPadFanExploratoryTrialCommand.Name,
     StringComparison.OrdinalIgnoreCase))
 {

@@ -240,3 +240,30 @@ behavior. The live attempts and vendor-assisted recovery are recorded above.
 Raw recovery verification: 26 focused tests, all 611 Capture tests and three
 architecture tests passed; independent review passed. The exact committed build
 completed with zero warnings or errors.
+## Current preferred-Auto recovery without vendor software
+
+The Fixed USB-only reconnect trial read raw `0000` while the operator still
+observed Medium. It correctly stopped before Auto. A full USB+12 V power cycle
+also returned to Medium with the same lighting. Raw control mode is not a fan-state
+oracle; the requested fan behavior needs to be stated and checked separately.
+
+The current recovery reasserts the already verified single-process captured
+sequence: query `0000`, acquire/query `0300`, Medium `01012C`, Auto `000600`,
+restore/query raw `0000`. It reuses the exploratory runner unchanged. A small
+wrapper confirms present normal Medium/green before native construction and
+labels the desired target as preferred quiet Auto, rather than restoring the
+starting physical Medium. Separate Medium, Auto and final physical checks remain.
+
+```powershell
+OpenBlade.Capture.exe recover-rz09-0528-cooling-pad-preferred-auto `
+  --confirm-target RZ09-05289EN4:1532:0F43:0200:CurrentMedium-ReassertPreferredQuietAuto `
+  --confirm-recovery ManualPowerCycleOnly
+```
+
+Exact model/SKU/pad and controller guards apply; BIOS is provenance only. This
+accepts no saved continuation receipt, command bytes or device path. Unexpected
+mode, failed acknowledgements, cancellation or rejected physical observations
+stop further writes. No retry, firmware cleanup in `finally`, vendor restart or
+new lifecycle machinery is introduced. Synapse and Razer services remain stopped.
+Independent source/tests/documentation review passed, with all 708 Capture tests passing. Exact committed-source build and missing-ack rejection precede execution. No preferred-Auto
+recovery attempt has yet started.
