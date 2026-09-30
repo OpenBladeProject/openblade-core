@@ -44,6 +44,15 @@ the original −1 value through journal reconciliation in a new process. Both
 800-byte copies restored exactly and the journal reached `Restored`. This test
 did not exercise installed-service IPC or establish boot activation.
 
+An attended test of the published Service classes saved a 45 W PPT limit and
+verified both complete firmware copies. A new helper process recovered the real
+ownership journal and restored the original default PPT configuration with the
+exact zero-reset command. Both 800-byte copies matched their independent
+originals, CO remained -1, and the journal reached `Restored` with no pending
+steps. No reboot, live-setting command or installed-application change occurred.
+This verifies the exact saved transaction and recovery path; boot activation and
+installed IPC remain unverified.
+
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
 unmanaged power limit, and saved recovery cannot enable a live restore. Missing,
@@ -208,9 +217,12 @@ The enclosing PM engine must still perform and record its separate fresh
 post-admission before metadata can be complete. The attended r6 driverless read
 completed both invocations and cleanup and returned Current 0, Min 0, Max 125000,
 Stepping 1 and Value `50001`, with no ReturnValue. The old strict reader therefore
-reported incomplete metadata. Offline replay tests cover the revised rule;
-that physical run did not execute or verify the revised readers. Current remains
-a firmware shadow,
+reported incomplete metadata. A subsequent attended test loaded the exact
+published Capture default reader, including its real identity path. Both version
+7 and MinMax completed with all getter stages, cleanup and separate fresh
+post-admission checks. Both retained absent/null acknowledgements with explicit
+compatibility provenance. This verifies the revised Capture reader's read-only
+sequence. Current remains a firmware shadow,
 and decoded bounds do not establish units, requested-state mapping or authority.
 The optional already-installed driver path still needs separately admitted
 production observation and lifetime evidence. No concrete PPT provider, proof
