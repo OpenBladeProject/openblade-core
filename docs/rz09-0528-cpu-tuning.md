@@ -157,7 +157,9 @@ a valid counter. A reviewed normal-token diagnostic observed short-term equality
 between separate processes; reboot and power-transition continuity remain unproved.
 An internal service reader acquires that named counter with one fixed four-byte
 read of its own process mapping on native AMD64 and the reviewed Windows build
-10.0.26200. Failed platform/version checks, failed or incomplete copies and
+10.0.26200 with service-pack major/minor zero. Its version gate uses the numeric
+fields returned by `RtlGetVersion`, independently of the app compatibility
+manifest. Failed platform/version checks, failed or incomplete copies and
 cancellation return unknown without retaining a previous value. It supplies no
 CPU-state or driver-lifetime continuity and is not wired into production admission.
 Fake-backend tests cover these paths; native mutation

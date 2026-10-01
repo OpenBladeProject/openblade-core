@@ -1,9 +1,44 @@
+using System.Runtime.InteropServices;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuBootSequenceReaderTests
 {
+    [Fact]
+    public void ExactVersionPolicyAcceptsOnlySuccessfulReviewedFiveFieldProfile()
+    {
+        Assert.True(WindowsCpuBootSequenceReader.IsReviewedWindowsVersion(0, 10, 0, 26200, 0, 0));
+    }
+
+    [Theory]
+    [InlineData(1, 10u, 0u, 26200u, 0, 0)]
+    [InlineData(int.MaxValue, 10u, 0u, 26200u, 0, 0)]
+    [InlineData(-1, 10u, 0u, 26200u, 0, 0)]
+    [InlineData(int.MinValue, 10u, 0u, 26200u, 0, 0)]
+    [InlineData(0, 9u, 0u, 26200u, 0, 0)]
+    [InlineData(0, 11u, 0u, 26200u, 0, 0)]
+    [InlineData(0, 10u, 1u, 26200u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26199u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26201u, 0, 0)]
+    [InlineData(0, 10u, 0u, 30000u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26200u, 1, 0)]
+    [InlineData(0, 10u, 0u, 26200u, 0, 1)]
+    public void ExactVersionPolicyRejectsNonzeroStatusOrAnyDifferentField(int status, uint major, uint minor,
+        uint build, ushort servicePackMajor, ushort servicePackMinor)
+    {
+        Assert.False(WindowsCpuBootSequenceReader.IsReviewedWindowsVersion(status, major, minor, build,
+            servicePackMajor, servicePackMinor));
+    }
+
+    [Fact]
+    public void VersionQueryUsesFullExLayoutWithNumericServicePackFields()
+    {
+        Assert.Equal(284, Marshal.SizeOf<WindowsCpuBootSequenceReader.OsVersionInfo>());
+        Assert.Equal((nint)276, Marshal.OffsetOf<WindowsCpuBootSequenceReader.OsVersionInfo>("ServicePackMajor"));
+        Assert.Equal((nint)278, Marshal.OffsetOf<WindowsCpuBootSequenceReader.OsVersionInfo>("ServicePackMinor"));
+    }
+
     [Fact]
     public void ConstructionDoesNotProbeAndEveryReadAcquiresFreshValue()
     {

@@ -40,6 +40,21 @@ internal sealed class WindowsCpuBootSequenceReader
         catch (Exception) { return null; }
     }
 
+    internal static bool IsReviewedWindowsVersion(int status, uint major, uint minor, uint build,
+        ushort servicePackMajor, ushort servicePackMinor) => status == 0
+        && major == 10 && minor == 0 && build == 26200 && servicePackMajor == 0 && servicePackMinor == 0;
+
+    // Full RTL_OSVERSIONINFOEXW from SDK winnt.h, including the numeric service
+    // pack fields. RtlGetVersion selects the EX contract from its 284-byte size.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct OsVersionInfo
+    {
+        public uint Size, Major, Minor, Build, PlatformId;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string ServicePack;
+        public ushort ServicePackMajor, ServicePackMinor, SuiteMask;
+        public byte ProductType, Reserved;
+    }
+
     private sealed class Native : IWindowsCpuBootSequenceNative
     {
         // SDK 10.0.26100.0 ntddk.h: compiled FIELD_OFFSET(BootId)=0x2C4,
@@ -49,9 +64,6 @@ internal sealed class WindowsCpuBootSequenceReader
         private const int BootSequenceAddress = 0x7FFE02C4;
         private const ushort MachineUnknown = 0;
         private const ushort MachineAmd64 = 0x8664;
-        private const uint VersionMinor = 1, VersionMajor = 2, VersionBuild = 4;
-        private const uint ServicePackMinor = 0x10, ServicePackMajor = 0x20;
-        private const byte VersionEqual = 1;
 
         public bool IsNativeWindowsAmd64() => OperatingSystem.IsWindows()
             && IntPtr.Size == 8 && RuntimeInformation.ProcessArchitecture == Architecture.X64
@@ -63,21 +75,14 @@ internal sealed class WindowsCpuBootSequenceReader
             var version = new OsVersionInfo
             {
                 Size = (uint)Marshal.SizeOf<OsVersionInfo>(),
-                Major = 10,
-                Minor = 0,
-                Build = 26200,
                 ServicePack = string.Empty,
             };
-            ulong mask = VerSetConditionMask(0, VersionMajor, VersionEqual);
-            mask = VerSetConditionMask(mask, VersionMinor, VersionEqual);
-            mask = VerSetConditionMask(mask, VersionBuild, VersionEqual);
-            mask = VerSetConditionMask(mask, ServicePackMajor, VersionEqual);
-            mask = VerSetConditionMask(mask, ServicePackMinor, VersionEqual);
-            // Exact predicate, not an independent actual-build attestation.
-            // Manifest/compatibility effects may reject an otherwise matching
-            // host. No fallback or widening to adjacent/future builds is allowed.
-            return VerifyVersionInfoW(ref version,
-                VersionMajor | VersionMinor | VersionBuild | ServicePackMajor | ServicePackMinor, mask);
+            // The documented user-mode ntdll query does not depend on the host's
+            // supportedOS manifest. Keep the same five exact numeric conditions;
+            // no fallback or widening to adjacent/future builds is allowed.
+            int status = RtlGetVersion(ref version);
+            return IsReviewedWindowsVersion(status, version.Major, version.Minor, version.Build,
+                version.ServicePackMajor, version.ServicePackMinor);
         }
 
         public WindowsCpuBootSequenceCopy CopyFixedBootSequence()
@@ -90,15 +95,6 @@ internal sealed class WindowsCpuBootSequenceReader
             return new(succeeded, copied, value);
         }
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct OsVersionInfo
-        {
-            public uint Size, Major, Minor, Build, PlatformId;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string ServicePack;
-            public ushort ServicePackMajor, ServicePackMinor, SuiteMask;
-            public byte ProductType, Reserved;
-        }
-
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("kernel32.dll", ExactSpelling = true)]
         private static extern nint GetCurrentProcess();
@@ -107,12 +103,8 @@ internal sealed class WindowsCpuBootSequenceReader
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool IsWow64Process2(nint process, out ushort processMachine, out ushort nativeMachine);
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        [DllImport("kernel32.dll", ExactSpelling = true)]
-        private static extern ulong VerSetConditionMask(ulong conditionMask, uint typeMask, byte condition);
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        [DllImport("kernel32.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool VerifyVersionInfoW(ref OsVersionInfo version, uint typeMask, ulong conditionMask);
+        [DllImport("ntdll.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        private static extern int RtlGetVersion(ref OsVersionInfo version);
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("kernel32.dll", ExactSpelling = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
