@@ -278,21 +278,23 @@ them into an effective value. Older IPC 59 peers cannot read this expanded statu
 contract, so deployment must update Service, Session Agent and Tray together.
 Default composition still supplies no concrete native provider.
 The coordinated IPC 61 installation passed complete saved-firmware baseline
-reads and typed service observation. Its first CO-disable request was rejected
-at forward/inverse admission before journal preparation or firmware submission;
-the PPT and restoration phases did not run. Saved write/restoration validation
-remains pending. First-failed-check diagnostics now preserve the existing
-predicates and short-circuit order ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)). The installed diagnostic identified the rejecting check as fresh power admission:
+reads and typed service observation. First-failed-check diagnostics identified
+an initial pre-submission rejection at fresh power admission ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)):
 Windows reports unknown external power even on the barrel adapter. CPU admission
 now uses the existing uncached adapter classifier and requires fresh agreeing
 full-power readings. Battery, USB-C, unknown power, cancellation and changed
 session or device state still reject commands ([issue #642](https://github.com/OpenBladeProject/openblade-core/issues/642)).
-The corrected installed write/restoration cycle remains pending.
-The current CPU card is a development UI; a production UI/UX pass follows
-behavior validation.
 
-Live controls also require trusted native proof and attended readback and restoration. Boot
-activation remains unverified and is separate from validating saved persistence.
+The corrected installed service passed attended CO disabled-zero with exact
+original all-core −1 restoration, then a separate PPT 45 W cycle with exact
+original-default restoration. Both complete 800-byte firmware copies matched
+their originals after each cycle, and typed observation and recovery checks
+passed. No live CPU settings, driver changes or reboot occurred. This validates
+saved persistence for those transitions, rather than every selectable value.
+Live controls still require trusted native proof and attended readback and
+restoration. Boot activation remains unverified and separate from saved
+persistence. The current CPU card remains a development UI; a production UI/UX
+pass follows behavior validation.
 
 The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic
 CPU states at two card widths. It checks saved/live separation, unknown live PPT,
