@@ -68,8 +68,8 @@ public partial class App
                         && text.Contains(editor.PendingBootSummary) && text.Contains(editor.AvailabilitySummary),
                         "CPU card did not render the separate saved/live/pending/backend summaries.");
                     RequireCpuLayout(editor.SavedSummary.Contains("65", StringComparison.Ordinal)
-                        && (fixture.Measured ? editor.LiveSummary.Contains("PPT unknown", StringComparison.Ordinal)
-                            && editor.LiveSummary.Contains("-7", StringComparison.Ordinal) : editor.LiveSummary.Contains("unknown", StringComparison.Ordinal)),
+                        && (fixture.Measured ? editor.LiveSummary == "Measured live: PPT Unknown; CO -7."
+                            : editor.LiveSummary == "Measured live: unknown."),
                         "Saved firmware was substituted for measured live state or unknown PPT was lost.");
                     RequireCpuLayout(editor.CanEditCurve == fixture.Editable && !editor.CanEditPower
                         && editor.CanApply == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked)
@@ -175,7 +175,7 @@ public partial class App
         return new(revision, true, false, [], null, [], "Synthetic CPU layout fixture",
             DeviceCapabilities.SafeTargetDefaults() with
             {
-                CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ObservedOnly),
+                CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ReadOnly),
                 CpuVoltageOptimizer = new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true },
             },
             new(PerformancePreset.Balanced, FanMode.Automatic, null, null), profiles,
