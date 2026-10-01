@@ -113,8 +113,8 @@ as recovery. Same-process healthy Stop/Resume is the supported resumable path.
 
 ## Compatibility and remaining attended acceptance
 
-Product version advances from 0.24.0 to 0.25.0 for this capability; the current PR
-compares main 0.23.0 to 0.25.0. Service IPC advances from 59 to 60 for typed
+Product version remains 0.24.0 for this PR's minor capability bump from main
+0.23.0. Service IPC advances from 59 to 60 for typed
 restoration requests/status. Protocol51 read-only projections continue to omit
 pad intent/status. Profiles, exports and override schemas are unchanged. The
 private mutation record writes schema2; legacy schema1 records load
