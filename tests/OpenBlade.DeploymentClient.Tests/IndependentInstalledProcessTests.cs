@@ -15,6 +15,18 @@ public sealed class IndependentInstalledProcessTests
     [InlineData(false)]
     public async Task Launch_OutlivesCallerJobs_WithDisposableParentAndNoInheritedHandles(bool hidden)
     {
+        DesktopProcessIdentity caller = DesktopProcessIdentity.ReadCaller();
+        if (caller.IsNormal)
+        {
+            await RunPositiveFixtureAsync(hidden);
+            return;
+        }
+
+        await CiNormalLaunchFixture.RunAsync(hidden);
+    }
+
+    internal static async Task RunPositiveFixtureAsync(bool hidden)
+    {
         using FixtureScope fixture = new();
         await fixture.StartAsync(hidden);
         File.WriteAllText(Path.Combine(fixture.Root, "launch"), "launch");
@@ -117,6 +129,62 @@ public sealed class IndependentInstalledProcessTests
         Assert.DoesNotContain("private-group", json);
         Assert.DoesNotContain("private-privilege", json);
         Assert.DoesNotContain("S-1-16-8192", json);
+    }
+
+    [Theory]
+    [InlineData("true", "github-hosted", "Windows", "eligible", true)]
+    [InlineData(null, "github-hosted", "Windows", "eligible", false)]
+    [InlineData("True", "github-hosted", "Windows", "eligible", false)]
+    [InlineData("true", "self-hosted", "Windows", "eligible", false)]
+    [InlineData("true", "github-hosted", "Linux", "eligible", false)]
+    [InlineData("true", "github-hosted", "Windows", "normal", false)]
+    [InlineData("true", "github-hosted", "Windows", "restricted", false)]
+    [InlineData("true", "github-hosted", "Windows", "appcontainer", false)]
+    [InlineData("true", "github-hosted", "Windows", "uiaccess", false)]
+    [InlineData("true", "github-hosted", "Windows", "system", false)]
+    [InlineData("true", "github-hosted", "Windows", "localsystem", false)]
+    public void CiAccountGuardRequiresExactHostedContextAndUnrestrictedElevatedCaller(
+        string? actions, string environment, string operatingSystem, string change, bool expected)
+    {
+        DesktopProcessIdentity caller = new("test-user", 1, 1, "S-1-16-12288", true, false, false, [], []);
+        caller = change switch
+        {
+            "normal" => caller with { Elevated = false, IntegritySid = "S-1-16-8192" },
+            "restricted" => caller with { Restricted = true },
+            "appcontainer" => caller with { AppContainer = true },
+            "uiaccess" => caller with { UiAccess = true },
+            "system" => caller with { IntegritySid = "S-1-16-16384" },
+            "localsystem" => caller with { UserSid = "S-1-5-18" },
+            _ => caller,
+        };
+        Assert.Equal(expected, CiNormalLaunchFixture.IsEligible(caller, actions, environment, operatingSystem));
+    }
+
+    [Theory]
+    [InlineData(true, true, true, "owned", "owned", true, true)]
+    [InlineData(false, true, true, "owned", "owned", true, false)]
+    [InlineData(true, false, true, "owned", "owned", true, false)]
+    [InlineData(true, true, false, "owned", "owned", true, false)]
+    [InlineData(true, true, true, null, null, true, false)]
+    [InlineData(true, true, true, "owned", "reused", true, false)]
+    [InlineData(true, true, true, "owned", "owned", false, false)]
+    public void CiAccountDeletionRequiresTerminalJobAndExactCreationOwnership(bool created, bool terminal,
+        bool drained, string? ownedSid, string? currentSid, bool markerMatches, bool expected)
+    {
+        Assert.Equal(expected, CiNormalLaunchFixture.CanDeleteAccount(created, terminal, drained,
+            ownedSid, currentSid, markerMatches));
+    }
+
+    [Fact]
+    public void CiBootstrapReportRequiresMatchingCaseAndCompletedAssertions()
+    {
+        var report = new CiNormalLaunchFixture.BootstrapReport("nonce", true, true, null);
+        Assert.True(CiNormalLaunchFixture.IsSuccessfulReport(report, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report, "other", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report, "nonce", false));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Succeeded = false }, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Error = "failed" }, "nonce", true));
+        Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(null, "nonce", true));
     }
 
     private sealed class FixtureScope : IDisposable
@@ -265,6 +333,16 @@ internal static class LaunchFixture
 
     private static int Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "ci-normal-orchestrator")
+        {
+            return CiNormalLaunchFixture.RunOrchestrator(args[1], bool.Parse(args[2]), args[3]);
+        }
+
+        if (args.Length == 4 && args[0] == "ci-normal-positive")
+        {
+            return CiNormalLaunchFixture.RunBootstrap(args[1], bool.Parse(args[2]), args[3]);
+        }
+
         // Explicitly attended, read-only admission check. This mode never starts
         // an installed application, calls the broker, or creates a shell child.
         if (args.Length == 2 && args[0] == "verify-desktop-context")
