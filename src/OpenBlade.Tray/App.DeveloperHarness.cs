@@ -329,63 +329,18 @@ public partial class App
             ITrayIconHost initialTrayIcon = trayIconHost
                 ?? throw new InvalidOperationException(
                     "The localization smoke test did not create a tray icon.");
-            const System.Reflection.BindingFlags privateInstance =
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            System.Reflection.FieldInfo disposedField = typeof(MainWindow).GetField("disposed", privateInstance)
-                ?? throw new InvalidOperationException("The window disposal field is unavailable.");
-            System.Reflection.FieldInfo readyField = typeof(MainWindow).GetField("dashboardCardsReady", privateInstance)
-                ?? throw new InvalidOperationException("The dashboard readiness field is unavailable.");
-            System.Reflection.FieldInfo canonicalField = typeof(MainWindow).GetField("canonicalLaptopCardsPlaced", privateInstance)
-                ?? throw new InvalidOperationException("The canonical card placement field is unavailable.");
-            MainWindow? failedReplacement = null;
-            RoutedEventHandler? queuedLoaded = null;
-            object? loadedSender = null;
-            bool failedReplacementClosed = false;
+            await smokeContext.RunPhaseAsync(
+                "validate retired window Loaded callback",
+                () => AssertRetiredLoadedCallbackAsync(smokeContext),
+                LiveLocalizationSmokeContext.RefreshTimeout);
             await smokeContext.RunPhaseAsync(
                 "refresh Russian to failed Chinese rollback",
                 () => RefreshLanguageAsync(
                     UiLanguagePreference.SimplifiedChinese,
-                    replacement =>
-                    {
-                        if (disposedField.GetValue(replacement) is not 0
-                            || readyField.GetValue(replacement) is not false
-                            || canonicalField.GetValue(replacement) is not false)
-                        {
-                            throw new InvalidOperationException(
-                                "The failed replacement must start alive with its Loaded work still pending.");
-                        }
-                        failedReplacement = replacement;
-                        replacement.Closed += (_, _) => failedReplacementClosed = true;
-                        loadedSender = replacement.Content;
-                        System.Reflection.MethodInfo loadedMethod = typeof(MainWindow).GetMethod(
-                            "OnRootLoaded", privateInstance)
-                            ?? throw new InvalidOperationException("The window Loaded handler is unavailable.");
-                        // Retain the real handler before retirement, as a callback
-                        // already queued before event detachment would retain it.
-                        queuedLoaded = loadedMethod.CreateDelegate<RoutedEventHandler>(replacement);
-                        throw new InvalidOperationException(
-                            "Injected replacement tray icon failure.");
-                    },
+                    _ => throw new InvalidOperationException(
+                        "Injected replacement tray icon failure."),
                     smokeContext),
                 LiveLocalizationSmokeContext.RefreshTimeout);
-            if (failedReplacement is null || queuedLoaded is null || loadedSender is null
-                || !failedReplacementClosed
-                || disposedField.GetValue(failedReplacement) is not 1
-                || readyField.GetValue(failedReplacement) is not false
-                || canonicalField.GetValue(failedReplacement) is not false)
-            {
-                throw new InvalidOperationException(
-                    "The failed replacement was not retired with its original Loaded work still pending.");
-            }
-            smokeContext.Report("invoke queued Loaded callback on retired replacement");
-            queuedLoaded(loadedSender, new RoutedEventArgs());
-            if (readyField.GetValue(failedReplacement) is not false
-                || canonicalField.GetValue(failedReplacement) is not false)
-            {
-                throw new InvalidOperationException(
-                    "A queued Loaded callback mutated the retired replacement.");
-            }
-            smokeContext.Report("retired replacement Loaded callback ignored");
             if (!ReferenceEquals(mainWindow, initialWindow)
                 || !ReferenceEquals(trayIconHost, initialTrayIcon)
                 || !initialWindow.IsWindowVisible)
@@ -466,6 +421,70 @@ public partial class App
                 }
             }
             Environment.Exit(1);
+        }
+    }
+
+    private async Task AssertRetiredLoadedCallbackAsync(LiveLocalizationSmokeContext smokeContext)
+    {
+        const System.Reflection.BindingFlags privateInstance =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        System.Reflection.FieldInfo disposedField = typeof(MainWindow).GetField("disposed", privateInstance)
+            ?? throw new InvalidOperationException("The window disposal field is unavailable.");
+        System.Reflection.FieldInfo readyField = typeof(MainWindow).GetField("dashboardCardsReady", privateInstance)
+            ?? throw new InvalidOperationException("The dashboard readiness field is unavailable.");
+        System.Reflection.FieldInfo canonicalField = typeof(MainWindow).GetField("canonicalLaptopCardsPlaced", privateInstance)
+            ?? throw new InvalidOperationException("The canonical card placement field is unavailable.");
+        System.Reflection.MethodInfo loadedMethod = typeof(MainWindow).GetMethod("OnRootLoaded", privateInstance)
+            ?? throw new InvalidOperationException("The window Loaded handler is unavailable.");
+        MainWindow spare = CreateMainWindow(
+            startupRegistration ?? throw new InvalidOperationException("The smoke startup registration is unavailable."),
+            UiLanguagePreference.Russian,
+            smokeContext.PreferenceStore,
+            UpdateCheckInterval.ManualOnly);
+        bool closed = false;
+        spare.Closed += (_, _) => closed = true;
+        try
+        {
+            // Construct, capture and start disposal in one dispatcher turn. The
+            // spare is never initialized, shown, attached or used as mainWindow.
+            if (disposedField.GetValue(spare) is not 0
+                || readyField.GetValue(spare) is not false
+                || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("The fresh spare window has already processed Loaded work.");
+            }
+            object loadedSender = spare.Content
+                ?? throw new InvalidOperationException("The spare window content is unavailable.");
+            RoutedEventHandler queuedLoaded = loadedMethod.CreateDelegate<RoutedEventHandler>(spare);
+            await spare.DisposeAsync();
+            if (!await CloseWindowSafelyAsync(spare) || !closed
+                || disposedField.GetValue(spare) is not 1
+                || readyField.GetValue(spare) is not false
+                || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("The spare window did not retire with its Loaded work still pending.");
+            }
+            smokeContext.Report("invoke queued Loaded callback on retired spare window");
+            queuedLoaded(loadedSender, new RoutedEventArgs());
+            if (readyField.GetValue(spare) is not false || canonicalField.GetValue(spare) is not false)
+            {
+                throw new InvalidOperationException("A queued Loaded callback mutated the retired spare window.");
+            }
+            smokeContext.Report("retired spare window Loaded callback ignored");
+        }
+        finally
+        {
+            if (!closed)
+            {
+                try { await spare.DisposeAsync(); }
+                finally
+                {
+                    if (!await CloseWindowSafelyAsync(spare))
+                    {
+                        throw new InvalidOperationException("The spare regression window did not close during cleanup.");
+                    }
+                }
+            }
         }
     }
 
