@@ -18,6 +18,27 @@ trivial tasks or split write-heavy work when merge conflicts and coordination
 would outweigh the benefit. When parallel editing is useful, assign disjoint
 files or components and inspect the combined diff before verification.
 
+## Proportionate execution
+
+Use the smallest workflow that resolves the concrete problem. Identify the
+specific unanswered question or observed failure before adding a helper,
+abstraction, approval step, validation pass, or documentation artifact. Prefer
+existing tools and the existing end-to-end path first.
+
+Reuse authorization within its agreed scope. Seek fresh approval only for a
+material change, an action exceeding that scope, or an explicit applicable rule.
+Do not repeat conclusive checks unless a relevant change, an inconclusive result,
+or an unmet requirement justifies them. Distinguish mandatory policy from
+precautions chosen by the agent, and explain the concrete reason for an added
+precaution.
+
+For hardware validation, prefer one captured, typed, reversible test: observe
+the baseline, apply one approved change, read back, and restore the exact original
+state. Retain required reviews and stop on ambiguous submission or restoration.
+Additional scaffolding must address a concrete risk and must not replace an
+already authorized test. This guidance does not waive hardware authorization or
+any applicable safety rule.
+
 ## Product boundary
 
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
