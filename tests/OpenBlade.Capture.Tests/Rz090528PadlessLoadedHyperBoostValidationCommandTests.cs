@@ -110,22 +110,32 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
         using var cancellation = new CancellationTokenSource();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int published = 0, disposed = 0;
-        var lane = new OwnedReadOnlyLane<string>(() => Interlocked.Increment(ref disposed), TimeSpan.FromMilliseconds(200));
+        // Cancellation is the outcome under test. Give it a longer operation
+        // deadline than the test watchdog so pool contention cannot select timeout.
+        TimeSpan watchdog = TimeSpan.FromSeconds(10);
+        var lane = new OwnedReadOnlyLane<string>(() => Interlocked.Increment(ref disposed), TimeSpan.FromMinutes(1));
         Task<string> read = lane.InvokeAsync(() =>
         {
             entered.SetResult(); release.Wait(); return "late";
         }, _ => Interlocked.Increment(ref published), cancellation.Token).AsTask();
+        Task<bool>? close = null;
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await entered.Task.WaitAsync(watchdog);
             cancellation.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
-            Assert.False(await lane.CloseAsync());
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(watchdog));
+            close = lane.CloseAsync();
+            Assert.False(close.IsCompleted);
+            Assert.False(lane.OperationQuiesced);
             Assert.Equal(0, Volatile.Read(ref disposed));
             await Assert.ThrowsAsync<InvalidOperationException>(() => lane.InvokeAsync(() => "retry", null, CancellationToken.None).AsTask());
         }
-        finally { release.Set(); }
-        Assert.True(await lane.CloseAsync());
+        finally
+        {
+            release.Set();
+            Assert.True(await (close ?? lane.CloseAsync()).WaitAsync(watchdog));
+        }
+        Assert.True(lane.OperationQuiesced);
         Assert.Equal(1, Volatile.Read(ref disposed));
         Assert.Equal(0, Volatile.Read(ref published));
     }
