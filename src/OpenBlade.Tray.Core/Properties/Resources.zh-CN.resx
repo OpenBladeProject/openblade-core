@@ -1458,4 +1458,37 @@
   <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
     <value>停止后会保留最后请求的转速。本次会话取得控制权后，即可恢复偏好的安静设置。</value>
   </data>
+  <data name="Confirm Medium" xml:space="preserve">
+    <value>确认中档</value>
+  </data>
+  <data name="Confirm quiet" xml:space="preserve">
+    <value>确认安静运行</value>
+  </data>
+  <data name="Control unavailable" xml:space="preserve">
+    <value>控制不可用</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="Finish restoration" xml:space="preserve">
+    <value>完成恢复</value>
+  </data>
+  <data name="I checked the pad and confirm these conditions" xml:space="preserve">
+    <value>我已检查散热垫，并确认符合这些条件</value>
+  </data>
+  <data name="Restore quiet" xml:space="preserve">
+    <value>恢复安静运行</value>
+  </data>
+  <data name="Temperature curve" xml:space="preserve">
+    <value>温度曲线</value>
+  </data>
+  <data name="Updates paused" xml:space="preserve">
+    <value>更新已暂停</value>
+  </data>
+  <data name="Updates running" xml:space="preserve">
+    <value>正在更新</value>
+  </data>
+  <data name="Updates stopped" xml:space="preserve">
+    <value>更新已停止</value>
+  </data>
 </root>

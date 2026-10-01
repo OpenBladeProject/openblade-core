@@ -1548,4 +1548,37 @@
   <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
     <value>[!! Stóp rétáíns thé lást démánd. Préférréd qúíét réstórátíón ís áváíláblé áftér thís séssíón ácqúírés cóntról. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Confirm Medium" xml:space="preserve">
+    <value>[!! Cónfírm Médíúm ~~~~~ !!]</value>
+  </data>
+  <data name="Confirm quiet" xml:space="preserve">
+    <value>[!! Cónfírm qúíét ~~~~~ !!]</value>
+  </data>
+  <data name="Control unavailable" xml:space="preserve">
+    <value>[!! Cóntról únáváíláblé ~~~~~~~ !!]</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>[!! Díscónnéctéd ~~~~~ !!]</value>
+  </data>
+  <data name="Finish restoration" xml:space="preserve">
+    <value>[!! Fínísh réstórátíón ~~~~~~ !!]</value>
+  </data>
+  <data name="I checked the pad and confirm these conditions" xml:space="preserve">
+    <value>[!! Í chéckéd thé pád ánd cónfírm thésé cóndítíóns ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Restore quiet" xml:space="preserve">
+    <value>[!! Réstóré qúíét ~~~~~ !!]</value>
+  </data>
+  <data name="Temperature curve" xml:space="preserve">
+    <value>[!! Témpérátúré cúrvé ~~~~~~ !!]</value>
+  </data>
+  <data name="Updates paused" xml:space="preserve">
+    <value>[!! Úpdátés páúséd ~~~~~ !!]</value>
+  </data>
+  <data name="Updates running" xml:space="preserve">
+    <value>[!! Úpdátés rúnníng ~~~~~ !!]</value>
+  </data>
+  <data name="Updates stopped" xml:space="preserve">
+    <value>[!! Úpdátés stóppéd ~~~~~ !!]</value>
+  </data>
 </root>

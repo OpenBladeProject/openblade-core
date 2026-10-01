@@ -2018,7 +2018,7 @@
     <value>Возобновить обновления</value>
   </data>
   <data name="MainWindow_ButtonUseSettings.Content" xml:space="preserve">
-    <value>Применить настройки</value>
+    <value>Применить</value>
   </data>
   <data name="MainWindow_ComboBoxCoolingPadControlMode.AccessibleName" xml:space="preserve">
     <value>Режим управления охлаждающей подставкой</value>
@@ -2038,20 +2038,14 @@
   <data name="MainWindow_SliderCoolingPadConfiguredDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Заданная скорость охлаждающей подставки</value>
   </data>
-  <data name="MainWindow_TextBlockCPUCurveTemperatureCDemandRPM.Text" xml:space="preserve">
-    <value>Кривая CPU: температура °C / заданная скорость RPM</value>
-  </data>
   <data name="MainWindow_TextBlockConfiguredDemandRPM.Text" xml:space="preserve">
-    <value>Заданная скорость (RPM)</value>
+    <value>Заданная скорость</value>
   </data>
   <data name="MainWindow_TextBlockCoolingPad.Text" xml:space="preserve">
     <value>Охлаждающая подставка</value>
   </data>
-  <data name="MainWindow_TextBlockGPUCurveTemperatureCDemandRPM.Text" xml:space="preserve">
-    <value>Кривая GPU: температура °C / заданная скорость RPM</value>
-  </data>
   <data name="MainWindow_TextBlockLastAcknowledgedDemand.Text" xml:space="preserve">
-    <value>Последняя подтверждённая заданная скорость:</value>
+    <value>Последний подтверждённый запрос:</value>
   </data>
   <data name="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable.Text" xml:space="preserve">
     <value>Измеренная скорость вентилятора недоступна.</value>
@@ -2060,9 +2054,33 @@
     <value>Запрошенная скорость:</value>
   </data>
   <data name="MainWindow_TextBlockSettingsLastForThisServiceSessionStop.Text" xml:space="preserve">
-    <value>Настройки действуют до перезапуска службы. После остановки обновлений подставка может сохранить последнюю заданную скорость.</value>
+    <value>Остановка обновлений сохраняет последнюю заданную скорость.</value>
   </data>
   <data name="MainWindow_CoolingPadPlannedDemand.Text" xml:space="preserve">
     <value>Рассчитанная скорость:</value>
+  </data>
+  <data name="MainWindow_CoolingPadControlDetails.Header" xml:space="preserve">
+    <value>Подробности управления</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurve.Header" xml:space="preserve">
+    <value>Кривая CPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveExplanation.Text" xml:space="preserve">
+    <value>Задайте скорость для каждой температуры. Используется большее из значений, запрошенных для CPU и GPU.</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurve.Header" xml:space="preserve">
+    <value>Кривая GPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestorationTitle.Text" xml:space="preserve">
+    <value>Восстановить тихую работу</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.Header" xml:space="preserve">
+    <value>°C</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.Header" xml:space="preserve">
+    <value>°C</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestoreDisclosure.Content" xml:space="preserve">
+    <value>Восстановить тихую работу…</value>
   </data>
 </root>

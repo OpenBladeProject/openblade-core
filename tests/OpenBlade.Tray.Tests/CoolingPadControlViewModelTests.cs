@@ -6,6 +6,206 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class CoolingPadControlViewModelTests
 {
+    [Fact]
+    public async Task VisibilityUsesConfirmedPresenceAndPreservesItOnlyWithinTheConnection()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var stopped = Pad() with
+        {
+            Requested = CoolingPadControlSettings.Stopped,
+            State = CoolingPadControlState.Stopped,
+            Connection = CoolingPadConnectionState.Unavailable,
+        };
+        var unknown = Snapshot(stopped);
+        view.Update(unknown, true);
+        Assert.False(view.IsVisible);
+        var present = unknown with { PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadPresent };
+        view.Update(present, true);
+        Assert.True(view.IsVisible);
+        view.Update(unknown, true);
+        Assert.True(view.IsVisible);
+        view.Update(present with
+        {
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            CoolingPadControl = stopped with { Connection = CoolingPadConnectionState.PresentExact },
+        }, true);
+        Assert.False(view.IsVisible);
+        view.Update(unknown, true);
+        Assert.False(view.IsVisible);
+        view.Update(present, true);
+        Assert.True(view.IsVisible);
+        view.Disconnect();
+        Assert.False(view.IsVisible);
+        view.Update(unknown, true);
+        Assert.False(view.IsVisible);
+        view.Update(Snapshot(stopped with { Connection = CoolingPadConnectionState.PresentExact }), true);
+        Assert.True(view.IsVisible);
+        view.Update(Snapshot(stopped with { Connection = CoolingPadConnectionState.Absent }), true);
+        Assert.False(view.IsVisible);
+    }
+
+    [Fact]
+    public async Task PresenceChangeInvalidatesPhysicalConfirmationWithUnchangedRestorationStatus()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var status = Snapshot(Pad() with
+        {
+            Connection = CoolingPadConnectionState.Unavailable,
+            Restoration = new(Guid.NewGuid(), CoolingPadRestorationStage.Medium, DateTimeOffset.UtcNow.AddMinutes(10)),
+        }) with
+        { PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadPresent };
+        view.Update(status, true);
+        view.PhysicalConfirmation = true;
+        Assert.True(view.RestoreQuietCommand.CanExecute(null));
+        view.Update(status with { PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent }, true);
+        Assert.False(view.IsVisible);
+        Assert.False(view.PhysicalConfirmation);
+        view.Update(status, true);
+        Assert.True(view.IsVisible);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task PresentationShowsOnlyRelevantActionsAndKeepsUncertainStateVisible()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad() with
+        {
+            Requested = CoolingPadControlSettings.Stopped,
+            State = CoolingPadControlState.Stopped,
+            PauseReason = CoolingPadControlPauseReason.None,
+            ResumeRequired = false,
+        }), true);
+        Assert.Equal("Updates stopped", view.SummaryText);
+        Assert.False(view.IsResumeVisible);
+        Assert.False(view.IsRestorationVisible);
+        Assert.False(view.IsNoticeVisible);
+
+        view.Update(Snapshot(Pad()), true);
+        Assert.True(view.IsResumeVisible);
+        view.Update(Snapshot(Pad() with { State = CoolingPadControlState.Running }), true);
+        Assert.False(view.IsResumeVisible);
+        view.Update(Snapshot(Pad() with
+        {
+            State = CoolingPadControlState.Running,
+            RetainedEffect = true,
+            RetainedSessionResumable = false,
+        }), true);
+        Assert.False(view.IsNoticeVisible);
+        view.Update(Snapshot(Pad() with
+        {
+            State = CoolingPadControlState.Stopped,
+            ResumeRequired = false,
+            RetainedEffect = true,
+            RetainedSessionResumable = true,
+            QuietRestorationAvailable = true,
+        }), true);
+        Assert.True(view.IsResumeVisible);
+        Assert.True(view.ResumeCommand.CanExecute(null));
+
+        view.Update(Snapshot(Pad() with { RetainedEffect = true, RetainedSessionResumable = false }), true);
+        Assert.True(view.IsNoticeVisible);
+        Assert.Contains("attended resolution", view.NoticeText);
+        Assert.False(view.IsResumeVisible);
+        Assert.False(view.IsRestorationVisible);
+
+        view.Update(Snapshot(Pad() with { SubmissionStateUnknown = true, QuietRestorationAvailable = true }), true);
+        Assert.True(view.IsNoticeVisible);
+        Assert.Contains("outcome is unknown", view.NoticeText);
+        Assert.False(view.CanConfirmPhysical);
+        Assert.False(view.IsRestorationVisible);
+        view.Disconnect();
+        Assert.True(view.IsNoticeVisible);
+        Assert.Equal("Disconnected", view.SummaryText);
+    }
+
+    [Theory]
+    [InlineData(CoolingPadRestorationStage.Medium, "Confirm Medium")]
+    [InlineData(CoolingPadRestorationStage.Quiet, "Confirm quiet")]
+    [InlineData(CoolingPadRestorationStage.Final, "Finish restoration")]
+    public async Task RestorationPresentationTracksFreshStageWithoutAdmittingUncheckedConfirmation(
+        CoolingPadRestorationStage stage, string action)
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var notified = new List<string?>();
+        view.PropertyChanged += (_, args) => notified.Add(args.PropertyName);
+        view.Update(Snapshot(Pad() with { QuietRestorationAvailable = true }), true);
+        Assert.False(view.IsRestorationVisible);
+        view.IsRestorationGuidanceOpen = true;
+        Assert.True(view.IsRestorationVisible);
+        Assert.False(view.HasRestorationStage);
+        Assert.Equal("Restore quiet", view.RestoreButtonText);
+        view.PhysicalConfirmation = true;
+        view.Update(Snapshot(Pad() with
+        {
+            Restoration = new(Guid.NewGuid(), stage, DateTimeOffset.UtcNow.AddMinutes(10)),
+        }), true);
+        Assert.True(view.HasRestorationStage);
+        Assert.True(view.IsRestorationVisible);
+        Assert.False(view.IsRestorationGuidanceOpen);
+        Assert.Equal(action, view.RestoreButtonText);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+        Assert.Contains(nameof(view.RestoreButtonText), notified);
+        Assert.Contains(nameof(view.IsRestorationVisible), notified);
+    }
+
+    [Fact]
+    public async Task HealthyRunningRestorationDisclosureIsLocalAndStagesStayVisible()
+    {
+        var client = new Client();
+        await using var view = new CoolingPadControlViewModel(client, default);
+        var healthy = Snapshot(Pad() with
+        {
+            State = CoolingPadControlState.Running,
+            PauseReason = CoolingPadControlPauseReason.None,
+            ResumeRequired = false,
+            RetainedEffect = true,
+            RetainedSessionResumable = false,
+            QuietRestorationAvailable = true,
+        }) with
+        { PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadPresent };
+        view.Update(healthy, true);
+        Assert.True(view.IsRestorationDisclosureVisible);
+        Assert.False(view.IsRestorationVisible);
+        Assert.False(view.IsNoticeVisible);
+        view.IsRestorationGuidanceOpen = true;
+        Assert.True(view.IsRestorationVisible);
+        Assert.Equal(0, client.Mutations);
+        Assert.Equal(0, client.Refreshes);
+        view.PhysicalConfirmation = true;
+        view.IsRestorationGuidanceOpen = false;
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+        view.IsRestorationGuidanceOpen = true;
+        view.PhysicalConfirmation = true;
+        view.Update(healthy with { CoolingPadControl = healthy.CoolingPadControl! with { QuietRestorationAvailable = false } }, true);
+        Assert.False(view.IsRestorationGuidanceOpen);
+        Assert.False(view.IsRestorationVisible);
+        Assert.False(view.PhysicalConfirmation);
+        view.Update(healthy, true);
+        view.IsRestorationGuidanceOpen = true;
+        view.PhysicalConfirmation = true;
+        view.Update(healthy with
+        {
+            CoolingPadControl = healthy.CoolingPadControl! with
+            {
+                Restoration = new(Guid.NewGuid(), CoolingPadRestorationStage.Medium, DateTimeOffset.UtcNow.AddMinutes(10)),
+            },
+        }, true);
+        Assert.True(view.IsRestorationVisible);
+        Assert.False(view.IsRestorationDisclosureVisible);
+        Assert.False(view.IsRestorationGuidanceOpen);
+        Assert.False(view.PhysicalConfirmation);
+        view.IsRestorationGuidanceOpen = false;
+        Assert.True(view.IsRestorationVisible);
+        Assert.Equal(0, client.Mutations);
+        Assert.Equal(0, client.Refreshes);
+        view.Disconnect();
+        Assert.False(view.IsRestorationGuidanceOpen);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -96,7 +296,7 @@ public sealed class CoolingPadControlViewModelTests
             PlannedDemand = new(1350),
             LastAcknowledgedDemand = new(1600),
         }), true);
-        Assert.Contains("Host curve", view.RequestedText);
+        Assert.Contains("Temperature curve", view.RequestedText);
         Assert.DoesNotContain("1350", view.RequestedText);
         Assert.Contains("1350", view.PlannedText);
         Assert.Contains("1600", view.AcknowledgedText);
@@ -200,6 +400,96 @@ public sealed class CoolingPadControlViewModelTests
         Assert.Equal(1, client.Refreshes);
         Assert.Contains("1600", view.RequestedText);
         Assert.DoesNotContain("2200", view.AcknowledgedText);
+        Assert.Equal(1600, view.FixedDemand);
+    }
+
+    [Fact]
+    public async Task CleanEditorHydratesRunningIntentAndRemoteChanges()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad() with { State = CoolingPadControlState.Running }), true);
+        Assert.True(view.IsFixed);
+        Assert.Equal(1600, view.FixedDemand);
+        var curves = new CoolingPadControlSettings(CoolingPadControlMode.HostCurve,
+            cpuCurve: new([new(45, new(1100)), new(85, new(2100)), new(100, new(2300))]),
+            gpuCurve: new([new(35, new(1200)), new(75, new(2200))]));
+        view.Update(Snapshot(Pad() with { Requested = curves, State = CoolingPadControlState.Running }) with { Revision = 2 }, true);
+        Assert.True(view.IsCurve);
+        Assert.Equal(curves, view.CreateSettings());
+        Assert.Equal(3, view.CpuPoints.Count);
+        view.CpuPoints[0].Demand = 1300;
+        view.Update(Snapshot(Pad()) with { Revision = 3 }, true);
+        Assert.True(view.IsCurve);
+        Assert.Equal(1300, view.CpuPoints[0].Demand);
+    }
+
+    [Fact]
+    public async Task FirstRunningCurveHydratesWithoutManualSelection()
+    {
+        var requested = new CoolingPadControlSettings(CoolingPadControlMode.HostCurve,
+            cpuCurve: new([new(42, new(1100)), new(88, new(2200))]),
+            gpuCurve: new([new(32, new(1200)), new(78, new(2300))]));
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad() with { Requested = requested, State = CoolingPadControlState.Running }), true);
+        Assert.Equal(requested, view.CreateSettings());
+    }
+
+    [Fact]
+    public async Task PendingDraftSurvivesStatusTicksAndFailedApply()
+    {
+        var client = new Client { Mutation = _ => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Blocked")) };
+        await using var view = new CoolingPadControlViewModel(client, default);
+        view.Update(Snapshot(Pad()), true);
+        view.FixedDemand = 2200;
+        view.Update(Snapshot(Pad() with { LastAcknowledgedDemand = new(1500) }) with { Revision = 2 }, true);
+        await view.ApplyCommand.ExecuteAsync(null);
+        view.Update(Snapshot(Pad()) with { Revision = 3 }, true);
+        Assert.Equal(2200, view.FixedDemand);
+    }
+
+    [Fact]
+    public async Task EditsMadeDuringSuccessfulApplyRemainPending()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<ControlOperationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new Client { Mutation = _ => { entered.SetResult(); return release.Task; } };
+        await using var view = new CoolingPadControlViewModel(client, default);
+        view.Update(Snapshot(Pad()), true);
+        view.FixedDemand = 2200;
+        Task applying = view.ApplyCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        view.FixedDemand = 2300;
+        release.SetResult(new(ControlOperationStatus.Applied, "Applied"));
+        await applying.WaitAsync(TimeSpan.FromSeconds(5));
+        view.Update(Snapshot(Pad()) with { Revision = 2 }, true);
+        Assert.Equal(2200, client.LastSettings!.FixedDemand!.Value.Rpm);
+        Assert.Equal(2300, view.FixedDemand);
+    }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Stored)]
+    [InlineData(ControlOperationStatus.Applied)]
+    public async Task SuccessfulApplyReleasesUnchangedDraftOnlyAfterFreshStatus(ControlOperationStatus outcome)
+    {
+        var client = new Client { Mutation = _ => Task.FromResult(new ControlOperationResult(outcome, "Accepted")) };
+        await using var view = new CoolingPadControlViewModel(client, default);
+        view.Update(Snapshot(Pad()), true);
+        view.FixedDemand = 2200;
+        await view.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal(1600, view.FixedDemand);
+        view.Update(Snapshot(Pad() with { Requested = new(CoolingPadControlMode.FixedDemand, new(2100)) }) with { Revision = 2 }, true);
+        Assert.Equal(2100, view.FixedDemand);
+    }
+
+    [Fact]
+    public async Task StaleSuccessfulApplyRefreshDoesNotReleaseDraft()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad()) with { Revision = 2 }, true);
+        view.FixedDemand = 2200;
+        await view.ApplyCommand.ExecuteAsync(null);
+        view.Update(Snapshot(Pad()) with { Revision = 3 }, true);
+        Assert.Equal(2200, view.FixedDemand);
     }
 
     [Theory]

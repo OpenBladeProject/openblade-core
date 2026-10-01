@@ -19,6 +19,7 @@ using WinRT.Interop;
 using XamlBorder = Microsoft.UI.Xaml.Controls.Border;
 using XamlButton = Microsoft.UI.Xaml.Controls.Button;
 using XamlColumnDefinition = Microsoft.UI.Xaml.Controls.ColumnDefinition;
+using XamlExpander = Microsoft.UI.Xaml.Controls.Expander;
 using XamlGrid = Microsoft.UI.Xaml.Controls.Grid;
 using XamlOrientation = Microsoft.UI.Xaml.Controls.Orientation;
 using XamlRowDefinition = Microsoft.UI.Xaml.Controls.RowDefinition;
@@ -976,6 +977,7 @@ public partial class App
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             PowerSource.PluggedIn, null, null, null, null, false)
         {
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadPresent,
             CoolingPadControl = new(new(CoolingPadControlMode.FixedDemand, new(1600)),
                 CoolingPadControlState.Unavailable, CoolingPadControlPauseReason.AdmissionClosed,
                 PlannedDemand: new(1350), LastAcknowledgedDemand: new(1500))
@@ -994,22 +996,115 @@ public partial class App
         card.DataContext = editor;
         card.Margin = new Thickness(16);
         card.VerticalAlignment = VerticalAlignment.Top;
-        var host = new XamlGrid { Background = new SolidColorBrush(Microsoft.UI.Colors.White) };
-        host.Children.Add(card);
+        bool darkTheme = string.Equals(Environment.GetEnvironmentVariable(
+            "OPENBLADE_COOLING_PAD_SNAPSHOT_THEME"), "Dark", StringComparison.OrdinalIgnoreCase);
+        var background = new SolidColorBrush(darkTheme
+            ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
+            : Microsoft.UI.Colors.White);
+        var host = new XamlGrid
+        {
+            Background = background,
+            RequestedTheme = darkTheme ? ElementTheme.Dark : ElementTheme.Light,
+        };
+        var frame = new XamlBorder
+        {
+            Background = background,
+            VerticalAlignment = VerticalAlignment.Top,
+            Child = card,
+        };
+        host.Children.Add(frame);
         window.Content = host;
         double scale = host.XamlRoot?.RasterizationScale ?? 1;
         window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(760 * scale), (int)(1120 * scale)));
-        foreach (CoolingPadControlMode mode in new[] { CoolingPadControlMode.FixedDemand, CoolingPadControlMode.HostCurve })
+        var admitted = status.CoolingPadControl! with
         {
-            editor.SelectedMode = editor.ModeOptions.Single(option => option.Mode == mode);
+            Access = DeviceFeatureAccess.ReadWrite,
+            State = CoolingPadControlState.Paused,
+            PauseReason = CoolingPadControlPauseReason.ExplicitResumeRequired,
+            ResumeRequired = true,
+        };
+        var stopped = admitted with
+        {
+            Requested = CoolingPadControlSettings.Stopped,
+            State = CoolingPadControlState.Stopped,
+            PauseReason = CoolingPadControlPauseReason.None,
+            ResumeRequired = false,
+            PlannedDemand = null,
+            LastAcknowledgedDemand = null,
+        };
+        var promptId = Guid.NewGuid();
+        var running = admitted with
+        {
+            State = CoolingPadControlState.Running,
+            PauseReason = CoolingPadControlPauseReason.None,
+            ResumeRequired = false,
+            RetainedEffect = true,
+            RetainedSessionResumable = false,
+            QuietRestorationAvailable = true,
+        };
+        var restoring = running with { State = CoolingPadControlState.Paused, QuietRestorationAvailable = false };
+        var curveSettings = new CoolingPadControlSettings(CoolingPadControlMode.HostCurve, cpuCurve: new([new(40, new(1000)), new(90, new(2200))]), gpuCurve: new([new(30, new(1000)), new(80, new(2200))]));
+        (string Name, CoolingPadControlStatus Status, CoolingPadControlMode Mode)[] states =
+        [
+            ("stopped", stopped, CoolingPadControlMode.Stop),
+            ("fixed", admitted, CoolingPadControlMode.FixedDemand),
+            ("curve", admitted with { Requested = curveSettings }, CoolingPadControlMode.HostCurve),
+            ("running-fixed", running, CoolingPadControlMode.FixedDemand),
+            ("running-curve", running with { Requested = curveSettings }, CoolingPadControlMode.HostCurve),
+            ("retained", admitted with { Requested = CoolingPadControlSettings.Stopped, RetainedEffect = true }, CoolingPadControlMode.Stop),
+            ("restore", running, CoolingPadControlMode.FixedDemand),
+            ("restore-medium", restoring with { Restoration = new(promptId, CoolingPadRestorationStage.Medium, DateTimeOffset.UtcNow.AddMinutes(10)) }, CoolingPadControlMode.FixedDemand),
+            ("restore-quiet", restoring with { Restoration = new(promptId, CoolingPadRestorationStage.Quiet, DateTimeOffset.UtcNow.AddMinutes(10)) }, CoolingPadControlMode.FixedDemand),
+            ("restore-final", restoring with { Restoration = new(promptId, CoolingPadRestorationStage.Final, DateTimeOffset.UtcNow.AddMinutes(10)) }, CoolingPadControlMode.FixedDemand),
+            ("unknown", admitted with { SubmissionStateUnknown = true, PauseReason = CoolingPadControlPauseReason.SubmissionUnknown }, CoolingPadControlMode.FixedDemand),
+        ];
+        foreach (var state in states)
+        {
+            editor.Update(status with { CoolingPadControl = state.Status }, true);
+            RequireResponsiveSelector(editor.SelectedMode.Mode == state.Mode,
+                "Cooling-pad selector must reflect authoritative requested intent without manual selection.");
+            if (state.Name == "restore") { editor.IsRestorationGuidanceOpen = true; }
+            if (state.Name.StartsWith("running-", StringComparison.Ordinal))
+            {
+                RequireResponsiveSelector(!editor.IsNoticeVisible && !editor.IsRestorationVisible,
+                    "Healthy running control must not show retained-effect warnings or unopened restoration guidance.");
+            }
             await WaitForSnapshotLayoutAsync();
             RequireResponsiveSelector(card.ActualWidth > 0 && card.ActualHeight > 0
                 && card.ActualHeight + card.Margin.Top + card.Margin.Bottom <= host.ActualHeight,
                 "Cooling-pad card must fit completely inside its snapshot host.");
-            RequireResponsiveSelector(!editor.ResumeCommand.CanExecute(null),
-                "Observed-only snapshot must not admit Resume.");
-            await SaveSnapshotAsync(card, Path.Combine(directory, $"cooling-pad-{mode}.png"));
+            RequireResponsiveSelector(!editor.PhysicalConfirmation && !editor.RestoreQuietCommand.CanExecute(null),
+                "Snapshot must not admit a physical restoration without fresh confirmation.");
+            await SaveSnapshotAsync(frame, Path.Combine(directory, $"cooling-pad-{state.Name}.png"));
+            if (state.Name == "curve")
+            {
+                var cpu = FindPerformanceSmokeDescendant<XamlExpander>(card, "CoolingPadCpuCurveExpander")!;
+                var gpu = FindPerformanceSmokeDescendant<XamlExpander>(card, "CoolingPadGpuCurveExpander")!;
+                cpu.IsExpanded = true;
+                gpu.IsExpanded = true;
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(frame, Path.Combine(directory, "cooling-pad-curve-expanded.png"));
+                cpu.IsExpanded = false;
+                gpu.IsExpanded = false;
+            }
+            if (state.Name == "fixed")
+            {
+                var details = FindPerformanceSmokeDescendant<XamlExpander>(card, "CoolingPadControlDetailsExpander")!;
+                details.IsExpanded = true;
+                await WaitForSnapshotLayoutAsync();
+                await SaveSnapshotAsync(frame, Path.Combine(directory, "cooling-pad-details.png"));
+                details.IsExpanded = false;
+            }
         }
+        editor.Update(status with
+        {
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent,
+            CoolingPadControl = stopped with { Connection = CoolingPadConnectionState.Absent },
+        }, true);
+        await WaitForSnapshotLayoutAsync();
+        RequireResponsiveSelector(!editor.IsVisible && card.Visibility == Visibility.Collapsed,
+            "Confirmed absent cooling pad must hide the card, even with retained settings.");
+        await SaveSnapshotAsync(host, Path.Combine(directory, "cooling-pad-absent.png"));
     }
 
     private static async Task RunPerformanceRowLayoutSmokeAsync(

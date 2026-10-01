@@ -19,6 +19,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep cooling-pad controls compact, preserve pending edits during status updates, and hide the card when the pad is disconnected. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Allow the local-development deployment broker to recognize an installed OpenBlade Nightly build before upgrading it. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Recover local-development deployment cleanup failures without overwriting the original result or reinstalling the application. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Reject queued cooling-pad writes when HyperBoost starts, and preserve unresolved pad-command evidence after updates stop; uncertain sessions require attended resolution. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
