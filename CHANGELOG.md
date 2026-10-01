@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Validate repeated cooling-pad transaction IDs in a bounded developer test for the exact supported pad. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
+- Add exact-device cooling-pad fixed-demand and host-curve control, resumable stopped updates, and explicit preferred-quiet restoration with physical confirmations. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable HyperBoost without the cooling pad on the supported Blade 16 (2025) RZ09-0528 on the full-power adapter, keep GPU clock tuning available, and start HyperBoost directly from Silent, Balanced or Performance with or without the pad. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
@@ -17,6 +19,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep cooling-pad controls compact, preserve pending edits during status updates, and hide the card when the pad is disconnected. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
+- Allow the local-development deployment broker to recognize an installed OpenBlade Nightly build before upgrading it. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
+- Recover local-development deployment cleanup failures without overwriting the original result or reinstalling the application. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
+- Reject queued cooling-pad writes when HyperBoost starts, and preserve unresolved pad-command evidence after updates stop; uncertain sessions require attended resolution. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
+- Preserve possible cooling-pad mutations across service restarts and block fresh control or HyperBoost entry until attended restoration is recorded; uncertain sessions require attended resolution. ([#621](https://github.com/OpenBladeProject/openblade-core/pull/621))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
 - Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
 - Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))

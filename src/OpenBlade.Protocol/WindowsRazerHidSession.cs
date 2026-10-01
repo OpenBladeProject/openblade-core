@@ -29,6 +29,9 @@ internal readonly record struct TransactionIdAssignment(
     byte TransactionId,
     HidSessionFailureKind? Failure)
 {
+    internal bool CoolingPadDeveloperCounter { get; init; }
+    internal bool CoolingPadProduction { get; init; }
+
     internal static TransactionIdAssignment Valid(byte transactionId)
     {
         if (transactionId == 0)
@@ -118,6 +121,8 @@ internal sealed class WindowsRazerHidSession :
     private readonly ValidationRunContext.ActorLease actorLease;
     private readonly TimeSpan featureReportSettleDelay;
     private readonly byte featureReportId;
+    private readonly bool coolingPadDeveloperCounter;
+    private readonly bool coolingPadProduction;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -129,7 +134,9 @@ internal sealed class WindowsRazerHidSession :
         ValidationRunContext.ActorLease actorLease,
         ControllerExclusivityPolicy exclusivityPolicy,
         TimeSpan featureReportSettleDelay = default,
-        byte featureReportId = 0)
+        byte featureReportId = 0,
+        HidHandleIdentity? developerCounterIdentity = null,
+        HidHandleIdentity? productionPadIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
@@ -141,6 +148,16 @@ internal sealed class WindowsRazerHidSession :
             throw new ArgumentOutOfRangeException(nameof(featureReportSettleDelay));
         }
 
+        if (developerCounterIdentity is { } identity
+            && (!identity.MatchesExpected(CoolingPadSessionFactory.ExactPadIdentity)
+                || exclusivityPolicy != ControllerExclusivityPolicy.Strict || featureReportId != 0))
+        { throw new ArgumentException("ExactStrictPadCounterIdentityRequired", nameof(developerCounterIdentity)); }
+        if (productionPadIdentity is { } productionIdentity
+            && (!productionIdentity.MatchesExpected(CoolingPadSessionFactory.ExactPadIdentity)
+                || exclusivityPolicy != ControllerExclusivityPolicy.Strict || featureReportId != 0 || developerCounterIdentity is not null))
+        { throw new ArgumentException("ExactStrictProductionPadIdentityRequired", nameof(productionPadIdentity)); }
+        coolingPadProduction = productionPadIdentity is not null;
+        coolingPadDeveloperCounter = developerCounterIdentity is not null;
         this.handle = handle;
         this.io = io;
         this.guard = guard;
@@ -254,6 +271,8 @@ internal sealed class WindowsRazerHidSession :
                         : HidSessionFailureKind.Disposed));
             }
 
+            if (coolingPadProduction && queue.Count >= 1)
+            { return Task.FromResult(Failure(HidSessionFailureKind.Exhausted)); }
             queue.Enqueue(item);
             item.RegisterQueuedCancellation();
             queued.Release();
@@ -426,7 +445,18 @@ internal sealed class WindowsRazerHidSession :
             return Failure(HidSessionFailureKind.Exhausted);
         }
 
-        if (assignment.TransactionId == 0 || assignment.Failure is not null)
+        bool developerAssignmentAllowed = assignment.CoolingPadDeveloperCounter && coolingPadDeveloperCounter
+            && item.ExpectResponse && assignment.TransactionId <= 0x1E
+            && CoolingPadDeveloperCounterPolicy.Allows(item.Command)
+            && (assignment.TransactionId != 0 || item.Command.ClassId == 0x0D && item.Command.CommandId == 1);
+        bool productionAssignmentAllowed = assignment.CoolingPadProduction && coolingPadProduction
+            && !assignment.CoolingPadDeveloperCounter && item.ExpectResponse && assignment.TransactionId <= 0x1E
+            && CoolingPadTransactionPolicy.Allows(item.Command);
+        if (assignment.Failure is not null || coolingPadProduction && !productionAssignmentAllowed
+            || assignment.CoolingPadProduction && !productionAssignmentAllowed
+            || coolingPadDeveloperCounter && !assignment.CoolingPadDeveloperCounter
+            || (assignment.CoolingPadDeveloperCounter
+            ? !developerAssignmentAllowed : assignment.TransactionId == 0 && !productionAssignmentAllowed))
         {
             Poison();
             return Failure(HidSessionFailureKind.ProtocolFailure);
@@ -645,6 +675,10 @@ internal sealed class WindowsRazerHidSession :
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
                 getBuffer.AsSpan(1, RazerReport.ReportLength),
                 item.Command.ExpectedPayloadLength);
+            if ((coolingPadDeveloperCounter || coolingPadProduction) && !(item.Command.ClassId == 0 && item.Command.CommandId == 0x84
+                ? payload.Length == 2 && payload.Span[1] == 0 && payload.Span[0] is 0 or 3
+                : payload.Span.SequenceEqual(item.Command.Arguments.Span)))
+            { throw new RazerProtocolException("Pad counter response payload mismatch.", HidProtocolValidationFailure.PayloadValidator); }
             if (item.Command.PayloadValidator is not null)
             {
                 bool valid;
@@ -710,7 +744,7 @@ internal sealed class WindowsRazerHidSession :
                 return Failure(HidSessionFailureKind.Exhausted);
             }
 
-            if (assignment.TransactionId == 0 || assignment.Failure is not null)
+            if (assignment.TransactionId == 0 || assignment.Failure is not null || assignment.CoolingPadDeveloperCounter || coolingPadDeveloperCounter || assignment.CoolingPadProduction || coolingPadProduction)
             {
                 Poison();
                 return Failure(HidSessionFailureKind.ProtocolFailure);

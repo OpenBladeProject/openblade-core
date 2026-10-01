@@ -27,6 +27,20 @@ public interface IServiceControlRuntime
 
     ServiceStatusSnapshot GetStatus();
 
+    Task<ControlOperationResult> SetCoolingPadControlAsync(CoolingPadControlSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad admission is closed."));
+
+    Task<ControlOperationResult> ResumeCoolingPadControlAsync(Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad admission is closed."));
+
+    Task<ControlOperationResult> RestoreCoolingPadQuietAsync(RestoreCoolingPadQuietRequest request, string owner,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad restoration is unavailable."));
+
+    Task MaintainCoolingPadControlAsync(CancellationToken token) => Task.CompletedTask;
+
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
     Task<DiagnosticHyperBoostOwnershipJournal>
@@ -538,6 +552,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
+    private readonly CoolingPadControlRuntime coolingPadControl;
+    private readonly CoolingPadControllerLease? coolingPadOwnership;
+    private Func<bool>? coolingPadSessionAuthorization;
+    private long hyperBoostPadAdmissionEpoch;
+    private int hyperBoostPadTransitions;
     private readonly ICoolingPadDiscoverySource hyperBoostPadDiscoverySource;
     private readonly IHyperBoostOwnershipJournalStore hyperBoostOwnershipJournalStore;
     private int? lastCurveFan1Rpm;
@@ -783,7 +802,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        ICoolingPadControlPortFactory? coolingPadPortFactory = null,
+        ICoolingPadMutationEvidenceStore? coolingPadEvidenceStore = null,
+        CoolingPadControllerLease? coolingPadOwnership = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -809,6 +831,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
+        this.coolingPadOwnership = coolingPadOwnership;
+        coolingPadControl = new(coolingPadEvidenceStore ?? new InMemoryCoolingPadMutationEvidenceStore(), coolingPadPortFactory, temperatures: this.fanTemperatureSource, clock: this.timeProvider,
+            writeAdmission: () => CoolingPadAdmissionReason(includeSession: false) == CoolingPadControlPauseReason.None);
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
@@ -902,7 +927,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .Resolve(UnknownConfirmedState)
                     .Lighting
                     .Value;
-            Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
+            Volatile.Write(ref status, CreateInitialSnapshot(powerSource) with { CoolingPadControl = coolingPadControl.GetStatus() });
         }
     }
 
@@ -1012,6 +1037,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ArgumentNullException.ThrowIfNull(userSid);
         ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (coolingPadSessionAuthorization is not null
+            && (!string.Equals(Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
+                || CoolingPadSessionAuthorizationLost()))
+        {
+            // Invalidate the old owner before any await or replacement callback.
+            coolingPadSessionAuthorization = static () => false;
+            await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.SessionChanged, cancellationToken).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+        }
         if (userConfigurationRepository is null)
         {
             return;
@@ -2044,6 +2078,121 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                     : new[] { DeviceSubsystem.Fans };
             });
+    }
+
+    public async Task<ControlOperationResult> SetCoolingPadControlAsync(CoolingPadControlSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token)
+    {
+        EnsureInitialized();
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (!stillControlsSession()) { return new(ControlOperationStatus.Blocked, "The active session changed."); }
+        if (CoolingPadSessionAuthorizationLost())
+        { await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.SessionChanged, token).ConfigureAwait(false); }
+        coolingPadSessionAuthorization = stillControlsSession;
+        CoolingPadControlStatus pad = await coolingPadControl.ApplySettingsAsync(settings, token).ConfigureAwait(false);
+        if (!stillControlsSession())
+        {
+            pad = await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.SessionChanged, CancellationToken.None).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+            return new(ControlOperationStatus.Blocked, "The active session changed; cooling-pad updates are paused.");
+        }
+        PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+        return new(ControlOperationStatus.Stored, settings.Mode == CoolingPadControlMode.Stop
+            ? "Cooling-pad updates stopped; no firmware handback was sent."
+            : pad.State == CoolingPadControlState.Running ? "Cooling-pad settings staged for the next admitted maintenance update."
+                : "Cooling-pad settings staged. Explicit resume and write admission are required.");
+    }
+
+    public async Task<ControlOperationResult> ResumeCoolingPadControlAsync(Func<bool> stillControlsSession, CancellationToken token)
+    {
+        EnsureInitialized();
+        ArgumentNullException.ThrowIfNull(stillControlsSession);
+        if (!stillControlsSession()) { return new(ControlOperationStatus.Blocked, "The active session changed."); }
+        long epoch = Volatile.Read(ref hyperBoostPadAdmissionEpoch);
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (CoolingPadSessionAuthorizationLost())
+            { await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.SessionChanged, token).ConfigureAwait(false); }
+            coolingPadSessionAuthorization = stillControlsSession;
+            CoolingPadControlPauseReason reason = epoch == Volatile.Read(ref hyperBoostPadAdmissionEpoch)
+                ? CoolingPadAdmissionReason() : CoolingPadControlPauseReason.HyperBoostActive;
+            CoolingPadControlStatus pad = reason == CoolingPadControlPauseReason.None
+                ? await coolingPadControl.ResumeAsync(token,
+                    () => epoch == Volatile.Read(ref hyperBoostPadAdmissionEpoch) && stillControlsSession()).ConfigureAwait(false)
+                : await coolingPadControl.PauseAsync(reason, token).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+            return new(pad.State == CoolingPadControlState.Running ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked,
+                pad.State == CoolingPadControlState.Running ? "Cooling-pad configured demand acknowledged; fan speed is not measured."
+                    : $"Cooling-pad updates paused: {pad.PauseReason}.");
+        }
+        finally { operationGate.Release(); }
+    }
+
+    public async Task MaintainCoolingPadControlAsync(CancellationToken token)
+    {
+        EnsureInitialized();
+        await coolingPadControl.RefreshProductionStateAsync(token).ConfigureAwait(false);
+        PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+        if (coolingPadControl.GetStatus().State != CoolingPadControlState.Running
+            && !coolingPadControl.GetStatus().RetainedSessionResumable && coolingPadControl.GetStatus().Restoration is null) { return; }
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            CoolingPadControlPauseReason reason = CoolingPadAdmissionReason();
+            if (coolingPadControl.GetStatus().State != CoolingPadControlState.Running && reason == CoolingPadControlPauseReason.None) { return; }
+            CoolingPadControlStatus pad = reason == CoolingPadControlPauseReason.None
+                ? await coolingPadControl.TickAsync(token).ConfigureAwait(false)
+                : await coolingPadControl.PauseAsync(reason, token).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+        }
+        finally { operationGate.Release(); }
+    }
+
+    public async Task<ControlOperationResult> RestoreCoolingPadQuietAsync(RestoreCoolingPadQuietRequest request, string owner,
+        Func<bool> stillControlsSession, CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!stillControlsSession()) { return new(ControlOperationStatus.Blocked, "The active session changed."); }
+        long epoch = Volatile.Read(ref hyperBoostPadAdmissionEpoch);
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (CoolingPadSessionAuthorizationLost())
+            {
+                await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.SessionChanged, token).ConfigureAwait(false);
+                PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+                return new(ControlOperationStatus.Blocked, "The cooling-pad owning session changed.");
+            }
+            if (epoch != Volatile.Read(ref hyperBoostPadAdmissionEpoch) || CoolingPadAdmissionReason(includeSession: false) != CoolingPadControlPauseReason.None)
+            { return new(ControlOperationStatus.Blocked, "Cooling-pad restoration admission is blocked."); }
+            var result = await coolingPadControl.RestoreQuietAsync(owner, request.OperationId, request.Stage, request.PhysicallyConfirmed,
+                () => epoch == Volatile.Read(ref hyperBoostPadAdmissionEpoch) && stillControlsSession(), token).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+            return result;
+        }
+        finally { operationGate.Release(); }
+    }
+
+    private bool CoolingPadSessionAuthorizationLost()
+    {
+        try { return coolingPadSessionAuthorization is { } authorization && !authorization(); }
+        catch { return true; }
+    }
+
+    private CoolingPadControlPauseReason CoolingPadAdmissionReason(bool includeSession = true)
+    {
+        if (Volatile.Read(ref hyperBoostPadTransitions) != 0) { return CoolingPadControlPauseReason.HyperBoostActive; }
+        if (lowPowerGate.IsActive || thermalConvergenceShutdown) { return CoolingPadControlPauseReason.PowerTransition; }
+        if (includeSession && coolingPadSessionAuthorization?.Invoke() != true) { return CoolingPadControlPauseReason.SessionChanged; }
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ControllerDetectionWarning is not null || current.PotentialControllers.Count > 0)
+        { return CoolingPadControlPauseReason.ControllerConflict; }
+        if (current.ConfirmedState?.HyperBoostActive != false) { return CoolingPadControlPauseReason.HyperBoostActive; }
+        if (!current.DeviceVerified || current.WritesBlocked || !ConfigurationIsAdmitted)
+        { return CoolingPadControlPauseReason.AdmissionClosed; }
+        return CoolingPadControlPauseReason.None;
     }
 
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
@@ -5452,6 +5601,50 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task<ControlOperationResult> SetHyperBoostCoreAsync(
+        bool enabled,
+        Guid? transitionId,
+        long? expectedOwnershipGeneration,
+        ValidatePadlessHyperBoostLifecycleRequest? lifecycleValidation,
+        bool restoreUserIntent,
+        PowerSource? exitPowerSourceOverride,
+        long? expectedExitPowerSourceGeneration,
+        CancellationToken token,
+        bool operationGateAlreadyHeld = false,
+        Action<bool>? writeAttemptObserver = null,
+        Func<bool>? stillPreparing = null,
+        long? lowPowerResumeGeneration = null,
+        PadlessHyperBoostLifecycleTarget? lifecycleTarget = null)
+    {
+        EnsureInitialized();
+        // Revoke synchronously, before waiting on either gate. A pad operation
+        // already waiting inside its native guard must fail its final admission.
+        if (enabled) { coolingPadControl.RequestHyperBoostEntryPark(); }
+        Interlocked.Increment(ref hyperBoostPadTransitions);
+        Interlocked.Increment(ref hyperBoostPadAdmissionEpoch);
+        try
+        {
+            if (coolingPadControl.GetStatus().State != CoolingPadControlState.Stopped)
+            {
+                if (enabled) { await coolingPadControl.ParkForHyperBoostEntryAsync(token).ConfigureAwait(false); }
+                else { await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.HyperBoostActive, token).ConfigureAwait(false); }
+                PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+            }
+            if (enabled && coolingPadOwnership is not null && !await coolingPadOwnership.EnsureServiceOwnershipAsync(token).ConfigureAwait(false))
+            { return new(ControlOperationStatus.Blocked, "Another OpenBlade controller owns the cooling-pad lease."); }
+            if (enabled && await coolingPadControl.HasBlockingMutationEvidenceAsync(token).ConfigureAwait(false))
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "HyperBoost is blocked because a cooling-pad setter may remain effective. Stopping updates did not restore fan behavior; explicit attended resolution is required.");
+            }
+            return await SetHyperBoostAfterPadExclusionAsync(enabled, transitionId, expectedOwnershipGeneration,
+                lifecycleValidation, restoreUserIntent, exitPowerSourceOverride, expectedExitPowerSourceGeneration,
+                token, operationGateAlreadyHeld, writeAttemptObserver, stillPreparing, lowPowerResumeGeneration,
+                lifecycleTarget).ConfigureAwait(false);
+        }
+        finally { Interlocked.Decrement(ref hyperBoostPadTransitions); }
+    }
+
+    private async Task<ControlOperationResult> SetHyperBoostAfterPadExclusionAsync(
         bool enabled,
         Guid? transitionId,
         long? expectedOwnershipGeneration,
@@ -11338,6 +11531,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        // A pad stop sends no firmware reports and must not skip laptop cleanup on failure.
+        try
+        {
+            CoolingPadControlStatus pad = await coolingPadControl.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+        }
+        catch { }
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.Shutdown,
             thermalConvergenceShutdown: true);
@@ -11411,6 +11611,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        try
+        {
+            if (coolingPadControl.GetStatus().Requested.Mode != CoolingPadControlMode.Stop
+                || coolingPadControl.GetStatus().RetainedSessionResumable || coolingPadControl.GetStatus().Restoration is not null)
+            {
+                CoolingPadControlStatus pad = await coolingPadControl.PauseAsync(CoolingPadControlPauseReason.PowerTransition, CancellationToken.None).ConfigureAwait(false);
+                PublishStatusUpdate(previous => previous with { CoolingPadControl = coolingPadControl.GetStatus() });
+            }
+        }
+        catch { }
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
             thermalConvergenceShutdown: false);
@@ -12549,10 +12759,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         thermalConvergenceArbiter.Dispose();
         operationGate.Dispose();
-        if (fanTemperatureSource is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
+        // Pad cleanup is independent of whether its temperature source owns resources.
+        _ = DisposePadTemperatureSourceAsync(fanTemperatureSource as IDisposable);
+    }
+
+    private async Task DisposePadTemperatureSourceAsync(IDisposable? source)
+    {
+        try { await coolingPadControl.DrainAsync().ConfigureAwait(false); source?.Dispose(); coolingPadOwnership?.Dispose(); }
+        catch { }
     }
 
     private async Task SetPerformanceOverrideCoreAsync(

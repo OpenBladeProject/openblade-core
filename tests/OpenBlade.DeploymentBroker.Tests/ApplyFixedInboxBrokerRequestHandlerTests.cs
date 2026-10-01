@@ -329,6 +329,54 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
             File.Exists(fixture.Paths.InFlightPath));
     }
 
+    [Fact]
+    public async Task CleanupFailureKeepsOriginalReportAndLaterReconcilesWithoutSecondInstaller()
+    {
+        bool locked = true;
+        int cleanupAttempts = 0;
+        using HandlerFixture fixture = CreateFixture(new(true, 0, false), new(true, true, false),
+            deleteStaging: path =>
+            {
+                cleanupAttempts++;
+                if (locked) { throw new IOException("Simulated sharing violation", unchecked((int)0x80070020)); }
+                Directory.Delete(path, recursive: true);
+            });
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request, fixture.Enrollment, default);
+        Assert.Equal(BrokerResponseStatus.Indeterminate, response.Status);
+        Assert.Equal(BrokerPaths.CleanupAttempts, cleanupAttempts);
+        string reportPath = Path.Combine(fixture.Paths.ReportDirectory, fixture.Request.RequestId.ToString("N") + ".json");
+        byte[] original = await File.ReadAllBytesAsync(reportPath);
+        byte[] unresolved = await File.ReadAllBytesAsync(fixture.Paths.InFlightPath);
+        Assert.Contains("Indeterminate", System.Text.Encoding.UTF8.GetString(original));
+        BrokerStartupReconciler reconciler = new(new BrokerInFlightStore(fixture.Paths), new NotRunningProcessInspector(),
+            fixture.State, new BrokerDurableRecordStore(fixture.Paths), fixture.Paths, TimeProvider.System,
+            NullLogger<BrokerStartupReconciler>.Instance);
+        // Persistent lock cannot produce a receipt or clear the latch.
+        Assert.False(await reconciler.TryReconcileAsync(fixture.Enrollment, default));
+        Assert.True(File.Exists(fixture.Paths.InFlightPath));
+        locked = false;
+        Assert.True(await reconciler.TryReconcileAsync(fixture.Enrollment, default));
+        string receiptPath = Path.Combine(fixture.Paths.ReportDirectory, fixture.Request.RequestId.ToString("N") + ".reconciled.json");
+        byte[] receipt = await File.ReadAllBytesAsync(receiptPath);
+        using (var document = System.Text.Json.JsonDocument.Parse(receipt))
+        {
+            Assert.Equal(BrokerDurableRecordStore.ComputeSha256(original), document.RootElement.GetProperty("originalReportSha256").GetString());
+            Assert.Equal(BrokerDurableRecordStore.ComputeSha256(unresolved), document.RootElement.GetProperty("inFlightStateSha256").GetString());
+            Assert.Equal(new string('b', 40), document.RootElement.GetProperty("targetSourceRevision").GetString());
+        }
+        Assert.Equal(original, await File.ReadAllBytesAsync(reportPath));
+        Assert.False(File.Exists(fixture.Paths.InFlightPath));
+        Assert.Equal(1, fixture.Runner.CallCount);
+        Assert.Equal(1, fixture.Sequence.Consumed);
+        // Model interruption after receipt publication but before latch clearing.
+        await File.WriteAllBytesAsync(fixture.Paths.InFlightPath, unresolved);
+        Assert.True(await reconciler.TryReconcileAsync(fixture.Enrollment, default));
+        Assert.Equal(receipt, await File.ReadAllBytesAsync(receiptPath));
+        Assert.Equal(original, await File.ReadAllBytesAsync(reportPath));
+        Assert.Equal(1, fixture.Runner.CallCount);
+        await new BrokerDurableRecordStore(fixture.Paths).ValidateExistingJournalsAsync();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
@@ -347,7 +395,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         bool corruptDetachedSignature = false,
         Action<BrokerInFlightDeployment>? afterInFlightReplacement = null,
         BrokerInstalledState? before = null,
-        Action<BrokerInFlightDeployment>? beforeInFlightReplacement = null)
+        Action<BrokerInFlightDeployment>? beforeInFlightReplacement = null,
+        Action<string>? deleteStaging = null)
     {
         ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         byte[] spki = key.ExportSubjectPublicKeyInfo();
@@ -369,7 +418,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
         {
             signatureBytes[0] ^= 0xFF;
         }
-        BrokerPaths paths = BrokerPaths.CreateForTests(root);
+        BrokerPaths paths = deleteStaging is null ? BrokerPaths.CreateForTests(root)
+            : new BrokerPaths(root, false, Path.Combine(root, "inbox"),
+                cleanupDelay: (_, _) => Task.CompletedTask, deleteDirectory: deleteStaging);
         FakeSequenceStore sequenceStore = new(acceptedSequence);
         FakeDownloader downloader = new(
             installer,

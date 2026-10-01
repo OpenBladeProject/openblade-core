@@ -1025,6 +1025,142 @@
                             </Border>
                             </StackPanel>
                         </Border>
+                        <Border x:Name="CoolingPadControlCard" Style="{StaticResource SettingsGroupStyle}" Margin="0,12,0,0"
+                                DataContext="{Binding CoolingPadControl}"
+                                Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsVisible}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsLastRowStyle}" Padding="16,12">
+                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock x:Uid="MainWindow_TextBlockCoolingPad" Text="Cooling pad" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{Binding SummaryText}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <local:ResponsiveChoiceSelector x:Uid="MainWindow_ComboBoxCoolingPadControlMode" x:Name="CoolingPadModeSelector"
+                                                  Grid.Column="1" VerticalAlignment="Center"
+                                                  ItemsSource="{Binding ModeOptions}" DisplayMemberPath="Label"
+                                                  CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                  SelectedItem="{Binding SelectedMode, Mode=TwoWay}"
+                                                  IsEnabled="{Binding IsConnected}" AccessibleName="Cooling-pad control mode" />
+                                    </Grid>
+                                </Border>
+                                <Border x:Name="CoolingPadFixedEditor" Style="{StaticResource SettingsEditorSubcardStyle}"
+                                        Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsFixed}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Uid="MainWindow_TextBlockConfiguredDemandRPM" Text="Requested speed" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                        <Grid Grid.Column="1" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Uid="MainWindow_SliderCoolingPadConfiguredDemand" x:Name="CoolingPadDemandSlider" Style="{StaticResource InlineCardSliderStyle}"
+                                                    Minimum="500" Maximum="3200" StepFrequency="50" SmallChange="50" SnapsTo="StepValues"
+                                                    Value="{Binding FixedDemand, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                    IsEnabled="{Binding IsConnected}" AutomationProperties.Name="Cooling-pad configured demand" />
+                                            <TextBlock Grid.Column="1" Style="{StaticResource InlineCardSliderValueStyle}">
+                                                <Run Text="{Binding FixedDemand}" /><Run Text=" RPM" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border x:Name="CoolingPadCurveEditor" Style="{StaticResource SettingsEditorSubcardStyle}"
+                                        Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsCurve}">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock x:Uid="MainWindow_CoolingPadCurveExplanation" Text="Set a requested speed for each temperature. The higher CPU or GPU request is used." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Expander x:Uid="MainWindow_CoolingPadCpuCurve" x:Name="CoolingPadCpuCurveExpander" Header="CPU curve"
+                                                      Style="{StaticResource CardContentExpanderStyle}" IsExpanded="False">
+                                                <ItemsControl ItemsSource="{Binding CpuPoints}" IsEnabled="{Binding IsConnected}" ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid ColumnSpacing="8" Margin="0,5">
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                <NumberBox x:Uid="MainWindow_NumberBoxCPUCurveTemperature" Header="°C" Value="{Binding Temperature, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="0" Maximum="115" AutomationProperties.Name="CPU curve temperature" />
+                                                                <NumberBox x:Uid="MainWindow_NumberBoxCPUCurveDemand" Grid.Column="1" Header="RPM" Value="{Binding Demand, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="500" Maximum="3200" SmallChange="50" AutomationProperties.Name="CPU curve demand" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Expander>
+                                            <Expander x:Uid="MainWindow_CoolingPadGpuCurve" x:Name="CoolingPadGpuCurveExpander" Grid.Column="1" Header="GPU curve"
+                                                      Style="{StaticResource CardContentExpanderStyle}" IsExpanded="False">
+                                                <ItemsControl ItemsSource="{Binding GpuPoints}" IsEnabled="{Binding IsConnected}" ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid ColumnSpacing="8" Margin="0,5">
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                <NumberBox x:Uid="MainWindow_NumberBoxGPUCurveTemperature" Header="°C" Value="{Binding Temperature, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="0" Maximum="115" AutomationProperties.Name="GPU curve temperature" />
+                                                                <NumberBox x:Uid="MainWindow_NumberBoxGPUCurveDemand" Grid.Column="1" Header="RPM" Value="{Binding Demand, Mode=TwoWay, Converter={StaticResource Int32Double}}" Minimum="500" Maximum="3200" SmallChange="50" AutomationProperties.Name="GPU curve demand" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Expander>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}" Padding="16,0,16,14">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock x:Uid="MainWindow_TextBlockSettingsLastForThisServiceSessionStop" Text="Stopping updates keeps the last requested speed." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button x:Uid="MainWindow_ButtonUseSettings" Content="Apply" Command="{Binding ApplyCommand}" />
+                                            <Button x:Uid="MainWindow_ButtonResumeUpdates" Content="Resume updates" Command="{Binding ResumeCommand}"
+                                                    Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsResumeVisible}" />
+                                            <ToggleButton x:Uid="MainWindow_CoolingPadRestoreDisclosure" Content="Restore quiet…"
+                                                          IsChecked="{Binding IsRestorationGuidanceOpen, Mode=TwoWay}"
+                                                          IsEnabled="{Binding CanConfirmPhysical}"
+                                                          Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsRestorationDisclosureVisible}" />
+                                        </StackPanel>
+                                        <InfoBar x:Name="CoolingPadNotice" IsOpen="True" IsClosable="False" Severity="Warning"
+                                                 Message="{Binding NoticeText}" AutomationProperties.LiveSetting="Polite"
+                                                 Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsNoticeVisible}" />
+                                        <TextBlock Text="{Binding Message}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border x:Name="CoolingPadRestorationPanel" Style="{StaticResource SettingsEmphasizedSubcardStyle}"
+                                        Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsRestorationVisible}">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock x:Uid="MainWindow_CoolingPadRestorationTitle" Text="Restore quiet" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{Binding RestorationText}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <CheckBox Content="{Binding PhysicalConfirmationText}" IsEnabled="{Binding CanConfirmPhysical}"
+                                                  IsChecked="{Binding PhysicalConfirmation, Mode=TwoWay}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Content="{Binding RestoreButtonText}" Command="{Binding RestoreQuietCommand}" />
+                                            <Button Content="{Binding CancelRestorationText}" Command="{Binding CancelRestorationCommand}"
+                                                    Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding HasRestorationStage}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastNeutralSubcardStyle}" Padding="0">
+                                    <Expander x:Uid="MainWindow_CoolingPadControlDetails" x:Name="CoolingPadControlDetailsExpander" Header="Control details"
+                                              Style="{StaticResource CardContentExpanderStyle}" IsExpanded="False">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Uid="MainWindow_TextBlockRequestedDemand" Text="Requested demand:" /><TextBlock Text="{Binding RequestedText}" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Uid="MainWindow_CoolingPadPlannedDemand" Text="Planned demand:" /><TextBlock Text="{Binding PlannedText}" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Uid="MainWindow_TextBlockLastAcknowledgedDemand" Text="Last acknowledged request:" /><TextBlock Text="{Binding AcknowledgedText}" />
+                                            </StackPanel>
+                                            <TextBlock x:Uid="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable" Text="Measured fan speed is unavailable." Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Expander>
+                                </Border>
+                            </StackPanel>
+                        </Border>
                         </StackPanel>
             </DataTemplate>
             <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainViewModel">

@@ -2014,4 +2014,73 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>[!! https://example.com ~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonResumeUpdates.Content" xml:space="preserve">
+    <value>[!! Résúmé úpdátés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonUseSettings.Content" xml:space="preserve">
+    <value>[!! Ápplý ~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ cúrvé démánd ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ cúrvé témpérátúré ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! GPÚ cúrvé démánd ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! GPÚ cúrvé témpérátúré ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_SliderCoolingPadConfiguredDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Cóólíng-pád cónfígúréd démánd ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockConfiguredDemandRPM.Text" xml:space="preserve">
+    <value>[!! Réqúéstéd spééd ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockCoolingPad.Text" xml:space="preserve">
+    <value>[!! Cóólíng pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockLastAcknowledgedDemand.Text" xml:space="preserve">
+    <value>[!! Lást ácknówlédgéd réqúést: ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable.Text" xml:space="preserve">
+    <value>[!! Méásúréd fán spééd ís únáváíláblé. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockRequestedDemand.Text" xml:space="preserve">
+    <value>[!! Réqúéstéd démánd: ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockSettingsLastForThisServiceSessionStop.Text" xml:space="preserve">
+    <value>[!! Stóppíng úpdátés kééps thé lást réqúéstéd spééd. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadPlannedDemand.Text" xml:space="preserve">
+    <value>[!! Plánnéd démánd: ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ComboBoxCoolingPadControlMode.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád cóntról módé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadControlDetails.Header" xml:space="preserve">
+    <value>[!! Cóntról détáíls ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurve.Header" xml:space="preserve">
+    <value>[!! CPÚ cúrvé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveExplanation.Text" xml:space="preserve">
+    <value>[!! Sét á réqúéstéd spééd fór éách témpérátúré. Thé híghér CPÚ ór GPÚ réqúést ís úséd. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurve.Header" xml:space="preserve">
+    <value>[!! GPÚ cúrvé ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestorationTitle.Text" xml:space="preserve">
+    <value>[!! Réstóré qúíét ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.Header" xml:space="preserve">
+    <value>[!! °C ~~ !!]</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.Header" xml:space="preserve">
+    <value>[!! °C ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestoreDisclosure.Content" xml:space="preserve">
+    <value>[!! Réstóré qúíét… ~~~~~ !!]</value>
+  </data>
 </root>

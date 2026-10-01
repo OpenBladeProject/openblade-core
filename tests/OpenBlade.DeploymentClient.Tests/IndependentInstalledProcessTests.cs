@@ -13,13 +13,24 @@ public sealed class IndependentInstalledProcessTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Launch_OutlivesCallerJobs_WithDisposableParentAndNoInheritedHandles(bool hidden)
+    public Task Launch_OutlivesCallerJobs_WithDisposableParentAndNoInheritedHandles(bool hidden) =>
+        NormalIntegrityFixtureHost.RunAsync(hidden ? "hidden" : "visible");
+
+    [Theory]
+    [InlineData("hidden")]
+    [InlineData("visible")]
+    [InlineData("dead-parent")]
+    public Task Launch_RunsNativeAssertionsInsideContainedSupervisor(string scenario) =>
+        NormalIntegrityFixtureHost.RunAsync(scenario, forceSupervisor: true);
+
+    internal static async Task RunLifetimeScenarioAsync(bool hidden)
     {
+        NormalIntegrityFixtureHost.AssertNormalIdentity(DesktopProcessIdentity.ReadCaller(), "fixture caller");
         using FixtureScope fixture = new();
         await fixture.StartAsync(hidden);
         File.WriteAllText(Path.Combine(fixture.Root, "launch"), "launch");
         LaunchReport report = await fixture.ReadReportAsync();
-        Assert.Null(report.Error);
+        Assert.True(report.Error is null, $"{report.Error}: {report.ErrorDetails}");
         using Process child = Process.GetProcessById(report.ProcessId);
         _ = child.Handle;
         try
@@ -46,8 +57,12 @@ public sealed class IndependentInstalledProcessTests
     }
 
     [Fact]
-    public async Task Launch_RejectsDeadRetainedParent_WithoutFallbackOrChildExecution()
+    public Task Launch_RejectsDeadRetainedParent_WithoutFallbackOrChildExecution() =>
+        NormalIntegrityFixtureHost.RunAsync("dead-parent");
+
+    internal static async Task RunDeadParentScenarioAsync()
     {
+        NormalIntegrityFixtureHost.AssertNormalIdentity(DesktopProcessIdentity.ReadCaller(), "fixture caller");
         using FixtureScope fixture = new();
         await fixture.StartAsync(hidden: true);
         File.WriteAllText(Path.Combine(fixture.Root, "parent.exit"), "exit");
@@ -121,6 +136,11 @@ public sealed class IndependentInstalledProcessTests
                 $"launch \"{Root}\" {CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64()} {hidden} {Parent.Id} {parentHandle}",
                 Root, CallerOuterJob, CallerInnerJob);
             await WaitForFileAsync("coordinator.ready", Coordinator);
+            DesktopProcessIdentity caller = DesktopProcessIdentity.ReadCaller();
+            Assert.True(caller.IsSameNormalIdentity(DesktopProcessIdentity.Read(Parent.SafeHandle)),
+                "The fixture parent must have the caller's actual normal identity.");
+            Assert.True(caller.IsSameNormalIdentity(DesktopProcessIdentity.Read(Coordinator.SafeHandle)),
+                "The fixture coordinator must have the caller's actual normal identity.");
             Assert.True(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle,
                 CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64(), CallerEvent.SafeWaitHandle));
         }
@@ -146,7 +166,8 @@ public sealed class IndependentInstalledProcessTests
                 await Task.Delay(25);
             }
 
-            Assert.True(File.Exists(path), $"Fixture did not produce {name} in ten seconds.");
+            string progress = string.Join(", ", Directory.GetFiles(Root).Select(Path.GetFileName));
+            Assert.True(File.Exists(path), $"Fixture did not produce {name} in ten seconds. Markers: {progress}.");
         }
 
         internal void CloseCallerJobs()
@@ -207,7 +228,7 @@ public sealed class IndependentInstalledProcessTests
 }
 
 internal sealed record LaunchReport(int ProcessId, long CallerHandleCandidate, long ParentHandleCandidate,
-    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null);
+    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null, string? ErrorDetails = null);
 
 // This WinExe apphost runs only bounded fixture processes. It never locates or
 // designates Explorer, and cannot touch an installed product process.
@@ -219,6 +240,11 @@ internal static class LaunchFixture
 
     private static int Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "normal-fixture-supervisor")
+        {
+            return NormalIntegrityFixtureHost.RunSupervisorAsync(args[1], args[2]).GetAwaiter().GetResult();
+        }
+
         // Explicitly attended, read-only admission check. This mode never starts
         // an installed application, calls the broker, or creates a shell child.
         if (args.Length == 2 && args[0] == "verify-desktop-context")
@@ -259,6 +285,7 @@ internal static class LaunchFixture
         if (args.Length == 6 && args[0] == "launch")
         {
             string root = args[1];
+            string stage = "inherited sentinel";
             try
             {
                 if (!GetHandleInformation(new(long.Parse(args[2])), out uint handleFlags) || (handleFlags & 1) == 0)
@@ -266,12 +293,14 @@ internal static class LaunchFixture
                     throw new InvalidOperationException("The coordinator did not inherit its event sentinel.");
                 }
 
+                stage = "open retained parent";
                 using SafeProcessHandle parent = OpenProcess(0x00101080, false, uint.Parse(args[4]));
                 if (parent.IsInvalid)
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
 
+                stage = "read coordinator identity";
                 DesktopProcessIdentity identity = DesktopProcessIdentity.ReadCaller();
                 WriteAtomic(root, "coordinator.ready", "ready");
                 WaitForMarker(root, "launch", 10);
@@ -279,13 +308,20 @@ internal static class LaunchFixture
                 Environment.SetEnvironmentVariable(CallerHandleVariable, args[2]);
                 Environment.SetEnvironmentVariable(ParentHandleVariable, args[5]);
                 bool hidden = bool.Parse(args[3]);
+                stage = "start installed-process fixture";
+                WriteAtomic(root, "coordinator.starting-child", "starting");
                 using Process child = IndependentInstalledProcess.Start(new(Environment.ProcessPath!, root, hidden,
                     hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal), parent, identity);
-                Thread.Sleep(15000);
+                WriteAtomic(root, "coordinator.started-child", child.Id.ToString());
+                stage = "wait for installed-process fixture";
+                if (child.WaitForExit(15000) && !File.Exists(Path.Combine(root, "report.json")))
+                {
+                    throw new InvalidOperationException($"The installed-process fixture exited {child.ExitCode} before reporting.");
+                }
             }
             catch (Exception exception)
             {
-                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name));
+                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name, $"{stage}: {exception}"));
             }
 
             return 0;

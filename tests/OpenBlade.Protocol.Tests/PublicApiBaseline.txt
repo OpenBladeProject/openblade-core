@@ -142,8 +142,105 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   property System.Collections.Generic.IReadOnlyList<System.String> HyperBoostBlockingControllers { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadControllerLease
+  interface System.IDisposable
+  ctor ()
+  method System.Boolean EnsureServiceOwnership()
+  method System.IDisposable Acquire()
+  method System.Threading.Tasks.Task<System.Boolean> EnsureServiceOwnershipAsync(System.Threading.CancellationToken token)
+  method virtual System.Void Dispose()
+type sealed class OpenBlade.Protocol.CoolingPadDemandEntryResult
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadDemandEntryResult>
+  ctor (OpenBlade.Protocol.CoolingPadWriteResult Entry, OpenBlade.Protocol.CoolingPadWriteResult Demand)
+  method OpenBlade.Protocol.CoolingPadDemandEntryResult <Clone>$()
+  method OpenBlade.Protocol.CoolingPadWriteResult get_Demand()
+  method OpenBlade.Protocol.CoolingPadWriteResult get_Entry()
+  method System.Void Deconstruct(out OpenBlade.Protocol.CoolingPadWriteResult Entry, out OpenBlade.Protocol.CoolingPadWriteResult Demand)
+  method System.Void set_Demand(OpenBlade.Protocol.CoolingPadWriteResult value)
+  method System.Void set_Entry(OpenBlade.Protocol.CoolingPadWriteResult value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadDemandEntryResult left, OpenBlade.Protocol.CoolingPadDemandEntryResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadDemandEntryResult left, OpenBlade.Protocol.CoolingPadDemandEntryResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadDemandEntryResult other)
+  property OpenBlade.Protocol.CoolingPadWriteResult Demand { get; init; }
+  property OpenBlade.Protocol.CoolingPadWriteResult Entry { get; init; }
 type static class OpenBlade.Protocol.CoolingPadDiscoveryFactory
   method static OpenBlade.Protocol.ICoolingPadDiscoverySource CreateWindows()
+type enum OpenBlade.Protocol.CoolingPadRawControlState
+  field System.Int32 value__
+  field const OpenBlade.Protocol.CoolingPadRawControlState Other = 2
+  field const OpenBlade.Protocol.CoolingPadRawControlState Raw0000 = 0
+  field const OpenBlade.Protocol.CoolingPadRawControlState Raw0300 = 1
+type sealed class OpenBlade.Protocol.CoolingPadRawQueryResult
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadRawQueryResult>
+  ctor (OpenBlade.Protocol.CoolingPadRawControlState State, System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method OpenBlade.Protocol.CoolingPadRawControlState get_State()
+  method OpenBlade.Protocol.CoolingPadRawQueryResult <Clone>$()
+  method System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> get_Fault()
+  method System.Void Deconstruct(out OpenBlade.Protocol.CoolingPadRawControlState State, out System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method System.Void set_Fault(System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> value)
+  method System.Void set_State(OpenBlade.Protocol.CoolingPadRawControlState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadRawQueryResult left, OpenBlade.Protocol.CoolingPadRawQueryResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadRawQueryResult left, OpenBlade.Protocol.CoolingPadRawQueryResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadRawQueryResult other)
+  property OpenBlade.Protocol.CoolingPadRawControlState State { get; init; }
+  property System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadSessionFactory
+  ctor ()
+  method System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadSessionOpenResult> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  method static OpenBlade.Protocol.CoolingPadSessionFactory CreateDeveloperWindows()
+  method static OpenBlade.Protocol.CoolingPadSessionFactory CreateProductionWindows(OpenBlade.Protocol.CoolingPadControllerLease ownership)
+  method static System.Boolean IsExactProductionHost()
+type enum OpenBlade.Protocol.CoolingPadSessionFault
+  field System.Int32 value__
+  field const OpenBlade.Protocol.CoolingPadSessionFault AdmissionClosed = 0
+  field const OpenBlade.Protocol.CoolingPadSessionFault AdmissionRevoked = 5
+  field const OpenBlade.Protocol.CoolingPadSessionFault ControllerConflict = 2
+  field const OpenBlade.Protocol.CoolingPadSessionFault Disconnected = 1
+  field const OpenBlade.Protocol.CoolingPadSessionFault Rejected = 3
+  field const OpenBlade.Protocol.CoolingPadSessionFault SubmissionUnknown = 4
+type sealed class OpenBlade.Protocol.CoolingPadSessionOpenResult
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadSessionOpenResult>
+  ctor (OpenBlade.Protocol.ICoolingPadDemandSession Session, System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method OpenBlade.Protocol.CoolingPadSessionOpenResult <Clone>$()
+  method OpenBlade.Protocol.ICoolingPadDemandSession get_Session()
+  method System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> get_Fault()
+  method System.Void Deconstruct(out OpenBlade.Protocol.ICoolingPadDemandSession Session, out System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method System.Void set_Fault(System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> value)
+  method System.Void set_Session(OpenBlade.Protocol.ICoolingPadDemandSession value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadSessionOpenResult left, OpenBlade.Protocol.CoolingPadSessionOpenResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadSessionOpenResult left, OpenBlade.Protocol.CoolingPadSessionOpenResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadSessionOpenResult other)
+  property OpenBlade.Protocol.ICoolingPadDemandSession Session { get; init; }
+  property System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadWriteResult
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadWriteResult>
+  ctor (System.Boolean Attempted, System.Boolean Acknowledged, System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method OpenBlade.Protocol.CoolingPadWriteResult <Clone>$()
+  method System.Boolean get_Acknowledged()
+  method System.Boolean get_Attempted()
+  method System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> get_Fault()
+  method System.Void Deconstruct(out System.Boolean Attempted, out System.Boolean Acknowledged, out System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault)
+  method System.Void set_Acknowledged(System.Boolean value)
+  method System.Void set_Attempted(System.Boolean value)
+  method System.Void set_Fault(System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadWriteResult left, OpenBlade.Protocol.CoolingPadWriteResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadWriteResult left, OpenBlade.Protocol.CoolingPadWriteResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadWriteResult other)
+  property System.Boolean Acknowledged { get; init; }
+  property System.Boolean Attempted { get; init; }
+  property System.Nullable<OpenBlade.Protocol.CoolingPadSessionFault> Fault { get; init; }
 type enum OpenBlade.Protocol.DriverModeRestoreOutcome
   field System.Int32 value__
   field const OpenBlade.Protocol.DriverModeRestoreOutcome Failed = 4
@@ -322,6 +419,15 @@ type interface OpenBlade.Protocol.IBladeDevice
   method virtual System.Threading.Tasks.Task<System.String> ReadMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IControllerPresenceMonitor
   method abstract OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type interface OpenBlade.Protocol.ICoolingPadDemandSession
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadDemandEntryResult> EnterDemandAsync(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand demand, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadRawQueryResult> QueryRawControlStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadWriteResult> AcquireAsync(System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadWriteResult> ReassertMediumAsync(System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadWriteResult> ReassertQuietAsync(System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadWriteResult> RestoreRawControlStateAsync(System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadWriteResult> UpdateDemandAsync(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand demand, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.ICoolingPadDiscoverySource
   method abstract OpenBlade.Contracts.CoolingPadConnectionState Observe()
 type interface OpenBlade.Protocol.IFanRpmQueryPort

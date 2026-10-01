@@ -647,6 +647,119 @@ public sealed class BrokerDurableRecordStore
         }
     }
 
+    // Called only after process absence, durable exit, fresh installed-state verification
+    // and completed guarded staging cleanup. Preserve the original terminal report.
+    internal async Task<bool> TryRecordReconciliationAsync(BrokerTerminalReport resolved,
+        BrokerInFlightDeployment state, CancellationToken cancellationToken = default)
+    {
+        ValidateReport(resolved);
+        byte[] stateBytes = BrokerInFlightDeploymentCodec.SerializeCanonical(state);
+        if (resolved.Disposition is not (BrokerDeploymentDisposition.Succeeded or BrokerDeploymentDisposition.RolledBack)
+            || state.InstallerProcessId is null || state.InstallerExitCode is null
+            || state.TargetSourceRevision is null
+            || resolved.RequestId != state.RequestId || resolved.Sequence != state.TargetSequence
+            || resolved.ManifestSha256 != state.ManifestSha256 || resolved.SigningKeyId != state.SigningKeyId
+            || resolved.PackageSha256 != state.InstallerSha256 || resolved.PreviousVersion != state.PreviousVersion
+            || resolved.TargetVersion != state.TargetVersion || resolved.InstallerExitCode != state.InstallerExitCode
+            || resolved.Disposition == BrokerDeploymentDisposition.Succeeded
+                && (resolved.InstallerExitCode != 0 || !resolved.ServiceHealthy))
+        { return false; }
+
+        string originalPath = Path.Combine(paths.ReportDirectory, resolved.RequestId.ToString("N") + ".json");
+        string receiptPath = Path.Combine(paths.ReportDirectory, resolved.RequestId.ToString("N") + ".reconciled.json");
+        try
+        {
+            ProtectedBrokerStorage.RejectReparsePoint(paths.ReportDirectory);
+            paths.VerifyDirectory(paths.ReportDirectory);
+            ProtectedBrokerStorage.RejectReparsePoint(originalPath);
+            paths.VerifyFile(originalPath);
+            byte[] original = await BrokerStateFile.ReadAsync(originalPath,
+                SerializeCanonicalReport(resolved).Length + 64, cancellationToken).ConfigureAwait(false);
+            using JsonDocument document = JsonDocument.Parse(original);
+            JsonElement root = document.RootElement;
+            if (!TryReadReportTime(root, out DateTimeOffset originalTime)
+                || !root.TryGetProperty("serviceHealthy", out JsonElement health)
+                || health.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            { return false; }
+            // All other fields, including enrollment and signed release identity, must
+            // be byte-for-byte canonical matches. Never reinterpret another outcome.
+            byte[] expectedOriginal = SerializeCanonicalReport(resolved with
+            {
+                Disposition = BrokerDeploymentDisposition.Indeterminate,
+                ServiceHealthy = health.GetBoolean(),
+                CompletedAt = originalTime,
+            });
+            if (!original.AsSpan().SequenceEqual(expectedOriginal)) { return false; }
+            string originalHash = ComputeSha256(original);
+            string stateHash = ComputeSha256(stateBytes);
+            byte[] receipt = SerializeReconciliation(resolved, originalHash, stateHash, state.TargetSourceRevision);
+            if (File.Exists(receiptPath))
+            {
+                ProtectedBrokerStorage.RejectReparsePoint(receiptPath);
+                paths.VerifyFile(receiptPath);
+                byte[] existing = await BrokerStateFile.ReadAsync(receiptPath, receipt.Length, cancellationToken).ConfigureAwait(false);
+                using JsonDocument previous = JsonDocument.Parse(existing);
+                if (previous.RootElement.ValueKind != JsonValueKind.Object
+                    || !previous.RootElement.TryGetProperty("resolvedReport", out JsonElement previousReport)
+                    || !TryReadReportTime(previousReport, out DateTimeOffset priorTime))
+                { return false; }
+                return existing.AsSpan().SequenceEqual(SerializeReconciliation(
+                    resolved with { CompletedAt = priorTime }, originalHash, stateHash, state.TargetSourceRevision));
+            }
+
+            string temporary = receiptPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await using (FileStream stream = new(temporary, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
+                {
+                    await stream.WriteAsync(receipt, cancellationToken).ConfigureAwait(false);
+                    await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    stream.Flush(flushToDisk: true);
+                }
+                paths.ProtectFile(temporary);
+                ProtectedBrokerStorage.RejectReparsePoint(temporary);
+                paths.VerifyFile(temporary);
+                File.Move(temporary, receiptPath, overwrite: false);
+                ProtectedBrokerStorage.RejectReparsePoint(receiptPath);
+                paths.VerifyFile(receiptPath);
+                return true;
+            }
+            finally { if (File.Exists(temporary)) { File.Delete(temporary); } }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
+        { return false; }
+    }
+
+    private static bool TryReadReportTime(JsonElement report, out DateTimeOffset completedAt)
+    {
+        completedAt = default;
+        return report.ValueKind == JsonValueKind.Object
+            && report.TryGetProperty("completedAt", out JsonElement time) && time.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParseExact(time.GetString(), "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out completedAt);
+    }
+
+    private static byte[] SerializeReconciliation(BrokerTerminalReport resolved,
+        string originalReportSha256, string inFlightStateSha256, string sourceRevision)
+    {
+        using MemoryStream stream = new();
+        using (Utf8JsonWriter writer = new(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("originalReportSha256", originalReportSha256);
+            writer.WriteString("inFlightStateSha256", inFlightStateSha256);
+            writer.WriteString("targetSourceRevision", sourceRevision);
+            writer.WritePropertyName("resolvedReport");
+            writer.WriteRawValue(SerializeCanonicalReport(resolved));
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
+    }
+
     public static string ComputeSha256(ReadOnlySpan<byte> bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 

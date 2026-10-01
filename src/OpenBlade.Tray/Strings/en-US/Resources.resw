@@ -2014,4 +2014,73 @@ OpenBlade did not retry any stop request.</value>
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
+  <data name="MainWindow_ButtonResumeUpdates.Content" xml:space="preserve">
+    <value>Resume updates</value>
+  </data>
+  <data name="MainWindow_ButtonUseSettings.Content" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU curve demand</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU curve temperature</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU curve demand</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU curve temperature</value>
+  </data>
+  <data name="MainWindow_SliderCoolingPadConfiguredDemand.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cooling-pad configured demand</value>
+  </data>
+  <data name="MainWindow_TextBlockConfiguredDemandRPM.Text" xml:space="preserve">
+    <value>Requested speed</value>
+  </data>
+  <data name="MainWindow_TextBlockCoolingPad.Text" xml:space="preserve">
+    <value>Cooling pad</value>
+  </data>
+  <data name="MainWindow_TextBlockLastAcknowledgedDemand.Text" xml:space="preserve">
+    <value>Last acknowledged request:</value>
+  </data>
+  <data name="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable.Text" xml:space="preserve">
+    <value>Measured fan speed is unavailable.</value>
+  </data>
+  <data name="MainWindow_TextBlockRequestedDemand.Text" xml:space="preserve">
+    <value>Requested demand:</value>
+  </data>
+  <data name="MainWindow_TextBlockSettingsLastForThisServiceSessionStop.Text" xml:space="preserve">
+    <value>Stopping updates keeps the last requested speed.</value>
+  </data>
+  <data name="MainWindow_CoolingPadPlannedDemand.Text" xml:space="preserve">
+    <value>Planned demand:</value>
+  </data>
+  <data name="MainWindow_ComboBoxCoolingPadControlMode.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad control mode</value>
+  </data>
+  <data name="MainWindow_CoolingPadControlDetails.Header" xml:space="preserve">
+    <value>Control details</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurve.Header" xml:space="preserve">
+    <value>CPU curve</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveExplanation.Text" xml:space="preserve">
+    <value>Set a requested speed for each temperature. The higher CPU or GPU request is used.</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurve.Header" xml:space="preserve">
+    <value>GPU curve</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestorationTitle.Text" xml:space="preserve">
+    <value>Restore quiet</value>
+  </data>
+  <data name="MainWindow_NumberBoxCPUCurveTemperature.Header" xml:space="preserve">
+    <value>°C</value>
+  </data>
+  <data name="MainWindow_NumberBoxGPUCurveTemperature.Header" xml:space="preserve">
+    <value>°C</value>
+  </data>
+  <data name="MainWindow_CoolingPadRestoreDisclosure.Content" xml:space="preserve">
+    <value>Restore quiet…</value>
+  </data>
 </root>

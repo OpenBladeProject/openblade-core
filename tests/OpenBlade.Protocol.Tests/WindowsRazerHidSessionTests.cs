@@ -8,6 +8,141 @@ public sealed class WindowsRazerHidSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
+    [Theory]
+    [InlineData(false, true, 0, false)]
+    [InlineData(false, true, 1, false)]
+    [InlineData(true, false, 0, false)]
+    [InlineData(true, false, 1, false)]
+    [InlineData(true, true, 0, true)]
+    [InlineData(true, true, 30, true)]
+    [InlineData(true, true, 31, false)]
+    public async Task ProductionPadRequiresExactActorAndSeparateTaggedAssignment(bool scoped, bool tagged, byte id, bool success)
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(id, 0x0D, 1, [1, 5, 64]));
+        await using var actor = CreateActor(io, productionPadIdentity: scoped ? CoolingPadSessionFactory.ExactPadIdentity : null);
+        var result = await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(3200)),
+            () => new(id, null) { CoolingPadProduction = tagged }, Timeout, default);
+        Assert.Equal(success, result.Failure is null);
+        Assert.Equal(success ? 2 : 0, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task ProductionPadCannotBypassPayloadEchoOrUseBatchTransport()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(0, 0x0D, 1, [1, 5, 44]));
+        await using var actor = CreateActor(io, productionPadIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        Assert.NotNull((await actor.ExecuteAsync(new(0x0D, 1, new byte[] { 1, 5, 10 }, 3, _ => true),
+            () => new(0, null) { CoolingPadProduction = true }, Timeout, default)).Failure);
+        var batchIo = new ScriptedIo();
+        await using var batchActor = CreateActor(batchIo, productionPadIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        Assert.NotNull((await batchActor.SubmitBatchAsync([CoolingPadHostDemandProtocol.CreateSpec(new(500))],
+            () => new(1, null) { CoolingPadProduction = true }, Timeout, default)).Failure);
+        Assert.Empty(batchIo.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, true, 0, false)]
+    [InlineData(false, true, 1, false)]
+    [InlineData(true, false, 0, false)]
+    [InlineData(true, false, 1, false)]
+    [InlineData(true, true, 0, true)]
+    [InlineData(true, true, 30, true)]
+    [InlineData(true, true, 31, false)]
+    public async Task DeveloperCounter_RequiresBothScopedActorAndTaggedAssignment(bool scoped, bool tagged, byte id, bool success)
+    {
+        byte[] payload = [1, 5, 20];
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(id, 0x0D, 1, payload));
+        await using var actor = CreateActor(io, developerCounterIdentity: scoped ? CoolingPadSessionFactory.ExactPadIdentity : null);
+        var response = await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(1000)),
+            () => new(id, null) { CoolingPadDeveloperCounter = tagged }, Timeout, default);
+        Assert.Equal(success, response.Failure is null);
+        Assert.Equal(success ? 2 : 0, io.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeveloperCounter_RejectsSetOnlyAndBatch(bool batch)
+    {
+        var io = new ScriptedIo();
+        await using var actor = CreateActor(io, developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        var spec = CoolingPadHostDemandProtocol.CreateSpec(new(1000));
+        TransactionIdAssignment Assign() => new(0, null) { CoolingPadDeveloperCounter = true };
+        var result = batch ? await actor.SubmitBatchAsync([spec], Assign, Timeout, default)
+            : await actor.SubmitAsync(spec, Assign, Timeout, default);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Empty(io.Calls);
+    }
+
+    [Theory]
+    [InlineData(0, 0x84)]
+    [InlineData(3, 0x01)]
+    public async Task DeveloperCounter_RejectsZeroForOtherCommands(byte cls, byte command)
+    {
+        var io = new ScriptedIo();
+        await using var actor = CreateActor(io, developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        var result = await actor.ExecuteAsync(new(cls, command, new byte[] { 0, 0 }, 2, _ => true),
+            () => new(0, null) { CoolingPadDeveloperCounter = true }, Timeout, default);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Empty(io.Calls);
+    }
+
+    [Theory]
+    [InlineData(1, 20)]
+    [InlineData(0, 44)]
+    public async Task DeveloperCounter_ZeroStillRequiresFullMatchingEcho(byte echoedId, byte echoedDemand)
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(echoedId, 0x0D, 1, [1, 5, echoedDemand]));
+        await using var actor = CreateActor(io, developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        Assert.NotNull((await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(1000)),
+            () => new(0, null) { CoolingPadDeveloperCounter = true }, Timeout, default)).Failure);
+        Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        int calls = io.Calls.Count;
+        Assert.NotNull((await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(1000)),
+            () => new(1, null) { CoolingPadDeveloperCounter = true }, Timeout, default)).Failure);
+        Assert.Equal(calls, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task DeveloperCounter_ActualActorAcceptsRepeatedIdOnlyAfterCompletedExchange_AndRechecksGuard()
+    {
+        byte[] payload = [1, 5, 20];
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(6, 0x0D, 1, payload),
+            SetSuccess(), GetSuccess(6, 0x0D, 1, payload), SetSuccess(), GetSuccess(7, 0x0D, 1, payload),
+            SetSuccess(), GetSuccess(8, 0x0D, 1, payload));
+        int guards = 0;
+        await using var actor = CreateActor(io, new CallbackGuard(() => guards++),
+            developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        foreach (byte id in new byte[] { 6, 6, 7, 8 })
+        {
+            Assert.Null((await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(1000)),
+                () => new(id, null) { CoolingPadDeveloperCounter = true }, Timeout, default)).Failure);
+        }
+        Assert.Equal(4, guards);
+        Assert.Equal(8, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task DeveloperCounter_DoesNotTrustCallerToSupplyExactEchoValidator()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(0, 0x0D, 1, [1, 5, 44]));
+        await using var actor = CreateActor(io, developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        var result = await actor.ExecuteAsync(new(0x0D, 1, new byte[] { 1, 5, 20 }, 3, _ => true),
+            () => new(0, null) { CoolingPadDeveloperCounter = true }, Timeout, default);
+        Assert.NotNull(result.Failure);
+    }
+
+    [Fact]
+    public async Task DeveloperCounter_CannotBypassScopeUsingOrdinaryNonzeroBatchAssignment()
+    {
+        var io = new ScriptedIo();
+        await using var actor = CreateActor(io, developerCounterIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        var result = await actor.SubmitBatchAsync([new(1, 1, new byte[] { 1 }, 1)],
+            () => TransactionIdAssignment.Valid(1), Timeout, default);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Empty(io.Calls);
+    }
+
     [Fact]
     public async Task NewActorReportsHealthyDisposition()
     {
@@ -1578,7 +1713,8 @@ public sealed class WindowsRazerHidSessionTests
         List<string>? events = null,
         Action? disposeBound = null,
         TimeSpan featureReportSettleDelay = default,
-        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict)
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
+        HidHandleIdentity? developerCounterIdentity = null, HidHandleIdentity? productionPadIdentity = null)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(
@@ -1588,7 +1724,7 @@ public sealed class WindowsRazerHidSessionTests
             time ?? TimeProvider.System,
             lease,
             policy,
-            featureReportSettleDelay);
+            featureReportSettleDelay, developerCounterIdentity: developerCounterIdentity, productionPadIdentity: productionPadIdentity);
     }
 
     private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)

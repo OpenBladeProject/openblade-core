@@ -7,6 +7,35 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ControlRequestHandlerTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CoolingPadRequestsRespectSessionAdmissionBeforeAndAfterActivation(bool resume, bool changesAfterActivation)
+    {
+        var authority = new MutableSessionAuthority(changesAfterActivation ? 4 : 5);
+        var runtime = new RecordingRuntime { AfterActivation = () => authority.SessionId = 5 };
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider(), NullServiceShutdownSignal.Instance, authority);
+        var client = new ServiceClientContext(new SecurityIdentifier("S-1-5-21-1-2-3-1001"), 4, false, ServiceClientLogonKind.Interactive);
+        ServiceRequest request = resume
+            ? new ResumeCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid())
+            : new SetCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), CoolingPadControlSettings.Stopped);
+        ServiceResponse response = await handler.HandleAsync(request, client, default);
+        if (changesAfterActivation)
+        {
+            Assert.True(response.Success);
+            Assert.Equal(ControlOperationStatus.Blocked, response.Result!.Status);
+            Assert.Equal(1, runtime.ActivationCalls);
+        }
+        else
+        {
+            Assert.False(response.Success);
+            Assert.Equal(0, runtime.ActivationCalls);
+        }
+        Assert.Empty(runtime.Calls);
+    }
+
     [Fact]
     public async Task HandleAsync_DispatchesEveryClosedRequestToExactlyOneRuntimeMethod()
     {
@@ -24,6 +53,9 @@ public sealed class ControlRequestHandlerTests
                 PerformanceShortcutSource.FunctionP),
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
+            new SetCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), CoolingPadControlSettings.Stopped),
+            new ResumeCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new RestoreCoolingPadQuietRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.Empty, CoolingPadRestorationStage.Begin, true),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
             new StepKeyboardBrightnessRequest(
                 OpenBladeIpc.ProtocolVersion,
@@ -109,7 +141,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetCoolingPadControl", "ResumeCoolingPadControl", "RestoreCoolingPadQuiet", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
@@ -213,6 +245,7 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Status.FanOverride);
         Assert.Null(response.Status.LightingOverride);
         Assert.Null(response.Status.ThermalConvergence);
+        Assert.Null(response.Status.CoolingPadControl);
         Assert.Equal(["GetStatus"], runtime.Calls);
     }
 
@@ -617,6 +650,8 @@ public sealed class ControlRequestHandlerTests
                 new LiveReadings(-18_000, 2_400, 2_500),
                 null, null, null, false)
             {
+                CoolingPadControl = new(new(CoolingPadControlMode.FixedDemand, new(1500)),
+                    CoolingPadControlState.Paused, CoolingPadControlPauseReason.ExplicitResumeRequired),
                 ThermalConvergence = new ThermalConvergenceStatus(
                     ThermalControlPolicy.MaintainDesiredState,
                     ThermalPolicyUpgradeDisclosureState.NotRequired,
@@ -643,6 +678,20 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) =>
             Record("SetFanOverride");
+
+        public Task<ControlOperationResult> RestoreCoolingPadQuietAsync(RestoreCoolingPadQuietRequest request, string owner,
+            Func<bool> stillControlsSession, CancellationToken token) => stillControlsSession() ? Record("RestoreCoolingPadQuiet")
+                : Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Inactive"));
+
+        public Task<ControlOperationResult> SetCoolingPadControlAsync(
+            CoolingPadControlSettings settings, Func<bool> stillControlsSession, CancellationToken token) =>
+            stillControlsSession() ? Record("SetCoolingPadControl")
+                : Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Session changed."));
+
+        public Task<ControlOperationResult> ResumeCoolingPadControlAsync(
+            Func<bool> stillControlsSession, CancellationToken token) =>
+            stillControlsSession() ? Record("ResumeCoolingPadControl")
+                : Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Session changed."));
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");

@@ -408,6 +408,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         string? applicationBaseDirectory = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
+        CoolingPadControl = new CoolingPadControlViewModel(this.serviceClient, lifetime.Token);
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.diagnosticArchiveSaver = diagnosticArchiveSaver
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
@@ -4712,6 +4713,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lifetime.Cancel();
+        await CoolingPadControl.DisposeAsync();
         foreach (AsyncRelayCommand command in commands)
         {
             await command.DisposeAsync();
@@ -4838,6 +4840,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
+        CoolingPadControl.Update(status, true);
         if (IsConnected
             && previousStatus is not null
             && !performanceHoldReleased
@@ -5527,6 +5530,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         subscriptionConnected = false;
         latestAcceptedRevision = -1;
         IsConnected = false;
+        CoolingPadControl.Disconnect();
         TrayIconState = TrayIconState.GenericError;
         IsReadOnly = true;
         CanControlHardware = false;

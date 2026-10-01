@@ -1386,4 +1386,109 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Review thermal control policy</value></data>
   <data name="Review policy" xml:space="preserve"><value>Review policy</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Review the new default. Restoration stays paused until you select Got it.</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>Cooling-pad control is being validated. Hardware control is not enabled in this build.</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>Fixed demand</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>Host curve</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>Host demand updates are running.</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>Host updates are paused. Check the pad before resuming.</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>Host updates are stopped. The pad may retain its last demand.</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>Stop updates</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>The command outcome is unknown. Further updates are paused.</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>The cooling-pad request could not be completed. Refresh its status before trying again.</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>Updates paused because temperature readings are unavailable or too old. The last demand may remain active.</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Connect the supported cooling pad before enabling HyperBoost.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost requires the supported cooling pad to stay connected.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
+  </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>Cancel restoration</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet.</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes.</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands.</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration.</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>I have checked the pad and confirm the requested physical condition</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>Restoration cancellation could not be confirmed. Further stages are not confirmed.</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation.</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>Restore quiet / confirm stage</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>Retained pad effects require attended resolution. This session cannot resume or restore automatically.</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>Stop retains the last demand. Preferred quiet restoration is available after this session acquires control.</value>
+  </data>
+  <data name="Confirm Medium" xml:space="preserve">
+    <value>Confirm Medium</value>
+  </data>
+  <data name="Confirm quiet" xml:space="preserve">
+    <value>Confirm quiet</value>
+  </data>
+  <data name="Control unavailable" xml:space="preserve">
+    <value>Control unavailable</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Disconnected</value>
+  </data>
+  <data name="Finish restoration" xml:space="preserve">
+    <value>Finish restoration</value>
+  </data>
+  <data name="I checked the pad and confirm these conditions" xml:space="preserve">
+    <value>I checked the pad and confirm these conditions</value>
+  </data>
+  <data name="Restore quiet" xml:space="preserve">
+    <value>Restore quiet</value>
+  </data>
+  <data name="Temperature curve" xml:space="preserve">
+    <value>Temperature curve</value>
+  </data>
+  <data name="Updates paused" xml:space="preserve">
+    <value>Updates paused</value>
+  </data>
+  <data name="Updates running" xml:space="preserve">
+    <value>Updates running</value>
+  </data>
+  <data name="Updates stopped" xml:space="preserve">
+    <value>Updates stopped</value>
+  </data>
 </root>

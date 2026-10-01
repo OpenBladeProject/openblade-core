@@ -1386,4 +1386,109 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>Проверьте политику производительности и вентиляторов</value></data>
   <data name="Review policy" xml:space="preserve"><value>Проверьте политику</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>Ознакомьтесь с новым режимом по умолчанию. Восстановление останется приостановленным, пока вы не выберете «Понятно».</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>Управление охлаждающей подставкой проходит проверку. В этой сборке управление оборудованием не включено.</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>Фиксированная заданная скорость</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>Кривая на компьютере</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>Обновление заданной скорости с компьютера работает.</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>Обновления с компьютера приостановлены. Проверьте подставку перед возобновлением.</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>Обновления с компьютера остановлены. Подставка может сохранить последнюю заданную скорость.</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>Остановить обновления</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>Результат команды неизвестен. Дальнейшие обновления приостановлены.</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>Не удалось завершить запрос к охлаждающей подставке. Обновите её состояние перед повторной попыткой.</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>Обновления приостановлены: показания температуры недоступны или устарели. Последняя заданная скорость может оставаться активной.</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>Подключите поддерживаемую охлаждающую подставку перед включением HyperBoost.</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>Для HyperBoost поддерживаемая охлаждающая подставка должна оставаться подключённой.</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
+  </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>Отменить восстановление</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>Проверьте нормальную работу вентиляторов в среднем режиме, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Подтвердите, чтобы запросить предпочитаемый тихий режим.</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>Проверьте нормальную текущую работу вентиляторов, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Восстановление предпочитаемого тихого режима сначала запрашивает средний режим. Каждое подтверждение состояния подставки действует десять минут.</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>Проверьте работу вентиляторов в предпочитаемом тихом режиме, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Подтвердите, чтобы завершить команды восстановления.</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>Проверьте, что предпочитаемый тихий режим и неизменное освещение остаются нормальными, нет красной индикации или индикации сна, а HyperBoost выключен. Подтвердите, чтобы завершить восстановление.</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>Я проверил подставку и подтверждаю требуемое фактическое состояние</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>Не удалось подтвердить отмену восстановления. Дальнейшие этапы не подтверждены.</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>Не удалось подтвердить восстановление. Обновите состояние; не повторяйте устаревшее подтверждение.</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>Восстановить тихий режим / подтвердить этап</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>Сохранившиеся эффекты подставки требуют устранения в присутствии пользователя. Этот сеанс не может автоматически возобновить работу или выполнить восстановление.</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>Остановка сохраняет последнюю заданную скорость. Восстановление предпочитаемого тихого режима доступно после получения управления этим сеансом.</value>
+  </data>
+  <data name="Confirm Medium" xml:space="preserve">
+    <value>Подтвердить средний режим</value>
+  </data>
+  <data name="Confirm quiet" xml:space="preserve">
+    <value>Подтвердить тихую работу</value>
+  </data>
+  <data name="Control unavailable" xml:space="preserve">
+    <value>Управление недоступно</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Нет подключения</value>
+  </data>
+  <data name="Finish restoration" xml:space="preserve">
+    <value>Завершить восстановление</value>
+  </data>
+  <data name="I checked the pad and confirm these conditions" xml:space="preserve">
+    <value>Я проверил подставку и подтверждаю эти условия</value>
+  </data>
+  <data name="Restore quiet" xml:space="preserve">
+    <value>Восстановить тихую работу</value>
+  </data>
+  <data name="Temperature curve" xml:space="preserve">
+    <value>Температурная кривая</value>
+  </data>
+  <data name="Updates paused" xml:space="preserve">
+    <value>Обновления приостановлены</value>
+  </data>
+  <data name="Updates running" xml:space="preserve">
+    <value>Обновления выполняются</value>
+  </data>
+  <data name="Updates stopped" xml:space="preserve">
+    <value>Обновления остановлены</value>
+  </data>
 </root>

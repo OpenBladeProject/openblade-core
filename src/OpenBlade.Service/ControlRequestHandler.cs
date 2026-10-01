@@ -226,6 +226,14 @@ public sealed class ControlRequestHandler
                     set.Settings,
                     stillControlsSession,
                     cancellationToken)),
+            SetCoolingPadControlRequest set => Result(
+                request.RequestId,
+                await runtime.SetCoolingPadControlAsync(set.Settings, stillControlsSession, cancellationToken)),
+            RestoreCoolingPadQuietRequest restore => Result(request.RequestId,
+                await runtime.RestoreCoolingPadQuietAsync(restore, $"{client.UserSid}:{client.SessionId}", stillControlsSession, cancellationToken)),
+            ResumeCoolingPadControlRequest => Result(
+                request.RequestId,
+                await runtime.ResumeCoolingPadControlAsync(stillControlsSession, cancellationToken)),
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
@@ -388,6 +396,7 @@ public sealed class ControlRequestHandler
             PerformanceOverride = null,
             FanOverride = null,
             FanControlOverride = null,
+            CoolingPadControl = null,
             LightingOverride = null,
             FullChargeOverride = false,
             AlwaysOverrideExternalLightingChanges = false,

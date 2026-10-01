@@ -1386,4 +1386,109 @@
   <data name="Review thermal control policy" xml:space="preserve"><value>查看性能与风扇控制策略</value></data>
   <data name="Review policy" xml:space="preserve"><value>查看策略</value></data>
   <data name="Review the new default. Restoration stays paused until you select Got it." xml:space="preserve"><value>请查看新的默认设置。在你选择“知道了”之前，恢复会保持暂停。</value></data>
+  <data name="Cooling-pad control is being validated. Hardware control is not enabled in this build." xml:space="preserve">
+    <value>散热底座控制正在验证中。此版本尚未启用硬件控制。</value>
+  </data>
+  <data name="Fixed demand" xml:space="preserve">
+    <value>固定目标转速</value>
+  </data>
+  <data name="Host curve" xml:space="preserve">
+    <value>主机风扇曲线</value>
+  </data>
+  <data name="Host demand updates are running." xml:space="preserve">
+    <value>主机目标转速更新正在运行。</value>
+  </data>
+  <data name="Host updates are paused. Check the pad before resuming." xml:space="preserve">
+    <value>主机更新已暂停。恢复前请检查底座。</value>
+  </data>
+  <data name="Host updates are stopped. The pad may retain its last demand." xml:space="preserve">
+    <value>主机更新已停止。底座可能仍保留最后的目标转速。</value>
+  </data>
+  <data name="Stop updates" xml:space="preserve">
+    <value>停止更新</value>
+  </data>
+  <data name="The command outcome is unknown. Further updates are paused." xml:space="preserve">
+    <value>命令结果未知。后续更新已暂停。</value>
+  </data>
+  <data name="The cooling-pad request could not be completed. Refresh its status before trying again." xml:space="preserve">
+    <value>无法完成散热底座请求。重试前请刷新其状态。</value>
+  </data>
+  <data name="Updates paused because temperature readings are unavailable or too old. The last demand may remain active." xml:space="preserve">
+    <value>温度读数不可用或已过期，更新已暂停。最后的目标转速可能仍然生效。</value>
+  </data>
+  <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve">
+    <value>启用 HyperBoost 前，请连接支持的散热底座。</value>
+  </data>
+  <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
+    <value>HyperBoost 需要支持的散热底座保持连接。</value>
+  </data>
+  <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
+    <value>无法确认散热底座连接。启用 HyperBoost 前，请刷新笔记本状态。</value>
+  </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>取消恢复</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>请检查风扇在中档下运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。确认后请求恢复偏好的安静设置。</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>请检查当前风扇运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。恢复偏好的安静设置会先请求中档。每次现场确认在十分钟后失效。</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>请检查风扇在偏好的安静设置下运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。确认后完成恢复命令。</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>请检查偏好的安静设置和未改变的灯光仍保持正常，没有红色或睡眠指示，且 HyperBoost 未启用。确认后完成恢复。</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>我已检查散热垫，并确认其实际状态符合要求</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>无法确认恢复已取消。后续阶段尚未确认。</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>无法确认恢复。请刷新状态，不要重复已过期的确认。</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>恢复安静设置 / 确认阶段</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>散热垫保留的效果需要在场处理。本次会话无法自动继续或恢复。</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>停止后会保留最后请求的转速。本次会话取得控制权后，即可恢复偏好的安静设置。</value>
+  </data>
+  <data name="Confirm Medium" xml:space="preserve">
+    <value>确认中档</value>
+  </data>
+  <data name="Confirm quiet" xml:space="preserve">
+    <value>确认安静运行</value>
+  </data>
+  <data name="Control unavailable" xml:space="preserve">
+    <value>控制不可用</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="Finish restoration" xml:space="preserve">
+    <value>完成恢复</value>
+  </data>
+  <data name="I checked the pad and confirm these conditions" xml:space="preserve">
+    <value>我已检查散热垫，并确认符合这些条件</value>
+  </data>
+  <data name="Restore quiet" xml:space="preserve">
+    <value>恢复安静运行</value>
+  </data>
+  <data name="Temperature curve" xml:space="preserve">
+    <value>温度曲线</value>
+  </data>
+  <data name="Updates paused" xml:space="preserve">
+    <value>更新已暂停</value>
+  </data>
+  <data name="Updates running" xml:space="preserve">
+    <value>正在更新</value>
+  </data>
+  <data name="Updates stopped" xml:space="preserve">
+    <value>更新已停止</value>
+  </data>
 </root>

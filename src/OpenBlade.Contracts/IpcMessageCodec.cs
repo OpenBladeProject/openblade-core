@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 58;
+    public const int ProtocolVersion = 60;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -254,6 +254,10 @@ public static class IpcMessageCodec
                         && Enum.IsDefined(set.Value.Lifetime)
                         && (set.Settings is null
                             || set.Settings.Mode == set.Value.Value),
+            SetCoolingPadControlRequest set => set.Settings is not null,
+            ResumeCoolingPadControlRequest => true,
+            RestoreCoolingPadQuietRequest restore => Enum.IsDefined(restore.Stage)
+                && (restore.Stage == CoolingPadRestorationStage.Begin ? restore.OperationId == Guid.Empty : restore.OperationId != Guid.Empty),
             SetLightingOverrideRequest set =>
                 set.Value is null
                 || set.Value.Value is not null
@@ -686,6 +690,11 @@ public static class IpcMessageCodec
             throw InvalidStatus("capability collections are malformed");
         }
 
+        if (status.CoolingPadControl is { IsWellFormed: false })
+        {
+            throw InvalidStatus("cooling-pad control status is malformed");
+        }
+
         if (string.IsNullOrWhiteSpace(status.ServiceVersion))
         {
             throw InvalidStatus("service version is missing");
@@ -848,6 +857,7 @@ public static class IpcMessageCodec
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
+            CoolingPadControl = null,
         };
 
     private static JsonSerializerOptions CreateSerializerOptions(
@@ -887,6 +897,9 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                JsonPropertyInfo coolingPad = typeInfo.Properties.Single(property =>
+                    string.Equals(property.Name, "coolingPadControl", StringComparison.OrdinalIgnoreCase));
+                coolingPad.ShouldSerialize = static (_, _) => false;
             }
         });
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

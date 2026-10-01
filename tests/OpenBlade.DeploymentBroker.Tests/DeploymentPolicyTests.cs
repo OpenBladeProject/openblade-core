@@ -300,6 +300,52 @@ public sealed class DeploymentPolicyTests : IDisposable
     }
 
     [Fact]
+    public async Task StagingCleanup_RetriesRealSharingViolationAfterOwningHandleCloses()
+    {
+        FileStream? held = null;
+        int delays = 0;
+        BrokerPaths paths = new(root, false, cleanupDelay: (_, _) =>
+        {
+            delays++;
+            held!.Dispose();
+            return Task.CompletedTask;
+        });
+        Guid requestId = Guid.NewGuid();
+        string request = paths.CreateRequestStagingDirectory(requestId);
+        held = new FileStream(Path.Combine(request, "held.bin"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
+        try { await paths.DeleteRequestStagingDirectoryAsync(requestId, default); }
+        finally { held.Dispose(); }
+        Assert.Equal(1, delays);
+        Assert.False(Directory.Exists(request));
+    }
+
+    [Fact]
+    public async Task StagingCleanup_PersistentRealLockHasFiniteAttemptsAndPreservesDirectory()
+    {
+        int delays = 0;
+        BrokerPaths paths = new(root, false, cleanupDelay: (_, _) => { delays++; return Task.CompletedTask; });
+        Guid requestId = Guid.NewGuid();
+        string request = paths.CreateRequestStagingDirectory(requestId);
+        using var held = new FileStream(Path.Combine(request, "held.bin"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
+        await Assert.ThrowsAsync<IOException>(() => paths.DeleteRequestStagingDirectoryAsync(requestId, default));
+        Assert.Equal(BrokerPaths.CleanupAttempts - 1, delays);
+        Assert.True(Directory.Exists(request));
+    }
+
+    [Fact]
+    public async Task StagingCleanup_DoesNotRetryOtherIoFailures()
+    {
+        int attempts = 0, delays = 0;
+        BrokerPaths paths = new(root, false, cleanupDelay: (_, _) => { delays++; return Task.CompletedTask; },
+            deleteDirectory: _ => { attempts++; throw new IOException("Not a sharing violation"); });
+        Guid requestId = Guid.NewGuid();
+        paths.CreateRequestStagingDirectory(requestId);
+        await Assert.ThrowsAsync<IOException>(() => paths.DeleteRequestStagingDirectoryAsync(requestId, default));
+        Assert.Equal(1, attempts);
+        Assert.Equal(0, delays);
+    }
+
+    [Fact]
     public async Task Recovery_BoundsJournalAndReportReads()
     {
         BrokerPaths paths = BrokerPaths.CreateForTests(root);

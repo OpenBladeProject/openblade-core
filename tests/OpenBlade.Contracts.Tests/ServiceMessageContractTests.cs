@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(58, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(60, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -33,6 +33,9 @@ public sealed class ServiceMessageContractTests
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
+            (typeof(SetCoolingPadControlRequest), "setCoolingPadControl"),
+            (typeof(ResumeCoolingPadControlRequest), "resumeCoolingPadControl"),
+            (typeof(RestoreCoolingPadQuietRequest), "restoreCoolingPadQuiet"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
             (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
             (typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage"),
@@ -71,7 +74,7 @@ public sealed class ServiceMessageContractTests
             "ActivePowerSource", "LiveReadings",
             "PadlessHyperBoostEligibility",
             "HyperBoostRestorePending", "HyperBoostBlockingControllers",
-            "ThermalConvergence",
+            "ThermalConvergence", "CoolingPadControl",
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride",
             "BatteryPolicyOverride", "BatteryProtectionOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",

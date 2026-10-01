@@ -286,6 +286,19 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type struct OpenBlade.Contracts.CoolingPadConfiguredRpmDemand
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand>
+  ctor (System.Int32 rpm)
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 get_Rpm()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand left, OpenBlade.Contracts.CoolingPadConfiguredRpmDemand right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand left, OpenBlade.Contracts.CoolingPadConfiguredRpmDemand right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand other)
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 Rpm { get; }
 type enum OpenBlade.Contracts.CoolingPadConnectionState
   field System.Int32 value__
   field const OpenBlade.Contracts.CoolingPadConnectionState Absent = 1
@@ -293,6 +306,177 @@ type enum OpenBlade.Contracts.CoolingPadConnectionState
   field const OpenBlade.Contracts.CoolingPadConnectionState ObservationFailed = 4
   field const OpenBlade.Contracts.CoolingPadConnectionState PresentExact = 2
   field const OpenBlade.Contracts.CoolingPadConnectionState Unavailable = 0
+type enum OpenBlade.Contracts.CoolingPadControlMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadControlMode FixedDemand = 1
+  field const OpenBlade.Contracts.CoolingPadControlMode HostCurve = 2
+  field const OpenBlade.Contracts.CoolingPadControlMode Stop = 0
+type enum OpenBlade.Contracts.CoolingPadControlPauseReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason AdmissionClosed = 2
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason ControllerConflict = 4
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason DeviceUnavailable = 3
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason ExplicitResumeRequired = 11
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason HyperBoostActive = 5
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason None = 0
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason PowerTransition = 10
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason SessionChanged = 9
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason StaleTelemetry = 7
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason SubmissionUnknown = 8
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason TelemetryUnavailable = 6
+  field const OpenBlade.Contracts.CoolingPadControlPauseReason Unsupported = 1
+type sealed class OpenBlade.Contracts.CoolingPadControlSettings
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadControlSettings>
+  ctor (OpenBlade.Contracts.CoolingPadControlMode mode = Stop, System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> fixedDemand = null, OpenBlade.Contracts.CoolingPadDemandCurve cpuCurve = null, OpenBlade.Contracts.CoolingPadDemandCurve gpuCurve = null)
+  method OpenBlade.Contracts.CoolingPadControlMode get_Mode()
+  method OpenBlade.Contracts.CoolingPadControlSettings <Clone>$()
+  method OpenBlade.Contracts.CoolingPadDemandCurve get_CpuCurve()
+  method OpenBlade.Contracts.CoolingPadDemandCurve get_GpuCurve()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> get_FixedDemand()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.CoolingPadControlSettings get_Default()
+  method static OpenBlade.Contracts.CoolingPadControlSettings get_Stopped()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadControlSettings left, OpenBlade.Contracts.CoolingPadControlSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadControlSettings left, OpenBlade.Contracts.CoolingPadControlSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadControlSettings other)
+  property OpenBlade.Contracts.CoolingPadControlMode Mode { get; }
+  property OpenBlade.Contracts.CoolingPadControlSettings Default { get; }
+  property OpenBlade.Contracts.CoolingPadControlSettings Stopped { get; }
+  property OpenBlade.Contracts.CoolingPadDemandCurve CpuCurve { get; }
+  property OpenBlade.Contracts.CoolingPadDemandCurve GpuCurve { get; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> FixedDemand { get; }
+type enum OpenBlade.Contracts.CoolingPadControlState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadControlState Paused = 2
+  field const OpenBlade.Contracts.CoolingPadControlState Running = 1
+  field const OpenBlade.Contracts.CoolingPadControlState Stopped = 0
+  field const OpenBlade.Contracts.CoolingPadControlState Unavailable = 3
+type sealed class OpenBlade.Contracts.CoolingPadControlStatus
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadControlStatus>
+  ctor (OpenBlade.Contracts.CoolingPadControlSettings Requested, OpenBlade.Contracts.CoolingPadControlState State, OpenBlade.Contracts.CoolingPadControlPauseReason PauseReason, System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> PlannedDemand = null, System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> LastAcknowledgedDemand = null)
+  method OpenBlade.Contracts.CoolingPadConnectionState get_Connection()
+  method OpenBlade.Contracts.CoolingPadControlPauseReason get_PauseReason()
+  method OpenBlade.Contracts.CoolingPadControlSettings get_Requested()
+  method OpenBlade.Contracts.CoolingPadControlState get_State()
+  method OpenBlade.Contracts.CoolingPadControlStatus <Clone>$()
+  method OpenBlade.Contracts.CoolingPadRestorationPrompt get_Restoration()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method System.Boolean get_MeasuredRpmReadbackSupported()
+  method System.Boolean get_QuietRestorationAvailable()
+  method System.Boolean get_ResumeRequired()
+  method System.Boolean get_RetainedEffect()
+  method System.Boolean get_RetainedSessionResumable()
+  method System.Boolean get_SubmissionStateUnknown()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> get_LastAcknowledgedDemand()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> get_PlannedDemand()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CoolingPadControlSettings Requested, out OpenBlade.Contracts.CoolingPadControlState State, out OpenBlade.Contracts.CoolingPadControlPauseReason PauseReason, out System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> PlannedDemand, out System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> LastAcknowledgedDemand)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Connection(OpenBlade.Contracts.CoolingPadConnectionState value)
+  method System.Void set_LastAcknowledgedDemand(System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> value)
+  method System.Void set_PauseReason(OpenBlade.Contracts.CoolingPadControlPauseReason value)
+  method System.Void set_PlannedDemand(System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> value)
+  method System.Void set_QuietRestorationAvailable(System.Boolean value)
+  method System.Void set_Requested(OpenBlade.Contracts.CoolingPadControlSettings value)
+  method System.Void set_Restoration(OpenBlade.Contracts.CoolingPadRestorationPrompt value)
+  method System.Void set_ResumeRequired(System.Boolean value)
+  method System.Void set_RetainedEffect(System.Boolean value)
+  method System.Void set_RetainedSessionResumable(System.Boolean value)
+  method System.Void set_State(OpenBlade.Contracts.CoolingPadControlState value)
+  method System.Void set_SubmissionStateUnknown(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadControlStatus left, OpenBlade.Contracts.CoolingPadControlStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadControlStatus left, OpenBlade.Contracts.CoolingPadControlStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadControlStatus other)
+  property OpenBlade.Contracts.CoolingPadConnectionState Connection { get; init; }
+  property OpenBlade.Contracts.CoolingPadControlPauseReason PauseReason { get; init; }
+  property OpenBlade.Contracts.CoolingPadControlSettings Requested { get; init; }
+  property OpenBlade.Contracts.CoolingPadControlState State { get; init; }
+  property OpenBlade.Contracts.CoolingPadRestorationPrompt Restoration { get; init; }
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property System.Boolean MeasuredRpmReadbackSupported { get; }
+  property System.Boolean QuietRestorationAvailable { get; init; }
+  property System.Boolean ResumeRequired { get; init; }
+  property System.Boolean RetainedEffect { get; init; }
+  property System.Boolean RetainedSessionResumable { get; init; }
+  property System.Boolean SubmissionStateUnknown { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> LastAcknowledgedDemand { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadConfiguredRpmDemand> PlannedDemand { get; init; }
+type struct OpenBlade.Contracts.CoolingPadCurvePoint
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadCurvePoint>
+  ctor (System.Int32 TemperatureCelsius, OpenBlade.Contracts.CoolingPadConfiguredRpmDemand Demand)
+  method OpenBlade.Contracts.CoolingPadConfiguredRpmDemand get_Demand()
+  method System.Int32 get_TemperatureCelsius()
+  method System.Void Deconstruct(out System.Int32 TemperatureCelsius, out OpenBlade.Contracts.CoolingPadConfiguredRpmDemand Demand)
+  method System.Void set_Demand(OpenBlade.Contracts.CoolingPadConfiguredRpmDemand value)
+  method System.Void set_TemperatureCelsius(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadCurvePoint left, OpenBlade.Contracts.CoolingPadCurvePoint right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadCurvePoint left, OpenBlade.Contracts.CoolingPadCurvePoint right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadCurvePoint other)
+  property OpenBlade.Contracts.CoolingPadConfiguredRpmDemand Demand { get; init; }
+  property System.Int32 TemperatureCelsius { get; init; }
+type sealed class OpenBlade.Contracts.CoolingPadDemandCurve
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadDemandCurve>
+  ctor (System.Collections.Generic.IEnumerable<OpenBlade.Contracts.CoolingPadCurvePoint> points)
+  ctor (System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> points)
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> get_Points()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadDemandCurve other)
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> Points { get; }
+type sealed class OpenBlade.Contracts.CoolingPadFanCapabilities
+  method OpenBlade.Contracts.DeviceFeatureAccess get_HostDemandAccess()
+  method OpenBlade.Contracts.DeviceNumericRange get_VendorConfiguredDemandRpm()
+  method System.Boolean get_ActiveFanStateReadbackSupported()
+  method System.Boolean get_FullDemandRangePhysicallyValidated()
+  method System.Boolean get_MeasuredRpmReadbackSupported()
+  method System.Boolean get_OwnershipReadbackSupported()
+  method System.UInt16 get_ProductId()
+  method System.UInt16 get_Revision()
+  method System.UInt16 get_VendorId()
+  method static OpenBlade.Contracts.CoolingPadFanCapabilities get_Observed()
+  property OpenBlade.Contracts.CoolingPadFanCapabilities Observed { get; }
+  property OpenBlade.Contracts.DeviceFeatureAccess HostDemandAccess { get; }
+  property OpenBlade.Contracts.DeviceNumericRange VendorConfiguredDemandRpm { get; }
+  property System.Boolean ActiveFanStateReadbackSupported { get; }
+  property System.Boolean FullDemandRangePhysicallyValidated { get; }
+  property System.Boolean MeasuredRpmReadbackSupported { get; }
+  property System.Boolean OwnershipReadbackSupported { get; }
+  property System.UInt16 ProductId { get; }
+  property System.UInt16 Revision { get; }
+  property System.UInt16 VendorId { get; }
+type sealed class OpenBlade.Contracts.CoolingPadRestorationPrompt
+  interface System.IEquatable<OpenBlade.Contracts.CoolingPadRestorationPrompt>
+  ctor (System.Guid OperationId, OpenBlade.Contracts.CoolingPadRestorationStage Stage, System.DateTimeOffset ExpiresAt)
+  method OpenBlade.Contracts.CoolingPadRestorationPrompt <Clone>$()
+  method OpenBlade.Contracts.CoolingPadRestorationStage get_Stage()
+  method System.DateTimeOffset get_ExpiresAt()
+  method System.Guid get_OperationId()
+  method System.Void Deconstruct(out System.Guid OperationId, out OpenBlade.Contracts.CoolingPadRestorationStage Stage, out System.DateTimeOffset ExpiresAt)
+  method System.Void set_ExpiresAt(System.DateTimeOffset value)
+  method System.Void set_OperationId(System.Guid value)
+  method System.Void set_Stage(OpenBlade.Contracts.CoolingPadRestorationStage value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadRestorationPrompt left, OpenBlade.Contracts.CoolingPadRestorationPrompt right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadRestorationPrompt left, OpenBlade.Contracts.CoolingPadRestorationPrompt right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadRestorationPrompt other)
+  property OpenBlade.Contracts.CoolingPadRestorationStage Stage { get; init; }
+  property System.DateTimeOffset ExpiresAt { get; init; }
+  property System.Guid OperationId { get; init; }
+type enum OpenBlade.Contracts.CoolingPadRestorationStage
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadRestorationStage Begin = 0
+  field const OpenBlade.Contracts.CoolingPadRestorationStage Final = 3
+  field const OpenBlade.Contracts.CoolingPadRestorationStage Medium = 1
+  field const OpenBlade.Contracts.CoolingPadRestorationStage Quiet = 2
 type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
   ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)
@@ -1304,7 +1488,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 58
+  field const System.Int32 ProtocolVersion = 60
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1688,6 +1872,41 @@ type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ResolvedSetting<T> other)
   property OpenBlade.Contracts.SettingValueSource Source { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.RestoreCoolingPadQuietRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.RestoreCoolingPadQuietRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Guid OperationId, OpenBlade.Contracts.CoolingPadRestorationStage Stage, System.Boolean PhysicallyConfirmed)
+  method OpenBlade.Contracts.CoolingPadRestorationStage get_Stage()
+  method System.Boolean get_PhysicallyConfirmed()
+  method System.Guid get_OperationId()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Guid OperationId, out OpenBlade.Contracts.CoolingPadRestorationStage Stage, out System.Boolean PhysicallyConfirmed)
+  method System.Void set_OperationId(System.Guid value)
+  method System.Void set_PhysicallyConfirmed(System.Boolean value)
+  method System.Void set_Stage(OpenBlade.Contracts.CoolingPadRestorationStage value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.RestoreCoolingPadQuietRequest left, OpenBlade.Contracts.RestoreCoolingPadQuietRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.RestoreCoolingPadQuietRequest left, OpenBlade.Contracts.RestoreCoolingPadQuietRequest right)
+  method virtual OpenBlade.Contracts.RestoreCoolingPadQuietRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.RestoreCoolingPadQuietRequest other)
+  property OpenBlade.Contracts.CoolingPadRestorationStage Stage { get; init; }
+  property System.Boolean PhysicallyConfirmed { get; init; }
+  property System.Guid OperationId { get; init; }
+type sealed class OpenBlade.Contracts.ResumeCoolingPadControlRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ResumeCoolingPadControlRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ResumeCoolingPadControlRequest left, OpenBlade.Contracts.ResumeCoolingPadControlRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ResumeCoolingPadControlRequest left, OpenBlade.Contracts.ResumeCoolingPadControlRequest right)
+  method virtual OpenBlade.Contracts.ResumeCoolingPadControlRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ResumeCoolingPadControlRequest other)
 type struct OpenBlade.Contracts.RgbColor
   interface System.IEquatable<OpenBlade.Contracts.RgbColor>
   ctor (System.Byte Red, System.Byte Green, System.Byte Blue)
@@ -1853,6 +2072,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
+  method OpenBlade.Contracts.CoolingPadControlStatus get_CoolingPadControl()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method OpenBlade.Contracts.DeviceObservationReason get_ObservationReason()
@@ -1905,6 +2125,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
   method System.Void set_ControllerDetectionWarning(System.String value)
+  method System.Void set_CoolingPadControl(OpenBlade.Contracts.CoolingPadControlStatus value)
   method System.Void set_DesiredState(OpenBlade.Contracts.DesiredDeviceState value)
   method System.Void set_DeviceVerified(System.Boolean value)
   method System.Void set_DisplayBrightnessHidAvailability(OpenBlade.Contracts.DisplayBrightnessHidAvailability value)
@@ -1947,6 +2168,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
   property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
+  property OpenBlade.Contracts.CoolingPadControlStatus CoolingPadControl { get; init; }
   property OpenBlade.Contracts.DesiredDeviceState DesiredState { get; init; }
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
   property OpenBlade.Contracts.DeviceObservationReason ObservationReason { get; init; }
@@ -2028,6 +2250,22 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetCoolingPadControlRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetCoolingPadControlRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.CoolingPadControlSettings Settings)
+  method OpenBlade.Contracts.CoolingPadControlSettings get_Settings()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.CoolingPadControlSettings Settings)
+  method System.Void set_Settings(OpenBlade.Contracts.CoolingPadControlSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetCoolingPadControlRequest left, OpenBlade.Contracts.SetCoolingPadControlRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetCoolingPadControlRequest left, OpenBlade.Contracts.SetCoolingPadControlRequest right)
+  method virtual OpenBlade.Contracts.SetCoolingPadControlRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetCoolingPadControlRequest other)
+  property OpenBlade.Contracts.CoolingPadControlSettings Settings { get; init; }
 type sealed class OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetDisplayBrightnessHidUsageRequest>

@@ -30,6 +30,10 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Session power transition reporting is unavailable."));
 
+    Task<ControlOperationResult> RestoreCoolingPadQuietAsync(Guid operationId, CoolingPadRestorationStage stage,
+        bool physicallyConfirmed, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad restoration is unavailable."));
+
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
     Task<ServiceStatusSnapshot> ObserveStateAsync(
@@ -89,6 +93,15 @@ public interface IServiceClient : IServiceStatusWatcher
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetCoolingPadControlAsync(
+        CoolingPadControlSettings settings,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+
+    Task<ControlOperationResult> ResumeCoolingPadControlAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
 
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,

@@ -436,6 +436,33 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_CoolingPadUsesCompactEditorsAndKeepsSafetyOutsideDetails()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement card = NamedElement(document, "Border", "CoolingPadControlCard");
+        XElement details = NamedElement(document, "Expander", "CoolingPadControlDetailsExpander");
+        Assert.Equal("False", Attribute(details, "IsExpanded"));
+        Assert.Contains(details.Descendants(), element => Attribute(element, "Text") == "{Binding AcknowledgedText}");
+        Assert.Contains(details.Descendants(), element => Attribute(element, "Text") == "Measured fan speed is unavailable.");
+        XElement notice = NamedElement(document, "InfoBar", "CoolingPadNotice");
+        Assert.Equal("{Binding IsNoticeVisible}", Attribute(notice, "AnimatedVisibility.IsVisible"));
+        Assert.Equal("{Binding NoticeText}", Attribute(notice, "Message"));
+        Assert.DoesNotContain(notice, details.Descendants());
+        XElement restoration = NamedElement(document, "Border", "CoolingPadRestorationPanel");
+        Assert.Equal("{Binding IsRestorationVisible}", Attribute(restoration, "AnimatedVisibility.IsVisible"));
+        Assert.DoesNotContain(restoration, details.Descendants());
+        XElement confirmation = restoration.Descendants().Single(element => element.Name.LocalName == "CheckBox");
+        Assert.Equal("{Binding CanConfirmPhysical}", Attribute(confirmation, "IsEnabled"));
+        Assert.Equal("{Binding PhysicalConfirmation, Mode=TwoWay}", Attribute(confirmation, "IsChecked"));
+        Assert.Single(card.Descendants(), element => Attribute(element, "Command") == "{Binding ApplyCommand}");
+        XElement disclosure = card.Descendants().Single(element => element.Name.LocalName == "ToggleButton");
+        Assert.Equal("{Binding IsRestorationGuidanceOpen, Mode=TwoWay}", Attribute(disclosure, "IsChecked"));
+        Assert.Null(Attribute(disclosure, "Command"));
+        Assert.All(new[] { "CoolingPadCpuCurveExpander", "CoolingPadGpuCurveExpander" }, name =>
+            Assert.Equal("False", Attribute(NamedElement(document, "Expander", name), "IsExpanded")));
+    }
+
+    [Fact]
     public void MainWindow_AnimatesConditionalDashboardSubcardsAndExportsJsonProfiles()
     {
         string xaml = ReadMainWindowXaml();
@@ -444,7 +471,16 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(27, animated.Length);
+        Assert.Equal(35, animated.Length);
+        XElement padCard = NamedElement(document, "Border", "CoolingPadControlCard");
+        Assert.Equal("{Binding CoolingPadControl}", Attribute(padCard, "DataContext"));
+        Assert.Equal("{Binding IsVisible}", Attribute(padCard, "AnimatedVisibility.IsVisible"));
+        Assert.Equal(
+            new[] { "{Binding IsFixed}", "{Binding IsCurve}", "{Binding IsResumeVisible}", "{Binding IsRestorationDisclosureVisible}",
+                "{Binding IsNoticeVisible}", "{Binding IsRestorationVisible}", "{Binding HasRestorationStage}" },
+            padCard.Descendants()
+                .Select(element => Attribute(element, "AnimatedVisibility.IsVisible"))
+                .Where(binding => binding is not null));
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -777,6 +813,7 @@ public sealed class CapabilityPresentationTests
             "GpuCoreClockOffsetSlider",
             "GpuMemoryClockOffsetSlider",
             "FixedFanSpeedSlider",
+            "CoolingPadDemandSlider",
             "DashboardChargeLimitSlider",
             "DashboardLightingBrightnessSlider",
             "DashboardAudioMeterColorBoostSlider",
@@ -1075,7 +1112,7 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(25, usages.Length);
+        Assert.Equal(26, usages.Length);
         Assert.All(usages, usage =>
         {
             Assert.NotNull(Attribute(usage, "ItemsSource"));
@@ -1096,7 +1133,11 @@ public sealed class CapabilityPresentationTests
                 "{Binding ",
                 StringComparison.Ordinal) == true)
             .ToArray();
-        Assert.Equal(5, runtimeBoundUsages.Length);
+        Assert.Equal(6, runtimeBoundUsages.Length);
+        XElement padMode = NamedElement(mainWindow, "ResponsiveChoiceSelector", "CoolingPadModeSelector");
+        Assert.Equal("{Binding SelectedMode, Mode=TwoWay}", Attribute(padMode, "SelectedItem"));
+        Assert.Equal("{Binding ModeOptions}", Attribute(padMode, "ItemsSource"));
+        Assert.Null(Attribute(padMode, "SelectionChanged"));
         XElement[] immediateUsages = new[]
             {
                 "DashboardPerformanceSelector",
@@ -1108,7 +1149,8 @@ public sealed class CapabilityPresentationTests
             .Select(name => NamedElement(mainWindow, "ResponsiveChoiceSelector", name))
             .ToArray();
         Assert.Equal(
-            runtimeBoundUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
+            runtimeBoundUsages.Where(usage => usage != padMode)
+                .OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal),
             immediateUsages.OrderBy(usage => Attribute(usage, "Name"), StringComparer.Ordinal));
         Assert.All(immediateUsages, usage =>
         {
