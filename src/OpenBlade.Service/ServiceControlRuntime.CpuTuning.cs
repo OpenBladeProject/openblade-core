@@ -5,6 +5,49 @@ namespace OpenBlade.Service;
 
 public sealed partial class ServiceControlRuntime
 {
+    private readonly object cpuPowerClassificationSync = new();
+    private Task<PowerSource>? cpuPowerClassification;
+
+    // Native admission callbacks are synchronous. Run the fresh classifier off
+    // their context, retaining its actual task until terminal if a caller times
+    // out. A late classification cannot authorize a write or overlap a retry.
+    private bool CpuFreshFullPower(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        Task<PowerSource> worker;
+        CancellationToken workerToken;
+        lock (cpuPowerClassificationSync)
+        {
+            if (cpuPowerClassification is { IsCompleted: false }) { return false; }
+            var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            workerToken = deadline.Token;
+            worker = Task.Run(async () =>
+            {
+                try
+                {
+                    workerToken.ThrowIfCancellationRequested();
+                    PowerSource result = await ResolveCurrentPowerSourceAsync(workerToken,
+                        allowCachedExternalClassification: false).ConfigureAwait(false);
+                    workerToken.ThrowIfCancellationRequested();
+                    return result;
+                }
+                finally { deadline.Dispose(); }
+            }, CancellationToken.None);
+            cpuPowerClassification = worker;
+        }
+        _ = worker.ContinueWith(static completed => { _ = completed.Exception; },
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted
+                | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        try
+        {
+            PowerSource result = worker.WaitAsync(workerToken).GetAwaiter().GetResult();
+            token.ThrowIfCancellationRequested();
+            return result == PowerSource.PluggedIn;
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return false; }
+    }
+
     public async Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
         Func<bool> stillControlsSession, CancellationToken token)
     {
@@ -27,12 +70,12 @@ public sealed partial class ServiceControlRuntime
             if (useInstalledBackend && cpuTuningController.HasLiveBackend)
             {
                 CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration), token).ConfigureAwait(false);
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, token), token).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
             if (!stillControlsSession() || lowPowerGate.IsActive
                 || useInstalledBackend && cpuTuningController.HasLiveBackend
-                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration))
+                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, token))
             {
                 return new(ControlOperationStatus.Blocked, "The CPU observation session changed.");
             }
@@ -99,7 +142,7 @@ public sealed partial class ServiceControlRuntime
                 }
                 long generation = lowPowerGate.Generation;
                 ControlOperationResult live = await cpuTuningController.MutateLiveAsync(settings, restoring,
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation), token).ConfigureAwait(false);
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, token), token).ConfigureAwait(false);
                 if (live.CpuTuning is { } liveStatus)
                 {
                     var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
@@ -128,7 +171,7 @@ public sealed partial class ServiceControlRuntime
                 ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
                 return diagnostic.Check(presence.DetectionWarning is null, "runtime controller detection")
                     && diagnostic.Check(presence.PotentialControllers.Count == 0, "runtime controller absence")
-                    && diagnostic.Check(powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn, "runtime fresh power source")
+                    && diagnostic.Check(CpuFreshFullPower(token), "runtime fresh power source")
                     && diagnostic.Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
                     && diagnostic.Check(lowPowerGate.Generation == savedGeneration, "runtime power generation after probes")
                     && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic)
@@ -168,7 +211,7 @@ public sealed partial class ServiceControlRuntime
         finally { operationGate.Release(); }
     }
 
-    private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation)
+    private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation, CancellationToken token)
     {
         ServiceStatusSnapshot current = GetStatus();
         if (lowPowerGate.Generation != generation || !CpuMutationSafetyAvailable(current, stillControlsSession)
@@ -178,7 +221,7 @@ public sealed partial class ServiceControlRuntime
                 && current.Capabilities?.CpuPowerLimit?.Access != DeviceFeatureAccess.ReadWrite) { return false; }
         ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
         return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
-            && powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn
+            && CpuFreshFullPower(token)
             && deviceProvider.TryGetVerifiedDevice(out _)
             && lowPowerGate.Generation == generation && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
     }

@@ -9,6 +9,151 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade.CpuTuning.Tests", Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(false, AdapterPowerState.FullPower280W)]
+    [InlineData(true, AdapterPowerState.FullPower330W)]
+    public async Task ExternalPowerRequiresFreshBarrelConsensusForSavedAndLive(bool liveTarget, AdapterPowerState adapter)
+    {
+        var live = liveTarget ? new LiveFixture(curve: true, power: false) : null;
+        var context = await CreateContextAsync(admittedSavedBackend: !liveTarget, live: live);
+        context.Power.Power = PowerSource.ExternalUnknown;
+        int samples = 0;
+        context.Device.ReadAdapterPower = async token =>
+        {
+            await Task.Yield();
+            token.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref samples);
+            return adapter;
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(liveTarget ? CpuTuningTarget.LiveNow : CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.True(samples >= 4); // Reclassify at subsequent admission boundaries.
+        Assert.Equal(0, samples % 2);
+        if (liveTarget) { Assert.NotEmpty(live!.Curve!.Sent); }
+        else { Assert.Equal(1, context.Source.Submissions); }
+    }
+
+    [Theory]
+    [InlineData("battery", false)]
+    [InlineData("usb", false)]
+    [InlineData("unknown", false)]
+    [InlineData("failure", false)]
+    [InlineData("usb", true)]
+    public async Task CachedFullPowerCannotAdmitFreshBatteryUsbOrUnclassifiedPower(string failure, bool liveTarget)
+    {
+        var live = liveTarget ? new LiveFixture(curve: true, power: false) : null;
+        var context = await CreateContextAsync(admittedSavedBackend: !liveTarget, live: live);
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        context.Power.Power = failure == "battery" ? PowerSource.Battery : PowerSource.ExternalUnknown;
+        int samples = 0;
+        context.Device.ReadAdapterPower = async _ =>
+        {
+            await Task.Yield();
+            Interlocked.Increment(ref samples);
+            if (failure == "failure") { throw new IOException("unavailable adapter sample"); }
+            return failure == "usb" ? AdapterPowerState.UsbCPower100W : AdapterPowerState.Unknown;
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(liveTarget ? CpuTuningTarget.LiveNow : CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Source.Submissions);
+        if (liveTarget) { Assert.Empty(live!.Curve!.Sent); }
+        if (failure == "battery") { Assert.Equal(0, samples); }
+        else { Assert.True(samples >= 2); }
+    }
+
+    [Theory]
+    [InlineData("session")]
+    [InlineData("generation")]
+    [InlineData("device")]
+    public async Task RevocationDuringAsyncAdapterReadPreventsSavedSubmission(string revoked)
+    {
+        var context = await CreateContextAsync(admittedSavedBackend: true);
+        context.Power.Power = PowerSource.ExternalUnknown;
+        bool active = true;
+        context.Device.ReadAdapterPower = async _ =>
+        {
+            await Task.Yield();
+            if (revoked == "session") { active = false; }
+            else if (revoked == "generation") { context.Gate.Enter(); }
+            else { context.Provider.Available = false; }
+            return AdapterPowerState.FullPower330W;
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => active, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Source.Submissions);
+    }
+
+    [Fact]
+    public async Task ReverseAdmissionReclassifiesRatherThanReusingForwardPower()
+    {
+        var context = await CreateContextAsync(admittedSavedBackend: true);
+        context.Power.Power = PowerSource.ExternalUnknown;
+        int samples = 0;
+        context.Device.ReadAdapterPower = async _ =>
+        {
+            await Task.Yield();
+            return Interlocked.Increment(ref samples) <= 2 ? AdapterPowerState.FullPower330W : AdapterPowerState.UsbCPower100W;
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.EndsWith("Admission failed at: runtime fresh power source.", result.Message);
+        Assert.Equal(4, samples);
+        Assert.Equal(0, context.Source.Submissions);
+        Assert.False(result.CpuTuning!.RestorePending);
+    }
+
+    [Fact]
+    public async Task CancelledClassificationRetainsActualReadAndDeniesOverlappingAdmission()
+    {
+        var context = await CreateContextAsync(admittedSavedBackend: true);
+        context.Power.Power = PowerSource.ExternalUnknown;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int samples = 0;
+        context.Device.ReadAdapterPower = async _ =>
+        {
+            Interlocked.Increment(ref samples);
+            entered.TrySetResult();
+            await release.Task; // Deliberately model an actual read that ignores cancellation.
+            return AdapterPowerState.FullPower330W;
+        };
+        using var cancellation = new CancellationTokenSource();
+        Task<ControlOperationResult> operation = Task.Run(() => context.Runtime.SetCpuTuningAsync(
+            CpuTuningTarget.FirmwareNextBoot, new(null, new(true, -2)), () => true, cancellation.Token));
+        Task? worker = null;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            worker = Assert.IsAssignableFrom<Task>(typeof(ServiceControlRuntime).GetField("cpuPowerClassification",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+            Assert.False(worker.IsCompleted);
+            var next = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+                new(null, new(true, -2)), () => true, default);
+            Assert.Equal(ControlOperationStatus.Blocked, next.Status);
+            Assert.Equal(1, samples);
+            Assert.Equal(0, context.Source.Submissions);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            release.TrySetResult();
+            try { await operation; }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            worker ??= typeof(ServiceControlRuntime).GetField("cpuPowerClassification",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime) as Task;
+            if (worker is not null)
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData("inactive")]
     [InlineData("low-power")]
     [InlineData("unverified")]
@@ -650,9 +795,10 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         if (admittedSavedBackend) { source.Bytes = CpuSavedTuningTransactionTests.Baseline(); }
         var gate = new LowPowerGate();
         var hub = new FakeHub();
+        var power = new FakePowerState { Power = writable ? PowerSource.PluggedIn : PowerSource.Battery };
         var runtime = new ServiceControlRuntime(store,
             new PersistentOverrideStore(Path.Combine(directory, "overrides.json")),
-            new FakePowerState { Power = writable ? PowerSource.PluggedIn : PowerSource.Battery },
+            power,
             hub, provider, new DiagnosticHistory(), gate,
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
@@ -663,7 +809,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         runtime.Initialize(configuration, writable ? PowerSource.PluggedIn : PowerSource.Battery);
         await runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(verified, runtime.GetStatus().DeviceVerified);
-        return new(runtime, device, provider, source, gate, hub);
+        return new(runtime, device, provider, source, gate, hub, power);
     }
 
     public void Dispose()
@@ -672,7 +818,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     private sealed record TestContext(ServiceControlRuntime Runtime, BatteryTestDevice Device,
-        FakeProvider Provider, FakeObservationSource Source, LowPowerGate Gate, FakeHub Hub);
+        FakeProvider Provider, FakeObservationSource Source, LowPowerGate Gate, FakeHub Hub, FakePowerState Power);
 
     private sealed class FakeObservationSource : ICpuTuningObservationSource
     {

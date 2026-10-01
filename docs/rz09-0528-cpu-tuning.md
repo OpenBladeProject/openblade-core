@@ -282,8 +282,16 @@ reads and typed service observation. Its first CO-disable request was rejected
 at forward/inverse admission before journal preparation or firmware submission;
 the PPT and restoration phases did not run. Saved write/restoration validation
 remains pending. First-failed-check diagnostics now preserve the existing
-predicates and short-circuit order ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)). Live controls
-also require trusted native proof and attended readback and restoration. Boot
+predicates and short-circuit order ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)). The installed diagnostic identified the rejecting check as fresh power admission:
+Windows reports unknown external power even on the barrel adapter. CPU admission
+now uses the existing uncached adapter classifier and requires fresh agreeing
+full-power readings. Battery, USB-C, unknown power, cancellation and changed
+session or device state still reject commands ([issue #642](https://github.com/OpenBladeProject/openblade-core/issues/642)).
+The corrected installed write/restoration cycle remains pending.
+The current CPU card is a development UI; a production UI/UX pass follows
+behavior validation.
+
+Live controls also require trusted native proof and attended readback and restoration. Boot
 activation remains unverified and is separate from validating saved persistence.
 
 The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic

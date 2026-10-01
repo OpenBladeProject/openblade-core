@@ -18,6 +18,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Use fresh verified adapter readings for CPU full-power admission when Windows reports unknown external power. Battery, USB-C, unknown and canceled readings still deny commands. ([#642](https://github.com/OpenBladeProject/openblade-core/issues/642))
+
 - Identify the first rejecting safety check when a saved CPU command is denied, without changing admission or retrying commands. ([#641](https://github.com/OpenBladeProject/openblade-core/issues/641))
 - Ignore queued window load callbacks after a language replacement window has been disposed. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
