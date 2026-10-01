@@ -25,12 +25,16 @@ public sealed class IndependentInstalledProcessTests
         await CiNormalLaunchFixture.RunAsync(hidden);
     }
 
-    internal static async Task RunPositiveFixtureAsync(bool hidden)
+    internal static async Task RunPositiveFixtureAsync(bool hidden, Action<string>? reportPhase = null)
     {
+        reportPhase?.Invoke("core-enter");
         using FixtureScope fixture = new();
+        reportPhase?.Invoke("fixture-created");
         await fixture.StartAsync(hidden);
+        reportPhase?.Invoke("fixture-ready");
         File.WriteAllText(Path.Combine(fixture.Root, "launch"), "launch");
         LaunchReport report = await fixture.ReadReportAsync();
+        reportPhase?.Invoke("launch-report-read");
         Assert.True(report.Error is null,
             $"Fixture launch failed: {report.Error}; {JsonSerializer.Serialize(report.Failure)}");
         using Process child = Process.GetProcessById(report.ProcessId);
@@ -50,11 +54,13 @@ public sealed class IndependentInstalledProcessTests
                 report.ParentHandleCandidate, fixture.ParentEvent.SafeWaitHandle));
             Assert.True(DesktopProcessIdentity.ReadCaller().IsSameNormalIdentity(report.Identity!));
             Assert.Equal(fixture.Root, report.WorkingDirectory);
+            reportPhase?.Invoke("assertions-completed");
         }
         finally
         {
             File.WriteAllText(Path.Combine(fixture.Root, "child.exit"), "exit");
             FixtureScope.StopExactFixture(child);
+            reportPhase?.Invoke("child-stopped");
         }
     }
 
@@ -185,6 +191,117 @@ public sealed class IndependentInstalledProcessTests
         Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Succeeded = false }, "nonce", true));
         Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(report with { Error = "failed" }, "nonce", true));
         Assert.False(CiNormalLaunchFixture.IsSuccessfulReport(null, "nonce", true));
+    }
+
+    [Fact]
+    public void CiBootstrapDiagnosticsDistinguishUnconfirmedDrainageAndMissingEvidence()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiDiagnostics." + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal("not collected: owned job drainage unconfirmed",
+                CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: false));
+            string evidence = CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: true);
+            Assert.Contains("bootstrap-phases.txt: FileNotFoundException", evidence);
+            Assert.Contains("host-trace:", evidence);
+            Assert.Contains("NotFoundException", evidence[evidence.IndexOf("host-trace:", StringComparison.Ordinal)..]);
+        }
+        finally { Directory.Delete(root); }
+    }
+
+    [Fact]
+    public void CiBootstrapDiagnosticsBoundTraceEvidenceAndExcludeUnrelatedFiles()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiDiagnostics." + Guid.NewGuid().ToString("N"));
+        string traces = Path.Combine(root, "host-trace");
+        Directory.CreateDirectory(traces);
+        List<string> files = [];
+        try
+        {
+            Write(Path.Combine(root, "bootstrap-phases.txt"), "managed-enter\nidentity-verified\n");
+            Write(Path.Combine(root, "owned-account.json"), "unrelated-account-secret");
+            Write(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.log"), "malformed-name-secret");
+            for (int index = 1; index <= 9; index++)
+            {
+                Write(Path.Combine(traces, $"OpenBlade.DeploymentClient.Tests.{index}.log"),
+                    "omitted-prefix" + new string('x', 10000) + "host-tail-marker");
+            }
+            string evidence = CiNormalLaunchFixture.ReadBootstrapDiagnostics(root, jobDrained: true);
+            Assert.InRange(evidence.Length, 1, 6000);
+            Assert.Contains("managed-enter", evidence);
+            Assert.Contains("host-tail-marker", evidence);
+            Assert.DoesNotContain("omitted-prefix", evidence);
+            Assert.DoesNotContain("unrelated-account-secret", evidence);
+            Assert.DoesNotContain("malformed-name-secret", evidence);
+        }
+        finally
+        {
+            foreach (string path in files) { File.Delete(path); }
+            Directory.Delete(traces);
+            Directory.Delete(root);
+        }
+
+        void Write(string path, string text)
+        {
+            files.Add(path);
+            File.WriteAllText(path, text);
+        }
+    }
+
+    [Theory]
+    [InlineData("ancestry", 1)]
+    [InlineData("phase", 1)]
+    [InlineData("report", 4)]
+    public void CiBootstrapSetupFailuresReturnTerminalDiagnosticsWithoutEnteringCore(string failure, int expected)
+    {
+        string nonce = Guid.NewGuid().ToString("N");
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiNormalLaunch." + nonce);
+        Directory.CreateDirectory(root);
+        int ancestryCalls = 0, coreCalls = 0, phaseCalls = 0;
+        CiNormalLaunchFixture.BootstrapReport? report = null;
+        try
+        {
+            int result = CiNormalLaunchFixture.RunBootstrapWithDiagnostics(root, true, nonce,
+                () =>
+                {
+                    ancestryCalls++;
+                    throw new UnauthorizedAccessException("synthetic ancestry denial");
+                },
+                _ => coreCalls++,
+                phase =>
+                {
+                    phaseCalls++;
+                    Assert.Equal("managed-enter", phase);
+                    if (failure == "phase") { throw new IOException("synthetic phase write failure"); }
+                },
+                value =>
+                {
+                    if (failure == "report") { throw new IOException("synthetic report write failure"); }
+                    report = value;
+                });
+            Assert.Equal(expected, result);
+            Assert.Equal(0, coreCalls);
+            Assert.Equal(1, phaseCalls);
+            Assert.Equal(failure == "phase" ? 0 : 1, ancestryCalls);
+            if (failure != "report")
+            {
+                Assert.NotNull(report);
+                Assert.False(report.Succeeded);
+                Assert.Contains(failure == "phase" ? "synthetic phase write failure" : "synthetic ancestry denial", report.Error);
+            }
+        }
+        finally { Directory.Delete(root); }
+    }
+
+    [Fact]
+    public void CiBootstrapInvalidRootShapeDoesNotInvokeAnyOperationOrWriter()
+    {
+        int calls = 0;
+        int result = CiNormalLaunchFixture.RunBootstrapWithDiagnostics("invalid-relative-root", true, "invalid-nonce",
+            () => calls++, _ => calls++, _ => calls++, _ => calls++);
+        Assert.Equal(2, result);
+        Assert.Equal(0, calls);
     }
 
     private sealed class FixtureScope : IDisposable

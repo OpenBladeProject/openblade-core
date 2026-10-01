@@ -228,7 +228,10 @@ internal static class CiNormalLaunchFixture
             if (!processTerminal) { throw new TimeoutException("The retained normal bootstrap did not terminate in sixty seconds."); }
             if (!GetExitCodeProcess(process, out uint exitCode)) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
             stage = "read-normal-bootstrap-result";
-            BootstrapReport? report = ReadReport(root, "bootstrap-result.json");
+            BootstrapReport? report;
+            try { report = ReadReport(root, "bootstrap-result.json"); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+            { throw new InvalidOperationException($"Normal bootstrap exited {exitCode} without a readable result.", exception); }
             Assert.True(exitCode == 0 && IsSuccessfulReport(report, nonce, hidden),
                 $"Normal bootstrap exit {exitCode}: {JsonSerializer.Serialize(report)}");
         }
@@ -296,26 +299,56 @@ internal static class CiNormalLaunchFixture
                 }
             }
         }
-        if (failure is not null) { ExceptionDispatchInfo.Capture(failure).Throw(); }
+        if (failure is not null)
+        {
+            throw new InvalidOperationException(
+                $"Bootstrap diagnostics: {ReadBootstrapDiagnostics(root, jobDrained)}\nFailure: {BoundedError(failure)}");
+        }
     }
 
     internal static int RunBootstrap(string root, bool hidden, string nonce)
     {
-        ValidateRoot(root, nonce);
+        return RunBootstrapWithDiagnostics(root, hidden, nonce,
+            () => RejectReparseAncestors(root),
+            reportPhase =>
+            {
+                if (!DesktopProcessIdentity.ReadCaller().IsNormal)
+                {
+                    throw new InvalidOperationException("The fixed normal bootstrap context is invalid.");
+                }
+                reportPhase("identity-verified");
+                IndependentInstalledProcessTests.RunPositiveFixtureAsync(hidden, reportPhase).GetAwaiter().GetResult();
+                reportPhase("core-returned");
+            },
+            phase => RecordBootstrapPhase(root, phase),
+            report => WriteResult(root, "bootstrap-result.json", report));
+    }
+
+    // The injectable operations exercise diagnostic failure paths without accounts,
+    // process creation or native identity queries. Production uses the fixed calls above.
+    internal static int RunBootstrapWithDiagnostics(string root, bool hidden, string nonce,
+        Action validateAncestry, Action<Action<string>> runCore, Action<string> writePhase,
+        Action<BootstrapReport> writeReport)
+    {
+        try { ValidateRootShape(root, nonce); }
+        catch (Exception) { return 2; } // Invalid shape: no filesystem access or report writes.
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(root);
+            if ((attributes & FileAttributes.Directory) == 0 || (attributes & FileAttributes.ReparsePoint) != 0)
+            { return 3; }
+        }
+        catch (Exception) { return 3; } // Unknown/reparsed leaf: do not write through it.
         string? error = null;
         try
         {
-            if (!DesktopProcessIdentity.ReadCaller().IsNormal)
-            {
-                throw new InvalidOperationException("The fixed normal bootstrap context is invalid.");
-            }
-            IndependentInstalledProcessTests.RunPositiveFixtureAsync(hidden).GetAwaiter().GetResult();
+            writePhase("managed-enter");
+            validateAncestry(); // Required before identity queries or any fixture work.
+            runCore(writePhase);
         }
-        catch (Exception exception)
-        {
-            error = BoundedError(exception);
-        }
-        WriteResult(root, "bootstrap-result.json", new(nonce, hidden, error is null, error));
+        catch (Exception exception) { error = BoundedError(exception); }
+        try { writeReport(new(nonce, hidden, error is null, error)); }
+        catch (Exception) { return 4; } // Managed entry occurred, but result writing failed.
         return error is null ? 0 : 1;
     }
 
@@ -327,10 +360,15 @@ internal static class CiNormalLaunchFixture
 
     private static void ValidateRoot(string root, string nonce)
     {
+        ValidateRootShape(root, nonce);
+        RejectReparseAncestors(root);
+    }
+
+    private static void ValidateRootShape(string root, string nonce)
+    {
         if (!Guid.TryParseExact(nonce, "N", out _) || !Path.IsPathFullyQualified(root)
             || Path.GetFileName(root) != "OpenBlade.CiNormalLaunch." + nonce)
         { throw new InvalidOperationException("The fixed CI fixture root is invalid."); }
-        RejectReparseAncestors(root);
     }
 
     private static BootstrapReport? ReadReport(string root, string name)
@@ -391,7 +429,7 @@ internal static class CiNormalLaunchFixture
                 "grant-owned-directory-access");
         }
         finally { _ = LocalFree(descriptor); }
-        foreach (string child in new[] { "temp", "profile", "local", "roaming" })
+        foreach (string child in new[] { "temp", "profile", "local", "roaming", "host-trace" })
         { Directory.CreateDirectory(Path.Combine(root, child)); }
     }
 
@@ -461,7 +499,81 @@ internal static class CiNormalLaunchFixture
             ["RUNNER_ENVIRONMENT"] = "github-hosted",
             ["RUNNER_OS"] = "Windows",
         };
+        if (normalBootstrap)
+        {
+            values["DOTNET_DISABLE_GUI_ERRORS"] = "1";
+            values["DOTNET_HOST_TRACE"] = "1";
+            values["DOTNET_HOST_TRACE_VERBOSITY"] = "4";
+            // .NET 10 creates separate executable/PID files in this owned directory.
+            values["DOTNET_HOST_TRACEFILE"] = Path.Combine(root, "host-trace");
+        }
         return Marshal.StringToHGlobalUni(string.Join('\0', values.Select(pair => pair.Key + "=" + pair.Value)) + "\0\0");
+    }
+
+    private static void RecordBootstrapPhase(string root, string phase)
+    {
+        if (phase is not ("managed-enter" or "identity-verified" or "core-enter" or "fixture-created"
+            or "fixture-ready" or "launch-report-read" or "assertions-completed" or "child-stopped" or "core-returned"))
+        { throw new InvalidOperationException("Unexpected bootstrap diagnostic phase."); }
+        using var output = new FileStream(Path.Combine(root, "bootstrap-phases.txt"),
+            phase == "managed-enter" ? FileMode.CreateNew : FileMode.Append, FileAccess.Write, FileShare.Read);
+        if (output.Length > 2048) { throw new InvalidDataException("Bootstrap phases exceeded their bound."); }
+        byte[] bytes = Encoding.UTF8.GetBytes(phase + "\n");
+        output.Write(bytes);
+        output.Flush(flushToDisk: true);
+    }
+
+    internal static string ReadBootstrapDiagnostics(string root, bool jobDrained)
+    {
+        if (!jobDrained) { return "not collected: owned job drainage unconfirmed"; }
+        var result = new StringBuilder();
+        AppendFile("bootstrap-phases.txt", Path.Combine(root, "bootstrap-phases.txt"));
+        string traces = Path.Combine(root, "host-trace");
+        try
+        {
+            if ((File.GetAttributes(traces) & FileAttributes.ReparsePoint) != 0)
+            { return result.Append("host-trace: reparse directory refused").ToString(); }
+            int examined = 0, accepted = 0;
+            foreach (string path in Directory.EnumerateFiles(traces))
+            {
+                if (++examined > 8) { result.Append("host-trace: file limit reached\n"); break; }
+                string name = Path.GetFileName(path);
+                const string prefix = "OpenBlade.DeploymentClient.Tests.";
+                if (name.Length <= prefix.Length + 4
+                    || !name.StartsWith(prefix, StringComparison.Ordinal) || !name.EndsWith(".log", StringComparison.Ordinal)
+                    || !uint.TryParse(name.AsSpan(prefix.Length, name.Length - prefix.Length - 4), out uint id) || id == 0)
+                { continue; }
+                accepted++;
+                AppendFile(name, path);
+            }
+            if (accepted == 0) { result.Append("host-trace: no matching files\n"); }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        { result.Append($"host-trace: {exception.GetType().Name} (0x{exception.HResult:X8})\n"); }
+        const int characterLimit = 6000;
+        const string truncated = "\n[diagnostic character limit]";
+        return result.Length <= characterLimit
+            ? result.ToString()
+            : result.ToString(0, characterLimit - truncated.Length) + truncated;
+
+        void AppendFile(string label, string path)
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                { result.Append($"{label}: reparse file refused\n"); return; }
+                using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                long length = input.Length;
+                input.Position = Math.Max(0, length - 4096);
+                byte[] bytes = new byte[4096];
+                int count = input.Read(bytes);
+                string text = Encoding.UTF8.GetString(bytes, 0, count);
+                if (text.Length > 1024) { text = text[^1024..]; }
+                result.Append($"{label}: {length} bytes; bounded tail: {text}\n");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            { result.Append($"{label}: {exception.GetType().Name} (0x{exception.HResult:X8})\n"); }
+        }
     }
 
     private static void CheckNet(uint result, string operation)
