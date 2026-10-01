@@ -19,7 +19,8 @@ public sealed class IndependentInstalledProcessTests
         await fixture.StartAsync(hidden);
         File.WriteAllText(Path.Combine(fixture.Root, "launch"), "launch");
         LaunchReport report = await fixture.ReadReportAsync();
-        Assert.Null(report.Error);
+        Assert.True(report.Error is null,
+            $"Fixture launch failed: {report.Error}; {JsonSerializer.Serialize(report.Failure)}");
         using Process child = Process.GetProcessById(report.ProcessId);
         _ = child.Handle;
         try
@@ -90,6 +91,32 @@ public sealed class IndependentInstalledProcessTests
         Assert.True(caller.IsSameNormalIdentity(caller));
         Assert.False(caller.IsSameNormalIdentity(parent));
         Assert.False(parent.IsSameNormalIdentity(caller));
+    }
+
+    [Fact]
+    public void LaunchFailure_RoundTripsExceptionAndSanitizedIdentityDetails()
+    {
+        DesktopProcessIdentity caller = new("private-user", 123, 4, "S-1-16-8192", false, false, false,
+            ["private-group"], ["private-privilege"]);
+        DesktopProcessIdentity parent = caller with { Elevated = true, AuthenticationId = 456, Groups = [] };
+        Exception exception = Record.Exception((Action)(() => throw new UnauthorizedAccessException("synthetic rejection")))!;
+        LaunchFailure failure = new("start", exception.Message, exception.HResult, exception.StackTrace,
+            false, LaunchIdentityDiagnostics.From(caller, parent));
+        LaunchReport original = new(0, 0, 0, "fixture", null, exception.GetType().Name, failure);
+        string json = JsonSerializer.Serialize(original);
+        LaunchReport copy = JsonSerializer.Deserialize<LaunchReport>(json)!;
+
+        Assert.Equal(original, copy);
+        Assert.NotNull(copy.Failure!.StackTrace);
+        Assert.True(copy.Failure.Identity!.CallerNormal);
+        Assert.False(copy.Failure.Identity.ParentNormal);
+        Assert.True(copy.Failure.Identity.AuthenticationMismatch);
+        Assert.True(copy.Failure.Identity.GroupsMismatch);
+        Assert.False(copy.Failure.Identity.UserMismatch);
+        Assert.DoesNotContain("private-user", json);
+        Assert.DoesNotContain("private-group", json);
+        Assert.DoesNotContain("private-privilege", json);
+        Assert.DoesNotContain("S-1-16-8192", json);
     }
 
     private sealed class FixtureScope : IDisposable
@@ -207,7 +234,26 @@ public sealed class IndependentInstalledProcessTests
 }
 
 internal sealed record LaunchReport(int ProcessId, long CallerHandleCandidate, long ParentHandleCandidate,
-    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null);
+    string WorkingDirectory, DesktopProcessIdentity? Identity, string? Error = null, LaunchFailure? Failure = null);
+
+internal sealed record LaunchFailure(string Stage, string Message, int HResult, string? StackTrace,
+    bool? ParentExited, LaunchIdentityDiagnostics? Identity, string? DiagnosticError = null);
+
+internal sealed record LaunchIdentityDiagnostics(bool CallerNormal, bool CallerElevated, bool CallerRestricted,
+    bool CallerAppContainer, bool CallerUiAccess, bool? ParentNormal, bool? ParentElevated, bool? ParentRestricted,
+    bool? ParentAppContainer, bool? ParentUiAccess, bool? UserMismatch, bool? AuthenticationMismatch,
+    bool? SessionMismatch, bool? IntegrityMismatch, bool? GroupsMismatch, bool? PrivilegesMismatch)
+{
+    internal static LaunchIdentityDiagnostics From(DesktopProcessIdentity caller, DesktopProcessIdentity? parent) =>
+        new(caller.IsNormal, caller.Elevated, caller.Restricted, caller.AppContainer, caller.UiAccess,
+            parent?.IsNormal, parent?.Elevated, parent?.Restricted, parent?.AppContainer, parent?.UiAccess,
+            parent is null ? null : caller.UserSid != parent.UserSid,
+            parent is null ? null : caller.AuthenticationId != parent.AuthenticationId,
+            parent is null ? null : caller.SessionId != parent.SessionId,
+            parent is null ? null : caller.IntegritySid != parent.IntegritySid,
+            parent is null ? null : !caller.Groups.SequenceEqual(parent.Groups),
+            parent is null ? null : !caller.Privileges.SequenceEqual(parent.Privileges));
+}
 
 // This WinExe apphost runs only bounded fixture processes. It never locates or
 // designates Explorer, and cannot touch an installed product process.
@@ -259,6 +305,9 @@ internal static class LaunchFixture
         if (args.Length == 6 && args[0] == "launch")
         {
             string root = args[1];
+            string stage = "caller-sentinel";
+            SafeProcessHandle? parent = null;
+            DesktopProcessIdentity? identity = null;
             try
             {
                 if (!GetHandleInformation(new(long.Parse(args[2])), out uint handleFlags) || (handleFlags & 1) == 0)
@@ -266,26 +315,61 @@ internal static class LaunchFixture
                     throw new InvalidOperationException("The coordinator did not inherit its event sentinel.");
                 }
 
-                using SafeProcessHandle parent = OpenProcess(0x00101080, false, uint.Parse(args[4]));
+                stage = "open-parent";
+                parent = OpenProcess(0x00101080, false, uint.Parse(args[4]));
                 if (parent.IsInvalid)
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
 
-                DesktopProcessIdentity identity = DesktopProcessIdentity.ReadCaller();
+                stage = "read-caller-identity";
+                identity = DesktopProcessIdentity.ReadCaller();
+                stage = "coordinator-ready";
                 WriteAtomic(root, "coordinator.ready", "ready");
+                stage = "wait-launch";
                 WaitForMarker(root, "launch", 10);
+                stage = "prepare-child-environment";
                 Environment.SetEnvironmentVariable(RootVariable, root);
                 Environment.SetEnvironmentVariable(CallerHandleVariable, args[2]);
                 Environment.SetEnvironmentVariable(ParentHandleVariable, args[5]);
                 bool hidden = bool.Parse(args[3]);
+                stage = "start";
                 using Process child = IndependentInstalledProcess.Start(new(Environment.ProcessPath!, root, hidden,
                     hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal), parent, identity);
+                stage = "child-returned";
                 Thread.Sleep(15000);
             }
             catch (Exception exception)
             {
-                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name));
+                bool? parentExited = null;
+                LaunchIdentityDiagnostics? diagnostic = identity is null ? null : LaunchIdentityDiagnostics.From(identity, null);
+                string? diagnosticError = null;
+                try
+                {
+                    // Failure-only snapshot of the retained fixture parent, not
+                    // the rejected child's token or the original gate instant.
+                    if (parent is { IsInvalid: false, IsClosed: false })
+                    {
+                        parentExited = IndependentInstalledProcess.HasExited(parent);
+                        if (parentExited == false && identity is not null)
+                        {
+                            diagnostic = LaunchIdentityDiagnostics.From(identity, DesktopProcessIdentity.Read(parent));
+                        }
+                    }
+                }
+                catch (Exception diagnosticException)
+                {
+                    // Diagnostics must never replace the original launch failure.
+                    diagnosticError = $"{diagnosticException.GetType().Name}: 0x{diagnosticException.HResult:X8}";
+                }
+
+                WriteReport(root, new(0, 0, 0, root, null, exception.GetType().Name,
+                    new(stage, exception.Message, exception.HResult, exception.StackTrace,
+                        parentExited, diagnostic, diagnosticError)));
+            }
+            finally
+            {
+                parent?.Dispose();
             }
 
             return 0;
