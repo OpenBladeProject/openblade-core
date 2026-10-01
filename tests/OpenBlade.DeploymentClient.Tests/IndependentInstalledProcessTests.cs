@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -335,10 +336,31 @@ public sealed class IndependentInstalledProcessTests
         Assert.NotEqual(root, CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData", "1123456789abcdef0123456789abcdef"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData(" 4")]
+    [InlineData("+4")]
+    [InlineData("9223372036854775808")]
+    public void ParentSentinelHandleRejectsMalformedOrInvalidValues(string text)
+    {
+        Assert.False(LaunchFixture.TryParseSentinelHandle(text, out IntPtr handle));
+        Assert.Equal(IntPtr.Zero, handle);
+    }
+
+    [Fact]
+    public void ParentSentinelHandleParsesInvariantPositiveValueWithoutAdmittingAnObject()
+    {
+        Assert.True(LaunchFixture.TryParseSentinelHandle("4", out IntPtr handle));
+        Assert.Equal(new IntPtr(4), handle);
+        // The parent still requires a real inheritable handle, and the fixture
+        // compares its actual kernel object before allowing the launch phase.
+    }
+
     private sealed class FixtureScope : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), $"OpenBlade.LaunchTest.{Guid.NewGuid():N}");
-        private readonly string parentEventName = $"Local\\OpenBlade.ParentSentinel.{Guid.NewGuid():N}";
         internal EventWaitHandle CallerEvent { get; } = new(false, EventResetMode.ManualReset);
         internal EventWaitHandle ParentEvent { get; }
         internal SafeFileHandle ParentJob { get; } = LaunchFixture.CreateJob(killOnClose: false);
@@ -350,14 +372,27 @@ public sealed class IndependentInstalledProcessTests
         internal FixtureScope()
         {
             Directory.CreateDirectory(Root);
-            ParentEvent = new(false, EventResetMode.ManualReset, parentEventName);
+            ParentEvent = new(false, EventResetMode.ManualReset);
         }
 
         internal async Task StartAsync(bool hidden)
         {
-            Parent = LaunchFixture.StartFixture($"parent \"{Root}\" {parentEventName}", Root, ParentJob);
+            // The sentinel needs object identity, not a session namespace entry.
+            // Only the fixture parent receives this inheritable handle.
+            Assert.True(LaunchFixture.SetHandleInformation(ParentEvent.SafeWaitHandle, 1, 1));
+            try
+            {
+                string sentinelHandle = ParentEvent.SafeWaitHandle.DangerousGetHandle().ToInt64()
+                    .ToString(CultureInfo.InvariantCulture);
+                Parent = LaunchFixture.StartFixture($"parent \"{Root}\" {sentinelHandle}", Root, ParentJob);
+            }
+            finally
+            {
+                Assert.True(LaunchFixture.SetHandleInformation(ParentEvent.SafeWaitHandle, 1, 0));
+            }
+
             await WaitForFileAsync("parent.ready", Parent);
-            long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")));
+            long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")), CultureInfo.InvariantCulture);
             Assert.True(LaunchFixture.IsSameRemoteObject(Parent.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
             Assert.True(LaunchFixture.SetHandleInformation(CallerEvent.SafeWaitHandle, 1, 1));
             Coordinator = LaunchFixture.StartFixture(
@@ -366,6 +401,7 @@ public sealed class IndependentInstalledProcessTests
             await WaitForFileAsync("coordinator.ready", Coordinator);
             Assert.True(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle,
                 CallerEvent.SafeWaitHandle.DangerousGetHandle().ToInt64(), CallerEvent.SafeWaitHandle));
+            Assert.False(LaunchFixture.IsSameRemoteObject(Coordinator.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
         }
 
         internal async Task<LaunchReport> ReadReportAsync()
@@ -517,13 +553,14 @@ internal static class LaunchFixture
 
         if (args.Length == 3 && args[0] == "parent")
         {
-            using EventWaitHandle sentinel = EventWaitHandle.OpenExisting(args[2]);
-            if (!SetHandleInformation(sentinel.SafeWaitHandle, 1, 1))
+            if (!TryParseSentinelHandle(args[2], out IntPtr handle)
+                || !GetHandleInformation(handle, out uint handleFlags) || (handleFlags & 1) == 0)
             {
                 return 3;
             }
 
-            WriteAtomic(args[1], "parent.ready", sentinel.SafeWaitHandle.DangerousGetHandle().ToInt64().ToString());
+            using SafeWaitHandle sentinel = new(handle, ownsHandle: true);
+            WriteAtomic(args[1], "parent.ready", handle.ToInt64().ToString(CultureInfo.InvariantCulture));
             WaitForMarker(args[1], "parent.exit", 25);
             return 0;
         }
@@ -618,6 +655,19 @@ internal static class LaunchFixture
         return 0;
     }
 
+    internal static bool TryParseSentinelHandle(string text, out IntPtr handle)
+    {
+        handle = IntPtr.Zero;
+        if (!long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out long value)
+            || value <= 0 || IntPtr.Size == 4 && value > int.MaxValue)
+        {
+            return false;
+        }
+
+        handle = new(value);
+        return true;
+    }
+
     private static void WaitForMarker(string root, string name, int seconds)
     {
         long start = Stopwatch.GetTimestamp();
@@ -698,7 +748,7 @@ internal static class LaunchFixture
         {
             int error = Marshal.GetLastWin32Error();
             duplicate.Dispose();
-            // Our CreateEvent/OpenEvent sentinels support cross-process duplication
+            // Our unnamed event sentinels support cross-process duplication
             // (also proved by the parent/coordinator positive controls). A missing
             // slot (6) or a reused, nonduplicable object (50) cannot be that event.
             // Permission failures and every other error remain test failures.
