@@ -5,14 +5,17 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveCurveRangeMetadataTests
 {
-    [Fact]
-    public void FixedGettersReturnMagnitudeRangeAndKeepCurrentAsFirmwareShadow()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public void FixedGettersReturnMagnitudeRangeAndKeepCurrentAsFirmwareShadow(string bios)
     {
         var session = new Session();
         session.Pack.Values["Current"] = (uint)400;
         session.Pack.Values["Min"] = (uint)2;
         session.Pack.Values["Max"] = (uint)12;
-        var result = Reader(session).Read(Context(), new Scope());
+        var result = Reader(session).Read(Context() with { Identity = Context().Identity with { BiosVersion = bios } }, new Scope());
         Assert.Equal(CpuLiveCurveRangeStatus.Complete, result.Status);
         Assert.Equal(new CpuLiveCurveTrustedRange(0x5000A, 2, 12, 1, true), result.Range);
         Assert.Equal((uint)400, result.MinMax.FirmwareShadow);
@@ -104,7 +107,7 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
     [InlineData("null")]
     [InlineData("scope")]
     [InlineData("revoked")]
-    [InlineData("bios")]
+    [InlineData("model")]
     [InlineData("source")]
     [InlineData("cancel")]
     public void InvalidTrustNeverOpensProvider(string fault)
@@ -112,7 +115,7 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
         int opens = 0;
         var reader = new WindowsCpuLiveCurveRangeMetadata(_ => { opens++; throw new Exception(); });
         var context = fault == "null" ? null : Context();
-        if (fault == "bios") { context = context! with { Identity = context.Identity with { BiosVersion = "2.03" } }; }
+        if (fault == "model") { context = context! with { Identity = context.Identity with { Model = "RZ09-9999" } }; }
         if (fault == "source") { context = context! with { BootSequence = new(CpuLiveCurveBootSequenceSource.Unknown, 1) }; }
         Scope? scope = fault == "scope" ? null : new() { Current = fault != "revoked" };
         var result = reader.Read(context, scope, fault == "cancel" ? new CancellationToken(true) : default);
@@ -177,7 +180,7 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
     private sealed class Scope : CpuLiveCurveRangeTrustedScope
     {
         internal bool Current = true;
-        internal override bool IsCurrent(CpuLiveCurveContext exactContext) => Current && exactContext == Context();
+        internal override bool IsCurrent(CpuLiveCurveContext exactContext) => Current && Context().MatchesHardwareContext(exactContext);
     }
     private sealed class Session : IWindowsCpuCurveRangeSession
     {

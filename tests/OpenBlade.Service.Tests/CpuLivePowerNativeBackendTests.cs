@@ -6,6 +6,22 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLivePowerNativeBackendTests
 {
+    [Theory]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public async Task BiosProvenanceChangeDoesNotInvalidateTheOtherwiseExactFreshContext(string bios)
+    {
+        var platform = new Platform(); var provider = new Provider(platform);
+        var expected = provider.Context;
+        provider.Context = expected with { Identity = expected.Identity with { BiosVersion = bios } };
+        var backend = new CpuLivePowerNativeBackend(platform, provider, new Metadata());
+        var request = Request(platform.Pair, platform.Pair, CpuLivePowerLimit.Fast, 90000);
+        Assert.Equal(CpuLivePowerSubmission.Acknowledged, await backend.SendAsync(expected, request, default));
+        Assert.Same(request, provider.LastRequest);
+        Assert.Equal(1, platform.Setters);
+        Assert.True(backend.Status.LastNativeResult!.Verified);
+    }
+
     [Fact]
     public async Task ActualReadProfileRequiresIndependentInterpretationAndNeverUsesSetter()
     {

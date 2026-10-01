@@ -54,7 +54,7 @@ public sealed class CpuPmOwnedDriverLifecycleTests
         f.Platform.Abandoned = fault == "abandoned"; f.Platform.Timeout = fault == "mutex-timeout";
         f.Safety.Current = fault switch
         {
-            "host" => f.Safety.Current with { ExactRz090528Bios202Package1 = false },
+            "host" => f.Safety.Current with { ExactRz090528Package1 = false },
             "power" => f.Safety.Current with { AcPower = false },
             "session" => f.Safety.Current with { LocalActiveDefaultSession = false },
             "controllers" => f.Safety.Current with { ControllersAbsent = false },

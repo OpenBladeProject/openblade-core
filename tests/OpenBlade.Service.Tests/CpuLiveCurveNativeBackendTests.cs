@@ -6,6 +6,22 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveNativeBackendTests
 {
+    [Theory]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public async Task BiosProvenanceChangeDoesNotInvalidateTheOtherwiseExactFreshContext(string bios)
+    {
+        var platform = new Platform(); var provider = new Provider();
+        var expected = provider.Context!;
+        provider.Context = expected with { Identity = expected.Identity with { BiosVersion = bios } };
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        Assert.True(await backend.CheckWriteAdmissionAsync(expected, Command(0), CpuLiveCurveCommandPurpose.Forward, default));
+        Assert.Equal(CpuLiveCurveSubmission.Acknowledged,
+            await backend.SendAsync(expected, Command(0), CpuLiveCurveCommandPurpose.Forward, Snapshot(), default));
+        Assert.Equal(1, platform.Setters);
+        Assert.True(backend.Status.LastNativeResult!.Verified);
+    }
+
     [Fact]
     public async Task ActualProtocolCompositionObservesAdmitsWritesAndRestoresFullMixedVector()
     {

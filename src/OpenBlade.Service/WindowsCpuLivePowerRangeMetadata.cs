@@ -97,7 +97,7 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
             try
             {
                 token.ThrowIfCancellationRequested(); checkpoint();
-                if (context is not { IsWellFormed: true } || context.Identity.BiosVersion != "2.02"
+                if (context is not { IsWellFormed: true }
                     || scope is null || !scope.IsCurrent(context)) { throw new AdmissionFailure(); }
             }
             catch (Exception) { throw new AdmissionFailure(); }
@@ -161,7 +161,7 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
     {
         var fields = Fields(output, ["version", "ReturnValue"], check, decoded, final: true);
         // Complete strict enumeration alone can prove absence. Every checkpoint
-        // also pins this compatibility to BIOS2.02 and independent source trust.
+        // also requires exact hardware and independent source trust.
         return fields is not null && fields.TryGetValue("version", out var value) && value is uint version && version == 7
             && (decoded.Raw.ReturnValueState == CpuLivePowerRangeReturnValueState.Absent
                 || decoded.Raw is { ReturnValueState: CpuLivePowerRangeReturnValueState.PresentBoolean, ReturnValue: true })

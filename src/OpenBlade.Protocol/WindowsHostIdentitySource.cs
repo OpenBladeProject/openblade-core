@@ -154,15 +154,23 @@ internal sealed class WindowsHostIdentitySource : IHostIdentitySource
             || !TryReadExact(BiosKey, "SystemManufacturer", expected.Manufacturer, out string biosManufacturer)
             || !TryReadExact(BiosKey, "SystemProductName", expected.ProductName, out string biosProductName)
             || !TryReadExact(BiosKey, "SystemSKU", expected.Sku, out string sku)
-            || !TryReadValue(BiosKey, "BIOSVersion", out string biosVersion)
             || !TryReadExact(SystemInformationKey, "SystemManufacturer", expected.Manufacturer, out string systemManufacturer)
             || !TryReadExact(SystemInformationKey, "SystemProductName", expected.ProductName, out string systemProductName)
-            || !TryReadValue(SystemInformationKey, "BIOSVersion", out string systemBiosVersion)
             || !string.Equals(biosManufacturer, systemManufacturer, StringComparison.Ordinal)
-            || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal)
-            || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
+            || !string.Equals(biosProductName, systemProductName, StringComparison.Ordinal))
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
+        }
+
+        // Keep every hardware/platform read above mandatory. Only BIOS provenance
+        // may be unavailable or inconsistent for a model-scoped admission.
+        bool biosRead = TryReadValue(BiosKey, "BIOSVersion", out string biosVersion);
+        bool systemBiosRead = TryReadValue(SystemInformationKey, "BIOSVersion", out string systemBiosVersion);
+        if (!biosRead || !systemBiosRead || !string.Equals(biosVersion, systemBiosVersion, StringComparison.Ordinal))
+        {
+            if (expected.FirmwareAdmission != FirmwareAdmissionScope.ModelScoped)
+            { return new(null, HidSessionFailureKind.IdentityBlocked); }
+            biosVersion = "Unknown";
         }
 
         bool testedFirmware = expected.ValidatedBiosVersions.Contains(

@@ -8,13 +8,19 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SourceAdmittedPairedObservationRequiresJournalAndDoesNotPromiseARestorableBaseline(bool hasJournal)
+    [InlineData(false, "2.02")]
+    [InlineData(true, "2.02")]
+    [InlineData(false, "Unknown")]
+    [InlineData(true, "Unknown")]
+    public async Task SourceAdmittedPairedObservationRequiresJournalAndDoesNotPromiseARestorableBaseline(bool hasJournal, string bios)
     {
         // Per-core is observable but has no all-core typed reverse. Backend
         // availability must not pretend this particular mutation is admitted.
-        var source = new FakeObservationSource { Saved = Observed(DecodeSaved(2, 41)) };
+        var source = new FakeObservationSource
+        {
+            Saved = Observed(DecodeSaved(2, 41)),
+            Identity = FakeObservationSource.ExactIdentity with { BiosVersion = bios },
+        };
         CpuTuningStatus status = await new CpuTuningController(source, hasJournal ? new EmptyStore() : null)
             .ObserveAsync(false, default);
         Assert.Equal(hasJournal, status.Firmware.CanWrite);
@@ -27,7 +33,7 @@ public sealed class CpuTuningControllerTests
 
     [Theory]
     [InlineData("identity")]
-    [InlineData("bios")]
+    [InlineData("model")]
     [InlineData("status")]
     [InlineData("error")]
     [InlineData("missing-last")]
@@ -51,7 +57,7 @@ public sealed class CpuTuningControllerTests
             Identity = fault switch
             {
                 "identity" => FakeObservationSource.ExactIdentity with { ProductId = 0x02E0 },
-                "bios" => FakeObservationSource.ExactIdentity with { BiosVersion = "2.03" },
+                "model" => FakeObservationSource.ExactIdentity with { Model = "RZ09-9999" },
                 _ => FakeObservationSource.ExactIdentity,
             },
         };

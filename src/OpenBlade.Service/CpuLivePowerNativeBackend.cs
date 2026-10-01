@@ -132,7 +132,7 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     private bool MatchesFresh(CpuLivePowerContext? expected, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        return expected is { IsWellFormed: true } && provider.ReadFreshContext(token) is { IsWellFormed: true } current && current == expected;
+        return expected is { IsWellFormed: true } && provider.ReadFreshContext(token) is { IsWellFormed: true } current && expected.MatchesHardwareContext(current);
     }
     private static bool ValidPair(CpuLivePowerPair? pair) => pair is not null
         && CpuLivePowerValue.TryFromRawBits(pair.Fast.RawBits, out var fast) && fast == pair.Fast

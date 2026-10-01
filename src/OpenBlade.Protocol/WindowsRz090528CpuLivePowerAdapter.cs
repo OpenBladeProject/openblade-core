@@ -70,7 +70,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             { throw new CpuPowerAdmissionException(); }
         }
         bool ExactPowerPlatform() => platform is ICpuPmWindowsPlatform pm
-            && pm.ReadHost() is { Failure: null, Evidence: { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4", BiosVersion: "2.02" } }
+            && pm.ReadHost() is { Failure: null, Evidence: { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" } }
             && pm.ReadPackage() is { MaximumExtendedLeaf: >= 0x80000001, Package: 1 };
         void CheckRange()
         {

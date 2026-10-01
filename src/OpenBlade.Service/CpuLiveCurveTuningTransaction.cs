@@ -108,7 +108,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             var owned = loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } ? loaded.Journal : null;
-            if (owned is not null && observed?.Context is { } currentContext && currentContext != owned.Context)
+            if (owned is not null && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
             if (owned is not null && !Matches(owned, observed, owned.Expected, out baseline))
@@ -184,7 +184,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (loaded.Journal is not { State: CpuLiveCurveOwnershipState.Prepared or CpuLiveCurveOwnershipState.OwnedVerified } journal)
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(journal, loaded.Sha256!, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, journal.Expected, out snapshot))
@@ -230,7 +230,7 @@ internal sealed class CpuLiveCurveTuningTransaction
         if (loaded.Journal is { State: CpuLiveCurveOwnershipState.Blocked }) { return Blocked(CpuLiveCurveBlockReason.StateChanged); }
         var observed = await ObserveAsync(token).ConfigureAwait(false);
         if (loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } owned
-            && observed?.Context is { } currentContext && currentContext != owned.Context)
+            && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
         { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
         if (!Valid(observed, out var snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
         if (loaded.Journal is null or { State: CpuLiveCurveOwnershipState.Restored })
@@ -257,16 +257,16 @@ internal sealed class CpuLiveCurveTuningTransaction
         if (loaded.Sha256 != operation.Hash || loaded.Journal is { State: CpuLiveCurveOwnershipState.Blocked })
         { return Blocked(CpuLiveCurveBlockReason.StateChanged); }
         var observed = await ObserveAsync(token).ConfigureAwait(false);
-        if (observed?.Context is { } currentContext && currentContext != operation.Context)
+        if (observed?.Context is { } currentContext && !operation.Context.MatchesHardwareContext(currentContext))
         {
             return loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } owned
                 ? await BlockJournalAsync(owned, loaded.Sha256!, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false)
                 : Blocked(CpuLiveCurveBlockReason.ContextMismatch);
         }
         if (!Valid(observed, out var snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
-        if (operation.Context != observed!.Context || !operation.Expected.CoreOffsets.SequenceEqual(snapshot!.CoreOffsets))
+        if (!operation.Context.MatchesHardwareContext(observed!.Context) || !operation.Expected.CoreOffsets.SequenceEqual(snapshot!.CoreOffsets))
         {
-            var reason = operation.Context != observed.Context ? CpuLiveCurveBlockReason.ContextMismatch : CpuLiveCurveBlockReason.StateChanged;
+            var reason = !operation.Context.MatchesHardwareContext(observed.Context) ? CpuLiveCurveBlockReason.ContextMismatch : CpuLiveCurveBlockReason.StateChanged;
             return loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } owned
                 ? await BlockJournalAsync(owned, loaded.Sha256!, reason, snapshot).ConfigureAwait(false) : Blocked(reason, snapshot);
         }
@@ -354,7 +354,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             var step = journal.Steps[index];
             var purpose = restoring ? CpuLiveCurveCommandPurpose.Restore : CpuLiveCurveCommandPurpose.Forward;
             var observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(journal, hash, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, journal.Expected, out snapshot))
@@ -470,9 +470,9 @@ internal sealed class CpuLiveCurveTuningTransaction
     }
     private static bool Matches(CpuLiveCurveOwnershipJournal journal, CpuLiveCurveBackendObservation? observed,
         IReadOnlyList<CpuLiveCoreOffset> expected, out CpuLiveCurveSnapshot? snapshot) =>
-        Valid(observed, out snapshot) && journal.Context == observed!.Context && snapshot!.CoreOffsets.SequenceEqual(expected);
+        Valid(observed, out snapshot) && journal.Context.MatchesHardwareContext(observed!.Context) && snapshot!.CoreOffsets.SequenceEqual(expected);
     private static CpuLiveCurveBlockReason MismatchReason(CpuLiveCurveOwnershipJournal journal, CpuLiveCurveBackendObservation? observed) =>
-        observed?.Context != journal.Context ? CpuLiveCurveBlockReason.ContextMismatch : CpuLiveCurveBlockReason.StateChanged;
+        !journal.Context.MatchesHardwareContext(observed?.Context) ? CpuLiveCurveBlockReason.ContextMismatch : CpuLiveCurveBlockReason.StateChanged;
     private static CpuLiveCurveTransactionResult Blocked(CpuLiveCurveBlockReason reason, CpuLiveCurveSnapshot? snapshot = null) =>
         new(CpuLiveCurveOutcome.Blocked, CpuLiveCurveRecovery.Blocked, reason, snapshot);
     private static CpuLiveCurveTransactionResult Uncertain(CpuLiveCurveSnapshot? snapshot = null) =>

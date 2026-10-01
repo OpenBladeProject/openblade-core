@@ -21,7 +21,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             var cpu = shared.ReadProcessor();
             var package = shared.ReadPackage();
             bool exact = host.Failure is null && host.Evidence is
-            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4", BiosVersion: "2.02" }
+            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }
                 && cpu is { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
                 && package.MaximumExtendedLeaf >= 0x80000001 && package.Package == 1;
             bool usb = ExactUsb(shared.ReadUsb());

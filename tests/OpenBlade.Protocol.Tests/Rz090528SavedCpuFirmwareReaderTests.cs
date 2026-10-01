@@ -6,11 +6,15 @@ public sealed class Rz090528SavedCpuFirmwareReaderTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
-    [Fact]
-    public void ReadsOnlyExactVariablesWithBoundedBuffer()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    [InlineData("")]
+    public void ReadsOnlyExactVariablesWithBoundedBuffer(string bios)
     {
         var native = new FakeReader();
-        var result = new Rz090528SavedCpuFirmwareReader(native).Read(Exact);
+        var result = new Rz090528SavedCpuFirmwareReader(native).Read(Exact with { BiosVersion = bios });
         Assert.Equal(SavedCpuFirmwareReadStatus.Observed, result.Status);
         Assert.True(result.HasRestoreBaseline);
         Assert.Equal(new[] { "AodSetupStx", "AodSetupStxLast" }, native.Names);
@@ -19,13 +23,13 @@ public sealed class Rz090528SavedCpuFirmwareReaderTests
     }
 
     [Fact]
-    public void UnsupportedIdentityOrDecoderBiosSkipsAllReads()
+    public void UnsupportedHardwareIdentitySkipsAllReads()
     {
         var native = new FakeReader();
         foreach (var identity in new[]
         {
             Exact with { Model = "RZ09-0581" }, Exact with { VendorId = 1 },
-            Exact with { ProductId = 0x02E0 }, Exact with { BiosVersion = "2.03" },
+            Exact with { ProductId = 0x02E0 },
         })
         {
             var result = new Rz090528SavedCpuFirmwareReader(native).Read(identity);

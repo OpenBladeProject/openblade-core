@@ -66,7 +66,7 @@ internal sealed record CpuSavedTuningTransactionResult(
 internal static class CpuSavedTuningPlan
 {
     internal static bool IsExactIdentity(DeviceIdentity? identity) => identity is
-    { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6, BiosVersion: "2.02" };
+    { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 };
 
     internal static CpuSavedTuningStep[]? Create(byte[] baseline, CpuTuningSettings settings)
     {
@@ -158,7 +158,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         {
             CpuTuningOwnershipJournalLoadResult loaded = await LoadJournalAsync(token).ConfigureAwait(false);
             if (!loaded.Invalid && loaded.Journal is { State: CpuTuningOwnershipState.OwnedVerified } owned
-                && owned.Identity == identity && loaded.Sha256 is not null
+                && CpuHardwareIdentity.Same(owned.Identity, identity) && loaded.Sha256 is not null
                 && settings is { IsWellFormed: true, IsConfigured: true })
             {
                 return await UpdateOwnedAsync(owned, loaded.Sha256, settings, token).ConfigureAwait(false);
@@ -208,7 +208,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         {
             CpuTuningOwnershipJournalLoadResult loaded = await LoadJournalAsync(token).ConfigureAwait(false);
             if (!loaded.Invalid && loaded.Journal is { State: CpuTuningOwnershipState.Prepared } prepared
-                && prepared.Identity == identity && loaded.Sha256 is not null)
+                && CpuHardwareIdentity.Same(prepared.Identity, identity) && loaded.Sha256 is not null)
             {
                 SavedCpuFirmwareReadResult observation = await backend.ReadAsync(identity, token).ConfigureAwait(false);
                 if (!Matches(observation, prepared.BaselineCurrent))
@@ -223,7 +223,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
                     : new(CpuSavedTuningOutcome.Verified, observation, CpuTuningPendingBoot.Unknown, false);
             }
             if (loaded.Invalid || loaded.Journal is not { State: CpuTuningOwnershipState.OwnedVerified } journal
-                || journal.Identity != identity || loaded.Sha256 is null)
+                || !CpuHardwareIdentity.Same(journal.Identity, identity) || loaded.Sha256 is null)
             {
                 return await ObserveCoreAsync(identity, loaded, token).ConfigureAwait(false);
             }
@@ -282,7 +282,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         }
         CpuTuningOwnershipJournal? journal = loaded.Journal;
         bool pending = journal is { State: not CpuTuningOwnershipState.Restored };
-        if (!CpuSavedTuningPlan.IsExactIdentity(identity) || journal is not null && journal.Identity != identity)
+        if (!CpuSavedTuningPlan.IsExactIdentity(identity) || journal is not null && !CpuHardwareIdentity.Same(journal.Identity, identity))
         {
             if (pending && journal is { State: CpuTuningOwnershipState.Prepared or CpuTuningOwnershipState.OwnedVerified })
             { return await LoseOwnershipAsync(journal, loaded.Sha256!, null, CpuSavedTuningBlockReason.IdentityMismatch).ConfigureAwait(false); }

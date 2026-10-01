@@ -55,7 +55,7 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
             try
             {
                 if (token.IsCancellationRequested || context is not { IsWellFormed: true }
-                    || context.Identity.BiosVersion != "2.02" || scope is null || !scope.IsCurrent(context))
+                    || scope is null || !scope.IsCurrent(context))
                 { throw new AdmissionFailure(); }
             }
             catch (Exception) { throw new AdmissionFailure(); }
@@ -100,7 +100,7 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
     private static bool DecodeVersion(IWindowsCpuCurveRangeObject output, Action check, ref CpuLiveCurveRangeRaw raw)
     {
         var fields = Fields(output, ["version", "ReturnValue"], check, ref raw);
-        // Exact BIOS2.02 is enforced by every checkpoint. Only a complete
+        // Exact hardware and trusted scope are checked at every boundary. Only a complete
         // successful enumeration can establish the pinned COM compatibility.
         return fields is not null && fields.TryGetValue("version", out var value) && value is uint word && word == 7
             && (raw.ReturnState == CpuLiveCurveRangeReturnState.Absent

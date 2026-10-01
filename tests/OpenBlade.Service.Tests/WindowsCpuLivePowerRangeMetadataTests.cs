@@ -5,11 +5,15 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLivePowerRangeMetadataTests
 {
-    [Fact]
-    public void FixedContinuousGettersPreserveShadowAndRawIntervalWithoutGrantingRangeAuthority()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public void FixedContinuousGettersPreserveShadowAndRawIntervalWithoutGrantingRangeAuthority(string bios)
     {
         var sessions = new List<Session>();
-        var reader = new WindowsCpuLivePowerRangeMetadata(Context(), new Scope(), _ =>
+        var context = Context() with { Identity = Context().Identity with { BiosVersion = bios } };
+        var reader = new WindowsCpuLivePowerRangeMetadata(context, new Scope(), _ =>
         {
             var session = new Session(); sessions.Add(session);
             session.Pack.Values["Current"] = 400u;
@@ -118,13 +122,13 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     [InlineData("context")]
     [InlineData("scope")]
     [InlineData("revoked")]
-    [InlineData("bios")]
+    [InlineData("model")]
     [InlineData("source")]
     [InlineData("cancel")]
     public void InvalidTrustOrCompatibilityContextDoesNotOpenProvider(string fault)
     {
         var context = fault == "context" ? null : Context();
-        if (fault == "bios") { context = context! with { Identity = context.Identity with { BiosVersion = "2.03" } }; }
+        if (fault == "model") { context = context! with { Identity = context.Identity with { Model = "RZ09-9999" } }; }
         if (fault == "source") { context = context! with { BootSequence = new(CpuLiveCurveBootSequenceSource.Unknown, 42) }; }
         var scope = fault == "scope" ? null : new Scope { Current = fault != "revoked" };
         int opens = 0;
@@ -298,7 +302,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     private sealed class Scope : CpuLivePowerRangeTrustedScope
     {
         internal bool Current = true;
-        internal override bool IsCurrent(CpuLivePowerContext context) => Current && context == Context();
+        internal override bool IsCurrent(CpuLivePowerContext context) => Current && Context().MatchesHardwareContext(context);
     }
     private sealed class Session : IWindowsCpuPowerRangeSession
     {

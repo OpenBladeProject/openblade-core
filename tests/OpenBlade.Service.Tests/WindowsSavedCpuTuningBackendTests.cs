@@ -9,10 +9,13 @@ public sealed class WindowsSavedCpuTuningBackendTests
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
     private static readonly CpuSavedTuningCommand Curve = new(CpuSavedTuningCommandKind.CurveOptimizer, -1);
 
-    [Fact]
-    public async Task SourceAdmittedCommandsStillUseFreshIdentityAndTheInjectedInvoker()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public async Task SourceAdmittedCommandsStillUseFreshIdentityAndTheInjectedInvoker(string bios)
     {
-        var source = new Source();
+        var source = new Source { Identity = Exact with { BiosVersion = bios } };
         var invoker = new Invoker();
         var backend = new WindowsSavedCpuTuningBackend(source,
             (_, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command), invoker);
@@ -50,7 +53,7 @@ public sealed class WindowsSavedCpuTuningBackendTests
     [Fact]
     public async Task ChangedHostIdentityFailsBeforeInvoker()
     {
-        var source = new Source { Identity = Exact with { BiosVersion = "2.03" } };
+        var source = new Source { Identity = Exact with { Model = "RZ09-9999" } };
         var invoker = new Invoker();
         var backend = new WindowsSavedCpuTuningBackend(source, (_, _) => true, invoker);
         Assert.Equal(CpuSavedTuningSubmission.NotSubmitted,

@@ -32,10 +32,13 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         Assert.False(Run(fake, approval).Complete); Assert.Equal(events, fake.Events.Count);
     }
 
-    [Fact]
-    public void ThreeSamplesReuseActualThreadAffineLeaseAndTwoIndependentPmWireGuards()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public void ThreeSamplesReuseActualThreadAffineLeaseAndTwoIndependentPmWireGuards(string bios)
     {
-        var fake = new Fake(); var result = Run(fake);
+        var fake = new Fake { Bios = bios }; var result = Run(fake);
         Assert.True(result.Complete); Assert.Null(result.Diagnostic); Assert.Equal(3, result.CopySamples().Length);
         Assert.Equal(new uint[] { 6, 0x65, 6, 6, 0x65, 6, 6, 0x65, 6 }, fake.Commands);
         Assert.Equal(3, fake.Copies); Assert.Equal(2, fake.IdleDelays);
@@ -49,7 +52,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     }
 
     [Theory]
-    [InlineData("bios")]
+    [InlineData("manufacturer")]
     [InlineData("sku")]
     [InlineData("package")]
     [InlineData("leaf")]
@@ -78,7 +81,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     [Fact]
     public void DriftAcrossDeviceOpenClosesWithoutAnIoctl()
     {
-        var fake = new Fake { AfterOpen = f => f.Failure = "bios" };
+        var fake = new Fake { AfterOpen = f => f.Failure = "manufacturer" };
         Assert.False(Run(fake).Complete); Assert.Empty(fake.Codes);
         Assert.Equal(new[] { "close", "unpin", "release", "mutex-dispose", "continuity-dispose" }, fake.Events.TakeLast(5));
     }
@@ -246,7 +249,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     public void PmUncertainCleanupParksAllPathsEvenWhenCancellationMasksTheFailure(string fault)
     {
         var fake = new Fake { ThrowAt = fault };
-        if (fault == "acquire-cleanup-cancel") { fake.AfterOpen = f => f.Failure = "bios"; }
+        if (fault == "acquire-cleanup-cancel") { fake.AfterOpen = f => f.Failure = "manufacturer"; }
         var result = Run(fake);
         Assert.False(result.Complete);
         Assert.Equal(CpuPmObservationStage.Cleanup, result.Diagnostic!.Stage);
@@ -345,6 +348,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal CpuPmRunOwnedDriverLifetime? FreshLifetime;
         internal string? Failure, ThrowAt;
+        internal string Bios = "2.02";
         internal bool Pinned, Locked, ContinuityFailure, CleanupFailure;
         internal CpuQueryMutexWait Wait = CpuQueryMutexWait.Acquired;
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays;
@@ -358,7 +362,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal Fake() => FreshLifetime = Lifetime;
         private void Event(string value) { Events.Add(value); Threads.Add(Environment.CurrentManagedThreadId); }
         public HostIdentityReadResult ReadHost() => ThrowAt == "host-unknown" ? throw new NotSupportedException()
-            : new(new("Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Failure == "bios" ? "2.03" : "2.02"), null);
+            : new(new(Failure == "manufacturer" ? "other" : "Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Bios), null);
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, Failure == "stepping" ? 1 : 0);
         public CpuPmProcessorPackage ReadPackage() => new(Failure == "leaf" ? 0x80000000 : 0x80000001, Failure == "package" ? 0 : 1);
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, Failure == "usb" ? (ushort)0x02E0 : (ushort)0x02C6, "2.02");

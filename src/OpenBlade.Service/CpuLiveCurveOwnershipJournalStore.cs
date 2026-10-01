@@ -26,6 +26,10 @@ internal sealed record CpuLiveCurveBootSequence(CpuLiveCurveBootSequenceSource S
 internal sealed record CpuLiveCurveContext(DeviceIdentity Identity, uint EnabledCoreMask,
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
+    // Ignore only BIOS provenance; every other context field retains record equality.
+    internal bool MatchesHardwareContext(CpuLiveCurveContext? other) => other is not null
+        && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;
+
     internal bool IsWellFormed => CpuSavedTuningPlan.IsExactIdentity(Identity)
         && EnabledCoreMask == CpuLiveCurveSnapshot.SupportedMask
         && PmVersion == CpuLiveCurveSnapshot.SupportedPmVersion
@@ -129,7 +133,7 @@ internal sealed class CpuLiveCurveOwnershipJournal
 
     internal static CpuLiveCurveOwnershipJournal Prepare(CpuLiveCurveContext context, Rz090528CpuLiveCurvePlan plan,
         CpuLiveCurveOwnershipJournal? owned = null) =>
-        new(3, owned?.TransactionId ?? Guid.NewGuid(), context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
+        new(3, owned?.TransactionId ?? Guid.NewGuid(), owned?.Context ?? context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
             plan.Baseline.CoreOffsets,
             plan.Steps.Select(step => new CpuLiveCurveStoredStep(step.Command.PhysicalCoreId,
                 step.RestoreCommand.Offset, step.Command.Offset)).ToArray(), plan.Baseline.CoreOffsets,

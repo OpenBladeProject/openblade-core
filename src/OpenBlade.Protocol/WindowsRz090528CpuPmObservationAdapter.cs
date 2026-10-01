@@ -264,7 +264,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             _ = CheckContinuity(); var value = platform.ReadHost();
             if (value.Failure is not null || value.Evidence is not
-                { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4", BiosVersion: "2.02" })
+                { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" })
             { throw new IOException("PM host admission denied."); }
             host = value;
             return value;

@@ -34,8 +34,8 @@ internal interface ICpuFirmwareVariableReader
 /// <summary>
 /// Reads the two exact saved AOD variables only. The caller owns privilege
 /// configuration; this reader never enables privileges or mutates firmware.
-/// The observed 800-byte decoder is restricted to BIOS 2.02, independently of
-/// the general production firmware-compatibility policy.
+/// Admission is exact-model scoped; the captured BIOS is provenance only.
+/// Both full images must still satisfy the observed 800-byte layout.
 /// </summary>
 internal sealed class Rz090528SavedCpuFirmwareReader
 {
@@ -53,9 +53,7 @@ internal sealed class Rz090528SavedCpuFirmwareReader
 
     internal SavedCpuFirmwareReadResult Read(DeviceIdentity identity)
     {
-        if (identity is null || identity.Model != "RZ09-0528"
-            || identity.VendorId != 0x1532 || identity.ProductId != 0x02C6
-            || identity.BiosVersion != "2.02")
+        if (!CpuHardwareIdentity.IsRz090528(identity))
         {
             return new(SavedCpuFirmwareReadStatus.UnsupportedIdentity, null, null, 0, 0);
         }

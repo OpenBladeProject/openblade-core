@@ -56,6 +56,8 @@ public sealed class CpuTuningControllerLiveTests
     public async Task CombinedApplyPreparesBothJournalsBeforeFirstSendAndRestoresAcrossRestart()
     {
         var fixture = new Fixture();
+        // Only BIOS provenance differs between the independently observed families.
+        fixture.Power.Context = fixture.Power.Context with { Identity = fixture.Power.Context.Identity with { BiosVersion = "Unknown" } };
         var curveOriginal = fixture.Curve.Values.ToArray(); var powerOriginal = fixture.Power.Pair;
         fixture.Power.OnSend = request =>
         {
@@ -78,6 +80,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.Equal(new(null, 45000, 45000), applied.CpuTuning.LiveState!.PowerLimits);
         Assert.Equal(-2, applied.CpuTuning.LiveState.UniformCurveOptimizerValue);
         fixture.Power.OnSend = null; fixture.Curve.OnSend = null;
+        fixture.Curve.Context = fixture.Curve.Context with { Identity = fixture.Curve.Context.Identity with { BiosVersion = "2.03" } };
         var restored = await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
         Assert.Equal(ControlOperationStatus.Stored, restored.Status);
         Assert.Equal(curveOriginal, fixture.Curve.Values); Assert.Equal(powerOriginal, fixture.Power.Pair);

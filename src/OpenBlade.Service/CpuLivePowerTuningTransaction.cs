@@ -101,7 +101,7 @@ internal sealed class CpuLivePowerTuningTransaction
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             var owned = loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } ? loaded.Journal : null;
-            if (owned is not null && observed?.Context is { } currentContext && currentContext != owned.Context)
+            if (owned is not null && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (owned is not null && !Matches(owned, observed, owned.Expected.Decode()!, out baseline))
@@ -167,7 +167,7 @@ internal sealed class CpuLivePowerTuningTransaction
             if (loaded.Journal is not { State: CpuLivePowerOwnershipState.Prepared or CpuLivePowerOwnershipState.OwnedVerified } journal)
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(journal, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, journal.Expected.Decode()!, out baseline))
@@ -211,7 +211,7 @@ internal sealed class CpuLivePowerTuningTransaction
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked }) { return Blocked(CpuLivePowerBlockReason.StateChanged); }
         var observed = await ObserveAsync(token).ConfigureAwait(false);
         if (loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
-            && observed?.Context is { } currentContext && currentContext != owned.Context)
+            && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
         { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
         if (!Valid(observed, out var pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
         if (loaded.Journal is null or { State: CpuLivePowerOwnershipState.Restored })
@@ -239,16 +239,16 @@ internal sealed class CpuLivePowerTuningTransaction
         if (loaded.Sha256 != operation.Hash || loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked })
         { return Blocked(CpuLivePowerBlockReason.StateChanged); }
         var observed = await ObserveAsync(token).ConfigureAwait(false);
-        if (observed?.Context is { } currentContext && currentContext != operation.Context)
+        if (observed?.Context is { } currentContext && !operation.Context.MatchesHardwareContext(currentContext))
         {
             return loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
                 ? await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false)
                 : Blocked(CpuLivePowerBlockReason.ContextMismatch);
         }
         if (!Valid(observed, out var pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
-        if (operation.Context != observed!.Context || operation.Expected != pair)
+        if (!operation.Context.MatchesHardwareContext(observed!.Context) || operation.Expected != pair)
         {
-            var reason = operation.Context != observed.Context ? CpuLivePowerBlockReason.ContextMismatch : CpuLivePowerBlockReason.StateChanged;
+            var reason = !operation.Context.MatchesHardwareContext(observed.Context) ? CpuLivePowerBlockReason.ContextMismatch : CpuLivePowerBlockReason.StateChanged;
             return loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
                 ? await BlockJournalAsync(owned, loaded.Sha256!, reason, pair).ConfigureAwait(false) : Blocked(reason, pair);
         }
@@ -318,7 +318,7 @@ internal sealed class CpuLivePowerTuningTransaction
             }
             var request = Request(journal, journal.CompletedSteps, scope);
             var observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(journal, hash, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, request.Before, out pair))
@@ -446,9 +446,9 @@ internal sealed class CpuLivePowerTuningTransaction
         return observed?.Context is { IsWellFormed: true } && pair is not null;
     }
     private static bool Matches(CpuLivePowerOwnershipJournal journal, CpuLivePowerBackendObservation? observed,
-        CpuLivePowerPair expected, out CpuLivePowerPair? pair) => Valid(observed, out pair) && journal.Context == observed!.Context && pair == expected;
+        CpuLivePowerPair expected, out CpuLivePowerPair? pair) => Valid(observed, out pair) && journal.Context.MatchesHardwareContext(observed!.Context) && pair == expected;
     private static CpuLivePowerBlockReason MismatchReason(CpuLivePowerOwnershipJournal journal, CpuLivePowerBackendObservation? observed) =>
-        observed?.Context != journal.Context ? CpuLivePowerBlockReason.ContextMismatch : CpuLivePowerBlockReason.StateChanged;
+        !journal.Context.MatchesHardwareContext(observed?.Context) ? CpuLivePowerBlockReason.ContextMismatch : CpuLivePowerBlockReason.StateChanged;
     private static CpuLivePowerTransactionResult Blocked(CpuLivePowerBlockReason reason, CpuLivePowerPair? pair = null) =>
         new(CpuLivePowerOutcome.Blocked, CpuLivePowerRecovery.Blocked, reason, pair);
     private static CpuLivePowerTransactionResult Uncertain(CpuLivePowerPair? pair = null) =>

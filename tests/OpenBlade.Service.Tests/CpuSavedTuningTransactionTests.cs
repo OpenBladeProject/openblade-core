@@ -19,12 +19,13 @@ public sealed class CpuSavedTuningTransactionTests
         Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
             .ApplyAsync(Identity, new(45, new(false, -30)), default)).Outcome);
         Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
-            .ApplyAsync(Identity, new(95, new(true, -30)), default)).Outcome);
+            .ApplyAsync(Identity with { BiosVersion = "2.03" }, new(95, new(true, -30)), default)).Outcome);
         Assert.Equal(original, store.Journal!.BaselineCurrent);
         Assert.Equal(original, store.Journal.BaselineLast);
         Assert.True(CpuSavedSemanticPolicy.MatchesPlan(original, original, store.Journal.Settings, store.Journal.Steps));
         Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
-            .RestoreAsync(Identity, default)).Outcome);
+            .RestoreAsync(Identity with { BiosVersion = "Unknown" }, default)).Outcome);
+        Assert.Equal(Identity, store.Journal.Identity);
         Assert.Equal(original, backend.Bytes);
         Assert.Equal(6, backend.Sent.Count);
         Assert.Equal(new(CpuSavedTuningCommandKind.CurveOptimizer, -1), backend.Sent[^2]);
@@ -84,7 +85,7 @@ public sealed class CpuSavedTuningTransactionTests
         backend.MirrorMismatch = true;
         var drift = await transaction.ObserveOwnershipAsync(Identity, CancellationToken.None);
         Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.PowerLimit), drift.Recovery);
-        var mismatch = await transaction.ObserveOwnershipAsync(Identity with { BiosVersion = "2.03" }, CancellationToken.None);
+        var mismatch = await transaction.ObserveOwnershipAsync(Identity with { Model = "RZ09-9999" }, CancellationToken.None);
         Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None), mismatch.Recovery);
     }
 
@@ -459,7 +460,7 @@ public sealed class CpuSavedTuningTransactionTests
         var transaction = new CpuSavedTuningTransaction(backend, store);
         await transaction.ApplyAsync(Identity, Curve, default);
         Assert.Equal(CpuSavedTuningBlockReason.IdentityMismatch,
-            (await transaction.ObserveOwnershipAsync(Identity with { BiosVersion = "2.03" }, default)).Reason);
+            (await transaction.ObserveOwnershipAsync(Identity with { Model = "RZ09-9999" }, default)).Reason);
         Assert.Equal(CpuTuningOwnershipState.Blocked, store.Journal!.State);
         Assert.Equal(CpuSavedTuningOutcome.Blocked,
             (await new CpuSavedTuningTransaction(backend, store).RestoreAsync(Identity, default)).Outcome);
@@ -575,7 +576,7 @@ public sealed class CpuSavedTuningTransactionTests
         internal bool MirrorMismatch { get; set; }
         internal bool Unavailable { get; set; }
         public Task<bool> CheckWriteAdmissionAsync(DeviceIdentity identity, CpuSavedTuningCommand command, CancellationToken token) =>
-            Task.FromResult(identity == Identity && command.Kind != DeniedKind);
+            Task.FromResult(CpuHardwareIdentity.Same(identity, Identity) && command.Kind != DeniedKind);
         public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();

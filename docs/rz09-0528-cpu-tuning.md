@@ -6,15 +6,20 @@ saved firmware; opting into the installed AMD backend permits passive dependency
 inspection. It does not start a driver or grant permission to tune the CPU.
 
 The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
-and BIOS 2.02 when fresh safety checks, paired readback and a reversible original
+when fresh safety checks, paired readback and a reversible original
 plan pass. Installed LocalSystem/session IPC validation remains pending. Live
 writes remain unavailable. The editor represents the 45–95 W power range and
 −30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
 and retains the editor's negative value. Each feature can be left unmanaged.
 
+Admission is model/SKU scoped. BIOS 2.02 identifies the attended captures below;
+BIOS values, including missing or inconsistent provenance, do not grant or revoke
+CPU admission or ownership. Firmware interface version, complete layout, exact
+hardware, backend lifetime and all command-specific safety checks still apply.
+
 ## Saved firmware
 
-The exact BIOS 2.02 reader compares both saved firmware copies, their attributes,
+The exact-model reader compares both saved firmware copies, their attributes,
 and their complete 800-byte layouts. The service uses a temporary impersonation
 token for the firmware-read privilege. Unsupported curve modes remain unknown.
 Saved configuration is not evidence of the running CPU state or boot activation.
@@ -220,10 +225,10 @@ RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
 interpretation and range admission remain independent provider requirements.
 A Service-owned fixed metadata reader now decodes version 7 and continuous
 selector 50001, preserving partial evidence and actual disposal outcomes.
-Missing version acknowledgement compatibility requires the exact BIOS 2.02
+Missing version acknowledgement compatibility requires the exact model/SKU
 scope; MinMax accepts Boolean true or narrowly classified missing-acknowledgement
 compatibility after this reader actually completes version 7, all getter stages,
-cleanup and fresh local admission on the exact BIOS 2.02 profile. That eligibility
+cleanup and fresh local admission on the exact model/SKU profile. That eligibility
 is consumed before the next continuous `50001` getter; an intervening getter or
 failure cannot reuse it. Compatibility requires complete exact enumeration of all
 five UInt32 fields, selector `50001`, an ordered interval, nonzero stepping and

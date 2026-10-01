@@ -70,7 +70,7 @@ public sealed class WindowsHostIdentitySourceTests
     public static TheoryData<string> RegistryValueLocations()
     {
         TheoryData<string> data = new();
-        foreach (RegistryValueRequest request in ExpectedRequests)
+        foreach (RegistryValueRequest request in ExpectedRequests.Where(request => request.ValueName != "BIOSVersion"))
         {
             data.Add(request.Location);
         }
@@ -82,7 +82,6 @@ public sealed class WindowsHostIdentitySourceTests
     {
         { $"{SystemInformationKey}|SystemManufacturer" },
         { $"{SystemInformationKey}|SystemProductName" },
-        { $"{SystemInformationKey}|BIOSVersion" },
     };
 
     [Fact]
@@ -252,9 +251,41 @@ public sealed class WindowsHostIdentitySourceTests
         HostIdentityReadResult result = new WindowsHostIdentitySource(
             registry,
             new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            new ExpectedHostIdentity("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", ["3.01"]),
             policy).ReadExactIdentity();
 
         AssertIdentityBlocked(result);
+    }
+
+    [Theory]
+    [InlineData("missing", true)]
+    [InlineData("unreadable", true)]
+    [InlineData("inconsistent", true)]
+    [InlineData("wrong-type", true)]
+    [InlineData("missing", false)]
+    [InlineData("unreadable", false)]
+    [InlineData("inconsistent", false)]
+    [InlineData("wrong-type", false)]
+    public void OnlyModelScopedAdmissionToleratesUnavailableBiosProvenance(string fault, bool modelScoped)
+    {
+        var registry = CreateExactRegistry();
+        string location = $"{BiosKey}|BIOSVersion";
+        if (fault == "missing") { registry.Values.Remove(location); }
+        if (fault == "unreadable") { registry.ThrowAt = location; }
+        if (fault == "inconsistent") { registry.Values[location] = "different"; }
+        if (fault == "wrong-type") { registry.Values[location] = 301u; }
+        var expected = new ExpectedHostIdentity("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", ["3.01"],
+            modelScoped ? FirmwareAdmissionScope.ModelScoped : FirmwareAdmissionScope.ExactVersions);
+        var result = new WindowsHostIdentitySource(registry, new FakeWindowsPlatformEvidenceSource(ExactPlatform),
+            expected, new FirmwareCompatibilityPolicy { AllowUntestedFirmware = true }).ReadExactIdentity();
+        if (modelScoped)
+        {
+            Assert.Null(result.Failure);
+            Assert.Equal("Unknown", result.Evidence!.Value.BiosVersion);
+            Assert.Equal(HostFirmwareCompatibility.ModelScoped, result.FirmwareCompatibility);
+            Assert.Equal(ExpectedRequests.Length, registry.Requests.Count);
+        }
+        else { AssertIdentityBlocked(result); }
     }
 
     [Theory]
@@ -414,7 +445,7 @@ public sealed class WindowsHostIdentitySourceTests
         Func<RegistryValueRequest, string> valueFactory)
     {
         TheoryData<string, string> data = new();
-        foreach (RegistryValueRequest request in ExpectedRequests)
+        foreach (RegistryValueRequest request in ExpectedRequests.Where(request => request.ValueName != "BIOSVersion"))
         {
             data.Add(request.Location, valueFactory(request));
         }

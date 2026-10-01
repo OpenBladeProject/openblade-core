@@ -5,10 +5,13 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528CpuPmObservationEngineTests
 {
-    [Fact]
-    public void FixedIdleBatchOwnsOneThreadLeaseAndUsesOnlyExactProfile()
+    [Theory]
+    [InlineData("2.02")]
+    [InlineData("2.03")]
+    [InlineData("Unknown")]
+    public void FixedIdleBatchOwnsOneThreadLeaseAndUsesOnlyExactProfile(string bios)
     {
-        var fake = new Fake();
+        var fake = new Fake { Bios = bios };
         var result = fake.Engine().Observe();
         Assert.True(result.Complete);
         Assert.Null(result.Diagnostic);
@@ -40,7 +43,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
     [Theory]
     [InlineData("package")]
     [InlineData("extended")]
-    [InlineData("bios")]
+    [InlineData("manufacturer")]
     [InlineData("sku")]
     [InlineData("usb")]
     [InlineData("cpu")]
@@ -411,6 +414,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
         private bool leased, awaitingPostCopySelection;
         private readonly Guid session = Guid.NewGuid(), lifetime = Guid.NewGuid();
         internal string? AdmissionFailure, WireFailure;
+        internal string Bios = "2.02";
         internal int FailCopyNumber, Copies, Acquires, Disposals, IdleDelays, PostCopyResponseSelections;
         internal bool MutexBusy, SkipIdleDelay, CleanupThrows;
         internal TimeSpan Now, AcquireElapsed;
@@ -463,7 +467,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 new CpuBackendFileMetadata(entry.Key, entry.Value, true, Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray();
             var backend = new InstalledCpuBackendSnapshot(files, true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, 3, true);
             return new(new("RZ09-0528", 0x1532, AdmissionFailure == "usb" ? (ushort)0x02E0 : (ushort)0x02C6, "2.02"),
-                new(new("Razer", "Blade 16 - RZ09-0528", AdmissionFailure == "sku" ? "wrong" : "RZ09-05289EN4", AdmissionFailure == "bios" ? "2.03" : "2.02"), null),
+                new(new(AdmissionFailure == "manufacturer" ? "other" : "Razer", "Blade 16 - RZ09-0528", AdmissionFailure == "sku" ? "wrong" : "RZ09-05289EN4", Bios), null),
                 new("AuthenticAMD", 0x1A, AdmissionFailure == "cpu" ? 0x25 : 0x24, 0),
                 AdmissionFailure == "extended" ? 0x80000000u : 0x80000001u,
                 AdmissionFailure == "package" ? 0 : 1,

@@ -10,6 +10,10 @@ namespace OpenBlade.Service;
 internal sealed record CpuLivePowerContext(DeviceIdentity Identity, uint EnabledCoreMask,
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
+    // Ignore only BIOS provenance; every other context field retains record equality.
+    internal bool MatchesHardwareContext(CpuLivePowerContext? other) => other is not null
+        && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;
+
     internal bool IsWellFormed => CpuSavedTuningPlan.IsExactIdentity(Identity)
         && EnabledCoreMask == CpuLiveCurveSnapshot.SupportedMask
         && PmVersion == CpuLivePowerSnapshot.SupportedVersion && PmTableLength == CpuLivePowerSnapshot.PayloadLength
@@ -124,7 +128,7 @@ internal sealed class CpuLivePowerOwnershipJournal
 
     internal static CpuLivePowerOwnershipJournal Prepare(CpuLivePowerContext context, Rz090528CpuLivePowerPlan plan,
         CpuLivePowerOwnershipJournal? owned = null) =>
-        new(1, owned?.TransactionId ?? Guid.NewGuid(), context, owned?.OriginalBaseline ?? CpuLivePowerStoredPair.From(plan.Baseline.Pair),
+        new(1, owned?.TransactionId ?? Guid.NewGuid(), owned?.Context ?? context, owned?.OriginalBaseline ?? CpuLivePowerStoredPair.From(plan.Baseline.Pair),
             CpuLivePowerStoredPair.From(plan.Baseline.Pair), plan.Steps.Select(step => new CpuLivePowerStoredStep(step.Command.Limit,
                 CpuLivePowerStoredValue.From(step.Before.Get(step.Command.Limit)), CpuLivePowerStoredValue.From(step.After.Get(step.Command.Limit)))).ToArray(),
             CpuLivePowerStoredPair.From(plan.Baseline.Pair), CpuLivePowerOwnershipState.Prepared, 0, false, DateTimeOffset.UtcNow);

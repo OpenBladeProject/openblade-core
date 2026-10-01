@@ -15,10 +15,10 @@ internal sealed record CpuPmDriverSnapshot(bool RetainedHandle, bool ScmConfigur
 {
     internal bool Owned(string? tag) => RetainedHandle && ScmConfigurationExact && RegistryConfigurationExact && OwnerTag == tag;
 }
-internal sealed record CpuPmDriverSafetySnapshot(bool ExactRz090528Bios202Package1, bool HealthyUniqueUsb,
+internal sealed record CpuPmDriverSafetySnapshot(bool ExactRz090528Package1, bool HealthyUniqueUsb,
     bool AcPower, bool LocalActiveDefaultSession, bool ControllersAbsent, bool VendorAndPayloadPinsHeld, bool TrustedOperatorPremiseAccepted)
 {
-    internal bool Admits => ExactRz090528Bios202Package1 && HealthyUniqueUsb && AcPower && LocalActiveDefaultSession
+    internal bool Admits => ExactRz090528Package1 && HealthyUniqueUsb && AcPower && LocalActiveDefaultSession
         && ControllersAbsent && VendorAndPayloadPinsHeld && TrustedOperatorPremiseAccepted;
 }
 internal sealed record CpuPmDriverOwnerTag

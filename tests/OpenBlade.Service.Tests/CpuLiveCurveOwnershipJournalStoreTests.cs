@@ -106,7 +106,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     [InlineData("null-boot")]
     [InlineData("missing-boot")]
     [InlineData("backend")]
-    [InlineData("bios")]
+    [InlineData("model")]
     [InlineData("missing-field")]
     [InlineData("operation-missing")]
     [InlineData("operation-duplicate")]
@@ -138,7 +138,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
             case "null-boot": node["context"]!["bootSequence"] = null; break;
             case "missing-boot": node["context"]!.AsObject().Remove("bootSequence"); break;
             case "backend": node["context"]!["backend"]!["driverSha256"] = "other"; break;
-            case "bios": node["context"]!["identity"]!["biosVersion"] = "2.03"; break;
+            case "model": node["context"]!["identity"]!["model"] = "RZ09-9999"; break;
             case "missing-field": node.AsObject().Remove("restoring"); break;
             case "operation-missing": node.AsObject().Remove("operationBaseline"); break;
             case "operation-duplicate": node["operationBaseline"]![0]!["physicalCoreId"] = 2; break;

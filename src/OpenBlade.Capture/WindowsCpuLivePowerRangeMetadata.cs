@@ -76,7 +76,7 @@ internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRa
                     var expected = WindowsHostIdentitySource.Rz090528Identity;
                     if (identity.Failure is not null || identity.Evidence is not { } host
                         || host.Manufacturer != expected.Manufacturer || host.ProductName != expected.ProductName
-                        || host.Sku != expected.Sku || host.BiosVersion != "2.02")
+                        || host.Sku != expected.Sku)
                     { throw new InvalidOperationException("Power range profile identity changed."); }
                 }
             }

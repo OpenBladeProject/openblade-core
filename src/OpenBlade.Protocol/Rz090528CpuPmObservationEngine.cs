@@ -255,7 +255,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         CpuPmSessionEvidence evidence = admission.ReadFresh();
         if (evidence.UsbIdentity is not { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
             || evidence.Host.Failure is not null || evidence.Host.Evidence is not
-            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4", BiosVersion: "2.02" }
+            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }
                 || evidence.Processor is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
             || evidence.MaximumExtendedCpuidLeaf < 0x80000001 || evidence.Package != 1
             || !evidence.ControllersAbsent || evidence.Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime

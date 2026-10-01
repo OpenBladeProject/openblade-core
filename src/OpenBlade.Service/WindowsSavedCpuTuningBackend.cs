@@ -43,15 +43,15 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
     }
 
     private bool Check(DeviceIdentity identity, CpuSavedTuningCommand command) =>
-        identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6, BiosVersion: "2.02" }
+        identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
         && IsProductionCommandAdmitted(command) && admitted(identity, command)
-        && source.ReadIdentity() == identity;
+        && CpuHardwareIdentity.Same(source.ReadIdentity(), identity);
 
     public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token) =>
         CpuFirmwareReadScheduler.RunAsync(() =>
         {
             token.ThrowIfCancellationRequested();
-            if (source.ReadIdentity() != identity)
+            if (!CpuHardwareIdentity.Same(source.ReadIdentity(), identity))
             {
                 return new SavedCpuFirmwareReadResult(SavedCpuFirmwareReadStatus.UnsupportedIdentity,
                     null, null, 0, 0);
@@ -71,7 +71,7 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
         return invoker.SendAsync(command, () => Check(identity, command), token);
     }
 
-    // Reviewed source admission for the exact existing model/SKU/BIOS guards.
+    // Reviewed source admission for the exact existing model/SKU guards.
     // This does not replace version-7 negotiation, strict ACK decoding, fresh
     // runtime safety, complete paired readback or exact original restoration.
     // Installed LocalSystem/session IPC validation remains separate.
@@ -149,7 +149,7 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
                         new InvokeMethodOptions { Timeout = OperationDeadline });
                     token.ThrowIfCancellationRequested();
                     // This invoker is reachable only through the exact model,
-                    // USB and BIOS 2.02 admission above. Enumerated absence is
+                    // USB and exact-host admission above. Enumerated absence is
                     // distinct from a failed property read; never swallow a
                     // provider error as successful missing-return compatibility.
                     if (!WindowsSavedCpuWmiOutput.AcceptReturnValue(WindowsSavedCpuWmiOutput.Read(version, "ReturnValue"), PinnedMissingReturnValueCompatibility)

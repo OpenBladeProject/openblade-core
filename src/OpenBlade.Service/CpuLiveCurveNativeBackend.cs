@@ -119,7 +119,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     {
         token.ThrowIfCancellationRequested();
         return expected is { IsWellFormed: true } && provider.ReadFreshContext(token) is { IsWellFormed: true } current
-            && current == expected;
+            && expected.MatchesHardwareContext(current);
     }
     private DeviceIdentity? ReadBoundUsb(CpuLiveCurveContext context, CancellationToken token) =>
         MatchesFresh(context, token) ? context.Identity : null;

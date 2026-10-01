@@ -187,14 +187,15 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     }
 
     [Theory]
-    [InlineData(0u, 0u, 125000u, 1u)] // Attended r6 raw tuple; Current is a shadow, not measured watts.
-    [InlineData(70000u, 10000u, 150000u, 10u)]
-    public void MissingMinMaxAcknowledgementIsSingleUseProfileCandidate(uint current, uint min, uint max, uint step)
+    [InlineData(0u, 0u, 125000u, 1u, "2.02")] // Attended r6 raw tuple; Current is a shadow, not measured watts.
+    [InlineData(70000u, 10000u, 150000u, 10u, "2.03")]
+    [InlineData(0u, 0u, 125000u, 1u, "Unknown")]
+    public void MissingMinMaxAcknowledgementIsSingleUseProfileCandidate(uint current, uint min, uint max, uint step, string bios)
     {
         var version = new Object([Pair("version", 7u)]);
         var output = MissingMinMax(current, min, max, step);
         int opens = 0;
-        var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 ? version : output), () => ExactHost());
+        var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 ? version : output), () => ExactHost(bios));
         var q = reader.QueryVersion(() => { });
         var result = reader.GetMinMaxSteppingValues(() => { });
         Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, result.Status);
@@ -207,7 +208,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
     }
 
     [Theory]
-    [InlineData("bios")]
+    [InlineData("sku")]
     [InlineData("no-identity")]
     [InlineData("no-version")]
     [InlineData("version")]
@@ -243,7 +244,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         if (fault == "unreadable") { output = Envelope(pack) with { FailRead = "ReturnValue" }; }
         int opens = 0;
         var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0 && fault != "no-version" ? version : output),
-            fault == "no-identity" ? null : () => ExactHost(fault == "bios" ? "2.03" : "2.02"));
+            fault == "no-identity" ? null : () => ExactHost(sku: fault == "sku" ? "wrong" : "RZ09-05289EN4"));
         if (fault != "no-version") { reader.QueryVersion(() => { }); }
         if (fault == "intervening") { reader.GetDValues(() => { }); }
         var result = reader.GetMinMaxSteppingValues(() =>
@@ -258,7 +259,7 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         int identities = 0, opens = 0; bool revoked = false;
         var reader = new WindowsCpuLivePowerRangeMetadata(_ => new Session(opens++ == 0
             ? new Object([Pair("version", 7u)]) : MissingMinMax()),
-            () => { identities++; return ExactHost(revoked ? "2.03" : "2.02"); });
+            () => { identities++; return ExactHost(sku: revoked ? "wrong" : "RZ09-05289EN4"); });
         Assert.Equal(0, identities); Assert.Equal(0, opens);
         Assert.Equal(CpuLivePowerRangeMetadataStatus.Complete, reader.QueryVersion(() => { }).Status);
         revoked = true;
@@ -267,8 +268,8 @@ public sealed class WindowsCpuLivePowerRangeMetadataTests
         Assert.Null(reader.GetMinMaxSteppingValues(() => { }).Value);
     }
 
-    private static HostIdentityReadResult ExactHost(string bios = "2.02") =>
-        new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", bios), null);
+    private static HostIdentityReadResult ExactHost(string bios = "2.02", string sku = "RZ09-05289EN4") =>
+        new(new("Razer", "Blade 16 - RZ09-0528", sku, bios), null);
     private static Object MissingMinMax(uint current = 0, uint min = 0, uint max = 125000, uint step = 1) =>
         new([Pair("pack", new Object([Pair("Current", current), Pair("Min", min), Pair("Max", max),
             Pair("Stepping", step), Pair("Value", 0x50001u)]))]);

@@ -413,7 +413,7 @@ internal sealed class CpuTuningController
     }
 
     private static bool CompatibleContexts(CpuLiveCurveContext curve, CpuLivePowerContext power) =>
-        curve.Identity == power.Identity && curve.Backend == power.Backend && curve.BootSequence == power.BootSequence
+        CpuHardwareIdentity.Same(curve.Identity, power.Identity) && curve.Backend == power.Backend && curve.BootSequence == power.BootSequence
         && curve.EnabledCoreMask == power.EnabledCoreMask && curve.PmVersion == power.PmVersion && curve.PmTableLength == power.PmTableLength;
 
     private async Task<(bool Blocked, CpuTuningFeatures Features)> ReadLiveOwnershipAsync(CancellationToken token)
@@ -574,7 +574,7 @@ internal sealed class WindowsCpuTuningObservationSource : ICpuTuningObservationS
 
     public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity)
     {
-        if (identity.BiosVersion != "2.02")
+        if (!CpuHardwareIdentity.IsRz090528(identity))
         {
             return new(SavedCpuFirmwareReadStatus.UnsupportedIdentity, null, null, 0, 0);
         }

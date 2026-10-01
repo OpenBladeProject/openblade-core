@@ -21,6 +21,8 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Equal(12, store.Journal!.CompletedSteps);
         Assert.Equal(original, store.Journal.OriginalBaseline);
         Assert.All(backend.Values, value => Assert.Equal(-2, value.Offset));
+        var originalContext = store.Journal.Context;
+        backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "Unknown" } };
         var restored = await new CpuLiveCurveTuningTransaction(backend, store).RestoreAsync(CancellationToken.None);
         Assert.Equal(CpuLiveCurveOutcome.Verified, restored.Outcome);
         Assert.Equal(CpuLiveCurveRecovery.None, restored.Recovery);
@@ -28,6 +30,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Equal(original.Select(core => core.PhysicalCoreId).Reverse(), backend.Sent.Skip(12).Select(command => command.PhysicalCoreId));
         Assert.Equal(original.Select(core => core.Offset).Reverse(), backend.Sent.Skip(12).Select(command => command.Offset));
         Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal.State);
+        Assert.Equal(originalContext, store.Journal.Context);
     }
 
     [Fact]
@@ -233,7 +236,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
     [InlineData("unknown-boot-source")]
     [InlineData("undefined-boot-source")]
     [InlineData("backend")]
-    [InlineData("bios")]
+    [InlineData("model")]
     [InlineData("unselected-core")]
     public async Task ChangedContextOrVectorBlocksRestoreAcrossRestart(string fault)
     {
@@ -246,7 +249,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         if (fault == "undefined-boot-source") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Source = (CpuLiveCurveBootSequenceSource)999 } }; }
         if (fault == "boot") { Assert.True(backend.Context.IsWellFormed); }
         if (fault == "backend") { backend.Context = backend.Context with { Backend = backend.Context.Backend with { DriverSha256 = "other" } }; }
-        if (fault == "bios") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "2.03" } }; }
+        if (fault == "model") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { Model = "RZ09-9999" } }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         int writes = store.Writes;
@@ -423,7 +426,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
         await transaction.ApplySelectiveAsync([new(0, 0)], default);
         var original = store.Journal!.OriginalBaseline;
         if (fault == "boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 43 } }; }
-        if (fault == "context") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "other" } }; }
+        if (fault == "context") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { Model = "RZ09-9999" } }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.ApplySelectiveAsync([new(8, -2)], default)).Outcome);
         Assert.Equal(original, store.Journal!.OriginalBaseline); Assert.Single(backend.Sent);
@@ -501,12 +504,12 @@ public sealed class CpuLiveCurveTuningTransactionTests
         { Reads++; return Task.FromResult(new CpuLiveCurveBackendObservation(Context, new(0xFF55, 0x005D000B, 0xD50, Values.ToArray()))); }
         public Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CancellationToken token)
-        { Admissions.Add((command, purpose)); return Task.FromResult(context == Context && Admit(command, purpose)); }
+        { Admissions.Add((command, purpose)); return Task.FromResult(Context.MatchesHardwareContext(context) && Admit(command, purpose)); }
         public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token)
         {
             Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
-            Assert.Equal(Context, context); Assert.Equal(Values, expectedBefore.CoreOffsets);
+            Assert.True(Context.MatchesHardwareContext(context)); Assert.Equal(Values, expectedBefore.CoreOffsets);
             Assert.Contains((command, purpose), Admissions);
             Sent.Add(command); return OnSend?.Invoke(command) ?? Apply(command);
         }

@@ -13,10 +13,14 @@ public sealed class CpuLivePowerTuningTransactionTests
         var transaction = new CpuLivePowerTuningTransaction(backend, store);
         Assert.Equal(CpuLivePowerOutcome.Verified, (await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 90)], default)).Outcome);
         var id = store.Journal!.TransactionId;
+        var originalContext = store.Journal.Context;
+        backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "2.03" } };
         Assert.Equal(CpuLivePowerOutcome.Verified, (await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 89), new(CpuLivePowerLimit.Slow, 79)], default)).Outcome);
         Assert.Equal(original, store.Journal!.OriginalBaseline.Decode()); Assert.Equal(id, store.Journal.TransactionId);
         Assert.Equal(90000u, store.Journal.OperationBaseline.Fast.Milliwatts);
+        backend.Context = backend.Context with { Identity = backend.Context.Identity with { BiosVersion = "Unknown" } };
         Assert.Equal(CpuLivePowerOutcome.Verified, (await new CpuLivePowerTuningTransaction(backend, store).RestoreAsync(default)).Outcome);
+        Assert.Equal(originalContext, store.Journal.Context);
         Assert.Equal(original, backend.Pair); Assert.Equal(CpuLivePowerOwnershipState.Restored, store.Journal!.State);
         Assert.Equal(new[] { 100123u, 80765u }, backend.Sent.Skip(3).Select(request => request.Command.Milliwatts));
         Assert.All(backend.Sent, request => Assert.Equal(original, request.Original));
@@ -380,11 +384,11 @@ public sealed class CpuLivePowerTuningTransactionTests
         { Reads++; OnObserve?.Invoke(); return Task.FromResult(new CpuLivePowerBackendObservation(Context, Unavailable ? null : Raw(Pair), Cap, Capability, Range)); }
         public Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
             CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token)
-        { Admissions.Add((command, purpose)); return Task.FromResult(context == Context && Admit(command, purpose)); }
+        { Admissions.Add((command, purpose)); return Task.FromResult(Context.MatchesHardwareContext(context) && Admit(command, purpose)); }
         public Task<CpuLivePowerSubmission> SendAsync(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token)
         {
             Assert.Equal(CpuLivePowerOwnershipState.PossibleSubmission, store.Journal!.State);
-            Assert.Equal(Context, context); Assert.Equal(Pair, request.Before);
+            Assert.True(Context.MatchesHardwareContext(context)); Assert.Equal(Pair, request.Before);
             Assert.Equal(store.Journal.OriginalBaseline.Decode(), request.Original);
             Assert.Equal(request.Before.With(request.Command), request.After);
             Assert.Contains((request.Command, request.Purpose), Admissions);
