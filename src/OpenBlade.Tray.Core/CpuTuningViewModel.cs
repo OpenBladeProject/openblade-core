@@ -49,21 +49,28 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public bool BackendReadWriteAvailable => status?.IsWellFormed == true
         && (LiveNow ? status.Live.CanWrite : status.Firmware.CanWrite);
     public bool CanEdit => IsVisible && BackendReadWriteAvailable && safetyAvailable() && !busy;
-    public bool CanEditPower => CanEdit && capabilities?.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite };
-    public bool CanEditCurve => CanEdit && capabilities?.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite };
+    private bool PowerFeatureAdmitted => capabilities?.CpuPowerLimit is { IsWellFormed: true } power
+        && FeatureAccessAdmitted(power.Access);
+    private bool CurveFeatureAdmitted => capabilities?.CpuVoltageOptimizer is { IsWellFormed: true } curve
+        && FeatureAccessAdmitted(curve.Access);
+    public bool CanEditPower => CanEdit && PowerFeatureAdmitted;
+    public bool CanEditCurve => CanEdit && CurveFeatureAdmitted;
     public bool CanEditPowerValue => CanEditPower && ManagePower;
     public bool CanEditCurveValue => CanEditCurve && ManageCurve && CurveEnabled;
     public bool CanApply => CanEdit && Settings.IsConfigured && Settings.IsWellFormed
         && status?.FirmwareRecovery?.State != CpuTuningRecoveryState.Blocked
         && status?.LiveRecovery?.State != CpuTuningRecoveryState.Blocked
-        && (!ManagePower || CanEditPower) && (!ManageCurve || CanEditCurve);
+        && (!ManagePower || CanEditPower && capabilities!.CpuPowerLimit!.Watts.Supports(PowerLimitWatts))
+        && (!ManageCurve || CanEditCurve && (CurveEnabled
+            ? capabilities!.CpuVoltageOptimizer!.Value.Supports(CurveValue)
+            : capabilities!.CpuVoltageOptimizer!.SupportsEnableDisable));
     public bool CanRestore => CanEdit && status?.RestorePending == true
         && (LiveNow ? status.LiveRecovery : status.FirmwareRecovery)
             is { IsWellFormed: true, State: CpuTuningRecoveryState.RestoreReady } recovery
         && (!recovery.Features.HasFlag(CpuTuningFeatures.PowerLimit)
-            || capabilities?.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
+            || PowerFeatureAdmitted)
         && (!recovery.Features.HasFlag(CpuTuningFeatures.CurveOptimizer)
-            || capabilities?.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite });
+            || CurveFeatureAdmitted);
     public bool CanRefresh => IsVisible && connected() && !busy;
     public string TargetLabel => TrayText.Get(LiveNow ? "Live now" : "Next boot");
     public string ApplyLabel => TrayText.Get(LiveNow ? "Apply now" : "Save for next boot");
@@ -111,6 +118,11 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         ApplyCommand.NotifyCanExecuteChanged();
         RestoreCommand.NotifyCanExecuteChanged();
     }
+
+    // Shared observed capability discovery does not admit a live backend. Saved
+    // controls additionally require the selected firmware backend's CanWrite.
+    private bool FeatureAccessAdmitted(DeviceFeatureAccess access) => access == DeviceFeatureAccess.ReadWrite
+        || !LiveNow && access == DeviceFeatureAccess.ObservedOnly;
 
     private async Task RunAsync(Func<Task<ControlOperationResult>> operation)
     {
