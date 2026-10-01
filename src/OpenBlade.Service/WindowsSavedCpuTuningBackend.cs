@@ -44,7 +44,7 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
 
     private bool Check(DeviceIdentity identity, CpuSavedTuningCommand command) =>
         identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6, BiosVersion: "2.02" }
-        && command is { IsWellFormed: true } && admitted(identity, command)
+        && IsProductionCommandAdmitted(command) && admitted(identity, command)
         && source.ReadIdentity() == identity;
 
     public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token) =>
@@ -71,12 +71,13 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
         return invoker.SendAsync(command, () => Check(identity, command), token);
     }
 
-    // This is a production admission decision, independent of preference,
-    // saved-state availability, journal contents or a machine-local artifact.
-    // Attended published-Service cycles verified saved mutation and recovery.
-    // Installed LocalSystem/session IPC and controls remain unverified, and
-    // confirmed ownership loss must remain durable. No setter is admitted yet.
-    internal static bool IsProductionCommandAdmitted(CpuSavedTuningCommand command) => false;
+    // Reviewed source admission for the exact existing model/SKU/BIOS guards.
+    // This does not replace version-7 negotiation, strict ACK decoding, fresh
+    // runtime safety, complete paired readback or exact original restoration.
+    // Installed LocalSystem/session IPC validation remains separate.
+    internal static bool IsProductionCommandAdmitted(CpuSavedTuningCommand command) =>
+        command is { IsWellFormed: true } && CpuSavedSemanticPolicy.MatchesKnownAnswers()
+        && CpuSavedSemanticPolicy.MatchesEncoding(command, command.Encode());
 
     internal static bool CheckFreshAdmission(Func<bool> admission, CancellationToken token)
     {

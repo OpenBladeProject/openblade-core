@@ -92,7 +92,7 @@ internal sealed class CpuTuningController
             ? new(current.PowerLimitMilliwatts, current.PolicyMode, current.PowerLimitMode,
                 DecodeCurve(current))
             : null;
-        CpuTuningBackendStatus firmware = DescribeFirmwareBackend(saved);
+        CpuTuningBackendStatus firmware = DescribeFirmwareBackend(identity, saved);
         CpuTuningBackendStatus live = source.InspectInstalled(identity, useInstalledBackend) with
         {
             // Passive dependency discovery is not native query/write admission.
@@ -152,7 +152,7 @@ internal sealed class CpuTuningController
         CpuSavedConfiguration? saved = result.Observation?.Current is { } current
             ? new(current.PowerLimitMilliwatts, current.PolicyMode, current.PowerLimitMode, DecodeCurve(current)) : null;
         var status = new CpuTuningStatus(saved, null,
-            DescribeFirmwareBackend(result.Observation),
+            DescribeFirmwareBackend(identity, result.Observation),
             unavailable, ownership.PendingBoot, ownership.RestorePending)
         { FirmwareRecovery = ownership.Recovery };
         if (savedPersistenceUncertain) { status = SavedPersistenceVeto(status); }
@@ -204,13 +204,24 @@ internal sealed class CpuTuningController
         };
     }
 
-    private static CpuTuningBackendStatus DescribeFirmwareBackend(SavedCpuFirmwareReadResult? saved) =>
-        new(DeviceFeatureAccess.ObservedOnly, saved?.Status switch
-        {
-            SavedCpuFirmwareReadStatus.Observed => CpuTuningBackendAvailability.Available,
-            SavedCpuFirmwareReadStatus.InvalidData or SavedCpuFirmwareReadStatus.MirrorMismatch => CpuTuningBackendAvailability.Failed,
-            _ => CpuTuningBackendAvailability.Unavailable,
-        });
+    private CpuTuningBackendStatus DescribeFirmwareBackend(DeviceIdentity? identity, SavedCpuFirmwareReadResult? saved)
+    {
+        bool pair = saved is
+        { Status: SavedCpuFirmwareReadStatus.Observed, CurrentError: 0, LastError: 0, Current: not null, Last: not null }
+            && saved.HasRestoreBaseline && saved.Current.CopyBytes() is { Length: 800 } current
+            && current.AsSpan().SequenceEqual(saved.Last.CopyBytes());
+        bool available = pair && CpuSavedTuningPlan.IsExactIdentity(identity);
+        // Availability does not admit a particular baseline's reverse route;
+        // the transaction checks both original images and the complete plan.
+        return new(journalStore is not null && available && CpuSavedSemanticPolicy.MatchesKnownAnswers()
+                ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
+            available ? CpuTuningBackendAvailability.Available : saved?.Status switch
+            {
+                SavedCpuFirmwareReadStatus.Observed or SavedCpuFirmwareReadStatus.InvalidData
+                    or SavedCpuFirmwareReadStatus.MirrorMismatch => CpuTuningBackendAvailability.Failed,
+                _ => CpuTuningBackendAvailability.Unavailable,
+            });
+    }
 
     // A future provider must capture this during the initiating operation and
     // repeat it inside its native proof. This check is rejection-only authority.

@@ -54,15 +54,7 @@ internal sealed record CpuTuningOwnershipJournal(
                 return false;
             }
 
-            CpuSavedTuningStep[]? derived = CpuSavedTuningPlan.Create(BaselineCurrent, Settings);
-            bool validPlan = derived is not null && derived.Length == Steps.Length
-                && derived.Zip(Steps).All(pair => pair.Second is not null
-                    && pair.First.Command == pair.Second.Command
-                    && pair.First.RestoreCommand == pair.Second.RestoreCommand
-                    && pair.Second.Before is not null && pair.Second.After is not null
-                    && pair.First.Before.AsSpan().SequenceEqual(pair.Second.Before)
-                    && pair.First.After.AsSpan().SequenceEqual(pair.Second.After));
-            if (!validPlan) { return false; }
+            if (!CpuSavedSemanticPolicy.MatchesPlan(BaselineCurrent, BaselineLast, Settings, Steps)) { return false; }
             if (PendingUpdateStep is null) { return PendingUpdateSettings is null; }
             if (State != CpuTuningOwnershipState.PossibleSubmission || Restoring
                 || PendingUpdateSettings is not { IsConfigured: true, IsWellFormed: true }
@@ -72,6 +64,8 @@ internal sealed record CpuTuningOwnershipJournal(
                 || !PendingUpdateStep.Before.AsSpan().SequenceEqual(ExpectedCurrent)) { return false; }
             CpuSavedTuningStep[]? updatePlan = CpuSavedTuningPlan.Create(BaselineCurrent, PendingUpdateSettings);
             return updatePlan is not null
+                && CpuSavedSemanticPolicy.MatchesPlan(BaselineCurrent, BaselineLast, PendingUpdateSettings, updatePlan)
+                && CpuSavedSemanticPolicy.MatchesStep(PendingUpdateStep)
                 && CpuSavedTuningPlan.Simulate(ExpectedCurrent, PendingUpdateStep.Command).AsSpan().SequenceEqual(PendingUpdateStep.After)
                 && CpuSavedTuningPlan.Simulate(PendingUpdateStep.After, PendingUpdateStep.RestoreCommand).AsSpan().SequenceEqual(ExpectedCurrent)
                 && (updatePlan.Length == 0 ? BaselineCurrent : updatePlan[^1].After).AsSpan().SequenceEqual(PendingUpdateStep.After);

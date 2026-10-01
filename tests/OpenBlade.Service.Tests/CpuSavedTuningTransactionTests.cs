@@ -11,6 +11,52 @@ public sealed class CpuSavedTuningTransactionTests
     private static readonly CpuTuningSettings Curve = new(null, new(true, -12));
 
     [Fact]
+    public async Task SourceAdmittedEndpointEditsKeepOriginalPairAndRestoreAcrossTransactions()
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        byte[] original = (byte[])backend.Bytes.Clone();
+        Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
+            .ApplyAsync(Identity, new(45, new(false, -30)), default)).Outcome);
+        Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
+            .ApplyAsync(Identity, new(95, new(true, -30)), default)).Outcome);
+        Assert.Equal(original, store.Journal!.BaselineCurrent);
+        Assert.Equal(original, store.Journal.BaselineLast);
+        Assert.True(CpuSavedSemanticPolicy.MatchesPlan(original, original, store.Journal.Settings, store.Journal.Steps));
+        Assert.Equal(CpuSavedTuningOutcome.Verified, (await new CpuSavedTuningTransaction(backend, store)
+            .RestoreAsync(Identity, default)).Outcome);
+        Assert.Equal(original, backend.Bytes);
+        Assert.Equal(6, backend.Sent.Count);
+        Assert.Equal(new(CpuSavedTuningCommandKind.CurveOptimizer, -1), backend.Sent[^2]);
+        Assert.Equal(new(CpuSavedTuningCommandKind.ResetPowerLimit, 0), backend.Sent[^1]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvalidOriginalOrPendingTransitionBlocksRecreatedTransactionBeforeAnyBackendRead(bool pendingEdit)
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        await new CpuSavedTuningTransaction(backend, store).ApplyAsync(Identity, Curve, default);
+        if (pendingEdit)
+        {
+            backend.AfterWrite = () => throw new TimeoutException();
+            Assert.Equal(CpuSavedTuningOutcome.Uncertain, (await new CpuSavedTuningTransaction(backend, store)
+                .ApplyAsync(Identity, new(null, new(true, -13)), default)).Outcome);
+        }
+        CpuSavedTuningStep corrupted = pendingEdit ? store.Journal!.PendingUpdateStep! : store.Journal!.Steps[0];
+        corrupted.After[799] ^= 1;
+        int reads = backend.Reads;
+        int sends = backend.Sent.Count;
+        var recreated = new CpuSavedTuningTransaction(backend, store);
+        Assert.Equal(CpuSavedTuningBlockReason.InvalidJournal, (await recreated.RestoreAsync(Identity, default)).Reason);
+        Assert.Equal(CpuSavedTuningBlockReason.InvalidJournal, (await recreated.ApplyAsync(Identity, Curve, default)).Reason);
+        Assert.Equal(reads, backend.Reads);
+        Assert.Equal(sends, backend.Sent.Count);
+    }
+
+    [Fact]
     public async Task CompleteReversePlanIsAdmittedBeforeFirstRestoreCommand()
     {
         var store = new MemoryStore();

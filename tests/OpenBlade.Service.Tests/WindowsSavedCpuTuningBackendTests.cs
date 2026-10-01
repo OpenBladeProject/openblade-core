@@ -10,18 +10,38 @@ public sealed class WindowsSavedCpuTuningBackendTests
     private static readonly CpuSavedTuningCommand Curve = new(CpuSavedTuningCommandKind.CurveOptimizer, -1);
 
     [Fact]
-    public async Task ProductionAdmissionRejectsEveryTypedCommandWithoutInvokingFirmware()
+    public async Task SourceAdmittedCommandsStillUseFreshIdentityAndTheInjectedInvoker()
     {
         var source = new Source();
         var invoker = new Invoker();
         var backend = new WindowsSavedCpuTuningBackend(source,
             (_, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command), invoker);
         foreach (var command in new[] { Curve, new(CpuSavedTuningCommandKind.CurveOptimizer, 0),
-            new(CpuSavedTuningCommandKind.PowerLimit, 65), new(CpuSavedTuningCommandKind.ResetPowerLimit, 0) })
+            new(CpuSavedTuningCommandKind.CurveOptimizer, -30), new(CpuSavedTuningCommandKind.PowerLimit, 45),
+            new(CpuSavedTuningCommandKind.PowerLimit, 95), new(CpuSavedTuningCommandKind.ResetPowerLimit, 0) })
         {
-            Assert.False(await backend.CheckWriteAdmissionAsync(Exact, command, CancellationToken.None));
-            Assert.Equal(CpuSavedTuningSubmission.NotSubmitted,
+            Assert.True(await backend.CheckWriteAdmissionAsync(Exact, command, CancellationToken.None));
+            Assert.Equal(CpuSavedTuningSubmission.Acknowledged,
                 await backend.SendAsync(Exact, command, CancellationToken.None));
+        }
+        Assert.Equal(6, invoker.Calls);
+        Assert.Equal(18, source.IdentityReads);
+    }
+
+    [Fact]
+    public async Task InvalidFamilyBoundsNeverReachEvenTheInjectedInvoker()
+    {
+        var source = new Source();
+        var invoker = new Invoker();
+        var backend = new WindowsSavedCpuTuningBackend(source, (_, _) => true, invoker);
+        foreach (var command in new[] { new CpuSavedTuningCommand(CpuSavedTuningCommandKind.CurveOptimizer, 1),
+            new(CpuSavedTuningCommandKind.CurveOptimizer, -31), new(CpuSavedTuningCommandKind.PowerLimit, 0),
+            new(CpuSavedTuningCommandKind.PowerLimit, 44), new(CpuSavedTuningCommandKind.PowerLimit, 96),
+            new(CpuSavedTuningCommandKind.ResetPowerLimit, 1), new((CpuSavedTuningCommandKind)99, 0) })
+        {
+            Assert.False(WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command));
+            Assert.Equal(CpuSavedTuningSubmission.NotSubmitted,
+                await backend.SendAsync(Exact, command, default));
         }
         Assert.Equal(0, invoker.Calls);
         Assert.Equal(0, source.IdentityReads);

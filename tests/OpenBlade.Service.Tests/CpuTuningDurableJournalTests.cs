@@ -10,6 +10,42 @@ public sealed class CpuTuningDurableJournalTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBladeCpuJournalTests", Guid.NewGuid().ToString("N"));
     private string JournalPath => Path.Combine(directory, "ownership.json");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingEditPreservesFirstOriginalAndRequiresItsSeparateImmediateInverse(bool power)
+    {
+        byte[] baseline = CpuSavedTuningTransactionTests.Baseline();
+        CpuTuningSettings first = power ? new(45, null) : new(null, new(true, -12));
+        CpuTuningSettings next = power ? new(95, null) : new(null, new(true, -20));
+        CpuSavedTuningStep[] originalPlan = CpuSavedTuningPlan.Create(baseline, first)!;
+        CpuSavedTuningStep pending = Assert.Single(CpuSavedTuningPlan.Create(originalPlan[0].After, next)!);
+        var journal = Create() with
+        {
+            Settings = first,
+            Steps = originalPlan,
+            State = CpuTuningOwnershipState.PossibleSubmission,
+            CompletedSteps = 1,
+            PendingUpdateSettings = next,
+            PendingUpdateStep = pending,
+        };
+        Assert.NotEqual(originalPlan[0].RestoreCommand, pending.RestoreCommand);
+        Assert.True(journal.IsWellFormed);
+        var store = new CpuTuningOwnershipJournalStore(JournalPath);
+        Assert.NotNull(await store.TryWriteAsync(null, journal, default));
+        var loaded = await new CpuTuningOwnershipJournalStore(JournalPath).LoadAsync(default);
+        Assert.False(loaded.Invalid);
+        Assert.Equal(baseline, loaded.Journal!.BaselineCurrent);
+        Assert.Equal(originalPlan[0].RestoreCommand, loaded.Journal.Steps[0].RestoreCommand);
+        Assert.Equal(pending.RestoreCommand, loaded.Journal.PendingUpdateStep!.RestoreCommand);
+
+        // The first original's reverse is not the current edit's immediate inverse.
+        var corrupted = journal with { PendingUpdateStep = pending with { RestoreCommand = originalPlan[0].RestoreCommand } };
+        Assert.False(corrupted.IsWellFormed);
+        await File.WriteAllTextAsync(JournalPath, JsonSerializer.Serialize(corrupted, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Assert.True((await new CpuTuningOwnershipJournalStore(JournalPath).LoadAsync(default)).Invalid);
+    }
+
     [Fact]
     public async Task FullImagesTypedCommandsAndPossibleSubmissionSurviveRestart()
     {

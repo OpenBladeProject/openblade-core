@@ -174,7 +174,8 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
             SavedCpuFirmwareReadResult observation = await backend.ReadAsync(identity, token).ConfigureAwait(false);
             if (!TryGetPair(observation, out byte[]? baseline)) { return Blocked(observation, false); }
             CpuSavedTuningStep[]? steps = CpuSavedTuningPlan.Create(baseline!, settings);
-            if (steps is null) { return Blocked(observation, false, CpuSavedTuningBlockReason.UnrestorableBaseline); }
+            if (steps is null || !CpuSavedSemanticPolicy.MatchesPlan(baseline!, observation.Last!.CopyBytes(), settings, steps))
+            { return Blocked(observation, false, CpuSavedTuningBlockReason.UnrestorableBaseline); }
             if (steps.Length == 0)
             {
                 // Matching settings do not establish ownership.
@@ -374,6 +375,7 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         {
             token.ThrowIfCancellationRequested();
             int index = restoring ? journal.CompletedSteps - 1 : journal.CompletedSteps;
+            if (!journal.IsWellFormed) { return Blocked(observation, true, CpuSavedTuningBlockReason.InvalidJournal); }
             CpuSavedTuningStep step = journal.Steps[index];
             CpuSavedTuningCommand command = restoring ? step.RestoreCommand : step.Command;
             byte[] before = restoring ? step.After : step.Before;
@@ -456,7 +458,8 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
         if (!Matches(observation, journal.ExpectedCurrent))
         { return await RejectMismatchAsync(journal, hash, observation, journal.ExpectedCurrent).ConfigureAwait(false); }
         CpuSavedTuningStep[]? changes = CpuSavedTuningPlan.Create(journal.ExpectedCurrent, requested);
-        if (changes is null) { return Blocked(observation, true, CpuSavedTuningBlockReason.UnrestorableBaseline); }
+        if (changes is null || !CpuSavedSemanticPolicy.MatchesPlan(journal.ExpectedCurrent, observation.Last!.CopyBytes(), requested, changes))
+        { return Blocked(observation, true, CpuSavedTuningBlockReason.UnrestorableBaseline); }
         if (changes.Length == 0)
         {
             return new(CpuSavedTuningOutcome.Unchanged, observation, CpuTuningPendingBoot.Requested, true);
@@ -484,6 +487,8 @@ internal sealed class CpuSavedTuningTransaction(ICpuSavedTuningBackend backend, 
                 : currentSettings with { CurveOptimizer = requested.CurveOptimizer };
             CpuSavedTuningStep[]? updatedPlan = CpuSavedTuningPlan.Create(journal.BaselineCurrent, updatedSettings);
             if (updatedPlan is null
+                || !CpuSavedSemanticPolicy.MatchesPlan(journal.BaselineCurrent, journal.BaselineLast, updatedSettings, updatedPlan)
+                || !CpuSavedSemanticPolicy.MatchesStep(change)
                 || !(updatedPlan.Length == 0 ? journal.BaselineCurrent : updatedPlan[^1].After).AsSpan().SequenceEqual(change.After))
             {
                 return Blocked(observation, true, CpuSavedTuningBlockReason.UnrestorableBaseline);

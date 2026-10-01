@@ -5,11 +5,12 @@ to the running CPU. The CPU card keeps their observations separate. Refresh read
 saved firmware; opting into the installed AMD backend permits passive dependency
 inspection. It does not start a driver or grant permission to tune the CPU.
 
-This implementation is in progress. The service blocks tuning and restoration
-requests until their backend, readback, and recovery paths are admitted. The
-editor represents the observed 45–95 W power range and −30 to −1 curve optimizer
-range. Disabling the optimizer means zero magnitude and retains the editor's
-negative value. Each feature can be left unmanaged.
+The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
+and BIOS 2.02 when fresh safety checks, paired readback and a reversible original
+plan pass. Installed LocalSystem/session IPC validation remains pending. Live
+writes remain unavailable. The editor represents the 45–95 W power range and
+−30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
+and retains the editor's negative value. Each feature can be left unmanaged.
 
 ## Saved firmware
 
@@ -30,7 +31,14 @@ Before each provider call it records possible submission durably; only an
 acknowledged command and exact full readback establish ownership. Timeout,
 unexpected changes, or a failed mirror check block further commands. Explicit
 restoration proceeds in reverse order and verifies every byte. These paths are
-covered by fake-backend tests; production command admission remains disabled.
+covered by fake-backend tests. Saved source admission independently checks the
+eight-byte command encodings, every transition byte and both original reverse
+paths. Each owned edit also validates its immediate inverse separately from the
+plan restoring the first original pair. PPT zero reset is available only for
+exact original-default restoration. The reviewed semantic candidate is in
+[capture PR #35](https://github.com/OpenBladeProject/openblade-captures/pull/35).
+Physical tests covered CO zero/original −1 and PPT 45 W/default; they did not
+exercise every selectable value or the installed application.
 
 A later attended test of the actual service transaction stopped before submitting
 a command. A read-only diagnostic found that the COM getter returned output but
@@ -264,9 +272,9 @@ displays each limit separately, including fractional watts; it does not average
 them into an effective value. Older IPC 59 peers cannot read this expanded status
 contract, so deployment must update Service, Session Agent and Tray together.
 Default composition still supplies no concrete native provider.
-Boot activation, installed-service IPC validation, and attended live
-readback and restoration remain necessary before enabling the corresponding
-controls.
+Installed-service IPC and saved-control validation remain pending. Live controls
+also require trusted native proof and attended readback and restoration. Boot
+activation remains unverified and is separate from validating saved persistence.
 
 The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic
 CPU states at two card widths. It checks saved/live separation, unknown live PPT,

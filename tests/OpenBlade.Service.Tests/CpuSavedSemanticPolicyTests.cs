@@ -81,6 +81,7 @@ public sealed class CpuSavedSemanticPolicyTests
         var settings = new CpuTuningSettings(95, null);
         CpuSavedTuningStep[] steps = CpuSavedTuningPlan.Create(baseline, settings)!;
         steps[0].After[offset] ^= 1;
+        Assert.False(CpuSavedSemanticPolicy.MatchesStep(steps[0]));
         Assert.False(CpuSavedSemanticPolicy.MatchesPlan(baseline, baseline, settings, steps));
     }
 

@@ -7,6 +7,60 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuTuningControllerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SourceAdmittedPairedObservationRequiresJournalAndDoesNotPromiseARestorableBaseline(bool hasJournal)
+    {
+        // Per-core is observable but has no all-core typed reverse. Backend
+        // availability must not pretend this particular mutation is admitted.
+        var source = new FakeObservationSource { Saved = Observed(DecodeSaved(2, 41)) };
+        CpuTuningStatus status = await new CpuTuningController(source, hasJournal ? new EmptyStore() : null)
+            .ObserveAsync(false, default);
+        Assert.Equal(hasJournal, status.Firmware.CanWrite);
+        Assert.Equal(CpuTuningBackendAvailability.Available, status.Firmware.Availability);
+        Assert.Null(status.LiveState);
+        Assert.False(status.Live.CanWrite);
+        Assert.False(status.RestorePending);
+        Assert.Null(CpuSavedTuningPlan.Create(source.Saved.Current!.CopyBytes(), new(null, new(true, -1))));
+    }
+
+    [Theory]
+    [InlineData("identity")]
+    [InlineData("bios")]
+    [InlineData("status")]
+    [InlineData("error")]
+    [InlineData("missing-last")]
+    [InlineData("mirror")]
+    [InlineData("geometry")]
+    public async Task SourceAdmissionDoesNotPromoteInvalidOrUnsupportedPairedObservations(string fault)
+    {
+        SavedCpuFirmwareReadResult saved = Observed(DecodeSaved(1, 1));
+        saved = fault switch
+        {
+            "status" => saved with { Status = SavedCpuFirmwareReadStatus.UnsupportedIdentity },
+            "error" => saved with { LastError = 5 },
+            "missing-last" => saved with { Last = null },
+            "mirror" => saved with { Last = DecodeSaved(1, 2) },
+            "geometry" => saved with { Current = new(saved.Current!.CopyBytes()[..799]), Last = new(saved.Last!.CopyBytes()[..799]) },
+            _ => saved,
+        };
+        var source = new FakeObservationSource
+        {
+            Saved = saved,
+            Identity = fault switch
+            {
+                "identity" => FakeObservationSource.ExactIdentity with { ProductId = 0x02E0 },
+                "bios" => FakeObservationSource.ExactIdentity with { BiosVersion = "2.03" },
+                _ => FakeObservationSource.ExactIdentity,
+            },
+        };
+        CpuTuningStatus status = await new CpuTuningController(source, new EmptyStore()).ObserveAsync(false, default);
+        Assert.False(status.Firmware.CanWrite);
+        Assert.NotEqual(CpuTuningBackendAvailability.Available, status.Firmware.Availability);
+        Assert.False(status.RestorePending);
+    }
+
     [Fact]
     public async Task MissingExactIdentitySkipsSavedReadsAndInstalledBackendInspection()
     {
@@ -227,6 +281,14 @@ public sealed class CpuTuningControllerTests
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(0x104), magnitude);
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(0x106), 17);
         return Rz090528CpuFirmwareCodec.DecodeSaved(bytes);
+    }
+
+    private sealed class EmptyStore : ICpuTuningOwnershipJournalStore
+    {
+        public Task<CpuTuningOwnershipJournalLoadResult> LoadAsync(CancellationToken token) =>
+            Task.FromResult(new CpuTuningOwnershipJournalLoadResult(null, false, null));
+        public Task<string?> TryWriteAsync(string? expectedSha256, CpuTuningOwnershipJournal journal, CancellationToken token) =>
+            throw new InvalidOperationException("Passive observation must not prepare ownership.");
     }
 
     private sealed class FakeObservationSource : ICpuTuningObservationSource

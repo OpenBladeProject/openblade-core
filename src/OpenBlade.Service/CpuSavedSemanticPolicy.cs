@@ -62,17 +62,26 @@ internal static class CpuSavedSemanticPolicy
             if (next >= steps.Count) { return false; }
             CpuSavedTuningStep step = steps[next++];
             if (step.Command != command || !step.Before.AsSpan().SequenceEqual(expectedBefore)
-                || !MatchesEncoding(command, command.Encode())
-                || !MatchesTransition(step.Before, step.After, command)
-                || !CpuSavedTuningPlan.Simulate(step.Before, command).AsSpan().SequenceEqual(step.After)
-                || !MatchesOriginalReverse(step.Before, command.Kind, step.RestoreCommand)
-                || !MatchesEncoding(step.RestoreCommand, step.RestoreCommand.Encode())
-                || !MatchesTransition(step.After, step.Before, step.RestoreCommand)
-                || !CpuSavedTuningPlan.Simulate(step.After, step.RestoreCommand).AsSpan().SequenceEqual(step.Before)) { return false; }
+                || !MatchesStep(step)) { return false; }
             expectedBefore = step.After;
             return true;
         }
     }
+
+    // A pending owned edit needs its immediate inverse checked separately
+    // from the plan restoring the immutable first original pair.
+    internal static bool MatchesStep(CpuSavedTuningStep? step) => step is
+    { Before.Length: 800, After.Length: 800, Command: not null, RestoreCommand: not null }
+        && step.Command.Kind is CpuSavedTuningCommandKind.CurveOptimizer or CpuSavedTuningCommandKind.PowerLimit
+        && HasSupportedShape(step.Command) && HasSupportedShape(step.RestoreCommand)
+        && !step.Before.AsSpan().SequenceEqual(step.After)
+        && MatchesEncoding(step.Command, step.Command.Encode())
+        && MatchesTransition(step.Before, step.After, step.Command)
+        && CpuSavedTuningPlan.Simulate(step.Before, step.Command).AsSpan().SequenceEqual(step.After)
+        && MatchesOriginalReverse(step.Before, step.Command.Kind, step.RestoreCommand)
+        && MatchesEncoding(step.RestoreCommand, step.RestoreCommand.Encode())
+        && MatchesTransition(step.After, step.Before, step.RestoreCommand)
+        && CpuSavedTuningPlan.Simulate(step.After, step.RestoreCommand).AsSpan().SequenceEqual(step.Before);
 
     private static bool Known(CpuSavedTuningCommandKind kind, int value, string hex)
     {

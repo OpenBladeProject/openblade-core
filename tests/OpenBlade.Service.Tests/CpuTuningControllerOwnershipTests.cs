@@ -33,7 +33,7 @@ public sealed class CpuTuningControllerOwnershipTests : IDisposable
         CpuTuningStatus observed = await Controller().ObserveAsync(false, CancellationToken.None);
         Assert.True(observed.RestorePending);
         Assert.Equal(CpuTuningPendingBoot.Requested, observed.PendingBoot);
-        Assert.False(observed.Firmware.CanWrite);
+        Assert.True(observed.Firmware.CanWrite);
         Assert.Equal(first.CpuTuning.FirmwareRecovery, observed.FirmwareRecovery);
 
         ControlOperationResult restored = await Controller().RestoreSavedAsync((_, _) => true, CancellationToken.None);

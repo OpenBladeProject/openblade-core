@@ -158,7 +158,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             new(45, new(false, -10)), () => true, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
         Assert.Equal(2, context.Source.Submissions);
-        Assert.False(applied.CpuTuning!.Firmware.CanWrite);
+        Assert.True(applied.CpuTuning!.Firmware.CanWrite);
         Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(
             CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default)).Status);
         Assert.Equal(0, live.Curve!.Reads);
@@ -179,26 +179,28 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task DefaultSavedFactoryStillDeniesAfterPairedReadWithoutPreparingOrSubmitting()
+    public async Task DefaultSavedFactorySessionRevocationAfterPairedReadPreventsNativeAdmission()
     {
-        // Fail before creating the default native backend if production admission
-        // ever changes; this offline regression must never exercise a native setter.
-        Assert.False(WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(new(CpuSavedTuningCommandKind.CurveOptimizer, 0)));
-        Assert.False(WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(new(CpuSavedTuningCommandKind.CurveOptimizer, -1)));
         var journal = new FailingSavedStore { Fail = false };
         TestContext context = await CreateContextAsync(admittedSavedBackend: true, savedJournal: journal,
             savedAccess: DeviceFeatureAccess.ObservedOnly, defaultSavedBackend: true);
         int readsBefore = context.Source.SavedReads;
         byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        bool active = true;
+        // Arm only after setup. The real default backend returns this fake pair,
+        // then its runtime callback refuses before any native USB/controller or
+        // WMI call. This fence is independent of the source-admission decision.
+        context.Source.AfterSavedRead = () => active = false;
         var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
-            new(null, new(false, -10)), () => true, default);
+            new(null, new(false, -10)), () => active, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.True(context.Source.SavedReads > readsBefore);
+        Assert.False(active);
         Assert.Equal(0, journal.Writes);
         Assert.Null(journal.Journal);
         Assert.Equal(0, context.Source.Submissions);
         Assert.Equal(baseline, context.Source.Bytes);
-        Assert.False(result.CpuTuning!.Firmware.CanWrite);
+        Assert.True(result.CpuTuning!.Firmware.CanWrite);
     }
 
     [Theory]
@@ -665,6 +667,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         public Action? AfterInspection { get; set; }
         internal Action? BeforeIdentity;
         internal Action? BeforeSavedSend;
+        internal Action? AfterSavedRead;
         internal byte[]? Bytes;
         internal int Submissions;
         internal int SavedReads;
@@ -680,8 +683,10 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             SavedReads++;
             if (Bytes is not null)
             {
-                return new(SavedCpuFirmwareReadStatus.Observed, Rz090528CpuFirmwareCodec.DecodeSaved(Bytes),
+                var result = new SavedCpuFirmwareReadResult(SavedCpuFirmwareReadStatus.Observed, Rz090528CpuFirmwareCodec.DecodeSaved(Bytes),
                     Rz090528CpuFirmwareCodec.DecodeSaved(Bytes), 0, 0);
+                AfterSavedRead?.Invoke();
+                return result;
             }
             return new(SavedCpuFirmwareReadStatus.Unavailable, null, null, 5, 5);
         }
