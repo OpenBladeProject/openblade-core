@@ -1,5 +1,5 @@
-using OpenBlade.Capture;
 using System.Runtime.InteropServices;
+using OpenBlade.Capture;
 
 namespace OpenBlade.Capture.Tests;
 

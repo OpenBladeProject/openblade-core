@@ -160,6 +160,60 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.False(result.CpuTuning!.RestorePending);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CompletedLowPowerBoundaryRevokesPendingSavedOperation(bool restoring, bool beforeSend)
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true);
+        if (restoring)
+        {
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.SetCpuTuningAsync(
+                CpuTuningTarget.FirmwareNextBoot, new(null, new(false, -10)), () => true, default)).Status);
+        }
+        byte[] before = (byte[])context.Source.Bytes!.Clone();
+        int submissions = context.Source.Submissions;
+        Action boundary = () =>
+        {
+            context.Source.BeforeIdentity = null;
+            context.Source.BeforeSavedSend = null;
+            Assert.True(context.Gate.Enter());
+            Assert.True(context.Gate.Exit());
+        };
+        if (beforeSend) { context.Source.BeforeSavedSend = boundary; }
+        else { context.Source.BeforeIdentity = boundary; }
+
+        ControlOperationResult result = restoring
+            ? await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, () => true, default)
+            : await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+                new(null, new(false, -10)), () => true, default);
+
+        Assert.False(context.Gate.IsActive);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(submissions, context.Source.Submissions);
+        Assert.Equal(before, context.Source.Bytes);
+        // Final admission denial retains an already prepared restoration journal.
+        Assert.Equal(restoring || beforeSend, result.CpuTuning!.RestorePending);
+
+        if (beforeSend && !restoring)
+        {
+            // Retire the prepared, never-submitted journal before a new apply.
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.RestoreCpuTuningAsync(
+                CpuTuningTarget.FirmwareNextBoot, () => true, default)).Status);
+            Assert.Equal(submissions, context.Source.Submissions);
+            Assert.Equal(before, context.Source.Bytes);
+        }
+        // A fresh operation may admit the new generation; the interrupted one cannot.
+        ControlOperationResult next = restoring
+            ? await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, () => true, default)
+            : await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+                new(null, new(false, -10)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, next.Status);
+        Assert.Equal(submissions + 1, context.Source.Submissions);
+    }
+
     [Fact]
     public async Task LiveCurveUsesRetainedOwnershipAndRestoresWithoutPowerAuthority()
     {
@@ -450,6 +504,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         public int Calls { get; private set; }
         public Action? AfterInspection { get; set; }
         internal Action? BeforeIdentity;
+        internal Action? BeforeSavedSend;
         internal byte[]? Bytes;
         internal int Submissions;
         public DeviceIdentity? ReadIdentity()
@@ -505,6 +560,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             Task.FromResult(source.ReadSaved(identity));
         public Task<CpuSavedTuningSubmission> SendAsync(DeviceIdentity identity, CpuSavedTuningCommand command, CancellationToken token)
         {
+            source.BeforeSavedSend?.Invoke();
             if (!safety(identity, command)) { return Task.FromResult(CpuSavedTuningSubmission.NotSubmitted); }
             source.Bytes = CpuSavedTuningPlan.Simulate(source.Bytes!, command);
             source.Submissions++;

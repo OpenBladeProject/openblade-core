@@ -116,15 +116,17 @@ public sealed partial class ServiceControlRuntime
                     "CPU tuning requires admitted commands, exact restoration, and the active session on full power.")
                 { CpuTuning = current.CpuTuning };
             }
+            long savedGeneration = lowPowerGate.Generation;
             bool FreshAdmission(DeviceIdentity identity, CpuSavedTuningCommand command)
             {
-                if (!CpuSavedTuningPlan.IsExactIdentity(identity)
+                if (lowPowerGate.Generation != savedGeneration || !CpuSavedTuningPlan.IsExactIdentity(identity)
                     || !CpuMutationSafetyAvailable(GetStatus(), stillControlsSession)
                     || !CpuCommandFeatureAdmitted(GetStatus().Capabilities, command)) { return false; }
                 ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
                 return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
                     && powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn
                     && deviceProvider.TryGetVerifiedDevice(out _)
+                    && lowPowerGate.Generation == savedGeneration
                     && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
             }
             ControlOperationResult result = restoring
