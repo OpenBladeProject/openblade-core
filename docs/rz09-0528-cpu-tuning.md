@@ -7,8 +7,9 @@ inspection. It does not start a driver or grant permission to tune the CPU.
 
 The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
-plan pass. Installed LocalSystem/session IPC validation remains pending. Live
-writes remain unavailable. The editor represents the 45–95 W power range and
+plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
+45 W, each followed by exact original restoration. Live writes remain unavailable.
+The editor represents the 45–95 W power range and
 −30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
 and retains the editor's negative value. Each feature can be left unmanaged.
 
@@ -43,7 +44,8 @@ plan restoring the first original pair. PPT zero reset is available only for
 exact original-default restoration. The reviewed semantic candidate is in
 [capture PR #35](https://github.com/OpenBladeProject/openblade-captures/pull/35).
 Physical tests covered CO zero/original −1 and PPT 45 W/default; they did not
-exercise every selectable value or the installed application.
+exercise every selectable value or the installed application. Later installed-service
+validation is described below.
 
 A later attended test of the actual service transaction stopped before submitting
 a command. A read-only diagnostic found that the COM getter returned output but
@@ -64,7 +66,7 @@ exact zero-reset command. Both 800-byte copies matched their independent
 originals, CO remained -1, and the journal reached `Restored` with no pending
 steps. No reboot, live-setting command or installed-application change occurred.
 This verifies the exact saved transaction and recovery path; boot activation and
-installed IPC remain unverified.
+installed IPC were unverified at that stage.
 
 Recovery authority identifies its saved or live target and the features that
 need restoration. A saved curve-only change does not require admission for an
@@ -181,7 +183,7 @@ An internal CO transport reuses the query session for full before/after vectors,
 checks fresh capability and range evidence, and records possible submission before
 the driver call. Forward edits also require the exact immediate reverse to fit
 that range. Uncertain cleanup blocks later operations on the retained platform.
-Only fake tests supply its write proof; no production factory or provider exists.
+Only fake tests supply its write proof; no production proof provider exists.
 An unwired service backend now connects that transport to the live transaction.
 It retains the actual native worker across caller cancellation and excludes
 replacement operations on the same platform until completion. Cleanup uncertainty
