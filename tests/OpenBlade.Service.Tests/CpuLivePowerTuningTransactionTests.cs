@@ -175,22 +175,54 @@ public sealed class CpuLivePowerTuningTransactionTests
         Assert.Equal(reads, backend.Reads); Assert.Equal(writes, store.Writes); Assert.Single(backend.Sent);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task UnavailableObservationOrInvalidContextPreservesExistingOwnership(bool invalidContext)
+    [Fact]
+    public async Task UnavailableObservationPreservesExistingOwnership()
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store); var transaction = new CpuLivePowerTuningTransaction(backend, store);
         await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 90)], default);
         var journal = store.Journal; int writes = store.Writes;
-        if (invalidContext) { backend.Context = backend.Context with { Backend = backend.Context.Backend with { DriverSha256 = "unknown" } }; }
-        else { backend.Unavailable = true; }
+        backend.Unavailable = true;
         Assert.Equal(CpuLivePowerBlockReason.ObservationUnavailable,
             (await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Slow, 79)], default)).Reason);
         Assert.Equal(CpuLivePowerBlockReason.ObservationUnavailable, (await transaction.RestoreAsync(default)).Reason);
         Assert.Same(journal, store.Journal); Assert.Equal(writes, store.Writes); Assert.Single(backend.Sent);
         backend.Unavailable = false; backend.Context = ContextFixture();
         Assert.Equal(CpuLivePowerOutcome.Verified, (await transaction.RestoreAsync(default)).Outcome);
+    }
+
+    [Theory]
+    [InlineData("prepare")]
+    [InlineData("restore")]
+    [InlineData("ticket")]
+    [InlineData("observe")]
+    public async Task ChangedNonNullInvalidContextDurablyBlocksBeforeSubmission(string operation)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLivePowerTuningTransaction(backend, store);
+        await transaction.ApplySelectiveAsync([new(CpuLivePowerLimit.Fast, 90)], default);
+        var original = store.Journal!.OriginalBaseline;
+        CpuLivePowerTuningTransaction.PreparedOperation? ticket = null;
+        if (operation == "ticket")
+        { ticket = (await transaction.PrepareApplyAsync([new(CpuLivePowerLimit.Slow, 79)], default)).Operation; }
+        backend.Context = backend.Context with { Backend = backend.Context.Backend with { DriverSha256 = "unknown" } };
+        CpuLivePowerTransactionResult result = operation switch
+        {
+            "prepare" => (await transaction.PrepareApplyAsync([new(CpuLivePowerLimit.Slow, 79)], default)).Result,
+            "restore" => (await transaction.PrepareRestoreAsync(default)).Result,
+            "observe" => await transaction.ObserveOwnershipAsync(default),
+            _ => await transaction.ValidatePreparedAsync(ticket!, default),
+        };
+        Assert.Equal(CpuLivePowerBlockReason.ContextMismatch, result.Reason);
+        Assert.Equal(CpuLivePowerOwnershipState.Blocked, store.Journal!.State);
+        Assert.Equal(original, store.Journal.OriginalBaseline); Assert.Single(backend.Sent);
+        backend.Context = ContextFixture();
+        int reads = backend.Reads, writes = store.Writes;
+        var restarted = new CpuLivePowerTuningTransaction(backend, store);
+        Assert.Equal(CpuLivePowerOutcome.Blocked, (await restarted.RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLivePowerOutcome.Blocked,
+            (await restarted.ApplySelectiveAsync([new(CpuLivePowerLimit.Slow, 79)], default)).Outcome);
+        Assert.Equal(CpuLivePowerOutcome.Blocked, (await restarted.ObserveOwnershipAsync(default)).Outcome);
+        Assert.Equal(reads, backend.Reads); Assert.Equal(writes, store.Writes); Assert.Single(backend.Sent);
     }
 
     [Theory]

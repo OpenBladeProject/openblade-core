@@ -46,6 +46,24 @@ public sealed class CpuTuningDurableJournalTests : IDisposable
     }
 
     [Fact]
+    public async Task BlockedOwnershipRetainsOriginalImagesAcrossDiskStoreRestart()
+    {
+        var journal = Create() with { State = CpuTuningOwnershipState.OwnedVerified, CompletedSteps = 1 };
+        var store = new CpuTuningOwnershipJournalStore(JournalPath);
+        string? ownedHash = await store.TryWriteAsync(null, journal, default);
+        string? blockedHash = await store.TryWriteAsync(ownedHash, journal with { State = CpuTuningOwnershipState.Blocked }, default);
+        var loaded = await new CpuTuningOwnershipJournalStore(JournalPath).LoadAsync(default);
+        Assert.False(loaded.Invalid);
+        Assert.NotNull(blockedHash);
+        Assert.Equal(blockedHash, loaded.Sha256);
+        Assert.Equal(CpuTuningOwnershipState.Blocked, loaded.Journal!.State);
+        Assert.Equal(journal.BaselineCurrent, loaded.Journal.BaselineCurrent);
+        Assert.Equal(journal.BaselineLast, loaded.Journal.BaselineLast);
+        Assert.Equal(journal.ExpectedCurrent, loaded.Journal.ExpectedCurrent);
+        Assert.Equal(journal.TransactionId, loaded.Journal.TransactionId);
+    }
+
+    [Fact]
     public async Task CompareAndSwapRejectsForeignReplacementAndStaleRevision()
     {
         var store = new CpuTuningOwnershipJournalStore(JournalPath);

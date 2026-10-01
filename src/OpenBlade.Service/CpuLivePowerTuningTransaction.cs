@@ -16,8 +16,7 @@ internal interface ICpuLivePowerBackend
     // proof under the native lease. Acknowledged requires firmware response 1.
     // NotSubmitted guarantees terminal clean cleanup and no setter invocation.
     // Implementations must retain/exclude an actual worker across cancellation
-    // and backend replacement, including observation/admission callbacks. No
-    // concrete backend or shared native coordinator is supplied in this slice.
+    // and backend replacement, including observation/admission callbacks.
     Task<CpuLivePowerSubmission> SendAsync(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token);
 }
 
@@ -31,8 +30,8 @@ internal enum CpuLivePowerBlockReason
 internal sealed record CpuLivePowerTransactionResult(CpuLivePowerOutcome Outcome, CpuLivePowerRecovery Recovery,
     CpuLivePowerBlockReason Reason, CpuLivePowerPair? Observation);
 
-// Unwired. This transaction only consumes an independently trusted backend;
-// candidate metadata, journal equality and successful planning grant no proof.
+// Default composition supplies no concrete native provider. This transaction
+// consumes independently trusted admission; metadata, equality and planning grant no proof.
 internal sealed class CpuLivePowerTuningTransaction
 {
     private readonly ICpuLivePowerBackend backend;
@@ -40,6 +39,39 @@ internal sealed class CpuLivePowerTuningTransaction
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly TimeSpan operationTimeout;
     private bool persistenceUncertain;
+    private PreparedOperation? currentPrepared;
+
+    // The ticket binds an exact journal revision; it grants no native authority.
+    internal sealed class PreparedOperation(CpuLivePowerContext context, CpuLivePowerPair expected,
+        CpuLivePowerOwnershipJournal? journal, string? hash, bool execute, CpuLivePowerWriteScope scope)
+    {
+        internal CpuLivePowerContext Context { get; } = context;
+        internal CpuLivePowerPair Expected { get; private set; } = expected;
+        internal CpuLivePowerOwnershipJournal? Journal { get; private set; } = journal;
+        internal string? Hash { get; private set; } = hash;
+        internal CpuLivePowerWriteScope Scope { get; } = scope;
+        internal bool NeedsExecution { get; set; } = execute;
+        internal bool Started { get; set; }
+        internal bool Closed { get; private set; }
+        internal void Close() => Closed = true;
+        internal void Update(CpuLivePowerOwnershipJournal value, string next)
+        { Journal = value; Hash = next; Expected = value.Expected.Decode()!; }
+    }
+    internal sealed record Preparation(CpuLivePowerTransactionResult Result, PreparedOperation? Operation);
+
+    internal async Task<Preparation> PrepareApplyAsync(IReadOnlyList<CpuLivePowerTarget>? targets, CancellationToken token)
+    {
+        PreparedOperation? operation = null;
+        var result = await ApplyCoreAsync(targets, token, value => operation = value).ConfigureAwait(false);
+        return new(result, operation);
+    }
+
+    internal async Task<Preparation> PrepareRestoreAsync(CancellationToken token)
+    {
+        PreparedOperation? operation = null;
+        var result = await RestoreCoreAsync(token, value => operation = value).ConfigureAwait(false);
+        return new(result, operation);
+    }
 
     internal CpuLivePowerTuningTransaction(ICpuLivePowerBackend backend, ICpuLivePowerOwnershipJournalStore store,
         TimeSpan? operationTimeout = null)
@@ -50,13 +82,18 @@ internal sealed class CpuLivePowerTuningTransaction
         { throw new ArgumentOutOfRangeException(nameof(operationTimeout)); }
     }
 
-    internal async Task<CpuLivePowerTransactionResult> ApplySelectiveAsync(IReadOnlyList<CpuLivePowerTarget>? targets, CancellationToken token)
+    internal Task<CpuLivePowerTransactionResult> ApplySelectiveAsync(IReadOnlyList<CpuLivePowerTarget>? targets, CancellationToken token) =>
+        ApplyCoreAsync(targets, token);
+
+    private async Task<CpuLivePowerTransactionResult> ApplyCoreAsync(IReadOnlyList<CpuLivePowerTarget>? targets, CancellationToken token,
+        Action<PreparedOperation>? prepared = null)
     {
         if (targets is { Count: > 2 }) { return Blocked(CpuLivePowerBlockReason.InvalidTarget); }
         var copy = targets?.ToArray() ?? [];
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            currentPrepared = null;
             if (persistenceUncertain) { return Uncertain(); }
             var loaded = await LoadAsync(token).ConfigureAwait(false);
             if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
@@ -64,6 +101,8 @@ internal sealed class CpuLivePowerTuningTransaction
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             var owned = loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } ? loaded.Journal : null;
+            if (owned is not null && observed?.Context is { } currentContext && currentContext != owned.Context)
+            { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (owned is not null && !Matches(owned, observed, owned.Expected.Decode()!, out baseline))
             { return await BlockJournalAsync(owned, loaded.Sha256!, MismatchReason(owned, observed), baseline).ConfigureAwait(false); }
@@ -71,6 +110,8 @@ internal sealed class CpuLivePowerTuningTransaction
                 observed.FusedCap, observed.Capability, observed.Range, null);
             if (shape.Status == CpuLivePowerPlanStatus.Unchanged)
             {
+                if (prepared is not null)
+                { prepared(currentPrepared = new(observed.Context!, baseline!, loaded.Journal, loaded.Sha256, false, new())); }
                 return new(CpuLivePowerOutcome.Unchanged, owned is null ? CpuLivePowerRecovery.None : CpuLivePowerRecovery.RestoreReady,
                     CpuLivePowerBlockReason.None, baseline);
             }
@@ -101,22 +142,33 @@ internal sealed class CpuLivePowerTuningTransaction
             var journal = CpuLivePowerOwnershipJournal.Prepare(observed.Context!, plan, owned);
             string? hash = await WriteAsync(loaded.Sha256, journal, token).ConfigureAwait(false);
             if (hash is null) { return Blocked(CpuLivePowerBlockReason.JournalUnavailable, baseline); }
+            if (prepared is not null)
+            {
+                prepared(currentPrepared = new(observed.Context!, baseline!, journal, hash, true, scope));
+                return new(CpuLivePowerOutcome.Unchanged, CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, baseline);
+            }
             return await ExecuteAsync(journal, hash, scope, token).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
 
-    internal async Task<CpuLivePowerTransactionResult> RestoreAsync(CancellationToken token)
+    internal Task<CpuLivePowerTransactionResult> RestoreAsync(CancellationToken token) => RestoreCoreAsync(token);
+
+    private async Task<CpuLivePowerTransactionResult> RestoreCoreAsync(CancellationToken token,
+        Action<PreparedOperation>? prepared = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            currentPrepared = null;
             if (persistenceUncertain) { return Uncertain(); }
             var loaded = await LoadAsync(token).ConfigureAwait(false);
             if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
             if (loaded.Journal is not { State: CpuLivePowerOwnershipState.Prepared or CpuLivePowerOwnershipState.OwnedVerified } journal)
             { return await ObserveCoreAsync(loaded, token).ConfigureAwait(false); }
             var observed = await ObserveAsync(token).ConfigureAwait(false);
+            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            { return await BlockJournalAsync(journal, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out var baseline)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, journal.Expected.Decode()!, out baseline))
             { return await BlockJournalAsync(journal, loaded.Sha256!, MismatchReason(journal, observed), baseline).ConfigureAwait(false); }
@@ -129,6 +181,13 @@ internal sealed class CpuLivePowerTuningTransaction
             if (token.IsCancellationRequested) { return Blocked(CpuLivePowerBlockReason.AdmissionDenied, baseline); }
             string? hash = await WriteAsync(loaded.Sha256, restoration, token).ConfigureAwait(false);
             if (hash is null) { return Blocked(CpuLivePowerBlockReason.JournalUnavailable, baseline); }
+            if (prepared is not null)
+            {
+                prepared(currentPrepared = new(journal.Context, baseline!, restoration, hash,
+                    restoration.State != CpuLivePowerOwnershipState.Restored, scope));
+                return new(CpuLivePowerOutcome.Unchanged, restoration.State == CpuLivePowerOwnershipState.Restored
+                    ? CpuLivePowerRecovery.None : CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, baseline);
+            }
             if (restoration.State == CpuLivePowerOwnershipState.Restored)
             { return new(CpuLivePowerOutcome.Verified, CpuLivePowerRecovery.None, CpuLivePowerBlockReason.None, baseline); }
             return await ExecuteAsync(restoration, hash, scope, token).ConfigureAwait(false);
@@ -151,6 +210,9 @@ internal sealed class CpuLivePowerTuningTransaction
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission }) { return Uncertain(); }
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked }) { return Blocked(CpuLivePowerBlockReason.StateChanged); }
         var observed = await ObserveAsync(token).ConfigureAwait(false);
+        if (loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
+            && observed?.Context is { } currentContext && currentContext != owned.Context)
+        { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
         if (!Valid(observed, out var pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
         if (loaded.Journal is null or { State: CpuLivePowerOwnershipState.Restored })
         { return new(CpuLivePowerOutcome.Unchanged, CpuLivePowerRecovery.None, CpuLivePowerBlockReason.None, pair); }
@@ -159,14 +221,105 @@ internal sealed class CpuLivePowerTuningTransaction
         return new(CpuLivePowerOutcome.Blocked, CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, pair);
     }
 
+    internal async Task<CpuLivePowerTransactionResult> ValidatePreparedAsync(PreparedOperation operation, CancellationToken token)
+    {
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try { return await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false); }
+        finally { gate.Release(); }
+    }
+
+    private async Task<CpuLivePowerTransactionResult> ValidatePreparedCoreAsync(PreparedOperation operation, CancellationToken token)
+    {
+        if (persistenceUncertain) { return Uncertain(); }
+        if (!ReferenceEquals(currentPrepared, operation) || operation.Closed)
+        { return Blocked(CpuLivePowerBlockReason.AdmissionDenied); }
+        var loaded = await LoadAsync(token).ConfigureAwait(false);
+        if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
+        if (loaded.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission }) { return Uncertain(); }
+        if (loaded.Sha256 != operation.Hash || loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked })
+        { return Blocked(CpuLivePowerBlockReason.StateChanged); }
+        var observed = await ObserveAsync(token).ConfigureAwait(false);
+        if (observed?.Context is { } currentContext && currentContext != operation.Context)
+        {
+            return loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
+                ? await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false)
+                : Blocked(CpuLivePowerBlockReason.ContextMismatch);
+        }
+        if (!Valid(observed, out var pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
+        if (operation.Context != observed!.Context || operation.Expected != pair)
+        {
+            var reason = operation.Context != observed.Context ? CpuLivePowerBlockReason.ContextMismatch : CpuLivePowerBlockReason.StateChanged;
+            return loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
+                ? await BlockJournalAsync(owned, loaded.Sha256!, reason, pair).ConfigureAwait(false) : Blocked(reason, pair);
+        }
+        if (operation.Journal is { State: not CpuLivePowerOwnershipState.Restored } journal)
+        {
+            var remaining = operation.NeedsExecution ? journal : journal.ArmRestoration();
+            for (int index = remaining.CompletedSteps; index < remaining.Steps.Count; index++)
+            {
+                if (!await AdmitOperationAsync(observed, Request(remaining, index, operation.Scope), token).ConfigureAwait(false))
+                { return Blocked(CpuLivePowerBlockReason.AdmissionDenied, pair); }
+            }
+        }
+        if (token.IsCancellationRequested) { return Blocked(CpuLivePowerBlockReason.AdmissionDenied, pair); }
+        return new(CpuLivePowerOutcome.Unchanged, loaded.Journal is null or { State: CpuLivePowerOwnershipState.Restored }
+            ? CpuLivePowerRecovery.None : CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, pair);
+    }
+
+    internal async Task<CpuLivePowerTransactionResult> ExecutePreparedAsync(PreparedOperation operation,
+        Func<CancellationToken, Task<bool>>? beforeStep, CancellationToken token)
+    {
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (operation.Started) { return Blocked(CpuLivePowerBlockReason.AdmissionDenied); }
+            operation.Started = true;
+            var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
+            if (validation.Outcome != CpuLivePowerOutcome.Unchanged || !operation.NeedsExecution) { return validation; }
+            return await ExecuteAsync(operation.Journal!, operation.Hash!, operation.Scope, token, operation, beforeStep).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
+    internal async Task<CpuLivePowerTransactionResult> RejectPreparedAsync(PreparedOperation operation)
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!ReferenceEquals(currentPrepared, operation) || operation.Closed)
+            { return Blocked(CpuLivePowerBlockReason.AdmissionDenied); }
+            if (persistenceUncertain) { return Uncertain(); }
+            var loaded = await LoadAsync(CancellationToken.None).ConfigureAwait(false);
+            if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
+            if (loaded.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission }) { return Uncertain(); }
+            if (loaded.Journal is null or { State: CpuLivePowerOwnershipState.Blocked })
+            { return Blocked(CpuLivePowerBlockReason.StateChanged); }
+            if (loaded.Journal.Steps.Count == 0) { return Blocked(CpuLivePowerBlockReason.StateChanged); }
+            if (loaded.Sha256 != operation.Hash) { return Blocked(CpuLivePowerBlockReason.JournalUnavailable); }
+            return await BlockJournalAsync(loaded.Journal, loaded.Sha256!, CpuLivePowerBlockReason.StateChanged,
+                operation.Expected).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
     private async Task<CpuLivePowerTransactionResult> ExecuteAsync(CpuLivePowerOwnershipJournal journal, string hash,
-        CpuLivePowerWriteScope scope, CancellationToken token)
+        CpuLivePowerWriteScope scope, CancellationToken token, PreparedOperation? operation = null,
+        Func<CancellationToken, Task<bool>>? beforeStep = null)
     {
         CpuLivePowerPair? pair = null;
         while (journal.CompletedSteps < journal.Steps.Count)
         {
+            if (beforeStep is not null && !await beforeStep(token).ConfigureAwait(false))
+            { return Blocked(CpuLivePowerBlockReason.AdmissionDenied, pair); }
+            if (operation is not null)
+            {
+                var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
+                if (validation.Outcome != CpuLivePowerOutcome.Unchanged) { return validation; }
+            }
             var request = Request(journal, journal.CompletedSteps, scope);
             var observed = await ObserveAsync(token).ConfigureAwait(false);
+            if (observed?.Context is { } currentContext && currentContext != journal.Context)
+            { return await BlockJournalAsync(journal, hash, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
             if (!Valid(observed, out pair)) { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable); }
             if (!Matches(journal, observed, request.Before, out pair))
             { return await BlockJournalAsync(journal, hash, MismatchReason(journal, observed), pair).ConfigureAwait(false); }
@@ -175,6 +328,7 @@ internal sealed class CpuLivePowerTuningTransaction
             var pending = journal.Progress(CpuLivePowerOwnershipState.PossibleSubmission, journal.CompletedSteps);
             string? pendingHash = await WriteAsync(hash, pending, token).ConfigureAwait(false);
             if (pendingHash is null) { return Blocked(CpuLivePowerBlockReason.JournalUnavailable, pair); }
+            operation?.Update(pending, pendingHash);
             CpuLivePowerSubmission submission;
             try
             {
@@ -184,8 +338,10 @@ internal sealed class CpuLivePowerTuningTransaction
             catch { return Uncertain(pair); }
             if (submission == CpuLivePowerSubmission.NotSubmitted && !token.IsCancellationRequested)
             {
-                return await WriteAsync(pendingHash, journal, CancellationToken.None).ConfigureAwait(false) is null
-                    ? Uncertain(pair) : Blocked(CpuLivePowerBlockReason.AdmissionDenied, pair);
+                string? reverted = await WriteAsync(pendingHash, journal, CancellationToken.None).ConfigureAwait(false);
+                if (reverted is null) { return Uncertain(pair); }
+                operation?.Update(journal, reverted);
+                return Blocked(CpuLivePowerBlockReason.AdmissionDenied, pair);
             }
             if (submission != CpuLivePowerSubmission.Acknowledged || token.IsCancellationRequested) { return Uncertain(pair); }
             observed = await ObserveAsync(token).ConfigureAwait(false);
@@ -197,7 +353,9 @@ internal sealed class CpuLivePowerTuningTransaction
             string? verifiedHash = await WriteAsync(pendingHash, verified, token).ConfigureAwait(false);
             if (verifiedHash is null) { return Uncertain(pair); }
             journal = verified; hash = verifiedHash;
+            operation?.Update(journal, hash);
         }
+        if (operation is not null) { operation.NeedsExecution = false; }
         return new(CpuLivePowerOutcome.Verified, journal.State == CpuLivePowerOwnershipState.Restored
             ? CpuLivePowerRecovery.None : CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, pair);
     }

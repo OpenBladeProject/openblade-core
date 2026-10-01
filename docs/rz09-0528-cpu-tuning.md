@@ -234,14 +234,29 @@ and PPT transactions. Each operation has admission tied to its initiating
 session and power generation; later requests cannot renew an expired operation.
 Uncertain submission or journal persistence blocks both live features, including
 when a failed journal write leaves no entry on disk. Saved recovery remains
-separate. Fake-backend tests cover observation, edits and exact restoration.
+separate; confirmed saved identity or complete paired-image drift is durably
+blocked, and saved journal persistence uncertainty remains blocked across
+transactions in the same controller.
+
+Combined live edits prepare both complete plans and their restoration routes
+before either family sends. Each journal preserves its first original, including
+across later single-family edits. Apply orders PPT before CO; restore orders CO
+before PPT. Before every step the coordinator checks the other family's exact
+expected state and restoration admission. Confirmed peer loss blocks the active
+coupled journals, including when a peer has already been restored. An unchanged
+family acquires no baseline ownership. An incomplete or uncertain operation stops
+without compensation or automatic replay; verified partial changes retain their
+independent recovery records. These checks precede submission and do not attest
+peer state atomically at the native setter. A future concrete provider must bind
+the same operation lease and combined expected-state/restoration proofs at the
+actual native boundary. Offline fake-backend tests cover this orchestration;
+they do not establish physical live-write admission.
 The IPC 60 status contract also permits PPT-only observations. These retain the
 independent fast and slow limits in milliwatts and report CO as unknown. The tray
 displays each limit separately, including fractional watts; it does not average
 them into an effective value. Older IPC 59 peers cannot read this expanded status
 contract, so deployment must update Service, Session Agent and Tray together.
-Default composition still supplies no native provider. Combined CO/PPT requests
-remain blocked.
+Default composition still supplies no concrete native provider.
 Boot activation, installed-service IPC validation, and attended live
 readback and restoration remain necessary before enabling the corresponding
 controls.

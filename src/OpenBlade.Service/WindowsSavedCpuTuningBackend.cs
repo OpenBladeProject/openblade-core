@@ -73,8 +73,9 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
 
     // This is a production admission decision, independent of preference,
     // saved-state availability, journal contents or a machine-local artifact.
-    // The attended helper validated CO persistence, but not the full service
-    // mutation/recovery path or boot activation. No production setter is admitted.
+    // Attended published-Service cycles verified saved mutation and recovery.
+    // Installed LocalSystem/session IPC and controls remain unverified, and
+    // confirmed ownership loss must remain durable. No setter is admitted yet.
     internal static bool IsProductionCommandAdmitted(CpuSavedTuningCommand command) => false;
 
     internal static bool CheckFreshAdmission(Func<bool> admission, CancellationToken token)

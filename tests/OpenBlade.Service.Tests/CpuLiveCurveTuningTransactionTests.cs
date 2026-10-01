@@ -239,6 +239,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
         await new CpuLiveCurveTuningTransaction(backend, store).ApplySelectiveAsync([new(0, 0)], default);
+        var originalContext = backend.Context; var expected = backend.Values.ToArray();
         if (fault == "boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 43 } }; }
         if (fault == "unknown-boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = null } }; }
         if (fault == "unknown-boot-source") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Source = CpuLiveCurveBootSequenceSource.Unknown } }; }
@@ -249,16 +250,23 @@ public sealed class CpuLiveCurveTuningTransactionTests
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         int writes = store.Writes;
-        Assert.Equal(CpuLiveCurveRecovery.Blocked, (await transaction.ObserveOwnershipAsync(default)).Recovery);
-        bool confirmedDrift = fault is "boot" or "unselected-core";
-        Assert.Equal(writes + (confirmedDrift ? 1 : 0), store.Writes);
-        if (confirmedDrift) { Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State); }
+        var observed = await transaction.ObserveOwnershipAsync(default);
+        Assert.Equal(CpuLiveCurveRecovery.Blocked, observed.Recovery);
+        Assert.Equal(fault == "unselected-core" ? CpuLiveCurveBlockReason.StateChanged : CpuLiveCurveBlockReason.ContextMismatch,
+            observed.Reason);
+        Assert.Equal(writes + 1, store.Writes);
+        Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State);
         var result = await transaction.RestoreAsync(default);
         Assert.Equal(CpuLiveCurveOutcome.Blocked, result.Outcome);
-        if (confirmedDrift) { Assert.Equal(CpuLiveCurveBlockReason.StateChanged, result.Reason); }
-        if (fault is "unknown-boot-source" or "undefined-boot-source")
-        { Assert.Equal(CpuLiveCurveBlockReason.ContextMismatch, result.Reason); }
+        Assert.Equal(CpuLiveCurveBlockReason.StateChanged, result.Reason);
         Assert.Single(backend.Sent); Assert.Equal(CpuLiveCurveOwnershipState.Blocked, store.Journal!.State);
+        backend.Context = originalContext; backend.Values = expected;
+        int reads = backend.Reads;
+        var restarted = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.ObserveOwnershipAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, (await restarted.ApplySelectiveAsync([new(8, -2)], default)).Outcome);
+        Assert.Equal(reads, backend.Reads); Assert.Equal(writes + 1, store.Writes); Assert.Single(backend.Sent);
     }
 
     [Fact]

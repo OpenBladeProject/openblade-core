@@ -219,19 +219,25 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task CombinedIntentAndSecondOwnedFamilyAreRefusedBeforeTheirNativeCalls()
+    public async Task CombinedIntentAndLaterSingleFamilyEditRestoreBothOriginalsThroughRuntime()
     {
         var live = new LiveFixture(curve: true, power: true);
         var context = await CreateContextAsync(live: live);
+        var original = live.Power!.Pair;
         var combined = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, new(true, -2)), () => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, combined.Status);
-        Assert.Equal(0, live.Curve!.Reads); Assert.Equal(0, live.Power!.Reads);
-        await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default);
-        var second = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(45, null), () => true, default);
-        Assert.Equal(ControlOperationStatus.Blocked, second.Status);
-        Assert.Equal(0, live.Power.Reads); Assert.Empty(live.Power.Sent);
+        Assert.Equal(ControlOperationStatus.Stored, combined.Status);
+        Assert.True(combined.CpuTuning!.IsWellFormed);
+        Assert.Equal(-2, combined.CpuTuning.LiveState!.UniformCurveOptimizerValue);
+        Assert.Equal(new(null, 45000, 45000), combined.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(combined.CpuTuning, context.Runtime.GetStatus().CpuTuning);
+        var second = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow, new(60, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, second.Status);
+        Assert.Equal(-2, second.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
         Assert.Equal(ControlOperationStatus.Stored,
             (await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow, () => true, default)).Status);
+        Assert.Equal(original, live.Power.Pair);
+        Assert.All(live.Curve!.Values, core => Assert.Equal(-1, core.Offset));
+        Assert.Equal(0, context.Source.Submissions);
     }
 
     [Fact]
@@ -344,6 +350,45 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(1, context.Source.Submissions);
         Assert.Equal(new(CpuTuningRecoveryState.Blocked, feature), saved.CpuTuning!.LiveRecovery);
     }
+    [Fact]
+    public async Task SavedFailedPrepareRemainsBlockedAcrossRecreatedTransactionsAndReadOnlyObservation()
+    {
+        var journal = new FailingSavedStore();
+        var context = await CreateContextAsync(admittedSavedBackend: true, savedJournal: journal);
+        var failed = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -1)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, failed.Status);
+        Assert.Equal(new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer), failed.CpuTuning!.FirmwareRecovery);
+        Assert.True(failed.CpuTuning.RestorePending); Assert.True(failed.CpuTuning.IsWellFormed);
+        Assert.Null(journal.Journal); Assert.Equal(0, context.Source.Submissions);
+        journal.Fail = false;
+        var observed = await context.Runtime.ObserveCpuTuningAsync(false, () => true, default);
+        Assert.NotNull(observed.CpuTuning!.SavedConfiguration);
+        Assert.Equal(failed.CpuTuning.FirmwareRecovery, observed.CpuTuning.FirmwareRecovery);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -1)), () => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot, () => true, default)).Status);
+        Assert.Equal(1, journal.Writes); Assert.Equal(0, context.Source.Submissions);
+    }
+
+    private sealed class FailingSavedStore : ICpuTuningOwnershipJournalStore
+    {
+        internal bool Fail = true;
+        internal int Writes;
+        internal CpuTuningOwnershipJournal? Journal;
+        private string? hash;
+        public Task<CpuTuningOwnershipJournalLoadResult> LoadAsync(CancellationToken token) =>
+            Task.FromResult(new CpuTuningOwnershipJournalLoadResult(Journal, false, hash));
+        public Task<string?> TryWriteAsync(string? expectedSha256, CpuTuningOwnershipJournal journal, CancellationToken token)
+        {
+            Writes++;
+            if (Fail || expectedSha256 != hash) { return Task.FromResult<string?>(null); }
+            Assert.True(journal.IsWellFormed); Journal = journal; hash = Writes.ToString();
+            return Task.FromResult<string?>(hash);
+        }
+    }
+
     private sealed class LiveFixture
     {
         internal readonly CpuLiveCurveTuningTransactionTests.MemoryStore? CurveStore;
@@ -357,7 +402,8 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         }
     }
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
-        bool admittedSavedBackend = false, bool powerAdmitted = true, LiveFixture? live = null)
+        bool admittedSavedBackend = false, bool powerAdmitted = true, LiveFixture? live = null,
+        ICpuTuningOwnershipJournalStore? savedJournal = null)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
@@ -382,7 +428,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
             cpuTuningController: new CpuTuningController(source,
-                admittedSavedBackend ? new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")) : null,
+                admittedSavedBackend ? savedJournal ?? new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")) : null,
                 admittedSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,
                 live?.Curve, live?.CurveStore, live?.Power, live?.PowerStore));
         runtime.Initialize(configuration, writable ? PowerSource.PluggedIn : PowerSource.Battery);

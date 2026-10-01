@@ -353,6 +353,87 @@ public sealed class CpuSavedTuningTransactionTests
         Assert.Single(backend.Sent);
     }
 
+    [Theory]
+    [InlineData("observe", false)]
+    [InlineData("observe", true)]
+    [InlineData("update", false)]
+    [InlineData("update", true)]
+    [InlineData("restore", false)]
+    [InlineData("restore", true)]
+    public async Task ConfirmedOwnershipLossCannotBeReacquiredAfterValuesReturn(string operation, bool mirrorMismatch)
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, Curve, default);
+        byte[] expected = (byte[])backend.Bytes.Clone();
+        byte[] original = (byte[])store.Journal!.BaselineCurrent.Clone();
+        if (mirrorMismatch) { backend.MirrorMismatch = true; }
+        else { backend.Bytes[799] ^= 1; }
+        var result = operation switch
+        {
+            "observe" => await transaction.ObserveOwnershipAsync(Identity, default),
+            "update" => await transaction.ApplyAsync(Identity, new(null, new(true, -15)), default),
+            _ => await transaction.RestoreAsync(Identity, default),
+        };
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, result.Outcome);
+        Assert.Equal(CpuTuningOwnershipState.Blocked, store.Journal.State);
+        Assert.Equal(original, store.Journal.BaselineCurrent);
+        Assert.Equal(original, store.Journal.BaselineLast);
+        expected.CopyTo(backend.Bytes, 0); backend.MirrorMismatch = false;
+        int reads = backend.Reads;
+        var restarted = new CpuSavedTuningTransaction(backend, store);
+        Assert.Equal(CpuTuningRecoveryState.Blocked, (await restarted.ObserveOwnershipAsync(Identity, default)).Recovery.State);
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, (await restarted.RestoreAsync(Identity, default)).Outcome);
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, (await restarted.ApplyAsync(Identity, Curve, default)).Outcome);
+        Assert.Equal(reads, backend.Reads);
+        Assert.Single(backend.Sent);
+    }
+
+    [Fact]
+    public async Task TransientUnavailableReadPreservesConfirmedJournalAndLaterRestore()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, Curve, default);
+        var owned = store.Journal;
+        backend.Unavailable = true;
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, (await transaction.RestoreAsync(Identity, default)).Outcome);
+        Assert.Same(owned, store.Journal);
+        backend.Unavailable = false;
+        Assert.Equal(CpuSavedTuningOutcome.Verified,
+            (await new CpuSavedTuningTransaction(backend, store).RestoreAsync(Identity, default)).Outcome);
+        Assert.Equal(Baseline(), backend.Bytes);
+    }
+
+    [Fact]
+    public async Task ConfirmedIdentityChangePermanentlyLosesOriginalOwnership()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, Curve, default);
+        Assert.Equal(CpuSavedTuningBlockReason.IdentityMismatch,
+            (await transaction.ObserveOwnershipAsync(Identity with { BiosVersion = "2.03" }, default)).Reason);
+        Assert.Equal(CpuTuningOwnershipState.Blocked, store.Journal!.State);
+        Assert.Equal(CpuSavedTuningOutcome.Blocked,
+            (await new CpuSavedTuningTransaction(backend, store).RestoreAsync(Identity, default)).Outcome);
+        Assert.Single(backend.Sent);
+    }
+
+    [Fact]
+    public async Task FailedOwnershipLossPersistenceBlocksTheRetainedTransaction()
+    {
+        var store = new MemoryStore { FailState = CpuTuningOwnershipState.Blocked };
+        var backend = new FakeBackend(store); var transaction = new CpuSavedTuningTransaction(backend, store);
+        await transaction.ApplyAsync(Identity, Curve, default);
+        backend.Bytes[799] ^= 1;
+        Assert.Equal(CpuSavedTuningBlockReason.JournalUnavailable,
+            (await transaction.ObserveOwnershipAsync(Identity, default)).Reason);
+        backend.Bytes[799] ^= 1;
+        Assert.Equal(CpuSavedTuningOutcome.Blocked, (await transaction.RestoreAsync(Identity, default)).Outcome);
+        Assert.Single(backend.Sent);
+    }
+
     [Fact]
     public async Task PartialAcknowledgedPlanCanBeExplicitlyRestoredAfterFreshGateDenial()
     {
@@ -446,12 +527,14 @@ public sealed class CpuSavedTuningTransactionTests
         internal CpuSavedTuningSubmission Submission { get; init; } = CpuSavedTuningSubmission.Acknowledged;
         internal Action? AfterWrite { get; set; }
         internal bool MirrorMismatch { get; set; }
+        internal bool Unavailable { get; set; }
         public Task<bool> CheckWriteAdmissionAsync(DeviceIdentity identity, CpuSavedTuningCommand command, CancellationToken token) =>
             Task.FromResult(identity == Identity && command.Kind != DeniedKind);
         public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Reads++;
+            if (Unavailable) { return Task.FromResult(new SavedCpuFirmwareReadResult(SavedCpuFirmwareReadStatus.Unavailable, null, null, 5, 5)); }
             byte[] last = (byte[])Bytes.Clone();
             if (MirrorMismatch) { last[799] ^= 1; }
             return Task.FromResult(new SavedCpuFirmwareReadResult(

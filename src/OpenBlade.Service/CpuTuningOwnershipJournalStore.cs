@@ -6,7 +6,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-internal enum CpuTuningOwnershipState { Prepared, PossibleSubmission, OwnedVerified, Restored }
+internal enum CpuTuningOwnershipState { Prepared, PossibleSubmission, OwnedVerified, Restored, Blocked }
 
 internal sealed record CpuSavedTuningStep(
     CpuSavedTuningCommand Command,
