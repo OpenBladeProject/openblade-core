@@ -418,14 +418,41 @@ public sealed class IndependentInstalledProcessTests
             {
                 if (process.HasExited)
                 {
-                    Assert.True(File.Exists(path), $"Fixture exited {process.ExitCode} before {name}.");
+                    bool produced = File.Exists(path);
+                    Assert.True(produced, produced ? null
+                        : $"Fixture exited {process.ExitCode} before {name}. {ReadFailureDiagnostics()}");
                     break;
                 }
 
                 await Task.Delay(25);
             }
 
-            Assert.True(File.Exists(path), $"Fixture did not produce {name} in ten seconds.");
+            bool exists = File.Exists(path);
+            Assert.True(exists, exists ? null
+                : $"Fixture did not produce {name} in ten seconds. {ReadFailureDiagnostics()}");
+        }
+
+        private string ReadFailureDiagnostics()
+        {
+            try
+            {
+                string phasePath = Path.Combine(Root, "coordinator-phase.txt");
+                string phase = File.Exists(phasePath) && new FileInfo(phasePath).Length <= 1024
+                    ? File.ReadAllText(phasePath) : "missing or oversized";
+                return $"Coordinator phase: {phase}; child.started: {File.Exists(Path.Combine(Root, "child.started"))}; "
+                    + $"report.json: {File.Exists(Path.Combine(Root, "report.json"))}; "
+                    + $"retained parent: {Describe(Parent)}; retained coordinator: {Describe(Coordinator)}.";
+            }
+            catch (Exception exception)
+            {
+                return $"Fixture diagnostics unavailable: {exception.GetType().Name} 0x{exception.HResult:X8}.";
+            }
+
+            static string Describe(Process? retained)
+            {
+                if (retained is null) { return "not returned"; }
+                return retained.HasExited ? $"exited {retained.ExitCode}" : "running";
+            }
         }
 
         internal void CloseCallerJobs()
@@ -597,9 +624,19 @@ internal static class LaunchFixture
                 Environment.SetEnvironmentVariable(ParentHandleVariable, args[5]);
                 bool hidden = bool.Parse(args[3]);
                 stage = "start";
+                TryWriteCoordinatorPhase(root, "start-enter");
                 using Process child = IndependentInstalledProcess.Start(new(Environment.ProcessPath!, root, hidden,
                     hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal), parent, identity);
                 stage = "child-returned";
+                try
+                {
+                    TryWriteCoordinatorPhase(root, child.HasExited
+                        ? $"child-returned; exited {child.ExitCode}" : "child-returned; running");
+                }
+                catch (Exception exception)
+                {
+                    TryWriteCoordinatorPhase(root, $"child-returned; state unavailable {exception.GetType().Name} 0x{exception.HResult:X8}");
+                }
                 Thread.Sleep(15000);
             }
             catch (Exception exception)
@@ -679,6 +716,18 @@ internal static class LaunchFixture
 
     private static void WriteReport(string root, LaunchReport report) =>
         WriteAtomic(root, "report.json", JsonSerializer.Serialize(report));
+
+    private static void TryWriteCoordinatorPhase(string root, string phase)
+    {
+        try
+        {
+            string path = Path.Combine(root, "coordinator-phase.txt");
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, phase);
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception) { /* Diagnostics cannot replace the actual launch outcome. */ }
+    }
 
     private static void WriteAtomic(string root, string name, string content)
     {
