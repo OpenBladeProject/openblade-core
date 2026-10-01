@@ -148,6 +148,164 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ObservedSavedFeaturesApplyAndRestoreWithoutAdmittingLiveOrConstrainingOriginals()
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true, live: live,
+            savedAccess: DeviceFeatureAccess.ObservedOnly);
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(45, new(false, -10)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.Equal(2, context.Source.Submissions);
+        Assert.False(applied.CpuTuning!.Firmware.CanWrite);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetCpuTuningAsync(
+            CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default)).Status);
+        Assert.Equal(0, live.Curve!.Reads);
+        Assert.Empty(live.Curve.Sent);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            CpuPowerLimit = new(new(60, 90, 10), DeviceFeatureAccess.ObservedOnly),
+            CpuVoltageOptimizer = new(new(-30, -2, 2), DeviceFeatureAccess.ObservedOnly),
+        };
+        await context.Runtime.ObserveAsync(default);
+        // Restore -1 and exact default PPT Reset0, neither in these editor ranges.
+        var restored = await context.Runtime.RestoreCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(4, context.Source.Submissions);
+        Assert.Equal(baseline, context.Source.Bytes);
+        Assert.False(restored.CpuTuning!.RestorePending);
+    }
+
+    [Fact]
+    public async Task DefaultSavedFactoryStillDeniesAfterPairedReadWithoutPreparingOrSubmitting()
+    {
+        // Fail before creating the default native backend if production admission
+        // ever changes; this offline regression must never exercise a native setter.
+        Assert.False(WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(new(CpuSavedTuningCommandKind.CurveOptimizer, 0)));
+        Assert.False(WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(new(CpuSavedTuningCommandKind.CurveOptimizer, -1)));
+        var journal = new FailingSavedStore { Fail = false };
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true, savedJournal: journal,
+            savedAccess: DeviceFeatureAccess.ObservedOnly, defaultSavedBackend: true);
+        int readsBefore = context.Source.SavedReads;
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(false, -10)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Source.SavedReads > readsBefore);
+        Assert.Equal(0, journal.Writes);
+        Assert.Null(journal.Journal);
+        Assert.Equal(0, context.Source.Submissions);
+        Assert.Equal(baseline, context.Source.Bytes);
+        Assert.False(result.CpuTuning!.Firmware.CanWrite);
+    }
+
+    [Theory]
+    [InlineData("power-range")]
+    [InlineData("power-step")]
+    [InlineData("unknown-step")]
+    [InlineData("curve-range")]
+    [InlineData("curve-step")]
+    [InlineData("disable")]
+    [InlineData("readonly")]
+    [InlineData("unknown-access")]
+    [InlineData("missing")]
+    [InlineData("invalid-range")]
+    public async Task SavedForwardIntentRequiresEligibleFeatureAndSupportedValue(string denial)
+    {
+        bool curve = denial.StartsWith("curve", StringComparison.Ordinal) || denial == "disable";
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true,
+            savedAccess: DeviceFeatureAccess.ObservedOnly, configureCapabilities: capabilities => denial switch
+            {
+                "power-range" => capabilities with { CpuPowerLimit = new(new(70, 95, 1), DeviceFeatureAccess.ObservedOnly) },
+                "power-step" => capabilities with { CpuPowerLimit = new(new(45, 95, 10), DeviceFeatureAccess.ObservedOnly) },
+                "unknown-step" => capabilities with { CpuPowerLimit = new(new(45, 95, null), DeviceFeatureAccess.ObservedOnly) },
+                "curve-range" => capabilities with { CpuVoltageOptimizer = new(new(-8, -1, 1), DeviceFeatureAccess.ObservedOnly) },
+                "curve-step" => capabilities with { CpuVoltageOptimizer = new(new(-30, -2, 2), DeviceFeatureAccess.ObservedOnly) },
+                "disable" => capabilities with { CpuVoltageOptimizer = new(new(-30, -1, 1), DeviceFeatureAccess.ObservedOnly) },
+                "readonly" => capabilities with { CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ReadOnly) },
+                "unknown-access" => capabilities with { CpuPowerLimit = new(new(45, 95, 1), (DeviceFeatureAccess)99) },
+                "missing" => capabilities with { CpuPowerLimit = null },
+                _ => capabilities with { CpuPowerLimit = new(new(95, 45, 1), DeviceFeatureAccess.ObservedOnly) },
+            });
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            curve ? new(null, new(denial != "disable", -9)) : new(60, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Source.Calls);
+        Assert.Equal(0, context.Source.Submissions);
+    }
+
+    [Theory]
+    [InlineData("range")]
+    [InlineData("disable")]
+    [InlineData("access")]
+    [InlineData("missing")]
+    public async Task PublishedCapabilityLossDuringFinalDeviceProbeRevokesSavedAdmission(string loss)
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true, savedAccess: DeviceFeatureAccess.ObservedOnly);
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        var previousCapabilities = context.Runtime.GetStatus().Capabilities;
+        context.Source.BeforeSavedSend = () => context.Provider.BeforeVerify = () =>
+        {
+            context.Provider.BeforeVerify = null;
+            DeviceCapabilities revoked = loss switch
+            {
+                "range" => previousCapabilities! with { CpuPowerLimit = new(new(70, 95, 1), DeviceFeatureAccess.ObservedOnly) },
+                "disable" => previousCapabilities! with { CpuVoltageOptimizer = new(new(-30, -1, 1), DeviceFeatureAccess.ObservedOnly) },
+                "missing" => previousCapabilities! with { CpuPowerLimit = null },
+                _ => previousCapabilities! with { CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ReadOnly) },
+            };
+            // Simulate capability publication during the existing synchronous
+            // device probe; do not introduce a product admission/status override.
+            Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update = status => status with { Capabilities = revoked };
+            typeof(ServiceControlRuntime).GetMethod("PublishStatusUpdate",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(context.Runtime, [update]);
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            loss == "disable" ? new(null, new(false, -10)) : new(65, null), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.NotSame(previousCapabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Equal(0, context.Source.Submissions);
+        Assert.Equal(baseline, context.Source.Bytes);
+        Assert.True(result.CpuTuning!.RestorePending);
+    }
+
+    [Fact]
+    public async Task ZeroCurveOriginalRequiresDisableSupportBeforeApplyAndAgainBeforeRestore()
+    {
+        TestContext context = await CreateContextAsync(admittedSavedBackend: true, savedAccess: DeviceFeatureAccess.ObservedOnly);
+        context.Source.Bytes = CpuSavedTuningPlan.Simulate(context.Source.Bytes!, new(CpuSavedTuningCommandKind.CurveOptimizer, 0));
+        byte[] baseline = (byte[])context.Source.Bytes!.Clone();
+        var supported = context.Device.Capabilities;
+        context.Device.Capabilities = supported with
+        {
+            CpuVoltageOptimizer = supported.CpuVoltageOptimizer! with { SupportsEnableDisable = false },
+        };
+        await context.Runtime.ObserveAsync(default);
+        var denied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, denied.Status);
+        Assert.Equal(0, context.Source.Submissions);
+        context.Device.Capabilities = supported;
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.SetCpuTuningAsync(
+            CpuTuningTarget.FirmwareNextBoot, new(null, new(true, -2)), () => true, default)).Status);
+        context.Device.Capabilities = supported with { CpuVoltageOptimizer = supported.CpuVoltageOptimizer! with { SupportsEnableDisable = false } };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.RestoreCpuTuningAsync(
+            CpuTuningTarget.FirmwareNextBoot, () => true, default)).Status);
+        Assert.Equal(1, context.Source.Submissions);
+        context.Device.Capabilities = supported;
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.RestoreCpuTuningAsync(
+            CpuTuningTarget.FirmwareNextBoot, () => true, default)).Status);
+        Assert.Equal(2, context.Source.Submissions);
+        Assert.Equal(baseline, context.Source.Bytes);
+    }
+
+    [Fact]
     public async Task SessionLossAfterInitialGateStopsFakeSavedSubmission()
     {
         TestContext context = await CreateContextAsync(admittedSavedBackend: true);
@@ -457,7 +615,8 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
         bool admittedSavedBackend = false, bool powerAdmitted = true, LiveFixture? live = null,
-        ICpuTuningOwnershipJournalStore? savedJournal = null)
+        ICpuTuningOwnershipJournalStore? savedJournal = null, DeviceFeatureAccess savedAccess = DeviceFeatureAccess.ReadWrite,
+        bool defaultSavedBackend = false, Func<DeviceCapabilities, DeviceCapabilities>? configureCapabilities = null)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
@@ -467,9 +626,10 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         device.Capabilities = device.Capabilities with
         {
             CpuPowerLimit = supported ? new(new(45, 95, 1), writable && powerAdmitted
-                ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly) : null,
-            CpuVoltageOptimizer = writable ? new(new(-30, -1, 1), DeviceFeatureAccess.ReadWrite) : null,
+                ? savedAccess : DeviceFeatureAccess.ObservedOnly) : null,
+            CpuVoltageOptimizer = writable ? new(new(-30, -1, 1), savedAccess) { SupportsEnableDisable = true } : null,
         };
+        if (configureCapabilities is not null) { device.Capabilities = configureCapabilities(device.Capabilities); }
         var provider = new FakeProvider(device) { Available = verified };
         var source = new FakeObservationSource();
         if (admittedSavedBackend) { source.Bytes = CpuSavedTuningTransactionTests.Baseline(); }
@@ -483,7 +643,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
             cpuTuningController: new CpuTuningController(source,
                 admittedSavedBackend ? savedJournal ?? new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")) : null,
-                admittedSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,
+                admittedSavedBackend && !defaultSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,
                 live?.Curve, live?.CurveStore, live?.Power, live?.PowerStore));
         runtime.Initialize(configuration, writable ? PowerSource.PluggedIn : PowerSource.Battery);
         await runtime.ObserveAsync(CancellationToken.None);
@@ -507,6 +667,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         internal Action? BeforeSavedSend;
         internal byte[]? Bytes;
         internal int Submissions;
+        internal int SavedReads;
         public DeviceIdentity? ReadIdentity()
         {
             Calls++;
@@ -516,6 +677,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity)
         {
             Calls++;
+            SavedReads++;
             if (Bytes is not null)
             {
                 return new(SavedCpuFirmwareReadStatus.Observed, Rz090528CpuFirmwareCodec.DecodeSaved(Bytes),
@@ -534,11 +696,13 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     private sealed class FakeProvider(IBladeDevice device) : IVerifiedBladeDeviceProvider
     {
         public bool Available { get; set; } = true;
+        internal Action? BeforeVerify;
         public FirmwareCompatibilityStatus FirmwareCompatibility => FirmwareCompatibilityStatus.Tested;
         public bool RequiresUntestedFirmwareOverride => false;
         public void SetAllowUntestedFirmware(bool enabled) { }
         public bool TryGetVerifiedDevice(out IBladeDevice result)
         {
+            BeforeVerify?.Invoke();
             result = device;
             return Available;
         }

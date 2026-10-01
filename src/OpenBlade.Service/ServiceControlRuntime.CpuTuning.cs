@@ -110,7 +110,7 @@ public sealed partial class ServiceControlRuntime
             }
             if (!cpuTuningController.HasSavedBackend
                 || !CpuMutationSafetyAvailable(current, stillControlsSession)
-                || !CpuFeaturesAdmitted(current.Capabilities, settings, restoring))
+                || !CpuSavedFeaturesEligible(current.Capabilities, settings, restoring))
             {
                 return new(ControlOperationStatus.Blocked,
                     "CPU tuning requires admitted commands, exact restoration, and the active session on full power.")
@@ -121,13 +121,16 @@ public sealed partial class ServiceControlRuntime
             {
                 if (lowPowerGate.Generation != savedGeneration || !CpuSavedTuningPlan.IsExactIdentity(identity)
                     || !CpuMutationSafetyAvailable(GetStatus(), stillControlsSession)
-                    || !CpuCommandFeatureAdmitted(GetStatus().Capabilities, command)) { return false; }
+                    || !CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring)
+                    || !CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command)) { return false; }
                 ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
                 return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
                     && powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn
                     && deviceProvider.TryGetVerifiedDevice(out _)
                     && lowPowerGate.Generation == savedGeneration
-                    && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
+                    && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession)
+                    && CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring)
+                    && CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command);
             }
             ControlOperationResult result = restoring
                 ? await cpuTuningController.RestoreSavedAsync(FreshAdmission, token).ConfigureAwait(false)
@@ -207,8 +210,35 @@ public sealed partial class ServiceControlRuntime
                 && (settings.PowerLimitWatts is null || capabilities.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
                 && (settings.CurveOptimizer is null || capabilities.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite }));
 
-    private static bool CpuCommandFeatureAdmitted(DeviceCapabilities? capabilities, CpuSavedTuningCommand command) =>
-        command.Kind == CpuSavedTuningCommandKind.CurveOptimizer
-            ? capabilities?.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite }
-            : capabilities?.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite };
+    // Discovery describes the saved feature; the backend independently admits
+    // every exact forward and reverse command. It remains production-disabled.
+    private static bool CpuSavedFeatureAccessEligible(DeviceFeatureAccess access) =>
+        access is DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadWrite;
+
+    private static bool CpuSavedPowerEligible(DeviceCapabilities? capabilities) =>
+        capabilities?.CpuPowerLimit is { IsWellFormed: true } power && CpuSavedFeatureAccessEligible(power.Access);
+
+    private static bool CpuSavedCurveEligible(DeviceCapabilities? capabilities) =>
+        capabilities?.CpuVoltageOptimizer is { IsWellFormed: true } curve && CpuSavedFeatureAccessEligible(curve.Access);
+
+    private static bool CpuSavedFeaturesEligible(DeviceCapabilities? capabilities, CpuTuningSettings? settings, bool restoring) =>
+        capabilities is not null && (restoring || settings is { IsWellFormed: true, IsConfigured: true }
+            && (settings.PowerLimitWatts is null || CpuSavedPowerEligible(capabilities)
+                && capabilities.CpuPowerLimit!.Watts.Supports(settings.PowerLimitWatts.Value))
+            && (settings.CurveOptimizer is null || CpuSavedCurveEligible(capabilities)
+                && (settings.CurveOptimizer.Enabled
+                    ? capabilities.CpuVoltageOptimizer!.Value.Supports(settings.CurveOptimizer.Value)
+                    : capabilities.CpuVoltageOptimizer!.SupportsEnableDisable)));
+
+    // Originals are admitted by the exact restoration plan, not the forward
+    // editor range. Zero CO still requires explicit disable support; PPT reset
+    // is a distinct typed reverse command rather than an editable zero watts.
+    private static bool CpuSavedCommandFeatureEligible(DeviceCapabilities? capabilities, CpuSavedTuningCommand command) =>
+        command.IsWellFormed && (command.Kind switch
+        {
+            CpuSavedTuningCommandKind.CurveOptimizer => CpuSavedCurveEligible(capabilities)
+                && (command.Value != 0 || capabilities!.CpuVoltageOptimizer!.SupportsEnableDisable),
+            CpuSavedTuningCommandKind.PowerLimit or CpuSavedTuningCommandKind.ResetPowerLimit => CpuSavedPowerEligible(capabilities),
+            _ => false,
+        });
 }
