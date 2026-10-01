@@ -1,9 +1,12 @@
 # Cooling-pad developer counter reuse validation
 
-This prepares one finite, attended native experiment. It has not been run on
-hardware. Production pad admission remains closed. The vendor trace shows the
-`1E -> 00 -> 01 -> 02` boundary; it does not contain an identical fan transaction
-ID twice. A successful software test cannot replace native verification of reuse.
+The finite, attended native experiment completed successfully on September 30,
+2026 (Pacific), using source `589437b4`. It acknowledged an identical demand
+transaction ID with a changed payload and two subsequent demand exchanges, then
+completed explicit restoration and physical checks. Production pad admission
+remains closed. The earlier vendor trace established the `1E -> 00 -> 01 -> 02`
+boundary but did not contain an identical fan transaction ID twice; the native
+result below supplies separate application-level evidence of that reuse.
 
 The command is:
 
@@ -78,15 +81,16 @@ An assigned ID is not proof of native submission. Missing completion is unknown;
 a complete logical total is emitted only for successful completed cleanup and
 verified actor FullyDisposed release with no pending factory disposal. This
 is application evidence, not an independent packet trace, measured fan RPM,
-thermal tracking, firmware handback or production approval. Native reuse with two
-ACK successors remains the next attended check; production lifecycle, retained
-effects, cross-process admission and lighting requirements remain separate.
+thermal tracking, firmware handback or production approval. The completed native
+result meets the bounded reuse-and-two-successors objective; production lifecycle,
+retained effects, cross-process admission and lighting requirements remain separate.
 
-Version impact: this developer-only preparation leaves product version `0.24.0`,
+Version impact: this developer-only slice leaves product version `0.24.0`,
 IPC `59`, public contracts and stored schemas unchanged. No production capability
-is opened. No installed-service deployment or hardware run is part of these checks.
+is opened. Software verification and the subsequent attended hardware result are
+recorded separately below.
 
-## Software verification
+## Software verification before the attended run
 
 The full solution builds with zero warnings and errors. Full Protocol tests pass
 1668/1668 and Capture tests pass 507/507, including 18 counter-specific cases.
@@ -95,3 +99,51 @@ the host rerun. The unchanged elevated protected-store test is skipped in this
 run; its earlier positive result is separate. Independent final review passes,
 with hardware-free Protocol 52/52 and Capture 18/18 checks independently repeated.
 No native pad operations were executed by this verification.
+
+## Attended native result: September 30, 2026 (Pacific)
+
+The separately authorized run used exact source
+`589437b45a6416bcc7c926f207d7ce88e04ea032`, LocalDev build
+`65535.416.63420.24992`, on the exact host and pad scope above. The private native
+JSON is 35,303 bytes, SHA-256
+`C58552B8EA24E1A648A7BA18E5018FE22F4D7B1ABBE4DA25C62CB81D3B2B416C`.
+It records 43 acknowledged logical exchanges and 34 configured-demand decisions.
+All response outcomes are available, with no failure or unknown submission.
+
+The actual demand assignments establish reuse with a changed payload:
+
+| Logical exchange | Wire ID | Configured demand | Result |
+| --- | --- | --- | --- |
+| 6 | `06` | 2200 (`01052C`) | ACK, initial demand |
+| 37 | `06` | 1000 (`010514`) | ACK, repeated ID with changed payload |
+| 38 | `07` | 2200 (`01052C`) | ACK, first successor |
+| 39 | `08` | 1000 (`010514`) | ACK, second successor |
+
+The same serialized sequence also acknowledged the `1E -> 00 -> 01 -> 02`
+boundary at exchanges 30 through 33. This is actual recorded assignment and
+validated response evidence, not an inference from the configured loop count.
+
+Initial quiet/green/HB-inactive, first-demand and interval physical gates passed.
+Explicit restoration then acknowledged Medium `01012C` at ID `09`, quiet
+`000600` at `0A`, saved raw0000 SET at `0B` and the matching raw0000 query at `0C`.
+Medium, quiet and final physical confirmations all passed. The result reports
+completed restoration and resource cleanup, verified actor release, no manual
+attention requirement and no submission uncertainty. Independent review checked
+the source's FullyDisposed/zero-active/zero-pending cleanup requirement and the
+actual result. Native exit was zero at `2026-10-01T04:45:07.2515515+00:00`
+(September 30, 21:45:07 PDT).
+
+The separate attended helper accepted the final safe-cleanup confirmation under
+`CompletedRestoration`, restored the initially running OpenBlade service and
+exited zero. Its cleanup result is timestamped
+`2026-10-01T04:46:07.2968403+00:00`. Host verification found OpenBlade running,
+both Razer services stopped and no remaining trial or competing controllers.
+Fresh IPC59 reported the expected installed source, verified identity and pad
+Stop/Stopped/ObservedOnly, without submission uncertainty. Helper service cleanup
+is separate from native restoration; no retry or automatic recovery was needed.
+
+This finite result does not establish measured RPM, thermal tracking, indefinite
+updates, restart/reconnect safety, firmware ownership or production admission.
+No independent USB packet trace was collected. The installed service was stopped
+during the experiment, so outer service admission and cross-process controller
+exclusion remain unexercised. Further live work needs its own attended scope.

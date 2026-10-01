@@ -1,21 +1,25 @@
 # Cooling-pad continuous-control evidence and remaining gaps
 
-Native production admission remains closed. The finite service-curve result
-supports acknowledged demand changes and attended restoration, not continuous
-transaction reuse or session renewal.
+Native production admission remains closed. A separately authorized native run
+on September 30, 2026 (Pacific), using source `589437b4`, acknowledged repeated
+demand ID `06` with a changed payload and two demand successors, then completed
+explicit restoration and physical checks. This finite application-level result
+does not establish indefinite control, service lifecycle safety or session renewal.
+The earlier finite service-curve result separately supports acknowledged demand
+changes and attended restoration.
 
-The later ten-minute vendor trace below establishes acknowledged `0D/01`
+The earlier ten-minute vendor trace below establishes acknowledged `0D/01`
 demands across `1E -> 00`, followed by successful `01`, `02` and further demands.
-It does not show an identical fan request ID twice within the recording,
-independently instrument allocator lifetime, or validate native OpenBlade reuse.
+That trace alone does not show an identical fan request ID twice within the
+recording, independently instrument allocator lifetime, or validate native reuse.
 Production admission remains closed. Its final selection exceeded the stimulus
 deadline, recording timed out gracefully, and physical confirmation followed
 timeout; successful cleanup does not rewrite those outcomes.
 
-The subsequently authorized five-minute vendor capture is recorded in
+The earlier authorized five-minute vendor capture is recorded in
 [the bounded result](cooling-pad-vendor-continuous-capture.md). It contains one
 acknowledged configured-2200 demand and no changed-demand successors; fan IDs
-remain below `20`. The counter-reuse objective remains unresolved. Synapse and
+remain below `20`. That capture left the counter-reuse objective unresolved. Synapse and
 Razer services were stopped afterward and OpenBlade was restored. The saved
 Balanced CPU curve selects 2200 across rounded 40..99.9 degrees C, supporting an
 unchanged-target explanation. Current records do not prove capture-time settings.
@@ -26,12 +30,14 @@ or the preparation plan below.
 Another separately approved repeated-preset capture observed acknowledged
 `1E -> 00` during vendor Fixed/off restoration. Its seven demand ACKs remain
 below that transition; no fan ID repeats within the trace and no fan commands
-follow `00`. The demand-boundary objective therefore remains incomplete.
+follow `00`. The demand-boundary objective therefore remained incomplete at that stage.
 
 ## What the current evidence supports
 
-`ValidationRunContext` allocates IDs `01..FF` without reuse. This is a software
-limit, not an evidenced cooling-pad counter width. The source-inferred highest
+The ordinary `ValidationRunContext` path allocates IDs `01..FF` without reuse.
+This is a software limit, not an evidenced cooling-pad counter width. The new
+exact-pad developer opt-in and its finite native result are described below;
+ordinary allocation and default zero rejection remain unchanged. The source-inferred highest
 allocated ID in the successful `37b51016` trial was `17` hex: four restoration
 reservations, six startup exchanges and thirteen subsequent demand changes.
 No independent packet trace was collected for that trial.
@@ -46,8 +52,8 @@ Its unacknowledged lighting `0F/03` traffic cycles `1F -> 00 -> 01` at frames
 counter policy. Orderly handle-replacement results likewise do not prove counter
 exhaustion or uninterrupted host-demand renewal.
 
-Do not wrap IDs, widen admission to guessed high-bit IDs, reopen as a counter
-reset, or reacquire raw0300 on the strength of these observations. Raw control
+Those earlier observations do not justify generic ID wrapping, guessed high-bit
+IDs, reopening as a counter reset or reacquiring raw0300. Raw control
 state is not fan-state or firmware-ownership readback.
 
 ## Preparation for a separately authorized capture
@@ -263,9 +269,9 @@ Thus vendor Fixed/off restoration and its subsequent physical check were within
 recording. This does not validate an OpenBlade standalone off/handback command,
 measured RPM, thermal causality or firmware Auto ownership.
 
-The result supports distinct host-managed Smart demands, but the acknowledged
-counter-boundary objective remains unresolved. Native admission and transaction
-reuse remain closed. No further recording is authorized by this completed attempt.
+That result supports distinct host-managed Smart demands, but left the acknowledged
+counter-boundary objective unresolved. It did not admit native transaction reuse.
+No further recording is authorized by that completed attempt.
 
 ## Repeated-preset capture: observed restoration boundary
 
@@ -322,7 +328,7 @@ OpenBlade is running and both temporary Razer services are stopped. Read-only
 IPC59 verifies unchanged installed source `55718fa0` and pad
 Stop/Stopped/ObservedOnly, with no planned or historical demand. No OpenBlade pad
 Feature query/control command, measured-RPM test or software install occurred.
-Native admission, standalone handback and continuous demand reuse remain closed.
+That recording did not admit native reuse or standalone handback.
 Further recording requires separate authorization; this attempt cannot extend
 or restart automatically.
 
@@ -401,10 +407,50 @@ No OpenBlade pad Feature query/control command or software install occurred.
 Raw packets and vendor source remain private; no further recording is authorized
 by this completed attempt.
 
-## Eventual implementation boundary
+## Completed native repeated-ID validation
 
-An eventual pad-specific ID policy must come from that evidence. Keep one
-serialized exchange and validate its full response before permitting evidenced
-reuse. Ambiguous submission, timeout, unexpected response or incomplete disposal
-ends the epoch without retry or automatic renewal. A journal or saved request can
-block admission but cannot authorize recovery, reattachment or firmware handback.
+Following the vendor boundary evidence, a developer-only exact-pad policy was
+implemented and reviewed without opening production admission. The separately
+authorized native run used source
+`589437b45a6416bcc7c926f207d7ce88e04ea032`, LocalDev `65535.416.63420.24992`.
+The [counter validation guide](cooling-pad-counter-reuse-validation.md) records
+its scope, prior software checks, exact assignments and complete result.
+
+The native JSON records 43 ACKs and 34 alternating configured 2200/1000 demand
+decisions. Demand ID `06` first acknowledged configured 2200 at logical exchange
+6, then configured 1000 at exchange 37; `07`/2200 and `08`/1000 at exchanges
+38 and 39 were both acknowledged successors. The same serialized session crossed
+`1E -> 00 -> 01 -> 02`. These are recorded actor assignments with full validated
+response outcomes; no independent USB packet trace was collected.
+
+All initial, demand-interval and explicit Medium/quiet/final physical gates passed.
+Restoration acknowledged Medium `01012C`, quiet `000600`, saved raw0000 SET and
+matching raw0000 query. Native completion, verified actor disposal and helper
+cleanup succeeded with exit zero and no manual-attention or unknown-submission
+flag. The native terminal time was `2026-10-01T04:45:07.2515515+00:00`, which is
+September 30 at 21:45:07 PDT. The private 35,303-byte native JSON has SHA-256
+`C58552B8EA24E1A648A7BA18E5018FE22F4D7B1ABBE4DA25C62CB81D3B2B416C`.
+
+After the separate final safe-cleanup confirmation, the helper restored the
+initially running OpenBlade service. Host verification found both Razer services
+stopped and no remaining trial or competing controllers. Fresh IPC59 reported
+the expected installed source, verified identity and pad Stop/Stopped/ObservedOnly
+without submission uncertainty. This cleanup does not imply firmware handback.
+Raw0000 remains mode-state evidence; quiet is an operator observation.
+
+## Remaining implementation boundary
+
+The finite repeated-ID objective is met for the exact developer scope. Production
+still needs service ownership and admission across controller processes, a
+long-running serialized transaction policy with bounded queues, and safe
+stop/disconnect/power/restart
+behavior while retaining unresolved mutation evidence. The native experiment
+stopped the installed service and did not exercise its outer IPC/admission path.
+Lighting and firmware-ownership claims remain separate, unvalidated requirements.
+
+Keep one serialized exchange and full response validation. Ambiguous submission,
+timeout, unexpected response or incomplete disposal ends the epoch without retry
+or automatic renewal. A journal or saved request can block admission but cannot
+authorize recovery, reattachment or firmware handback. Neither this finite result
+nor a pure software test establishes measured RPM, thermal tracking or indefinite
+control; no production capability or further live attempt is authorized by it.
