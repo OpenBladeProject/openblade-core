@@ -117,24 +117,27 @@ public sealed partial class ServiceControlRuntime
                 { CpuTuning = current.CpuTuning };
             }
             long savedGeneration = lowPowerGate.Generation;
+            var diagnostic = new CpuSavedAdmissionDiagnostic();
             bool FreshAdmission(DeviceIdentity identity, CpuSavedTuningCommand command)
             {
-                if (lowPowerGate.Generation != savedGeneration || !CpuSavedTuningPlan.IsExactIdentity(identity)
-                    || !CpuMutationSafetyAvailable(GetStatus(), stillControlsSession)
-                    || !CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring)
-                    || !CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command)) { return false; }
+                if (!diagnostic.Check(lowPowerGate.Generation == savedGeneration, "runtime power generation before probes")
+                    || !diagnostic.Check(CpuSavedTuningPlan.IsExactIdentity(identity), "runtime command identity")
+                    || !CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic)
+                    || !diagnostic.Check(CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring), "runtime requested saved features before probes")
+                    || !diagnostic.Check(CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command), "runtime saved command feature before probes")) { return false; }
                 ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
-                return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
-                    && powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn
-                    && deviceProvider.TryGetVerifiedDevice(out _)
-                    && lowPowerGate.Generation == savedGeneration
-                    && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession)
-                    && CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring)
-                    && CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command);
+                return diagnostic.Check(presence.DetectionWarning is null, "runtime controller detection")
+                    && diagnostic.Check(presence.PotentialControllers.Count == 0, "runtime controller absence")
+                    && diagnostic.Check(powerStateProvider.CapturePowerSource() == PowerSource.PluggedIn, "runtime fresh power source")
+                    && diagnostic.Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
+                    && diagnostic.Check(lowPowerGate.Generation == savedGeneration, "runtime power generation after probes")
+                    && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic)
+                    && diagnostic.Check(CpuSavedFeaturesEligible(GetStatus().Capabilities, settings, restoring), "runtime requested saved features after probes")
+                    && diagnostic.Check(CpuSavedCommandFeatureEligible(GetStatus().Capabilities, command), "runtime saved command feature after probes");
             }
             ControlOperationResult result = restoring
-                ? await cpuTuningController.RestoreSavedAsync(FreshAdmission, token).ConfigureAwait(false)
-                : await cpuTuningController.ApplySavedAsync(settings!, FreshAdmission, token).ConfigureAwait(false);
+                ? await cpuTuningController.RestoreSavedAsync(FreshAdmission, token, diagnostic).ConfigureAwait(false)
+                : await cpuTuningController.ApplySavedAsync(settings!, FreshAdmission, token, diagnostic).ConfigureAwait(false);
             if (result.CpuTuning is { } observed)
             {
                 CpuTuningStatus? previous = GetStatus().CpuTuning;
@@ -191,15 +194,26 @@ public sealed partial class ServiceControlRuntime
     private static bool HasCpuRecovery(CpuTuningRecoveryStatus? recovery) =>
         recovery is { State: CpuTuningRecoveryState.RestoreReady or CpuTuningRecoveryState.Blocked, Features: not CpuTuningFeatures.None };
 
-    private bool CpuMutationSafetyAvailable(ServiceStatusSnapshot current, Func<bool> stillControlsSession) =>
-        stillControlsSession() && !lowPowerGate.IsActive && !thermalConvergenceShutdown
-        && current.DeviceVerified && !current.WritesBlocked
-        && current.ControlAccess == SessionControlAccess.Active
-        && current.ActivePowerSource == PowerSource.PluggedIn
-        && current.ControllerDetectionWarning is null && current.PotentialControllers.Count == 0
-        && current.UnconfirmedWrites.Count == 0 && !pendingWriteConfirmations.HasPending
-        && current.ConfirmedState?.HyperBoostActive != true && !current.HyperBoostRestorePending
-        && !hyperBoostJournalSafetyBlock && !hyperBoostRestorePending;
+    private bool CpuMutationSafetyAvailable(ServiceStatusSnapshot current, Func<bool> stillControlsSession,
+        CpuSavedAdmissionDiagnostic? diagnostic = null)
+    {
+        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
+        return Check(stillControlsSession(), "runtime controlling session")
+            && Check(!lowPowerGate.IsActive, "runtime active power lifecycle")
+            && Check(!thermalConvergenceShutdown, "runtime thermal shutdown")
+            && Check(current.DeviceVerified, "runtime verified device status")
+            && Check(!current.WritesBlocked, "runtime write safety status")
+            && Check(current.ControlAccess == SessionControlAccess.Active, "runtime control access status")
+            && Check(current.ActivePowerSource == PowerSource.PluggedIn, "runtime power source status")
+            && Check(current.ControllerDetectionWarning is null, "runtime controller detection status")
+            && Check(current.PotentialControllers.Count == 0, "runtime controller absence status")
+            && Check(current.UnconfirmedWrites.Count == 0, "runtime unconfirmed write status")
+            && Check(!pendingWriteConfirmations.HasPending, "runtime pending write confirmations")
+            && Check(current.ConfirmedState?.HyperBoostActive != true, "runtime HyperBoost state")
+            && Check(!current.HyperBoostRestorePending, "runtime HyperBoost restoration status")
+            && Check(!hyperBoostJournalSafetyBlock, "runtime HyperBoost journal safety")
+            && Check(!hyperBoostRestorePending, "runtime HyperBoost restoration");
+    }
 
     // The durable reverse plan determines restoration's required features.
     // Every reverse command is admitted before any submission and again at send

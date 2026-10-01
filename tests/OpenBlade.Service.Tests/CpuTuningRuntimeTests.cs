@@ -178,8 +178,12 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.False(restored.CpuTuning!.RestorePending);
     }
 
-    [Fact]
-    public async Task DefaultSavedFactorySessionRevocationAfterPairedReadPreventsNativeAdmission()
+    [Theory]
+    [InlineData("session", "runtime controlling session", 0)]
+    [InlineData("generation", "runtime power generation before probes", 0)]
+    [InlineData("device", "runtime fresh verified device", 1)]
+    public async Task DefaultSavedFactoryRevocationAfterPairedReadReportsFirstFailureBeforeNativeAdmission(
+        string failure, string stage, int expectedVerifications)
     {
         var journal = new FailingSavedStore { Fail = false };
         TestContext context = await CreateContextAsync(admittedSavedBackend: true, savedJournal: journal,
@@ -187,20 +191,29 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         int readsBefore = context.Source.SavedReads;
         byte[] baseline = (byte[])context.Source.Bytes!.Clone();
         bool active = true;
+        int verificationCalls = 0;
+        context.Provider.BeforeVerify = () => verificationCalls++;
         // Arm only after setup. The real default backend returns this fake pair,
         // then its runtime callback refuses before any native USB/controller or
         // WMI call. This fence is independent of the source-admission decision.
-        context.Source.AfterSavedRead = () => active = false;
+        context.Source.AfterSavedRead = () =>
+        {
+            if (failure == "session") { active = false; }
+            else if (failure == "generation") { context.Gate.Enter(); }
+            else { context.Provider.Available = false; }
+        };
         var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
             new(null, new(false, -10)), () => active, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.True(context.Source.SavedReads > readsBefore);
-        Assert.False(active);
+        Assert.Equal(failure != "session", active);
         Assert.Equal(0, journal.Writes);
         Assert.Null(journal.Journal);
         Assert.Equal(0, context.Source.Submissions);
         Assert.Equal(baseline, context.Source.Bytes);
         Assert.True(result.CpuTuning!.Firmware.CanWrite);
+        Assert.Equal($"CPU commands require attended service write and restoration admission. Admission failed at: {stage}.", result.Message);
+        Assert.Equal(expectedVerifications, verificationCalls);
     }
 
     [Theory]

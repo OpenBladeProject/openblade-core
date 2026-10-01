@@ -10,6 +10,49 @@ public sealed class WindowsSavedCpuTuningBackendTests
     private static readonly CpuSavedTuningCommand Curve = new(CpuSavedTuningCommandKind.CurveOptimizer, -1);
 
     [Theory]
+    [InlineData("identity", "saved command device identity", 0, 0)]
+    [InlineData("encoding", "saved command semantic encoding", 0, 0)]
+    [InlineData("runtime", "fresh runtime admission", 1, 0)]
+    [InlineData("host", "fresh host identity", 1, 1)]
+    public async Task FirstDeniedStageStopsBeforeLaterChecks(string failure, string stage,
+        int expectedAdmissions, int expectedIdentityReads)
+    {
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var source = new Source { Identity = failure == "host" ? Exact with { ProductId = 0 } : Exact };
+        var invoker = new Invoker();
+        int admissions = 0;
+        var backend = new WindowsSavedCpuTuningBackend(source, (_, _) =>
+        {
+            admissions++;
+            return failure != "runtime";
+        }, invoker, diagnostic);
+        Assert.False(await backend.CheckWriteAdmissionAsync(
+            failure == "identity" ? Exact with { ProductId = 0 } : Exact,
+            failure == "encoding" ? new(CpuSavedTuningCommandKind.CurveOptimizer, 1) : Curve, default));
+        Assert.Equal(stage, diagnostic.FirstFailure);
+        Assert.Equal(expectedAdmissions, admissions);
+        Assert.Equal(expectedIdentityReads, source.IdentityReads);
+        Assert.Equal(0, invoker.Calls);
+        Assert.False(diagnostic.Check(false, "later failure"));
+        Assert.True(diagnostic.Check(true, "later success"));
+        Assert.Equal(stage, diagnostic.FirstFailure);
+    }
+
+    [Fact]
+    public async Task SpecificRuntimeFailureSurvivesBackendFallbackAndStopsBeforeIdentity()
+    {
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var source = new Source();
+        var invoker = new Invoker();
+        var backend = new WindowsSavedCpuTuningBackend(source,
+            (_, _) => diagnostic.Check(false, "runtime controlling session"), invoker, diagnostic);
+        Assert.False(await backend.CheckWriteAdmissionAsync(Exact, Curve, default));
+        Assert.Equal("runtime controlling session", diagnostic.FirstFailure);
+        Assert.Equal(0, source.IdentityReads);
+        Assert.Equal(0, invoker.Calls);
+    }
+
+    [Theory]
     [InlineData("2.02")]
     [InlineData("2.03")]
     [InlineData("Unknown")]
@@ -17,8 +60,9 @@ public sealed class WindowsSavedCpuTuningBackendTests
     {
         var source = new Source { Identity = Exact with { BiosVersion = bios } };
         var invoker = new Invoker();
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
         var backend = new WindowsSavedCpuTuningBackend(source,
-            (_, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command), invoker);
+            (_, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command), invoker, diagnostic);
         foreach (var command in new[] { Curve, new(CpuSavedTuningCommandKind.CurveOptimizer, 0),
             new(CpuSavedTuningCommandKind.CurveOptimizer, -30), new(CpuSavedTuningCommandKind.PowerLimit, 45),
             new(CpuSavedTuningCommandKind.PowerLimit, 95), new(CpuSavedTuningCommandKind.ResetPowerLimit, 0) })
@@ -29,6 +73,7 @@ public sealed class WindowsSavedCpuTuningBackendTests
         }
         Assert.Equal(6, invoker.Calls);
         Assert.Equal(18, source.IdentityReads);
+        Assert.Null(diagnostic.FirstFailure);
     }
 
     [Fact]

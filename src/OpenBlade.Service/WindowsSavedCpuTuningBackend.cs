@@ -4,6 +4,19 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
+// One operation's first denial only; this carries no admission authority.
+internal sealed class CpuSavedAdmissionDiagnostic
+{
+    private string? firstFailure;
+    internal string? FirstFailure => Volatile.Read(ref firstFailure);
+
+    internal bool Check(bool allowed, string stage)
+    {
+        if (!allowed) { Interlocked.CompareExchange(ref firstFailure, stage, null); }
+        return allowed;
+    }
+}
+
 internal interface ICpuSavedFirmwareCommandInvoker
 {
     // A false/unknown result after invocation must never be treated as proof
@@ -17,22 +30,25 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
     private readonly ICpuTuningObservationSource source;
     private readonly Func<DeviceIdentity, CpuSavedTuningCommand, bool> admitted;
     private readonly ICpuSavedFirmwareCommandInvoker invoker;
+    private readonly CpuSavedAdmissionDiagnostic? diagnostic;
 
     internal WindowsSavedCpuTuningBackend(ICpuTuningObservationSource source,
-        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission)
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission,
+        CpuSavedAdmissionDiagnostic? diagnostic = null)
         : this(source, (identity, command) => freshRuntimeAdmission(identity, command)
-            && Rz090528CpuFreshUsbIdentity.Read() is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
-            && Rz090528CpuControllerPresence.ControllersAbsent(),
-            new WindowsCpuSavedFirmwareCommandInvoker())
+            && CheckStage(Rz090528CpuFreshUsbIdentity.Read() is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }, diagnostic, "fresh USB identity")
+            && CheckStage(Rz090528CpuControllerPresence.ControllersAbsent(), diagnostic, "fresh controller process/service inventory"),
+            new WindowsCpuSavedFirmwareCommandInvoker(), diagnostic)
     { }
 
     internal WindowsSavedCpuTuningBackend(ICpuTuningObservationSource source,
         Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission,
-        ICpuSavedFirmwareCommandInvoker invoker)
+        ICpuSavedFirmwareCommandInvoker invoker, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         this.source = source ?? throw new ArgumentNullException(nameof(source));
         admitted = freshRuntimeAdmission ?? throw new ArgumentNullException(nameof(freshRuntimeAdmission));
         this.invoker = invoker ?? throw new ArgumentNullException(nameof(invoker));
+        this.diagnostic = diagnostic;
     }
 
     public Task<bool> CheckWriteAdmissionAsync(DeviceIdentity identity, CpuSavedTuningCommand command,
@@ -43,9 +59,13 @@ internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
     }
 
     private bool Check(DeviceIdentity identity, CpuSavedTuningCommand command) =>
-        identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
-        && IsProductionCommandAdmitted(command) && admitted(identity, command)
-        && CpuHardwareIdentity.Same(source.ReadIdentity(), identity);
+        CheckStage(identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }, diagnostic, "saved command device identity")
+        && CheckStage(IsProductionCommandAdmitted(command), diagnostic, "saved command semantic encoding")
+        && CheckStage(admitted(identity, command), diagnostic, "fresh runtime admission")
+        && CheckStage(CpuHardwareIdentity.Same(source.ReadIdentity(), identity), diagnostic, "fresh host identity");
+
+    private static bool CheckStage(bool allowed, CpuSavedAdmissionDiagnostic? diagnostic, string stage) =>
+        diagnostic?.Check(allowed, stage) ?? allowed;
 
     public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token) =>
         CpuFirmwareReadScheduler.RunAsync(() =>

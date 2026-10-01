@@ -277,7 +277,12 @@ displays each limit separately, including fractional watts; it does not average
 them into an effective value. Older IPC 59 peers cannot read this expanded status
 contract, so deployment must update Service, Session Agent and Tray together.
 Default composition still supplies no concrete native provider.
-Installed-service IPC and saved-control validation remain pending. Live controls
+The coordinated IPC 61 installation passed complete saved-firmware baseline
+reads and typed service observation. Its first CO-disable request was rejected
+at forward/inverse admission before journal preparation or firmware submission;
+the PPT and restoration phases did not run. Saved write/restoration validation
+remains pending. First-failed-check diagnostics now preserve the existing
+predicates and short-circuit order ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)). Live controls
 also require trusted native proof and attended readback and restoration. Boot
 activation remains unverified and is separate from validating saved persistence.
 

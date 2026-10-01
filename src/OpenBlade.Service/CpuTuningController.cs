@@ -105,23 +105,26 @@ internal sealed class CpuTuningController
     }
 
     internal async Task<ControlOperationResult> ApplySavedAsync(CpuTuningSettings settings,
-        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token) =>
-        await MutateSavedAsync(settings, freshRuntimeAdmission, restoring: false, token).ConfigureAwait(false);
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token,
+        CpuSavedAdmissionDiagnostic? diagnostic = null) =>
+        await MutateSavedAsync(settings, freshRuntimeAdmission, restoring: false, token, diagnostic).ConfigureAwait(false);
 
     internal async Task<ControlOperationResult> RestoreSavedAsync(
-        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token) =>
-        await MutateSavedAsync(null, freshRuntimeAdmission, restoring: true, token).ConfigureAwait(false);
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, CancellationToken token,
+        CpuSavedAdmissionDiagnostic? diagnostic = null) =>
+        await MutateSavedAsync(null, freshRuntimeAdmission, restoring: true, token, diagnostic).ConfigureAwait(false);
 
     private CpuSavedTuningTransaction CreateTransaction(
-        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission) => new(
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission,
+        CpuSavedAdmissionDiagnostic? diagnostic = null) => new(
             backendFactory?.Invoke(freshRuntimeAdmission) ?? new WindowsSavedCpuTuningBackend(source,
                 (identity, command) => WindowsSavedCpuTuningBackend.IsProductionCommandAdmitted(command)
-                    && freshRuntimeAdmission(identity, command)),
+                    && freshRuntimeAdmission(identity, command), diagnostic),
             journalStore ?? throw new InvalidOperationException("CPU ownership storage is unavailable."));
 
     private async Task<ControlOperationResult> MutateSavedAsync(CpuTuningSettings? settings,
         Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission, bool restoring,
-        CancellationToken token)
+        CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
         token.ThrowIfCancellationRequested();
         if (journalStore is null)
@@ -134,7 +137,8 @@ internal sealed class CpuTuningController
         DeviceIdentity? identity = source.ReadIdentity();
         if (!CpuSavedTuningPlan.IsExactIdentity(identity))
         { return new(ControlOperationStatus.Blocked, "The saved CPU firmware identity is not admitted."); }
-        CpuSavedTuningTransaction transaction = CreateTransaction(freshRuntimeAdmission);
+        diagnostic ??= new CpuSavedAdmissionDiagnostic();
+        CpuSavedTuningTransaction transaction = CreateTransaction(freshRuntimeAdmission, diagnostic);
         CpuSavedTuningTransactionResult result = restoring
             ? await transaction.RestoreAsync(identity!, token).ConfigureAwait(false)
             : await transaction.ApplyAsync(identity!, settings!, token).ConfigureAwait(false);
@@ -182,6 +186,11 @@ internal sealed class CpuTuningController
                 _ => "The saved CPU state or write authority changed; further writes are blocked.",
             },
         };
+        if (operation == ControlOperationStatus.Blocked && result.Reason == CpuSavedTuningBlockReason.AdmissionDenied
+            && diagnostic.FirstFailure is { } failure)
+        {
+            message += $" Admission failed at: {failure}.";
+        }
         return new(savedPersistenceUncertain ? ControlOperationStatus.Blocked : operation,
             savedPersistenceUncertain ? "Saved CPU journal persistence is uncertain. Further saved writes are blocked." : message)
         { CpuTuning = status };
