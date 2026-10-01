@@ -1,5 +1,5 @@
-using OpenBlade.DeploymentBroker;
 using OpenBlade.Deployment;
+using OpenBlade.DeploymentBroker;
 
 namespace OpenBlade.DeploymentBroker.Tests;
 

@@ -1425,4 +1425,37 @@
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value>
   </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>Cancel restoration</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet.</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes.</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands.</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration.</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>I have checked the pad and confirm the requested physical condition</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>Restoration cancellation could not be confirmed. Further stages are not confirmed.</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation.</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>Restore quiet / confirm stage</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>Retained pad effects require attended resolution. This session cannot resume or restore automatically.</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>Stop retains the last demand. Preferred quiet restoration is available after this session acquires control.</value>
+  </data>
 </root>

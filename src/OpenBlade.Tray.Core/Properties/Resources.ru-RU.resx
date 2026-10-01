@@ -1425,4 +1425,37 @@
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value>
   </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>Отменить восстановление</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>Проверьте нормальную работу вентиляторов в среднем режиме, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Подтвердите, чтобы запросить предпочитаемый тихий режим.</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>Проверьте нормальную текущую работу вентиляторов, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Восстановление предпочитаемого тихого режима сначала запрашивает средний режим. Каждое подтверждение состояния подставки действует десять минут.</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>Проверьте работу вентиляторов в предпочитаемом тихом режиме, неизменное освещение, отсутствие красной индикации или индикации сна и выключенный HyperBoost. Подтвердите, чтобы завершить команды восстановления.</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>Проверьте, что предпочитаемый тихий режим и неизменное освещение остаются нормальными, нет красной индикации или индикации сна, а HyperBoost выключен. Подтвердите, чтобы завершить восстановление.</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>Я проверил подставку и подтверждаю требуемое фактическое состояние</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>Не удалось подтвердить отмену восстановления. Дальнейшие этапы не подтверждены.</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>Не удалось подтвердить восстановление. Обновите состояние; не повторяйте устаревшее подтверждение.</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>Восстановить тихий режим / подтвердить этап</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>Сохранившиеся эффекты подставки требуют устранения в присутствии пользователя. Этот сеанс не может автоматически возобновить работу или выполнить восстановление.</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>Остановка сохраняет последнюю заданную скорость. Восстановление предпочитаемого тихого режима доступно после получения управления этим сеансом.</value>
+  </data>
 </root>

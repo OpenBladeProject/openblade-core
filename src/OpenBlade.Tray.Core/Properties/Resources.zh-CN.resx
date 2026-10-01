@@ -1425,4 +1425,37 @@
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve">
     <value>无法确认散热底座连接。启用 HyperBoost 前，请刷新笔记本状态。</value>
   </data>
+  <data name="Cancel restoration" xml:space="preserve">
+    <value>取消恢复</value>
+  </data>
+  <data name="Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet." xml:space="preserve">
+    <value>请检查风扇在中档下运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。确认后请求恢复偏好的安静设置。</value>
+  </data>
+  <data name="Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes." xml:space="preserve">
+    <value>请检查当前风扇运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。恢复偏好的安静设置会先请求中档。每次现场确认在十分钟后失效。</value>
+  </data>
+  <data name="Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands." xml:space="preserve">
+    <value>请检查风扇在偏好的安静设置下运行正常、灯光未改变、没有红色或睡眠指示，且 HyperBoost 未启用。确认后完成恢复命令。</value>
+  </data>
+  <data name="Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration." xml:space="preserve">
+    <value>请检查偏好的安静设置和未改变的灯光仍保持正常，没有红色或睡眠指示，且 HyperBoost 未启用。确认后完成恢复。</value>
+  </data>
+  <data name="I have checked the pad and confirm the requested physical condition" xml:space="preserve">
+    <value>我已检查散热垫，并确认其实际状态符合要求</value>
+  </data>
+  <data name="Restoration cancellation could not be confirmed. Further stages are not confirmed." xml:space="preserve">
+    <value>无法确认恢复已取消。后续阶段尚未确认。</value>
+  </data>
+  <data name="Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation." xml:space="preserve">
+    <value>无法确认恢复。请刷新状态，不要重复已过期的确认。</value>
+  </data>
+  <data name="Restore quiet / confirm stage" xml:space="preserve">
+    <value>恢复安静设置 / 确认阶段</value>
+  </data>
+  <data name="Retained pad effects require attended resolution. This session cannot resume or restore automatically." xml:space="preserve">
+    <value>散热垫保留的效果需要在场处理。本次会话无法自动继续或恢复。</value>
+  </data>
+  <data name="Stop retains the last demand. Preferred quiet restoration is available after this session acquires control." xml:space="preserve">
+    <value>停止后会保留最后请求的转速。本次会话取得控制权后，即可恢复偏好的安静设置。</value>
+  </data>
 </root>

@@ -1,5 +1,5 @@
-using OpenBlade.Contracts;
 using Microsoft.Win32.SafeHandles;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol.Tests;
 
