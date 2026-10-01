@@ -1,108 +1,148 @@
-# Cooling-pad service integration
+# Cooling-pad service control
 
-Issue #119 and draft #621 now include a separate cooling-pad settings and
-status path. The installed service's native admission remains closed. This
-does not enable production control or establish measured fan RPM.
+This implementation adds installed-service fan control for the exact RZ09-0528 /
+RZ09-05289EN4 host and cooling pad `1532:0F43`, revision `0200`, MI00,
+usage `000C:0001`, 91-byte Windows Feature geometry with report prefix zero.
+Admission uses model/SKU and device metadata, never BIOS version. It requires
+fresh competing-controller absence before every SET. The installed IPC path
+still requires the attended acceptance check below; implementation and unit-test
+results are not a completed hardware validation.
 
-The service owns transient pad intent independently of laptop fan profiles:
-Stop, fixed configured demand, or independently evaluated CPU/GPU curves.
-Settings last until the service restarts; they are not saved in power profiles.
-The tray exposes an observed capability and separates requested settings,
-the latest planned demand, and historical exact acknowledgement. It never
-fills laptop fan readings with pad demand values.
+## Using fan control
 
-The supported developer identity is host model/SKU `RZ09-05289EN4` and pad
-`1532:0F43`, revision `0200`, MI00, usage `000C:0001`, 91-byte Windows Feature
-buffer with zero prefix. Model/SKU and exact device geometry control admission;
-BIOS versions are provenance only. Production composition constructs no native
-pad backend. Developer construction is explicit and cannot be selected through
-IPC, a profile, or a saved evidence artifact.
+Choose **Fixed demand** or **Host curve**, then **Use settings** and **Resume
+updates**. Settings apply to this service session and are not persisted as power
+profiles. Startup defaults to Stop and sends no pad commands. Requested settings,
+planned demand and historical acknowledged demand are displayed separately;
+none is measured fan speed.
 
-The coordinator stages settings before explicit Resume. Resume starts only
-from a freshly queried raw `0000`, then acquires/queries `0300` and sends the
-captured entry immediately followed by a fresh demand. Raw state is not
-fan-state readback or proof of firmware ownership. In an admitted running
-session, changing settings applies on the next maintenance tick without
-reacquisition. Unchanged targets are suppressed against the current session's
-last exact acknowledgement. The existing worker attempts pad maintenance every
-second one-second timer tick, a nominal two-second cadence. Laptop maintenance
-or other awaited work can delay that tick; each pad update acquires a new sample.
+Configured demand uses the vendor's 500..3200 RPM-unit range in steps of 50.
+The encoder and range are source/capture backed. Full-range physical behavior is
+not validated; the reviewed native trials cover a narrower set of demands.
+The capability retains `FullDemandRangePhysicallyValidated=false`.
 
-Curve planning uses the larger of the independently calculated CPU/GPU
-demands, endpoint clamping and upward 50-RPM quantization. Host acquisition
-age includes the read and must remain below five seconds, including a check
-after the controller guard immediately before native submission. It does not
-provide a sensor-origin timestamp. CPU input is the existing firmware thermal
-zone reading, not an independently measured CPU-core temperature.
+Host curves independently interpolate CPU/GPU points, clamp endpoints, round
+up to a 50-unit step and choose the larger demand. Maintenance uses the existing
+nominal two-second scheduler; other service work can delay it. Every new demand
+requires a sample acquired less than five seconds ago, rechecked after the
+controller guard immediately before SET. This is host acquisition age, not a
+sensor-origin timestamp. CPU is the existing firmware thermal-zone reading.
+An unqualified GPU-inactive heuristic cannot silently authorize CPU-only control.
+Missing, invalid, uncertain or stale telemetry pauses updates. A healthy session
+is parked, and explicit Resume requires fresh telemetry before another demand.
 
-The current GPU inactivity heuristic lacks counter-coverage attestation.
-Consequently this coordinator does not treat an unqualified inactive result
-as permission for CPU-only planning. Missing, invalid or stale telemetry
-pauses future writes, preserving historical acknowledgement as history.
-Unknown activity or an unavailable active-GPU temperature also pauses.
+**Stop updates** sends no quiet command or firmware handback. It revokes queued
+admission and parks a healthy owned session after its current operation settles.
+The pad may retain its last demand. Choose new settings and explicitly Resume to
+update that same session with fresh guards; no reopening or reacquisition occurs.
+Changing settings during Running applies at the next admitted tick. Only the
+current session's last exact ACK can suppress an unchanged target.
 
-Disconnects, conflicts, cancellation and ambiguous exchanges revoke the active
-epoch. A different user's authorization cannot revive an old pending SET.
-Reconnection never automatically replays intent; explicit Resume checks fresh
-admission. The current raw `0000` prerequisite can block Resume after a prior
-session left `0300`; this is reported instead of guessed recovery.
+## Restoring preferred quiet
 
-Stop ceases updates and disposes resources. The pad may retain its demand.
-Stop, telemetry failure, shutdown and low power send no quiet command or
-firmware handback. The attended developer trial has a separate explicit
-Medium-to-quiet restoration sequence on the same still-owned session; it
-cannot run after the session has become uncertain or been disposed.
+On a healthy running or parked session, read the physical prompt and check the
+confirmation box, then select **Restore quiet / confirm stage**. Keep watching
+fan behavior and lighting during confirmation and restoration. The initial
+confirmation means the current condition is normal; it is not a measured RPM
+snapshot. A changed acknowledged demand resets the checkbox. The stages are:
 
-Outer service coordination closes pad admission before a HyperBoost transition
-waits for either control gate. Pad Resume and maintenance serialize with laptop
-operations; a queued Resume from an older HyperBoost admission epoch is rejected.
-A protected machine-local record is armed before a possible native setter.
-It means mutation may have occurred, including when a later guard prevents
-submission; requested settings and observed metadata alone do not arm it.
-Stop, pause, disposal and restart do not clear it. Unresolved or invalid evidence
-blocks fresh pad Resume and HyperBoost entry; HyperBoost exit remains available
-for laptop recovery. Entry reloads the record rather than trusting cached state.
-Only complete explicit attended restoration with every physical check permits
-generation/hash-checked resolution. If replacement commits but later readback
-fails, the current runtime stays blocked; a restart may read that committed
-resolution. The record is neither fan-state readback nor authority to recover.
-Service IPC and native production admission are unchanged.
+1. Confirm normal current fan behavior, unchanged lighting, no red/sleep
+   indication and inactive HyperBoost; request captured Fixed Medium `01012C`.
+2. Confirm normal Medium behavior and the same lighting/HB conditions; request
+   captured preferred-quiet `000600`.
+3. Confirm preferred quiet and normal lighting/HB conditions; restore the saved
+   raw0000 control state and require the matching query.
+4. Confirm preferred quiet remains normal; resolve this operation's durable
+   evidence and close its session.
 
-The finite developer Capture runner uses the same fixed protected store.
-Its operator must have storage access and establish exclusive hardware control
-separately. Fresh loads do not serialize HyperBoost transitions across processes;
-the store does not stop the installed service or coordinate device ownership.
+Begin confirms the current normal condition under continuous operator watch and
+creates the operation ID after admission. Subsequent replies bind to that issued
+user/session-bound operation ID, expected stage and ten-minute monotonic deadline.
+A confirmation is consumed once. No checkbox or
+confirmation is carried to another stage or reconnected UI. Cancel, rejection,
+expiry, session change or ambiguity stops later stages. There is no automatic
+restoration in cleanup, shutdown or error handling. Raw0000 is mode evidence,
+not fan-state or ownership readback. Quiet is an operator observation, not a
+claim that firmware now runs an autonomous temperature curve.
 
-Native exchange waits and disposal are bounded. Late operations remain owned
-until actual completion, and a pending or failed disposal blocks replacement.
-Every native SET has fresh exact metadata/controller checks and revocation
-checks before and after the caller's admission predicate. No retry follows
-uncertain submission. Four transaction IDs are reserved for explicit developer
-restoration. The generic session allows at most 246 subsequent demand updates;
-the service path's additional startup query leaves at most 245. Neither recycles
-IDs. Continuous production transaction management remains
-a separate admission prerequisite.
-The byte-wide allocation ceiling is a software limit, not a validated pad
-counter width. The successful trial remained below ID `1F`; vendor lighting
-rollover does not establish acknowledged fan-control rollover. See the
-[continuous-control evidence gap](cooling-pad-continuous-control-evidence.md).
+## Ownership and failure behavior
 
-Service IPC advances from 58 to 59 for the typed settings and Resume requests.
-Protocol51 read-only compatibility and inactive-session projections omit pad
-intent/status. Profile, export and override schemas are unchanged. Shared
-Contracts changes require a coordinated installation rather than a tray-only
-patch. Product version advances from 0.23.0 to 0.24.0 for the new visible
-settings/status capability; this version does not admit native pad writes.
+The service and native developer pad openers share a protected machine-wide
+cooperative lease. The service retains its ownership reference after pad Stop;
+individual native-session references survive delayed disposal until actual
+FullyDisposed release. HyperBoost entry also needs this lease. Known older
+Capture processes, USBPcap and vendor controllers block production admission;
+relevant Razer services must be exactly Stopped. OpenBlade does not stop them.
+This lease excludes participating OpenBlade processes, not arbitrary vendor or
+administrator software. Fresh vendor checks remain necessary.
 
-The finite service-curve trial from source `37b51016` completed with exit zero:
-60 maintenance decisions, 14 acknowledged configured demands and explicit
-attended restoration. Source/build identity, actual acknowledgements, operator
-observations and the preceding separate telemetry failure are recorded in
-[the attended guide](cooling-pad-service-curve-trial.md). This result does not
-independently establish RPM, thermal causality or firmware Auto regulation.
+The exact-pad production policy uses one outstanding full-response exchange and
+wire IDs `01..1E,00..1E`. Queues and diagnostic state remain bounded; there is no
+finite developer-operation ceiling or accumulated unbounded history. Checked
+logical ACK counts exclude assignments rejected before SET. Ordinary allocators
+and default zero rejection are unchanged. The historical developer experiment
+retains its separate 39+4 capacity and its source-bound evidence.
 
-The trial exercises the core coordinator and adapter, not the outer installed
-service admission or IPC. Low-power, active-session and confirmed laptop
-HyperBoost admission remain outside its scope; HyperBoost inactivity is an
-attended operator requirement throughout. A successful trial cannot grant
-production admission.
+A proven admission revocation before native SET consumes that assignment without
+replaying it. Only an already-entered healthy production session may then park
+for a later explicit request. Partial startup, uncertain submission, unexpected
+response, identity/controller failure and incomplete disposal never use that
+exception. There is no automatic retry, reopen, reacquire or counter reset.
+
+The protected private journal records a pending mutation before a possible port
+setter and checkpoints exact acknowledged outcomes afterward. It distinguishes
+pending, acknowledged retained, parked, restoration-in-progress and resolved
+states. Generation/hash comparison prevents stale replacement. Settings and
+metadata alone do not arm it. Crashes between submission and durable outcome,
+corrupt/inaccessible storage, failed persistence and ambiguous completion block
+fresh control and HyperBoost entry. HyperBoost exit remains available.
+
+A blocked HyperBoost entry parks a healthy retained pad session so the user can
+still explicitly restore quiet. It does not erase the retained effect or revive
+an earlier queued SET. Power transitions, disconnection, competing controllers,
+active-session loss and shutdown revoke and dispose without firmware cleanup.
+No connection, power or process transition automatically resumes demand updates.
+
+After service restart or a disposed/disconnected epoch, the UI shows retained
+acknowledgements as history. The stored device scope identifies a class, not a
+uniquely serialized physical pad. Ordinary Resume and quiet restoration cannot
+use that record to open a replacement session. Clean retained-state takeover and
+distinct uncertain-state attended recovery remain closed: their new fresh-handle
+composition has not been validated. Do not clear the journal or interpret raw0000
+as recovery. Same-process healthy Stop/Resume is the supported resumable path.
+
+## Compatibility and remaining attended acceptance
+
+Product version advances from 0.24.0 to 0.25.0 for this capability; the current PR
+compares main 0.23.0 to 0.25.0. Service IPC advances from 59 to 60 for typed
+restoration requests/status. Protocol51 read-only projections continue to omit
+pad intent/status. Profiles, exports and override schemas are unchanged. The
+private mutation record writes schema2; legacy schema1 records load
+conservatively, and unresolved records are never automatically migrated clean.
+Older binaries fail closed on new records. Shared Contracts require a coordinated
+installation, not a tray-only patch.
+
+Before production acceptance, use the reviewed exact installed build through
+normal service IPC with the operator present: fresh quiet/green/HB-inactive
+baseline, a bounded changing-demand/curve interval, Stop then explicit Resume,
+blocked HyperBoost entry retaining restoration availability, and the explicit
+Medium/quiet/raw restoration prompts. Observe low/high vendor-range endpoints
+under a separately agreed scope; software encoding tests do not prove their
+physical behavior. Preserve source identity, actual ACKs and operator checks.
+Do not start a workload or vendor controller automatically.
+
+A later clean retained-state takeover check must be prepared as an explicit
+operation: exclusive new ownership, fresh exact guards/raw query, raw0000
+acquisition or an explicitly authorized raw0300 entry path, then fresh requested
+demand. Neither branch may replay saved demand or claim a unique-pad match. This
+specific path remains unavailable pending implementation review and attended
+validation; unknown outcomes need a separate explicitly attended resolution,
+not an ordinary Resume bypass. No further lifecycle matrix is required to prove
+software cancellation and storage failures; deterministic tests cover those.
+
+The earlier finite core trial and repeated-ID result remain separately recorded
+in [the service-curve guide](cooling-pad-service-curve-trial.md) and
+[the counter guide](cooling-pad-counter-reuse-validation.md). They do not test the
+outer installed-service IPC admission. Lighting remains a separate issue119
+requirement. This change makes no measured-RPM, thermal-tracking, firmware
+ownership or complete issue119 claim.

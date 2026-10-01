@@ -142,6 +142,13 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   property System.Collections.Generic.IReadOnlyList<System.String> HyperBoostBlockingControllers { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadControllerLease
+  interface System.IDisposable
+  ctor ()
+  method System.Boolean EnsureServiceOwnership()
+  method System.IDisposable Acquire()
+  method System.Threading.Tasks.Task<System.Boolean> EnsureServiceOwnershipAsync(System.Threading.CancellationToken token)
+  method virtual System.Void Dispose()
 type sealed class OpenBlade.Protocol.CoolingPadDemandEntryResult
   interface System.IEquatable<OpenBlade.Protocol.CoolingPadDemandEntryResult>
   ctor (OpenBlade.Protocol.CoolingPadWriteResult Entry, OpenBlade.Protocol.CoolingPadWriteResult Demand)
@@ -187,9 +194,12 @@ type sealed class OpenBlade.Protocol.CoolingPadSessionFactory
   ctor ()
   method System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadSessionOpenResult> OpenAsync(System.Threading.CancellationToken cancellationToken)
   method static OpenBlade.Protocol.CoolingPadSessionFactory CreateDeveloperWindows()
+  method static OpenBlade.Protocol.CoolingPadSessionFactory CreateProductionWindows(OpenBlade.Protocol.CoolingPadControllerLease ownership)
+  method static System.Boolean IsExactProductionHost()
 type enum OpenBlade.Protocol.CoolingPadSessionFault
   field System.Int32 value__
   field const OpenBlade.Protocol.CoolingPadSessionFault AdmissionClosed = 0
+  field const OpenBlade.Protocol.CoolingPadSessionFault AdmissionRevoked = 5
   field const OpenBlade.Protocol.CoolingPadSessionFault ControllerConflict = 2
   field const OpenBlade.Protocol.CoolingPadSessionFault Disconnected = 1
   field const OpenBlade.Protocol.CoolingPadSessionFault Rejected = 3

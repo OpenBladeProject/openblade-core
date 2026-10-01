@@ -8,8 +8,13 @@ namespace OpenBlade.Service;
 
 // This is a conservative mutation barrier, not ownership, measured fan state,
 // or authority to replay commands. The scope identifies a device class, not a serial.
+internal enum CoolingPadMutationPhase { Pending, Acknowledged, Parked, RestorationPending, RestorationAcknowledged, Resolved }
 internal sealed record CoolingPadMutationEvidence(int SchemaVersion, string Scope, long Generation,
-    Guid Epoch, bool MutationMayHaveOccurred);
+    Guid Epoch, bool MutationMayHaveOccurred)
+{
+    public CoolingPadMutationPhase? Phase { get; init; }
+    public int? LastAcknowledgedDemandRpm { get; init; }
+}
 internal sealed record CoolingPadMutationEvidenceSnapshot(CoolingPadMutationEvidence? Evidence,
     string? Sha256, bool Invalid = false)
 {
@@ -20,6 +25,9 @@ internal interface ICoolingPadMutationEvidenceStore
     Task<CoolingPadMutationEvidenceSnapshot> LoadAsync(CancellationToken token);
     Task<CoolingPadMutationEvidenceSnapshot> ArmAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token);
     Task<CoolingPadMutationEvidenceSnapshot> ResolveAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token);
+    Task<CoolingPadMutationEvidenceSnapshot> CheckpointAsync(CoolingPadMutationEvidenceSnapshot expected,
+        CoolingPadMutationPhase phase, int? demandRpm, CancellationToken token) =>
+        throw new NotSupportedException("This store does not support production checkpoints.");
 }
 
 internal sealed class InMemoryCoolingPadMutationEvidenceStore : ICoolingPadMutationEvidenceStore
@@ -30,6 +38,16 @@ internal sealed class InMemoryCoolingPadMutationEvidenceStore : ICoolingPadMutat
     { token.ThrowIfCancellationRequested(); lock (gate) { return Task.FromResult(current); } }
     public Task<CoolingPadMutationEvidenceSnapshot> ArmAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token) => Change(expected, true, token);
     public Task<CoolingPadMutationEvidenceSnapshot> ResolveAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token) => Change(expected, false, token);
+    public Task<CoolingPadMutationEvidenceSnapshot> CheckpointAsync(CoolingPadMutationEvidenceSnapshot expected,
+        CoolingPadMutationPhase phase, int? demandRpm, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            current = CoolingPadMutationEvidenceStore.Snapshot(CoolingPadMutationEvidenceStore.Checkpoint(current, expected, phase, demandRpm));
+            return Task.FromResult(current);
+        }
+    }
     private Task<CoolingPadMutationEvidenceSnapshot> Change(CoolingPadMutationEvidenceSnapshot expected, bool armed, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -76,12 +94,19 @@ internal sealed class CoolingPadMutationEvidenceStore : ICoolingPadMutationEvide
     public Task<CoolingPadMutationEvidenceSnapshot> ArmAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token) => Change(expected, true, token);
     public Task<CoolingPadMutationEvidenceSnapshot> ResolveAsync(CoolingPadMutationEvidenceSnapshot expected, CancellationToken token) => Change(expected, false, token);
 
-    private Task<CoolingPadMutationEvidenceSnapshot> Change(CoolingPadMutationEvidenceSnapshot expected, bool armed, CancellationToken token)
+    public Task<CoolingPadMutationEvidenceSnapshot> CheckpointAsync(CoolingPadMutationEvidenceSnapshot expected,
+        CoolingPadMutationPhase phase, int? demandRpm, CancellationToken token) =>
+        Commit(expected, current => Checkpoint(current, expected, phase, demandRpm), token);
+
+    private Task<CoolingPadMutationEvidenceSnapshot> Change(CoolingPadMutationEvidenceSnapshot expected, bool armed, CancellationToken token) =>
+        Commit(expected, current => { RequireExpected(current, expected, armed); return Next(expected, armed); }, token);
+
+    private Task<CoolingPadMutationEvidenceSnapshot> Commit(CoolingPadMutationEvidenceSnapshot expected,
+        Func<CoolingPadMutationEvidenceSnapshot, CoolingPadMutationEvidence> change, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         using var held = Lock();
-        RequireExpected(Read(), expected, armed);
-        CoolingPadMutationEvidence next = Next(expected, armed);
+        CoolingPadMutationEvidence next = change(Read());
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(next, Json);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -145,8 +170,11 @@ internal sealed class CoolingPadMutationEvidenceStore : ICoolingPadMutationEvide
             { throw new InvalidDataException("Duplicate or invalid pad evidence fields."); }
         }
         CoolingPadMutationEvidence? evidence = JsonSerializer.Deserialize<CoolingPadMutationEvidence>(bytes, Json);
-        if (evidence is null || evidence.SchemaVersion != 1 || evidence.Scope != ExactScope
-            || evidence.Generation <= 0 || evidence.Epoch == Guid.Empty)
+        if (evidence is null || evidence.SchemaVersion is not (1 or 2) || evidence.Scope != ExactScope
+            || evidence.Generation <= 0 || evidence.Epoch == Guid.Empty
+            || evidence.SchemaVersion == 2 && evidence.Phase is null
+            || evidence.Phase is { } phase && (!Enum.IsDefined(phase) || (phase == CoolingPadMutationPhase.Resolved) == evidence.MutationMayHaveOccurred)
+            || evidence.LastAcknowledgedDemandRpm is { } rpm && !OpenBlade.Contracts.CoolingPadFanCapabilities.Observed.VendorConfiguredDemandRpm.Supports(rpm))
         { throw new InvalidDataException("Invalid pad mutation evidence."); }
         return new(evidence, Convert.ToHexString(SHA256.HashData(bytes)));
     }
@@ -164,8 +192,36 @@ internal sealed class CoolingPadMutationEvidenceStore : ICoolingPadMutationEvide
         { throw new InvalidDataException("Pad evidence changed or is unresolved."); }
     }
     internal static CoolingPadMutationEvidence Next(CoolingPadMutationEvidenceSnapshot expected, bool armed) =>
-        new(1, ExactScope, checked((expected.Evidence?.Generation ?? 0) + 1),
-            armed ? Guid.NewGuid() : expected.Evidence!.Epoch, armed);
+        new(2, ExactScope, checked((expected.Evidence?.Generation ?? 0) + 1),
+            armed ? Guid.NewGuid() : expected.Evidence!.Epoch, armed)
+        { Phase = armed ? CoolingPadMutationPhase.Pending : CoolingPadMutationPhase.Resolved };
+
+    internal static CoolingPadMutationEvidence Checkpoint(CoolingPadMutationEvidenceSnapshot current,
+        CoolingPadMutationEvidenceSnapshot expected, CoolingPadMutationPhase phase, int? demandRpm)
+    {
+        RequireExpected(current, expected, false);
+        if (!Enum.IsDefined(phase) || phase == CoolingPadMutationPhase.Resolved
+            || demandRpm is { } rpm && !OpenBlade.Contracts.CoolingPadFanCapabilities.Observed.VendorConfiguredDemandRpm.Supports(rpm))
+        { throw new InvalidDataException("Invalid pad checkpoint."); }
+        var previous = current.Evidence!.Phase ?? CoolingPadMutationPhase.Pending;
+        bool valid = phase switch
+        {
+            CoolingPadMutationPhase.Pending => previous is CoolingPadMutationPhase.Acknowledged or CoolingPadMutationPhase.Parked,
+            CoolingPadMutationPhase.RestorationPending => previous is CoolingPadMutationPhase.Acknowledged or CoolingPadMutationPhase.Parked or CoolingPadMutationPhase.RestorationAcknowledged,
+            CoolingPadMutationPhase.Acknowledged => previous == CoolingPadMutationPhase.Pending,
+            CoolingPadMutationPhase.RestorationAcknowledged => previous == CoolingPadMutationPhase.RestorationPending,
+            CoolingPadMutationPhase.Parked => previous is CoolingPadMutationPhase.Acknowledged or CoolingPadMutationPhase.Parked,
+            _ => false,
+        };
+        if (!valid) { throw new InvalidDataException("Invalid pad checkpoint transition."); }
+        return current.Evidence with
+        {
+            SchemaVersion = 2,
+            Generation = checked(current.Evidence.Generation + 1),
+            Phase = phase,
+            LastAcknowledgedDemandRpm = demandRpm ?? current.Evidence.LastAcknowledgedDemandRpm
+        };
+    }
     internal static CoolingPadMutationEvidenceSnapshot Snapshot(CoolingPadMutationEvidence evidence) =>
         new(evidence, Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(evidence, Json))));
 

@@ -11,6 +11,35 @@ public sealed class CoolingPadMutationEvidenceStoreTests : IDisposable
     private CoolingPadMutationEvidenceStore Store() => new(directory, (_, _) => { }, _ => { });
 
     [Fact]
+    public async Task ProductionCheckpointsPersistPendingAndRejectStaleOrSkippedTransitions()
+    {
+        var store = Store();
+        var armed = await store.ArmAsync(await store.LoadAsync(default), default);
+        var acknowledged = await store.CheckpointAsync(armed, CoolingPadMutationPhase.Acknowledged, 1600, default);
+        var parked = await store.CheckpointAsync(acknowledged, CoolingPadMutationPhase.Parked, null, default);
+        Assert.Equal(1600, parked.Evidence!.LastAcknowledgedDemandRpm);
+        var pending = await store.CheckpointAsync(parked, CoolingPadMutationPhase.Pending, null, default);
+        Assert.Equal(pending, await Store().LoadAsync(default));
+        Assert.Equal(CoolingPadMutationPhase.Pending, pending.Evidence!.Phase);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.CheckpointAsync(parked, CoolingPadMutationPhase.Acknowledged, 1000, default));
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.CheckpointAsync(pending, CoolingPadMutationPhase.Parked, null, default));
+        Assert.True((await Store().LoadAsync(default)).BlocksAdmission);
+    }
+
+    [Fact]
+    public async Task LegacyArmedRecordLoadsAsUnresolvedAndCannotBecomeCleanThroughCheckpoint()
+    {
+        string json = $$"""{"schemaVersion":1,"scope":"{{CoolingPadMutationEvidenceStore.ExactScope}}","generation":1,"epoch":"{{Guid.NewGuid()}}","mutationMayHaveOccurred":true}""";
+        await File.WriteAllTextAsync(Path.Combine(directory, CoolingPadMutationEvidenceStore.FileName), json);
+        var store = Store();
+        var old = await store.LoadAsync(default);
+        Assert.True(old.BlocksAdmission);
+        Assert.Null(old.Evidence!.Phase);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.CheckpointAsync(old, CoolingPadMutationPhase.Parked, null, default));
+        Assert.Equal(json, await File.ReadAllTextAsync(Path.Combine(directory, CoolingPadMutationEvidenceStore.FileName)));
+    }
+
+    [Fact]
     public async Task DurableArmSurvivesNewStoreAndOnlyMatchingResolutionClears()
     {
         var first = Store();
@@ -50,7 +79,7 @@ public sealed class CoolingPadMutationEvidenceStoreTests : IDisposable
         json = change switch
         {
             "corrupt" => "{",
-            "schema" => json.Replace("\"schemaVersion\":1", "\"schemaVersion\":99"),
+            "schema" => json.Replace("\"schemaVersion\":2", "\"schemaVersion\":99"),
             "scope" => json.Replace("RZ09-05289EN4", "OTHER"),
             "oversize" => new string(' ', 4097),
             "duplicateProperty" => json.Insert(1, "\"schemaVersion\":1,"),

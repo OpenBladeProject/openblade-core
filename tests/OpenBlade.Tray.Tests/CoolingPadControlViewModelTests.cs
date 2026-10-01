@@ -6,6 +6,85 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class CoolingPadControlViewModelTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InitialConfirmationResetsWhenPhysicalPremiseChanges(bool retainedEffect)
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var pad = Pad() with { QuietRestorationAvailable = true };
+        view.Update(Snapshot(pad), true);
+        view.PhysicalConfirmation = true;
+        view.Update(Snapshot(retainedEffect ? pad with { RetainedEffect = true } : pad with { LastAcknowledgedDemand = new(2200) }), true);
+        Assert.True(view.CanConfirmPhysical);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task NewlyAvailableInitialPromptRequiresFreshConfirmationButUnchangedRefreshPreservesIt()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad()), true);
+        Assert.False(view.CanConfirmPhysical);
+        view.PhysicalConfirmation = true; // A stale binding or previous draft cannot pre-confirm a new prompt.
+        view.Update(Snapshot(Pad() with { QuietRestorationAvailable = true }), true);
+        Assert.True(view.CanConfirmPhysical);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+        view.PhysicalConfirmation = true;
+        view.Update(Snapshot(Pad() with { QuietRestorationAvailable = true, PlannedDemand = new(1600) }), true);
+        Assert.True(view.PhysicalConfirmation);
+        Assert.True(view.RestoreQuietCommand.CanExecute(null));
+        view.Update(Snapshot(Pad()), true);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.CanConfirmPhysical);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnchangedStageCannotCarryConfirmationAcrossDisconnectOrUnknownSubmission(bool unknown)
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var pad = Pad() with { Restoration = new(Guid.NewGuid(), CoolingPadRestorationStage.Medium, DateTimeOffset.UtcNow.AddMinutes(10)) };
+        view.Update(Snapshot(pad), true);
+        view.PhysicalConfirmation = true;
+        view.Update(Snapshot(pad with { SubmissionStateUnknown = unknown }), unknown);
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.CanConfirmPhysical);
+        view.Update(Snapshot(pad), true);
+        Assert.True(view.CanConfirmPhysical);
+        Assert.False(view.PhysicalConfirmation);
+    }
+
+    [Fact]
+    public async Task RestorationPhysicalConfirmationIsNeverCarriedAcrossStagesOrReconnect()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        var prompt = new CoolingPadRestorationPrompt(Guid.NewGuid(), CoolingPadRestorationStage.Medium, DateTimeOffset.UtcNow.AddMinutes(10));
+        view.Update(Snapshot(Pad() with { Restoration = prompt }), true);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+        view.PhysicalConfirmation = true;
+        Assert.True(view.RestoreQuietCommand.CanExecute(null));
+        view.Update(Snapshot(Pad() with { Restoration = prompt with { Stage = CoolingPadRestorationStage.Quiet } }), true);
+        Assert.False(view.PhysicalConfirmation);
+        view.PhysicalConfirmation = true;
+        view.Disconnect();
+        Assert.False(view.PhysicalConfirmation);
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task KnownRetainedWithoutLiveSessionDoesNotOfferResumeOrQuietRestoration()
+    {
+        await using var view = new CoolingPadControlViewModel(new Client(), default);
+        view.Update(Snapshot(Pad() with { RetainedEffect = true, RetainedSessionResumable = false }), true);
+        Assert.False(view.ResumeCommand.CanExecute(null));
+        Assert.False(view.RestoreQuietCommand.CanExecute(null));
+        Assert.Contains("attended resolution", view.RestorationText);
+    }
+
     [Fact]
     public async Task HostCurveRequestPlannedDemandAndHistoricalAcknowledgementHaveSeparateLabels()
     {

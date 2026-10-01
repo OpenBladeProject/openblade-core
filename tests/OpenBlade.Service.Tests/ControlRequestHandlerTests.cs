@@ -55,6 +55,7 @@ public sealed class ControlRequestHandlerTests
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), CoolingPadControlSettings.Stopped),
             new ResumeCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new RestoreCoolingPadQuietRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.Empty, CoolingPadRestorationStage.Begin, true),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
             new StepKeyboardBrightnessRequest(
                 OpenBladeIpc.ProtocolVersion,
@@ -140,7 +141,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetCoolingPadControl", "ResumeCoolingPadControl", "SetLightingOverride",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetCoolingPadControl", "ResumeCoolingPadControl", "RestoreCoolingPadQuiet", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
@@ -677,6 +678,10 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) =>
             Record("SetFanOverride");
+
+        public Task<ControlOperationResult> RestoreCoolingPadQuietAsync(RestoreCoolingPadQuietRequest request, string owner,
+            Func<bool> stillControlsSession, CancellationToken token) => stillControlsSession() ? Record("RestoreCoolingPadQuiet")
+                : Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Inactive"));
 
         public Task<ControlOperationResult> SetCoolingPadControlAsync(
             CoolingPadControlSettings settings, Func<bool> stillControlsSession, CancellationToken token) =>

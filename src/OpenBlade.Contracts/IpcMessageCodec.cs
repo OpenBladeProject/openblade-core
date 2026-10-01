@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 59;
+    public const int ProtocolVersion = 60;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
@@ -256,6 +256,8 @@ public static class IpcMessageCodec
                             || set.Settings.Mode == set.Value.Value),
             SetCoolingPadControlRequest set => set.Settings is not null,
             ResumeCoolingPadControlRequest => true,
+            RestoreCoolingPadQuietRequest restore => Enum.IsDefined(restore.Stage)
+                && (restore.Stage == CoolingPadRestorationStage.Begin ? restore.OperationId == Guid.Empty : restore.OperationId != Guid.Empty),
             SetLightingOverrideRequest set =>
                 set.Value is null
                 || set.Value.Value is not null

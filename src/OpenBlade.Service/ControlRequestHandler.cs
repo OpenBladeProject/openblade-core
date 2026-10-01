@@ -229,6 +229,8 @@ public sealed class ControlRequestHandler
             SetCoolingPadControlRequest set => Result(
                 request.RequestId,
                 await runtime.SetCoolingPadControlAsync(set.Settings, stillControlsSession, cancellationToken)),
+            RestoreCoolingPadQuietRequest restore => Result(request.RequestId,
+                await runtime.RestoreCoolingPadQuietAsync(restore, $"{client.UserSid}:{client.SessionId}", stillControlsSession, cancellationToken)),
             ResumeCoolingPadControlRequest => Result(
                 request.RequestId,
                 await runtime.ResumeCoolingPadControlAsync(stillControlsSession, cancellationToken)),

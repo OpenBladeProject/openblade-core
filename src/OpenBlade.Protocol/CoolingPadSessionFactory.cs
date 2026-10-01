@@ -7,13 +7,14 @@ public enum CoolingPadSessionFault
     ControllerConflict,
     Rejected,
     SubmissionUnknown,
+    AdmissionRevoked,
 }
 
 public sealed record CoolingPadSessionOpenResult(
     ICoolingPadDemandSession? Session,
     CoolingPadSessionFault? Fault);
 
-/// <summary>Production admission remains closed. Developer opening is explicit.</summary>
+/// <summary>The default constructor is closed; production and developer opening require explicit composition.</summary>
 public sealed class CoolingPadSessionFactory
 {
     private readonly Func<IValidationActorFactory>? createActors;
@@ -22,24 +23,61 @@ public sealed class CoolingPadSessionFactory
     private int active;
     private readonly bool developerCounter;
     private int counterOpened;
+    private readonly bool production;
+    private readonly Func<IDisposable?>? acquireLease;
+    private IDisposable? controllerLease;
     internal CoolingPadDeveloperCounterPolicy? CounterEvidence { get; private set; }
     internal bool DeveloperCounterResourcesReleased => developerCounter
         && Volatile.Read(ref active) == 0 && pending.Count == 0;
 
     public CoolingPadSessionFactory() : this(null, TimeProvider.System) { }
 
-    internal CoolingPadSessionFactory(Func<IValidationActorFactory>? createActors, TimeProvider clock, bool developerCounter = false)
+    internal CoolingPadSessionFactory(Func<IValidationActorFactory>? createActors, TimeProvider clock, bool developerCounter = false,
+        bool production = false, Func<IDisposable?>? acquireLease = null)
     {
         this.developerCounter = developerCounter;
+        this.production = production;
+        this.acquireLease = acquireLease;
         this.createActors = createActors;
         this.clock = clock;
     }
 
     public static CoolingPadSessionFactory CreateDeveloperWindows() =>
-        new(() => CreateDeveloperActors(), TimeProvider.System);
+        new(() => CreateDeveloperActors(), TimeProvider.System, acquireLease: AcquireDeveloperLease);
 
     internal static CoolingPadSessionFactory CreateDeveloperCounterWindows() =>
-        new(() => CreateDeveloperActors(true), TimeProvider.System, developerCounter: true);
+        new(() => CreateDeveloperActors(true), TimeProvider.System, developerCounter: true, acquireLease: AcquireDeveloperLease);
+
+    public static bool IsExactProductionHost()
+    {
+        try
+        {
+            var registry = new WindowsRegistryValueSource();
+            var identity = new WindowsHostIdentitySource(registry, new RuntimeWindowsPlatformEvidenceSource(registry),
+                WindowsHostIdentitySource.Rz090528Identity).ReadExactIdentity();
+            return identity.Evidence is not null && identity.Failure is null;
+        }
+        catch { return false; }
+    }
+
+    public static CoolingPadSessionFactory CreateProductionWindows(CoolingPadControllerLease ownership) =>
+        new(() => CreateDeveloperActors(production: true), TimeProvider.System, production: true,
+            acquireLease: () => ownership.EnsureServiceOwnership() ? ownership.Acquire() : null);
+
+    private static IDisposable? AcquireDeveloperLease()
+    {
+        var owner = new CoolingPadControllerLease();
+        var reference = owner.Acquire();
+        owner.Dispose();
+        return reference;
+    }
+
+    private void ReleaseOwnership()
+    {
+        controllerLease?.Dispose();
+        controllerLease = null;
+        Interlocked.Exchange(ref active, 0);
+    }
 
     public async Task<CoolingPadSessionOpenResult> OpenAsync(CancellationToken cancellationToken)
     {
@@ -61,8 +99,20 @@ public sealed class CoolingPadSessionFactory
         var context = new ValidationRunContext();
         if (developerCounter) { CounterEvidence = context.CreateCoolingPadDeveloperCounterPolicy(); }
         // Isolate synchronous enumeration/opening too. A late open is disposed, never returned.
+        long openingStarted = clock.GetTimestamp();
         Task<HidSessionResult<ValidationActor>> opening = Task.Run(async () =>
-            await createActors().OpenAsync(context).ConfigureAwait(false), CancellationToken.None);
+        {
+            if (acquireLease is not null)
+            {
+                controllerLease = acquireLease();
+                if (controllerLease is null)
+                { return new HidSessionResult<ValidationActor>(null, HidSessionFailureKind.ConflictBlocked); }
+            }
+            // A slow or canceled lease acquisition cannot progress into native opening.
+            if (cancellationToken.IsCancellationRequested || clock.GetElapsedTime(openingStarted) >= TimeSpan.FromSeconds(3))
+            { return new HidSessionResult<ValidationActor>(null, HidSessionFailureKind.QueuedCanceled); }
+            return await createActors().OpenAsync(context).ConfigureAwait(false);
+        }, CancellationToken.None);
         try
         {
             var opened = await opening.WaitAsync(TimeSpan.FromSeconds(3), clock, cancellationToken).ConfigureAwait(false);
@@ -76,12 +126,12 @@ public sealed class CoolingPadSessionFactory
                 }
                 if (opened.Value is null || opened.Value.Session.Disposition == RazerCommandSessionDisposition.FullyDisposed)
                 {
-                    Interlocked.Exchange(ref active, 0);
+                    ReleaseOwnership();
                 }
                 return new(null, CoolingPadDemandSession.MapFault(opened.Failure));
             }
             return new(new CoolingPadDemandSession(opened.Value, context, clock, pending,
-                () => Interlocked.Exchange(ref active, 0), CounterEvidence), null);
+                ReleaseOwnership, CounterEvidence, production ? new CoolingPadTransactionPolicy() : null), null);
         }
         catch
         {
@@ -101,7 +151,7 @@ public sealed class CoolingPadSessionFactory
                 catch { release = opening.IsFaulted || opening.IsCanceled; }
                 finally
                 {
-                    if (release) { Interlocked.Exchange(ref active, 0); }
+                    if (release) { ReleaseOwnership(); }
                 }
             }));
             return new(null, CoolingPadSessionFault.Disconnected);
@@ -111,7 +161,7 @@ public sealed class CoolingPadSessionFactory
     internal static readonly HidHandleIdentity ExactPadIdentity =
         new(0x1532, 0x0F43, 0x000C, 0x0001, 91, 0x0200);
 
-    private static IValidationActorFactory CreateDeveloperActors(bool counter = false)
+    private static IValidationActorFactory CreateDeveloperActors(bool counter = false, bool production = false)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -119,12 +169,12 @@ public sealed class CoolingPadSessionFactory
             WindowsHostIdentitySource.Rz090528Identity);
         var padNative = new PadInterfaceNative(native);
         var guard = new PadAccessGuard(new RunningProcessSource(), new WindowsServiceSource(),
-            () => HostAndPadStillExact(host, padNative), requireOpenBladeServiceAbsent: counter, developerProcessAllowed: counter ? CounterProcessAlone : null);
+            () => HostAndPadStillExact(host, padNative), requireOpenBladeServiceAbsent: !production, developerProcessAllowed: !production ? CounterProcessAlone : null, production: production);
         var opener = new WindowsRazerHidSessionOpener(
             host, guard, padNative, ControllerExclusivityPolicy.Strict, ExactPadIdentity);
         return new ValidationActorFactory(opener, new OverlappedFeatureOperation(native), guard,
             TimeProvider.System, TimeSpan.FromSeconds(3), ControllerExclusivityPolicy.Strict,
-            TimeSpan.FromMilliseconds(30), featureReportId: 0, developerCounterIdentity: counter ? ExactPadIdentity : null);
+            TimeSpan.FromMilliseconds(30), featureReportId: 0, developerCounterIdentity: counter ? ExactPadIdentity : null, productionPadIdentity: production ? ExactPadIdentity : null);
     }
 
     internal static bool HostAndPadStillExact(IHostIdentitySource host, IHidCandidateNative native)
@@ -178,7 +228,7 @@ public sealed class CoolingPadSessionFactory
     }
 
     internal sealed class PadAccessGuard(IRunningProcessSource processes, IWindowsServiceSource services,
-        Func<bool>? identityAllowed = null, bool requireOpenBladeServiceAbsent = false, Func<bool>? developerProcessAllowed = null)
+        Func<bool>? identityAllowed = null, bool requireOpenBladeServiceAbsent = false, Func<bool>? developerProcessAllowed = null, bool production = false)
         : IHardwareAccessGuard
     {
         private readonly WindowsHardwareAccessGuard controllers = new(processes, services);
@@ -194,9 +244,10 @@ public sealed class CoolingPadSessionFactory
                     name.Equals("USBPcapCMD", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("SynapseAppEngine", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase)
+                    || production && name.Equals("OpenBlade.Capture", StringComparison.OrdinalIgnoreCase)
                     || requireOpenBladeServiceAbsent && name.Equals("OpenBlade.Service", StringComparison.OrdinalIgnoreCase));
                 var vendorServices = services.GetServices().Where(service =>
-                    (requireOpenBladeServiceAbsent ? service.State != WindowsServiceState.Stopped
+                    (requireOpenBladeServiceAbsent || production ? service.State != WindowsServiceState.Stopped
                         : service.State is WindowsServiceState.Running or WindowsServiceState.StartPending or WindowsServiceState.ContinuePending)
                     && (service.ServiceName.Contains("Razer", StringComparison.OrdinalIgnoreCase)
                         || service.DisplayName.Contains("Razer", StringComparison.OrdinalIgnoreCase)

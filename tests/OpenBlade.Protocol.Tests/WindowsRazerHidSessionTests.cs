@@ -16,6 +16,38 @@ public sealed class WindowsRazerHidSessionTests
     [InlineData(true, true, 0, true)]
     [InlineData(true, true, 30, true)]
     [InlineData(true, true, 31, false)]
+    public async Task ProductionPadRequiresExactActorAndSeparateTaggedAssignment(bool scoped, bool tagged, byte id, bool success)
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(id, 0x0D, 1, [1, 5, 64]));
+        await using var actor = CreateActor(io, productionPadIdentity: scoped ? CoolingPadSessionFactory.ExactPadIdentity : null);
+        var result = await actor.ExecuteAsync(CoolingPadHostDemandProtocol.CreateSpec(new(3200)),
+            () => new(id, null) { CoolingPadProduction = tagged }, Timeout, default);
+        Assert.Equal(success, result.Failure is null);
+        Assert.Equal(success ? 2 : 0, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task ProductionPadCannotBypassPayloadEchoOrUseBatchTransport()
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(0, 0x0D, 1, [1, 5, 44]));
+        await using var actor = CreateActor(io, productionPadIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        Assert.NotNull((await actor.ExecuteAsync(new(0x0D, 1, new byte[] { 1, 5, 10 }, 3, _ => true),
+            () => new(0, null) { CoolingPadProduction = true }, Timeout, default)).Failure);
+        var batchIo = new ScriptedIo();
+        await using var batchActor = CreateActor(batchIo, productionPadIdentity: CoolingPadSessionFactory.ExactPadIdentity);
+        Assert.NotNull((await batchActor.SubmitBatchAsync([CoolingPadHostDemandProtocol.CreateSpec(new(500))],
+            () => new(1, null) { CoolingPadProduction = true }, Timeout, default)).Failure);
+        Assert.Empty(batchIo.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, true, 0, false)]
+    [InlineData(false, true, 1, false)]
+    [InlineData(true, false, 0, false)]
+    [InlineData(true, false, 1, false)]
+    [InlineData(true, true, 0, true)]
+    [InlineData(true, true, 30, true)]
+    [InlineData(true, true, 31, false)]
     public async Task DeveloperCounter_RequiresBothScopedActorAndTaggedAssignment(bool scoped, bool tagged, byte id, bool success)
     {
         byte[] payload = [1, 5, 20];
@@ -1682,7 +1714,7 @@ public sealed class WindowsRazerHidSessionTests
         Action? disposeBound = null,
         TimeSpan featureReportSettleDelay = default,
         ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict,
-        HidHandleIdentity? developerCounterIdentity = null)
+        HidHandleIdentity? developerCounterIdentity = null, HidHandleIdentity? productionPadIdentity = null)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(
@@ -1692,7 +1724,7 @@ public sealed class WindowsRazerHidSessionTests
             time ?? TimeProvider.System,
             lease,
             policy,
-            featureReportSettleDelay, developerCounterIdentity: developerCounterIdentity);
+            featureReportSettleDelay, developerCounterIdentity: developerCounterIdentity, productionPadIdentity: productionPadIdentity);
     }
 
     private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)

@@ -22,6 +22,7 @@ internal static class ServiceComposition
 
         services.AddSingleton<IHyperBoostOwnershipJournalStore>(
             _ => new HyperBoostOwnershipJournalStore(journalPath));
+        services.AddSingleton<CoolingPadControllerLease>();
         services.AddSingleton<ICoolingPadMutationEvidenceStore>(
             _ => new CoolingPadMutationEvidenceStore(machineDataDirectory));
         services.AddSingleton<IServiceControlRuntime>(provider =>
@@ -43,7 +44,9 @@ internal static class ServiceComposition
                     provider.GetRequiredService<IDisplayBrightnessHidController>(),
                 hyperBoostOwnershipJournalStore:
                     provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
-                coolingPadEvidenceStore: provider.GetRequiredService<ICoolingPadMutationEvidenceStore>()));
+                coolingPadEvidenceStore: provider.GetRequiredService<ICoolingPadMutationEvidenceStore>(),
+                coolingPadPortFactory: CoolingPadProtocolPortFactory.CreateProduction(provider.GetRequiredService<CoolingPadControllerLease>()),
+                coolingPadOwnership: provider.GetRequiredService<CoolingPadControllerLease>()));
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

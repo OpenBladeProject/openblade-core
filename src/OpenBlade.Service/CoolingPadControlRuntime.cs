@@ -3,12 +3,18 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-public enum CoolingPadPortFault { AdmissionClosed, Disconnected, ControllerConflict, HyperBoostActive, Rejected, SubmissionUnknown }
+public enum CoolingPadPortFault { AdmissionClosed, Disconnected, ControllerConflict, HyperBoostActive, Rejected, SubmissionUnknown, AdmissionRevoked }
 public enum CoolingPadRawControlState { Raw0000, Raw0300, Other }
 public sealed record CoolingPadPortOpenResult(ICoolingPadControlPort? Port, CoolingPadPortFault? Fault = null);
 public sealed record CoolingPadQueryResult(CoolingPadRawControlState State, CoolingPadPortFault? Fault = null);
 public sealed record CoolingPadWriteResult(bool Attempted, bool Acknowledged, CoolingPadPortFault? Fault = null);
 public sealed record CoolingPadEntryResult(CoolingPadWriteResult Entry, CoolingPadWriteResult Demand);
+
+internal interface ICoolingPadProductionPortFactory
+{
+    bool Production { get; }
+    bool SupportedHost { get; }
+}
 
 public interface ICoolingPadControlPortFactory
 {
@@ -61,7 +67,7 @@ public sealed class UnavailableCoolingPadControlPortFactory : ICoolingPadControl
 /// Pad intent and acknowledgement history. Stop never sends firmware cleanup.
 /// The caller owns the temperature source; a pending read must finish before its disposal.
 /// </summary>
-public sealed class CoolingPadControlRuntime
+public sealed partial class CoolingPadControlRuntime
 {
     private static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan PortTimeout = TimeSpan.FromSeconds(3);
@@ -79,6 +85,12 @@ public sealed class CoolingPadControlRuntime
     private Task? pendingCleanup;
     private volatile bool revoked = true;
     private long revocationGeneration;
+    private readonly object revocationLock = new();
+    private long safeParkGeneration;
+    private CoolingPadControlPauseReason safeParkReason;
+    private long deniedAdmissionEpoch = -1;
+    private bool freshnessRejected;
+    private long unsafeRevocationGeneration;
     private long runningGeneration;
     private Func<bool> epochAdmission = () => true;
     private int retainedMutationEvidence;
@@ -100,7 +112,7 @@ public sealed class CoolingPadControlRuntime
     internal CoolingPadControlRuntime(ICoolingPadMutationEvidenceStore evidenceStore,
         ICoolingPadControlPortFactory? factory = null, IFanTemperatureSource? temperatures = null,
         TimeProvider? clock = null, Func<FanTemperatureReadings, bool>? isGpuInactivityTrustworthy = null,
-        Func<bool>? writeAdmission = null)
+        Func<bool>? writeAdmission = null, bool productionLifecycle = false)
     {
         this.evidenceStore = evidenceStore ?? throw new ArgumentNullException(nameof(evidenceStore));
         this.factory = factory ?? new UnavailableCoolingPadControlPortFactory();
@@ -108,6 +120,9 @@ public sealed class CoolingPadControlRuntime
         this.clock = clock ?? TimeProvider.System;
         trustworthyInactive = isGpuInactivityTrustworthy ?? (_ => false);
         this.writeAdmission = writeAdmission ?? (() => true);
+        this.productionLifecycle = productionLifecycle || factory is ICoolingPadProductionPortFactory { Production: true };
+        if (this.productionLifecycle && factory is not ICoolingPadProductionPortFactory { SupportedHost: false })
+        { status = status with { Access = DeviceFeatureAccess.ReadWrite }; }
     }
 
     public CoolingPadControlStatus GetStatus() => Volatile.Read(ref status);
@@ -127,10 +142,29 @@ public sealed class CoolingPadControlRuntime
     public async Task<CoolingPadControlStatus> ApplySettingsAsync(CoolingPadControlSettings settings, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (settings.Mode == CoolingPadControlMode.Stop) { Revoke(); }
+        if (settings.Mode == CoolingPadControlMode.Stop) { Revoke(explicitStop: true); }
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (productionLifecycle && restorationOwner is null && port is not null && !status.SubmissionStateUnknown
+                && (parked || status.State == CoolingPadControlState.Running))
+            {
+                if (settings.Mode == CoolingPadControlMode.Stop)
+                {
+                    await CheckpointAsync(CoolingPadMutationPhase.Parked, null, token).ConfigureAwait(false);
+                    parked = true;
+                }
+                status = status with
+                {
+                    Requested = settings,
+                    PlannedDemand = null,
+                    State = parked ? CoolingPadControlState.Stopped : status.State,
+                    RetainedEffect = true,
+                    RetainedSessionResumable = parked,
+                    QuietRestorationAvailable = true
+                };
+                return status;
+            }
             if (settings.Mode != CoolingPadControlMode.Stop && status.State == CoolingPadControlState.Running
                 && port is not null && Allowed(token))
             {
@@ -149,6 +183,7 @@ public sealed class CoolingPadControlRuntime
             };
             return status;
         }
+        catch (Exception exception) { return await FailAsync(exception).ConfigureAwait(false); }
         finally { gate.Release(); }
     }
 
@@ -166,17 +201,49 @@ public sealed class CoolingPadControlRuntime
     // Allows the source owner to defer disposal without blocking service shutdown.
     public async Task DrainAsync()
     {
-        await StopAsync(CancellationToken.None).ConfigureAwait(false);
+        Revoke();
+        await gate.WaitAsync().ConfigureAwait(false);
+        try { await CloseAsync().ConfigureAwait(false); status = status with { State = CoolingPadControlState.Stopped }; }
+        finally { gate.Release(); }
         if (temperatureRead is { } reading) { try { await reading.ConfigureAwait(false); } catch { } }
         if (pendingCleanup is { } cleanup) { try { await cleanup.ConfigureAwait(false); } catch { } }
     }
 
     public async Task<CoolingPadControlStatus> ResumeAsync(CancellationToken token, Func<bool>? sessionAdmission = null)
     {
-        long requestedGeneration = Revoke();
+        long requestedGeneration = RevokeForRetainedEpoch(out bool retainedEpochSafe);
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (productionLifecycle && port is not null && !retainedEpochSafe)
+            {
+                await CloseAsync().ConfigureAwait(false);
+                return Pause(CoolingPadControlPauseReason.SessionChanged);
+            }
+            if (productionLifecycle && (parked || status.State == CoolingPadControlState.Running) && port is not null && status.Requested.Mode != CoolingPadControlMode.Stop)
+            {
+                var current = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
+                if (current != armedEvidence || current.Evidence?.Phase is not (CoolingPadMutationPhase.Parked or CoolingPadMutationPhase.Acknowledged)
+                    || requestedGeneration != Volatile.Read(ref revocationGeneration))
+                { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+                revoked = false;
+                runningGeneration = requestedGeneration;
+                epochAdmission = sessionAdmission ?? (() => true);
+                await RequireRawAsync(CoolingPadRawControlState.Raw0300, token).ConfigureAwait(false);
+                var planned = await PlanAsync(token).ConfigureAwait(false);
+                var updated = await PortAsync(() => port.SetDemandAsync(planned.Demand, () => Fresh(planned.Started, token), token), token, acknowledgedDemand: planned.Demand).ConfigureAwait(false);
+                RequireWrite(updated);
+                parked = false;
+                status = status with
+                {
+                    State = CoolingPadControlState.Running,
+                    PauseReason = CoolingPadControlPauseReason.None,
+                    LastAcknowledgedDemand = planned.Demand,
+                    ResumeRequired = false,
+                    RetainedSessionResumable = false
+                };
+                return status;
+            }
             await CloseAsync().ConfigureAwait(false);
             if (status.Requested.Mode == CoolingPadControlMode.Stop) { return status; }
             if (requestedGeneration != Volatile.Read(ref revocationGeneration))
@@ -187,7 +254,18 @@ public sealed class CoolingPadControlRuntime
             { return Pause(CoolingPadControlPauseReason.TelemetryUnavailable); }
             var evidence = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
             if (evidence.BlocksAdmission || Volatile.Read(ref evidenceUnavailable) != 0)
-            { return Pause(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            {
+                if (productionLifecycle)
+                {
+                    status = status with
+                    {
+                        RetainedEffect = true,
+                        SubmissionStateUnknown = evidence.Invalid
+                    || Volatile.Read(ref evidenceUnavailable) != 0 || evidence.Evidence?.Phase is null or CoolingPadMutationPhase.Pending or CoolingPadMutationPhase.RestorationPending
+                    };
+                }
+                return Pause(CoolingPadControlPauseReason.ExplicitResumeRequired);
+            }
             armedEvidence = null;
             revoked = false;
             runningGeneration = requestedGeneration;
@@ -213,7 +291,7 @@ public sealed class CoolingPadControlRuntime
             await RequireRawAsync(CoolingPadRawControlState.Raw0300, token).ConfigureAwait(false);
             var first = await PlanAsync(token).ConfigureAwait(false);
             var entry = await PortAsync(() => port.EnterDemandAsync(first.Demand,
-                () => Fresh(first.Started, token), token), token).ConfigureAwait(false);
+                () => Fresh(first.Started, token), token), token, acknowledgedDemand: first.Demand).ConfigureAwait(false);
             RequireWrite(entry.Entry);
             if (!entry.Demand.Attempted && !Fresh(first.Started, token))
             { throw new ControlFailure(Allowed(token) ? CoolingPadControlPauseReason.StaleTelemetry : CoolingPadControlPauseReason.SessionChanged); }
@@ -225,6 +303,8 @@ public sealed class CoolingPadControlRuntime
                 PauseReason = CoolingPadControlPauseReason.None,
                 ResumeRequired = false,
                 SubmissionStateUnknown = false,
+                RetainedEffect = true,
+                QuietRestorationAvailable = productionLifecycle,
             };
             return status;
         }
@@ -240,6 +320,7 @@ public sealed class CoolingPadControlRuntime
             if (status.State != CoolingPadControlState.Running) { return status; }
             if (revoked || runningGeneration != Volatile.Read(ref revocationGeneration))
             {
+                if (await TryParkSafeRevocationAsync().ConfigureAwait(false)) { return status; }
                 await CloseAsync().ConfigureAwait(false);
                 return Pause(CoolingPadControlPauseReason.ExplicitResumeRequired);
             }
@@ -247,7 +328,7 @@ public sealed class CoolingPadControlRuntime
             var sample = await PlanAsync(token).ConfigureAwait(false);
             if (sample.Demand == status.LastAcknowledgedDemand) { return status; }
             var write = await PortAsync(() => port.SetDemandAsync(sample.Demand,
-                () => Fresh(sample.Started, token), token), token).ConfigureAwait(false);
+                () => Fresh(sample.Started, token), token), token, acknowledgedDemand: sample.Demand).ConfigureAwait(false);
             if (!write.Attempted && !Fresh(sample.Started, token))
             { throw new ControlFailure(Allowed(token) ? CoolingPadControlPauseReason.StaleTelemetry : CoolingPadControlPauseReason.SessionChanged); }
             RequireWrite(write);
@@ -335,6 +416,9 @@ public sealed class CoolingPadControlRuntime
 
     private async Task<(CoolingPadConfiguredRpmDemand Demand, long? Started)> PlanAsync(CancellationToken token)
     {
+        planningOnly = true;
+        knownUnsubmitted = false;
+        freshnessRejected = false;
         if (!Allowed(token)) { throw new OperationCanceledException(token); }
         if (status.Requested.Mode == CoolingPadControlMode.FixedDemand)
         {
@@ -366,31 +450,109 @@ public sealed class CoolingPadControlRuntime
         return (planned, started);
     }
 
-    private long Revoke()
+    private long Revoke(bool explicitStop = false, bool hyperBoostEntry = false, bool healthyPause = false)
     {
-        revoked = true;
-        return Interlocked.Increment(ref revocationGeneration);
+        lock (revocationLock)
+        {
+            revoked = true;
+            long generation = Interlocked.Increment(ref revocationGeneration);
+            if (explicitStop || hyperBoostEntry || healthyPause)
+            {
+                safeParkGeneration = generation;
+                safeParkReason = hyperBoostEntry ? CoolingPadControlPauseReason.HyperBoostActive : CoolingPadControlPauseReason.ExplicitResumeRequired;
+            }
+            else { unsafeRevocationGeneration = generation; }
+            return generation;
+        }
+    }
+
+    // Published synchronously before the outer HB epoch changes. This does not
+    // infer HB intent from an arbitrary false callback.
+    internal void RequestHyperBoostEntryPark() => Revoke(hyperBoostEntry: true);
+
+    private long RevokeForRetainedEpoch(out bool safe)
+    {
+        lock (revocationLock)
+        {
+            safe = RetainedEpochHasNoUnsafeRevocation();
+            return Revoke();
+        }
+    }
+
+    private bool RetainedEpochHasNoUnsafeRevocation()
+    {
+        lock (revocationLock)
+        {
+            return unsafeRevocationGeneration <= runningGeneration
+                && Volatile.Read(ref deniedAdmissionEpoch) != runningGeneration;
+        }
+    }
+
+    private bool IsSafeParkRevoked()
+    {
+        lock (revocationLock)
+        {
+            return revoked && safeParkGeneration == revocationGeneration
+                && unsafeRevocationGeneration <= runningGeneration
+                && Volatile.Read(ref deniedAdmissionEpoch) != runningGeneration;
+        }
+    }
+
+    private async Task<bool> TryParkSafeRevocationAsync()
+    {
+        // Stop/HB entry may revoke before its gate waiter runs. Preserve only a
+        // healthy entered epoch; unsafe revocation or observed denial wins.
+        return IsSafeParkRevoked()
+            && await TryParkAsync(safeParkReason).ConfigureAwait(false)
+            && IsSafeParkRevoked();
     }
 
     private bool Allowed(CancellationToken token)
     {
         long generation = runningGeneration;
-        // A predicate may wait for native metadata. Revocation during that wait
-        // must still prevent the queued SET at its submission boundary.
+        if (revoked || token.IsCancellationRequested || generation != Volatile.Read(ref revocationGeneration)
+            || Volatile.Read(ref deniedAdmissionEpoch) == generation) { return false; }
+        try
+        {
+            if (!epochAdmission() || !writeAdmission())
+            {
+                Interlocked.Exchange(ref deniedAdmissionEpoch, generation);
+                return false;
+            }
+        }
+        catch
+        {
+            Interlocked.Exchange(ref deniedAdmissionEpoch, generation);
+            throw;
+        }
+        // A predicate may wait; revocation during it must deny the queued SET.
         return !revoked && !token.IsCancellationRequested
             && generation == Volatile.Read(ref revocationGeneration)
-            && epochAdmission() && writeAdmission()
-            && !revoked && !token.IsCancellationRequested
-            && generation == Volatile.Read(ref revocationGeneration);
+            && Volatile.Read(ref deniedAdmissionEpoch) != generation;
     }
-    private bool Fresh(long? started, CancellationToken token) =>
-        Allowed(token) && (started is null || clock.GetElapsedTime(started.Value) is var age && age >= TimeSpan.Zero && age < MaximumAge);
-
-    private async Task<T> PortAsync<T>(Func<Task<T>> operation, CancellationToken token, bool mayWrite = true)
+    private bool Fresh(long? started, CancellationToken token)
     {
+        if (!Allowed(token)) { return false; }
+        bool fresh = started is null || clock.GetElapsedTime(started.Value) is var age && age >= TimeSpan.Zero && age < MaximumAge;
+        if (!fresh) { freshnessRejected = true; }
+        return fresh;
+    }
+
+    private bool CanParkUnrevokedEpoch()
+    {
+        try { return Allowed(CancellationToken.None); }
+        catch { return false; }
+    }
+
+    private async Task<T> PortAsync<T>(Func<Task<T>> operation, CancellationToken token, bool mayWrite = true, CoolingPadConfiguredRpmDemand? acknowledgedDemand = null)
+    {
+        knownUnsubmitted = false;
+        freshnessRejected = false;
         if (!Allowed(token)) { throw new OperationCanceledException(token); }
         if (mayWrite)
         {
+            planningOnly = false;
+            knownUnsubmitted = false;
             var current = await EvidenceAsync(evidenceStore.LoadAsync, token).ConfigureAwait(false);
             if (current.Invalid || Volatile.Read(ref evidenceUnavailable) != 0)
             { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
@@ -400,6 +562,10 @@ public sealed class CoolingPadControlRuntime
             }
             else if (current != armedEvidence)
             { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
+            else if (productionLifecycle)
+            {
+                await CheckpointAsync(restorationOwner is null ? CoolingPadMutationPhase.Pending : CoolingPadMutationPhase.RestorationPending, null, token).ConfigureAwait(false);
+            }
             if (armedEvidence.Invalid || armedEvidence.Evidence?.MutationMayHaveOccurred != true)
             { throw new ControlFailure(CoolingPadControlPauseReason.ExplicitResumeRequired); }
             // A completed or late journal operation never revives revoked admission.
@@ -408,7 +574,22 @@ public sealed class CoolingPadControlRuntime
         var pending = Task.Run(operation, CancellationToken.None);
         portOperation = pending;
         Retain(pending);
-        try { return await pending.WaitAsync(PortTimeout, clock, token).ConfigureAwait(false); }
+        try
+        {
+            var value = await pending.WaitAsync(PortTimeout, clock, token).ConfigureAwait(false);
+            if (mayWrite && productionLifecycle)
+            {
+                bool acknowledged = value is CoolingPadWriteResult { Attempted: true, Acknowledged: true, Fault: null }
+                    || value is CoolingPadEntryResult { Entry: { Attempted: true, Acknowledged: true, Fault: null }, Demand: { Attempted: true, Acknowledged: true, Fault: null } };
+                knownUnsubmitted = value is CoolingPadWriteResult { Attempted: false, Acknowledged: false, Fault: CoolingPadPortFault.AdmissionRevoked };
+                if (acknowledged || knownUnsubmitted)
+                {
+                    await CheckpointAsync(restorationOwner is null ? CoolingPadMutationPhase.Acknowledged : CoolingPadMutationPhase.RestorationAcknowledged,
+                    restorationOwner is null && acknowledged ? acknowledgedDemand?.Rpm : null, token).ConfigureAwait(false);
+                }
+            }
+            return value;
+        }
         catch
         {
             if (mayWrite)
@@ -468,11 +649,24 @@ public sealed class CoolingPadControlRuntime
 
     private async Task<CoolingPadControlStatus> FailAsync(Exception exception)
     {
-        Revoke();
+        if (productionLifecycle) { status = status with { RetainedEffect = HasRetainedMutationEvidence }; }
         var reason = exception is ControlFailure failure ? failure.Reason :
             status.SubmissionStateUnknown ? CoolingPadControlPauseReason.SubmissionUnknown :
             exception is OperationCanceledException ? CoolingPadControlPauseReason.ExplicitResumeRequired :
             CoolingPadControlPauseReason.DeviceUnavailable;
+        if (productionLifecycle && (planningOnly || knownUnsubmitted))
+        {
+            if (await TryParkSafeRevocationAsync().ConfigureAwait(false)) { return status; }
+            bool planningFailure = planningOnly && reason is CoolingPadControlPauseReason.TelemetryUnavailable or CoolingPadControlPauseReason.StaleTelemetry;
+            if ((planningFailure || knownUnsubmitted && freshnessRejected)
+                && CanParkUnrevokedEpoch() && await TryParkAsync(reason).ConfigureAwait(false)
+                && CanParkUnrevokedEpoch())
+            {
+                Revoke(healthyPause: true);
+                return status;
+            }
+        }
+        Revoke();
         await CloseAsync().ConfigureAwait(false);
         return Pause(reason);
     }
@@ -494,6 +688,9 @@ public sealed class CoolingPadControlRuntime
     {
         ICoolingPadControlPort? closing = port;
         port = null;
+        parked = false;
+        restorationOwner = null;
+        status = status with { RetainedSessionResumable = false, QuietRestorationAvailable = false, Restoration = null };
         if (closing is null) { return; }
         Task? operation = portOperation;
         var cleanup = Task.Run(async () =>
@@ -519,6 +716,7 @@ public sealed class CoolingPadControlRuntime
 
     private static CoolingPadControlPauseReason Map(CoolingPadPortFault fault) => fault switch
     {
+        CoolingPadPortFault.AdmissionRevoked => CoolingPadControlPauseReason.ExplicitResumeRequired,
         CoolingPadPortFault.AdmissionClosed => CoolingPadControlPauseReason.AdmissionClosed,
         CoolingPadPortFault.Disconnected => CoolingPadControlPauseReason.DeviceUnavailable,
         CoolingPadPortFault.ControllerConflict => CoolingPadControlPauseReason.ControllerConflict,

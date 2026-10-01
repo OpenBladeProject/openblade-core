@@ -6,7 +6,7 @@ using ProtocolPadWrite = OpenBlade.Protocol.CoolingPadWriteResult;
 namespace OpenBlade.Service;
 
 /// <summary>The ordinary constructor cannot open a native pad session.</summary>
-public sealed class CoolingPadProtocolPortFactory : ICoolingPadControlPortFactory
+public sealed class CoolingPadProtocolPortFactory : ICoolingPadControlPortFactory, ICoolingPadProductionPortFactory
 {
     private readonly Func<CancellationToken, Task<CoolingPadSessionOpenResult>> open;
 
@@ -19,6 +19,13 @@ public sealed class CoolingPadProtocolPortFactory : ICoolingPadControlPortFactor
     internal static CoolingPadProtocolPortFactory CreateForDeveloperValidation() =>
         new(CoolingPadSessionFactory.CreateDeveloperWindows().OpenAsync);
 
+    internal static CoolingPadProtocolPortFactory CreateProduction(CoolingPadControllerLease ownership) =>
+        new(CoolingPadSessionFactory.CreateProductionWindows(ownership).OpenAsync) { Production = true, SupportedHost = CoolingPadSessionFactory.IsExactProductionHost() };
+    internal bool Production { get; private init; }
+    internal bool SupportedHost { get; private init; }
+    bool ICoolingPadProductionPortFactory.Production => Production;
+    bool ICoolingPadProductionPortFactory.SupportedHost => SupportedHost;
+
     public async Task<CoolingPadPortOpenResult> OpenAsync(CancellationToken token)
     {
         var result = await open(token).ConfigureAwait(false);
@@ -29,6 +36,7 @@ public sealed class CoolingPadProtocolPortFactory : ICoolingPadControlPortFactor
     {
         null => null,
         CoolingPadSessionFault.AdmissionClosed => CoolingPadPortFault.AdmissionClosed,
+        CoolingPadSessionFault.AdmissionRevoked => CoolingPadPortFault.AdmissionRevoked,
         CoolingPadSessionFault.Disconnected => CoolingPadPortFault.Disconnected,
         CoolingPadSessionFault.ControllerConflict => CoolingPadPortFault.ControllerConflict,
         CoolingPadSessionFault.SubmissionUnknown => CoolingPadPortFault.SubmissionUnknown,

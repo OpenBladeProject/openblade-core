@@ -5,6 +5,60 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class CoolingPadDemandSessionTests
 {
+    [Fact]
+    public async Task ProductionKnownAdmissionRevocationConsumesIdWithoutReplayingOrPoisoningEnteredSession()
+    {
+        var fake = new Session();
+        var policy = new CoolingPadTransactionPolicy();
+        await using var port = new CoolingPadDemandSession(new(fake, new BatteryCommandClient(fake, TimeSpan.FromSeconds(3))),
+            new(), TimeProvider.System, new(), productionPolicy: policy);
+        await port.QueryRawControlStateAsync(default);
+        await port.AcquireAsync(() => true, default);
+        await port.EnterDemandAsync(new(2200), () => true, default);
+        int before = fake.Commands.Count;
+        var denied = await port.UpdateDemandAsync(new(1000), () => false, default);
+        Assert.False(denied.Attempted);
+        Assert.Equal(CoolingPadSessionFault.AdmissionRevoked, denied.Fault);
+        Assert.Equal(before, fake.Commands.Count);
+        Assert.True((await port.UpdateDemandAsync(new(1600), () => true, default)).Acknowledged);
+        Assert.Equal(before + 1, fake.Commands.Count);
+        Assert.Equal(6, policy.CompletedCount); // The revoked assignment is not an ACK.
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 7 }, fake.Ids);
+    }
+
+    [Fact]
+    public async Task ProductionPolicyContinuesPastOrdinaryCapacityAndRestoresAtCurrentWirePosition()
+    {
+        var fake = new Session();
+        var policy = new CoolingPadTransactionPolicy();
+        await using var port = new CoolingPadDemandSession(new(fake, new BatteryCommandClient(fake, TimeSpan.FromSeconds(3))),
+            new(), TimeProvider.System, new(), productionPolicy: policy);
+        await port.QueryRawControlStateAsync(default);
+        await port.AcquireAsync(() => true, default);
+        await port.EnterDemandAsync(new(500), () => true, default);
+        for (int i = 0; i < 1000; i++)
+        { Assert.True((await port.UpdateDemandAsync(new(i % 2 == 0 ? 3200 : 500), () => true, default)).Acknowledged); }
+        Assert.True((await port.ReassertMediumAsync(() => true, default)).Acknowledged);
+        Assert.True((await port.ReassertQuietAsync(() => true, default)).Acknowledged);
+        Assert.True((await port.RestoreRawControlStateAsync(() => true, default)).Acknowledged);
+        Assert.Equal(1009, policy.CompletedCount);
+        Assert.Equal(Enumerable.Range(1, 1009).Select(i => (byte)(i % 31)), fake.Ids);
+    }
+
+    [Theory]
+    [InlineData(WindowsServiceState.Running)]
+    [InlineData(WindowsServiceState.StartPending)]
+    [InlineData(WindowsServiceState.Other)]
+    public void ProductionGuardRequiresStoppedVendorAndNoCaptureButAllowsOwnService(WindowsServiceState state)
+    {
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes([]),
+            new Services([new("Razer", "Razer", state)]), production: true).Check().Safe);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes(["OpenBlade.Capture"]), new Services([]), production: true).Check().Safe);
+        Assert.False(new CoolingPadSessionFactory.PadAccessGuard(new Processes(null), new Services([]), production: true).Check().Safe);
+        Assert.True(new CoolingPadSessionFactory.PadAccessGuard(new Processes(["OpenBlade.Service"]),
+            new Services([new("OpenBlade", "OpenBlade", state), new("Razer", "Razer", WindowsServiceState.Stopped)]), production: true).Check().Safe);
+    }
+
     [Theory]
     [InlineData(WindowsServiceState.Running)]
     [InlineData(WindowsServiceState.StartPending)]
@@ -560,11 +614,17 @@ public sealed class CoolingPadDemandSessionTests
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> assign, TimeSpan timeout, CancellationToken token)
         {
+            // Match the native actor: assignment is consumed before fresh submission admission.
+            var assigned = assign();
+            if (assigned.Failure is { } failure)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, failure));
+            }
             if (command.SubmissionAllowed?.Invoke() == false)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ConflictBlocked));
             }
-            Ids.Add(assign().TransactionId);
+            Ids.Add(assigned.TransactionId);
             Commands.Add($"{command.ClassId:X2}/{command.CommandId:X2}:{Convert.ToHexString(command.Arguments.Span)}");
             if (Commands.Count == FailureCall)
             {

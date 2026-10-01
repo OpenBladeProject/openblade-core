@@ -8,7 +8,8 @@ public sealed record CoolingPadWriteResult(bool Attempted, bool Acknowledged, Co
 public sealed record CoolingPadDemandEntryResult(CoolingPadWriteResult Entry, CoolingPadWriteResult Demand);
 
 /// <summary>
-/// Typed finite developer operations; echoes are not fan-state or ownership readback.
+/// Typed pad operations; allocation is finite for developer trials and serial cyclic for production.
+/// Echoes are not fan-state or ownership readback.
 /// Raw restoration is explicit and does not restore fan behavior or prove handback.
 /// </summary>
 public interface ICoolingPadDemandSession : IAsyncDisposable
@@ -26,7 +27,8 @@ public interface ICoolingPadDemandSession : IAsyncDisposable
 
 internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationRunContext context,
     TimeProvider clock, PendingDisposalRegistry pending, Action? fullyDisposed = null,
-    CoolingPadDeveloperCounterPolicy? developerCounter = null) : ICoolingPadDemandSession
+    CoolingPadDeveloperCounterPolicy? developerCounter = null,
+    CoolingPadTransactionPolicy? productionPolicy = null) : ICoolingPadDemandSession
 {
     private readonly SemaphoreSlim serial = new(1);
     private volatile bool stopped;
@@ -39,7 +41,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     private bool quietAcknowledged;
     // Ordinary policy never wraps IDs. With five startup exchanges and four reserved restoration
     // exchanges, a fresh context has at most 246 demand updates (extra queries consume IDs).
-    private readonly byte[]? restorationIds = developerCounter is null ? ReserveRestoration(context) : [];
+    private readonly byte[]? restorationIds = developerCounter is null && productionPolicy is null ? ReserveRestoration(context) : [];
 
     private static byte[]? ReserveRestoration(ValidationRunContext context)
     {
@@ -167,6 +169,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
 
     private byte RestorationId(byte[] ids, int index)
     {
+        if (productionPolicy is not null) { return 0; }
         if (developerCounter is null) { return ids[index]; }
         if (!developerCounter.Reserve(1, restoration: true))
         { stopped = true; throw new InvalidOperationException("RestorationBudgetExhausted"); }
@@ -176,6 +179,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     private bool Reserve(int count, out byte[] ids)
     {
         ids = new byte[count];
+        if (productionPolicy is not null) { return !stopped && count > 0; }
         if (developerCounter is not null)
         {
             bool allowed = !budgetExhausted && developerCounter.Reserve(count, restoration: false);
@@ -224,15 +228,25 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     {
         ArgumentNullException.ThrowIfNull(allowed);
         if (stopped || token.IsCancellationRequested) { stopped = true; return Rejected(); }
+        bool admissionRejected = false;
         try
         {
             var response = await ExecuteBounded(command with
             {
                 // Recheck after the supplied callback too: it may itself block.
-                SubmissionAllowed = () => !stopped && !token.IsCancellationRequested
-                    && allowed() && !stopped && !token.IsCancellationRequested,
-            }, id, token).ConfigureAwait(false);
+                SubmissionAllowed = () =>
+                {
+                    bool admitted = !stopped && !token.IsCancellationRequested
+                        && allowed() && !stopped && !token.IsCancellationRequested;
+                    admissionRejected = !admitted;
+                    return admitted;
+                },
+            }, id, token, () => entered && admissionRejected).ConfigureAwait(false);
             if (response.Failure is null && command.PayloadValidator?.Invoke(response.Value) == true) { return new(true, true, null); }
+            if (productionPolicy is not null && entered && admissionRejected
+                && response.Failure == HidSessionFailureKind.ConflictBlocked
+                && actor.Session.Disposition == RazerCommandSessionDisposition.Healthy)
+            { return new(false, false, CoolingPadSessionFault.AdmissionRevoked); }
             stopped = true;
             bool notSubmitted = response.Failure is HidSessionFailureKind.IdentityBlocked or HidSessionFailureKind.ConflictBlocked
                 or HidSessionFailureKind.ConflictDetectionFailed or HidSessionFailureKind.QueuedCanceled
@@ -243,7 +257,7 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
     }
 
     private async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteBounded(
-        RazerCommandSpec command, byte id, CancellationToken token)
+        RazerCommandSpec command, byte id, CancellationToken token, Func<bool>? admissionRejected = null)
     {
         // Also isolate a synchronous guard/implementation before it returns its Task.
         Task<HidSessionResult<ReadOnlyMemory<byte>>> operation = Task.Run(async () =>
@@ -251,11 +265,14 @@ internal sealed class CoolingPadDemandSession(ValidationActor actor, ValidationR
             int sequence = 0;
             var response = await actor.Session.ExecuteAsync(command, () =>
             {
+                if (productionPolicy is not null) { return productionPolicy.Assign(command); }
                 if (developerCounter is null) { return TransactionIdAssignment.Valid(id); }
                 var assigned = developerCounter.Assign(command);
                 sequence = assigned.Sequence;
                 return assigned.Assignment;
             }, TimeSpan.FromSeconds(3), token).ConfigureAwait(false);
+            productionPolicy?.Complete(response, response.Failure == HidSessionFailureKind.ConflictBlocked
+                && admissionRejected?.Invoke() == true && actor.Session.Disposition == RazerCommandSessionDisposition.Healthy);
             if (sequence != 0) { developerCounter!.Complete(sequence, response); }
             return response;
         }, CancellationToken.None);

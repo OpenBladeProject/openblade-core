@@ -7,6 +7,21 @@ namespace OpenBlade.Contracts.Tests;
 public sealed partial class IpcMessageCodecTests
 {
     [Theory]
+    [InlineData(CoolingPadRestorationStage.Begin)]
+    [InlineData(CoolingPadRestorationStage.Medium)]
+    [InlineData(CoolingPadRestorationStage.Quiet)]
+    [InlineData(CoolingPadRestorationStage.Final)]
+    public async Task RestorationStagesRoundTripWithoutRawCommands(CoolingPadRestorationStage stage)
+    {
+        var request = new RestoreCoolingPadQuietRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            stage == CoolingPadRestorationStage.Begin ? Guid.Empty : Guid.NewGuid(), stage, true);
+        using var stream = new MemoryStream();
+        await IpcMessageCodec.WriteRequestAsync(stream, request, default);
+        stream.Position = 0;
+        Assert.Equal(request, Assert.IsType<RestoreCoolingPadQuietRequest>(await IpcMessageCodec.ReadRequestAsync(stream, default)));
+    }
+
+    [Theory]
     [InlineData(CoolingPadControlMode.Stop)]
     [InlineData(CoolingPadControlMode.FixedDemand)]
     [InlineData(CoolingPadControlMode.HostCurve)]

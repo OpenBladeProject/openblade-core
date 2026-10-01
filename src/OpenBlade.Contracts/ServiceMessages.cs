@@ -34,6 +34,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetCoolingPadControlRequest), "setCoolingPadControl")]
 [JsonDerivedType(typeof(ResumeCoolingPadControlRequest), "resumeCoolingPadControl")]
+[JsonDerivedType(typeof(RestoreCoolingPadQuietRequest), "restoreCoolingPadQuiet")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
@@ -186,6 +187,9 @@ public sealed record SetCoolingPadControlRequest(
 
 public sealed record ResumeCoolingPadControlRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
+
+public sealed record RestoreCoolingPadQuietRequest(int Version, Guid RequestId, Guid OperationId,
+    CoolingPadRestorationStage Stage, bool PhysicallyConfirmed) : ServiceRequest(Version, RequestId);
 
 public sealed record SetLightingOverrideRequest(
     int Version,

@@ -9,6 +9,100 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceControlRuntimeTests : IDisposable
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProductionParkedOwnerReplacementDisposesBeforeResumeOrRestoration(bool activateUser, bool restore)
+    {
+        var firstSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var secondSid = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        var repository = new RecordingUserConfigurationRepository(new Dictionary<string, ProfileSet>
+        {
+            [firstSid.Value] = ProfileDefaults.CreateSafeDefaults(),
+            [secondSid.Value] = ProfileDefaults.CreateSafeDefaults(),
+        }, directory);
+        var pad = new AdmissionRacePadFactory { Production = true };
+        var context = CreateContext(true, coolingPadPortFactory: pad, userConfigurationRepository: repository,
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.PresentExact),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadRequiredHyperBoost(context);
+        await context.Runtime.ObserveAsync(default);
+        await context.Runtime.ActivateUserAsync(firstSid, default);
+        bool firstOwns = true;
+        await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1500)), () => firstOwns, default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.ResumeCoolingPadControlAsync(() => firstOwns, default)).Status);
+        await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => firstOwns, default);
+        Assert.False(pad.Ports[0].Disposed);
+        int writes = pad.Ports[0].Writes;
+        firstOwns = false;
+        if (activateUser) { await context.Runtime.ActivateUserAsync(secondSid, default); }
+        ControlOperationResult result;
+        if (restore)
+        {
+            result = await context.Runtime.RestoreCoolingPadQuietAsync(new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+                Guid.Empty, CoolingPadRestorationStage.Begin, true), "second:2", () => true, default);
+        }
+        else
+        {
+            result = await context.Runtime.ResumeCoolingPadControlAsync(() => true, default);
+        }
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(pad.Ports[0].Disposed);
+        Assert.Equal(writes, pad.Ports[0].Writes);
+        Assert.Single(pad.Ports);
+        Assert.False(context.Runtime.GetStatus().CoolingPadControl!.QuietRestorationAvailable);
+    }
+
+    [Fact]
+    public async Task ProductionHyperBoostPendingUpdateRevocationKeepsHealthyRestorationAvailable()
+    {
+        var pad = new AdmissionRacePadFactory { Production = true };
+        var context = await CreatePadHyperBoostContextAsync(pad);
+        await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1500)), () => true, default);
+        await context.Runtime.ResumeCoolingPadControlAsync(() => true, default);
+        await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1000)), () => true, default);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        pad.BeforeUpdate = async () => { entered.SetResult(); await release.Task; };
+        int writes = pad.Ports[0].Writes;
+        Task maintenance = context.Runtime.MaintainCoolingPadControlAsync(default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task<ControlOperationResult> hyperBoost = context.Runtime.SetHyperBoostAsync(true, default);
+        release.SetResult();
+        await maintenance;
+        Assert.Equal(ControlOperationStatus.Blocked, (await hyperBoost).Status);
+        Assert.Equal(writes, pad.Ports[0].Writes);
+        Assert.False(pad.Ports[0].Disposed);
+        Assert.True(context.Runtime.GetStatus().CoolingPadControl!.QuietRestorationAvailable);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
+    [Fact]
+    public async Task ProductionHyperBoostEntryBlockedByRetainedEffectsKeepsQuietRestorationAvailable()
+    {
+        var pad = new AdmissionRacePadFactory { Production = true };
+        var context = await CreatePadHyperBoostContextAsync(pad);
+        await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1500)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetHyperBoostAsync(true, default)).Status);
+        Assert.False(pad.Ports[0].Disposed);
+        Assert.True(context.Runtime.GetStatus().CoolingPadControl!.QuietRestorationAvailable);
+        var begin = new RestoreCoolingPadQuietRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.Empty, CoolingPadRestorationStage.Begin, true);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.RestoreCoolingPadQuietAsync(begin, "user:1", () => true, default)).Status);
+        foreach (var stage in new[] { CoolingPadRestorationStage.Medium, CoolingPadRestorationStage.Quiet, CoolingPadRestorationStage.Final })
+        {
+            var prompt = context.Runtime.GetStatus().CoolingPadControl!.Restoration!;
+            Assert.Equal(stage, prompt.Stage);
+            Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.RestoreCoolingPadQuietAsync(
+                begin with { RequestId = Guid.NewGuid(), OperationId = prompt.OperationId, Stage = stage }, "user:1", () => true, default)).Status);
+        }
+        Assert.False(context.Runtime.GetStatus().CoolingPadControl!.RetainedEffect);
+        Assert.True(pad.Ports[0].Disposed);
+        Assert.Equal(0, context.Device.HyperBoostSetCalls);
+    }
+
     [Fact]
     public async Task HyperBoostFreshEntryLoadsEvidenceArmedAfterServiceInitializationButExitRemainsAvailable()
     {
@@ -76,10 +170,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default);
     }
 
-    [Fact]
-    public async Task HyperBoostBeginRevokesWaitingDemandButStopDoesNotErasePriorMutationEvidence()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HyperBoostBeginRevokesWaitingDemandButStopDoesNotErasePriorMutationEvidence(bool production)
     {
-        var pad = new AdmissionRacePadFactory();
+        var pad = new AdmissionRacePadFactory { Production = production };
         var context = await CreatePadHyperBoostContextAsync(pad);
         await context.Runtime.SetCoolingPadControlAsync(new(CoolingPadControlMode.FixedDemand, new(1500)), () => true, default);
         Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.ResumeCoolingPadControlAsync(() => true, default)).Status);
@@ -96,6 +192,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await tick.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(ControlOperationStatus.Blocked, (await hyperBoost.WaitAsync(TimeSpan.FromSeconds(5))).Status);
         Assert.Equal(2, pad.Ports[0].Writes); // acquire plus initial entry/demand operation
+        if (production) { Assert.False(pad.Ports[0].Disposed); Assert.True(context.Runtime.GetStatus().CoolingPadControl!.QuietRestorationAvailable); }
         Assert.Equal(0, context.Device.HyperBoostSetCalls);
         Assert.Equal(desired, context.Runtime.GetStatus().CoolingPadControl!.Requested);
         await context.Runtime.SetCoolingPadControlAsync(CoolingPadControlSettings.Stopped, () => true, default);
@@ -28874,8 +28971,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         }
     }
 
-    private sealed class AdmissionRacePadFactory : ICoolingPadControlPortFactory
+    private sealed class AdmissionRacePadFactory : ICoolingPadControlPortFactory, ICoolingPadProductionPortFactory
     {
+        public bool Production { get; set; }
+        public bool SupportedHost => true;
         internal List<AdmissionRacePadPort> Ports { get; } = [];
         internal Func<Task>? BeforeAcquire;
         internal Func<Task>? BeforeUpdate;
@@ -28888,7 +28987,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         }
     }
 
-    private sealed class AdmissionRacePadPort(AdmissionRacePadFactory owner) : ICoolingPadControlPort
+    private sealed class AdmissionRacePadPort(AdmissionRacePadFactory owner) : ICoolingPadControlPort, ICoolingPadDeveloperRestorationPort
     {
         internal Func<bool>? PendingAdmission;
         internal int Writes;
@@ -28915,10 +29014,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             PendingAdmission = allowed;
             if (owner.BeforeUpdate is not null) { await owner.BeforeUpdate(); }
-            if (!allowed()) { return Denied; }
+            if (!allowed()) { return owner.Production ? new(false, false, CoolingPadPortFault.AdmissionRevoked) : Denied; }
             Writes++;
             return new(true, true);
         }
+        public Task<OpenBlade.Service.CoolingPadWriteResult> ReassertMediumAsync(Func<bool> allowed, CancellationToken token) => Restore(allowed);
+        public Task<OpenBlade.Service.CoolingPadWriteResult> ReassertQuietAsync(Func<bool> allowed, CancellationToken token) => Restore(allowed);
+        public Task<OpenBlade.Service.CoolingPadWriteResult> RestoreRawAsync(Func<bool> allowed, CancellationToken token) => Restore(allowed);
+        private Task<OpenBlade.Service.CoolingPadWriteResult> Restore(Func<bool> allowed)
+        { Assert.True(allowed()); Writes++; return Task.FromResult(new OpenBlade.Service.CoolingPadWriteResult(true, true)); }
         public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }
 

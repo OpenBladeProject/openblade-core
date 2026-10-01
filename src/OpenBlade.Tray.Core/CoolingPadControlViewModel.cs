@@ -32,6 +32,7 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
     private long connectionGeneration;
     private long latestRevision = -1;
     private bool notifyingCommands;
+    private bool physicalConfirmation;
 
     public CoolingPadControlViewModel(IServiceClient client, CancellationToken lifetimeToken)
     {
@@ -60,7 +61,7 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
             catch (Exception) { Message = TrayText.Get("The cooling-pad request could not be completed. Refresh its status before trying again."); }
-        }, _ => connected && IsEditorValid && ResumeCommand?.IsRunning != true, lifetimeToken);
+        }, _ => connected && IsEditorValid && ResumeCommand?.IsRunning != true && RestoreQuietCommand?.IsRunning != true && status?.Restoration is null, lifetimeToken);
         ResumeCommand = new(async (_, token) =>
         {
             long generation = connectionGeneration;
@@ -73,7 +74,40 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
             catch (Exception) { Message = TrayText.Get("The cooling-pad request could not be completed. Refresh its status before trying again."); }
-        }, _ => CanResume && !ApplyCommand.IsRunning, lifetimeToken);
+        }, _ => CanResume && !ApplyCommand.IsRunning && RestoreQuietCommand?.IsRunning != true, lifetimeToken);
+        RestoreQuietCommand = new(async (_, token) =>
+        {
+            var prompt = status?.Restoration;
+            bool confirmation = PhysicalConfirmation;
+            PhysicalConfirmation = false;
+            long generation = connectionGeneration;
+            try
+            {
+                var result = await client.RestoreCoolingPadQuietAsync(prompt?.OperationId ?? Guid.Empty,
+                    prompt?.Stage ?? CoolingPadRestorationStage.Begin, confirmation, token);
+                Message = result.Message;
+                var refreshed = await client.GetStatusAsync(token);
+                if (generation == connectionGeneration) { Update(refreshed, connected); }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch { Message = TrayText.Get("Restoration could not be confirmed. Refresh status; do not repeat a stale confirmation."); }
+        }, _ => CanConfirmPhysical && PhysicalConfirmation
+            && !ApplyCommand.IsRunning && !ResumeCommand.IsRunning, lifetimeToken);
+        CancelRestorationCommand = new(async (_, token) =>
+        {
+            if (status?.Restoration is not { } prompt) { return; }
+            PhysicalConfirmation = false;
+            try
+            {
+                var result = await client.RestoreCoolingPadQuietAsync(prompt.OperationId, prompt.Stage, false, token);
+                Message = result.Message;
+                Update(await client.GetStatusAsync(token), connected);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch { Message = TrayText.Get("Restoration cancellation could not be confirmed. Further stages are not confirmed."); }
+        }, _ => connected && status?.Restoration is not null && !RestoreQuietCommand.IsRunning, lifetimeToken);
+        RestoreQuietCommand.CanExecuteChanged += (_, _) => NotifyCommands();
+        CancelRestorationCommand.CanExecuteChanged += (_, _) => NotifyCommands();
         ApplyCommand.CanExecuteChanged += (_, _) => NotifyCommands();
         ResumeCommand.CanExecuteChanged += (_, _) => NotifyCommands();
     }
@@ -84,6 +118,27 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
     public ObservableCollection<CoolingPadCurveEditorPoint> GpuPoints { get; }
     public AsyncRelayCommand ApplyCommand { get; }
     public AsyncRelayCommand ResumeCommand { get; }
+    public AsyncRelayCommand RestoreQuietCommand { get; }
+    public AsyncRelayCommand CancelRestorationCommand { get; }
+    public bool PhysicalConfirmation
+    {
+        get => physicalConfirmation;
+        set { physicalConfirmation = value; Notify(); RestoreQuietCommand?.NotifyCanExecuteChanged(); }
+    }
+    public bool CanConfirmPhysical => connected && status?.SubmissionStateUnknown == false
+        && (status.QuietRestorationAvailable || status.Restoration is not null);
+    public string PhysicalConfirmationText => TrayText.Get("I have checked the pad and confirm the requested physical condition");
+    public string RestoreButtonText => TrayText.Get("Restore quiet / confirm stage");
+    public string CancelRestorationText => TrayText.Get("Cancel restoration");
+    public string RestorationText => status?.Restoration?.Stage switch
+    {
+        CoolingPadRestorationStage.Medium => TrayText.Get("Check normal Medium fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to request preferred quiet."),
+        CoolingPadRestorationStage.Quiet => TrayText.Get("Check preferred quiet fan behavior, unchanged lighting, no red/sleep indication and HyperBoost inactive. Confirm to finish the restoration commands."),
+        CoolingPadRestorationStage.Final => TrayText.Get("Check that preferred quiet and unchanged lighting remain normal, without red/sleep and with HyperBoost inactive. Confirm to finish restoration."),
+        _ when status?.QuietRestorationAvailable == true => TrayText.Get("Check normal current fan behavior, unchanged lighting, no red/sleep and HyperBoost inactive. Restore preferred quiet first requests Medium. Each physical confirmation expires after ten minutes."),
+        _ when status?.RetainedEffect == true => TrayText.Get("Retained pad effects require attended resolution. This session cannot resume or restore automatically."),
+        _ => TrayText.Get("Stop retains the last demand. Preferred quiet restoration is available after this session acquires control."),
+    };
     public bool IsVisible => status is not null;
     public bool IsConnected => connected;
     public bool IsFixed => selectedMode.Mode == CoolingPadControlMode.FixedDemand;
@@ -103,7 +158,7 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
     {
         Access: DeviceFeatureAccess.ReadWrite,
         Requested.Mode: not CoolingPadControlMode.Stop, SubmissionStateUnknown: false
-    };
+    } && status.Restoration is null && (!status.RetainedEffect || status.RetainedSessionResumable || status.State == CoolingPadControlState.Running);
     public string StatusText => status?.PauseReason switch
     {
         CoolingPadControlPauseReason.AdmissionClosed or CoolingPadControlPauseReason.Unsupported =>
@@ -144,18 +199,28 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
     {
         if (snapshot.Revision < latestRevision) { return; }
         latestRevision = snapshot.Revision;
+        if (connected != isConnected
+            || status?.Restoration != snapshot.CoolingPadControl?.Restoration
+            || status?.QuietRestorationAvailable != snapshot.CoolingPadControl?.QuietRestorationAvailable
+            || status?.SubmissionStateUnknown != snapshot.CoolingPadControl?.SubmissionStateUnknown
+            || status?.LastAcknowledgedDemand != snapshot.CoolingPadControl?.LastAcknowledgedDemand
+            || status?.RetainedEffect != snapshot.CoolingPadControl?.RetainedEffect)
+        { PhysicalConfirmation = false; }
         status = snapshot.CoolingPadControl;
         connected = isConnected;
         Notify(nameof(IsVisible)); Notify(nameof(IsConnected)); Notify(nameof(StatusText));
-        Notify(nameof(RequestedText)); Notify(nameof(PlannedText)); Notify(nameof(AcknowledgedText)); Notify(nameof(CanResume));
+        Notify(nameof(RequestedText)); Notify(nameof(PlannedText)); Notify(nameof(AcknowledgedText)); Notify(nameof(CanResume)); Notify(nameof(RestorationText)); Notify(nameof(CanConfirmPhysical));
         ApplyCommand.NotifyCanExecuteChanged(); ResumeCommand.NotifyCanExecuteChanged();
+        RestoreQuietCommand.NotifyCanExecuteChanged(); CancelRestorationCommand.NotifyCanExecuteChanged();
     }
     public void Disconnect()
     {
         connectionGeneration++;
         latestRevision = -1;
-        connected = false; Notify(nameof(IsConnected)); Notify(nameof(CanResume));
+        PhysicalConfirmation = false;
+        connected = false; Notify(nameof(IsConnected)); Notify(nameof(CanResume)); Notify(nameof(RestorationText)); Notify(nameof(CanConfirmPhysical));
         ApplyCommand.NotifyCanExecuteChanged(); ResumeCommand.NotifyCanExecuteChanged();
+        RestoreQuietCommand.NotifyCanExecuteChanged(); CancelRestorationCommand.NotifyCanExecuteChanged();
     }
     private void NotifyEditor()
     {
@@ -167,9 +232,13 @@ public sealed class CoolingPadControlViewModel : INotifyPropertyChanged, IAsyncD
     {
         if (notifyingCommands) { return; }
         notifyingCommands = true;
-        try { ApplyCommand.NotifyCanExecuteChanged(); ResumeCommand.NotifyCanExecuteChanged(); }
+        try
+        {
+            ApplyCommand.NotifyCanExecuteChanged(); ResumeCommand.NotifyCanExecuteChanged();
+            RestoreQuietCommand.NotifyCanExecuteChanged(); CancelRestorationCommand.NotifyCanExecuteChanged();
+        }
         finally { notifyingCommands = false; }
     }
     public async ValueTask DisposeAsync()
-    { await ApplyCommand.DisposeAsync(); await ResumeCommand.DisposeAsync(); }
+    { await ApplyCommand.DisposeAsync(); await ResumeCommand.DisposeAsync(); await RestoreQuietCommand.DisposeAsync(); await CancelRestorationCommand.DisposeAsync(); }
 }

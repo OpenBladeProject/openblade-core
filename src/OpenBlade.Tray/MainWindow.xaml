@@ -1081,6 +1081,14 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock x:Uid="MainWindow_TextBlockLastAcknowledgedDemand" Text="Last acknowledged demand:" /><TextBlock Text="{Binding AcknowledgedText}" />
                                 </StackPanel>
+                                <TextBlock Text="{Binding RestorationText}" TextWrapping="Wrap" />
+                                <CheckBox Content="{Binding PhysicalConfirmationText}"
+                                          IsEnabled="{Binding CanConfirmPhysical}"
+                                          IsChecked="{Binding PhysicalConfirmation, Mode=TwoWay}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="{Binding RestoreButtonText}" Command="{Binding RestoreQuietCommand}" />
+                                    <Button Content="{Binding CancelRestorationText}" Command="{Binding CancelRestorationCommand}" />
+                                </StackPanel>
                                 <TextBlock x:Uid="MainWindow_TextBlockMeasuredFanSpeedIsUnavailable" Text="Measured fan speed is unavailable." Style="{StaticResource SecondaryTextStyle}" />
                                 <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
                             </StackPanel>

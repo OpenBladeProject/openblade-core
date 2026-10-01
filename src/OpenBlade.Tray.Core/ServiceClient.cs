@@ -225,6 +225,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         CancellationToken token) => SendMutationAsync(
             new SetCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
 
+    public Task<ControlOperationResult> RestoreCoolingPadQuietAsync(Guid operationId, CoolingPadRestorationStage stage,
+        bool physicallyConfirmed, CancellationToken token) => SendMutationAsync(
+            new RestoreCoolingPadQuietRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), operationId, stage, physicallyConfirmed), token);
+
     public Task<ControlOperationResult> ResumeCoolingPadControlAsync(CancellationToken token) =>
         SendMutationAsync(new ResumeCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
 

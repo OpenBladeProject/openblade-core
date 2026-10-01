@@ -123,10 +123,22 @@ public sealed record CoolingPadControlStatus(
     public bool ResumeRequired { get; init; }
     public bool SubmissionStateUnknown { get; init; }
     public bool MeasuredRpmReadbackSupported => false;
+    public bool RetainedEffect { get; init; }
+    public bool RetainedSessionResumable { get; init; }
+    public bool QuietRestorationAvailable { get; init; }
+    public CoolingPadRestorationPrompt? Restoration { get; init; }
 
     internal bool IsWellFormed => Requested is not null
         && Enum.IsDefined(State) && Enum.IsDefined(PauseReason)
         && Enum.IsDefined(Access) && Enum.IsDefined(Connection)
+        && (Restoration is null || Restoration.IsWellFormed)
         && (PlannedDemand is null || PlannedDemand.Value.IsWellFormed)
         && (LastAcknowledgedDemand is null || LastAcknowledgedDemand.Value.IsWellFormed);
+}
+
+
+public enum CoolingPadRestorationStage { Begin, Medium, Quiet, Final }
+public sealed record CoolingPadRestorationPrompt(Guid OperationId, CoolingPadRestorationStage Stage, DateTimeOffset ExpiresAt)
+{
+    internal bool IsWellFormed => OperationId != Guid.Empty && Stage is not CoolingPadRestorationStage.Begin && Enum.IsDefined(Stage);
 }
