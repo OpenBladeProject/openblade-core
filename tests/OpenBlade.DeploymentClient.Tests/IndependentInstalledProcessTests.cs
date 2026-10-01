@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,16 @@ namespace OpenBlade.DeploymentClient.Tests;
 
 public sealed class IndependentInstalledProcessTests
 {
+    [Fact]
+    public void LaunchFixtureAppHostUsesTheWindowsGuiSubsystem()
+    {
+        string executable = Path.ChangeExtension(typeof(LaunchFixture).Assembly.Location, ".exe");
+        using FileStream stream = File.OpenRead(executable);
+        using PEReader image = new(stream);
+        Assert.NotNull(image.PEHeaders.PEHeader);
+        Assert.Equal(Subsystem.WindowsGui, image.PEHeaders.PEHeader.Subsystem);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

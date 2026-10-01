@@ -18,4 +18,11 @@
     <ProjectReference Include="..\..\src\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.DeploymentClient\OpenBlade.DeploymentClient.csproj" />
   </ItemGroup>
+  <!-- The test SDK sets OutputType=Exe after project properties are evaluated.
+       Keep the launch fixture windowed before compilation and apphost creation. -->
+  <Target Name="PreserveWindowedLaunchFixture" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <OutputType>WinExe</OutputType>
+    </PropertyGroup>
+  </Target>
 </Project>
