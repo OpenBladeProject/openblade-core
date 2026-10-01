@@ -120,7 +120,9 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
         }, null, CancellationToken.None).AsTask();
         await WithBlockedLaneCleanupAsync(lane, release, blocked, drained.Task, expectedOperationTimeout: true, async () =>
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            // Pending ownership starts at enqueue, including before the worker
+            // enters the callback. Neither phase may overlap a final probe.
+            Assert.False(lane.OperationQuiesced);
             Assert.False(await Rz090528PadlessBatteryBoundaryValidationCommand.VerifyFinalGpuZeroAsync(lane,
                 () => { probes++; return "zero"; }, value => value == "zero", true, true, CancellationToken.None));
             await Assert.ThrowsAsync<TimeoutException>(() => blocked);
@@ -129,6 +131,7 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
             Assert.Equal(0, probes);
             Assert.False(lane.OperationQuiesced);
         });
+        Assert.True(entered.Task.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -144,12 +147,13 @@ public sealed class Rz090528PadlessBatteryBoundaryValidationCommandTests
             CancellationToken.None).AsTask();
         await WithBlockedLaneCleanupAsync(lane, release, probe, drained.Task, expectedOperationTimeout: false, async () =>
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-            Assert.False(await probe.WaitAsync(TimeSpan.FromSeconds(2)));
+            Assert.False(lane.OperationQuiesced);
+            Assert.False(await probe);
             Assert.False(lane.OperationQuiesced);
             Assert.False(await lane.CloseAsync());
             Assert.Equal(0, disposed);
         });
+        Assert.True(entered.Task.IsCompletedSuccessfully);
         Assert.Equal(1, disposed);
     }
 
