@@ -304,6 +304,37 @@ public sealed class IndependentInstalledProcessTests
         Assert.Equal(0, calls);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("relative")]
+    [InlineData("C:relative")]
+    [InlineData("\\ProgramData")]
+    public void CiFixtureRootRejectsMissingOrNonFullyQualifiedBase(string commonBase)
+    {
+        Assert.Throws<InvalidOperationException>(() => CiNormalLaunchFixture.GetFixtureRoot(
+            commonBase, "0123456789abcdef0123456789abcdef"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../escape")]
+    [InlineData("0123456789abcdef0123456789abcdef\\child")]
+    public void CiFixtureRootRejectsInvalidOrEscapingNonce(string nonce)
+    {
+        Assert.Throws<InvalidOperationException>(() => CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData", nonce));
+    }
+
+    [Fact]
+    public void CiFixtureRootIsOneDirectUniqueLeafUnderTheCommonBase()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        string root = CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData\", nonce);
+        Assert.Equal(@"C:\ProgramData", Path.GetDirectoryName(root));
+        Assert.Equal("OpenBlade.CiNormalLaunch." + nonce, Path.GetFileName(root));
+        Assert.NotEqual(root, CiNormalLaunchFixture.GetFixtureRoot(@"C:\ProgramData", "1123456789abcdef0123456789abcdef"));
+    }
+
     private sealed class FixtureScope : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), $"OpenBlade.LaunchTest.{Guid.NewGuid():N}");

@@ -35,10 +35,9 @@ internal static class CiNormalLaunchFixture
         DesktopProcessIdentity caller = DesktopProcessIdentity.ReadCaller();
         RequireHostedCaller(caller);
         string nonce = Guid.NewGuid().ToString("N");
-        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.CiNormalLaunch." + nonce);
+        string root = GetFixtureRoot(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), nonce);
         RejectReparseAncestors(Path.GetDirectoryName(root)!);
-        if (Directory.Exists(root) || File.Exists(root)) { throw new IOException("The unique fixture root already exists."); }
-        Directory.CreateDirectory(root);
+        CreateOwnedRoot(root, caller.UserSid);
         SafeFileHandle job = LaunchFixture.CreateJob(killOnClose: true);
         SafeProcessHandle? process = null;
         SafeFileHandle? thread = null;
@@ -413,6 +412,34 @@ internal static class CiNormalLaunchFixture
         finally { Marshal.FreeHGlobal(pointer); }
     }
 
+    internal static string GetFixtureRoot(string commonApplicationData, string nonce)
+    {
+        if (string.IsNullOrWhiteSpace(commonApplicationData) || !Path.IsPathFullyQualified(commonApplicationData)
+            || !Guid.TryParseExact(nonce, "N", out _))
+        { throw new InvalidOperationException("The common fixture base or nonce is invalid."); }
+        string parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(commonApplicationData));
+        string root = Path.Combine(parent, "OpenBlade.CiNormalLaunch." + nonce);
+        if (!string.Equals(Path.GetDirectoryName(root), parent, StringComparison.OrdinalIgnoreCase))
+        { throw new InvalidOperationException("The fixture root must be a direct child of its common base."); }
+        return root;
+    }
+
+    private static void CreateOwnedRoot(string root, string ownerSid)
+    {
+        string sddl = $"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;{ownerSid})";
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, out IntPtr descriptor, out _))
+        { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+        try
+        {
+            var security = new SecurityAttributes { Size = Marshal.SizeOf<SecurityAttributes>(), Descriptor = descriptor };
+            // Create exactly one protected leaf. A collision fails; an existing
+            // directory is never adopted and no common-base ACL is changed.
+            if (!CreateDirectoryW(root, ref security))
+            { throw new Win32Exception(Marshal.GetLastWin32Error(), "Exclusive fixture root creation failed."); }
+        }
+        finally { _ = LocalFree(descriptor); }
+    }
+
     private static void PrepareDirectory(string root, string ownerSid, string userSid)
     {
         RejectReparseAncestors(root);
@@ -435,10 +462,21 @@ internal static class CiNormalLaunchFixture
 
     private static void RejectReparseAncestors(string path)
     {
+        int ordinal = 0;
         for (DirectoryInfo? directory = new(path); directory is not null; directory = directory.Parent)
         {
-            if (!directory.Exists || (directory.Attributes & FileAttributes.ReparsePoint) != 0)
-            { throw new IOException("The fixture root ancestry is missing or reparsed."); }
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(directory.FullName); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new IOException($"Fixture ancestor {ordinal} metadata read failed: "
+                    + $"{exception.GetType().Name} (0x{exception.HResult:X8}).");
+            }
+            if ((attributes & FileAttributes.Directory) == 0)
+            { throw new IOException($"Fixture ancestor {ordinal} is not a directory."); }
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            { throw new IOException($"Fixture ancestor {ordinal} is a reparse point."); }
+            ordinal++;
         }
     }
 
@@ -682,6 +720,9 @@ internal static class CiNormalLaunchFixture
     private static extern uint NetLocalGroupAddMembers(string? server, string group, uint level, ref IntPtr buffer, uint count);
     [DllImport("netapi32.dll", ExactSpelling = true)]
     private static extern uint NetApiBufferFree(IntPtr buffer);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateDirectoryW(string path, ref SecurityAttributes security);
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcessWithLogonW(string username, string domain, string password, uint logonFlags,
