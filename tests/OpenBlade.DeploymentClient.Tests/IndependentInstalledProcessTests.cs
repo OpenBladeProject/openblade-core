@@ -305,6 +305,36 @@ public sealed class IndependentInstalledProcessTests
         Assert.Equal(0, calls);
     }
 
+    [Fact]
+    public void ChildDiagnosticsReadOnlyReturnedPidAndBoundTraceTail()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade.LaunchTest." + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string missing = LaunchFixture.ReadChildDiagnostics(root);
+            Assert.Contains("FileNotFoundException", missing);
+            Assert.Contains("child trace unavailable", missing);
+            File.WriteAllText(Path.Combine(root, "child-state.json"),
+                "{\"ProcessId\":123,\"ElapsedMilliseconds\":9750,\"Exited\":true,\"ExitCode\":2,\"Error\":null}");
+            File.WriteAllText(Path.Combine(root, "child-managed.txt"), "RootPresent=false");
+            File.WriteAllText(Path.Combine(root, "child-trace-setup.txt"), "configured");
+            string traces = Path.Combine(root, "child-host-trace");
+            Directory.CreateDirectory(traces);
+            File.WriteAllText(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.123.log"),
+                "excluded-prefix" + new string('x', 8192) + "selected-child-tail");
+            File.WriteAllText(Path.Combine(traces, "OpenBlade.DeploymentClient.Tests.456.log"), "unrelated-child-secret");
+            string evidence = LaunchFixture.ReadChildDiagnostics(root);
+            Assert.Contains("\"ExitCode\":2", evidence);
+            Assert.Contains("RootPresent=false", evidence);
+            Assert.Contains("selected-child-tail", evidence);
+            Assert.DoesNotContain("excluded-prefix", evidence);
+            Assert.DoesNotContain("unrelated-child-secret", evidence);
+            Assert.True(evidence.Length < 6600);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -441,7 +471,8 @@ public sealed class IndependentInstalledProcessTests
                     ? File.ReadAllText(phasePath) : "missing or oversized";
                 return $"Coordinator phase: {phase}; child.started: {File.Exists(Path.Combine(Root, "child.started"))}; "
                     + $"report.json: {File.Exists(Path.Combine(Root, "report.json"))}; "
-                    + $"retained parent: {Describe(Parent)}; retained coordinator: {Describe(Coordinator)}.";
+                    + $"retained parent: {Describe(Parent)}; retained coordinator: {Describe(Coordinator)}. "
+                    + LaunchFixture.ReadChildDiagnostics(Root);
             }
             catch (Exception exception)
             {
@@ -544,6 +575,8 @@ internal static class LaunchFixture
 
     private static int Main(string[] args)
     {
+        if (args.Length == 0) { TryRecordChildManagedEntry(); }
+
         if (args.Length == 4 && args[0] == "ci-normal-orchestrator")
         {
             return CiNormalLaunchFixture.RunOrchestrator(args[1], bool.Parse(args[2]), args[3]);
@@ -625,19 +658,20 @@ internal static class LaunchFixture
                 bool hidden = bool.Parse(args[3]);
                 stage = "start";
                 TryWriteCoordinatorPhase(root, "start-enter");
+                TryConfigureChildTrace(root);
                 using Process child = IndependentInstalledProcess.Start(new(Environment.ProcessPath!, root, hidden,
                     hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal), parent, identity);
                 stage = "child-returned";
-                try
+                long maintenanceStarted = Stopwatch.GetTimestamp();
+                do
                 {
-                    TryWriteCoordinatorPhase(root, child.HasExited
-                        ? $"child-returned; exited {child.ExitCode}" : "child-returned; running");
+                    TryRecordChildState(root, child, Stopwatch.GetElapsedTime(maintenanceStarted));
+                    TimeSpan remaining = TimeSpan.FromSeconds(15) - Stopwatch.GetElapsedTime(maintenanceStarted);
+                    if (remaining <= TimeSpan.Zero) { break; }
+                    Thread.Sleep(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250));
                 }
-                catch (Exception exception)
-                {
-                    TryWriteCoordinatorPhase(root, $"child-returned; state unavailable {exception.GetType().Name} 0x{exception.HResult:X8}");
-                }
-                Thread.Sleep(15000);
+                while (Stopwatch.GetElapsedTime(maintenanceStarted) < TimeSpan.FromSeconds(15));
+                TryRecordChildState(root, child, Stopwatch.GetElapsedTime(maintenanceStarted));
             }
             catch (Exception exception)
             {
@@ -690,6 +724,130 @@ internal static class LaunchFixture
             Environment.CurrentDirectory, DesktopProcessIdentity.ReadCaller()));
         WaitForMarker(childRoot, "child.exit", 15);
         return 0;
+    }
+
+    private sealed record ChildState(int ProcessId, long ElapsedMilliseconds, bool? Exited, int? ExitCode, string? Error);
+
+    private static void TryRecordChildState(string root, Process child, TimeSpan elapsed)
+    {
+        int id = 0;
+        ChildState state;
+        try
+        {
+            id = child.Id;
+            child.Refresh();
+            bool exited = child.HasExited;
+            state = new(id, (long)elapsed.TotalMilliseconds, exited, exited ? child.ExitCode : null, null);
+        }
+        catch (Exception exception)
+        {
+            state = new(id, (long)elapsed.TotalMilliseconds, null, null, DiagnosticError(exception));
+        }
+        TryWriteDiagnostic(root, "child-state.json", JsonSerializer.Serialize(state));
+        TryWriteCoordinatorPhase(root, "child-returned; " + JsonSerializer.Serialize(state));
+    }
+
+    private static void TryConfigureChildTrace(string root)
+    {
+        try
+        {
+            string directory = Path.Combine(root, "child-host-trace");
+            Directory.CreateDirectory(directory);
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            { throw new IOException("Child trace directory is reparsed."); }
+            // .NET 10's existing directory mode names each trace by executable/PID.
+            // Only subsequently created children receive this route; the running
+            // parent and coordinator retain their already initialized trace sinks.
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACEFILE", directory);
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACE_VERBOSITY", "4");
+            Environment.SetEnvironmentVariable("DOTNET_HOST_TRACE", "1");
+            TryWriteDiagnostic(root, "child-trace-setup.txt", "configured");
+        }
+        catch (Exception exception)
+        { TryWriteDiagnostic(root, "child-trace-setup.txt", DiagnosticError(exception)); }
+    }
+
+    private static void TryRecordChildManagedEntry()
+    {
+        string? root = null;
+        try
+        {
+            // The admitted launch plan supplies this exact fixture working directory.
+            // Do not route diagnostics through an unchecked environment-variable path.
+            string current = Environment.CurrentDirectory;
+            const string prefix = "OpenBlade.LaunchTest.";
+            string name = Path.GetFileName(current);
+            if (!Path.IsPathFullyQualified(current) || !name.StartsWith(prefix, StringComparison.Ordinal)
+                || !Guid.TryParseExact(name[prefix.Length..], "N", out _)
+                || (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) { return; }
+            root = current;
+            string? inheritedRoot = Environment.GetEnvironmentVariable(RootVariable);
+            TryWriteDiagnostic(root, "child-managed.txt", JsonSerializer.Serialize(new
+            {
+                Entered = true,
+                RootPresent = inheritedRoot is not null,
+                RootMatchesWorkingDirectory = string.Equals(inheritedRoot, current, StringComparison.OrdinalIgnoreCase),
+                CallerHandlePresent = Environment.GetEnvironmentVariable(CallerHandleVariable) is not null,
+                ParentHandlePresent = Environment.GetEnvironmentVariable(ParentHandleVariable) is not null,
+            }));
+        }
+        catch (Exception exception)
+        {
+            if (root is not null) { TryWriteDiagnostic(root, "child-managed.txt", DiagnosticError(exception)); }
+        }
+    }
+
+    private static string DiagnosticError(Exception exception) =>
+        $"{exception.GetType().Name} 0x{exception.HResult:X8}";
+
+    private static void TryWriteDiagnostic(string root, string name, string content)
+    {
+        try
+        {
+            string destination = Path.Combine(root, name);
+            string temporary = destination + ".tmp";
+            File.WriteAllText(temporary, content);
+            File.Move(temporary, destination, overwrite: true);
+        }
+        catch (Exception) { /* Best-effort diagnostics cannot change the launch outcome. */ }
+    }
+
+    internal static string ReadChildDiagnostics(string root)
+    {
+        // Failure-only, fixed file names and one exact returned PID; no inventory,
+        // process adoption, arbitrary environment dump or successful-case trace reads.
+        var result = new StringBuilder();
+        string stateText = ReadTail("child-state.json", 1024);
+        result.Append($"Child state: {stateText}; managed entry: {ReadTail("child-managed.txt", 1024)}; ");
+        result.Append($"trace setup: {ReadTail("child-trace-setup.txt", 256)}; ");
+        try
+        {
+            ChildState? state = JsonSerializer.Deserialize<ChildState>(stateText);
+            if (state is not { ProcessId: > 0 }) { return result.Append("child trace: returned PID unavailable").ToString(); }
+            string traceDirectory = Path.Combine(root, "child-host-trace");
+            if ((File.GetAttributes(traceDirectory) & FileAttributes.ReparsePoint) != 0)
+            { return result.Append("child trace: reparse directory refused").ToString(); }
+            string traceName = $"OpenBlade.DeploymentClient.Tests.{state.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
+            result.Append("child trace: " + ReadTail(Path.Combine("child-host-trace", traceName), 4096));
+        }
+        catch (Exception exception)
+        { result.Append("child trace unavailable: " + DiagnosticError(exception)); }
+        return result.ToString();
+
+        string ReadTail(string relative, int bound)
+        {
+            try
+            {
+                string path = Path.Combine(root, relative);
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) { return "reparse file refused"; }
+                using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                input.Position = Math.Max(0, input.Length - bound);
+                byte[] bytes = new byte[bound];
+                int count = input.Read(bytes);
+                return Encoding.UTF8.GetString(bytes, 0, count);
+            }
+            catch (Exception exception) { return DiagnosticError(exception); }
+        }
     }
 
     internal static bool TryParseSentinelHandle(string text, out IntPtr handle)
