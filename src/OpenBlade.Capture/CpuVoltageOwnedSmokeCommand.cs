@@ -37,9 +37,9 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         for (int i = 0; i < args.Length; i += 2)
         { if (!names.Contains(args[i], StringComparer.Ordinal) || !values.TryAdd(args[i], args[i + 1])) { throw new ArgumentException("Unknown or duplicate option."); } }
         string source = values["--source"], hash = values["--manifest-sha256"], version = values["--expected-service-version"], path = values["--payload"];
-        string suffix = "+voltage-validation." + source;
+        string suffix = "+voltage-validation." + (source.Length == 40 ? source[..8] : string.Empty);
         if (values["--confirm-target"] != Confirmation || !CpuPmLaunchSchema.IsHex(source, 40, true)
-            || !CpuPmLaunchSchema.IsHex(hash, 64, false) || !version.EndsWith(suffix, StringComparison.Ordinal)
+            || !CpuPmLaunchSchema.IsHex(hash, 64, false) || version.Length > 64 || version.Any(char.IsWhiteSpace) || !version.EndsWith(suffix, StringComparison.Ordinal)
             || !Version.TryParse(version[..^suffix.Length], out var parsed) || parsed.Build < 0
             || path.Length > 350 || !path.StartsWith(@"C:\", StringComparison.Ordinal) || path.Contains('/') || path != Path.GetFullPath(path))
         { throw new ArgumentException("Exact reviewed package, full source, validation Service version and shutdown confirmation required."); }
@@ -49,7 +49,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     {
         if (args.Length == 1 && args[0] == "--help")
         {
-            output.WriteLine($"{Name} --payload <private reviewed closure> --source <40hex> --manifest-sha256 <64HEX> --expected-service-version <version+voltage-validation.40hex> --confirm-target {Confirmation}");
+            output.WriteLine($"{Name} --payload <private reviewed closure> --source <40hex> --manifest-sha256 <64HEX> --expected-service-version <version+voltage-validation.8hex> --confirm-target {Confirmation}");
             output.WriteLine("Attended only: temporary owned V31, one -1/0 cycle, exact original restoration, then typed OpenBlade shutdown (including normal shutdown cleanup), then verified owned V31 removal. Fixed 600-second budget; uncertainty retains resources. No automatic elevation.");
             return 0;
         }
@@ -186,8 +186,8 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     internal static bool SourceVersion(string value, string source)
     {
         string[] parts = value.Split('+');
-        return CpuPmLaunchSchema.IsHex(source, 40, true) && parts.Length == 2 && Version.TryParse(parts[0], out var version) && version.Build >= 0
-            && (parts[1] == source || parts[1] == "voltage-validation." + source);
+        return CpuPmLaunchSchema.IsHex(source, 40, true) && value.Length <= 64 && !value.Any(char.IsWhiteSpace) && parts.Length == 2 && Version.TryParse(parts[0], out var version) && version.Build >= 0
+            && (parts[1] == source || parts[1] == "voltage-validation." + source[..8]);
     }
     private void WriteContext(string path, object value)
     {

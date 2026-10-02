@@ -130,7 +130,7 @@ if ($CpuVoltageValidation) {
     if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($validationChanges -join "`n"))) {
         throw 'CPU voltage validation publication requires a clean source checkout, including nonignored untracked files.'
     }
-    $buildIdentity.InformationalVersion = "$($buildIdentity.Version)+voltage-validation.$($buildIdentity.SourceRevision)"
+    $buildIdentity.InformationalVersion = "$($buildIdentity.Version)+voltage-validation.$($buildIdentity.SourceRevision.Substring(0, 8).ToLowerInvariant())"
 }
 
 function Invoke-OpenBladeSigning {

@@ -49,7 +49,7 @@ foreach ($channel in @('Stable', 'Nightly', 'LocalDev')) {
             $expected = '--property:OpenBladeCpuVoltageValidation=' + $enabled.ToString().ToLowerInvariant()
             if ($publishArguments -notcontains $expected) { throw 'Missing explicit shared profile selection.' }
             if ($enabled -and $publishArguments -notcontains (
-                    '--property:InformationalVersion=65535.1.2.3+voltage-validation.' + $SourceRevision)) {
+                    '--property:InformationalVersion=65535.1.2.3+voltage-validation.' + $SourceRevision.Substring(0, 8))) {
                 throw 'LocalDev lost its distinct exact-source validation version.'
             }
         }
@@ -57,6 +57,16 @@ foreach ($channel in @('Stable', 'Nightly', 'LocalDev')) {
     }
 }
 $CpuVoltageValidation = $true
+$buildIdentity = Resolve-OpenBladeBuildIdentity -BaseVersion '0.24.0' -Channel LocalDev `
+    -LocalDevVersion '65535.65534.65534.65534' -SourceRevision $SourceRevision
+. $gate
+. $arguments
+if ($buildIdentity.InformationalVersion -ne ('65535.65534.65534.65534+voltage-validation.' + $SourceRevision.Substring(0, 8)) -or
+    $buildIdentity.InformationalVersion.Length -gt 64 -or $buildIdentity.SourceRevision -ne $SourceRevision -or
+    $publishArguments -notcontains "--property:SourceRevision=$SourceRevision") {
+    throw 'Maximum LocalDev profile must fit IPC and retain the full source revision.'
+}
+$checks++
 foreach ($failure in @('revision', 'dirty', 'untracked', 'combined', 'malformed')) {
     $buildIdentity = Resolve-OpenBladeBuildIdentity -BaseVersion '0.24.0' -Channel LocalDev `
         -LocalDevVersion '65535.1.2.3' -SourceRevision $SourceRevision

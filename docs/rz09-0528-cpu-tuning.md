@@ -407,11 +407,11 @@ attended cycle uses `LiveNow` only and submits no saved or PPT command.
 
 Unit builds require `-p:SourceRevision=<40-character-commit>` and should use a
 separate `--artifacts-path`. Their product version is
-`0.24.0+voltage-validation.<commit>`. For a coordinated local candidate, the
+`0.24.0+voltage-validation.<first-eight-commit-characters>`. For a coordinated local candidate, the
 existing `build/Publish.ps1` accepts `-CpuVoltageValidation` only with
 `-BuildChannel LocalDev`, a reserved `-LocalDevVersion` and `-SourceRevision`
 matching a clean checkout, including nonignored untracked files. Every published project receives the same
-profile; the version is `<LocalDevVersion>+voltage-validation.<commit>`.
+profile; the version is `<LocalDevVersion>+voltage-validation.<first-eight-commit-characters>`.
 Stable and Nightly publication reject opt-in, and normal publication explicitly
 disables it. The runner accepts this exact marker with an 8- or 40-digit hex
 revision, and still requires an exact match to the installed Service version.
@@ -462,7 +462,7 @@ package root. The existing strict manifest format (`version: 1`, `source`, and
 Capture payload at root, complete Smoke payload under `firmware-smoke/`, and
 matching installed Service payload under `service/`. All OpenBlade assemblies
 must be source-qualified to the same full commit; the Service must carry the
-exact `+voltage-validation.<40hex>` version. The full manifest hash, source and
+exact `+voltage-validation.<8hex>` version matching the full source prefix. The full manifest hash, source and
 Service version are explicit reviewed command arguments. The command pins all
 manifest files, validates the complete package inventory, compares and pins the
 installed Service files, and uses the existing administrator/SYSTEM-only fresh
@@ -484,3 +484,14 @@ The explicit confirmation is
 The other required options are `--payload`, `--source`, `--manifest-sha256` and
 `--expected-service-version`. No installation, elevation, driver provisioning,
 Service shutdown or physical test is authorized merely by building this code.
+
+
+Issue [#661](https://github.com/OpenBladeProject/openblade-core/issues/661) bounds
+the profile's visible version to the existing 64-character IPC limit. The
+validation suffix uses exactly the first eight lowercase source characters;
+even `65535.65534.65534.65534+voltage-validation.<8hex>` fits. The complete
+40-character `SourceRevision` remains required in Service assembly metadata
+`OpenBladeValidationSourceRevision`, the clean-HEAD publication check, and the
+reviewed manifest. The owner requires the short visible suffix to match that
+full reviewed source prefix and retains all package and installed-file hashes.
+Normal build versions, native admission and IPC limits are unchanged.

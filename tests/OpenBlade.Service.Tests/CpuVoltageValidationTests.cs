@@ -20,13 +20,47 @@ public sealed partial class CpuTuningRuntimeTests
         Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.CpuVoltageOptimizer.Access);
         Assert.Equal(new DeviceNumericRange(-1, -1, 1), capabilities.CpuVoltageOptimizer.Value);
         Assert.Equal("true", metadata);
-        Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?\+voltage-validation\.[0-9a-f]{40}$", version);
+        string? fullSource = typeof(ServiceControlRuntime).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Single(value => value.Key == "OpenBladeValidationSourceRevision").Value;
+        Assert.Matches("^[0-9a-fA-F]{40}$", fullSource!);
+        Assert.EndsWith("+voltage-validation." + fullSource![..8].ToLowerInvariant(), version);
+        Assert.True(version.Length <= 64);
+        Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?\+voltage-validation\.[0-9a-f]{8}$", version);
 #else
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.CpuVoltageOptimizer.Access);
         Assert.Equal(new DeviceNumericRange(-30, -1, 1), capabilities.CpuVoltageOptimizer.Value);
         Assert.Equal("false", metadata);
         Assert.DoesNotContain("voltage-validation", version);
 #endif
+    }
+
+    [Fact]
+    public async Task VoltageValidationActualServiceAssemblyVersionRoundTripsStatusCodec()
+    {
+        using var backend = new ValidationCurveBackend(-1);
+        var context = await CreateValidationContextAsync(backend);
+        string version = OpenBladeProductVersion.Read(typeof(ServiceControlRuntime).Assembly);
+        using var stream = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(stream, new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion,
+            context.Runtime.GetStatus() with { ServiceVersion = version }), CancellationToken.None);
+        stream.Position = 0;
+        var decoded = Assert.IsType<ServiceStatusEvent>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Equal(version, decoded.Status.ServiceVersion);
+        Assert.Equal(0, backend.Sends);
+    }
+
+    [Fact]
+    public async Task VoltageValidationMaximumLocalDevVersionRoundTripsStatusCodec()
+    {
+        using var backend = new ValidationCurveBackend(-1);
+        var context = await CreateValidationContextAsync(backend);
+        const string version = "65535.65534.65534.65534+voltage-validation.12345678";
+        using var stream = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(stream, new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion,
+            context.Runtime.GetStatus() with { ServiceVersion = version }), CancellationToken.None);
+        stream.Position = 0;
+        var decoded = Assert.IsType<ServiceStatusEvent>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Equal(version, decoded.Status.ServiceVersion);
     }
 
     [Theory]

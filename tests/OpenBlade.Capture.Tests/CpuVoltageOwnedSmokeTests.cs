@@ -9,7 +9,7 @@ namespace OpenBlade.Capture.Tests;
 public sealed class CpuVoltageOwnedSmokeTests
 {
     private static readonly string Source = new('a', 40), Hash = new('A', 64);
-    private static readonly string Version = "0.24.0+voltage-validation." + Source;
+    private static readonly string Version = "0.24.0+voltage-validation." + Source[..8];
     private static readonly DateTimeOffset Started = DateTimeOffset.Parse("2026-10-02T10:00:00Z");
     private static readonly JsonSerializerOptions Json = new()
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
@@ -26,6 +26,23 @@ public sealed class CpuVoltageOwnedSmokeTests
         var duplicate = Args; duplicate[2] = "--payload"; Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(duplicate));
         Assert.Equal(2, CpuVoltageOwnedSmokeCommand.Run([], output));
     }
+    [Fact]
+    public void ShortProfileVersionMustMatchFullReviewedSourcePrefix()
+    {
+        var maximum = Args; maximum[7] = "65535.65534.65534.65534+voltage-validation." + Source[..8];
+        Assert.Equal(Source, CpuVoltageOwnedSmokeCommand.Parse(maximum).Source);
+        Assert.True(CpuVoltageOwnedSmokeCommand.SourceVersion(maximum[7], Source));
+        foreach (string version in new[] { "0.24.0+voltage-validation.bbbbbbbb", "0.24.0+voltage-validation." + Source,
+            "0.24.0+voltage-validation." + Source[..7], "0.24.0+arbitrary." + Source[..8] })
+        {
+            var args = Args; args[7] = version;
+            Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(args));
+            Assert.False(CpuVoltageOwnedSmokeCommand.SourceVersion(version, Source));
+        }
+        var abbreviatedSource = Args; abbreviatedSource[3] = Source[..8];
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(abbreviatedSource));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
