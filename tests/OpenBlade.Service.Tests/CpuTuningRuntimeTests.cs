@@ -550,7 +550,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(-1, restored.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
         Assert.Equal(CpuTuningRecoveryState.None, restored.CpuTuning.LiveRecovery!.State);
         Assert.False(restored.CpuTuning.RestorePending);
-        Assert.False(restored.CpuTuning.Live.CanWrite);
+        Assert.True(restored.CpuTuning.Live.CanWrite);
         Assert.Equal(0, context.Source.Calls);
     }
 
@@ -613,7 +613,26 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LiveObservationRequiresExplicitInstalledChoiceAndCannotAdmitWrites()
+    public async Task ProductionObservedOnlyCurveCapabilityKeepsFullLiveReadbackReadOnlyAndSubmitsNothing()
+    {
+        var production = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, production.CpuVoltageOptimizer!.Access);
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(live: live, configureCapabilities: capabilities => capabilities with
+        { CpuVoltageOptimizer = production.CpuVoltageOptimizer, CpuPowerLimit = production.CpuPowerLimit });
+        var observed = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(-1, observed.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
+        Assert.NotNull(observed.CpuTuning.LiveState.PowerLimits);
+        Assert.False(observed.CpuTuning.Live.CanWrite);
+        var denied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, denied.Status);
+        Assert.Empty(live.Curve!.Sent); Assert.Empty(live.Power!.Sent);
+        Assert.Equal(0, context.Source.Submissions);
+    }
+
+    [Fact]
+    public async Task LiveObservationRequiresExplicitInstalledChoiceAndFreshCurveWriteAdmission()
     {
         var live = new LiveFixture(curve: true, power: true);
         var context = await CreateContextAsync(live: live);
@@ -626,7 +645,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(live.Power.Pair.Fast.Milliwatts, observed.CpuTuning.LiveState.PowerLimits!.Message32Milliwatts);
         Assert.Equal(live.Power.Pair.Slow.Milliwatts, observed.CpuTuning.LiveState.PowerLimits.Message33Milliwatts);
         Assert.Null(observed.CpuTuning.LiveState.PowerLimits.EffectiveWatts);
-        Assert.False(observed.CpuTuning.Live.CanWrite);
+        Assert.True(observed.CpuTuning.Live.CanWrite);
         Assert.Equal(CpuTuningRecoveryState.None, observed.CpuTuning.LiveRecovery!.State);
         Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent);
     }

@@ -354,9 +354,35 @@ admission or validate the installed application.
 Tracked in [issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622)
 and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).
 
-The voltage-only editor revision passed independent source review and the full
-Release solution build with zero warnings/errors. All 9,321 tests across 17
+The Voltage Optimizer revisions passed independent source review and the full
+Release solution build with zero warnings/errors. All 9,370 tests across 17
 projects passed, including all 1,679 Tray tests. The rebuilt synthetic harness
 passed all fourteen layouts at 760/520 widths; saved editing, live restoration
 and restricted mixed/PPT recovery screenshots were inspected. These offline and
 synthetic results do not admit installed live writes or prove boot activation.
+
+The live backend reports write availability only after complete CO observation,
+resolved ownership and fresh CO runtime admission. This is presentation eligibility;
+each command and its reverse still require their own native proof. The production
+model capability remains observed-only.
+
+The existing FirmwareSmoke tool has a dedicated `cpu-voltage-optimizer` command.
+An attended run requires `--confirm-target RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE`,
+`--expected-service-version` matching the installed version with its commit suffix,
+and a fresh private `--output` directory. It requires a full twelve-core uniform
+baseline of −1 or zero, saves it durably, then observes it again before Apply.
+The command sends one voltage-only change to the opposite On/Off state, checks
+all twelve offsets independently, restores through Service ownership, and checks
+the exact original vector and resolved recovery. Uncertainty stops the run without
+retry or guessed restoration. Existing baseline/result evidence is preserved.
+The command does not bypass admission; the current production model gate rejects
+live validation before mutation. Installation, driver provisioning, restart and
+sleep validation remain separately authorized actions.
+
+The CPU feature branch uses IPC 60. The installed combined CPU/cooling build uses
+IPC 61; its contracts and cooling implementation must be retained in a separate
+combined candidate before any replacement. A CPU-branch build alone is not an
+installation candidate for the current combined setup.
+
+Focused checks passed 118 service tests and 40 runner tests. The full host run
+included all 194 FirmwareSmoke tests. No hardware command was run.

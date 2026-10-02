@@ -7,6 +7,83 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Fact]
+    public async Task FullCurveObservationWithFreshAdmissionPresentsWritableWithoutAdmittingCommands()
+    {
+        var fixture = new Fixture();
+        fixture.Curve.Admit = (_, _) => false;
+        var requested = new List<CpuTuningFeatures>();
+        var controller = fixture.Controller();
+        var status = await controller.ObserveLiveAsync(feature => { requested.Add(feature); return true; }, default);
+        Assert.True(status.Live.CanWrite);
+        Assert.Equal(-1, status.LiveState!.UniformCurveOptimizerValue);
+        Assert.NotNull(status.LiveState.PowerLimits);
+        Assert.Equal(CpuTuningFeatures.CurveOptimizer, requested[^1]);
+        Assert.Empty(fixture.Curve.Admissions); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        // The presentation flag cannot admit a command or its exact reverse route.
+        var denied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, denied.Status);
+        Assert.False(denied.CpuTuning!.Live.CanWrite); Assert.Empty(fixture.Curve.Sent);
+    }
+
+    [Fact]
+    public async Task ReadOnlyCurveDenialRunsAfterBothQueriesAndDoesNotRevokeQueryLease()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        Func<bool>? capturedQuery = null;
+        var status = await controller.ObserveLiveAsync(feature =>
+        {
+            if (feature == CpuTuningFeatures.None) { return true; }
+            Assert.True(fixture.Curve.Reads > 0); Assert.True(fixture.Power.Reads > 0);
+            capturedQuery = controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None);
+            return false;
+        }, default);
+        Assert.False(status.Live.CanWrite);
+        Assert.Equal(-1, status.LiveState!.UniformCurveOptimizerValue);
+        Assert.NotNull(status.LiveState.PowerLimits);
+        Assert.NotNull(capturedQuery); Assert.False(capturedQuery()); // Operation has expired.
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+    }
+
+    [Theory]
+    [InlineData("denied")]
+    [InlineData("revoked")]
+    [InlineData("incomplete")]
+    [InlineData("query-failed")]
+    [InlineData("ownership")]
+    public async Task IneligibleCurveObservationNeverPresentsWritable(string fault)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        if (fault == "ownership")
+        {
+            await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
+            fixture.Curve.Context = fixture.Curve.Context with
+            { BootSequence = fixture.Curve.Context.BootSequence with { Sequence = 43 } };
+        }
+        if (fault == "incomplete") { fixture.Curve.Values = fixture.Curve.Values[..^1]; }
+        if (fault == "query-failed") { fixture.Curve.Context = fixture.Curve.Context with { EnabledCoreMask = 0 }; }
+        int queries = 0, sends = fixture.Curve.Sent.Count;
+        var status = await controller.ObserveLiveAsync(feature => fault switch
+        {
+            "denied" => feature == CpuTuningFeatures.None,
+            "revoked" => ++queries == 1,
+            _ => true,
+        }, default);
+        Assert.False(status.Live.CanWrite); Assert.Equal(sends, fixture.Curve.Sent.Count);
+        if (fault is "incomplete" or "query-failed" or "revoked") { Assert.Null(status.LiveState); }
+        if (fault == "ownership") { Assert.Equal(CpuTuningRecoveryState.Blocked, status.LiveRecovery!.State); }
+    }
+
+    [Fact]
+    public async Task PowerOnlyObservationRemainsObservedOnlyEvenWithRuntimeAdmission()
+    {
+        var fixture = new Fixture();
+        var controller = new CpuTuningController(new UnusedSource(), powerBackend: fixture.Power, powerStore: fixture.PowerStore);
+        var status = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.False(status.Live.CanWrite); Assert.NotNull(status.LiveState!.PowerLimits);
+        Assert.Empty(status.LiveState.CoreValues);
+    }
+
+    [Fact]
     public async Task RuntimeLifetimeIsStableWithinServiceAndChangesAtRestartOrPowerBoundary()
     {
         var store = new CpuLivePowerTuningTransactionTests.MemoryStore();
@@ -76,6 +153,7 @@ public sealed class CpuTuningControllerLiveTests
         Assert.False(outside());
         var applied = await controller.MutateLiveAsync(new(45, null), false, _ => true, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.False(applied.CpuTuning!.Live.CanWrite);
         Assert.False(first!());
         backend.Admit = (_, _) =>
         {
@@ -127,6 +205,7 @@ public sealed class CpuTuningControllerLiveTests
         var controller = fixture.Controller();
         var applied = await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.True(applied.CpuTuning!.Live.CanWrite);
         Assert.Equal(Both, applied.CpuTuning!.LiveRecovery!.Features);
         Assert.Equal(CpuTuningRecoveryState.RestoreReady, applied.CpuTuning.LiveRecovery.State);
         Assert.Equal(new(null, 45000, 45000), applied.CpuTuning.LiveState!.PowerLimits);
@@ -135,6 +214,7 @@ public sealed class CpuTuningControllerLiveTests
         fixture.Curve.Context = fixture.Curve.Context with { Identity = fixture.Curve.Context.Identity with { BiosVersion = "2.03" } };
         var restored = await fixture.Controller().MutateLiveAsync(null, true, _ => true, default);
         Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.True(restored.CpuTuning!.Live.CanWrite);
         Assert.Equal(curveOriginal, fixture.Curve.Values); Assert.Equal(powerOriginal, fixture.Power.Pair);
         Assert.False(restored.CpuTuning!.RestorePending);
         Assert.Equal(CpuTuningFeatures.None, restored.CpuTuning.LiveRecovery!.Features);
@@ -265,6 +345,7 @@ public sealed class CpuTuningControllerLiveTests
         fixture.Curve.OnSend = _ => Task.FromResult(CpuLiveCurveSubmission.Unknown);
         var result = await controller.MutateLiveAsync(null, true, _ => true, default);
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(result.CpuTuning!.Live.CanWrite);
         Assert.Equal(Both, result.CpuTuning!.LiveRecovery!.Features);
         Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
         Assert.Equal(powerSends, fixture.Power.Sent.Count);

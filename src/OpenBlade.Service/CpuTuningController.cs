@@ -269,7 +269,9 @@ internal sealed class CpuTuningController
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power?.Recovery == CpuLivePowerRecovery.Blocked
                 ? CpuTuningRecoveryState.Blocked : ownership.Features == CpuTuningFeatures.None
                     ? CpuTuningRecoveryState.None : CpuTuningRecoveryState.RestoreReady;
-            return LiveStatus(curve?.Observation, power?.Observation, recovery, ownership.Features | liveUncertainty);
+            return LiveStatus(curve?.Observation, power?.Observation, recovery, ownership.Features | liveUncertainty,
+                liveCurve is not null && curve?.Observation is not null && recovery != CpuTuningRecoveryState.Blocked
+                    && lease.CanPresentCurveWrite());
         }
         finally
         {
@@ -422,7 +424,10 @@ internal sealed class CpuTuningController
                     : uncertain ? "Live CPU submission or readback is uncertain. Further live commands are blocked."
                     : confirmedPeerLoss ? "Confirmed live CPU state changed outside this operation. Ownership is blocked for both participating families."
                     : "The live CPU operation stopped before completion; verified changes and recovery data were retained.")
-            { CpuTuning = LiveStatus(curve, power, recovery, retained.Features) };
+            {
+                CpuTuning = LiveStatus(curve, power, recovery, retained.Features,
+                    completed && liveCurve is not null && curve is not null && lease.CanPresentCurveWrite()),
+            };
         }
     }
 
@@ -458,7 +463,7 @@ internal sealed class CpuTuningController
         { liveUncertainty |= CpuTuningFeatures.PowerLimit; }
     }
     private static CpuTuningStatus LiveStatus(CpuLiveCurveSnapshot? curve, CpuLivePowerPair? power,
-        CpuTuningRecoveryState recovery, CpuTuningFeatures features)
+        CpuTuningRecoveryState recovery, CpuTuningFeatures features, bool curveWriteEligible = false)
     {
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
         // Publish only the independently observed families. Raw fast/slow limits
@@ -467,7 +472,10 @@ internal sealed class CpuTuningController
             : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts),
             curve?.CoreOffsets.Select(core => new CpuCoreCurveOptimizerValue(core.PhysicalCoreId, core.Offset)).ToArray() ?? []);
         return new(null, live, unavailable, unavailable with
-        { Availability = curve is not null || power is not null ? CpuTuningBackendAvailability.Available : CpuTuningBackendAvailability.Unavailable },
+        {
+            Access = curveWriteEligible ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly,
+            Availability = curve is not null || power is not null ? CpuTuningBackendAvailability.Available : CpuTuningBackendAvailability.Unavailable,
+        },
             CpuTuningPendingBoot.Unknown, features != CpuTuningFeatures.None)
         { LiveRecovery = new(recovery, features) };
     }
@@ -485,6 +493,19 @@ internal sealed class CpuTuningController
         private int revoked;
         private CpuTuningFeatures requiredFeatures;
         internal void Require(CpuTuningFeatures features) => requiredFeatures |= features;
+        // Presentation is calculated only after query/transaction work is complete.
+        // Feature-specific denial must not revoke a valid read-only query lease;
+        // this flag grants no command, range, restoration, or native authority.
+        internal bool CanPresentCurveWrite()
+        {
+            if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref revoked) != 0 || token.IsCancellationRequested)
+            { return false; }
+            bool admitted;
+            try { admitted = admit(CpuTuningFeatures.CurveOptimizer | requiredFeatures); }
+            catch { return false; }
+            return admitted && Volatile.Read(ref disposed) == 0 && Volatile.Read(ref revoked) == 0
+                && !token.IsCancellationRequested;
+        }
         internal bool Allows(CpuTuningFeatures feature)
         {
             if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref revoked) != 0 || token.IsCancellationRequested)
