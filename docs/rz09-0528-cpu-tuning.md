@@ -189,7 +189,9 @@ It retains the actual native worker across caller cancellation and excludes
 replacement operations on the same platform until completion. Cleanup uncertainty
 invalidates that scope. Its private proof wrapper rechecks fresh context under
 the native lease. A separate fixed CO metadata reader accepts only version 7 and
-selector 5000A with strict unsigned fields and confirmed acknowledgement. It
+selector 5000A with strict unsigned fields. Its bounded version-7 compatibility
+accepts Boolean true or completely enumerated absence of ReturnValue; the absent
+form also requires the firmware shadow to lie within the magnitude bounds. It
 preserves partial evidence, treats Current as a firmware shadow, and returns a
 range only after confirmed cleanup and independent scope checks. Injected tests
 exercise cancellation, ambiguous submission, range decoding and recovery;

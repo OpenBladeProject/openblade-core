@@ -103,9 +103,11 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
         // Exact hardware and trusted scope are checked at every boundary. Only a complete
         // successful enumeration can establish the pinned COM compatibility.
         return fields is not null && fields.TryGetValue("version", out var value) && value is uint word && word == 7
-            && (raw.ReturnState == CpuLiveCurveRangeReturnState.Absent
-                || raw is { ReturnState: CpuLiveCurveRangeReturnState.Boolean, ReturnValue: true });
+            && AcceptedAcknowledgement(raw);
     }
+    private static bool AcceptedAcknowledgement(CpuLiveCurveRangeRaw raw) =>
+        raw.ReturnState == CpuLiveCurveRangeReturnState.Absent
+        || raw is { ReturnState: CpuLiveCurveRangeReturnState.Boolean, ReturnValue: true };
     private static CpuLiveCurveTrustedRange? DecodeMinMax(IWindowsCpuCurveRangeObject output, Action check,
         ref CpuLiveCurveRangeRaw raw)
     {
@@ -114,10 +116,14 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
         { return null; }
         // Native output owns embedded objects. Fakes model the same ownership.
         var fields = Fields(pack, ["Current", "Min", "Max", "Stepping", "Value"], check, ref raw);
-        if (fields is null || fields.Count != 5 || raw.ReturnState != CpuLiveCurveRangeReturnState.Boolean || raw.ReturnValue != true
-            || raw.FirmwareShadow is null || raw.MinimumMagnitude is not uint min || raw.MaximumMagnitude is not uint max
+        if (fields is null || fields.Count != 5 || !AcceptedAcknowledgement(raw)
+            || raw.FirmwareShadow is not uint shadow || raw.MinimumMagnitude is not uint min || raw.MaximumMagnitude is not uint max
             || raw.Step != 1 || raw.Selector != 0x5000A || min > max || max > 50)
         { return null; }
+        // Read reaches this decoder only after complete exact version7. For the
+        // missing-ReturnValue profile, shadow geometry is an additional rejection
+        // check; Current never proves active CO. Preserve explicit-true semantics.
+        if (raw.ReturnState == CpuLiveCurveRangeReturnState.Absent && (shadow < min || shadow > max)) { return null; }
         return new(0x5000A, (int)min, (int)max, 1, true);
     }
     private static Dictionary<string, object?>? Fields(IWindowsCpuCurveRangeObject output, string[] allowed,

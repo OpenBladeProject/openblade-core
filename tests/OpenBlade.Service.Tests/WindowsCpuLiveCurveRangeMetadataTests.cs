@@ -35,6 +35,7 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
     [InlineData("uint", false, CpuLiveCurveRangeReturnState.WrongType)]
     [InlineData("unreadable", false, CpuLiveCurveRangeReturnState.Unreadable)]
     [InlineData("enumeration", false, CpuLiveCurveRangeReturnState.NotRead)]
+    [InlineData("absent-enumeration", false, CpuLiveCurveRangeReturnState.NotRead)]
     public void VersionCompatibilityRequiresConfirmedAbsence(string fault, bool valid, object expectedState)
     {
         var session = new Session();
@@ -47,44 +48,36 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
     }
 
     [Theory]
-    [InlineData("absent")]
-    [InlineData("false")]
-    [InlineData("null")]
-    [InlineData("uint")]
-    [InlineData("unreadable")]
-    [InlineData("enumeration")]
-    public void MinMaxAlwaysRequiresActualBooleanTrue(string fault)
+    [InlineData("absent", true, CpuLiveCurveRangeReturnState.Absent)]
+    [InlineData("true", true, CpuLiveCurveRangeReturnState.Boolean)]
+    [InlineData("false", false, CpuLiveCurveRangeReturnState.Boolean)]
+    [InlineData("null", false, CpuLiveCurveRangeReturnState.WrongType)]
+    [InlineData("uint", false, CpuLiveCurveRangeReturnState.WrongType)]
+    [InlineData("unreadable", false, CpuLiveCurveRangeReturnState.Unreadable)]
+    [InlineData("enumeration", false, CpuLiveCurveRangeReturnState.NotRead)]
+    [InlineData("absent-enumeration", false, CpuLiveCurveRangeReturnState.NotRead)]
+    public void MinMaxCompatibilityRequiresConfirmedAbsence(string fault, bool valid, object expectedState)
     {
         var session = new Session(); ChangeReturn(session.MinMax, fault);
         var result = Reader(session).Read(Context(), new Scope());
-        Assert.Null(result.Range); Assert.True(session.Disposed); Assert.True(result.CleanupComplete);
-        if (fault == "unreadable") { Assert.Equal(CpuLiveCurveRangeReturnState.Unreadable, result.MinMax.ReturnState); }
-        if (fault == "absent") { Assert.Equal(CpuLiveCurveRangeReturnState.Absent, result.MinMax.ReturnState); }
+        Assert.Equal(valid, result.Range is not null); Assert.True(session.Disposed); Assert.True(result.CleanupComplete);
+        Assert.Equal((CpuLiveCurveRangeReturnState)expectedState, result.MinMax.ReturnState);
     }
 
     [Theory]
-    [InlineData("selector")]
-    [InlineData("int")]
-    [InlineData("null")]
-    [InlineData("missing")]
-    [InlineData("duplicate")]
-    [InlineData("alias")]
-    [InlineData("unknown")]
-    [InlineData("step")]
-    [InlineData("wide")]
-    [InlineData("ordered")]
-    [InlineData("header-alias")]
-    [InlineData("header-unknown")]
-    [InlineData("header-duplicate")]
-    [InlineData("not-pack")]
-    [InlineData("version-int")]
-    public void MalformedOrBroadenedMetadataIsIncomplete(string fault)
+    [MemberData(nameof(MalformedCases))]
+    public void MalformedOrBroadenedMetadataIsIncomplete(string fault, bool absent)
     {
         var session = new Session();
+        if (absent) { ChangeReturn(session.MinMax, "absent"); }
         switch (fault)
         {
             case "selector": session.Pack.Values["Value"] = (uint)0x50001; break;
             case "int": session.Pack.Values["Min"] = 0; break;
+            case "current-int": session.Pack.Values["Current"] = 0; break;
+            case "max-int": session.Pack.Values["Max"] = 50; break;
+            case "step-int": session.Pack.Values["Stepping"] = 1; break;
+            case "selector-int": session.Pack.Values["Value"] = 0x5000A; break;
             case "null": session.Pack.Values["Current"] = null; break;
             case "missing": session.Pack.Values.Remove("Current"); break;
             case "duplicate": session.Pack.Extra = "Min"; break;
@@ -96,11 +89,57 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
             case "header-alias": session.MinMax.Values.Remove("pack"); session.MinMax.Values["Pack"] = session.Pack; break;
             case "header-unknown": session.MinMax.Values["Other"] = true; break;
             case "header-duplicate": session.MinMax.Extra = "pack"; break;
+            case "return-alias": session.MinMax.Values.Remove("ReturnValue"); session.MinMax.Values["returnValue"] = true; break;
+            case "header-unreadable": session.MinMax.ThrowProperty = "pack"; break;
+            case "pack-enumeration": session.Pack.ThrowEnumeration = true; break;
             case "not-pack": session.MinMax.Values["pack"] = new object(); break;
             case "version-int": session.Version.Values["version"] = 7; break;
         }
         var result = Reader(session).Read(Context(), new Scope());
         Assert.Null(result.Range); Assert.True(session.Disposed); Assert.True(result.CleanupComplete);
+    }
+
+    public static IEnumerable<object[]> MalformedCases()
+    {
+        foreach (string fault in new[] { "selector", "int", "current-int", "max-int", "step-int", "selector-int", "null",
+            "missing", "duplicate", "alias", "unknown", "step", "wide", "ordered", "header-alias", "header-unknown",
+            "header-duplicate", "return-alias", "header-unreadable", "pack-enumeration", "not-pack", "version-int" })
+        {
+            yield return [fault, false];
+            yield return [fault, true];
+        }
+    }
+
+    [Theory]
+    [InlineData(6u, false)]
+    [InlineData(7u, true)]
+    [InlineData(8u, false)]
+    public void BothMissingAcknowledgementsRequireCompleteExactVersion7(uint version, bool valid)
+    {
+        var session = new Session(); session.Version.Values["version"] = version;
+        ChangeReturn(session.Version, "absent"); ChangeReturn(session.MinMax, "absent");
+        var result = Reader(session).Read(Context(), new Scope());
+        Assert.Equal(valid, result.Range is not null);
+        Assert.Equal(valid ? CpuLiveCurveRangeStatus.Complete : CpuLiveCurveRangeStatus.Incomplete, result.Status);
+        Assert.Equal(valid ? new[] { "version", "minmax" } : new[] { "version" }, session.Calls);
+        Assert.True(result.CleanupComplete); Assert.True(session.Disposed);
+    }
+
+    [Theory]
+    [InlineData(1u, false, false)]
+    [InlineData(2u, false, true)]
+    [InlineData(12u, false, true)]
+    [InlineData(13u, false, false)]
+    [InlineData(1u, true, true)]
+    [InlineData(13u, true, true)]
+    public void ShadowGeometryOnlyRejectsMissingAcknowledgement(uint shadow, bool explicitTrue, bool valid)
+    {
+        var session = new Session();
+        if (!explicitTrue) { ChangeReturn(session.MinMax, "absent"); }
+        session.Pack.Values["Current"] = shadow; session.Pack.Values["Min"] = (uint)2; session.Pack.Values["Max"] = (uint)12;
+        var result = Reader(session).Read(Context(), new Scope());
+        Assert.Equal(valid, result.Range is not null); Assert.Equal(shadow, result.MinMax.FirmwareShadow);
+        Assert.True(result.CleanupComplete);
     }
 
     [Theory]
@@ -141,14 +180,33 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
         Assert.True(session.Disposed); Assert.True(result.CleanupComplete);
     }
 
-    [Fact]
-    public void CleanupFailureIsStickyEvenWhenAdmissionAlsoRevokes()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CleanupFailureIsStickyEvenWhenAdmissionAlsoRevokes(bool absent)
     {
         var scope = new Scope(); var session = new Session();
+        if (absent) { ChangeReturn(session.Version, "absent"); ChangeReturn(session.MinMax, "absent"); }
         session.MinMax.OnDispose = () => { scope.Current = false; throw new InvalidOperationException(); };
         var result = Reader(session).Read(Context(), scope);
         Assert.Equal(CpuLiveCurveRangeStatus.CleanupUncertain, result.Status);
         Assert.False(result.CleanupComplete); Assert.Null(result.Range); Assert.True(session.Disposed); Assert.True(session.Version.Disposed);
+    }
+
+    [Theory]
+    [InlineData("minmax")]
+    [InlineData("property")]
+    [InlineData("cleanup")]
+    public void MissingAcknowledgementCompatibilityNeverSurvivesRevocation(string boundary)
+    {
+        var scope = new Scope(); var session = new Session();
+        ChangeReturn(session.Version, "absent"); ChangeReturn(session.MinMax, "absent");
+        if (boundary == "minmax") { session.OnMinMax = () => scope.Current = false; }
+        if (boundary == "property") { session.Pack.OnGet = () => scope.Current = false; }
+        if (boundary == "cleanup") { session.MinMax.OnDispose = () => scope.Current = false; }
+        var result = Reader(session).Read(Context(), scope);
+        Assert.Null(result.Range); Assert.Equal(CpuLiveCurveRangeStatus.AdmissionDenied, result.Status);
+        Assert.True(result.CleanupComplete); Assert.True(session.Disposed);
     }
 
     [Fact]
@@ -172,7 +230,8 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
     private static WindowsCpuLiveCurveRangeMetadata Reader(Session session) => new(_ => session);
     private static void ChangeReturn(Output output, string fault)
     {
-        if (fault == "absent") { output.Values.Remove("ReturnValue"); }
+        if (fault is "absent" or "absent-enumeration")
+        { output.Values.Remove("ReturnValue"); output.ThrowEnumeration = fault == "absent-enumeration"; }
         else if (fault == "unreadable") { output.ThrowProperty = "ReturnValue"; }
         else if (fault == "enumeration") { output.ThrowEnumeration = true; }
         else { output.Values["ReturnValue"] = fault switch { "true" => true, "false" => false, "uint" => (uint)1, _ => null }; }
