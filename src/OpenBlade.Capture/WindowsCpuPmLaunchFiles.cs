@@ -11,6 +11,8 @@ internal sealed class WindowsCpuPmLaunchFiles : ICpuPmLaunchFiles
 {
     private readonly Dictionary<string, Pin> pins = new(StringComparer.OrdinalIgnoreCase);
     private bool disposed;
+    private readonly bool voltageValidation;
+    internal WindowsCpuPmLaunchFiles(bool voltageValidation = false) => this.voltageValidation = voltageValidation;
     public void PinDirectory(string path, bool privateAcl, bool protectedAcl) => Open(path, true, 0, privateAcl, protectedAcl);
     public ICpuPmLaunchFilePin PinFile(string path, long maximumBytes, bool privateAcl) => Open(path, false, maximumBytes, privateAcl, false);
     private Pin Open(string path, bool directory, long maximumBytes, bool privateAcl, bool protectedAcl)
@@ -23,13 +25,13 @@ internal sealed class WindowsCpuPmLaunchFiles : ICpuPmLaunchFiles
             if (existing.Directory != directory || !directory && existing.Length > maximumBytes) { throw Denied(); }
             existing.PrivateAcl |= privateAcl; existing.ProtectedAcl |= protectedAcl; existing.AssertHeld(); return existing;
         }
-        if (pins.Count >= 800) { throw Denied(); }
+        if (pins.Count >= (voltageValidation ? CpuPmLaunchSchema.VoltageMaximumPins : 800)) { throw Denied(); }
         SafeFileHandle handle = WindowsCpuPmCaptureEvidenceFiles.CreateFileW(path, directory ? 0x00020080u : 0x80020000u,
             1, 0, 3, directory ? 0x02200000u : 0x00200000u, 0);
         FileStream? stream = null;
         try
         {
-            var pin = new Pin(path, directory, handle) { PrivateAcl = privateAcl, ProtectedAcl = protectedAcl };
+            var pin = new Pin(path, directory, handle, voltageValidation ? CpuPmLaunchSchema.VoltageManifestLimit : CpuPmLaunchSchema.ManifestLimit) { PrivateAcl = privateAcl, ProtectedAcl = protectedAcl };
             pin.AssertHeld();
             if (!directory)
             {
@@ -45,7 +47,7 @@ internal sealed class WindowsCpuPmLaunchFiles : ICpuPmLaunchFiles
         directory.AssertHeld(); int count = 0;
         foreach (string entry in System.IO.Directory.EnumerateFileSystemEntries(path))
         {
-            if (++count > 768) { throw Denied(); }
+            if (++count > (voltageValidation ? CpuPmLaunchSchema.VoltageMaximumEntries : 768)) { throw Denied(); }
             var attributes = File.GetAttributes(entry);
             if ((attributes & FileAttributes.ReparsePoint) != 0) { throw Denied(); }
             yield return new(Path.GetFileName(entry), (attributes & FileAttributes.Directory) != 0);
@@ -63,7 +65,7 @@ internal sealed class WindowsCpuPmLaunchFiles : ICpuPmLaunchFiles
         disposed = true;
         foreach (var pin in pins.Values.Reverse()) { pin.Dispose(); }
     }
-    private sealed class Pin(string path, bool directory, SafeFileHandle handle) : ICpuPmLaunchFilePin, IDisposable
+    private sealed class Pin(string path, bool directory, SafeFileHandle handle, int maximumReadBytes) : ICpuPmLaunchFilePin, IDisposable
     {
         private FileStream? stream;
         private bool measured;
@@ -80,7 +82,7 @@ internal sealed class WindowsCpuPmLaunchFiles : ICpuPmLaunchFiles
         public byte[] ReadBounded(int maximumBytes)
         {
             AssertHeld();
-            if (stream is null || Length > maximumBytes || maximumBytes is < 0 or > CpuPmLaunchSchema.ManifestLimit) { throw Denied(); }
+            if (stream is null || Length > maximumBytes || maximumBytes < 0 || maximumBytes > maximumReadBytes) { throw Denied(); }
             byte[] bytes = new byte[checked((int)Length)]; stream.Position = 0; stream.ReadExactly(bytes);
             if (Convert.ToHexString(SHA256.HashData(bytes)) != Sha256) { throw Denied(); }
             AssertHeld(); return bytes;

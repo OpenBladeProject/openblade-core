@@ -4,6 +4,11 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0].Equals(CpuVoltageOwnedSmokeCommand.Name, StringComparison.OrdinalIgnoreCase))
+{
+    return CpuVoltageOwnedSmokeCommand.Run(args.Skip(1).ToArray(), Console.Out);
+}
+
 if (args.Length > 0 && (args[0].Equals(Rz090528CpuPmObservationProbe.Name, StringComparison.OrdinalIgnoreCase)
     || args[0].Equals(Rz090528CpuPmObservationProbe.RangeName, StringComparison.OrdinalIgnoreCase)))
 {

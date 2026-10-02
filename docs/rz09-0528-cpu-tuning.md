@@ -417,3 +417,70 @@ disables it. The runner accepts this exact marker with an 8- or 40-digit hex
 revision, and still requires an exact match to the installed Service version.
 These profile builds do not establish physical validation or broader production
 admission; the CPU/cooling replacement must retain the combined IPC 61 sources.
+
+
+### Attended temporary-driver owner for the voltage cycle
+
+Issue [#660](https://github.com/OpenBladeProject/openblade-core/issues/660) adds
+one developer Capture command, `cpu-voltage-owned-smoke`. Its `--help` and
+invalid/missing arguments perform no native operation. This is source tooling;
+no physical run or deployment is established by its fake tests.
+
+The command reuses `CpuPmOwnedDriverLifecycle`, its exact V31 registration,
+durable journal, independent absence checks, signed vendor pins and retained
+child rules. It launches only the existing packaged FirmwareSmoke
+`cpu-voltage-optimizer` command. The owner performs no CPU-PM query, SMU getter
+or setter. FirmwareSmoke and the Service remain responsible for the existing
+maximum twenty-four CO setters: one all-core −1/zero transition and exact
+original restoration, with no automatic reverse or retry after ambiguity.
+
+A future attended approval must expressly cover installation, temporary owned
+V31 create/start/stop/delete, the voltage cycle, and the installed OpenBlade
+shutdown **including its normal shutdown cleanup**. The owner first requires
+independent V31 absence and retains the exact reviewed Service process. Only a
+terminal Smoke child with exit code zero, fresh pinned baseline/result files,
+complete twelve-core forward/original readback, and `OriginalVerified` permits
+one typed `ShutdownOpenBladeRequest`. The shutdown pipe must belong to that
+same retained Service process. Acknowledgement alone cannot permit cleanup:
+the retained process must become terminal and no replacement Service process
+may be present before the existing owned-driver cleanup runs.
+
+The operation has one fixed 600-second deadline, covering admission through
+shutdown and driver cleanup. Ordinary PM owner continuity remains 120 seconds.
+The Service client retains its existing two-second connection bound; requests
+use the remaining operation token. The unchanged Smoke child has no separate
+owner-imposed RPC timeout. Deadline, Ctrl+C, unknown child/result/shutdown,
+Service replacement, or lost file/power/session/ownership evidence parks the
+owner and retains resources. It does not kill the child, guess restoration,
+retry shutdown, or stop/delete the driver on uncertainty. A parked run needs
+attended investigation; it must not be described as successful cleanup.
+
+Before any live approval, prepare and independently review a protected package
+from one committed combined IPC 61 source. Run Capture from that exact private
+package root. The existing strict manifest format (`version: 1`, `source`, and
+`files` entries containing `name`, `length`, `sha256`) covers the complete
+Capture payload at root, complete Smoke payload under `firmware-smoke/`, and
+matching installed Service payload under `service/`. All OpenBlade assemblies
+must be source-qualified to the same full commit; the Service must carry the
+exact `+voltage-validation.<40hex>` version. The full manifest hash, source and
+Service version are explicit reviewed command arguments. The command pins all
+manifest files, validates the complete package inventory, compares and pins the
+installed Service files, and uses the existing administrator/SYSTEM-only fresh
+run tree. It durably records package/Service/child context and validated result
+hashes; result handles deny subsequent writes/deletion through cleanup. This
+trusts the expressly attending administrator and SYSTEM, as the existing owner
+does; JSON cannot grant approval by itself. No new launcher or deployment path
+is supplied, and previously packaged source artifacts remain historical.
+
+The voltage package uses fixed bounds of 1,536 manifest files, a 512 KiB
+manifest, 1 GiB aggregate payload, 4,096 retained pins and 2,048 inventory
+entries. The existing 128 MiB per-file and three-component relative-path bounds
+remain. These accommodate the measured complete self-contained trees without
+trimming runtime dependencies. The ordinary PM path retains its original
+256 files, 64 KiB manifest, 512 MiB total, 800 pins and 768 inventory entries.
+
+The explicit confirmation is
+`RZ09-0528-OWNED-V31-CO-AND-OPENBLADE-SHUTDOWN`, supplied with `--confirm-target`.
+The other required options are `--payload`, `--source`, `--manifest-sha256` and
+`--expected-service-version`. No installation, elevation, driver provisioning,
+Service shutdown or physical test is authorized merely by building this code.

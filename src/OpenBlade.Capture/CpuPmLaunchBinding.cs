@@ -57,6 +57,11 @@ internal interface ICpuPmLaunchProcesses : IDisposable
 internal static class CpuPmLaunchSchema
 {
     internal const int RecordLimit = 16384, ManifestLimit = 65536, MaximumFiles = 256;
+    // Three complete self-contained voltage-validation trees plus installed
+    // Service pins need their own fixed bounds. Ordinary PM callers keep theirs.
+    internal const int VoltageManifestLimit = 512 * 1024, VoltageMaximumFiles = 1536,
+        VoltageMaximumPins = 4096, VoltageMaximumEntries = 2048;
+    internal const long VoltageMaximumPayloadBytes = 1024L * 1024 * 1024;
     internal const long MaximumFileBytes = 128L * 1024 * 1024, MaximumPayloadBytes = 512L * 1024 * 1024;
     internal static bool IsHex(string? value, int length, bool lower) => value is not null && value.Length == length
         && value.All(c => c is >= '0' and <= '9' || (lower ? c is >= 'a' and <= 'f' : c is >= 'A' and <= 'F'));
@@ -152,21 +157,25 @@ internal static class CpuPmLaunchSchema
         return new(Id(root, "run"), Id(root, "lifetime"), Text(root, "source"), Text(root, "manifest"), Text(root, "ownerSha256"), Peer(root.GetProperty("parent")), Peer(root.GetProperty("child")));
     }
     internal static IReadOnlyList<CpuPmLaunchFile> ParseManifest(byte[] bytes, CpuPmReviewedLaunchBootstrap trusted)
+        => ParseManifest(bytes, trusted.Source, trusted.ManifestSha256, ["OpenBlade.Capture.exe", "OpenBlade.PmSupervisor.exe"]);
+    internal static IReadOnlyList<CpuPmLaunchFile> ParseManifest(byte[] bytes, string source, string manifestHash,
+        IReadOnlyList<string> requiredFiles, bool voltageValidation = false)
     {
-        if (Convert.ToHexString(SHA256.HashData(bytes)) != trusted.ManifestSha256) { throw new InvalidDataException(); }
-        using var doc = Document(bytes, ManifestLimit); var root = doc.RootElement; Fields(root, "version", "source", "files");
-        if (!root.GetProperty("version").TryGetInt32(out int version) || version != 1 || Text(root, "source") != trusted.Source
+        if (!IsHex(source, 40, true) || !IsHex(manifestHash, 64, false)
+            || Convert.ToHexString(SHA256.HashData(bytes)) != manifestHash) { throw new InvalidDataException(); }
+        using var doc = Document(bytes, voltageValidation ? VoltageManifestLimit : ManifestLimit); var root = doc.RootElement; Fields(root, "version", "source", "files");
+        if (!root.GetProperty("version").TryGetInt32(out int version) || version != 1 || Text(root, "source") != source
             || root.GetProperty("files").ValueKind != JsonValueKind.Array) { throw new InvalidDataException(); }
         var files = new List<CpuPmLaunchFile>(); var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase); long total = 0;
         foreach (var item in root.GetProperty("files").EnumerateArray())
         {
             Fields(item, "name", "length", "sha256"); string name = Text(item, "name"), hash = Text(item, "sha256");
-            if (files.Count >= MaximumFiles || !RelativeName(name) || !names.Add(name) || name.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)
+            if (files.Count >= (voltageValidation ? VoltageMaximumFiles : MaximumFiles) || !RelativeName(name) || !names.Add(name) || name.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)
                 || !IsHex(hash, 64, false) || !item.GetProperty("length").TryGetInt64(out long length) || length is < 0 or > MaximumFileBytes
-                || length > MaximumPayloadBytes - total) { throw new InvalidDataException(); }
+                || length > (voltageValidation ? VoltageMaximumPayloadBytes : MaximumPayloadBytes) - total) { throw new InvalidDataException(); }
             total += length; files.Add(new(name, length, hash));
         }
-        if (files.Count == 0 || !names.Contains("OpenBlade.Capture.exe") || !names.Contains("OpenBlade.PmSupervisor.exe")) { throw new InvalidDataException(); }
+        if (files.Count == 0 || requiredFiles.Count == 0 || requiredFiles.Any(name => !names.Contains(name))) { throw new InvalidDataException(); }
         // A path cannot be both a file and a directory, including case aliases.
         foreach (var file in files)
         {
@@ -243,7 +252,7 @@ internal sealed class CpuPmAuthenticatedChildRun : ICpuPmAuthenticatedCaptureRun
         for (string? path = Path.GetDirectoryName(final); path is not null; path = Path.GetDirectoryName(path)) { parents.Push(path); }
         while (parents.Count > 0) { files.PinDirectory(parents.Pop(), false, false); }
     }
-    internal static void ValidatePayload(ICpuPmLaunchFiles files, string root, IReadOnlyList<CpuPmLaunchFile> manifest, CancellationToken token)
+    internal static void ValidatePayload(ICpuPmLaunchFiles files, string root, IReadOnlyList<CpuPmLaunchFile> manifest, CancellationToken token, bool voltageValidation = false)
     {
         var expected = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["manifest.json"] = false };
         foreach (var file in manifest)
@@ -261,7 +270,7 @@ internal sealed class CpuPmAuthenticatedChildRun : ICpuPmAuthenticatedCaptureRun
                 token.ThrowIfCancellationRequested();
                 if (!CpuPmLaunchSchema.RelativeName(entry.Name) || entry.Name.Contains('/')) { throw new InvalidDataException(); }
                 string name = relative.Length == 0 ? entry.Name : relative + '/' + entry.Name;
-                if (seen.Count >= 768 || !seen.Add(name) || !expected.TryGetValue(name, out bool directory) || directory != entry.Directory) { throw new InvalidDataException(); }
+                if (seen.Count >= (voltageValidation ? CpuPmLaunchSchema.VoltageMaximumEntries : 768) || !seen.Add(name) || !expected.TryGetValue(name, out bool directory) || directory != entry.Directory) { throw new InvalidDataException(); }
                 string canonical = expected.Keys.Single(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
                 if (name != canonical) { throw new InvalidDataException(); }
                 if (directory) { files.PinDirectory(Path.Combine(root, name.Replace('/', '\\')), true, false); directories.Enqueue(name); }

@@ -10,7 +10,8 @@ internal sealed class CpuPmParentDriverSafety : ICpuPmDriverSafety
     private static int nativeClaimed;
     private static CpuPmParentDriverSafety? nativeRoot;
     private readonly object gate = new();
-    private readonly CpuPmReviewedLaunchBootstrap trusted;
+    private readonly CpuPmReviewedLaunchBootstrap? trusted;
+    private readonly Action? validateVoltagePayload;
     private readonly ICpuPmLaunchFiles files;
     private readonly ICpuPmParentPassiveSource source;
     private readonly CpuPmParentContinuity continuity;
@@ -45,6 +46,26 @@ internal sealed class CpuPmParentDriverSafety : ICpuPmDriverSafety
         var value = new CpuPmParentDriverSafety(trusted, files, source, continuity, vendorPins, operatorApproved);
         return value.Initialize(token) ? value : null;
     }
+    // Fixed CO owner reuses the same passive guards and vendor lease. The callback
+    // validates already pinned package/service context, never native CPU state.
+    internal static CpuPmParentDriverSafety? CreateForVoltageValidation(ICpuPmLaunchFiles files,
+        Action validatePayload, CancellationToken token)
+    {
+        if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess
+            || Interlocked.CompareExchange(ref nativeClaimed, 1, 0) != 0) { return null; }
+        var result = new CpuPmParentDriverSafety(files, validatePayload,
+            WindowsRz090528CpuQueryAdapter.CreateParentPassiveSource(),
+            WindowsCpuPmSessionContinuity.CreateParentPassivePlatform(),
+            new CpuPmParentVendorLease(new WindowsCpuPmLaunchFiles(), WindowsInstalledCpuBackendSnapshotSource.ReadFileMetadata));
+        nativeRoot = result;
+        return result.Initialize(token) ? result : null;
+    }
+    private CpuPmParentDriverSafety(ICpuPmLaunchFiles files, Action validatePayload,
+        ICpuPmParentPassiveSource source, ICpuPmContinuityPlatform platform, ICpuPmParentVendorLease vendorPins)
+    {
+        this.files = files; validateVoltagePayload = validatePayload; this.source = source;
+        continuity = new(platform, voltageValidation: true); this.vendorPins = vendorPins; operatorApproved = true;
+    }
     private bool Initialize(CancellationToken token)
     {
         try
@@ -54,11 +75,15 @@ internal sealed class CpuPmParentDriverSafety : ICpuPmDriverSafety
             token.ThrowIfCancellationRequested();
             vendorPins.InitializeAndVerify(token);
             token.ThrowIfCancellationRequested();
-            CpuPmAuthenticatedChildRun.PinAncestors(files, trusted.PayloadPath);
-            files.PinDirectory(trusted.PayloadPath, true, true);
-            var pin = files.PinFile(Path.Combine(trusted.PayloadPath, "manifest.json"), CpuPmLaunchSchema.ManifestLimit, true);
-            manifest = CpuPmLaunchSchema.ParseManifest(pin.ReadBounded(CpuPmLaunchSchema.ManifestLimit), trusted);
-            CpuPmAuthenticatedChildRun.ValidatePayload(files, trusted.PayloadPath, manifest, token);
+            if (validateVoltagePayload is not null) { validateVoltagePayload(); }
+            else
+            {
+                CpuPmAuthenticatedChildRun.PinAncestors(files, trusted!.PayloadPath);
+                files.PinDirectory(trusted.PayloadPath, true, true);
+                var pin = files.PinFile(Path.Combine(trusted.PayloadPath, "manifest.json"), CpuPmLaunchSchema.ManifestLimit, true);
+                manifest = CpuPmLaunchSchema.ParseManifest(pin.ReadBounded(CpuPmLaunchSchema.ManifestLimit), trusted);
+                CpuPmAuthenticatedChildRun.ValidatePayload(files, trusted.PayloadPath, manifest, token);
+            }
             token.ThrowIfCancellationRequested(); ready = true;
             if (!ReadFresh().Admits) { return Deny(); }
             token.ThrowIfCancellationRequested(); return true;
@@ -69,11 +94,12 @@ internal sealed class CpuPmParentDriverSafety : ICpuPmDriverSafety
     {
         lock (gate)
         {
-            if (!ready || refused || released || !operatorApproved || manifest is null) { return Unavailable(); }
+            if (!ready || refused || released || !operatorApproved || manifest is null && validateVoltagePayload is null) { return Unavailable(); }
             try
             {
                 if (!continuity.ReadFresh()) { return Refuse(); }
-                CpuPmAuthenticatedChildRun.ValidatePayload(files, trusted.PayloadPath, manifest, CancellationToken.None);
+                if (validateVoltagePayload is not null) { validateVoltagePayload(); }
+                else { CpuPmAuthenticatedChildRun.ValidatePayload(files, trusted!.PayloadPath, manifest!, CancellationToken.None); }
                 if (!continuity.ReadFresh()) { return Refuse(); }
                 vendorPins.AssertHeld();
                 CpuPmParentPassiveEvidence fresh = source.ReadFresh();
@@ -135,7 +161,7 @@ internal sealed class CpuPmParentDriverSafety : ICpuPmDriverSafety
             released = true; ready = false;
             bool callbacksReleased = continuity.Release();
             try { vendorPins.ReleaseAfterVerifiedCleanup(owner); }
-            finally { files.Dispose(); }
+            finally { if (validateVoltagePayload is null) { files.Dispose(); } }
             if (!callbacksReleased) { throw new IOException("Parent callback cleanup is uncertain."); }
         }
     }

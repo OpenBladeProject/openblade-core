@@ -19,7 +19,9 @@ internal sealed class CpuPmParentContinuity
     private CpuPmContinuityFailure failure;
     private uint? lastSuspendType, lastPowerType, lastPowerLength, lastPowerSource, suspendRegistrationStatus, powerRegistrationStatus;
     private bool? lastPowerSettingMatches;
-    internal CpuPmParentContinuity(ICpuPmContinuityPlatform platform) => this.platform = platform;
+    private readonly ulong budgetMilliseconds;
+    internal CpuPmParentContinuity(ICpuPmContinuityPlatform platform, bool voltageValidation = false)
+    { this.platform = platform; budgetMilliseconds = voltageValidation ? 600_000UL : 120_000UL; }
     internal CpuPmParentContinuityDiagnostic Diagnostic
     {
         get
@@ -93,7 +95,7 @@ internal sealed class CpuPmParentContinuity
             { return Deny(CpuPmContinuityFailure.ClockRegression); }
             ulong elapsed = value.TickMilliseconds - initial.TickMilliseconds;
             ulong unbiased = value.Unbiased100Nanoseconds - initial.Unbiased100Nanoseconds;
-            if (elapsed >= 120_000) { return Deny(CpuPmContinuityFailure.Expired); }
+            if (elapsed >= budgetMilliseconds) { return Deny(CpuPmContinuityFailure.Expired); }
             ulong ticks = elapsed * 10_000;
             ulong gap = ticks >= unbiased ? ticks - unbiased : unbiased - ticks;
             if (gap >= 2_500_000) { return Deny(CpuPmContinuityFailure.ClockGap); }

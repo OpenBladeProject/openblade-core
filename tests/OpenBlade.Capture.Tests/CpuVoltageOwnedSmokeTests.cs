@@ -1,0 +1,288 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using OpenBlade.Capture;
+using OpenBlade.Contracts;
+
+namespace OpenBlade.Capture.Tests;
+
+public sealed class CpuVoltageOwnedSmokeTests
+{
+    private static readonly string Source = new('a', 40), Hash = new('A', 64);
+    private static readonly string Version = "0.24.0+voltage-validation." + Source;
+    private static readonly DateTimeOffset Started = DateTimeOffset.Parse("2026-10-02T10:00:00Z");
+    private static readonly JsonSerializerOptions Json = new()
+    { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
+    private static string[] Args => ["--payload", @"C:\reviewed", "--source", Source, "--manifest-sha256", Hash,
+        "--expected-service-version", Version, "--confirm-target", CpuVoltageOwnedSmokeCommand.Confirmation];
+    [Fact]
+    public void HelpIsInertAndExactApprovalIsRequired()
+    {
+        using var output = new StringWriter(); Assert.Equal(0, CpuVoltageOwnedSmokeCommand.Run(["--help"], output));
+        Assert.Contains("600-second", output.ToString()); Assert.Contains("normal shutdown cleanup", output.ToString());
+        Assert.Equal(Version, CpuVoltageOwnedSmokeCommand.Parse(Args).ServiceVersion);
+        foreach (int index in new[] { 1, 3, 5, 7, 9 })
+        { var args = Args; args[index] = "invalid"; Assert.ThrowsAny<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(args)); }
+        var duplicate = Args; duplicate[2] = "--payload"; Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(duplicate));
+        Assert.Equal(2, CpuVoltageOwnedSmokeCommand.Run([], output));
+    }
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void BothExactCyclesVerifyThenShutdownThenTerminalThenCleanup(int original)
+    {
+        var evidence = Evidence(original); var child = new Child(); var events = new List<string>(); int polls = 0;
+        bool terminal = false;
+        Assert.True(CpuVoltageOwnedSmokeCommand.Complete(child, () => false, () => { }, () => events.Add("revoke"),
+            () => { Verify(evidence); events.Add("verified"); }, () => events.Add("shutdown"),
+            () => { terminal = true; events.Add("service-terminal"); },
+            () => { Assert.True(terminal); events.Add("cleanup"); return CpuPmDriverCleanup.Complete; },
+            () => { polls++; child.State = CpuPmChildState.Terminal; }));
+        Assert.Equal(1, polls); Assert.Equal(new[] { "revoke", "verified", "shutdown", "service-terminal", "cleanup" }, events);
+    }
+    [Theory]
+    [InlineData("outcome")]
+    [InlineData("restored")]
+    [InlineData("forward")]
+    [InlineData("original")]
+    [InlineData("missing-core")]
+    [InlineData("wrong-core")]
+    [InlineData("version")]
+    [InlineData("freshness")]
+    [InlineData("ppt")]
+    [InlineData("ownership")]
+    public void UnverifiedResultPreventsShutdownAndCleanup(string failure)
+    {
+        var data = Evidence(0); var b = JsonNode.Parse(data.Baseline)!; var r = JsonNode.Parse(data.Result)!;
+        switch (failure)
+        {
+            case "outcome": r["outcome"] = "Unknown"; break;
+            case "restored": r["originalVerified"] = false; break;
+            case "forward": r["forward"]!["coreValues"]![0]!["value"] = -2; break;
+            case "original": r["final"]!["coreValues"]![0]!["value"] = -1; break;
+            case "missing-core": r["final"]!["coreValues"]!.AsArray().RemoveAt(0); break;
+            case "wrong-core": r["final"]!["coreValues"]![0]!["coreIndex"] = 1; break;
+            case "version": r["expectedServiceVersion"] = "0.24.0+" + Source; break;
+            case "freshness": b["capturedAtUtc"] = Started.AddSeconds(-1); break;
+            case "ppt": b["requestedSettings"]!["powerLimitWatts"] = 45; break;
+            case "ownership": b["cpuTuning"]!["restorePending"] = true; break;
+        }
+        var changed = (JsonSerializer.SerializeToUtf8Bytes(b), JsonSerializer.SerializeToUtf8Bytes(r));
+        bool shutdown = false, cleanup = false;
+        Assert.ThrowsAny<Exception>(() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal },
+            () => false, () => { }, () => { }, () => Verify(changed), () => shutdown = true, () => { },
+            () => { cleanup = true; return CpuPmDriverCleanup.Complete; }, () => { }));
+        Assert.False(shutdown); Assert.False(cleanup);
+    }
+    [Theory]
+    [InlineData("child-unknown")]
+    [InlineData("child-identity")]
+    [InlineData("deadline")]
+    [InlineData("shutdown")]
+    [InlineData("service-terminal")]
+    [InlineData("pins-after-result")]
+    public void EachUncertainBoundaryRetainsResources(string failure)
+    {
+        var child = new Child { State = CpuPmChildState.Terminal, IdentityChanged = failure == "child-identity" };
+        if (failure == "child-unknown") { child.State = CpuPmChildState.Unknown; }
+        int verified = 0, shutdown = 0, cleanup = 0;
+        bool Run() => CpuVoltageOwnedSmokeCommand.Complete(child, () => failure == "deadline", () =>
+            { if (failure == "pins-after-result" && verified != 0) { throw new IOException(); } }, () => { },
+            () => verified++, () => { shutdown++; if (failure == "shutdown") { throw new IOException(); } },
+            () => { if (failure == "service-terminal") { throw new IOException(); } },
+            () => { cleanup++; return CpuPmDriverCleanup.Complete; }, () => throw new IOException());
+        if (failure is "shutdown" or "service-terminal" or "pins-after-result") { Assert.Throws<IOException>(() => Run()); }
+        else { Assert.False(Run()); }
+        Assert.Equal(0, cleanup);
+        if (failure is not ("shutdown" or "service-terminal")) { Assert.Equal(0, shutdown); }
+    }
+    [Fact]
+    public void RetainedServiceProofRejectsPidReuseReplacementPinsAndUnknownWait()
+    {
+        var probe = new Probe(); var pins = new Pins(); int[] inventory = [7];
+        var service = new WindowsCpuVoltageServiceProcess(probe, probe.Value, pins, Version, () => inventory);
+        service.AssertState(CpuPmChildState.Running);
+        probe.Value = probe.Value with { Created = 99 }; Assert.Throws<IOException>(() => service.AssertState(CpuPmChildState.Running));
+        probe.Value = probe.Value with { Created = 8, State = CpuPmChildState.Unknown };
+        Assert.Equal(CpuPmChildState.Unknown, service.ReadState());
+        probe.Value = probe.Value with { State = CpuPmChildState.Terminal, Image = null }; inventory = [];
+        service.AssertState(CpuPmChildState.Terminal);
+        inventory = [9]; Assert.Throws<IOException>(() => service.AssertState(CpuPmChildState.Terminal));
+        inventory = []; pins.Broken = true; Assert.Throws<IOException>(() => service.AssertState(CpuPmChildState.Terminal));
+        Assert.False(probe.Disposed);
+    }
+    [Fact]
+    public void FixedVoltageBudgetPreservesOrdinaryPmExpiryAndContinuityGuards()
+    {
+        var pm = new CpuPmParentContinuityTests.FakePlatform(); var voltage = new CpuPmParentContinuityTests.FakePlatform();
+        var old = new CpuPmParentContinuity(pm); var co = new CpuPmParentContinuity(voltage, voltageValidation: true);
+        Assert.True(old.Arm()); Assert.True(co.Arm());
+        pm.Value = pm.Value with { TickMilliseconds = pm.Value.TickMilliseconds + 120000, Unbiased100Nanoseconds = pm.Value.Unbiased100Nanoseconds + 1200000000 };
+        voltage.Value = voltage.Value with { TickMilliseconds = voltage.Value.TickMilliseconds + 120000, Unbiased100Nanoseconds = voltage.Value.Unbiased100Nanoseconds + 1200000000 };
+        Assert.False(old.ReadFresh()); Assert.True(co.ReadFresh());
+        voltage.Value = voltage.Value with { TickMilliseconds = voltage.Value.TickMilliseconds + 480000, Unbiased100Nanoseconds = voltage.Value.Unbiased100Nanoseconds + 4800000000 };
+        Assert.False(co.ReadFresh()); Assert.False(co.ReadFresh());
+        Assert.Equal(TimeSpan.FromSeconds(600), CpuVoltageOwnedSmokeCommand.Budget);
+    }
+    [Fact]
+    public void StrictEvidenceRejectsDuplicateFieldsAndArbitraryVersionMetadata()
+    {
+        var evidence = Evidence(-1);
+        var duplicate = System.Text.Encoding.UTF8.GetBytes(System.Text.Encoding.UTF8.GetString(evidence.Result).Insert(1, "\"outcome\":\"Passed\","));
+        Assert.ThrowsAny<Exception>(() => Verify((evidence.Baseline, duplicate)));
+        Assert.True(CpuVoltageOwnedSmokeCommand.SourceVersion(Version, Source));
+        Assert.True(CpuVoltageOwnedSmokeCommand.SourceVersion("0.24.0+" + Source, Source));
+        Assert.False(CpuVoltageOwnedSmokeCommand.SourceVersion("arbitrary" + Source, Source));
+        Assert.False(CpuVoltageOwnedSmokeCommand.SourceVersion("0.24.0+other." + Source, Source));
+    }
+    [Fact]
+    public void ManifestReuseKeepsPmRequiredFilesAndExactSourceHash()
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            version = 1,
+            source = Source,
+            files = new[] { new { name = "firmware-smoke/OpenBlade.FirmwareSmoke.exe", length = 5, sha256 = Hash } }
+        });
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+        Assert.Single(CpuPmLaunchSchema.ParseManifest(bytes, Source, hash, ["firmware-smoke/OpenBlade.FirmwareSmoke.exe"]));
+        Assert.ThrowsAny<Exception>(() => CpuPmLaunchSchema.ParseManifest(bytes, new CpuPmReviewedLaunchBootstrap(Source, hash)));
+        Assert.ThrowsAny<Exception>(() => CpuPmLaunchSchema.ParseManifest(bytes, Source, Hash, ["firmware-smoke/OpenBlade.FirmwareSmoke.exe"]));
+        Assert.ThrowsAny<Exception>(() => CpuPmLaunchSchema.ParseManifest(bytes, new string('b', 40), hash, ["firmware-smoke/OpenBlade.FirmwareSmoke.exe"]));
+    }
+    [Theory]
+    [InlineData(257)]
+    [InlineData(994)]
+    [InlineData(1536)]
+    public void CompleteVoltageClosuresFitWithoutWideningPmManifestLimits(int count)
+    {
+        byte[] bytes = CapacityManifest(count, 1024);
+        Assert.Equal(count, ParseCapacity(bytes, true).Count);
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(bytes, false));
+        Assert.ThrowsAny<Exception>(() => CpuPmLaunchSchema.ParseManifest(bytes,
+            new CpuPmReviewedLaunchBootstrap(Source, Digest(bytes))));
+    }
+    [Fact]
+    public void VoltageCapacityRetainsExplicitByteFileAndTotalBounds()
+    {
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(CapacityManifest(1537, 1), true));
+        byte[] normal = CapacityManifest(2, 1);
+        byte[] boundary = new byte[CpuPmLaunchSchema.VoltageManifestLimit];
+        Array.Fill(boundary, (byte)' '); normal.CopyTo(boundary, 0);
+        Assert.Equal(2, ParseCapacity(boundary, true).Count);
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(boundary, false));
+        Assert.ThrowsAny<Exception>(() => ParseCapacity([.. boundary, (byte)' '], true));
+        Assert.Equal(8, ParseCapacity(CapacityManifest(8, CpuPmLaunchSchema.MaximumFileBytes), true).Count);
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(CapacityManifest(9, CpuPmLaunchSchema.MaximumFileBytes), true));
+        Assert.Equal(4, ParseCapacity(CapacityManifest(4, CpuPmLaunchSchema.MaximumFileBytes), false).Count);
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(CapacityManifest(5, CpuPmLaunchSchema.MaximumFileBytes), false));
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(CapacityManifest(2, CpuPmLaunchSchema.MaximumFileBytes + 1), true));
+        Assert.ThrowsAny<Exception>(() => ParseCapacity(CapacityManifest(2, CpuPmLaunchSchema.MaximumFileBytes + 1), false));
+    }
+    [Fact]
+    public void VoltageInventoryPinsEveryCompleteClosureEntryAndStillRejectsExtras()
+    {
+        var manifest = ParseCapacity(CapacityManifest(994, 1024), true);
+        var files = new ClosureFiles(manifest);
+        CpuPmAuthenticatedChildRun.ValidatePayload(files, @"C:\reviewed", manifest, CancellationToken.None, voltageValidation: true);
+        Assert.Equal(994, files.FilePins);
+        Assert.ThrowsAny<Exception>(() => CpuPmAuthenticatedChildRun.ValidatePayload(new ClosureFiles(manifest),
+            @"C:\reviewed", manifest, CancellationToken.None));
+        files.Extra = true;
+        Assert.ThrowsAny<Exception>(() => CpuPmAuthenticatedChildRun.ValidatePayload(files,
+            @"C:\reviewed", manifest, CancellationToken.None, voltageValidation: true));
+    }
+    private static byte[] CapacityManifest(int count, long length) => JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        version = 1,
+        source = Source,
+        files = Enumerable.Range(0, count).Select(index => new
+        {
+            name = index switch
+            { 0 => "OpenBlade.Capture.exe", 1 => "OpenBlade.PmSupervisor.exe", _ => $"dependency-{index:D4}.dll" },
+            length,
+            sha256 = Hash
+        })
+    });
+    private static string Digest(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    private static IReadOnlyList<CpuPmLaunchFile> ParseCapacity(byte[] bytes, bool voltage) =>
+        CpuPmLaunchSchema.ParseManifest(bytes, Source, Digest(bytes), ["OpenBlade.Capture.exe", "OpenBlade.PmSupervisor.exe"], voltage);
+    private sealed class ClosureFiles(IReadOnlyList<CpuPmLaunchFile> manifest) : ICpuPmLaunchFiles
+    {
+        internal int FilePins;
+        internal bool Extra;
+        public void PinDirectory(string path, bool privateAcl, bool protectedAcl) { }
+        public ICpuPmLaunchFilePin PinFile(string path, long maximumBytes, bool privateAcl)
+        {
+            FilePins++; return new FilePin(manifest.Single(file => file.Name == Path.GetFileName(path)));
+        }
+        public IEnumerable<CpuPmLaunchEntry> Enumerate(string path) =>
+            manifest.Select(file => new CpuPmLaunchEntry(file.Name, false)).Append(new("manifest.json", false))
+                .Concat(Extra ? [new CpuPmLaunchEntry("unexpected.dll", false)] : []);
+        public void AssertAllPins() { }
+        public void Dispose() => throw new NotSupportedException();
+        private sealed class FilePin(CpuPmLaunchFile file) : ICpuPmLaunchFilePin
+        {
+            public long Length => file.Length;
+            public string Sha256 => file.Sha256;
+            public byte[] ReadBounded(int maximumBytes) => throw new NotSupportedException();
+        }
+    }
+    private static void Verify((byte[] Baseline, byte[] Result) value) =>
+        CpuVoltageOwnedSmokeEvidence.Verify(value.Baseline, value.Result, Version, Started, Started.AddMinutes(1));
+    private static (byte[] Baseline, byte[] Result) Evidence(int original)
+    {
+        CpuLiveState Vector(int value) => new(null, new[] { 0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15 }.Select(core => new CpuCoreCurveOptimizerValue(core, value)).ToArray());
+        var originalState = Vector(original);
+        var status = new CpuTuningStatus(null, originalState,
+            new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Available),
+            new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.None, false)
+        { LiveRecovery = new(CpuTuningRecoveryState.None, CpuTuningFeatures.None), FirmwareRecovery = new(CpuTuningRecoveryState.None, CpuTuningFeatures.None) };
+        return (JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            SchemaVersion = 1,
+            CoreMask = 0xFF55,
+            CapturedAtUtc = Started.AddSeconds(1),
+            ExpectedServiceVersion = Version,
+            Status = new { ServiceVersion = Version },
+            CpuTuning = status,
+            RequestedSettings = new CpuTuningSettings(null, new(original == 0, -1))
+        }, Json),
+            JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                Outcome = "Passed",
+                Phase = "OriginalReadback",
+                ApplyAttempted = true,
+                RestoreAttempted = true,
+                OriginalVerified = true,
+                ExpectedServiceVersion = Version,
+                Baseline = originalState,
+                Forward = Vector(original == 0 ? -1 : 0),
+                Final = originalState
+            }, Json));
+    }
+    private sealed class Child : ICpuPmRetainedChild
+    {
+        internal CpuPmChildState State = CpuPmChildState.Running;
+        internal bool IdentityChanged;
+        public CpuPmAuthorityPeer Identity { get; } = new(4, 5, @"C:\reviewed\child.exe", Hash);
+        public CpuPmAuthorityPeer? ReadFreshIdentity() => IdentityChanged ? null : Identity;
+        public CpuPmChildState ReadState() => State;
+    }
+    private sealed class Probe : ICpuPmRetainedProcessProbe
+    {
+        internal CpuPmProcessObservation Value = new(7, 8, CpuPmChildState.Running, WindowsCpuVoltageServiceProcess.Image);
+        internal bool Disposed;
+        public CpuPmProcessObservation Read(bool includeLiveImage) => Value;
+        public void Dispose() => Disposed = true;
+    }
+    private sealed class Pins : ICpuPmLaunchFiles
+    {
+        internal bool Broken;
+        public void AssertAllPins() { if (Broken) { throw new IOException(); } }
+        public void PinDirectory(string path, bool privateAcl, bool protectedAcl) => throw new NotSupportedException();
+        public ICpuPmLaunchFilePin PinFile(string path, long maximumBytes, bool privateAcl) => throw new NotSupportedException();
+        public IEnumerable<CpuPmLaunchEntry> Enumerate(string path) => throw new NotSupportedException();
+        public void Dispose() => throw new NotSupportedException();
+    }
+}
