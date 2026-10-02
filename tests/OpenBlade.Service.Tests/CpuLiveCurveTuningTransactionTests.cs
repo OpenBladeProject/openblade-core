@@ -499,6 +499,8 @@ public sealed class CpuLiveCurveTuningTransactionTests
         internal Func<CpuLiveCurveCommand, CpuLiveCurveCommandPurpose, bool> Admit = (_, _) => true;
         internal Func<CpuLiveCurveCommand, Task<CpuLiveCurveSubmission>>? OnSend;
         internal Action? AfterSend;
+        internal Func<CpuLivePowerPeerState, bool>? CheckPeer;
+        internal readonly List<CpuLivePowerPeerState> Peers = [];
         internal int Reads;
         public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token)
         { Reads++; return Task.FromResult(new CpuLiveCurveBackendObservation(Context, new(0xFF55, 0x005D000B, 0xD50, Values.ToArray()))); }
@@ -512,6 +514,16 @@ public sealed class CpuLiveCurveTuningTransactionTests
             Assert.True(Context.MatchesHardwareContext(context)); Assert.Equal(Values, expectedBefore.CoreOffsets);
             Assert.Contains((command, purpose), Admissions);
             Sent.Add(command); return OnSend?.Invoke(command) ?? Apply(command);
+        }
+        public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
+        {
+            if (peer is not null)
+            {
+                Peers.Add(peer);
+                if (CheckPeer?.Invoke(peer) != true) { return Task.FromResult(CpuLiveCurveSubmission.NotSubmitted); }
+            }
+            return SendAsync(context, command, purpose, expectedBefore, token);
         }
         internal Task<CpuLiveCurveSubmission> Apply(CpuLiveCurveCommand command)
         {

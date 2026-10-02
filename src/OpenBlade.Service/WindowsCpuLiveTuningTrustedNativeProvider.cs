@@ -155,7 +155,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
                 && !CheckWriteAdmission(exactContext, exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore, token)
             || !admission()) { return null; }
-        return new WriteProof(exactRequest, exactContext, admission, metadata, worker, token);
+        return new WriteProof(exactRequest, exactContext, admission, metadata, worker, this, token);
     }
 
     private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
@@ -202,10 +202,32 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,
         Func<bool> current, WindowsCpuLiveCurveRangeMetadata metadata, CpuNativeWorkerCoordinator worker,
-        CancellationToken token) : CpuLiveCurveWriteProof(request)
+        WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
         private bool read;
         private CpuLiveCurveTrustedRange? range;
+        internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)
+        {
+            if (!Current(exactRequest) || exactRequest.PowerPeer is not { } peer
+                || CpuLivePowerCapability.TryDecode(capability) is null) { return false; }
+            // The unchanged, unowned peer requires observation authority only.
+            // Any owned original still needs independent PPT restoration admission;
+            // the production PPT gate deliberately remains closed pending fixture.
+            if (peer.Original is { } original)
+            {
+                var peerContext = new CpuLivePowerContext(context.Identity, context.EnabledCoreMask, context.PmVersion,
+                    context.PmTableLength, context.Backend, context.BootSequence)
+                { RuntimeLifetime = context.RuntimeLifetime };
+                foreach (var limit in new[] { CpuLivePowerLimit.Fast, CpuLivePowerLimit.Slow })
+                {
+                    if (peer.Expected.Get(limit) == original.Get(limit)) { continue; }
+                    if (!CpuLivePowerCommand.TryCreate(limit, original.Get(limit).Milliwatts, out var restore)
+                        || !owner.CheckWriteAdmission(peerContext, restore, CpuLivePowerCommandPurpose.Restore,
+                            peer.Expected, original, token)) { return false; }
+                }
+            }
+            return current();
+        }
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => current();
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {

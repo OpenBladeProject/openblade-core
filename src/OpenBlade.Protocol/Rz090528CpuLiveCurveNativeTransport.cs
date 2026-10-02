@@ -8,7 +8,7 @@ internal sealed class CpuLiveCurveWriteScope;
 internal sealed class CpuLiveCurveNativeRequest
 {
     internal CpuLiveCurveNativeRequest(CpuLiveCurveWriteScope scope, CpuLiveCurveCommand command,
-        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore)
+        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? powerPeer = null)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(expectedBefore);
@@ -17,7 +17,7 @@ internal sealed class CpuLiveCurveNativeRequest
                 CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command
             || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0)
         { throw new ArgumentException("Invalid exact curve operation."); }
-        Scope = scope; Command = command; Purpose = purpose; Before = expectedBefore;
+        Scope = scope; Command = command; Purpose = purpose; Before = expectedBefore; PowerPeer = powerPeer;
         After = expectedBefore.WithOffset(command);
         short previous = expectedBefore.CoreOffsets.Single(core => core.PhysicalCoreId == command.PhysicalCoreId).Offset;
         if (!CpuLiveCurveCommand.TryCreate(command.PhysicalCoreId, previous,
@@ -26,6 +26,7 @@ internal sealed class CpuLiveCurveNativeRequest
         ImmediateReverse = reverse;
     }
 
+    internal CpuLivePowerPeerState? PowerPeer { get; }
     internal CpuLiveCurveWriteScope Scope { get; }
     internal CpuLiveCurveCommand Command { get; }
     internal CpuLiveCurveCommand ImmediateReverse { get; }
@@ -55,12 +56,12 @@ internal sealed record CpuLiveCurveTrustedRange(uint Selector, int MinimumMagnit
         && Step == 1 && -(int)command.Offset >= MinimumMagnitude && -(int)command.Offset <= MaximumMagnitude;
 }
 
-// No runtime implementation exists in this slice. The eventual trusted provider
-// must bind this exact immutable request/scope to independently admitted forward
+// A trusted provider must bind this exact immutable request/scope to independently admitted forward
 // AND reverse authority, loaded-driver lifetime, transition/AC/session continuity,
 // deadline, source/physical admission and fresh, strictly decoded CO metadata.
 // A getter approval, historical metadata or caller-supplied bool cannot implement
-// that trust. Only offline fakes supply this contract today.
+// that trust. The installed provider supplies CO authority from reviewed evidence;
+// peer PPT restoration remains independently gated.
 internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request)
 {
     private readonly long created = Stopwatch.GetTimestamp();
@@ -69,6 +70,11 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
         Interlocked.Exchange(ref consumed, 1) == 0 && ReferenceEquals(request, exactRequest) && Current(exactRequest);
     internal bool Current(CpuLiveCurveNativeRequest exactRequest) => ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsCurrent(exactRequest);
+    // Called under the initiating native lease, before the peer sample and at
+    // the final setter boundary. Independently admit requested-state semantics
+    // and every differing first-original restore against fresh range/caps.
+    // It must not invoke a backend observer or acquire another native lease.
+    internal virtual bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => false;
     internal abstract bool IsCurrent(CpuLiveCurveNativeRequest exactRequest);
     internal abstract CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest);
 }

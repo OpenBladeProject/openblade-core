@@ -67,7 +67,11 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
 
     public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
-        Start(CpuLiveCurveNativeWorkerKind.Submission, workToken => Send(context, command, purpose, expectedBefore, workToken),
+        SendAsync(context, command, purpose, expectedBefore, null, token);
+
+    public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
+        Start(CpuLiveCurveNativeWorkerKind.Submission, workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
             CpuLiveCurveSubmission.Unknown, token);
 
     private CpuLiveCurveBackendObservation Observe(CancellationToken token)
@@ -89,10 +93,10 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     }
 
     private CpuLiveCurveSubmission Send(CpuLiveCurveContext context, CpuLiveCurveCommand command,
-        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token)
+        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
     {
         if (!ValidCommand(command, purpose) || !MatchesFresh(context, token)) { return CpuLiveCurveSubmission.NotSubmitted; }
-        var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore);
+        var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
         if (!provider.CheckWriteAdmission(context, command, purpose, token) || !MatchesFresh(context, token))
         { return CpuLiveCurveSubmission.NotSubmitted; }
         var proof = provider.CreateWriteProof(context, request, token);
@@ -138,6 +142,8 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
+        internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>
+            IsCurrent(exactRequest) && source.AdmitPowerPeer(exactRequest, capability, cap) && IsCurrent(exactRequest);
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.Current(exactRequest) && owner.MatchesFresh(context, token);
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)

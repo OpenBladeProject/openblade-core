@@ -771,6 +771,11 @@ public sealed class CpuTuningRuntimeTests : IDisposable
         {
             if (curve) { CurveStore = new(); Curve = new(CurveStore); }
             if (power) { PowerStore = new(); Power = new(PowerStore); }
+            if (Curve is not null && Power is not null)
+            {
+                Curve.CheckPeer = peer => !Power.Unavailable && peer.Expected == Power.Pair;
+                Power.CheckPeer = peer => peer.Expected.CoreOffsets.SequenceEqual(Curve.Values);
+            }
         }
     }
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,

@@ -54,6 +54,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readUsb);
+        if (request.PowerPeer is not null)
+        { return ExecuteCurveWithPowerPeer(request, proof, readUsb, platform, token); }
         var latch = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref latch.Active, 1, 0) != 0)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }

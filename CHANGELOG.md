@@ -18,6 +18,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Recheck both settings and required capabilities before submitting combined live CPU edits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Use fresh verified adapter readings for CPU full-power admission when Windows reports unknown external power. Battery, USB-C, unknown and canceled readings still deny commands. ([#642](https://github.com/OpenBladeProject/openblade-core/issues/642))
 
 - Identify the first rejecting safety check when a saved CPU command is denied, without changing admission or retrying commands. ([#641](https://github.com/OpenBladeProject/openblade-core/issues/641))

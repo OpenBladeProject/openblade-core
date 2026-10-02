@@ -85,6 +85,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             Check();
             if (adapter?.FreshAdmission() != true || !ExactPowerPlatform()) { throw new CpuPowerAdmissionException(); }
             CheckRange();
+            if (request.CurvePeer is not null && !proof!.AdmitCurvePeer(request)) { throw new CpuPowerAdmissionException(); }
             Check();
         }
     }
@@ -101,7 +102,8 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8, Copy = 0x81112F08;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private const uint ExpectedFirmwareVersion = 0x0B5D1600;
-    private readonly CpuLivePowerNativeRequest request;
+    private readonly CpuLivePowerNativeRequest? request;
+    private readonly CpuLiveCurveNativeRequest? curveRequest;
     private readonly Action checkpoint, snapshotAdmission, finalAdmission;
     private readonly Queue<Step> steps = new();
     private Step? pending;
@@ -113,11 +115,20 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     internal CpuLivePowerFusedCap? Cap { get; private set; }
     internal uint? Capability { get; private set; }
     internal CpuLivePowerSnapshot? After { get; private set; }
+    internal CpuLiveCurveSnapshot? CurveAfter { get; private set; }
     internal bool Complete => scriptCreated && !failed && pending is null && steps.Count == 0;
 
     internal CpuPowerNativeWire(CpuLivePowerNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission)
+        : this(request, null, checkpoint, snapshotAdmission, finalAdmission) { }
+
+    internal CpuPowerNativeWire(CpuLiveCurveNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission)
+        : this(null, request, checkpoint, snapshotAdmission, finalAdmission) { }
+
+    private CpuPowerNativeWire(CpuLivePowerNativeRequest? request, CpuLiveCurveNativeRequest? curveRequest,
+        Action checkpoint, Action snapshotAdmission, Action finalAdmission)
     {
-        this.request = request; this.checkpoint = checkpoint; this.snapshotAdmission = snapshotAdmission; this.finalAdmission = finalAdmission;
+        this.request = request; this.curveRequest = curveRequest;
+        this.checkpoint = checkpoint; this.snapshotAdmission = snapshotAdmission; this.finalAdmission = finalAdmission;
         steps.Enqueue(new(Enumerate, new byte[28], 28, bytes =>
         {
             uint count = Word(bytes, 24);
@@ -197,11 +208,52 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         // Firmware version is separate from the PM layout checked by Snapshot.
         Mailbox(0x02, null, value => value == ExpectedFirmwareVersion);
         ReadCaps();
-        Snapshot(before: true);
-        ReadCaps(); // Recheck conditional fused ceiling after the before sample.
-        Mailbox(request.Command.Message, request.Command.EncodeArgument(), null, setter: true);
-        Snapshot(before: false);
+        if (curveRequest is { PowerPeer: not null } curve)
+        {
+            CurveSnapshot(curve.Before, after: false);
+            // CO metadata is read before the peer snapshot, under this lease.
+            Mailbox(0x82, null, value => { if ((value & 4) == 0) { return false; } snapshotAdmission(); return true; });
+            Snapshot(before: true);
+            ReadCaps();
+            Mailbox(CpuLiveCurveCommand.Message, curve.Command.EncodeArgument(), null, setter: true);
+            CurveSnapshot(curve.After, after: true);
+        }
+        else if (request is { } power)
+        {
+            Snapshot(before: true);
+            if (power.CurvePeer is { } peer)
+            {
+                CurveSnapshot(peer.Expected, after: false);
+                Mailbox(0x82, null, value => (value & 4) != 0);
+            }
+            ReadCaps(); // Recheck conditional fused ceiling after the before sample.
+            Mailbox(power.Command.Message, power.Command.EncodeArgument(), null, setter: true);
+            Snapshot(before: false);
+        }
+        else { throw new CpuPowerAdmissionException(); }
     }
+    private void CurveSnapshot(CpuLiveCurveSnapshot expected, bool after)
+    {
+        var values = new List<CpuLiveCoreOffset>();
+        Mailbox(6, 0, value => value == CpuLiveCurveSnapshot.SupportedPmVersion);
+        foreach (var core in expected.CoreOffsets)
+        {
+            uint argument = ((uint)(core.PhysicalCoreId / 8) << 28) | ((uint)(core.PhysicalCoreId % 8) << 20);
+            Mailbox(0x5E, argument, value =>
+            {
+                short offset = unchecked((short)value);
+                if (offset != core.Offset) { return false; }
+                values.Add(new(core.PhysicalCoreId, offset));
+                if (after && values.Count == expected.CoreOffsets.Count)
+                {
+                    CurveAfter = CpuLiveCurveSnapshot.TryCreate(new(CpuLiveCurveSnapshot.SupportedMask,
+                        CpuLiveCurveSnapshot.SupportedPmVersion, CpuLiveCurveSnapshot.SupportedPmLength, values));
+                }
+                return true;
+            });
+        }
+    }
+
     private void ReadCaps()
     {
         Smn(CpuLivePowerFusedCap.RegisterA0F, value => { capFirst = value; return value != uint.MaxValue; });
@@ -218,13 +270,13 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
             if (!CpuPmRawSnapshot.TryCreate(CpuLivePowerSnapshot.SupportedVersion, new(true, bytes),
                 DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), out var raw)) { return false; }
             copied = CpuLivePowerSnapshot.TryCreate(raw);
-            return copied is not null && (!before || copied.Pair == request.Before);
+            return copied is not null && (!before || copied.Pair == (request?.Before ?? curveRequest!.PowerPeer!.Expected));
         }));
         // F08 can alter hidden mailbox/index state; always explicitly reselect.
         Mailbox(6, 0, value =>
         {
             if (value != CpuLivePowerSnapshot.SupportedVersion || copied is null) { return false; }
-            if (before) { snapshotAdmission(); }
+            if (before) { if (request is not null) { snapshotAdmission(); } }
             else { After = copied; }
             copied = null; return true;
         });

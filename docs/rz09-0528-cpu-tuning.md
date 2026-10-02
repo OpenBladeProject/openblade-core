@@ -293,11 +293,19 @@ expected state and restoration admission. Confirmed peer loss blocks the active
 coupled journals, including when a peer has already been restored. An unchanged
 family acquires no baseline ownership. An incomplete or uncertain operation stops
 without compensation or automatic replay; verified partial changes retain their
-independent recovery records. These checks precede submission and do not attest
-peer state atomically at the native setter. A future concrete provider must bind
-the same operation lease and combined expected-state/restoration proofs at the
-actual native boundary. Offline fake-backend tests cover this orchestration;
-they do not establish physical live-write admission.
+independent recovery records. Each native step now carries its peer's immutable
+expected state and first owned original. The native adapter reads the peer under
+the initiating setter's same retained lease: version-bracketed accepted PPT
+Fast/Slow plus STAPM for CO, or the full enabled-core CO vector for PPT. The
+strict scripts retain firmware, capability, fuse, topology and deadline checks;
+peer reads never reenter a service observer or acquire another native worker.
+Exact-request proofs recheck peer restoration admission before the setter.
+The installed provider permits an unchanged unowned PPT observation but continues
+to deny PPT restoration/write authority pending the physical setter fixture.
+These serialized observations do not make firmware state physically atomic.
+Offline native and service fakes cover binding, drift, missing evidence and
+reentry; this combined native sequence remains unverified on physical hardware
+and does not establish physical live-write admission.
 The IPC 60 status contract also permits PPT-only observations. These retain the
 independent fast and slow limits in milliwatts and report CO as unknown. The tray
 displays each limit separately, including fractional watts; it does not average

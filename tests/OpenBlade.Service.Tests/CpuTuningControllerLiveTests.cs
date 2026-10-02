@@ -141,6 +141,70 @@ public sealed class CpuTuningControllerLiveTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnchangedPowerPeerIsBoundAtCurveSubmissionAndLossNeverSubmits(bool unavailable)
+    {
+        var fixture = new Fixture();
+        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
+        var expected = fixture.Power.Pair;
+        fixture.Power.Admit = (_, _) => false; // Unchanged PPT requires no setter admission.
+        fixture.Curve.CheckPeer = peer =>
+        {
+            Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+            Assert.Equal(expected, peer.Expected); Assert.Null(peer.Original);
+            fixture.Power.Unavailable = unavailable;
+            if (!unavailable) { fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(46000, 45000); }
+            return !fixture.Power.Unavailable && fixture.Power.Pair == peer.Expected;
+        };
+        var result = await fixture.Controller().MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+        Assert.Single(fixture.Curve.Peers); Assert.Null(fixture.PowerStore.Journal);
+        Assert.NotEqual(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+    }
+
+    [Fact]
+    public async Task CombinedRequestsCarryLatestPeerExpectedAndFirstOriginalAcrossEdits()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        var originalCurve = fixture.Curve.Values.ToArray(); var originalPower = fixture.Power.Pair;
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default)).Status);
+        Assert.All(fixture.Power.Sent, request => Assert.Equal(originalCurve, request.CurvePeer!.Expected.CoreOffsets));
+        Assert.All(fixture.Curve.Peers, peer =>
+        {
+            Assert.Equal(45000u, peer.Expected.Fast.Milliwatts); Assert.Equal(45000u, peer.Expected.Slow.Milliwatts);
+            Assert.Equal(originalPower, peer.Original);
+        });
+        fixture.Power.Sent.Clear(); fixture.Curve.Peers.Clear();
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(60, new(true, -3)), false, _ => true, default)).Status);
+        Assert.All(fixture.Power.Sent, request =>
+        {
+            Assert.All(request.CurvePeer!.Expected.CoreOffsets, core => Assert.Equal(-2, core.Offset));
+            Assert.Equal(originalCurve, request.CurvePeer.Original!.CoreOffsets);
+        });
+        Assert.All(fixture.Curve.Peers, peer =>
+        {
+            Assert.Equal(60000u, peer.Expected.Fast.Milliwatts); Assert.Equal(originalPower, peer.Original);
+        });
+    }
+
+    [Fact]
+    public async Task UnchangedPeerWithDifferentRuntimeGenerationCannotBindToCurveStep()
+    {
+        var fixture = new Fixture();
+        fixture.Power.Pair = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
+        var lifetime = new CpuLiveRuntimeLifetime(Guid.NewGuid(), 2, 3);
+        fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime };
+        fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime with { LowPowerGeneration = 4 } };
+        var result = await fixture.Controller().MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Empty(fixture.Curve.Peers); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+    }
+
+    [Theory]
     [InlineData("reverse")]
     [InlineData("persist")]
     [InlineData("context")]
@@ -316,7 +380,12 @@ public sealed class CpuTuningControllerLiveTests
         internal readonly CpuLivePowerTuningTransactionTests.MemoryStore PowerStore = new();
         internal readonly CpuLiveCurveTuningTransactionTests.FakeBackend Curve;
         internal readonly CpuLivePowerTuningTransactionTests.FakeBackend Power;
-        internal Fixture() { Curve = new(CurveStore); Power = new(PowerStore); }
+        internal Fixture()
+        {
+            Curve = new(CurveStore); Power = new(PowerStore);
+            Curve.CheckPeer = peer => !Power.Unavailable && peer.Expected == Power.Pair;
+            Power.CheckPeer = peer => peer.Expected.CoreOffsets.SequenceEqual(Curve.Values);
+        }
         internal CpuTuningController Controller() => new(new UnusedSource(), curveBackend: Curve,
             curveStore: CurveStore, powerBackend: Power, powerStore: PowerStore);
     }

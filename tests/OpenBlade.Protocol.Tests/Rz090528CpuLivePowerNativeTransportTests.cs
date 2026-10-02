@@ -320,6 +320,87 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.True((await worker).Verified);
     }
 
+    [Fact]
+    public void CombinedCurveReadsPowerAfterCurveMetadataWithinOneLeaseAndNeverReenters()
+    {
+        var platform = new Platform { Capability = 6 };
+        var request = CurveRequest(platform);
+        platform.AtFirstCopy = () => AssertCurveBusy(platform);
+        var proof = new CurveProof(request)
+        {
+            ReadRange = () => { Assert.True(platform.Held); Assert.Equal(0, platform.Copies); return true; },
+        };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
+        Assert.True(result.Verified); Assert.Equal(CpuLiveCurveNativeDisposition.Acknowledged, result.Disposition);
+        Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Releases);
+        Assert.Equal(1, platform.Copies); Assert.Equal(1, platform.Setters);
+        Assert.Equal(24, platform.Commands.Count(command => command == 0x5E));
+        Assert.DoesNotContain(0x32u, platform.Commands); Assert.DoesNotContain(0x33u, platform.Commands);
+        Assert.Equal(request.PowerPeer!.Expected, platform.Pair);
+    }
+
+    [Theory]
+    [InlineData("drift")]
+    [InlineData("copy-length")]
+    [InlineData("peer-authority")]
+    [InlineData("capability-revoked")]
+    public void CombinedCurveStopsOnPeerLossAfterOwnRangeBeforeNativeSetter(string fault)
+    {
+        var platform = new Platform { Capability = 6, Fault = fault };
+        var request = CurveRequest(platform);
+        var proof = new CurveProof(request)
+        {
+            PeerAllowed = fault != "peer-authority",
+            ReadRange = () => { if (fault == "drift") { platform.Pair = Pair(84000, 80000); } return true; },
+        };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.False(result.Verified); Assert.True(result.CleanupComplete); Assert.Equal(0, platform.Setters);
+        if (fault == "capability-revoked")
+        {
+            Assert.Equal(1, platform.Copies);
+            Assert.Equal(CpuLiveCurveNativeFailure.AdmissionDenied, result.Failure);
+        }
+    }
+
+    [Fact]
+    public void CombinedPowerReadsCurveAfterOwnMetadataAndDeniesMissingPeerProof()
+    {
+        foreach (bool drift in new[] { false, true })
+        {
+            var platform = new Platform { Capability = 6 };
+            var baseline = Request(platform.Pair);
+            var request = new CpuLivePowerNativeRequest(baseline.Scope, baseline.Command, baseline.Purpose,
+                baseline.Before, baseline.Original, new(CurveSnapshot(), null));
+            var proof = new Proof(request, platform)
+            {
+                PeerAllowed = drift,
+                AtRange = () => { if (drift) { platform.Curve[0] = new(0, -2); } },
+            };
+            var result = Run(platform, request, proof);
+            Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
+            Assert.Equal(0, platform.Setters); Assert.True(result.CleanupComplete);
+        }
+    }
+
+    [Fact]
+    public void CombinedCurveSetterFailureRemainsPossibleSubmissionWithoutCompensation()
+    {
+        var platform = new Platform { Capability = 6, Fault = "setter-throw" };
+        var request = CurveRequest(platform);
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, new CurveProof(request), () => Exact);
+        Assert.Equal(CpuLiveCurveNativeDisposition.PossibleSubmission, result.Disposition);
+        Assert.False(result.Verified); Assert.Equal(1, platform.Setters);
+    }
+
+    private static CpuLiveCurveNativeRequest CurveRequest(Platform platform)
+    {
+        Assert.True(CpuLiveCurveCommand.TryCreate(0, -2, 0xFF55, out var command));
+        return new(new(), command, CpuLiveCurveCommandPurpose.Forward, CurveSnapshot(), new(platform.Pair, null));
+    }
+    private static CpuLiveCurveSnapshot CurveSnapshot() => CpuLiveCurveSnapshot.TryCreate(new(0xFF55, 0x005D000B, 0xD50,
+        Enumerable.Range(0, 16).Where(CpuLiveCurveSnapshot.IsEnabled).Select(id => new CpuLiveCoreOffset(id, -1)).ToArray()))!;
+
     private static CpuLivePowerNativeResult Run(Platform platform, CpuLivePowerNativeRequest request, Proof? proof, CancellationToken token = default) =>
         WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecutePower(request, proof, () => Exact, token);
     private static CpuLivePowerNativeRequest Request(CpuLivePowerPair before, CpuLivePowerPair? original = null,
@@ -347,23 +428,35 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     }
     private sealed class CurveProof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
     {
+        internal bool PeerAllowed = true;
+        internal Func<bool>? ReadRange;
+        private bool rangeRead;
+        internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => PeerAllowed;
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => true;
-        internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest) => new(0x5000A, 0, 50, 1, true);
+        internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (!rangeRead) { rangeRead = true; if (ReadRange?.Invoke() == false) { return null; } }
+            return new(0x5000A, 0, 50, 1, true);
+        }
     }
     private sealed class Proof(CpuLivePowerNativeRequest request, Platform platform) : CpuLivePowerWriteProof(request)
     {
         internal CpuLivePowerTrustedRange Range = new(0x50001, 0, 125000, 1);
         internal int RangeReads;
+        internal bool PeerAllowed;
+        internal Action? AtRange;
+        internal override bool AdmitCurvePeer(CpuLivePowerNativeRequest exactRequest) => PeerAllowed;
         internal Func<bool>? ReadCurrent;
         internal override bool IsCurrent(CpuLivePowerNativeRequest exactRequest) => ReadCurrent?.Invoke() ?? true;
         internal override CpuLivePowerTrustedRange? ReadFreshRange(CpuLivePowerNativeRequest exactRequest)
         {
-            Assert.True(platform.Pinned); Assert.True(platform.Held); RangeReads++;
+            Assert.True(platform.Pinned); Assert.True(platform.Held); RangeReads++; AtRange?.Invoke();
             return platform.Fault == "range-revoked" && RangeReads == 2 ? null : Range;
         }
     }
     private sealed class Platform : ICpuPmWindowsPlatform, ICpuQueryDevice, ICpuQueryMutex, ICpuPmObservationClock
     {
+        internal CpuLiveCoreOffset[] Curve = CurveSnapshot().CoreOffsets.ToArray();
         internal CpuLivePowerPair Pair = Rz090528CpuLivePowerNativeTransportTests.Pair(85000, 80000);
         internal readonly CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal readonly List<uint> Commands = [];
@@ -436,6 +529,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                         0x03B10A88 => command == 0x02 ? FirmwareVersion
                             : command == 6 ? Fault == "version" || Fault == "post-before-version" && Copies == 1
                             || Fault == "post-version" && Copies == 2 ? 0 : 0x005D000Bu
+                            : command == 0x5E ? unchecked((ushort)Curve.Single(core => core.PhysicalCoreId == (int)(((argument >> 28) * 8) + ((argument >> 20) & 7))).Offset)
                             : command == 0x82 ? Fault == "capability-revoked" && Copies == 1 ? 0 : Capability : 1u,
                         _ => throw new InvalidOperationException(),
                     };
@@ -453,6 +547,14 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                 else if (selected == 0x03B10A20)
                 {
                     command = value; Commands.Add(value);
+                    if (value == 0x53)
+                    {
+                        Setters++; AtSetter?.Invoke();
+                        if (Fault == "setter-throw") { throw new IOException(); }
+                        Assert.True(CpuLiveCurveCommand.TryDecode(value, argument, 0xFF55, out var curve));
+                        int index = Array.FindIndex(Curve, core => core.PhysicalCoreId == curve.PhysicalCoreId);
+                        Curve[index] = new(curve.PhysicalCoreId, curve.Offset);
+                    }
                     if (value is 0x32 or 0x33)
                     {
                         Setters++; SetterArgument = argument; AtSetter?.Invoke();

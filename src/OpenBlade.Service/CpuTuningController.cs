@@ -370,7 +370,7 @@ internal sealed class CpuTuningController
                 if (!requested.HasFlag(CpuTuningFeatures.CurveOptimizer)) { return true; }
                 if (!lease.Allows(required)) { return false; }
                 // Called while CO holds its gate: validate only the PPT peer.
-                var result = await liveCurve!.ExecutePreparedAsync(curveOperation!, CheckPowerAsync, token).ConfigureAwait(false);
+                var result = await liveCurve!.ExecutePreparedAsync(curveOperation!, CheckPowerAsync, token, powerOperation?.PeerState).ConfigureAwait(false);
                 RecordCurve(result);
                 return result.Outcome is CpuLiveCurveOutcome.Verified or CpuLiveCurveOutcome.Unchanged;
             }
@@ -378,7 +378,7 @@ internal sealed class CpuTuningController
             {
                 if (!requested.HasFlag(CpuTuningFeatures.PowerLimit)) { return true; }
                 if (!lease.Allows(required)) { return false; }
-                var result = await livePower!.ExecutePreparedAsync(powerOperation!, CheckCurveAsync, token).ConfigureAwait(false);
+                var result = await livePower!.ExecutePreparedAsync(powerOperation!, CheckCurveAsync, token, curveOperation?.PeerState).ConfigureAwait(false);
                 RecordPower(result);
                 return result.Outcome is CpuLivePowerOutcome.Verified or CpuLivePowerOutcome.Unchanged;
             }
@@ -524,12 +524,15 @@ internal sealed class CpuTuningController
                 && lease.Allows(CpuTuningFeatures.CurveOptimizer);
         }
         public async Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
-            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token)
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
+            await SendAsync(context, command, purpose, expectedBefore, null, token).ConfigureAwait(false);
+        public async Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+            CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
         {
             var lease = current.Value;
             if (lease?.Allows(CpuTuningFeatures.CurveOptimizer) != true) { return CpuLiveCurveSubmission.NotSubmitted; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            var result = await backend.SendAsync(context, command, purpose, expectedBefore, cancellation.Token).ConfigureAwait(false);
+            var result = await backend.SendAsync(context, command, purpose, expectedBefore, peer, cancellation.Token).ConfigureAwait(false);
             return result == CpuLiveCurveSubmission.NotSubmitted || lease.Allows(CpuTuningFeatures.CurveOptimizer)
                 ? result : CpuLiveCurveSubmission.Unknown;
         }

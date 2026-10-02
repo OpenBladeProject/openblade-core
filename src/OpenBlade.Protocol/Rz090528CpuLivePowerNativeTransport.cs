@@ -8,14 +8,14 @@ internal sealed class CpuLivePowerWriteScope;
 internal sealed class CpuLivePowerNativeRequest
 {
     internal CpuLivePowerNativeRequest(CpuLivePowerWriteScope scope, CpuLivePowerCommand command,
-        CpuLivePowerCommandPurpose purpose, CpuLivePowerPair before, CpuLivePowerPair original)
+        CpuLivePowerCommandPurpose purpose, CpuLivePowerPair before, CpuLivePowerPair original, CpuLiveCurvePeerState? curvePeer = null)
     {
         ArgumentNullException.ThrowIfNull(scope);
         if (!ValidPair(before) || !ValidPair(original) || before.StapmRawBits != original.StapmRawBits || !Enum.IsDefined(purpose)
             || !CpuLivePowerCommand.TryDecode(command.Message, command.EncodeArgument(), out var decoded) || decoded != command
             || purpose == CpuLivePowerCommandPurpose.Forward && (command.Milliwatts is < 45000 or > 95000 || command.Milliwatts % 1000 != 0))
         { throw new ArgumentException("Invalid exact power operation."); }
-        Scope = scope; Command = command; Purpose = purpose; Before = before; Original = original;
+        Scope = scope; Command = command; Purpose = purpose; Before = before; Original = original; CurvePeer = curvePeer;
         After = before.With(command);
         _ = CpuLivePowerCommand.TryCreate(command.Limit, before.Get(command.Limit).Milliwatts, out var reverse);
         ImmediateReverse = reverse;
@@ -29,6 +29,7 @@ internal sealed class CpuLivePowerNativeRequest
         OriginalRestores = restores.AsReadOnly();
     }
 
+    internal CpuLiveCurvePeerState? CurvePeer { get; }
     internal CpuLivePowerWriteScope Scope { get; }
     internal CpuLivePowerCommand Command { get; }
     internal CpuLivePowerCommandPurpose Purpose { get; }
@@ -80,6 +81,11 @@ internal abstract class CpuLivePowerWriteProof(CpuLivePowerNativeRequest request
         Interlocked.Exchange(ref consumed, 1) == 0 && ReferenceEquals(request, exactRequest) && Current(exactRequest);
     internal bool Current(CpuLivePowerNativeRequest exactRequest) => ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsCurrent(exactRequest);
+    // Exact-request peer restoration admission under this native lease. The
+    // adapter verifies the complete expected CO vector; the provider must admit
+    // every differing first-original restore using fresh CO range/capability.
+    // Never reenter a backend observer or acquire another native lease here.
+    internal virtual bool AdmitCurvePeer(CpuLivePowerNativeRequest exactRequest) => false;
     internal abstract bool IsCurrent(CpuLivePowerNativeRequest exactRequest);
     internal abstract CpuLivePowerTrustedRange? ReadFreshRange(CpuLivePowerNativeRequest exactRequest);
 }

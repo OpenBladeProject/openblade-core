@@ -17,6 +17,11 @@ internal interface ICpuLiveCurveBackend
     // NotSubmitted guarantees this call is terminal and never invoked a setter.
     Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token);
+    Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
+        CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
+        peer is null ? SendAsync(context, command, purpose, expectedBefore, token)
+            : Task.FromResult(CpuLiveCurveSubmission.NotSubmitted);
+
 }
 
 internal enum CpuLiveCurveOutcome { Verified, Unchanged, Blocked, Uncertain }
@@ -50,6 +55,9 @@ internal sealed class CpuLiveCurveTuningTransaction
         internal bool NeedsExecution { get; set; } = execute;
         internal bool Started { get; set; }
         internal bool Closed { get; private set; }
+        internal CpuLiveCurvePeerState PeerState => new(Expected,
+            Journal is { State: not CpuLiveCurveOwnershipState.Restored } journal
+                ? CpuLiveCurveOwnershipJournal.Snapshot(journal.OriginalBaseline) : null);
         internal void Close() => Closed = true;
         internal void Update(CpuLiveCurveOwnershipJournal value, string next)
         { Journal = value; Hash = next; Expected = CpuLiveCurveOwnershipJournal.Snapshot(value.Expected)!; }
@@ -276,7 +284,7 @@ internal sealed class CpuLiveCurveTuningTransaction
     }
 
     internal async Task<CpuLiveCurveTransactionResult> ExecutePreparedAsync(PreparedOperation operation,
-        Func<CancellationToken, Task<bool>>? beforeStep, CancellationToken token)
+        Func<CancellationToken, Task<bool>>? beforeStep, CancellationToken token, CpuLivePowerPeerState? peer = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
@@ -286,7 +294,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
             if (validation.Outcome != CpuLiveCurveOutcome.Unchanged || !operation.NeedsExecution) { return validation; }
             return await ExecuteAsync(operation.Journal!, operation.Hash!, operation.Journal!.Restoring,
-                token, operation, beforeStep).ConfigureAwait(false);
+                token, operation, beforeStep, peer).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
@@ -337,7 +345,7 @@ internal sealed class CpuLiveCurveTuningTransaction
 
     private async Task<CpuLiveCurveTransactionResult> ExecuteAsync(CpuLiveCurveOwnershipJournal journal, string hash,
         bool restoring, CancellationToken token, PreparedOperation? operation = null,
-        Func<CancellationToken, Task<bool>>? beforeStep = null)
+        Func<CancellationToken, Task<bool>>? beforeStep = null, CpuLivePowerPeerState? peer = null)
     {
         CpuLiveCurveSnapshot? snapshot = null;
         while (restoring ? journal.CompletedSteps > 0 : journal.CompletedSteps < journal.Steps.Count)
@@ -372,7 +380,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             {
                 token.ThrowIfCancellationRequested();
                 submission = await BoundedAsync(t => backend.SendAsync(journal.Context, step.Command(restoring),
-                    purpose, snapshot!, t), token).ConfigureAwait(false);
+                    purpose, snapshot!, peer, t), token).ConfigureAwait(false);
             }
             catch { return Uncertain(snapshot); }
             if (submission == CpuLiveCurveSubmission.NotSubmitted)

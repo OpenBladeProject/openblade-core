@@ -160,6 +160,8 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     private sealed class ContextBoundProof(CpuLivePowerNativeRequest request, CpuLivePowerWriteProof source,
         CpuLivePowerNativeBackend owner, CpuLivePowerContext context, CancellationToken token) : CpuLivePowerWriteProof(request)
     {
+        internal override bool AdmitCurvePeer(CpuLivePowerNativeRequest exactRequest) =>
+            IsCurrent(exactRequest) && source.AdmitCurvePeer(exactRequest) && IsCurrent(exactRequest);
         internal override bool IsCurrent(CpuLivePowerNativeRequest exactRequest) => source.Current(exactRequest) && owner.MatchesFresh(context, token);
         internal override CpuLivePowerTrustedRange? ReadFreshRange(CpuLivePowerNativeRequest exactRequest)
         {

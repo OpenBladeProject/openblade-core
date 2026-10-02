@@ -53,6 +53,8 @@ internal sealed class CpuLivePowerTuningTransaction
         internal bool NeedsExecution { get; set; } = execute;
         internal bool Started { get; set; }
         internal bool Closed { get; private set; }
+        internal CpuLivePowerPeerState PeerState => new(Expected,
+            Journal is { State: not CpuLivePowerOwnershipState.Restored } journal ? journal.OriginalBaseline.Decode() : null);
         internal void Close() => Closed = true;
         internal void Update(CpuLivePowerOwnershipJournal value, string next)
         { Journal = value; Hash = next; Expected = value.Expected.Decode()!; }
@@ -267,7 +269,7 @@ internal sealed class CpuLivePowerTuningTransaction
     }
 
     internal async Task<CpuLivePowerTransactionResult> ExecutePreparedAsync(PreparedOperation operation,
-        Func<CancellationToken, Task<bool>>? beforeStep, CancellationToken token)
+        Func<CancellationToken, Task<bool>>? beforeStep, CancellationToken token, CpuLiveCurvePeerState? peer = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
@@ -276,7 +278,7 @@ internal sealed class CpuLivePowerTuningTransaction
             operation.Started = true;
             var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
             if (validation.Outcome != CpuLivePowerOutcome.Unchanged || !operation.NeedsExecution) { return validation; }
-            return await ExecuteAsync(operation.Journal!, operation.Hash!, operation.Scope, token, operation, beforeStep).ConfigureAwait(false);
+            return await ExecuteAsync(operation.Journal!, operation.Hash!, operation.Scope, token, operation, beforeStep, peer).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
@@ -304,7 +306,7 @@ internal sealed class CpuLivePowerTuningTransaction
 
     private async Task<CpuLivePowerTransactionResult> ExecuteAsync(CpuLivePowerOwnershipJournal journal, string hash,
         CpuLivePowerWriteScope scope, CancellationToken token, PreparedOperation? operation = null,
-        Func<CancellationToken, Task<bool>>? beforeStep = null)
+        Func<CancellationToken, Task<bool>>? beforeStep = null, CpuLiveCurvePeerState? peer = null)
     {
         CpuLivePowerPair? pair = null;
         while (journal.CompletedSteps < journal.Steps.Count)
@@ -316,7 +318,7 @@ internal sealed class CpuLivePowerTuningTransaction
                 var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
                 if (validation.Outcome != CpuLivePowerOutcome.Unchanged) { return validation; }
             }
-            var request = Request(journal, journal.CompletedSteps, scope);
+            var request = Request(journal, journal.CompletedSteps, scope, peer);
             var observed = await ObserveAsync(token).ConfigureAwait(false);
             if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
             { return await BlockJournalAsync(journal, hash, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
@@ -360,9 +362,9 @@ internal sealed class CpuLivePowerTuningTransaction
             ? CpuLivePowerRecovery.None : CpuLivePowerRecovery.RestoreReady, CpuLivePowerBlockReason.None, pair);
     }
 
-    private static CpuLivePowerNativeRequest Request(CpuLivePowerOwnershipJournal journal, int index, CpuLivePowerWriteScope scope) =>
+    private static CpuLivePowerNativeRequest Request(CpuLivePowerOwnershipJournal journal, int index, CpuLivePowerWriteScope scope, CpuLiveCurvePeerState? peer = null) =>
         new(scope, journal.Steps[index].Command(), journal.Restoring ? CpuLivePowerCommandPurpose.Restore : CpuLivePowerCommandPurpose.Forward,
-            journal.ExpectedAt(index), journal.OriginalBaseline.Decode()!);
+            journal.ExpectedAt(index), journal.OriginalBaseline.Decode()!, peer);
 
     private async Task<bool> AdmitOperationAsync(CpuLivePowerBackendObservation observed, CpuLivePowerNativeRequest request, CancellationToken token)
     {

@@ -39,6 +39,30 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
     }
 
     [Fact]
+    public async Task CurvePeerProofAllowsUnownedObservationButCannotAdmitPendingPptRestoration()
+    {
+        using var fixture = new Fixture();
+        CpuLiveCurveWriteProof? captured = null; CpuLiveCurveNativeRequest? capturedRequest = null;
+        var expected = CpuLivePowerTuningTransactionTests.PairFixture(45000, 45000);
+        await fixture.Run(context =>
+        {
+            var single = Request(-2);
+            capturedRequest = new(single.Scope, single.Command, single.Purpose, single.Before, new(expected, null));
+            captured = fixture.Provider.CreateWriteProof(context, capturedRequest, default);
+            Assert.NotNull(captured);
+            var cap = CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!;
+            Assert.True(captured.AdmitPowerPeer(capturedRequest, 6, cap));
+            var owned = new CpuLiveCurveNativeRequest(single.Scope, single.Command, single.Purpose, single.Before,
+                new(expected, CpuLivePowerTuningTransactionTests.PairFixture(100123, 80765)));
+            var ownedProof = fixture.Provider.CreateWriteProof(context, owned, default)!;
+            Assert.False(ownedProof.AdmitPowerPeer(owned, 6, cap));
+            Assert.False(captured.AdmitPowerPeer(owned, 6, cap));
+            Assert.False(captured.Consume(owned)); // Values/correlation never rebind the exact native proof.
+        });
+        Assert.False(captured!.AdmitPowerPeer(capturedRequest!, 6, CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!));
+    }
+
+    [Fact]
     public async Task PowerObservationRejectsChangedRuntimeContextAndUsbReturnCannotRenewOldApproval()
     {
         using var fixture = new Fixture();

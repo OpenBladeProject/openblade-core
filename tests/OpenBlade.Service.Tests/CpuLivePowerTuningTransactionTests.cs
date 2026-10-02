@@ -376,6 +376,7 @@ public sealed class CpuLivePowerTuningTransactionTests
         internal int Reads;
         internal bool Unavailable;
         internal Action? OnObserve, AfterSend;
+        internal Func<CpuLiveCurvePeerState, bool>? CheckPeer;
         internal Func<CpuLivePowerCommand, CpuLivePowerCommandPurpose, bool> Admit = (_, _) => true;
         internal Func<CpuLivePowerNativeRequest, Task<CpuLivePowerSubmission>>? OnSend;
         internal readonly List<CpuLivePowerNativeRequest> Sent = [];
@@ -388,6 +389,8 @@ public sealed class CpuLivePowerTuningTransactionTests
         public Task<CpuLivePowerSubmission> SendAsync(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token)
         {
             Assert.Equal(CpuLivePowerOwnershipState.PossibleSubmission, store.Journal!.State);
+            if (request.CurvePeer is { } peer && CheckPeer?.Invoke(peer) != true)
+            { return Task.FromResult(CpuLivePowerSubmission.NotSubmitted); }
             Assert.True(Context.MatchesHardwareContext(context)); Assert.Equal(Pair, request.Before);
             Assert.Equal(store.Journal.OriginalBaseline.Decode(), request.Original);
             Assert.Equal(request.Before.With(request.Command), request.After);
