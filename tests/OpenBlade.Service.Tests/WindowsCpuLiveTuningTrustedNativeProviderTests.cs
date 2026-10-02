@@ -241,7 +241,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend) => throw new InvalidOperationException();
     }
 
-    private sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryRetainableDevice, ICpuQueryMutex
+    internal sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryRetainableDevice, ICpuQueryMutex
     {
         internal int Opens, Pins;
         internal bool Running = true;

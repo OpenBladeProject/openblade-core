@@ -37,6 +37,11 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "bad+26f61284")]
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+unknown")]
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24+26f61284")]
+    [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+voltage-validation")]
+    [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+voltage-validation.1234567")]
+    [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+voltage-validation.12345678.extra")]
+    [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+other.12345678")]
+    [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0+Voltage-validation.12345678")]
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, " 0.24.0+26f61284")]
     public async Task MissingAuthorizationOrSourceVersionMakesNoClientCall(string confirmation, string? version)
     {
@@ -45,6 +50,13 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
             .RunAsync(confirmation, version, directory, CancellationToken.None));
         Assert.Empty(client.Calls);
     }
+
+    [Theory]
+    [InlineData("0.24.0+voltage-validation.12345678")]
+    [InlineData("65535.1.2.3+voltage-validation.1234567890123456789012345678901234567890")]
+    [InlineData("0.24.0+1234567890123456789012345678901234567890")]
+    public void ExactValidationOrProductionRevisionIsAccepted(string version) =>
+        CpuVoltageOptimizerSmokeRunner.ValidateAuthorization(CpuVoltageOptimizerSmokeRunner.Confirmation, version);
 
     [Theory]
     [InlineData("version")]

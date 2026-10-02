@@ -11,6 +11,9 @@
     <AssemblyVersion>$(OpenBladeVersion).0</AssemblyVersion>
     <FileVersion>$(OpenBladeVersion).0</FileVersion>
     <InformationalVersion>$(OpenBladeVersion)</InformationalVersion>
+    <OpenBladeCpuVoltageValidation Condition="'$(OpenBladeCpuVoltageValidation)' == ''">false</OpenBladeCpuVoltageValidation>
+    <DefineConstants Condition="'$(OpenBladeCpuVoltageValidation)' == 'true'">$(DefineConstants);OPENBLADE_CPU_VOLTAGE_VALIDATION</DefineConstants>
+    <InformationalVersion Condition="'$(OpenBladeCpuVoltageValidation)' == 'true'">$(OpenBladeVersion)+voltage-validation</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
   </PropertyGroup>

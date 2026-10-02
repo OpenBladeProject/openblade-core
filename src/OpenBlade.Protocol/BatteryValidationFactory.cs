@@ -590,8 +590,13 @@ public static class BatteryValidationFactory
                 new DeviceNumericRange(45, 95, 1),
                 DeviceFeatureAccess.ObservedOnly),
             new CpuVoltageOptimizerCapabilities(
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+                new DeviceNumericRange(-1, -1, 1),
+                DeviceFeatureAccess.ReadWrite)
+#else
                 new DeviceNumericRange(-30, -1, 1),
                 DeviceFeatureAccess.ObservedOnly)
+#endif
             {
                 SupportsEnableDisable = true,
             },

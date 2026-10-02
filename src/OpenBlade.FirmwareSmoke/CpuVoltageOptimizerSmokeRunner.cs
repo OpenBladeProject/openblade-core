@@ -17,10 +17,14 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
     internal static void ValidateAuthorization(string? confirmation, string? expectedServiceVersion)
     {
         string[] parts = expectedServiceVersion?.Split('+') ?? [];
+        string revision = parts.Length == 2 ? parts[1] : string.Empty;
+        const string validationPrefix = "voltage-validation.";
+        if (revision.StartsWith(validationPrefix, StringComparison.Ordinal))
+        { revision = revision[validationPrefix.Length..]; }
         if (confirmation != Confirmation || string.IsNullOrWhiteSpace(expectedServiceVersion)
             || expectedServiceVersion.Any(char.IsWhiteSpace)
             || parts.Length != 2 || !Version.TryParse(parts[0], out Version? version) || version.Build < 0
-            || parts[1].Length is not (8 or 40) || !parts[1].All(Uri.IsHexDigit))
+            || revision.Length is not (8 or 40) || !revision.All(Uri.IsHexDigit))
         {
             throw new ArgumentException("Exact attended CPU optimizer confirmation and --expected-service-version are required.");
         }

@@ -4,7 +4,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class CpuTuningRuntimeTests : IDisposable
+public sealed partial class CpuTuningRuntimeTests : IDisposable
 {
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade.CpuTuning.Tests", Guid.NewGuid().ToString("N"));
 
@@ -800,7 +800,8 @@ public sealed class CpuTuningRuntimeTests : IDisposable
     private async Task<TestContext> CreateContextAsync(bool supported = true, bool verified = true,
         bool admittedSavedBackend = false, bool powerAdmitted = true, LiveFixture? live = null,
         ICpuTuningOwnershipJournalStore? savedJournal = null, DeviceFeatureAccess savedAccess = DeviceFeatureAccess.ReadWrite,
-        bool defaultSavedBackend = false, Func<DeviceCapabilities, DeviceCapabilities>? configureCapabilities = null)
+        bool defaultSavedBackend = false, Func<DeviceCapabilities, DeviceCapabilities>? configureCapabilities = null,
+        Func<ICpuTuningObservationSource, CpuTuningController>? controllerFactory = null)
     {
         var store = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
             Path.Combine(directory, "preferences.json"), Path.Combine(directory, "commit.json"));
@@ -826,7 +827,7 @@ public sealed class CpuTuningRuntimeTests : IDisposable
             hub, provider, new DiagnosticHistory(), gate,
             new FakePresenceMonitor(), new FakeFirmwareSource(),
             static (_, _) => Task.CompletedTask, ProfileSetValidator.CreateUnverifiedSafeDefaults(),
-            cpuTuningController: new CpuTuningController(source,
+            cpuTuningController: controllerFactory?.Invoke(source) ?? new CpuTuningController(source,
                 admittedSavedBackend ? savedJournal ?? new CpuTuningOwnershipJournalStore(Path.Combine(directory, "cpu.json")) : null,
                 admittedSavedBackend && !defaultSavedBackend ? safety => new FakeSavedBackend(source, safety) : null,
                 live?.Curve, live?.CurveStore, live?.Power, live?.PowerStore));

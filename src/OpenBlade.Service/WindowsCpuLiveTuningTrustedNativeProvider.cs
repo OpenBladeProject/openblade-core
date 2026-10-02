@@ -130,6 +130,11 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token)
     {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        // The developer profile narrows every purpose, including first-original
+        // restoration. Fresh firmware metadata remains an independent intersection.
+        if (command.Offset is not (-1 or 0)) { return false; }
+#endif
         if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
             || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
                 CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
@@ -150,6 +155,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
+#endif
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null || !CheckWriteAdmission(exactContext, exactRequest.Command, exactRequest.Purpose, token)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward

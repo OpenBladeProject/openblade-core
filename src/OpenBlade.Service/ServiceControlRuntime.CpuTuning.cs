@@ -219,6 +219,9 @@ public sealed partial class ServiceControlRuntime
         long sourceGeneration, CancellationToken token)
     {
         ServiceStatusSnapshot current = GetStatus();
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        if ((features & ~CpuTuningFeatures.CurveOptimizer) != 0) { return false; }
+#endif
         if (lowPowerGate.Generation != generation || powerSourceGeneration != sourceGeneration
             || !CpuMutationSafetyAvailable(current, stillControlsSession)
             || (features & CpuTuningFeatures.CurveOptimizer) != 0
@@ -270,6 +273,9 @@ public sealed partial class ServiceControlRuntime
     // time; unrelated advertised features confer no authority.
     private static bool CpuFeaturesAdmitted(DeviceCapabilities? capabilities, CpuTuningSettings? settings, bool restoring) =>
         capabilities is not null
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        && (restoring || settings is { PowerLimitWatts: null, CurveOptimizer.EffectiveValue: -1 or 0 })
+#endif
         && (restoring || settings is not null
                 && (settings.PowerLimitWatts is null || capabilities.CpuPowerLimit is { Access: DeviceFeatureAccess.ReadWrite })
                 && (settings.CurveOptimizer is null || capabilities.CpuVoltageOptimizer is { Access: DeviceFeatureAccess.ReadWrite }));

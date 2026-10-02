@@ -386,3 +386,34 @@ installation candidate for the current combined setup.
 
 Focused checks passed 118 service tests and 40 runner tests. The full host run
 included all 194 FirmwareSmoke tests. No hardware command was run.
+
+### Bounded live voltage validation build
+
+Issue [#659](https://github.com/OpenBladeProject/openblade-core/issues/659) adds
+`-p:OpenBladeCpuVoltageValidation=true`, default off. This developer profile
+advertises only enabled −1 and disabled zero on the exact RZ09-0528 target.
+The Service rejects live PPT, mixed CPU requests and other live offsets. The
+installed native provider independently bounds every forward, reverse and restore
+command, and every value in the exact native before-vector, to −1 or zero.
+Fresh firmware range metadata must still cover the operation and exact reverse;
+identity, active-session, full-power, continuity, ownership and readback checks
+remain required. The profile uses the existing transaction and FirmwareSmoke
+command. It neither starts nor provisions the optional AMD driver.
+
+Normal builds retain `ObservedOnly` live admission and the existing saved path.
+The validation profile does not add saved write authority; its shared advertised
+−1-only capability also narrows saved requests that consume that range. The
+attended cycle uses `LiveNow` only and submits no saved or PPT command.
+
+Unit builds require `-p:SourceRevision=<40-character-commit>` and should use a
+separate `--artifacts-path`. Their product version is
+`0.24.0+voltage-validation.<commit>`. For a coordinated local candidate, the
+existing `build/Publish.ps1` accepts `-CpuVoltageValidation` only with
+`-BuildChannel LocalDev`, a reserved `-LocalDevVersion` and `-SourceRevision`
+matching a clean checkout, including nonignored untracked files. Every published project receives the same
+profile; the version is `<LocalDevVersion>+voltage-validation.<commit>`.
+Stable and Nightly publication reject opt-in, and normal publication explicitly
+disables it. The runner accepts this exact marker with an 8- or 40-digit hex
+revision, and still requires an exact match to the installed Service version.
+These profile builds do not establish physical validation or broader production
+admission; the CPU/cooling replacement must retain the combined IPC 61 sources.
