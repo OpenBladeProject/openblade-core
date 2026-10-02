@@ -116,10 +116,12 @@ internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBa
         return files.AsReadOnly();
     }
 
-    public InstalledCpuBackendSnapshot Read()
-    {
-        var files = ReadFileMetadata();
+    public InstalledCpuBackendSnapshot Read() => Read(ReadFileMetadata());
 
+    // Only the native session's still-held deny-write/delete file pins may
+    // supply cached metadata. Service configuration and state remain fresh.
+    internal InstalledCpuBackendSnapshot Read(IReadOnlyList<CpuBackendFileMetadata> files)
+    {
         using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
             @"SYSTEM\CurrentControlSet\Services\" + Rz090528InstalledCpuBackendInspector.ServiceName,
             writable: false);

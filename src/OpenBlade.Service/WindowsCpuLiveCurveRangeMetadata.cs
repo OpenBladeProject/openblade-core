@@ -3,7 +3,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-// No concrete scope exists. Implementations must independently prove the exact
+// Implementations must independently prove the exact
 // source, loaded lifetime and continuous fresh admission; record shape is only
 // an additional rejection check. This contract grants getters, never setters.
 internal abstract class CpuLiveCurveRangeTrustedScope
@@ -34,7 +34,7 @@ internal interface IWindowsCpuCurveRangeObject : IDisposable
 
 // Synchronous for the entire native lifetime. A caller must retain its actual
 // worker until this returns; WMI timeout options do not guarantee cancellation.
-// Deliberately unwired: no scope factory, service composition or admission.
+// Getters are admitted by the initiating runtime scope and retained native lifetime.
 internal sealed class WindowsCpuLiveCurveRangeMetadata
 {
     private readonly Func<Action, IWindowsCpuCurveRangeSession> open;

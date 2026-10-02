@@ -19,13 +19,61 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.True(result.Verified); Assert.True(result.CleanupComplete); Assert.True(result.WorkerTerminal);
         Assert.Equal(CpuLivePowerNativeDisposition.Acknowledged, result.Disposition);
         Assert.Equal(request.After, result.After!.Pair);
-        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6, 0x82, message, 6, 0x65, 6 }, platform.Commands);
+        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82, message, 6, 0x65, 6 }, platform.Commands);
         Assert.Equal(2, platform.Copies); Assert.Equal(1, platform.Setters); Assert.Equal(3, proof.RangeReads);
         Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Releases);
         Assert.Equal(3, platform.BackendReads); Assert.False(platform.Pinned); Assert.False(platform.Held);
         Assert.Equal(new[] { "close", "unpin", "release", "mutex-dispose" }, platform.Cleanup);
         Assert.Equal(limit == CpuLivePowerLimit.Fast ? 80000u : 85000u,
             result.After.Pair.Get(limit == CpuLivePowerLimit.Fast ? CpuLivePowerLimit.Slow : CpuLivePowerLimit.Fast).Milliwatts);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(0x005D000Bu)]
+    [InlineData(0x0B5D1700u)]
+    [InlineData(uint.MaxValue)]
+    public void DifferentFirmwareVersionStopsBeforeBaselineOrAnySetter(uint firmwareVersion)
+    {
+        var platform = new Platform { FirmwareVersion = firmwareVersion }; var request = Request(platform.Pair);
+        var proof = new Proof(request, platform);
+        var result = Run(platform, request, proof);
+        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
+        Assert.Equal(new uint[] { 0x02 }, platform.Commands);
+        Assert.Equal(0, platform.Copies); Assert.Equal(0, platform.Setters); Assert.Equal(0, proof.RangeReads);
+        Assert.Equal(request.Before, platform.Pair);
+        Assert.False(platform.Pinned); Assert.False(platform.Held);
+    }
+
+    [Theory]
+    [InlineData("firmware-ack")]
+    [InlineData("firmware-ack-failed-reply")]
+    public void FirmwareAcknowledgementFailureStopsBeforeBaselineOrAnySetter(string fault)
+    {
+        var platform = new Platform { Fault = fault }; var request = Request(platform.Pair);
+        var result = Run(platform, request, new Proof(request, platform));
+        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
+        Assert.Equal(new uint[] { 0x02 }, platform.Commands);
+        Assert.Equal(0, platform.Copies); Assert.Equal(0, platform.Setters);
+        Assert.Equal(request.Before, platform.Pair);
+    }
+
+    [Fact]
+    public void EachLeaseReadsFirmwareAgainRatherThanReusingEarlierMatch()
+    {
+        var platform = new Platform(); var first = Request(platform.Pair);
+        Assert.True(Run(platform, first, new Proof(first, platform)).Verified);
+        int copies = platform.Copies, commands = platform.Commands.Count;
+        platform.FirmwareVersion = 0x0B5D1700;
+        var second = Request(platform.Pair, target: 59000);
+        var result = Run(platform, second, new Proof(second, platform));
+        Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.False(result.Verified); Assert.True(result.CleanupComplete);
+        Assert.Equal(new uint[] { 0x02 }, platform.Commands.Skip(commands));
+        Assert.Equal(copies, platform.Copies); Assert.Equal(1, platform.Setters);
+        Assert.Equal(first.After, platform.Pair);
     }
 
     [Fact]
@@ -140,7 +188,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.Equal(CpuLivePowerNativeFailure.AdmissionDenied, result.Failure);
         Assert.False(result.Verified); Assert.True(result.CleanupComplete);
         Assert.Equal(0, platform.Setters); Assert.Equal(request.Before, platform.Pair);
-        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6, 0x82 }, platform.Commands);
+        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82 }, platform.Commands);
         Assert.Equal(1, proof.RangeReads);
         Assert.False(platform.Pinned); Assert.False(platform.Held);
     }
@@ -158,20 +206,23 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.Equal(CpuLivePowerNativeDisposition.PossibleSubmission, result.Disposition);
         Assert.Equal(CpuLivePowerNativeFailure.AdmissionDenied, result.Failure);
         Assert.False(result.Verified); Assert.Null(result.After); Assert.True(result.CleanupComplete);
-        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6, 0x82, 0x32 }, platform.Commands);
+        Assert.Equal(new uint[] { 0x02, 0x82, 6, 0x65, 6, 0x82, 0x32 }, platform.Commands);
         Assert.False(platform.Pinned); Assert.False(platform.Held);
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetterOrCopyCancellationRetainsActualWorkerUntilCleanClosure(bool duringCopy)
+    [InlineData("firmware")]
+    [InlineData("layout")]
+    [InlineData("copy")]
+    public async Task GetterOrCopyCancellationRetainsActualWorkerUntilCleanClosure(string blockedOperation)
     {
         using var cancelled = new CancellationTokenSource();
         using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
         void Block() { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); }
         var platform = new Platform(); var request = Request(platform.Pair);
-        if (duringCopy) { platform.AtFirstCopy = Block; } else { platform.AtVersionGetter = Block; }
+        if (blockedOperation == "copy") { platform.AtFirstCopy = Block; }
+        else if (blockedOperation == "firmware") { platform.AtFirmwareVersionGetter = Block; }
+        else { platform.AtVersionGetter = Block; }
         Task<CpuLivePowerNativeResult> worker = Task.Run(() => Run(platform, request, new Proof(request, platform), cancelled.Token));
         try
         {
@@ -180,7 +231,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await worker.WaitAsync(cancelled.Token));
             Assert.False(worker.IsCompleted); Assert.True(platform.Pinned); Assert.True(platform.Held);
             Assert.Empty(platform.Cleanup); Assert.Equal(0, platform.Setters);
-            Assert.Equal(duringCopy ? 1 : 0, platform.Copies);
+            Assert.Equal(blockedOperation == "copy" ? 1 : 0, platform.Copies);
             Assert.Equal(CpuLivePowerNativeDisposition.NotSubmitted, Run(platform, request, new Proof(request, platform)).Disposition);
             Assert.Equal(CpuLiveQueryStatus.Busy, WindowsRz090528CpuNativeSession.ForPlatform(platform).Query(
                 CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), () => Exact).Status);
@@ -196,7 +247,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete); Assert.False(result.Verified);
         Assert.False(platform.Held); Assert.False(platform.Pinned); Assert.Equal(1, platform.Releases);
         Assert.Equal(new[] { "close", "unpin", "release", "mutex-dispose" }, platform.Cleanup);
-        platform.AtFirstCopy = platform.AtVersionGetter = null;
+        platform.AtFirstCopy = platform.AtVersionGetter = platform.AtFirmwareVersionGetter = null;
         Assert.True(Run(platform, request, new Proof(request, platform)).Verified); // Only terminal clean closure releases the gate.
     }
 
@@ -317,11 +368,11 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         internal readonly CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal readonly List<uint> Commands = [];
         internal readonly List<string> Cleanup = [];
-        internal uint Capability = 2, SetterArgument;
+        internal uint Capability = 2, SetterArgument, FirmwareVersion = 0x0B5D1600;
         internal int Copies, Setters, Opens, Releases, BackendReads;
         internal bool Held, Pinned, SetterPrepared;
         internal string? Fault;
-        internal Action? AtSetter, AtVersionGetter, AtFirstCopy, Cancel;
+        internal Action? AtSetter, AtVersionGetter, AtFirmwareVersionGetter, AtFirstCopy, Cancel;
         private uint selected, argument, command;
         private bool deviceOpen;
         public HostIdentityReadResult ReadHost() => new(new("Razer", Fault == "acquire-cleanup-cancel" && Pinned ? "other" : "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
@@ -369,6 +420,9 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
             {
                 input.CopyTo(output, 0); uint offset = Word(input, 12);
                 if (offset == 0xC8 && selected == 0x03B10A88 && command == 6 && Copies == 0) { AtVersionGetter?.Invoke(); }
+                if (offset == 0xC8 && selected == 0x03B10A88 && command == 0x02) { AtFirmwareVersionGetter?.Invoke(); }
+                if (offset == 0xC8 && selected == 0x03B10A80 && command == 0x02 && Fault == "firmware-ack-failed-reply")
+                { return new(false, []); }
                 uint value = offset == 0 ? Word(input, 4) == 0 ? Fault == "root" ? 0 : CpuQueryPciTopology.RootId
                     : Word(input, 8) == 0 ? CpuQueryPciTopology.NodeId : CpuQueryPciTopology.OrientationId
                     : offset == 0x140 ? Fault == "mask" ? 0 : 0xFF55u
@@ -377,8 +431,10 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                         0x03820AB0 => (~0xFF55u & 0xFFFF) << 5,
                         0x03820A0F => Fault == "cap" ? uint.MaxValue : 4u,
                         0x03820A0B => 0x70000000u,
-                        0x03B10A80 => Setters > 0 && Fault == "setter-ack" ? 0xFEu : 1u,
-                        0x03B10A88 => command == 6 ? Fault == "version" || Fault == "post-before-version" && Copies == 1
+                        0x03B10A80 => command == 0x02 && Fault == "firmware-ack"
+                            || Setters > 0 && Fault == "setter-ack" ? 0xFEu : 1u,
+                        0x03B10A88 => command == 0x02 ? FirmwareVersion
+                            : command == 6 ? Fault == "version" || Fault == "post-before-version" && Copies == 1
                             || Fault == "post-version" && Copies == 2 ? 0 : 0x005D000Bu
                             : command == 0x82 ? Fault == "capability-revoked" && Copies == 1 ? 0 : Capability : 1u,
                         _ => throw new InvalidOperationException(),
@@ -391,7 +447,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
                 if (Word(input, 0) == 0)
                 {
                     selected = value;
-                    if (selected == 0x03B10A20 && Commands.Count == 5) { SetterPrepared = true; }
+                    if (selected == 0x03B10A20 && Commands.Count == 6) { SetterPrepared = true; }
                 }
                 else if (selected == 0x03B10A88) { argument = value; }
                 else if (selected == 0x03B10A20)

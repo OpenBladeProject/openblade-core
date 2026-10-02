@@ -25,6 +25,7 @@ internal sealed class CpuTuningController
     private readonly CpuLivePowerTuningTransaction? livePower;
     private readonly SemaphoreSlim liveGate = new(1, 1);
     private readonly AsyncLocal<LiveAdmission?> liveAdmission = new();
+    private readonly Guid serviceInstance = Guid.NewGuid();
     // A failed CAS may leave no readable marker. Retain that uncertainty across
     // both families for this controller lifetime; disk absence cannot clear it.
     private CpuTuningFeatures liveUncertainty;
@@ -232,21 +233,24 @@ internal sealed class CpuTuningController
             });
     }
 
-    // A future provider must capture this during the initiating operation and
-    // repeat it inside its native proof. This check is rejection-only authority.
+    // Providers capture the initiating operation, never a replaceable bool.
+    // A late native worker cannot borrow a subsequent request's admission.
     internal Func<bool> CaptureLiveRuntimeAdmission(CpuTuningFeatures feature)
     {
         LiveAdmission? captured = liveAdmission.Value;
         return () => captured?.Allows(feature) == true;
     }
 
+    internal CpuLiveRuntimeLifetime? CaptureLiveRuntimeLifetime() => liveAdmission.Value?.Lifetime;
+    internal object? CaptureLiveRuntimeRequest() => liveAdmission.Value;
+
     internal bool HasLiveBackend => liveCurve is not null || livePower is not null;
 
     internal async Task<CpuTuningStatus> ObserveLiveAsync(Func<CpuTuningFeatures, bool> freshAdmission,
-        CancellationToken token)
+        CancellationToken token, long lowPowerGeneration = 0, long powerSourceGeneration = 0)
     {
         await liveGate.WaitAsync(token).ConfigureAwait(false);
-        using var lease = new LiveAdmission(freshAdmission, token);
+        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration));
         liveAdmission.Value = lease;
         try
         {
@@ -275,14 +279,15 @@ internal sealed class CpuTuningController
     }
 
     internal async Task<ControlOperationResult> MutateLiveAsync(CpuTuningSettings? settings, bool restoring,
-        Func<CpuTuningFeatures, bool> freshAdmission, CancellationToken token)
+        Func<CpuTuningFeatures, bool> freshAdmission, CancellationToken token,
+        long lowPowerGeneration = 0, long powerSourceGeneration = 0)
     {
         CpuTuningFeatures requested = (settings?.CurveOptimizer is null ? CpuTuningFeatures.None : CpuTuningFeatures.CurveOptimizer)
             | (settings?.PowerLimitWatts is null ? CpuTuningFeatures.None : CpuTuningFeatures.PowerLimit);
         if (!HasLiveBackend || !restoring && settings is not { IsWellFormed: true, IsConfigured: true })
         { return new(ControlOperationStatus.Blocked, "Live CPU tuning requires supported settings and an admitted backend."); }
         await liveGate.WaitAsync(token).ConfigureAwait(false);
-        using var lease = new LiveAdmission(freshAdmission, token);
+        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration));
         liveAdmission.Value = lease;
         CpuLiveCurveTuningTransaction.PreparedOperation? curveOperation = null;
         CpuLivePowerTuningTransaction.PreparedOperation? powerOperation = null;
@@ -423,6 +428,7 @@ internal sealed class CpuTuningController
 
     private static bool CompatibleContexts(CpuLiveCurveContext curve, CpuLivePowerContext power) =>
         CpuHardwareIdentity.Same(curve.Identity, power.Identity) && curve.Backend == power.Backend && curve.BootSequence == power.BootSequence
+        && curve.RuntimeLifetime == power.RuntimeLifetime
         && curve.EnabledCoreMask == power.EnabledCoreMask && curve.PmVersion == power.PmVersion && curve.PmTableLength == power.PmTableLength;
 
     private async Task<(bool Blocked, CpuTuningFeatures Features)> ReadLiveOwnershipAsync(CancellationToken token)
@@ -469,8 +475,10 @@ internal sealed class CpuTuningController
     // Runtime admission expires with its initiating call. AsyncLocal captures the
     // exact lease for late continuations; a later request cannot renew it. Native
     // backends still own the actual worker and repeat their independent proofs.
-    private sealed class LiveAdmission(Func<CpuTuningFeatures, bool> admit, CancellationToken token) : IDisposable
+    private sealed class LiveAdmission(Func<CpuTuningFeatures, bool> admit, CancellationToken token,
+        CpuLiveRuntimeLifetime lifetime) : IDisposable
     {
+        internal CpuLiveRuntimeLifetime Lifetime { get; } = lifetime;
         private readonly CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         private int disposed;
         internal CancellationToken Token => cancellation.Token;

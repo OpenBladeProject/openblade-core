@@ -29,7 +29,6 @@ internal enum CpuLiveCurveBlockReason
 internal sealed record CpuLiveCurveTransactionResult(CpuLiveCurveOutcome Outcome,
     CpuLiveCurveRecovery Recovery, CpuLiveCurveBlockReason Reason, CpuLiveCurveSnapshot? Observation);
 
-// Default composition supplies no concrete native provider.
 // Each owned edit replaces only the bounded operation; the original baseline
 // remains immutable until every owned core is verified back at its original.
 internal sealed class CpuLiveCurveTuningTransaction

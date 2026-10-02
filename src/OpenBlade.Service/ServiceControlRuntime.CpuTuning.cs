@@ -65,17 +65,19 @@ public sealed partial class ServiceControlRuntime
             }
 
             long liveGeneration = lowPowerGate.Generation;
+            long livePowerSourceGeneration = powerSourceGeneration;
             CpuTuningStatus observation = await cpuTuningController.ObserveAsync(useInstalledBackend, token)
                 .ConfigureAwait(false);
             if (useInstalledBackend && cpuTuningController.HasLiveBackend)
             {
                 CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, token), token).ConfigureAwait(false);
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, token),
+                    token, liveGeneration, livePowerSourceGeneration).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
             if (!stillControlsSession() || lowPowerGate.IsActive
                 || useInstalledBackend && cpuTuningController.HasLiveBackend
-                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, token))
+                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, livePowerSourceGeneration, token))
             {
                 return new(ControlOperationStatus.Blocked, "The CPU observation session changed.");
             }
@@ -141,8 +143,10 @@ public sealed partial class ServiceControlRuntime
                     { CpuTuning = current.CpuTuning };
                 }
                 long generation = lowPowerGate.Generation;
+                long sourceGeneration = powerSourceGeneration;
                 ControlOperationResult live = await cpuTuningController.MutateLiveAsync(settings, restoring,
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, token), token).ConfigureAwait(false);
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, sourceGeneration, token),
+                    token, generation, sourceGeneration).ConfigureAwait(false);
                 if (live.CpuTuning is { } liveStatus)
                 {
                     var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
@@ -211,10 +215,12 @@ public sealed partial class ServiceControlRuntime
         finally { operationGate.Release(); }
     }
 
-    private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation, CancellationToken token)
+    private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
+        long sourceGeneration, CancellationToken token)
     {
         ServiceStatusSnapshot current = GetStatus();
-        if (lowPowerGate.Generation != generation || !CpuMutationSafetyAvailable(current, stillControlsSession)
+        if (lowPowerGate.Generation != generation || powerSourceGeneration != sourceGeneration
+            || !CpuMutationSafetyAvailable(current, stillControlsSession)
             || (features & CpuTuningFeatures.CurveOptimizer) != 0
                 && current.Capabilities?.CpuVoltageOptimizer?.Access != DeviceFeatureAccess.ReadWrite
             || (features & CpuTuningFeatures.PowerLimit) != 0
@@ -223,7 +229,8 @@ public sealed partial class ServiceControlRuntime
         return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
             && CpuFreshFullPower(token)
             && deviceProvider.TryGetVerifiedDevice(out _)
-            && lowPowerGate.Generation == generation && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
+            && lowPowerGate.Generation == generation && powerSourceGeneration == sourceGeneration
+            && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
     }
 
     private static CpuTuningStatus MergeLiveCpuStatus(CpuTuningStatus? previous, CpuTuningStatus live) => live with

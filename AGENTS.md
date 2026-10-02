@@ -20,6 +20,13 @@ files or components and inspect the combined diff before verification.
 
 ## Proportionate execution
 
+Keep work pragmatic and proportionate to the requested outcome. Do not turn a
+bounded task into an open-ended research, tooling, or validation project.
+Every additional workstream must resolve a concrete blocker or satisfy an
+explicit requirement; hypothetical risks alone do not justify expanding scope.
+When the workflow grows disproportionate, simplify it and return to delivering
+the requested behavior while preserving applicable safety requirements.
+
 Use the smallest workflow that resolves the concrete problem. Identify the
 specific unanswered question or observed failure before adding a helper,
 abstraction, approval step, validation pass, or documentation artifact. Prefer

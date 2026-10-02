@@ -2,8 +2,8 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-// No concrete provider exists. Record shape/equality is an additional rejection
-// check, never evidence of trusted boot, driver, AC/session or power continuity.
+// Record shape/equality is an additional rejection check. Providers bind fresh
+// runtime admission to a retained native device lifetime.
 // Implementations must independently validate fresh source/transition evidence,
 // strictly decoded CO metadata and the complete original restoration plan. The
 // proof must repeat those checks in its native-lease callbacks, including gaps.
@@ -11,6 +11,7 @@ internal interface ICpuLiveCurveTrustedNativeProvider
 {
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
     CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token);
+    CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
     bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token);
     CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
@@ -21,7 +22,7 @@ internal enum CpuLiveCurveNativeWorkerKind { None, Observation, Admission, Submi
 internal sealed record CpuLiveCurveNativeBackendStatus(bool WorkerOutstanding,
     CpuLiveCurveNativeWorkerKind WorkerKind, bool ScopeInvalid, CpuLiveCurveNativeResult? LastNativeResult);
 
-// Unwired bridge only: callers supply the same retained typed session and an actual
+// Callers supply the same retained typed session and an actual
 // trusted provider. Nothing constructs a native platform, creates approval from
 // a bool, provisions a driver, establishes ownership or updates a journal here.
 internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
@@ -73,9 +74,12 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     {
         var context = provider.ReadFreshContext(token);
         if (context is not { IsWellFormed: true }) { return new(null, null); }
-        var approval = provider.CreateQueryApproval(context, token);
-        if (approval is null || !MatchesFresh(context, token)) { return new(null, null); }
-        var result = session.Query(approval, () => ReadBoundUsb(context, token), token);
+        var installed = provider.CreateInstalledQueryApproval(context, token);
+        var approval = installed is null ? provider.CreateQueryApproval(context, token) : null;
+        if (installed is null && approval is null || !MatchesFresh(context, token)) { return new(null, null); }
+        var result = installed is not null
+            ? session.QueryInstalled(installed, () => ReadBoundUsb(context, token), token)
+            : session.Query(approval, () => ReadBoundUsb(context, token), token);
         if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup) { Invalidate(); }
         token.ThrowIfCancellationRequested();
         if (result.Status != CpuLiveQueryStatus.Observed || CpuLiveCurveSnapshot.TryCreate(result.Observation) is null)

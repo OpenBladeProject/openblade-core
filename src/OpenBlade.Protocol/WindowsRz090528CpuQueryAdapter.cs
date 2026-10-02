@@ -32,6 +32,10 @@ internal interface ICpuQueryDevice : IDisposable
 {
     CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength);
 }
+internal interface ICpuQueryRetainableDevice : ICpuQueryDevice
+{
+    ICpuQueryDevice Duplicate();
+}
 internal interface ICpuQueryWindowsPlatform
 {
     HostIdentityReadResult ReadHost();
@@ -50,10 +54,118 @@ internal interface ICpuNativeWireAdmission
     void Abort();
 }
 
+// This lease holds an existing device file object and the inspected files. It
+// does not establish loaded-image provenance or authorize a setter. Revocation
+// never releases resources still borrowed by a synchronous native worker.
+internal sealed class CpuInstalledBackendLease : IDisposable
+{
+    private readonly object gate = new();
+    private readonly ICpuQueryWindowsPlatform platform;
+    private readonly ICpuQueryRetainableDevice device;
+    private readonly IDisposable files;
+    private readonly Func<bool> fresh;
+    private readonly InstalledCpuBackendSnapshot baseline;
+    private readonly Action cleanupFailed;
+    private int borrowers;
+    private bool revoked, uncertain, closed;
+
+    internal CpuInstalledBackendLease(ICpuQueryWindowsPlatform platform, ICpuQueryRetainableDevice device,
+        IDisposable files, InstalledCpuBackendSnapshot baseline, Func<bool> fresh, Action cleanupFailed)
+    {
+        this.platform = platform; this.device = device; this.files = files;
+        this.baseline = baseline; this.fresh = fresh; this.cleanupFailed = cleanupFailed;
+    }
+
+    internal bool IsCurrent
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (revoked) { return false; }
+                try { if (fresh()) { return true; } }
+                catch { /* An unreadable identity is drift, never authority. */ }
+                Revoke(false);
+                return false;
+            }
+        }
+    }
+    internal bool LifetimeCurrent { get { lock (gate) { return !revoked; } } }
+    internal bool Matches(ICpuQueryWindowsPlatform candidate) => ReferenceEquals(platform, candidate);
+    internal bool RegistrationMatches(InstalledCpuBackendSnapshot snapshot) => SameRegistration(baseline, snapshot);
+    internal static bool SameRegistration(InstalledCpuBackendSnapshot before, InstalledCpuBackendSnapshot after) =>
+        before.ServiceExists == after.ServiceExists && before.ServiceType == after.ServiceType
+        && before.Start == after.Start && before.Running == after.Running
+        && string.Equals(before.ImagePath, after.ImagePath, StringComparison.OrdinalIgnoreCase);
+    internal CpuQueryInstalledApproval CreateQueryApproval(Func<bool> current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        return new(this, current);
+    }
+    internal bool TryBorrow()
+    {
+        lock (gate)
+        {
+            if (revoked) { return false; }
+            borrowers++;
+            return true;
+        }
+    }
+    internal ICpuQueryDevice Duplicate()
+    {
+        lock (gate)
+        {
+            if (revoked || borrowers == 0) { throw new IOException("Installed CPU device lifetime ended."); }
+            return device.Duplicate();
+        }
+    }
+    internal void Return(bool failed)
+    {
+        lock (gate)
+        {
+            if (failed) { Revoke(true); return; }
+            borrowers--;
+            CloseIfIdle();
+        }
+    }
+    internal void Revoke(bool failed)
+    {
+        lock (gate)
+        {
+            revoked = true;
+            uncertain |= failed;
+            if (failed) { cleanupFailed(); }
+            CloseIfIdle();
+        }
+    }
+    private void CloseIfIdle()
+    {
+        if (!revoked || uncertain || closed || borrowers != 0) { return; }
+        try { device.Dispose(); files.Dispose(); closed = true; }
+        catch { uncertain = true; cleanupFailed(); throw; }
+    }
+    public void Dispose() => Revoke(false);
+}
+
+internal sealed class CpuQueryInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current)
+{
+    private int consumed;
+    private readonly long created = Stopwatch.GetTimestamp();
+    internal bool Consume(ICpuQueryWindowsPlatform platform) => Interlocked.Exchange(ref consumed, 1) == 0
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+        && lease.Matches(platform) && lease.IsCurrent && IsCurrent();
+    internal bool IsCurrent()
+    {
+        try { return lease.LifetimeCurrent && current(); }
+        catch { return false; }
+    }
+}
+
 /// <summary>
-/// Separately attended validation only. This uses PCI transport writes even for
-/// getters. It never starts/provisions a driver or loads an AMD SDK DLL. Production
-/// read admission remains denied until the native path has been validated.
+/// Fixed native wire with separate attended and retained installed admission.
+/// Getters use PCI transport writes. This never starts/provisions a driver or
+/// loads an AMD SDK DLL; installed queries require an opaque retained lease and
+/// a fresh initiating-call approval.
 /// </summary>
 internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQueryIoctl, IRz090528CpuQuerySynchronization
 {
@@ -64,6 +176,9 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
     private readonly ICpuNativeWireAdmission wire;
     private ICpuQueryDevice? device;
+    private CpuInstalledBackendLease? retained;
+    private Func<bool>? queryCurrent;
+    private InstalledCpuBackendSnapshot? backendSnapshot;
     private int ownerThread, acquiring;
     private bool cleanupFailed;
     private CpuQueryStage stage = CpuQueryStage.InitialUsbIdentity;
@@ -102,13 +217,27 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             return new(CpuLiveQueryStatus.Unavailable, null,
                 new(CpuQueryStage.Approval, CpuQueryFailureCode.AdmissionDenied));
         }
+        return QueryWithPlatform(readFreshUsbIdentity, platform, cancellationToken);
+    }
+
+    internal static Rz090528CpuLiveQueryResult QueryInstalled(CpuQueryInstalledApproval? approval,
+        Func<DeviceIdentity?> readFreshUsbIdentity, ICpuQueryWindowsPlatform platform, CancellationToken token)
+    {
+        if (approval?.Consume(platform) != true)
+        { return new(CpuLiveQueryStatus.Unavailable, null, new(CpuQueryStage.Approval, CpuQueryFailureCode.AdmissionDenied)); }
+        return QueryWithPlatform(readFreshUsbIdentity, platform, token, approval.IsCurrent);
+    }
+
+    private static Rz090528CpuLiveQueryResult QueryWithPlatform(Func<DeviceIdentity?> readFreshUsbIdentity,
+        ICpuQueryWindowsPlatform platform, CancellationToken cancellationToken, Func<bool>? current = null)
+    {
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
         cancellationToken.ThrowIfCancellationRequested();
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveQueryStatus.Busy, null, new(CpuQueryStage.MutexWait, CpuQueryFailureCode.AdmissionDenied)); }
-        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity);
+        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity) { queryCurrent = current };
         try
         {
             var identity = readFreshUsbIdentity();
@@ -141,6 +270,19 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 
     private bool FreshAdmission()
     {
+        if (!(retained?.LifetimeCurrent ?? true) || !(queryCurrent?.Invoke() ?? true)) { return false; }
+        try
+        {
+            bool accepted = ReadFreshAdmission()
+                && (retained is null || retained.RegistrationMatches(backendSnapshot!));
+            if (!accepted && stage != CpuQueryStage.FreshUsbIdentity) { retained?.Dispose(); }
+            return accepted;
+        }
+        catch { retained?.Dispose(); throw; }
+    }
+
+    private bool ReadFreshAdmission(bool includeUsb = true)
+    {
         stage = CpuQueryStage.HostIdentity;
         var host = platform.ReadHost();
         if (host.Failure is not null || host.Evidence is not
@@ -149,11 +291,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         var cpu = platform.ReadProcessor();
         if (cpu is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }) { return false; }
         stage = CpuQueryStage.FreshUsbIdentity;
-        if (!ExactUsb(readFreshUsbIdentity())) { return false; }
+        if (includeUsb && !ExactUsb(readFreshUsbIdentity())) { return false; }
         stage = CpuQueryStage.ControllerPresence;
         if (!platform.ControllersAbsent()) { return false; }
         stage = CpuQueryStage.InstalledBackend;
-        return Rz090528InstalledCpuBackendInspector.Evaluate(platform.ReadBackend()).Availability
+        backendSnapshot = platform.ReadBackend();
+        return Rz090528InstalledCpuBackendInspector.Evaluate(backendSnapshot).Availability
             == CpuTuningBackendAvailability.Available;
     }
 
@@ -176,14 +319,22 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             // Revalidate after waiting, including an abandoned mutex. The engine
             // always rediscovers PCI topology, masks and mailbox state from scratch.
             stage = CpuQueryStage.BackendFilePins;
-            files = platform.PinBackendFiles();
+            var anchor = NativeOperations.GetValue(platform, static _ => new()).Retained;
+            if (anchor is not null)
+            {
+                if (!anchor.TryBorrow()) { throw new QueryAdmissionDeniedException(); }
+                retained = anchor;
+                files = EmptyPins.Instance;
+            }
+            else { files = platform.PinBackendFiles(); }
             if (!FreshAdmission()) { throw new QueryAdmissionDeniedException(); }
             cancellationToken.ThrowIfCancellationRequested();
             stage = CpuQueryStage.DeviceOpen;
-            device = platform.OpenExistingDevice();
+            device = retained is null ? platform.OpenExistingDevice() : retained.Duplicate();
             // Detect a service/configuration transition across CreateFile before
             // issuing any IOCTL. A userspace preflight cannot attest the bytes of
-            // an already loaded kernel image; that is an attended validation prerequisite.
+            // an already loaded kernel image. A retained handle establishes
+            // object continuity, not loaded-image attestation.
             if (!FreshAdmission()) { throw new QueryAdmissionDeniedException(); }
             cancellationToken.ThrowIfCancellationRequested();
             ownerThread = Environment.CurrentManagedThreadId;
@@ -205,7 +356,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 finally
                 {
                     try { if (acquired) { Cleanup(() => mutex!.Release()); } }
-                    finally { try { Cleanup(() => mutex?.Dispose()); } finally { if (ownerThread == 0) { Volatile.Write(ref acquiring, 0); } } }
+                    finally
+                    {
+                        try { Cleanup(() => mutex?.Dispose()); }
+                        finally
+                        {
+                            if (ownerThread == 0)
+                            {
+                                try { FinishRetention(); }
+                                finally { Volatile.Write(ref acquiring, 0); }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -219,6 +381,19 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         catch { cleanupFailed = true; stage = CpuQueryStage.Cleanup; throw; }
     }
 
+    private void FinishRetention()
+    {
+        var anchor = retained;
+        retained = null;
+        if (anchor is not null) { Cleanup(() => anchor.Return(cleanupFailed)); }
+    }
+
+    private sealed class EmptyPins : IDisposable
+    {
+        internal static readonly EmptyPins Instance = new();
+        public void Dispose() { }
+    }
+
     public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
     {
         CheckThread();
@@ -227,6 +402,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         CpuQueryIoctlReply reply;
         try
         {
+            if (retained is not null && (!retained.LifetimeCurrent || !(queryCurrent?.Invoke() ?? true)))
+            { throw new QueryAdmissionDeniedException(); }
             if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
             else if (wire is CpuPowerNativeWire power) { power.BeforeNativeInvoke(code, input); }
             reply = device.Invoke(code, input, outputLength);
@@ -256,6 +433,19 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         IDisposable files, int thread) : IDisposable
     {
         private bool disposed;
+        private bool transferred;
+        internal CpuInstalledBackendLease Retain(Action cleanupFailed)
+        {
+            if (disposed || transferred || adapter.device is not ICpuQueryRetainableDevice device)
+            { throw new QueryAdmissionDeniedException(); }
+            var baseline = adapter.backendSnapshot!;
+            var anchor = new CpuInstalledBackendLease(adapter.platform, device, files, baseline,
+                () => adapter.ReadFreshAdmission(includeUsb: false)
+                    && CpuInstalledBackendLease.SameRegistration(baseline, adapter.backendSnapshot!), cleanupFailed);
+            transferred = true;
+            adapter.device = null;
+            return anchor;
+        }
         public void Dispose()
         {
             if (disposed) { return; }
@@ -270,12 +460,40 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 {
                     adapter.device = null;
                     adapter.ownerThread = 0;
-                    try { files.Dispose(); }
+                    try { if (!transferred) { files.Dispose(); } }
                     finally { try { mutex.Release(); } finally { try { mutex.Dispose(); } finally { Volatile.Write(ref adapter.acquiring, 0); } } }
                 }
             }
             catch { adapter.cleanupFailed = true; throw; }
+            finally { adapter.FinishRetention(); }
         }
+    }
+
+    internal static CpuInstalledBackendLease? TryRetainInstalledBackend(ICpuQueryWindowsPlatform platform,
+        Func<DeviceIdentity?> readUsb, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(readUsb);
+        var latch = NativeOperations.GetValue(platform, static _ => new());
+        if (Interlocked.CompareExchange(ref latch.Active, 1, 0) != 0) { return null; }
+        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb);
+        CpuInstalledBackendLease? anchor = null;
+        try
+        {
+            if (latch.Retained is not null) { return null; }
+            using (var operation = adapter.Acquire(TimeSpan.FromSeconds(20), token) as QueryLease)
+            {
+                if (operation is null) { return null; }
+                anchor = operation.Retain(() => Interlocked.Exchange(ref latch.Active, 1));
+                latch.Retained = anchor;
+            }
+            return anchor;
+        }
+        catch
+        {
+            if (anchor is not null) { anchor.Revoke(adapter.cleanupFailed); }
+            throw;
+        }
+        finally { if (!adapter.cleanupFailed) { Volatile.Write(ref latch.Active, 0); } }
     }
 
     private sealed class QueryAdmissionDeniedException : IOException;
@@ -412,16 +630,26 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
         public bool ControllersAbsent() => Rz090528CpuControllerPresence.ControllersAbsent();
 
-        public InstalledCpuBackendSnapshot ReadBackend() => new WindowsInstalledCpuBackendSnapshotSource().Read();
+        private BackendFilePins? backendPins;
+        public InstalledCpuBackendSnapshot ReadBackend() => backendPins is { } pins
+            ? new WindowsInstalledCpuBackendSnapshotSource().Read(pins.ReadMetadata())
+            : new WindowsInstalledCpuBackendSnapshotSource().Read();
         public ICpuQueryDevice OpenExistingDevice() => new NativeDevice();
         public ICpuQueryMutex CreateSharedMutex() => new SharedMutex();
-        public IDisposable PinBackendFiles() => new BackendFilePins();
+        public IDisposable PinBackendFiles()
+        {
+            if (backendPins is not null) { throw new IOException("CPU backend files already pinned."); }
+            return backendPins = new BackendFilePins(() => backendPins = null);
+        }
 
         private sealed class BackendFilePins : IDisposable
         {
             private readonly List<IDisposable> pins = [];
-            internal BackendFilePins()
+            private IReadOnlyList<CpuBackendFileMetadata>? metadata;
+            private readonly Action released;
+            internal BackendFilePins(Action released)
             {
+                this.released = released;
                 try
                 {
                     var parents = new Stack<string>();
@@ -460,10 +688,16 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 }
                 catch { Dispose(); throw; }
             }
+            internal IReadOnlyList<CpuBackendFileMetadata> ReadMetadata() =>
+                metadata ??= WindowsInstalledCpuBackendSnapshotSource.ReadFileMetadata();
             public void Dispose()
             {
-                for (int i = pins.Count - 1; i >= 0; i--) { pins[i].Dispose(); }
-                pins.Clear();
+                try
+                {
+                    for (int i = pins.Count - 1; i >= 0; i--) { pins[i].Dispose(); }
+                    pins.Clear();
+                }
+                finally { metadata = null; released(); }
             }
         }
 
@@ -491,7 +725,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             public void Dispose() => mutex.Dispose();
         }
 
-        private sealed class NativeDevice : ICpuQueryDevice
+        private sealed class NativeDevice : ICpuQueryRetainableDevice
         {
             private readonly SafeFileHandle handle;
             internal NativeDevice()
@@ -503,6 +737,20 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                     handle.Dispose();
                     throw new Win32Exception(error);
                 }
+            }
+            private NativeDevice(SafeFileHandle duplicate) => handle = duplicate;
+            public ICpuQueryDevice Duplicate()
+            {
+                // DuplicateHandle retains the same kernel file object; never
+                // resolve the device pathname again during this lifetime.
+                nint process = GetCurrentProcess();
+                if (!DuplicateHandle(process, handle, process, out var duplicate, 0, false, 2))
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    duplicate?.Dispose();
+                    throw new Win32Exception(error);
+                }
+                return new NativeDevice(duplicate);
             }
             public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
             {
@@ -519,6 +767,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, nint security,
             uint creation, uint flags, nint template);
+        [DllImport("kernel32.dll")]
+        private static extern nint GetCurrentProcess();
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DuplicateHandle(nint sourceProcess, SafeFileHandle source, nint targetProcess,
+            out SafeFileHandle target, uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint options);
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DeviceIoControl(SafeFileHandle handle, uint code, byte[] input, int inputLength,

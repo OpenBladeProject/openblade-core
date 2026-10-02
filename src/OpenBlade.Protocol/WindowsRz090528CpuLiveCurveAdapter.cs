@@ -25,6 +25,14 @@ internal sealed partial class WindowsRz090528CpuNativeSession
         Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
         WindowsRz090528CpuQueryAdapter.QueryForAttendedValidation(approval, readFreshUsbIdentity, platform, token);
 
+    internal CpuInstalledBackendLease? TryRetainInstalledBackend(Func<DeviceIdentity?> readFreshUsbIdentity,
+        CancellationToken token = default) =>
+        WindowsRz090528CpuQueryAdapter.TryRetainInstalledBackend(platform, readFreshUsbIdentity, token);
+
+    internal Rz090528CpuLiveQueryResult QueryInstalled(CpuQueryInstalledApproval? approval,
+        Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
+        WindowsRz090528CpuQueryAdapter.QueryInstalled(approval, readFreshUsbIdentity, platform, token);
+
     internal CpuLiveCurveNativeResult ExecuteCurve(CpuLiveCurveNativeRequest request,
         CpuLiveCurveWriteProof? proof, Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
         WindowsRz090528CpuQueryAdapter.ExecuteCurveWithPlatform(request, proof, readFreshUsbIdentity, platform, token);
@@ -35,8 +43,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, NativeOperationLatch> NativeOperations = new();
 
     // The native session factory retains the private platform; this typed gate
-    // still requires an independent trusted write proof. No concrete proof,
-    // Capture command or production composition creates write authority today.
+    // still requires an independent trusted exact-request write proof. Retaining
+    // the installed device or approving a query never creates write authority.
     // All execution is synchronous; callers must retain their actual worker task
     // through termination even if they stop awaiting it. The latch outlives that wait.
     internal static CpuLiveCurveNativeResult ExecuteCurveWithPlatform(CpuLiveCurveNativeRequest request,
@@ -115,7 +123,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
     private sealed class CurveAdmissionException : Exception;
 
-    private sealed class NativeOperationLatch { internal int Active; }
+    private sealed class NativeOperationLatch
+    {
+        internal int Active;
+        internal CpuInstalledBackendLease? Retained;
+    }
 }
 
 // Separate from CpuQueryWireAdmission: the old approval/profile remains06/5E.

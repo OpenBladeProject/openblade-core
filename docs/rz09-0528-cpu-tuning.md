@@ -2,13 +2,17 @@
 
 CPU tuning has two targets: settings saved for the next boot, and settings applied
 to the running CPU. The CPU card keeps their observations separate. Refresh reads
-saved firmware; opting into the installed AMD backend permits passive dependency
-inspection. It does not start a driver or grant permission to tune the CPU.
+saved firmware. Opting into the installed AMD backend also permits fresh live CO
+queries when the exact signed stack is already running and runtime admission
+passes. It never starts or provisions a driver.
 
 The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
 plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
-45 W, each followed by exact original restoration. Live writes remain unavailable.
+45 W, each followed by exact original restoration. The draft source now wires
+optional live CO through a retained device lifetime and fresh metadata proofs;
+this integration has not yet been installed or physically validated. Live PPT
+remains unavailable in default composition.
 The editor represents the 45–95 W power range and
 −30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
 and retains the editor's negative value. Each feature can be left unmanaged.
@@ -183,8 +187,14 @@ An internal CO transport reuses the query session for full before/after vectors,
 checks fresh capability and range evidence, and records possible submission before
 the driver call. Forward edits also require the exact immediate reverse to fit
 that range. Uncertain cleanup blocks later operations on the retained platform.
-Only fake tests supply its write proof; no production proof provider exists.
-An unwired service backend now connects that transport to the live transaction.
+A concrete optional installed-stack provider now supplies the proof and connects
+that transport to the live transaction. Construction performs no native work.
+An initiating live request retains the existing device handle and immutable
+inspected files. Each operation duplicates that same device file object and
+rechecks host, processor, registration, controller and runtime admission. The
+initial file inspection is reused only while its actual file pins remain held.
+This assumes the trusted Windows signed-driver stack; disk hashes do not attest
+the bytes of an already loaded kernel image.
 It retains the actual native worker across caller cancellation and excludes
 replacement operations on the same platform until completion. Cleanup uncertainty
 invalidates that scope. Its private proof wrapper rechecks fresh context under
@@ -194,8 +204,12 @@ accepts Boolean true or completely enumerated absence of ReturnValue; the absent
 form also requires the firmware shadow to lie within the magnitude bounds. It
 preserves partial evidence, treats Current as a firmware shadow, and returns a
 range only after confirmed cleanup and independent scope checks. Injected tests
-exercise cancellation, ambiguous submission, range decoding and recovery;
-neither component supplies production trust or enables CPU controls.
+exercise cancellation, ambiguous submission, range decoding and recovery.
+The concrete proof captures its initiating admission, requires the forward and
+exact reverse values to fit fresh metadata, and reads one complete getter pair
+under each exact native write lease. Later requests cannot renew that proof.
+Ownership contexts include the service instance and observed sleep/AC generations;
+a restart or power boundary rejects reuse of an earlier ownership context.
 The native factory retains one private platform for query, CO and PM operations.
 An opaque typed session gives the service access without exposing raw driver
 handles or commands. All three paths share exclusion before native acquisition;
@@ -207,8 +221,12 @@ It checks both raw limit values and STAPM, rechecks the source-mapped conditiona
 fused cap and fresh firmware range, and requires independent admission for the
 immediate reverse and every remaining original restoration value. Its proof must
 establish that the candidate PM fields represent restorable requested settings;
-integer reconstruction alone does not do that. Physical setter behavior,
-clamping and restoration remain unproved. The pure planner requires explicit
+integer reconstruction alone does not do that. A bounded static trace ties the
+reviewed PM fields to the accepted post-clamp target and shows that the reviewed
+maintenance paths preserve those targets. The native transport now requires a
+fresh matching SMU firmware-version getter before baseline reads or setters.
+Physical setter behavior and exact restoration still require the attended cycle.
+The pure planner requires explicit
 capability and firmware-range data for changes: capability 82 bit 1 bypasses only
 the fused ceiling, while the firmware range still covers each forward and exact
 restoration value. These inputs supply no freshness or native authority, and

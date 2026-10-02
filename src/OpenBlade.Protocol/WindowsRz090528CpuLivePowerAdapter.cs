@@ -100,6 +100,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8, Copy = 0x81112F08;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
+    private const uint ExpectedFirmwareVersion = 0x0B5D1600;
     private readonly CpuLivePowerNativeRequest request;
     private readonly Action checkpoint, snapshotAdmission, finalAdmission;
     private readonly Queue<Step> steps = new();
@@ -192,6 +193,9 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         Pci(0, 0x18, 1, 0, value => value == CpuQueryPciTopology.OrientationId);
         Pci(0, 0x18, 1, 0x140, value => value == 0xFF55);
         Smn(0x03820AB0, value => (~(value >> 5) & 0xFFFF) == 0xFF55);
+        // Bind the reviewed PPT handler semantics inside this retained lease.
+        // Firmware version is separate from the PM layout checked by Snapshot.
+        Mailbox(0x02, null, value => value == ExpectedFirmwareVersion);
         ReadCaps();
         Snapshot(before: true);
         ReadCaps(); // Recheck conditional fused ceiling after the before sample.

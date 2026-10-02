@@ -7,6 +7,58 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Fact]
+    public async Task RuntimeLifetimeIsStableWithinServiceAndChangesAtRestartOrPowerBoundary()
+    {
+        var store = new CpuLivePowerTuningTransactionTests.MemoryStore();
+        var backend = new CpuLivePowerTuningTransactionTests.FakeBackend(store);
+        var controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
+        Assert.Null(controller.CaptureLiveRuntimeLifetime());
+        var lifetimes = new List<CpuLiveRuntimeLifetime>();
+        backend.Admit = (_, _) =>
+        {
+            lifetimes.Add(Assert.IsType<CpuLiveRuntimeLifetime>(controller.CaptureLiveRuntimeLifetime()));
+            return true;
+        };
+        await controller.MutateLiveAsync(new(45, null), false, _ => true, default, 2, 3);
+        var first = lifetimes[0];
+        Assert.All(lifetimes, value => Assert.Equal(first, value));
+        Assert.Equal(2, first.LowPowerGeneration); Assert.Equal(3, first.PowerSourceGeneration);
+        Assert.Null(controller.CaptureLiveRuntimeLifetime());
+        lifetimes.Clear();
+        await controller.MutateLiveAsync(null, true, _ => true, default, 2, 3);
+        Assert.All(lifetimes, value => Assert.Equal(first, value));
+        lifetimes.Clear();
+        await controller.MutateLiveAsync(new(60, null), false, _ => true, default, 4, 5);
+        Assert.All(lifetimes, value =>
+        {
+            Assert.Equal(first.ServiceInstance, value.ServiceInstance);
+            Assert.NotEqual(first, value);
+        });
+        controller = new CpuTuningController(new UnusedSource(), powerBackend: backend, powerStore: store);
+        lifetimes.Clear();
+        await controller.MutateLiveAsync(null, true, _ => true, default, 4, 5);
+        Assert.NotEmpty(lifetimes);
+        Assert.All(lifetimes, value => Assert.NotEqual(first.ServiceInstance, value.ServiceInstance));
+    }
+
+    [Fact]
+    public async Task OwnedContextWithEarlierRuntimeLifetimeBlocksRestorationBeforeSubmission()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        var lifetime = new CpuLiveRuntimeLifetime(Guid.NewGuid(), 2, 3);
+        fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime };
+        fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime };
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await controller.MutateLiveAsync(new(45, new(true, -2)), false, _ => true, default)).Status);
+        int curveSends = fixture.Curve.Sent.Count, powerSends = fixture.Power.Sent.Count;
+        fixture.Curve.Context = fixture.Curve.Context with { RuntimeLifetime = lifetime with { PowerSourceGeneration = 4 } };
+        fixture.Power.Context = fixture.Power.Context with { RuntimeLifetime = lifetime with { PowerSourceGeneration = 4 } };
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await controller.MutateLiveAsync(null, true, _ => true, default)).Status);
+        Assert.Equal(curveSends, fixture.Curve.Sent.Count); Assert.Equal(powerSends, fixture.Power.Sent.Count);
+    }
+
+    [Fact]
     public async Task CapturedAdmissionExpiresAndLaterRequestsCannotRenewIt()
     {
         var store = new CpuLivePowerTuningTransactionTests.MemoryStore();

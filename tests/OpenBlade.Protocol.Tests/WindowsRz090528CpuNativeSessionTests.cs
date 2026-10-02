@@ -102,6 +102,163 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         Assert.Equal(calls, platform.Commands.Count);
     }
 
+    [Fact]
+    public void InstalledLeaseKeepsOneFileObjectAcrossQueriesAndCurveOperations()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        bool initialCallCurrent = true;
+        using var lease = session.TryRetainInstalledBackend(() => initialCallCurrent ? Exact : null)!;
+        Assert.NotNull(lease);
+        initialCallCurrent = false;
+        Assert.True(lease.IsCurrent); // Acquisition's caller is not the retained lifetime.
+        Assert.True(platform.Pinned);
+        Assert.False(platform.Held);
+        Assert.Empty(platform.Commands);
+        Assert.Null(session.TryRetainInstalledBackend(() => Exact));
+
+        var approval = lease.CreateQueryApproval(() => true);
+        Assert.Equal(CpuLiveQueryStatus.Observed, session.QueryInstalled(approval, () => Exact).Status);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, session.QueryInstalled(approval, () => Exact).Status);
+        Assert.Equal(CpuLiveQueryStatus.Observed,
+            session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact).Status);
+        var request = Request();
+        Assert.True(session.ExecuteCurve(request, new Proof(request, platform), () => Exact).Verified);
+        Assert.Equal(1, platform.Opens);
+        Assert.Equal(1, platform.Pins);
+        Assert.Equal(3, platform.Duplicates);
+        Assert.Equal(3, platform.DuplicateCloses);
+        Assert.Equal(0, platform.AnchorCloses);
+        lease.Dispose();
+        Assert.Equal(1, platform.AnchorCloses);
+        Assert.False(platform.Pinned);
+        Assert.False(lease.IsCurrent);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, session.Query(Approval(), () => Exact).Status);
+        Assert.Equal(1, platform.Opens); // No pathname fallback after revocation.
+    }
+
+    [Fact]
+    public void InstalledApprovalRejectsWrongSessionAndExpiredCallerWithoutRevokingAnchor()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        var other = new Platform();
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, WindowsRz090528CpuNativeSession.ForPlatform(other)
+            .QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact).Status);
+        Assert.Equal(0, other.Opens);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable,
+            session.QueryInstalled(lease.CreateQueryApproval(() => false), () => Exact).Status);
+        Assert.True(lease.IsCurrent);
+        Assert.Equal(0, platform.Duplicates);
+        Assert.Equal(CpuLiveQueryStatus.Observed,
+            session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact).Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InstalledServiceDriftRevokesPermanentlyBeforeAnyTraffic(bool configurationOnly)
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        platform.Drift = !configurationOnly;
+        if (configurationOnly) { platform.Start = 2; }
+        Assert.Equal(CpuLiveQueryStatus.Unavailable,
+            session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact).Status);
+        Assert.False(lease.IsCurrent);
+        Assert.Empty(platform.Commands);
+        Assert.Equal(0, platform.Duplicates);
+        Assert.Equal(1, platform.AnchorCloses);
+        platform.Drift = false;
+        Assert.Null(session.TryRetainInstalledBackend(() => Exact));
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, session.Query(Approval(), () => Exact).Status);
+        Assert.Equal(1, platform.Opens);
+    }
+
+    [Fact]
+    public async Task RevocationWhileIoctlIsBlockedRetainsActualDeviceAndPinsUntilWorkerCleanup()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        platform.BeforeIoctl = () => { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(10))); };
+        var work = Task.Run(() => session.QueryInstalled(lease.CreateQueryApproval(() => !cancellation.IsCancellationRequested),
+            () => Exact, cancellation.Token));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            cancellation.Cancel();
+            lease.Dispose();
+            Assert.False(work.IsCompleted);
+            Assert.True(platform.Pinned);
+            Assert.Equal(0, platform.AnchorCloses);
+            Assert.Equal(0, platform.DuplicateCloses);
+            Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(Approval(), () => Exact).Status);
+        }
+        finally { release.Set(); }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await work);
+        Assert.Equal(1, platform.DuplicateCloses);
+        Assert.Equal(1, platform.AnchorCloses);
+        Assert.False(platform.Pinned);
+    }
+
+    [Fact]
+    public void FailedDuplicateCleanupParksAnchorAndSharedSession()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        platform.FailDuplicateClose = true;
+        var result = session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact);
+        Assert.Equal(CpuQueryStage.Cleanup, result.Diagnostic!.Stage);
+        Assert.False(lease.IsCurrent);
+        lease.Dispose();
+        Assert.True(platform.Pinned);
+        Assert.Equal(0, platform.AnchorCloses);
+        Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(Approval(), () => Exact).Status);
+        Assert.Null(session.TryRetainInstalledBackend(() => Exact));
+    }
+
+    [Fact]
+    public void DriftAcrossDuplicationRevokesBeforeAnyIoctlAndClosesOnlyAfterCleanup()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        platform.OnDuplicate = () => platform.Start = 2;
+        var result = session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(CpuQueryStage.InstalledBackend, result.Diagnostic!.Stage);
+        Assert.Empty(platform.Commands);
+        Assert.Equal(1, platform.DuplicateCloses);
+        Assert.Equal(1, platform.AnchorCloses);
+        Assert.False(platform.Pinned);
+        Assert.False(lease.IsCurrent);
+    }
+
+    [Fact]
+    public void AcquisitionCancellationDoesNotBecomePermanentRequestAuthority()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var acquisition = new CancellationTokenSource();
+        using var lease = session.TryRetainInstalledBackend(() => Exact, acquisition.Token)!;
+        acquisition.Cancel();
+        Assert.True(lease.IsCurrent);
+        using var request = new CancellationTokenSource();
+        request.Cancel();
+        Assert.ThrowsAny<OperationCanceledException>(() => session.QueryInstalled(
+            lease.CreateQueryApproval(() => true), () => Exact, request.Token));
+        Assert.Equal(0, platform.Duplicates);
+        Assert.Equal(CpuLiveQueryStatus.Observed,
+            session.QueryInstalled(lease.CreateQueryApproval(() => true), () => Exact).Status);
+    }
+
     private static CpuQueryAttendedApproval Approval() => CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true);
     private static CpuLiveCurveNativeRequest Request()
     {
@@ -124,8 +281,11 @@ public sealed class WindowsRz090528CpuNativeSessionTests
     private sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryDevice, ICpuQueryMutex
     {
         internal readonly List<uint> Commands = [];
-        internal int Opens, Pins, BackendReads, Releases;
-        internal bool Pinned, Held, FailCleanup;
+        internal int Opens, Pins, BackendReads, Releases, Duplicates, DuplicateCloses, AnchorCloses;
+        internal int Start = 3;
+        internal bool Pinned, Held, FailCleanup, Drift, FailDuplicateClose;
+        internal Action? BeforeIoctl;
+        internal Action? OnDuplicate;
         private uint selected, argument, result;
         private bool submitted;
 
@@ -139,12 +299,12 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         }
         public InstalledCpuBackendSnapshot ReadBackend()
         {
-            Assert.True(Pinned); Assert.True(Held); BackendReads++;
+            Assert.True(Pinned); BackendReads++;
             return new(Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair =>
                 new CpuBackendFileMetadata(pair.Key, pair.Value, true, Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray(),
-                true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, 3, true);
+                true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, Start, !Drift);
         }
-        public ICpuQueryDevice OpenExistingDevice() { Assert.True(Pinned); Assert.True(Held); Opens++; return this; }
+        public ICpuQueryDevice OpenExistingDevice() { Assert.True(Pinned); Assert.True(Held); Opens++; return new DeviceHandle(this, false); }
         public ICpuQueryMutex CreateSharedMutex() => this;
         public CpuQueryMutexWait Wait(TimeSpan timeout, CancellationToken cancellationToken)
         { Assert.False(Held); Held = true; return CpuQueryMutexWait.Acquired; }
@@ -154,6 +314,7 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
         {
             Assert.True(Pinned); Assert.True(Held);
+            Interlocked.Exchange(ref BeforeIoctl, null)?.Invoke();
             var output = new byte[outputLength];
             if (code == 0x81112F18)
             {
@@ -190,6 +351,22 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         }
         private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
         private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
+
+        private sealed class DeviceHandle(Platform platform, bool duplicate) : ICpuQueryRetainableDevice
+        {
+            public ICpuQueryDevice Duplicate()
+            { platform.Duplicates++; platform.OnDuplicate?.Invoke(); return new DeviceHandle(platform, true); }
+            public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength) => platform.Invoke(code, input, outputLength);
+            public void Dispose()
+            {
+                if (duplicate)
+                {
+                    platform.DuplicateCloses++;
+                    if (platform.FailDuplicateClose) { throw new IOException(); }
+                }
+                else { platform.AnchorCloses++; }
+            }
+        }
     }
 
     private sealed class Cleanup(Action cleanup) : IDisposable { public void Dispose() => cleanup(); }

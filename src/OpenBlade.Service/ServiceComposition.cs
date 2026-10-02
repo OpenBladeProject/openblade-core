@@ -24,8 +24,16 @@ internal static class ServiceComposition
             _ => new HyperBoostOwnershipJournalStore(journalPath));
         services.AddSingleton<ICpuTuningOwnershipJournalStore>(_ => new CpuTuningOwnershipJournalStore(
             Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-tuning-ownership.json")));
+        services.AddSingleton<ICpuLiveCurveOwnershipJournalStore>(_ => new CpuLiveCurveOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-live-curve-ownership.json")));
+        services.AddSingleton(provider => new WindowsCpuLiveCurveTrustedNativeProvider(
+            WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+            () => provider.GetRequiredService<CpuTuningController>(), new WindowsCpuTuningObservationSource()));
         services.AddSingleton(provider => new CpuTuningController(new WindowsCpuTuningObservationSource(),
-            provider.GetRequiredService<ICpuTuningOwnershipJournalStore>()));
+            provider.GetRequiredService<ICpuTuningOwnershipJournalStore>(),
+            curveBackend: new CpuLiveCurveNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+                provider.GetRequiredService<WindowsCpuLiveCurveTrustedNativeProvider>()),
+            curveStore: provider.GetRequiredService<ICpuLiveCurveOwnershipJournalStore>()));
         services.AddSingleton<IServiceControlRuntime>(provider =>
             new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),

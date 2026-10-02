@@ -14,6 +14,10 @@ internal sealed record CpuLiveCurveBackendIdentity(string DriverSha256, string P
 
 internal enum CpuLiveCurveBootSequenceSource { Unknown, WindowsKuserSharedData }
 
+// A live ownership journal cannot cross a service restart or an observed power
+// boundary. This is correlation, checked alongside fresh runtime/native admission.
+internal sealed record CpuLiveRuntimeLifetime(Guid ServiceInstance, long LowPowerGeneration, long PowerSourceGeneration);
+
 // Shape only: this record neither proves boot/CPU continuity nor grants native
 // authority. A trusted fresh backend must validate the source and power-transition
 // continuity, including observation gaps. There is no native provider here.
@@ -26,6 +30,7 @@ internal sealed record CpuLiveCurveBootSequence(CpuLiveCurveBootSequenceSource S
 internal sealed record CpuLiveCurveContext(DeviceIdentity Identity, uint EnabledCoreMask,
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
+    public CpuLiveRuntimeLifetime? RuntimeLifetime { get; init; }
     // Ignore only BIOS provenance; every other context field retains record equality.
     internal bool MatchesHardwareContext(CpuLiveCurveContext? other) => other is not null
         && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;

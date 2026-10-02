@@ -363,7 +363,8 @@ public sealed class CpuLivePowerNativeBackendTests
                         0x03820A0B => 7u << 28,
                         0x03820A13 or 0x03820A90 => 0,
                         0x03B10A80 => 1,
-                        0x03B10A88 => command == 6 ? InvalidVersion ? 0u : 0x005D000Bu : command == 0x82 ? 2u : 1u,
+                        0x03B10A88 => command == 2 ? 0x0B5D1600u
+                            : command == 6 ? InvalidVersion ? 0u : 0x005D000Bu : command == 0x82 ? 2u : 1u,
                         _ => throw new InvalidOperationException(),
                     };
                 Put(output, 20, value);

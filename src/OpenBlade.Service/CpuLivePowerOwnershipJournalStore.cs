@@ -10,6 +10,7 @@ namespace OpenBlade.Service;
 internal sealed record CpuLivePowerContext(DeviceIdentity Identity, uint EnabledCoreMask,
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
+    public CpuLiveRuntimeLifetime? RuntimeLifetime { get; init; }
     // Ignore only BIOS provenance; every other context field retains record equality.
     internal bool MatchesHardwareContext(CpuLivePowerContext? other) => other is not null
         && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;
