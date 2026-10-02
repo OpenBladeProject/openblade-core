@@ -4,7 +4,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-// No concrete scope/factory exists. Implementations independently attest the
+// Implementations independently attest the
 // exact source, loaded lifetime and continuous fresh getter admission. This
 // scope does not admit requested-state interpretation, range units or setters.
 internal abstract class CpuLivePowerRangeTrustedScope
@@ -33,7 +33,8 @@ internal sealed class CpuLivePowerRangeOpenFailure(Exception inner, bool cleanup
 // Synchronous, fixed getters only. Call under the retained Service actual worker;
 // WMI timeout options do not mean a cancelled caller has finished native work.
 // The PM engine orders version7 before MinMax. Each result is candidate metadata,
-// never a trusted range or proof. No production composition constructs this reader.
+// never a trusted range or proof. The shared installed provider constructs this
+// reader only within an initiating request's continuously checked context.
 internal sealed class WindowsCpuLivePowerRangeMetadata : IRz090528CpuLivePowerRangeMetadataReader
 {
     private readonly CpuLivePowerContext? context;

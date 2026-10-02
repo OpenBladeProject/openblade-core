@@ -5,7 +5,8 @@ namespace OpenBlade.Service;
 
 // Optional installed integration: construction is inert. Only an initiating
 // live request may retain the already-running, pinned driver. Never provisions it.
-internal sealed class WindowsCpuLiveCurveTrustedNativeProvider : ICpuLiveCurveTrustedNativeProvider, IDisposable
+internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveTrustedNativeProvider,
+    ICpuLivePowerTrustedNativeProvider, IDisposable
 {
     private readonly WindowsRz090528CpuNativeSession session;
     private readonly Func<CpuTuningController?> controller;
@@ -20,13 +21,13 @@ internal sealed class WindowsCpuLiveCurveTrustedNativeProvider : ICpuLiveCurveTr
     private CpuLiveCurveTrustedRange? range;
     private int disposed;
 
-    internal WindowsCpuLiveCurveTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
+    internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source)
         : this(session, controller, source, Rz090528CpuFreshUsbIdentity.Read, new WindowsCpuBootSequenceReader().Read,
             new WindowsCpuLiveCurveRangeMetadata())
     { }
 
-    internal WindowsCpuLiveCurveTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
+    internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source,
         Func<DeviceIdentity?> readUsb, Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot,
         WindowsCpuLiveCurveRangeMetadata metadata)
@@ -67,6 +68,63 @@ internal sealed class WindowsCpuLiveCurveTrustedNativeProvider : ICpuLiveCurveTr
     {
         var admission = Capture(exactContext, CpuTuningFeatures.None, token);
         return admission is null ? null : installed?.CreateQueryApproval(admission);
+    }
+
+    CpuLivePowerContext? ICpuLivePowerTrustedNativeProvider.ReadFreshContext(CancellationToken token) => PowerContext(token);
+
+    private CpuLivePowerContext? PowerContext(CancellationToken token)
+    {
+        var context = ReadFreshContext(token);
+        return context is null ? null : new(context.Identity, context.EnabledCoreMask, context.PmVersion,
+            context.PmTableLength, context.Backend, context.BootSequence)
+        { RuntimeLifetime = context.RuntimeLifetime };
+    }
+
+    public CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext exactContext, CancellationToken token) => null;
+    public CpuPmRunOwnedDriverLifetime? ReadFreshObservationLifetime(CpuLivePowerContext exactContext, CancellationToken token) => null;
+
+    public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token)
+    {
+        var admission = CapturePower(exactContext, token);
+        return admission is null ? null : installed?.CreatePowerObservationApproval(admission);
+    }
+
+    public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext exactContext, CancellationToken token)
+    {
+        var admission = CapturePower(exactContext, token);
+        return admission is null ? null : new WindowsCpuLivePowerRangeMetadata(exactContext, new PowerRangeScope(admission), token);
+    }
+
+    public CpuLivePowerTrustedRange? AdmitRequestedStateAndRange(CpuLivePowerContext exactContext,
+        CpuPmObservationBatch exactObservation, CancellationToken token)
+    {
+        var admission = CapturePower(exactContext, token);
+        if (admission is null || !exactObservation.Complete
+            || exactObservation.Profile != CpuPmObservationProfile.RangeSingleSample
+            || exactObservation.FirmwareVersion != CpuPmObservationWireAdmission.ExpectedFirmwareVersion
+            || exactObservation.RangeObservation is not { MetadataComplete: true, MinMax.Value: { Value: 0x50001, Stepping: 1 } limits }
+            || limits.Min > limits.Max || limits.Max > CpuLivePowerValue.MaximumMilliwatts
+            || exactObservation.CopySamples() is not [var sample] || CpuLivePowerSnapshot.TryCreate(sample.Snapshot) is null)
+        { return null; }
+        // The reviewed exact firmware publishes accepted targets at +08/+10.
+        // Current in WMI metadata is a shadow and never supplies this baseline.
+        return admission() ? new(0x50001, limits.Min, limits.Max, 1) : null;
+    }
+
+    // Native PPT production writes await the reviewed physical setter fixture.
+    public bool CheckWriteAdmission(CpuLivePowerContext exactContext, CpuLivePowerCommand command,
+        CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token) => false;
+    public CpuLivePowerWriteProof? CreateWriteProof(CpuLivePowerContext exactContext,
+        CpuLivePowerNativeRequest exactRequest, CancellationToken token) => null;
+
+    private Func<bool>? CapturePower(CpuLivePowerContext context, CancellationToken token)
+    {
+        var current = PowerContext(token);
+        if (!context.MatchesHardwareContext(current)) { return null; }
+        var curve = new CpuLiveCurveContext(context.Identity, context.EnabledCoreMask, context.PmVersion,
+            context.PmTableLength, context.Backend, context.BootSequence)
+        { RuntimeLifetime = context.RuntimeLifetime };
+        return Capture(curve, CpuTuningFeatures.None, token);
     }
 
     public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
@@ -135,6 +193,11 @@ internal sealed class WindowsCpuLiveCurveTrustedNativeProvider : ICpuLiveCurveTr
     private sealed class RangeScope(Func<bool> current) : CpuLiveCurveRangeTrustedScope
     {
         internal override bool IsCurrent(CpuLiveCurveContext exactContext) => current();
+    }
+
+    private sealed class PowerRangeScope(Func<bool> current) : CpuLivePowerRangeTrustedScope
+    {
+        internal override bool IsCurrent(CpuLivePowerContext exactContext) => current();
     }
 
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,

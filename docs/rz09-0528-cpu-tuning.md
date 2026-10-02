@@ -3,16 +3,16 @@
 CPU tuning has two targets: settings saved for the next boot, and settings applied
 to the running CPU. The CPU card keeps their observations separate. Refresh reads
 saved firmware. Opting into the installed AMD backend also permits fresh live CO
-queries when the exact signed stack is already running and runtime admission
+and PPT queries when the exact signed stack is already running and runtime admission
 passes. It never starts or provisions a driver.
 
 The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
 plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
 45 W, each followed by exact original restoration. The draft source now wires
-optional live CO through a retained device lifetime and fresh metadata proofs;
+optional live CO and read-only PPT through a shared retained device lifetime and fresh metadata proofs;
 this integration has not yet been installed or physically validated. Live PPT
-remains unavailable in default composition.
+mutation remains unavailable in default composition.
 The editor represents the 45–95 W power range and
 −30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
 and retains the editor's negative value. Each feature can be left unmanaged.
@@ -239,11 +239,11 @@ persistence outcomes retain uncertainty across restart; late completion cannot
 advance the journal. Fake tests cover this orchestration.
 Both live ownership observers persist confirmed drift, so returning values do
 not restore permission after restart. Unavailable observations preserve the
-existing journal. An unwired PPT backend now uses the same retained Service
+existing journal. The PPT backend uses the same retained Service
 worker as CO, including provider callbacks before native acquisition. Cancellation
 and backend replacement cannot release that worker or clear cleanup uncertainty.
-Its typed read-only observation facade preserves the existing attended
-RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
+Its typed read-only observation facade distinguishes retained-installed approval
+from attended RangeSingleSample approval and fresh run-owned driver lifetime; requested-state
 interpretation and range admission remain independent provider requirements.
 A Service-owned fixed metadata reader now decodes version 7 and continuous
 selector 50001, preserving partial evidence and actual disposal outcomes.
@@ -267,9 +267,14 @@ post-admission checks. Both retained absent/null acknowledgements with explicit
 compatibility provenance. This verifies the revised Capture reader's read-only
 sequence. Current remains a firmware shadow,
 and decoded bounds do not establish units, requested-state mapping or authority.
-The optional already-installed driver path still needs separately admitted
-production observation and lifetime evidence. No concrete PPT provider, proof
-factory enables these commands in default composition.
+The optional already-installed driver path uses the same retained device and
+file pins for CO and PPT. A separate typed installed approval binds each PPT
+observation to its initiating request, fresh USB identity and runtime lifetime.
+It checks firmware `0B5D1600` before copying the PM table, then obtains the fixed
+version-7/`50001` metadata pair. It never creates temporary driver authority or
+starts a driver. Default composition now includes PPT observation and its
+durable ownership store; production PPT write proofs remain disabled pending
+the reviewed physical setter fixture. This source change has not been installed.
 
 The service runtime now dispatches injected live backends through retained CO
 and PPT transactions. Each operation has admission tied to its initiating
@@ -298,7 +303,8 @@ independent fast and slow limits in milliwatts and report CO as unknown. The tra
 displays each limit separately, including fractional watts; it does not average
 them into an effective value. Older IPC 59 peers cannot read this expanded status
 contract, so deployment must update Service, Session Agent and Tray together.
-Default composition still supplies no concrete native provider.
+Default composition shares one concrete retained-installed provider across CO
+and PPT observation. Live PPT mutation remains unavailable.
 The coordinated IPC 61 installation passed complete saved-firmware baseline
 reads and typed service observation. First-failed-check diagnostics identified
 an initial pre-submission rejection at fresh power admission ([issue #641](https://github.com/OpenBladeProject/openblade-core/issues/641)):

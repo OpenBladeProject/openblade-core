@@ -2,13 +2,16 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-// No concrete provider exists. These callbacks independently establish fresh
+// The production provider shares the retained installed backend with live CO.
+// These callbacks independently establish fresh
 // source/continuity, PM requested-state interpretation, range units/applicability
 // and exact restoration ownership. Candidate bytes and equality only reject.
 internal interface ICpuLivePowerTrustedNativeProvider
 {
     CpuLivePowerContext? ReadFreshContext(CancellationToken token);
     CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext exactContext, CancellationToken token);
+    CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token) => null;
+    IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext exactContext, CancellationToken token) => null;
     CpuPmRunOwnedDriverLifetime? ReadFreshObservationLifetime(CpuLivePowerContext exactContext, CancellationToken token);
     // Admit the exact sample as requested/restorable state, not an effective
     // ceiling, and independently establish the metadata's mW/step1 contract.
@@ -22,22 +25,22 @@ internal interface ICpuLivePowerTrustedNativeProvider
 internal sealed record CpuLivePowerNativeBackendStatus(bool WorkerOutstanding, CpuNativeWorkerKind WorkerKind,
     bool ScopeInvalid, CpuLivePowerNativeResult? LastNativeResult);
 
-// Unwired bridge. Observation retains the existing attended approval/lifetime
-// gates; this is not production observation authority for an installed driver.
+// Production observation uses a typed retained-installed approval. The separate
+// attended path remains available to developer validation providers.
 internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
 {
     private readonly WindowsRz090528CpuNativeSession session;
     private readonly ICpuLivePowerTrustedNativeProvider provider;
-    private readonly IRz090528CpuLivePowerRangeMetadataReader metadataReader;
+    private readonly IRz090528CpuLivePowerRangeMetadataReader? metadataReader;
     private readonly CpuNativeWorkerCoordinator state;
 
     internal CpuLivePowerNativeBackend(ICpuQueryWindowsPlatform platform, ICpuLivePowerTrustedNativeProvider provider,
-        IRz090528CpuLivePowerRangeMetadataReader metadataReader)
+        IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null)
         : this(WindowsRz090528CpuNativeSession.ForPlatform(platform), provider, metadataReader) { }
     internal CpuLivePowerNativeBackend(WindowsRz090528CpuNativeSession session, ICpuLivePowerTrustedNativeProvider provider,
-        IRz090528CpuLivePowerRangeMetadataReader metadataReader)
+        IRz090528CpuLivePowerRangeMetadataReader? metadataReader = null)
     {
-        ArgumentNullException.ThrowIfNull(session); ArgumentNullException.ThrowIfNull(provider); ArgumentNullException.ThrowIfNull(metadataReader);
+        ArgumentNullException.ThrowIfNull(session); ArgumentNullException.ThrowIfNull(provider);
         this.session = session; this.provider = provider; this.metadataReader = metadataReader;
         state = CpuNativeWorkerCoordinator.ForSession(session);
     }
@@ -62,10 +65,22 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     {
         var context = provider.ReadFreshContext(token);
         if (context is not { IsWellFormed: true }) { return Empty(); }
-        var approval = provider.CreateObservationApproval(context, token);
-        if (approval?.Profile != CpuPmObservationProfile.RangeSingleSample || !MatchesFresh(context, token)) { return Empty(); }
-        var observed = session.ObservePower(approval, () => MatchesFresh(context, token)
-            ? provider.ReadFreshObservationLifetime(context, token) : null, metadataReader, token);
+        var installed = provider.CreateInstalledObservationApproval(context, token);
+        var reader = provider.CreateObservationMetadata(context, token) ?? metadataReader;
+        if (reader is null || !MatchesFresh(context, token)) { return Empty(); }
+        CpuLivePowerNativeObservationResult observed;
+        if (installed is not null)
+        {
+            observed = session.ObservePowerInstalled(installed, () => MatchesFresh(context, token)
+                ? context.Identity : null, reader, token);
+        }
+        else
+        {
+            var approval = provider.CreateObservationApproval(context, token);
+            if (approval?.Profile != CpuPmObservationProfile.RangeSingleSample || !MatchesFresh(context, token)) { return Empty(); }
+            observed = session.ObservePower(approval, () => MatchesFresh(context, token)
+                ? provider.ReadFreshObservationLifetime(context, token) : null, reader, token);
+        }
         if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Empty(); }
         token.ThrowIfCancellationRequested();
         var batch = observed.Batch; var samples = batch.CopySamples();

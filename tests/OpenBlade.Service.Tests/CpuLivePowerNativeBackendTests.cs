@@ -6,6 +6,25 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLivePowerNativeBackendTests
 {
+    [Fact]
+    public async Task InstalledObservationUsesProviderMetadataAndRetainedDeviceWithoutAttendedContinuity()
+    {
+        var platform = new Platform(); var metadata = new Metadata();
+        var provider = new Provider(platform) { InstalledMetadata = metadata };
+        var backend = new CpuLivePowerNativeBackend(platform, provider);
+        try
+        {
+            var result = await backend.ObserveAsync(default);
+            Assert.Equal(provider.Context, result.Context);
+            Assert.Equal(platform.Pair, CpuLivePowerSnapshot.TryCreate(result.Observation)!.Pair);
+            Assert.Equal(1, platform.Opens); Assert.Equal(1, platform.Duplicates);
+            Assert.Equal(0, platform.Arms); Assert.Equal(0, platform.Setters);
+            Assert.Equal(2, metadata.Calls); Assert.Equal(1, provider.Interpretations);
+            Assert.False(backend.Status.ScopeInvalid);
+        }
+        finally { provider.InstalledLease?.Dispose(); }
+    }
+
     [Theory]
     [InlineData("2.03")]
     [InlineData("Unknown")]
@@ -238,12 +257,22 @@ public sealed class CpuLivePowerNativeBackendTests
         internal int ContextReads, Interpretations;
         internal bool InterpretationAllowed = true, WrongProfile, ReuseApproval, ReuseProof;
         internal Action? OnContext, OnRange;
+        internal Metadata? InstalledMetadata;
+        internal CpuInstalledBackendLease? InstalledLease;
         internal CpuLivePowerNativeRequest? LastRequest;
         internal readonly List<(CpuLivePowerCommand Command, CpuLivePowerCommandPurpose Purpose, CpuLivePowerPair Before, CpuLivePowerPair Original)> Admissions = [];
         private CpuPmAttendedApproval? approval; private CpuLivePowerWriteProof? proof;
         public CpuLivePowerContext? ReadFreshContext(CancellationToken token) { ContextReads++; OnContext?.Invoke(); return Context; }
+        public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext context, CancellationToken token)
+        {
+            if (InstalledMetadata is null) { return null; }
+            InstalledLease ??= WindowsRz090528CpuNativeSession.ForPlatform(platform).TryRetainInstalledBackend(platform.ReadUsb, token);
+            return InstalledLease?.CreatePowerObservationApproval(() => context.MatchesHardwareContext(Context));
+        }
+        public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext context, CancellationToken token) => InstalledMetadata;
         public CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext context, CancellationToken token)
         {
+            Assert.Null(InstalledMetadata);
             if (ReuseApproval && approval is not null) { return approval; }
             var created = CpuPmAttendedApproval.Acknowledge(true, true, platform.Lifetime,
                 WrongProfile ? CpuPmObservationProfile.IdleThreeSamples : CpuPmObservationProfile.RangeSingleSample);
@@ -299,7 +328,7 @@ public sealed class CpuLivePowerNativeBackendTests
         internal CpuLivePowerPair Pair = CpuLivePowerTuningTransactionTests.PairFixture();
         internal readonly CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal readonly List<uint> Commands = [];
-        internal int Opens, Setters; internal bool Held, Pinned, InvalidVersion; internal string? CleanupFault; internal Action? BeforeSetter, AtSetter;
+        internal int Opens, Setters, Duplicates, Arms; internal bool Held, Pinned, InvalidVersion; internal string? CleanupFault; internal Action? BeforeSetter, AtSetter;
         private uint selected, argument, command; private int copies;
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, 0x02C6, "2.02");
         public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
@@ -316,7 +345,7 @@ public sealed class CpuLivePowerNativeBackendTests
         public void Release() { Assert.True(Held); Held = false; }
         public void Dispose() { }
         public ICpuQueryDevice OpenExistingDevice() { Assert.True(Held); Assert.True(Pinned); Opens++; copies = 0; return new Device(this); }
-        public ICpuPmContinuityScope ArmContinuity(CpuPmRunOwnedDriverLifetime lifetime) { Assert.Equal(Lifetime, lifetime); return new Continuity(this); }
+        public ICpuPmContinuityScope ArmContinuity(CpuPmRunOwnedDriverLifetime lifetime) { Arms++; Assert.Equal(Lifetime, lifetime); return new Continuity(this); }
         private sealed class Continuity(Platform platform) : ICpuPmContinuityScope
         {
             private readonly Guid session = Guid.NewGuid(); private bool disposed;
@@ -326,8 +355,12 @@ public sealed class CpuLivePowerNativeBackendTests
                     ? CpuPmContinuityFailure.UnregisterFailed : CpuPmContinuityFailure.Disposed : CpuPmContinuityFailure.None);
             public void Dispose() { disposed = true; }
         }
-        private sealed class Device(Platform platform) : ICpuQueryDevice
-        { public CpuQueryIoctlReply Invoke(uint code, byte[] input, int length) => platform.Invoke(code, input, length); public void Dispose() { } }
+        private sealed class Device(Platform platform) : ICpuQueryRetainableDevice
+        {
+            public ICpuQueryDevice Duplicate() { platform.Duplicates++; return new Device(platform); }
+            public CpuQueryIoctlReply Invoke(uint code, byte[] input, int length) => platform.Invoke(code, input, length);
+            public void Dispose() { }
+        }
         private sealed class ReleaseAction(Action action) : IDisposable { public void Dispose() => action(); }
         private CpuQueryIoctlReply Invoke(uint code, byte[] input, int length)
         {

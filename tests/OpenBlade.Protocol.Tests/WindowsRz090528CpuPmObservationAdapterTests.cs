@@ -10,6 +10,158 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(approval ?? Approval(fake), () => fake.FreshLifetime, fake, fake);
 
     [Fact]
+    public void InstalledObservationDuplicatesRetainedObjectWithoutOpeningOrArmingAndCannotReplay()
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        Assert.NotNull(held); fake.Events.Clear();
+        var approval = held.CreatePowerObservationApproval(() => true);
+        var result = session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata());
+        Assert.True(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(0x0B5D1600u, result.Batch.FirmwareVersion);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 6 }, fake.Commands);
+        Assert.Single(result.Batch.CopySamples()); Assert.True(held.IsCurrent);
+        Assert.Equal(1, fake.Events.Count(value => value == "duplicate"));
+        Assert.DoesNotContain("open", fake.Events); Assert.DoesNotContain("pin", fake.Events);
+        Assert.DoesNotContain("unpin", fake.Events); Assert.DoesNotContain("continuity-arm", fake.Events);
+        Assert.DoesNotContain("continuity-dispose", fake.Events);
+        Assert.Equal(0, fake.ServiceReads); // Use the existing retained-backend inspector.
+        int calls = fake.Codes.Count;
+        Assert.False(session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+        Assert.Equal(calls, fake.Codes.Count);
+        Assert.True(session.ObservePowerInstalled(held.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InstalledRequestRevocationIsStickyButDoesNotRevokeIndependentLease(bool throws)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        bool current = true;
+        var approval = held!.CreatePowerObservationApproval(() => current ? true : throws ? throw new IOException() : false);
+        fake.AfterCopy = _ => current = false;
+        var result = session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.True(result.CleanupComplete);
+        current = true; Assert.False(approval.IsCurrent()); Assert.True(held.IsCurrent);
+        fake.AfterCopy = null;
+        Assert.True(session.ObservePowerInstalled(held.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+    }
+
+    [Fact]
+    public void InstalledObservationRejectsForeignLeaseAndExpiredRequestBeforeTraffic()
+    {
+        var fake = new Fake { Installed = true }; var foreign = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        var other = WindowsRz090528CpuNativeSession.ForPlatform(foreign);
+        Assert.False(other.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), foreign.ReadUsb, new CompleteMetadata()).Batch.Complete);
+        Assert.Empty(foreign.Events);
+        fake.Events.Clear();
+        Assert.False(session.ObservePowerInstalled(held.CreatePowerObservationApproval(() => false), fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+        Assert.Empty(fake.Codes); Assert.DoesNotContain("duplicate", fake.Events);
+    }
+
+    [Theory]
+    [InlineData("service")]
+    [InlineData("start")]
+    [InlineData("controller")]
+    [InlineData("hash")]
+    public void InstalledBackendDriftRevokesHeldLeaseAcrossRequests(string drift)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        fake.AfterCopy = value => value.Failure = drift;
+        Assert.False(session.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+        fake.Failure = null; fake.AfterCopy = null;
+        Assert.False(held.IsCurrent);
+        int calls = fake.Codes.Count;
+        Assert.False(session.ObservePowerInstalled(held.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata()).Batch.Complete);
+        Assert.Equal(calls, fake.Codes.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InstalledCleanupAmbiguityRetainsAnchorAndSharedLatch(bool metadataFailure)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        fake.Events.Clear(); if (!metadataFailure) { fake.ThrowAt = "close"; }
+        var result = session.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), fake.ReadUsb,
+            new CompleteMetadata { CleanupFails = metadataFailure });
+        Assert.False(result.Batch.Complete); Assert.False(result.CleanupComplete); Assert.True(result.WorkerTerminal);
+        held.Dispose(); Assert.True(fake.Pinned); Assert.DoesNotContain("unpin", fake.Events);
+        Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb).Status);
+    }
+
+    [Fact]
+    public void InstalledWrongFirmwareStopsBeforeCopyAndMetadata()
+    {
+        var fake = new Fake { Installed = true, Firmware = 0x005D000B };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        var result = session.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.Equal(new uint[] { 2 }, fake.Commands); Assert.Equal(0, fake.Copies);
+        Assert.Null(result.Batch.FirmwareVersion);
+    }
+
+    [Fact]
+    public void InstalledLeaseDisposalDuringWorkerKeepsPinsUntilSameWorkerReturns()
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        fake.Events.Clear();
+        fake.AfterCopy = _ =>
+        {
+            held!.Dispose(); Assert.True(fake.Pinned); Assert.DoesNotContain("close", fake.Events);
+            Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb).Status);
+        };
+        var result = session.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.False(fake.Pinned); Assert.Equal(2, fake.Events.Count(value => value == "close"));
+        Assert.Equal(1, fake.Events.Count(value => value == "unpin"));
+    }
+
+    [Fact]
+    public void InstalledUsbIsRecheckedAtEveryNativeBoundary()
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        // Flip after the first firmware query submission, before its reply and
+        // well before the later snapshot boundary or kernel-copy operation.
+        DeviceIdentity? ReadUsb() => fake.Commands.Count == 0 ? fake.ReadUsb() : null;
+        var result = session.ObservePowerInstalled(held!.CreatePowerObservationApproval(() => true), ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.Equal(new uint[] { 2 }, fake.Commands);
+        Assert.Equal(0, fake.Copies); Assert.Null(result.Batch.FirmwareVersion);
+        Assert.True(result.CleanupComplete); Assert.True(held.IsCurrent);
+    }
+
+    private sealed class CompleteMetadata : IRz090528CpuLivePowerRangeMetadataReader
+    {
+        internal bool CleanupFails;
+        private CpuLivePowerRangeMetadataCall<T> Call<T>(T value, Action checkpoint) where T : class
+        {
+            checkpoint();
+            return new(value, CpuLivePowerRangeMetadataStatus.Complete,
+                CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
+                    | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead
+                    | (CleanupFails ? 0 : CpuLivePowerRangeMetadataStages.Disposed), DateTimeOffset.UtcNow, 1);
+        }
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint) => Call(new CpuLivePowerRangeVersion(7, false), checkpoint);
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) => throw new InvalidOperationException();
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) =>
+            Call(new CpuLivePowerRangeMinMax(0x50001, 0, 0, 125000, 1), checkpoint);
+    }
+
+    [Fact]
     public void BothDistinctApprovalsAndFreshLifetimeAreRequiredBeforePlatformAccess()
     {
         var fake = new Fake();
@@ -415,7 +567,8 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal CpuPmRunOwnedDriverLifetime? FreshLifetime;
         internal string? Failure, ThrowAt;
         internal string Bios = "2.02";
-        internal bool Pinned, Locked, ContinuityFailure, CleanupFailure;
+        internal bool Pinned, Locked, ContinuityFailure, CleanupFailure, Installed;
+        internal uint Firmware = 0x0B5D1600;
         internal CpuQueryMutexWait Wait = CpuQueryMutexWait.Acquired;
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
@@ -436,7 +589,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         public InstalledCpuBackendSnapshot ReadBackend()
         {
             FullBackendReads++;
-            if (FullBackendReads > 1) { Assert.True(Pinned); Assert.True(Locked); }
+            if (FullBackendReads > 1) { Assert.True(Pinned); if (!Installed) { Assert.True(Locked); } }
             var files = Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair => new CpuBackendFileMetadata(pair.Key,
                 Failure == "hash" ? "bad" : pair.Value, Failure != "signature", Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray();
             var service = Service(); return new(files, service.Exists, service.ImagePath, service.Type, service.Start, service.Running);
@@ -492,8 +645,9 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             public void Release() { fake.Event("release"); Assert.True(fake.Locked); fake.Locked = false; }
             public void Dispose() => fake.Event("mutex-dispose");
         }
-        private sealed class Device(Fake fake) : ICpuQueryDevice
+        private sealed class Device(Fake fake) : ICpuQueryRetainableDevice
         {
+            public ICpuQueryDevice Duplicate() { fake.Event("duplicate"); Assert.True(fake.Pinned); Assert.True(fake.Locked); return new Device(fake); }
             public CpuQueryIoctlReply Invoke(uint code, byte[] input, int length) => fake.Invoke(code, input, length);
             public void Dispose() { fake.Event("close"); if (fake.ThrowAt == "close") { throw new IOException(); } }
         }
@@ -523,7 +677,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
                     : offset == 0x140 ? 0xFF55u : selected == 0x03820AB0 ? ~0xFF55u << 5
                     : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
                     : selected is 0x03820A13 or 0x03820A90 or 0x03B10A80 ? 1u
-                    : selected == 0x03B10A88 ? command == 2 ? 0x0B5D1600u : command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
+                    : selected == 0x03B10A88 ? command == 2 ? Firmware : command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
                 Put(reply, 20, value);
             }
             else if (code == 0x81112F08)

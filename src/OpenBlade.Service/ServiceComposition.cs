@@ -26,14 +26,19 @@ internal static class ServiceComposition
             Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-tuning-ownership.json")));
         services.AddSingleton<ICpuLiveCurveOwnershipJournalStore>(_ => new CpuLiveCurveOwnershipJournalStore(
             Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-live-curve-ownership.json")));
-        services.AddSingleton(provider => new WindowsCpuLiveCurveTrustedNativeProvider(
+        services.AddSingleton<ICpuLivePowerOwnershipJournalStore>(_ => new CpuLivePowerOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-live-power-ownership.json")));
+        services.AddSingleton(provider => new WindowsCpuLiveTuningTrustedNativeProvider(
             WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
             () => provider.GetRequiredService<CpuTuningController>(), new WindowsCpuTuningObservationSource()));
         services.AddSingleton(provider => new CpuTuningController(new WindowsCpuTuningObservationSource(),
             provider.GetRequiredService<ICpuTuningOwnershipJournalStore>(),
             curveBackend: new CpuLiveCurveNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
-                provider.GetRequiredService<WindowsCpuLiveCurveTrustedNativeProvider>()),
-            curveStore: provider.GetRequiredService<ICpuLiveCurveOwnershipJournalStore>()));
+                provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>()),
+            curveStore: provider.GetRequiredService<ICpuLiveCurveOwnershipJournalStore>(),
+            powerBackend: new CpuLivePowerNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+                provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>()),
+            powerStore: provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>()));
         services.AddSingleton<IServiceControlRuntime>(provider =>
             new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),

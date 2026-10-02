@@ -4,8 +4,59 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class WindowsCpuLiveCurveTrustedNativeProviderTests
+public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
+    [Fact]
+    public async Task PowerObservationSharesRetainedDriverWithCurveAndCannotManufactureAttendedAuthority()
+    {
+        using var fixture = new Fixture();
+        var power = (ICpuLivePowerTrustedNativeProvider)fixture.Provider;
+        Assert.Null(power.ReadFreshContext(default));
+        CpuPmInstalledApproval? captured = null;
+        await fixture.Run(curve =>
+        {
+            var context = Assert.IsType<CpuLivePowerContext>(power.ReadFreshContext(default));
+            Assert.Equal(curve.Identity, context.Identity); Assert.Equal(curve.Backend, context.Backend);
+            Assert.Equal(curve.RuntimeLifetime, context.RuntimeLifetime);
+            Assert.Null(power.CreateObservationApproval(context, default));
+            Assert.Null(power.ReadFreshObservationLifetime(context, default));
+            captured = power.CreateInstalledObservationApproval(context, default);
+            Assert.NotNull(captured); Assert.True(captured.IsCurrent());
+            Assert.NotNull(power.CreateObservationMetadata(context, default));
+            Assert.Equal(0, fixture.MetadataOpens);
+            // Physical PPT admission is still pending, including restoration.
+            Assert.False(power.CheckWriteAdmission(context, default, CpuLivePowerCommandPurpose.Restore, null!, null!, default));
+            Assert.Null(power.CreateWriteProof(context, null!, default));
+        });
+        Assert.False(captured!.IsCurrent());
+        await fixture.Run(_ =>
+        {
+            var context = power.ReadFreshContext(default)!;
+            Assert.False(captured.IsCurrent());
+            Assert.True(power.CreateInstalledObservationApproval(context, default)!.IsCurrent());
+        });
+        Assert.Equal(1, fixture.Platform.Opens); Assert.Equal(1, fixture.Platform.Pins);
+    }
+
+    [Fact]
+    public async Task PowerObservationRejectsChangedRuntimeContextAndUsbReturnCannotRenewOldApproval()
+    {
+        using var fixture = new Fixture();
+        var power = (ICpuLivePowerTrustedNativeProvider)fixture.Provider;
+        await fixture.Run(_ =>
+        {
+            var context = power.ReadFreshContext(default)!;
+            var changed = context with { RuntimeLifetime = context.RuntimeLifetime! with { PowerSourceGeneration = 99 } };
+            Assert.Null(power.CreateInstalledObservationApproval(changed, default));
+            Assert.Null(power.CreateObservationMetadata(changed, default));
+            var approval = power.CreateInstalledObservationApproval(context, default)!;
+            var usb = fixture.Usb; fixture.Usb = null;
+            Assert.False(approval.IsCurrent());
+            fixture.Usb = usb;
+            Assert.False(approval.IsCurrent());
+        });
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -116,7 +167,7 @@ public sealed class WindowsCpuLiveCurveTrustedNativeProviderTests
     private sealed class Fixture : IDisposable
     {
         internal readonly Platform Platform = new();
-        internal readonly WindowsCpuLiveCurveTrustedNativeProvider Provider;
+        internal readonly WindowsCpuLiveTuningTrustedNativeProvider Provider;
         private readonly ProbeBackend backend = new();
         private readonly CpuTuningController controller;
         internal int MetadataOpens;

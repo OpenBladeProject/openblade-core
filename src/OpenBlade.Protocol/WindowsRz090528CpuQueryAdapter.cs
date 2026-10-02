@@ -111,6 +111,11 @@ internal sealed class CpuInstalledBackendLease : IDisposable
             return true;
         }
     }
+    internal CpuPmInstalledApproval CreatePowerObservationApproval(Func<bool> current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        return new(this, current);
+    }
     internal ICpuQueryDevice Duplicate()
     {
         lock (gate)
@@ -174,6 +179,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         new(() => WindowsRz090528CpuNativeSession.ForPlatform(InstalledPlatform.Value));
     private readonly ICpuQueryWindowsPlatform platform;
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
+    private readonly ICpuQueryWindowsPlatform retentionPlatform;
     private readonly ICpuNativeWireAdmission wire;
     private ICpuQueryDevice? device;
     private CpuInstalledBackendLease? retained;
@@ -187,9 +193,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         : this(platform, readFreshUsbIdentity, new CpuQueryWireAdmission()) { }
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity,
-        ICpuNativeWireAdmission wire)
+        ICpuNativeWireAdmission wire, ICpuQueryWindowsPlatform? retentionPlatform = null)
     {
         this.platform = platform;
+        this.retentionPlatform = retentionPlatform ?? platform;
         this.readFreshUsbIdentity = readFreshUsbIdentity;
         this.wire = wire;
     }
@@ -319,7 +326,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             // Revalidate after waiting, including an abandoned mutex. The engine
             // always rediscovers PCI topology, masks and mailbox state from scratch.
             stage = CpuQueryStage.BackendFilePins;
-            var anchor = NativeOperations.GetValue(platform, static _ => new()).Retained;
+            var anchor = NativeOperations.GetValue(retentionPlatform, static _ => new()).Retained;
             if (anchor is not null)
             {
                 if (!anchor.TryBorrow()) { throw new QueryAdmissionDeniedException(); }

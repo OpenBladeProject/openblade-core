@@ -9,7 +9,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceCompositionTests
 {
     [Fact]
-    public void CpuCompositionRetainsOptionalLiveCurveBackendWithoutNativeWorkAtConstruction()
+    public void CpuCompositionSharesOptionalLiveProviderWithoutNativeWorkAtConstruction()
     {
         var services = new ServiceCollection();
         services.AddServiceControlRuntime(Path.Combine(Path.GetTempPath(), "OpenBlade.CpuCompositionTests", Guid.NewGuid().ToString("N")));
@@ -18,9 +18,11 @@ public sealed class ServiceCompositionTests
         Assert.True(controller.HasSavedBackend);
         Assert.True(controller.HasLiveBackend);
         Assert.Null(controller.CaptureLiveRuntimeLifetime());
-        var nativeProvider = provider.GetRequiredService<WindowsCpuLiveCurveTrustedNativeProvider>();
+        var nativeProvider = provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>();
         Assert.Null(nativeProvider.ReadFreshContext(default));
-        Assert.Same(nativeProvider, provider.GetRequiredService<WindowsCpuLiveCurveTrustedNativeProvider>());
+        Assert.Null(((ICpuLivePowerTrustedNativeProvider)nativeProvider).ReadFreshContext(default));
+        Assert.NotNull(provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>());
+        Assert.Same(nativeProvider, provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>());
     }
 
     [Fact]

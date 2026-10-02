@@ -3,14 +3,17 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal enum CpuPmSessionContinuity { Unknown, ConfirmedFreshRunOwnedLifetime, Interrupted }
+internal enum CpuPmSessionContinuity { Unknown, ConfirmedFreshRunOwnedLifetime, Interrupted, ConfirmedRetainedInstalledLifetime }
 internal sealed record CpuPmSessionEvidence(DeviceIdentity UsbIdentity, HostIdentityReadResult Host,
     CpuQueryProcessorIdentity Processor, uint MaximumExtendedCpuidLeaf, int Package,
     InstalledCpuBackendSnapshot Backend, bool ControllersAbsent, CpuPmSessionContinuity Continuity,
-    Guid SessionId, Guid DriverLifetimeId);
+    Guid SessionId, Guid DriverLifetimeId)
+{
+    internal CpuInstalledBackendLease? RetainedInstalledLease { get; init; }
+}
 
-// This is fresh evidence, not an approval flag. The attended adapter must own
-// approval, pins, lifecycle/suspend observations and the existing-device handle.
+// Fresh evidence is separate from approval. Attended runs own parent continuity;
+// installed observations bind the actual retained lease and initiating request.
 // File metadata comes from immutable held pins; fresh checks use cheap session,
 // power, controller and service evidence, not repeated hashing or PnP scans.
 internal interface ICpuPmObservationSessionAdmission
@@ -85,6 +88,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private uint orientationMask, fuseMask;
     private TimeSpan started, previousClock;
     private Guid sessionId, lifetimeId;
+    private CpuInstalledBackendLease? installedLease;
     private int ownerThread;
     private bool used, readingVersionArgument, readingFirmwareArgument;
     private uint? firmwareVersion;
@@ -267,13 +271,29 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }
                 || evidence.Processor is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
             || evidence.MaximumExtendedCpuidLeaf < 0x80000001 || evidence.Package != 1
-            || !evidence.ControllersAbsent || evidence.Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime
-            || evidence.SessionId == Guid.Empty || evidence.DriverLifetimeId == Guid.Empty
+            || !evidence.ControllersAbsent
             || Rz090528InstalledCpuBackendInspector.Evaluate(evidence.Backend).Availability != CpuTuningBackendAvailability.Available)
         { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
-        if (sessionId == Guid.Empty) { sessionId = evidence.SessionId; lifetimeId = evidence.DriverLifetimeId; }
-        else if (sessionId != evidence.SessionId || lifetimeId != evidence.DriverLifetimeId)
-        { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+        if (evidence.Continuity == CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime)
+        {
+            if (profile != CpuPmObservationProfile.RangeSingleSample || sessionId != Guid.Empty
+                || evidence.SessionId != Guid.Empty || evidence.DriverLifetimeId != Guid.Empty
+                || evidence.RetainedInstalledLease is not { LifetimeCurrent: true } current
+                || !current.RegistrationMatches(evidence.Backend)
+                || installedLease is not null && !ReferenceEquals(installedLease, current))
+            { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+            installedLease = current;
+        }
+        else
+        {
+            if (installedLease is not null || evidence.RetainedInstalledLease is not null
+                || evidence.Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime
+                || evidence.SessionId == Guid.Empty || evidence.DriverLifetimeId == Guid.Empty)
+            { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+            if (sessionId == Guid.Empty) { sessionId = evidence.SessionId; lifetimeId = evidence.DriverLifetimeId; }
+            else if (sessionId != evidence.SessionId || lifetimeId != evidence.DriverLifetimeId)
+            { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
+        }
         // Include the fresh evidence provider's time in the cooperative budget.
         now = clock.MonotonicNow;
         if (now < previousClock || now - started >= TimeSpan.FromSeconds(90))

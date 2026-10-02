@@ -76,37 +76,53 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     private static CpuLivePowerNativeObservationResult ObservePmScope(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
         CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader,
-        ICpuPmContinuityScope? borrowedContinuity = null)
+        ICpuPmContinuityScope? borrowedContinuity = null, CpuPmInstalledApproval? installedApproval = null,
+        Func<DeviceIdentity?>? readInstalledUsb = null)
     {
-        if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
-        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples), true, true); }
-        ArgumentNullException.ThrowIfNull(lifetime); ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
+        bool installed = readInstalledUsb is not null;
+        CpuPmObservationProfile profile = installed ? CpuPmObservationProfile.RangeSingleSample
+            : approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples;
+        if (installed ? installedApproval?.Consume(platform) != true || metadataReader is null
+            : approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile), true, true); }
+        if (!installed) { ArgumentNullException.ThrowIfNull(lifetime); }
+        ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
         token.ThrowIfCancellationRequested();
         // Use the actual persistent platform, never the per-call PmAdapter.
         // The gate covers notification registration and cleanup as well as IOCTLs.
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
-        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(CpuPmObservationStage.Mutex, CpuPmObservationFailure.Busy, approval.Profile), true, true); }
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(CpuPmObservationStage.Mutex, CpuPmObservationFailure.Busy, profile), true, true); }
         ICpuPmContinuityScope? continuity = null;
         PmAdapter? adapter = null;
         var metadata = metadataReader is null ? null : new PmMetadataCleanup(metadataReader);
         bool cleanup = true, unknownFailure = false;
-        CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval.Profile);
+        CpuPmObservationBatch result = WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile);
         try
         {
-            if (lifetime() != approval.Lifetime) { throw new IOException("PM lifetime admission denied."); }
-            // Arm before even constructing/acquiring a native mutex or device.
-            // If registration throws before returning its scope, its resources
-            // cannot be proven released and this platform must stay parked.
-            cleanup = borrowedContinuity is not null;
-            continuity = borrowedContinuity ?? platform.ArmContinuity(approval.Lifetime);
-            if (continuity is null) { throw new IOException("PM continuity scope unavailable."); }
-            cleanup = true;
-            adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
+            if (installed)
+            {
+                if (!ReferenceEquals(operation.Retained, installedApproval!.Lease))
+                { throw new IOException("Installed PM anchor differs from the retained session."); }
+                adapter = new PmAdapter(platform, installedApproval!, readInstalledUsb!, clock);
+            }
+            else
+            {
+                if (lifetime() != approval!.Lifetime) { throw new IOException("PM lifetime admission denied."); }
+                // Arm before even constructing/acquiring a native mutex or device.
+                // If registration throws before returning its scope, its resources
+                // cannot be proven released and this platform must stay parked.
+                cleanup = borrowedContinuity is not null;
+                continuity = borrowedContinuity ?? platform.ArmContinuity(approval.Lifetime);
+                if (continuity is null) { throw new IOException("PM continuity scope unavailable."); }
+                cleanup = true;
+                adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
+            }
             adapter.FullAdmission();
             token.ThrowIfCancellationRequested();
-            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, approval.Profile, metadata).Observe(token));
-            if (continuity.ReadFresh(lifetime()).Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime)
+            result = adapter.PreserveRejectedCap(new Rz090528CpuPmObservationEngine(adapter.Transport, adapter, adapter, clock, profile, metadata).Observe(token));
+            if (installed ? !installedApproval!.IsCurrent() || !installedApproval.Lease.IsCurrent
+                : continuity!.ReadFresh(lifetime()).Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime)
             { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         }
         catch (OperationCanceledException) { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.Cancelled); }
@@ -125,7 +141,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                     try
                     {
                         continuity.Dispose();
-                        cleanup = continuity.ReadFresh(approval.Lifetime).Failure == CpuPmContinuityFailure.Disposed;
+                        cleanup = continuity.ReadFresh(approval!.Lifetime).Failure == CpuPmContinuityFailure.Disposed;
                     }
                     catch (Exception e) when (PmBoundedFailure(e) || e is OperationCanceledException) { }
                 }
@@ -136,7 +152,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 // cleanup cancellation swallowed by the PM engine's diagnostics.
                 cleanup &= !unknownFailure && adapter?.Transport.cleanupFailed != true && metadata?.CleanupComplete != false;
                 if (!cleanup)
-                { result = Incomplete(result, CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
+                {
+                    installedApproval?.Lease.Revoke(true);
+                    result = Incomplete(result, CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed);
+                }
                 else { Volatile.Write(ref operation.Active, 0); }
             }
         }
@@ -173,9 +192,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     private sealed class PmAdapter : ICpuQueryWindowsPlatform, IRz090528CpuQuerySynchronization, ICpuPmObservationSessionAdmission
     {
         private readonly ICpuPmWindowsPlatform platform;
-        private readonly ICpuPmContinuityScope continuity;
-        private readonly CpuPmRunOwnedDriverLifetime lifetime;
-        private readonly Func<CpuPmRunOwnedDriverLifetime?> readLifetime;
+        private readonly ICpuPmContinuityScope? continuity;
+        private readonly CpuPmRunOwnedDriverLifetime? lifetime;
+        private readonly Func<CpuPmRunOwnedDriverLifetime?>? readLifetime;
+        private readonly CpuPmInstalledApproval? installedApproval;
+        private readonly Func<DeviceIdentity?>? readInstalledUsb;
         private readonly int thread = Environment.CurrentManagedThreadId;
         private HostIdentityReadResult? host;
         private CpuQueryProcessorIdentity processor;
@@ -192,6 +213,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             Transport = new(this, ReadUsb, new PmNativeWire(profile, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
                     clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)));
+        }
+        internal PmAdapter(ICpuPmWindowsPlatform platform, CpuPmInstalledApproval approval,
+            Func<DeviceIdentity?> readUsb, ICpuPmObservationClock clock)
+        {
+            this.platform = platform; installedApproval = approval; readInstalledUsb = readUsb;
+            // The original platform key selects the existing anchor's pins and
+            // exact device object. The transient PM adapter must not reopen it.
+            pinned = true;
+            Transport = new(this, ReadUsb, new PmNativeWire(CpuPmObservationProfile.RangeSingleSample, (address, reply) =>
+                rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
+                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)), platform)
+            { queryCurrent = approval.IsCurrent };
         }
         internal CpuPmObservationBatch PreserveRejectedCap(CpuPmObservationBatch result)
         {
@@ -236,10 +269,16 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         private CpuPmContinuityEvidence CheckContinuity()
         {
             CheckThread();
-            CpuPmRunOwnedDriverLifetime? fresh = readLifetime();
-            var evidence = continuity.ReadFresh(fresh);
+            if (installedApproval is { } installed)
+            {
+                if (!installed.IsCurrent() || !installed.Lease.IsCurrent)
+                { throw new IOException("Installed PM lifetime is unavailable."); }
+                return new(CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime, Guid.Empty, Guid.Empty, CpuPmContinuityFailure.None);
+            }
+            CpuPmRunOwnedDriverLifetime? fresh = readLifetime!();
+            var evidence = continuity!.ReadFresh(fresh);
             if (fresh != lifetime || evidence.Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime
-                || evidence.SessionId == Guid.Empty || evidence.DriverLifetimeId != lifetime.DriverLifetimeId)
+                || evidence.SessionId == Guid.Empty || evidence.DriverLifetimeId != lifetime!.DriverLifetimeId)
             { throw new IOException("PM lifetime continuity is unavailable."); }
             return evidence;
         }
@@ -257,15 +296,23 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public CpuPmSessionEvidence ReadFresh()
         {
             var current = CheckContinuity();
+            if (installedApproval is not null) { _ = ReadUsb(); }
             if (host is null || usb is null || files is null || leased && !pinned) { throw new IOException("PM provenance unavailable."); }
-            CpuPmServiceSnapshot service = platform.ReadService();
-            var backend = new InstalledCpuBackendSnapshot(files, service.Exists, service.ImagePath, service.Type, service.Start, service.Running);
-            if (service.Start != 3 || Rz090528InstalledCpuBackendInspector.Evaluate(backend).Availability != CpuTuningBackendAvailability.Available)
-            { throw new IOException("PM driver state changed."); }
+            InstalledCpuBackendSnapshot backend;
+            if (installedApproval is not null) { backend = platform.ReadBackend(); }
+            else
+            {
+                CpuPmServiceSnapshot service = platform.ReadService();
+                backend = new(files, service.Exists, service.ImagePath, service.Type, service.Start, service.Running);
+            }
+            if ((installedApproval is null ? backend.Start != 3 : !installedApproval.Lease.RegistrationMatches(backend))
+                || Rz090528InstalledCpuBackendInspector.Evaluate(backend).Availability != CpuTuningBackendAvailability.Available)
+            { installedApproval?.Lease.Dispose(); throw new IOException("PM driver state changed."); }
             bool controllers = platform.ControllersAbsent();
             current = CheckContinuity();
             return new(usb, host.Value, processor, package.MaximumExtendedLeaf, package.Package, backend, controllers,
-                current.Continuity, current.SessionId, current.DriverLifetimeId);
+                current.Continuity, current.SessionId, current.DriverLifetimeId)
+            { RetainedInstalledLease = installedApproval?.Lease };
         }
         public HostIdentityReadResult ReadHost()
         {
@@ -286,15 +333,17 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         private DeviceIdentity? ReadUsb()
         {
-            usb = platform.ReadUsb(); if (!ExactUsb(usb)) { throw new IOException("PM USB admission denied."); }
+            usb = readInstalledUsb is null ? platform.ReadUsb() : readInstalledUsb();
+            if (!ExactUsb(usb)) { throw new IOException("PM USB admission denied."); }
             return usb;
         }
         public bool ControllersAbsent() => platform.ControllersAbsent();
         public InstalledCpuBackendSnapshot ReadBackend()
         {
             var value = platform.ReadBackend();
-            if (value.Start != 3 || Rz090528InstalledCpuBackendInspector.Evaluate(value).Availability != CpuTuningBackendAvailability.Available)
-            { throw new IOException("PM backend admission denied."); }
+            if ((installedApproval is null ? value.Start != 3 : !installedApproval.Lease.RegistrationMatches(value))
+                || Rz090528InstalledCpuBackendInspector.Evaluate(value).Availability != CpuTuningBackendAvailability.Available)
+            { installedApproval?.Lease.Dispose(); throw new IOException("PM backend admission denied."); }
             // Pre-mutex inspection is preliminary only. The actual lease repeats
             // this under deny-write/delete pins before and after device opening.
             files = Array.AsReadOnly(value.Files.ToArray());
