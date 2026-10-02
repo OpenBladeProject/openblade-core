@@ -1,366 +1,199 @@
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
-
 namespace OpenBlade.Tray.Tests;
 
 public sealed class CpuTuningViewModelTests
 {
-    private static DeviceCapabilities Capabilities(DeviceFeatureAccess access) => new(new HashSet<PerformancePreset>(), new HashSet<FanMode>(),
-        new HashSet<LightingEffect>(), new HashSet<int>(), false, false)
-    {
-        CpuPowerLimit = new(new(45, 95, 1), access),
-        CpuVoltageOptimizer = new(new(-30, -1, 1), access) { SupportsEnableDisable = true },
-    };
-    private static CpuTuningStatus Status(DeviceFeatureAccess access, bool restore = false) => new(
-        new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -10, [])), null,
-        new(access, CpuTuningBackendAvailability.Available),
-        new(access, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, restore)
-    {
-        FirmwareRecovery = restore
-            ? new(CpuTuningRecoveryState.RestoreReady,
-                CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer) : null,
-    };
+    private static DeviceCapabilities Caps(DeviceFeatureAccess access = DeviceFeatureAccess.ReadWrite) => new(
+        new HashSet<PerformancePreset>(), new HashSet<FanMode>(), new HashSet<LightingEffect>(), new HashSet<int>(), false, false)
+    { CpuPowerLimit = new(new(45, 95, 1), access), CpuVoltageOptimizer = new(new(-30, -1, 1), access) { SupportsEnableDisable = true } };
+    private static CpuTuningStatus Status(int saved = -10, int? live = null) => new(
+        new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, saved, [])),
+        live.HasValue ? new(null, [new(0, live.Value), new(1, live.Value)]) : null,
+        new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available),
+        new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, false);
 
     [Fact]
-    public void ObservedCapabilitiesRemainVisibleButOptInDoesNotAdmitWrites()
+    public void ConfirmedTargetsInitializeOnceAndRefreshPreservesEdits()
     {
         var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly), Capabilities(DeviceFeatureAccess.ObservedOnly));
-        vm.UseInstalledBackend = true;
-        vm.ManagePower = true;
-        Assert.True(vm.IsVisible);
-        Assert.True(vm.CanRefresh);
-        Assert.False(vm.CanEdit);
-        Assert.False(vm.ApplyCommand.CanExecute(null));
-        Assert.False(vm.RestoreCommand.CanExecute(null));
-        Assert.Contains("unknown", vm.LiveSummary);
-        Assert.Contains("unknown", vm.PendingBootSummary);
-    }
-
-    [Fact]
-    public void RefreshPreservesEditorIntentAndNeverUsesSavedAsLive()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { ManagePower = true, PowerLimitWatts = 80, ManageCurve = true, CurveValue = -23, CurveEnabled = false };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.Equal(80, vm.PowerLimitWatts);
-        Assert.Equal(-23, vm.CurveValue);
-        Assert.False(vm.CurveEnabled);
-        Assert.Equal(0, vm.Settings.CurveOptimizer!.EffectiveValue);
-        Assert.Contains("65", vm.SavedSummary);
-        Assert.Contains("unknown", vm.LiveSummary);
-        vm.CurveEnabled = true;
-        Assert.Equal(-23, vm.Settings.CurveOptimizer.EffectiveValue);
-    }
-
-    [Fact]
-    public void SafetyAndActualRestorePendingGateActions()
-    {
-        bool safe = true;
-        var vm = new CpuTuningViewModel(new Client(), () => safe, () => true) { ManagePower = true };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.True(vm.CanApply);
-        Assert.False(vm.CanRestore);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true), Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.True(vm.CanRestore);
-        safe = false;
-        vm.NotifyState();
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RestoreRequiresAdmissionForEveryOwnedFeature(bool live)
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { LiveNow = live };
-        CpuTuningStatus status = Status(DeviceFeatureAccess.ReadWrite, restore: true) with
-        {
-            LiveRecovery = new(CpuTuningRecoveryState.RestoreReady,
-                CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer),
-        };
-        vm.UpdateStatus(status, Capabilities(DeviceFeatureAccess.ObservedOnly));
-        Assert.True(vm.BackendReadWriteAvailable);
-        Assert.Equal(!live, vm.CanRestore);
-        Assert.Equal(!live, vm.RestoreCommand.CanExecute(null));
-        vm.UpdateStatus(status,
-            Capabilities(DeviceFeatureAccess.ReadWrite) with
-            {
-                CpuVoltageOptimizer = new(new(-30, -1, 1), DeviceFeatureAccess.ReadOnly),
-            });
-        Assert.False(vm.CanRestore);
-        // Restore admission cannot be widened by leaving an editor field unmanaged.
-        vm.ManageCurve = false;
-        Assert.False(vm.CanRestore);
-    }
-
-    [Fact]
-    public void SavedAdmissionDoesNotAdmitLiveOrBypassSelectedBackend()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { ManagePower = true, ManageCurve = true, CurveEnabled = true };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), Capabilities(DeviceFeatureAccess.ObservedOnly));
-        Assert.True(vm.CanEditPower);
-        Assert.True(vm.CanEditCurve);
-        Assert.True(vm.ApplyCommand.CanExecute(null));
+        Assert.Equal(-1, vm.CurveValue);
+        vm.UpdateStatus(Status(-12, -7), Caps());
+        Assert.True(vm.CurveEnabled); Assert.Equal(-12, vm.CurveValue);
+        vm.CurveValue = -23; vm.CurveEnabled = false;
+        vm.UpdateStatus(Status(-18, -9), Caps());
+        Assert.Equal(-23, vm.CurveValue); Assert.False(vm.CurveEnabled);
         vm.LiveNow = true;
-        Assert.True(vm.BackendReadWriteAvailable);
-        Assert.False(vm.CanEditPower);
-        Assert.False(vm.CanEditCurve);
-        Assert.False(vm.ApplyCommand.CanExecute(null));
+        Assert.Equal(-9, vm.CurveValue); Assert.True(vm.CurveEnabled);
         vm.LiveNow = false;
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite) with
-        {
-            Firmware = new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Available),
-        }, Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.False(vm.CanEdit);
-        Assert.False(vm.CanApply);
-        vm.LiveNow = true;
-        Assert.True(vm.CanApply);
+        Assert.Equal(-23, vm.CurveValue); Assert.False(vm.CurveEnabled);
     }
-
+    [Fact]
+    public void PreObservationEditsAndMissingLiveStateNeverUseSavedValues()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { CurveValue = -21 };
+        vm.UpdateStatus(Status(-20), Caps());
+        Assert.Equal(-21, vm.CurveValue); Assert.False(vm.CurveEnabled);
+        vm.LiveNow = true;
+        Assert.Equal(-1, vm.CurveValue); Assert.Contains("unknown", vm.LiveSummary);
+        Assert.Contains("-20", vm.SavedSummary);
+        vm.UpdateStatus(Status(-20, -6), Caps());
+        Assert.Equal(-6, vm.CurveValue); Assert.True(vm.CurveEnabled);
+    }
+    [Fact]
+    public void OffRemembersNegativeOffsetAndToggleDoesNotApply()
+    {
+        var client = new Client(); var vm = new CpuTuningViewModel(client, () => true, () => true);
+        vm.UpdateStatus(Status(0), Caps());
+        Assert.False(vm.CurveEnabled); Assert.Equal(-1, vm.CurveValue);
+        vm.CurveValue = -24; vm.CurveEnabled = true; vm.CurveEnabled = false;
+        Assert.Equal(-24, vm.CurveValue); Assert.Equal(0, vm.Settings.CurveOptimizer!.EffectiveValue);
+        Assert.Null(client.Settings);
+        vm.CurveEnabled = true; Assert.Equal(-24, vm.Settings.CurveOptimizer.EffectiveValue);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ApplyChecksManagedValuesAgainstRangeAndStepWithoutLockingEditor(bool live)
+    public async Task EveryApplyIsCurveOnlyForSelectedTarget(bool live)
     {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { LiveNow = live, ManagePower = true, PowerLimitWatts = 65, ManageCurve = true, CurveEnabled = true, CurveValue = -10 };
-        DeviceCapabilities capabilities = Capabilities(DeviceFeatureAccess.ReadWrite) with
-        {
-            CpuPowerLimit = new(new(50, 80, 10), DeviceFeatureAccess.ReadWrite),
-            CpuVoltageOptimizer = new(new(-20, -2, 2), DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true },
-        };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), capabilities);
-        Assert.True(vm.CanEditPower);
-        Assert.True(vm.CanEditCurve);
-        Assert.False(vm.CanApply);
-        vm.PowerLimitWatts = 60;
-        Assert.True(vm.CanApply);
-        vm.PowerLimitWatts = 90;
-        Assert.False(vm.CanApply);
-        vm.ManagePower = false;
-        Assert.True(vm.CanApply);
-        vm.CurveValue = -9;
-        Assert.False(vm.CanApply);
-        vm.CurveValue = -22;
-        Assert.False(vm.CanApply);
-        vm.CurveEnabled = false;
-        Assert.True(vm.CanApply);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), capabilities with
-        {
-            CpuVoltageOptimizer = capabilities.CpuVoltageOptimizer! with { SupportsEnableDisable = false },
-        });
-        Assert.False(vm.CanApply);
-        vm.CurveEnabled = true;
-        vm.CurveValue = -10;
-        Assert.True(vm.CanApply);
+        var client = new Client(); var vm = new CpuTuningViewModel(client, () => true, () => true) { LiveNow = live };
+        vm.UpdateStatus(Status(-10, -5), Caps()); await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal(live ? CpuTuningTarget.LiveNow : CpuTuningTarget.FirmwareNextBoot, client.Target);
+        Assert.Null(client.Settings!.PowerLimitWatts); Assert.NotNull(client.Settings.CurveOptimizer);
+        vm.CurveEnabled = false; await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Null(client.Settings.PowerLimitWatts); Assert.Equal(0, client.Settings.CurveOptimizer!.EffectiveValue);
+        vm.UseInstalledBackend = true; await vm.RefreshCommand.ExecuteAsync(null); Assert.True(client.InstalledOptIn);
     }
-
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RestoreAdmitsOnlyExactCurveRecovery(bool live)
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { LiveNow = live, CurveValue = -31 };
+        foreach (var features in new[] { CpuTuningFeatures.None, CpuTuningFeatures.PowerLimit,
+            CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer, CpuTuningFeatures.CurveOptimizer })
+        {
+            var recovery = new CpuTuningRecoveryStatus(CpuTuningRecoveryState.RestoreReady, features);
+            vm.UpdateStatus(Status(live: -5) with { RestorePending = true, FirmwareRecovery = recovery, LiveRecovery = recovery }, Caps() with { CpuPowerLimit = null });
+            Assert.Equal(features == CpuTuningFeatures.CurveOptimizer, vm.CanRestore);
+            Assert.Equal(features == CpuTuningFeatures.CurveOptimizer, vm.RestoreCommand.CanExecute(null));
+        }
+    }
+    [Fact]
+    public void SafetySelectedBackendFeatureAndBlockedRecoveryRemainRequired()
+    {
+        bool safe = true; var vm = new CpuTuningViewModel(new Client(), () => safe, () => true);
+        vm.UpdateStatus(Status(), Caps(DeviceFeatureAccess.ObservedOnly)); Assert.True(vm.CanApply);
+        vm.LiveNow = true; Assert.False(vm.CanApply); vm.LiveNow = false;
+        vm.UpdateStatus(Status() with { Firmware = new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Available) }, Caps()); Assert.False(vm.CanApply);
+        vm.UpdateStatus(Status(), Caps()); safe = false; Assert.False(vm.CanApply); Assert.False(vm.CanRestore); Assert.True(vm.CanRefresh);
+        safe = true;
+        vm.UpdateStatus(Status() with { LiveRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer) }, Caps()); Assert.False(vm.CanApply);
+    }
     [Theory]
     [InlineData(DeviceFeatureAccess.ReadOnly)]
     [InlineData((DeviceFeatureAccess)99)]
-    public void ReadOnlyOrUnknownFeatureAccessCannotUseAdmittedSavedBackend(DeviceFeatureAccess access)
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { ManagePower = true, ManageCurve = true, CurveEnabled = true };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true), Capabilities(access));
-        Assert.True(vm.BackendReadWriteAvailable);
-        Assert.False(vm.CanEditPower);
-        Assert.False(vm.CanEditCurve);
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-    }
-
-    [Fact]
-    public void InvalidOrMissingFeaturesCannotUseAdmittedSavedBackend()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { ManagePower = true, ManageCurve = true };
-        CpuTuningStatus status = Status(DeviceFeatureAccess.ReadWrite, restore: true);
-        DeviceCapabilities capabilities = Capabilities(DeviceFeatureAccess.ObservedOnly) with
-        {
-            CpuPowerLimit = new(new(95, 45, 1), DeviceFeatureAccess.ObservedOnly),
-            CpuVoltageOptimizer = new(new(-30, -1, 0), DeviceFeatureAccess.ObservedOnly),
-        };
-        vm.UpdateStatus(status, capabilities);
-        Assert.False(vm.CanEditPower);
-        Assert.False(vm.CanEditCurve);
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-        vm.UpdateStatus(status, capabilities with { CpuPowerLimit = null, CpuVoltageOptimizer = null });
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-    }
-
-    [Fact]
-    public void RestoreUsesOwnedRecoveryRatherThanEditorValuesOrUnknownSteps()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true)
-        { ManagePower = true, PowerLimitWatts = 44, ManageCurve = true, CurveEnabled = true, CurveValue = -31 };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true),
-            Capabilities(DeviceFeatureAccess.ObservedOnly) with
-            {
-                CpuPowerLimit = new(new(45, 95, null), DeviceFeatureAccess.ObservedOnly),
-                CpuVoltageOptimizer = new(new(-30, -1, null), DeviceFeatureAccess.ObservedOnly),
-            });
-        Assert.True(vm.CanEditPower);
-        Assert.True(vm.CanEditCurve);
-        Assert.False(vm.CanApply);
-        Assert.True(vm.RestoreCommand.CanExecute(null));
-        vm.PowerLimitWatts = 65;
-        vm.CurveValue = -10;
-        Assert.False(vm.CanApply);
-        vm.ManagePower = false;
-        vm.CurveEnabled = false;
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true),
-            Capabilities(DeviceFeatureAccess.ObservedOnly) with
-            {
-                CpuVoltageOptimizer = new(new(-30, -1, null), DeviceFeatureAccess.ObservedOnly) { SupportsEnableDisable = true },
-            });
-        Assert.True(vm.CanApply);
-    }
-
-    [Fact]
-    public void CurveOnlyRecoveryDoesNotRequireUnownedPowerAdmission()
+    public void ReadOnlyOrInvalidFeatureCannotWrite(DeviceFeatureAccess access)
     {
         var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        vm.UpdateStatus(Status(), Caps(access)); Assert.False(vm.CanEditCurve); Assert.False(vm.CanApply);
+    }
+    [Fact]
+    public void RangeStepAndDisableSupportStillGateApply()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        var caps = Caps() with { CpuVoltageOptimizer = new(new(-20, -2, 2), DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true } };
+        vm.UpdateStatus(Status(), caps); Assert.True(vm.CanApply);
+        vm.CurveValue = -9; Assert.False(vm.CanApply); vm.CurveEnabled = false; Assert.True(vm.CanApply);
+        vm.UpdateStatus(Status(), caps with { CpuVoltageOptimizer = caps.CpuVoltageOptimizer! with { SupportsEnableDisable = false } }); Assert.False(vm.CanApply);
+    }
+    [Fact]
+    public void MixedRunningAndMissingOptimizerArePresentedHonestly()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { LiveNow = true };
+        vm.UpdateStatus(Status() with { LiveState = new(new(65, 85000, 80000), [new(0, -10), new(1, -11)]) }, Caps());
+        Assert.Contains("mixed", vm.LiveSummary); Assert.DoesNotContain("PPT", vm.LiveSummary); Assert.DoesNotContain("PPT", vm.SavedSummary);
+        Assert.Equal(-1, vm.CurveValue);
+        vm.UpdateStatus(Status(), Caps() with { CpuVoltageOptimizer = null }); Assert.False(vm.IsVisible); Assert.False(vm.CanApply);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingOrInvalidSelectedReadbackBlocksEditingAndDoesNotBorrowOtherTarget(bool live)
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { LiveNow = live };
+        var status = live ? Status() : Status(live: -5) with { SavedConfiguration = null };
+        var ready = new CpuTuningRecoveryStatus(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer);
+        status = status with { RestorePending = true, FirmwareRecovery = ready, LiveRecovery = ready };
+        vm.UpdateStatus(status, Caps()); Assert.False(vm.CanEditCurve); Assert.False(vm.CanApply); Assert.False(vm.CanRestore);
+        Assert.Contains("unavailable", vm.AvailabilitySummary);
+        status = live ? Status() with { LiveState = new(new(65, null, null), []) }
+            : Status() with { SavedConfiguration = new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -70000, [])) };
+        vm.UpdateStatus(status, Caps()); Assert.False(vm.CanApply);
+    }
+    [Fact]
+    public async Task MixedRecoveryCannotDispatchRestoreRequest()
+    {
+        var client = new Client(); var vm = new CpuTuningViewModel(client, () => true, () => true);
+        vm.UpdateStatus(Status() with
         {
-            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer),
-        }, Capabilities(DeviceFeatureAccess.ReadWrite) with
+            RestorePending = true,
+            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer)
+        }, Caps());
+        await vm.RestoreCommand.ExecuteAsync(null);
+        Assert.Equal(0, client.RestoreRequests);
+    }
+    [Fact]
+    public void DeferredApplyKeepsClickedTargetAndValueAndRechecksAdmission()
+    {
+        PumpingSynchronizationContext.Run(async _ =>
         {
-            CpuPowerLimit = new(new(45, 95, 1), DeviceFeatureAccess.ObservedOnly),
+            var client = new Client(); var vm = new CpuTuningViewModel(client, () => true, () => true);
+            vm.UpdateStatus(Status(-10), Caps());
+            Task request = vm.ApplyCommand.ExecuteAsync(null);
+            vm.LiveNow = true; vm.CurveValue = -24;
+            await request;
+            Assert.Equal(CpuTuningTarget.FirmwareNextBoot, client.Target);
+            Assert.Equal(-10, client.Settings!.CurveOptimizer!.Value);
+            Assert.Null(client.Settings.PowerLimitWatts);
+            vm.LiveNow = false;
+            request = vm.ApplyCommand.ExecuteAsync(null);
+            vm.UpdateStatus(Status() with { SavedConfiguration = null }, Caps());
+            client.ClearSettings();
+            await request;
+            Assert.Null(client.Settings);
         });
-        Assert.True(vm.CanRestore);
-        vm.ManagePower = true;
-        Assert.True(vm.CanRestore);
     }
-
-    [Fact]
-    public void SavedRecoveryNeverEnablesLiveRestore()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true), Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.True(vm.CanRestore);
-        vm.LiveNow = true;
-        Assert.False(vm.CanRestore);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
-        {
-            LiveRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer),
-        }, Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.True(vm.CanRestore);
-    }
-
     [Theory]
-    [InlineData(null)]
-    [InlineData(CpuTuningRecoveryState.Unknown)]
-    [InlineData(CpuTuningRecoveryState.None)]
-    [InlineData(CpuTuningRecoveryState.Blocked)]
-    public void GlobalPendingWithoutTargetRecoveryAuthorityCannotRestore(CpuTuningRecoveryState? state)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnrepresentableInitialValueNeedsDeliberateChoiceButOwnedRestoreRemainsAvailable(bool mixed)
     {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { LiveNow = true };
+        var live = new CpuLiveState(null, mixed ? [new(0, -10), new(1, -11)] : [new(0, -40), new(1, -40)]);
+        vm.UpdateStatus(Status() with
         {
-            FirmwareRecovery = state.HasValue ? new(state.Value, CpuTuningFeatures.None) : null,
-        }, Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.False(vm.CanRestore);
+            LiveState = live,
+            RestorePending = true,
+            LiveRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer)
+        }, Caps());
+        Assert.True(vm.CanEditCurve); Assert.False(vm.CanApply); Assert.True(vm.CanRestore);
+        vm.CurveEnabled = true; Assert.True(vm.CanApply);
+        vm.CurveEnabled = false; Assert.True(vm.CanApply);
+        Assert.Equal(0, vm.Settings.CurveOptimizer!.EffectiveValue);
     }
-
-    [Fact]
-    public void BlockedRecoveryCannotBeBypassedWithEditorOrTargetChanges()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true) { ManageCurve = true };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
-        {
-            FirmwareRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer),
-        }, Capabilities(DeviceFeatureAccess.ReadWrite));
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-        vm.LiveNow = true;
-        Assert.False(vm.CanApply);
-        Assert.False(vm.CanRestore);
-    }
-
-    [Fact]
-    public void PreparedCleanupWithNoHardwareCommandsRequiresReadyRecoveryAndSafety()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite, restore: true) with
-        {
-            FirmwareRecovery = new(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.None),
-        }, Capabilities(DeviceFeatureAccess.ObservedOnly));
-        Assert.True(vm.CanRestore);
-    }
-
-    [Fact]
-    public void MeasuredMixedCurveAndUnknownPowerStayDistinct()
-    {
-        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly) with
-        {
-            LiveState = new(null, [new(0, -10), new(1, -11)]),
-            PendingBoot = CpuTuningPendingBoot.Requested,
-        }, Capabilities(DeviceFeatureAccess.ObservedOnly));
-        Assert.Contains("PPT Unknown", vm.LiveSummary);
-        Assert.Contains("mixed", vm.LiveSummary);
-        Assert.Contains("requested", vm.PendingBootSummary);
-    }
-
-    [Theory]
-    [InlineData("en-US", "85.123", "80.765")]
-    [InlineData("de-DE", "85,123", "80,765")]
-    public void IndependentFractionalPowerLimitsKeepCurveAndEffectiveWattsUnknown(string culture, string fast, string slow)
-    {
-        var previous = System.Globalization.CultureInfo.CurrentCulture;
-        using var language = TrayLocalization.BeginTemporaryLanguageOverride("en-US");
-        try
-        {
-            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo(culture);
-            var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
-            vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly) with
-            {
-                LiveState = new(new(null, 85123, 80765), []),
-            }, Capabilities(DeviceFeatureAccess.ObservedOnly));
-            Assert.Equal($"Measured live: PPT effective Unknown, fast {fast} W, slow {slow} W; CO Unknown.", vm.LiveSummary);
-            Assert.False(vm.CanApply);
-            Assert.False(vm.CanRestore);
-            vm.UpdateStatus(Status(DeviceFeatureAccess.ObservedOnly) with
-            {
-                LiveState = new(new(65, 45000, null), [new(0, -1)]),
-            }, Capabilities(DeviceFeatureAccess.ObservedOnly));
-            Assert.Equal("Measured live: PPT effective 65 W, fast 45 W, slow Unknown; CO -1.", vm.LiveSummary);
-        }
-        finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
-    }
-
-    [Fact]
-    public async Task TypedActionsUseTargetAndLeaveUncheckedFeaturesUnmanaged()
-    {
-        var client = new Client();
-        var vm = new CpuTuningViewModel(client, () => true, () => true) { ManageCurve = true, CurveEnabled = true };
-        vm.UpdateStatus(Status(DeviceFeatureAccess.ReadWrite), Capabilities(DeviceFeatureAccess.ReadWrite));
-        await vm.ApplyCommand.ExecuteAsync(null);
-        Assert.Equal(CpuTuningTarget.FirmwareNextBoot, client.Target);
-        Assert.Null(client.Settings!.PowerLimitWatts);
-        vm.LiveNow = true;
-        Assert.Equal("Apply now", vm.ApplyLabel);
-        await vm.ApplyCommand.ExecuteAsync(null);
-        Assert.Equal(CpuTuningTarget.LiveNow, client.Target);
-        vm.UseInstalledBackend = true;
-        await vm.RefreshCommand.ExecuteAsync(null);
-        Assert.True(client.InstalledOptIn);
-    }
-
     private sealed class Client : OpenBlade.Testing.UnavailableServiceClient, IServiceClient
     {
         public CpuTuningTarget Target { get; private set; }
         public CpuTuningSettings? Settings { get; private set; }
         public bool InstalledOptIn { get; private set; }
+        public int RestoreRequests { get; private set; }
+        public void ClearSettings() => Settings = null;
         public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings, CancellationToken token)
         { Target = target; Settings = settings; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "test")); }
         public Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend, CancellationToken token)
         { InstalledOptIn = useInstalledBackend; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "test")); }
+        public Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target, CancellationToken token)
+        { RestoreRequests++; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "test")); }
     }
 }

@@ -1408,4 +1408,11 @@
   <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>Connect the supported cooling pad before enabling HyperBoost.</value></data>
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost.</value></data>
   <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>HyperBoost requires the supported cooling pad to stay connected.</value></data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>Optimizer changes are currently unavailable for this target.</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Measured running optimizer: unknown.</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>Running optimizer changes are available.</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>Saved for next boot: optimizer unknown.</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>Saved for next boot: optimizer {0}.</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>Saving the optimizer for next boot is available.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Measured running optimizer: {0}.</value></data>
 </root>

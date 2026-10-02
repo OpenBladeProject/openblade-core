@@ -1408,4 +1408,11 @@
   <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>启用 HyperBoost 前，请连接受支持的散热底座。</value></data>
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>无法确认散热底座的连接状态。启用 HyperBoost 前，请刷新笔记本电脑状态。</value></data>
   <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>使用 HyperBoost 时，受支持的散热底座必须保持连接。</value></data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>当前无法更改此目标的优化器。</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>运行中优化器实测：未知。</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>可以更改运行中的优化器。</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>下次启动已保存：优化器未知。</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>下次启动已保存：优化器 {0}。</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>可以保存优化器设置供下次启动使用。</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>运行中优化器实测：{0}。</value></data>
 </root>

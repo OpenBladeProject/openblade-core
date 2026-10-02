@@ -229,6 +229,16 @@ public sealed class WinUiShellContractTests
         Assert.Equal("1", Attribute(cpuTarget, "Grid.Column"));
         Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(cpuTarget, "Style"));
         Assert.Equal("{Binding LiveNow, Mode=TwoWay}", Attribute(cpuTarget, "IsOn"));
+        Assert.DoesNotContain(cpuCard.Descendants(), element => element.Name.LocalName == "NumberBox");
+        Assert.DoesNotContain(cpuCard.Descendants(), element => Attribute(element, "IsChecked")?.Contains("Manage", StringComparison.Ordinal) == true);
+        XElement optimizerToggle = UidElement(XDocument.Parse(xaml), "ToggleSwitch", "MainWindow_CpuTuningCurveEnabled");
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(optimizerToggle, "Style"));
+        Assert.Equal("{Binding CurveEnabled, Mode=TwoWay}", Attribute(optimizerToggle, "IsOn"));
+        XElement optimizerSlider = UidElement(XDocument.Parse(xaml), "Slider", "MainWindow_CpuTuningCurveValue");
+        Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(optimizerSlider, "Style"));
+        Assert.Equal("-30", Attribute(optimizerSlider, "Minimum"));
+        Assert.Equal("-1", Attribute(optimizerSlider, "Maximum"));
+        Assert.Equal("1", Attribute(optimizerSlider, "StepFrequency"));
     }
 
     [Fact]

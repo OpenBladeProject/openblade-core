@@ -1993,17 +1993,17 @@
   <data name="SpecialKey_ValuePlaceholder_Website" xml:space="preserve">
     <value>https://example.com</value>
   </data>
-  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 调节</value></data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 电压优化器</value></data>
   <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve"><value>应用目标</value></data>
-  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>检查已安装的 AMD 驱动组件</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>此可选检查不会安装驱动程序，也不会启用 CPU 设置写入。</value></data>
-  <data name="MainWindow_CpuTuningManagePower.Content" xml:space="preserve"><value>管理 CPU PPT（45–95 W）</value></data>
-  <data name="MainWindow_CpuTuningPowerValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU PPT 功率（瓦）</value></data>
-  <data name="MainWindow_CpuTuningManageCurve.Content" xml:space="preserve"><value>管理 Curve Optimizer</value></data>
-  <data name="MainWindow_CpuTuningCurveEnabled.Content" xml:space="preserve"><value>启用 Curve Optimizer（关闭时应用 0）</value></data>
-  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Curve Optimizer 数值</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>未勾选的选项不受管理。已保存的固件值不代表 CPU 当前的运行状态。</value></data>
+  <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>使用已安装的驱动读取运行值</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>可选。刷新以检查是否可用。</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>全核心优化偏移</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭会应用零并记住偏移值。选择保存或应用后，更改才会生效。</value></data>
   <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>刷新</value></data>
-  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复原值</value></data>
-  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 调节应用目标</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
+  <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>优化器目标</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningTarget.OffContent" xml:space="preserve"><value>下次启动</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>全核心偏移</value></data>
+  <data name="MainWindow_CpuTuningTarget.OnContent" xml:space="preserve"><value>当前运行</value></data>
 </root>

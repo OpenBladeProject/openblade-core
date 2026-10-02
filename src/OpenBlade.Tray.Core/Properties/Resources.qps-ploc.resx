@@ -1542,4 +1542,11 @@
   <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve">
     <value>[!! HýpérBóóst réqúírés thé súppórtéd cóólíng pád tó stáý cónnéctéd. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>[Öþţîɱîžëŕ çħåñĝëš åŕë çüŕŕëñţľý üñåvåîľåbľë ƒôŕ ţħîš ţåŕĝëţ.]</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>[Ḿëåšüŕëð ŕüññîñĝ ôþţîɱîžëŕ: üñķñôŵñ.]</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>[Ŕüññîñĝ ôþţîɱîžëŕ çħåñĝëš åŕë åvåîľåbľë.]</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>[Šåvëð ƒôŕ ñëẋţ bôôţ: ôþţîɱîžëŕ üñķñôŵñ.]</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>[Šåvëð ƒôŕ ñëẋţ bôôţ: ôþţîɱîžëŕ {0}.]</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>[Šåvîñĝ ţħë ôþţîɱîžëŕ ƒôŕ ñëẋţ bôôţ îš åvåîľåbľë.]</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>[Ḿëåšüŕëð ŕüññîñĝ ôþţîɱîžëŕ: {0}.]</value></data>
 </root>

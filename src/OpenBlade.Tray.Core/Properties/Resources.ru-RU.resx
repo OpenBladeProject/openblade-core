@@ -1408,4 +1408,11 @@
   <data name="Connect the supported cooling pad before enabling HyperBoost." xml:space="preserve"><value>Перед включением HyperBoost подключите поддерживаемую охлаждающую подставку.</value></data>
   <data name="The cooling-pad connection could not be confirmed. Refresh the laptop state before enabling HyperBoost." xml:space="preserve"><value>Не удалось подтвердить подключение охлаждающей подставки. Обновите состояние ноутбука перед включением HyperBoost.</value></data>
   <data name="HyperBoost requires the supported cooling pad to stay connected." xml:space="preserve"><value>Для работы HyperBoost поддерживаемая охлаждающая подставка должна оставаться подключённой.</value></data>
+  <data name="Optimizer changes are currently unavailable for this target." xml:space="preserve"><value>Изменения оптимизатора для этой цели сейчас недоступны.</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Измеренный текущий оптимизатор: неизвестен.</value></data>
+  <data name="Running optimizer changes are available." xml:space="preserve"><value>Изменение текущих значений оптимизатора доступно.</value></data>
+  <data name="Saved for next boot: optimizer unknown." xml:space="preserve"><value>Сохранено для следующей загрузки: оптимизатор неизвестен.</value></data>
+  <data name="Saved for next boot: optimizer {0}." xml:space="preserve"><value>Сохранено для следующей загрузки: оптимизатор {0}.</value></data>
+  <data name="Saving the optimizer for next boot is available." xml:space="preserve"><value>Сохранение оптимизатора для следующей загрузки доступно.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Измеренный текущий оптимизатор: {0}.</value></data>
 </root>

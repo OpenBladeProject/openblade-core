@@ -781,6 +781,7 @@ public sealed class CapabilityPresentationTests
             Attribute(sliderStyle, "BasedOn"));
         string[] sliderNames =
         [
+            "CpuCurveOffsetSlider",
             "GpuCoreClockOffsetSlider",
             "GpuMemoryClockOffsetSlider",
             "FixedFanSpeedSlider",

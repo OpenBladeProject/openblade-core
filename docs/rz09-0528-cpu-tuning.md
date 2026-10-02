@@ -1,10 +1,16 @@
-# RZ09-0528 CPU tuning
+# RZ09-0528 CPU Voltage Optimizer
 
-CPU tuning has two targets: settings saved for the next boot, and settings applied
-to the running CPU. The CPU card keeps their observations separate. Refresh reads
-saved firmware. Opting into the installed AMD backend also permits fresh live CO
-and PPT queries when the exact signed stack is already running and runtime admission
-passes. It never starts or provisions a driver.
+The current product scope is Synapse's all-core CPU Voltage Optimizer: On/Off
+with a remembered integer value from −30 to −1. Off requests zero while keeping
+the editor's negative value. The editor sends only optimizer settings and keeps
+saved firmware, next-boot intent and measured running offsets separate.
+
+The driverless path saves firmware settings for the next boot. The optional live
+path uses the exact signed AMD stack when it is already installed and running;
+reads never start or provision a driver. Native live CO support is wired in source,
+but production live writes remain observed-only until the all-core installed path
+has attended readback and restoration evidence. A saved value does not prove
+running state or activation after restart.
 
 The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
@@ -13,9 +19,10 @@ plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
 optional live CO and read-only PPT through a shared retained device lifetime and fresh metadata proofs;
 this integration has not yet been installed or physically validated. Live PPT
 mutation remains unavailable in default composition.
-The editor represents the 45–95 W power range and
-−30 to −1 curve optimizer range. Disabling the optimizer means zero magnitude
-and retains the editor's negative value. Each feature can be left unmanaged.
+Further PPT feature development and power-limit experiments are deferred. The
+Voltage Optimizer card has no PPT controls or requests. Existing power-limit code
+and the historical validation notes below are retained as experimental work;
+they are not requirements for completing the Voltage Optimizer.
 
 Admission is model/SKU scoped. BIOS 2.02 identifies the attended captures below;
 BIOS values, including missing or inconsistent provenance, do not grant or revoke
@@ -307,9 +314,9 @@ Offline native and service fakes cover binding, drift, missing evidence and
 reentry; this combined native sequence remains unverified on physical hardware
 and does not establish physical live-write admission.
 The IPC 60 status contract also permits PPT-only observations. These retain the
-independent fast and slow limits in milliwatts and report CO as unknown. The tray
-displays each limit separately, including fractional watts; it does not average
-them into an effective value. Older IPC 59 peers cannot read this expanded status
+independent fast and slow limits in milliwatts and report CO as unknown. The
+Voltage Optimizer card displays CO observations only and does not derive them
+from power limits. Older IPC 59 peers cannot read this expanded status
 contract, so deployment must update Service, Session Agent and Tray together.
 Default composition shares one concrete retained-installed provider across CO
 and PPT observation. Live PPT mutation remains unavailable.
@@ -329,11 +336,16 @@ passed. No live CPU settings, driver changes or reboot occurred. This validates
 saved persistence for those transitions, rather than every selectable value.
 Live controls still require trusted native proof and attended readback and
 restoration. Boot activation remains unverified and separate from saved
-persistence. The current CPU card remains a development UI; a production UI/UX
-pass follows behavior validation.
+persistence. The voltage-only editor uses the shared card toggle and integer
+slider styles. It initializes each target from confirmed optimizer state without
+overwriting user edits on refresh. Mixed per-core observations require an explicit
+editor choice before Apply, and command execution retains the chosen target and
+settings through deferred startup. The card suppresses restoration that includes PPT.
+Source and synthetic UI checks do not establish installed behavior or live-write
+admission.
 
 The developer-only `--cpu-tuning-layout-smoke` harness renders seven synthetic
-CPU states at two card widths. It checks saved/live separation, unknown live PPT,
+CPU states at two card widths. It checks saved/live optimizer separation,
 pending boot changes, editing and restoration availability, and control bounds.
 It writes screenshots to the private validation archive without connecting to
 the service or sending CPU commands. These fixtures do not establish hardware
@@ -341,3 +353,10 @@ admission or validate the installed application.
 
 Tracked in [issue #622](https://github.com/OpenBladeProject/openblade-core/issues/622)
 and [draft PR #623](https://github.com/OpenBladeProject/openblade-core/pull/623).
+
+The voltage-only editor revision passed independent source review and the full
+Release solution build with zero warnings/errors. All 9,321 tests across 17
+projects passed, including all 1,679 Tray tests. The rebuilt synthetic harness
+passed all fourteen layouts at 760/520 widths; saved editing, live restoration
+and restricted mixed/PPT recovery screenshots were inspected. These offline and
+synthetic results do not admit installed live writes or prove boot activation.

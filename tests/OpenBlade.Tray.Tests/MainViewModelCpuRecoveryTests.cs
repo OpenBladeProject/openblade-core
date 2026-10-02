@@ -46,10 +46,16 @@ public sealed partial class MainViewModelTests
         client.PendingObservation.SetResult(received.Status);
         await observation;
 
-        Assert.NotEqual(before, viewModel.CpuTuning.LiveSummary);
-        Assert.Contains($"fast {(85123 / 1000m).ToString("0.###", System.Globalization.CultureInfo.CurrentCulture)} W", viewModel.CpuTuning.LiveSummary);
-        Assert.Contains($"slow {(80765 / 1000m).ToString("0.###", System.Globalization.CultureInfo.CurrentCulture)} W", viewModel.CpuTuning.LiveSummary);
-        Assert.Contains("CO Unknown", viewModel.CpuTuning.LiveSummary);
+        // Power observations still reach the model, while the voltage card
+        // deliberately presents only optimizer values.
+        var observed = Assert.IsType<CpuTuningStatus>(typeof(CpuTuningViewModel)
+            .GetField("status", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(viewModel.CpuTuning));
+        Assert.Equal(85123u, observed.LiveState!.PowerLimits!.Message32Milliwatts);
+        Assert.Equal(80765u, observed.LiveState.PowerLimits.Message33Milliwatts);
+        Assert.Equal(before, viewModel.CpuTuning.LiveSummary);
+        Assert.Contains("Unknown", viewModel.CpuTuning.LiveSummary);
+        Assert.DoesNotContain("PPT", viewModel.CpuTuning.LiveSummary);
         Assert.DoesNotContain("mixed", viewModel.CpuTuning.LiveSummary);
         Assert.False(viewModel.CpuTuning.CanApply);
         Assert.False(viewModel.CpuTuning.CanRestore);
@@ -68,7 +74,8 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         var backend = new CpuTuningBackendStatus(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available);
         var recovery = new CpuTuningRecoveryStatus(CpuTuningRecoveryState.RestoreReady, CpuTuningFeatures.CurveOptimizer);
-        var cpu = new CpuTuningStatus(null, null, backend, backend, CpuTuningPendingBoot.Unknown, true)
+        var cpu = new CpuTuningStatus(new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -10, [])),
+            new(null, [new(0, -10), new(1, -10)]), backend, backend, CpuTuningPendingBoot.Unknown, true)
         {
             FirmwareRecovery = live ? null : recovery,
             LiveRecovery = live ? recovery : null,

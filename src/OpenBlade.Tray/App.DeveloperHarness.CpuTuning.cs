@@ -53,8 +53,6 @@ public partial class App
                     CpuTuningViewModel editor = window.ViewModel.CpuTuning;
                     // Editor intent changes raise presentation notifications only.
                     editor.LiveNow = fixture.Live;
-                    editor.ManagePower = false;
-                    editor.ManageCurve = true;
                     editor.CurveEnabled = true;
                     editor.CurveValue = -12;
                     await WaitForSnapshotLayoutAsync();
@@ -67,22 +65,22 @@ public partial class App
                     RequireCpuLayout(text.Contains(editor.SavedSummary) && text.Contains(editor.LiveSummary)
                         && text.Contains(editor.PendingBootSummary) && text.Contains(editor.AvailabilitySummary),
                         "CPU card did not render the separate saved/live/pending/backend summaries.");
-                    RequireCpuLayout(editor.SavedSummary.Contains("65", StringComparison.Ordinal)
-                        && (fixture.Measured ? editor.LiveSummary == "Measured live: PPT Unknown; CO -7."
-                            : editor.LiveSummary == "Measured live: unknown."),
-                        "Saved firmware was substituted for measured live state or unknown PPT was lost.");
-                    RequireCpuLayout(editor.CanEditCurve == fixture.Editable && !editor.CanEditPower
+                    RequireCpuLayout(editor.SavedSummary.Contains("-10", StringComparison.Ordinal)
+                        && (fixture.Measured ? editor.LiveSummary == "Measured running optimizer: -7."
+                            : editor.LiveSummary == "Measured running optimizer: unknown."),
+                        "Saved optimizer was substituted for measured running state.");
+                    RequireCpuLayout(editor.CanEditCurve == fixture.Editable
                         && editor.CanApply == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked)
                         && editor.CanRestore == fixture.Restorable,
                         "Synthetic backend or recovery admission was presented incorrectly.");
                     var apply = elements.OfType<Button>().Single(button => Equals(button.Content, editor.ApplyLabel));
-                    var restore = elements.OfType<Button>().Single(button => Equals(button.Content, "Restore prior values"));
+                    var restore = elements.OfType<Button>().Single(button => Equals(button.Content, "Restore prior optimizer"));
                     RequireCpuLayout(apply.IsEnabled == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked)
                         && (restore.Visibility == Visibility.Visible) == fixture.Restorable,
                         "Rendered apply/restore controls disagree with presentation admission.");
                     var controlGeometry = elements.OfType<FrameworkElement>()
                         .Where(element => element.Visibility == Visibility.Visible && element.ActualWidth > 0 && element.ActualHeight > 0
-                            && (element is CheckBox or NumberBox or ToggleSwitch
+                            && (element is CheckBox or Slider or ToggleSwitch
                                 || element is Button button && (ReferenceEquals(button.Command, editor.ApplyCommand)
                                     || ReferenceEquals(button.Command, editor.RefreshCommand) || ReferenceEquals(button.Command, editor.RestoreCommand))))
                         .Select(element =>
@@ -104,7 +102,6 @@ public partial class App
                         editor.LiveSummary,
                         editor.PendingBootSummary,
                         editor.AvailabilitySummary,
-                        editor.CanEditPower,
                         editor.CanEditCurve,
                         editor.CanApply,
                         editor.CanRestore,
