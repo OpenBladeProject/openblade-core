@@ -75,7 +75,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
     private static CpuLivePowerNativeObservationResult ObservePmScope(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, ICpuPmWindowsPlatform platform, ICpuPmObservationClock clock,
-        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader)
+        CancellationToken token, IRz090528CpuLivePowerRangeMetadataReader? metadataReader,
+        ICpuPmContinuityScope? borrowedContinuity = null)
     {
         if (approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
         { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples), true, true); }
@@ -97,8 +98,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             // Arm before even constructing/acquiring a native mutex or device.
             // If registration throws before returning its scope, its resources
             // cannot be proven released and this platform must stay parked.
-            cleanup = false;
-            continuity = platform.ArmContinuity(approval.Lifetime);
+            cleanup = borrowedContinuity is not null;
+            continuity = borrowedContinuity ?? platform.ArmContinuity(approval.Lifetime);
             if (continuity is null) { throw new IOException("PM continuity scope unavailable."); }
             cleanup = true;
             adapter = new PmAdapter(platform, continuity, approval.Lifetime, lifetime, clock, approval.Profile);
@@ -116,7 +117,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             try
             {
-                if (continuity is not null)
+                if (continuity is not null && borrowedContinuity is null)
                 {
                     // A previous continuity failure can hide a later unregister
                     // failure. Only explicit clean disposal proves release.
@@ -162,7 +163,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
     }
     private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage, CpuPmObservationFailure failure) =>
-        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation);
+        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation)
+        {
+            FirmwareVersion = result.FirmwareVersion
+        };
     private static bool PmBoundedFailure(Exception e) => e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception
         or InvalidOperationException or System.Security.SecurityException or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException;
 
@@ -222,7 +226,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 };
             }
             return new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
-                result.Diagnostic, new(first, second), result.Profile, range);
+                result.Diagnostic, new(first, second), result.Profile, range)
+            {
+                FirmwareVersion = result.FirmwareVersion
+            };
         }
         private void CheckThread()
         { if (Environment.CurrentManagedThreadId != thread) { throw new IOException("PM scope thread changed."); } }

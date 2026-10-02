@@ -25,7 +25,7 @@ internal interface ICpuPmObservationClock
     DateTimeOffset UtcNow { get; }
     void DelayOneSecond(CancellationToken cancellationToken);
 }
-internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap, Capability, MetadataVersion, MetadataDValues, MetadataMinMax }
+internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap, Capability, MetadataVersion, MetadataDValues, MetadataMinMax, FirmwareVersion }
 internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, BudgetExpired, InvalidData, UnsupportedVersion, RequestRejected, ReplyRejected, NativeFailure, CleanupFailed }
 internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure);
 internal sealed record CpuPmCompletedSample(CpuPmRawSnapshot Snapshot, uint RefreshReturnedWord);
@@ -58,6 +58,7 @@ internal sealed class CpuPmObservationBatch
         Diagnostic = diagnostic;
         FusedCap = fusedCap; Profile = profile; RangeObservation = rangeObservation;
     }
+    internal uint? FirmwareVersion { get; init; }
     internal CpuPmObservationProfile Profile { get; }
     internal CpuLivePowerRangeObservation? RangeObservation { get; }
     internal bool Complete { get; }
@@ -85,7 +86,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private TimeSpan started, previousClock;
     private Guid sessionId, lifetimeId;
     private int ownerThread;
-    private bool used, readingVersionArgument;
+    private bool used, readingVersionArgument, readingFirmwareArgument;
+    private uint? firmwareVersion;
     private CpuPmObservationStage stage;
     private CpuPmCapRegisterRead? capA0F, capA0B, capA13, capA90;
     private CpuPmCapabilityObservation? capability;
@@ -134,6 +136,10 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 metadataApplicability = CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001;
                 ReadCap(bus, CpuLivePowerRangeObservation.RegisterA13, cancellationToken);
                 ReadCap(bus, CpuLivePowerRangeObservation.RegisterA90, cancellationToken);
+                // PM layout alone does not identify the reviewed PPT handlers.
+                // Bind the firmware inside this lease before the baseline copy.
+                stage = CpuPmObservationStage.FirmwareVersion;
+                firmwareVersion = Mailbox(bus, 2, 0, cancellationToken);
                 stage = CpuPmObservationStage.Capability;
                 capability = new(0x82, 0, false, false, null, null, null, false);
                 Mailbox(bus, 0x82, 0, cancellationToken);
@@ -203,7 +209,10 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, null, metadataMinMax, metadataApplicability) : null;
         return new(diagnostic is null && samples.Count == SampleCount && (range is null || range.MetadataComplete),
             samples, records, orientationMask, fuseMask, diagnostic,
-            capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, range);
+            capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, range)
+        {
+            FirmwareVersion = firmwareVersion
+        };
     }
 
     private void ReadMetadata(CancellationToken token)
@@ -316,11 +325,12 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         WriteSmn(bus, Message, command, token);
         WriteRegister(bus, 0, Response, token);
         Poll(bus, token);
-        readingVersionArgument = command == 6;
+        readingVersionArgument = command is 2 or 6;
+        readingFirmwareArgument = command == 2;
         readingCapabilityArgument = command == 0x82;
         if (readingCapabilityArgument && capability is not null) { capability = capability with { ResponseAcknowledged = true }; }
         try { return ReadSmn(bus, Argument, token); }
-        finally { readingVersionArgument = readingCapabilityArgument = false; }
+        finally { readingVersionArgument = readingFirmwareArgument = readingCapabilityArgument = false; }
     }
     private void Poll(uint bus, CancellationToken token)
     {
@@ -360,7 +370,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         {
             throw new Failure(!reply.Success ? CpuPmObservationFailure.NativeFailure
                 : readingVersionArgument && code == Read && reply.Bytes.Length == 24 && Word(input, 12) == 0xC8
-                    && Word(reply.Bytes, 20) != CpuPmObservationWireAdmission.Version
+                    && Word(reply.Bytes, 20) != (readingFirmwareArgument
+                        ? CpuPmObservationWireAdmission.ExpectedFirmwareVersion : CpuPmObservationWireAdmission.Version)
                     ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected);
         }
         CheckBoundary(token);

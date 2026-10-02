@@ -302,6 +302,7 @@ public sealed class Rz090528CpuPmObservationTests
     public void RangeGuardAllowsOneArgumentZeroCapabilityAndOneSampleOnly()
     {
         var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        Transaction(guard, 2, 0, CpuPmObservationWireAdmission.ExpectedFirmwareVersion);
         Transaction(guard, 0x82, 0, 2);
         Transaction(guard, 6, 0, CpuPmObservationWireAdmission.Version);
         Transaction(guard, 0x65, 3, 42);
@@ -316,7 +317,9 @@ public sealed class Rz090528CpuPmObservationTests
     [InlineData(6u, 0u)]
     [InlineData(0x65u, 3u)]
     [InlineData(0x82u, 3u)]
-    public void RangeRequiresCapabilityFirstWithArgumentZero(uint command, uint argument)
+    [InlineData(0x82u, 0u)]
+    [InlineData(2u, 3u)]
+    public void RangeRequiresFirmwareFirstWithArgumentZero(uint command, uint argument)
     {
         var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
         PrepareTransaction(guard, argument); Select(guard, Message);
@@ -328,12 +331,24 @@ public sealed class Rz090528CpuPmObservationTests
     public void RangeCannotRepeatCapabilityAndDefaultCannotRequestIt()
     {
         var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        Transaction(guard, 2, 0, CpuPmObservationWireAdmission.ExpectedFirmwareVersion);
         Transaction(guard, 0x82, 0, 2);
         PrepareTransaction(guard, 0); Select(guard, Message);
         Assert.False(guard.Allows(Write, Words(1, 0x82, 0), 0));
         guard = Discover(); PrepareTransaction(guard, 0); Select(guard, Message);
         Assert.False(guard.Allows(Write, Words(1, 0x82, 0), 0));
         guard = Discover(); Assert.False(guard.Allows(Write, Words(0, CpuLivePowerRangeObservation.RegisterA13, 0), 0));
+    }
+
+    [Fact]
+    public void FirmwareCannotRepeatAndIdleProfileCannotRequestIt()
+    {
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample);
+        Transaction(guard, 2, 0, CpuPmObservationWireAdmission.ExpectedFirmwareVersion);
+        PrepareTransaction(guard, 0); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 2, 0), 0));
+        guard = Discover(); PrepareTransaction(guard, 0); Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 2, 0), 0));
     }
 
     [Theory]

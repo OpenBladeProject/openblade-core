@@ -29,7 +29,7 @@ public sealed class CpuLivePowerNativeBackendTests
         var backend = new CpuLivePowerNativeBackend(platform, provider, metadata);
         var result = await backend.ObserveAsync(default);
         Assert.Equal(provider.Context, result.Context); Assert.Equal(platform.Pair, CpuLivePowerSnapshot.TryCreate(result.Observation)!.Pair);
-        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6 }, platform.Commands); Assert.Equal(0, platform.Setters);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 6 }, platform.Commands); Assert.Equal(0, platform.Setters);
         Assert.Equal(1, provider.Interpretations); Assert.Equal(2, metadata.Calls);
         Assert.Equal(2u, result.Capability!.RawValue); Assert.Equal(71u, result.FusedCap!.Watts);
         Assert.False(backend.Status.ScopeInvalid); Assert.Null(backend.OutstandingWorker);

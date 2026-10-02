@@ -13,17 +13,28 @@ internal sealed partial class WindowsRz090528CpuNativeSession
         Func<CpuPmRunOwnedDriverLifetime?> readFreshLifetime, IRz090528CpuLivePowerRangeMetadataReader? metadataReader,
         CancellationToken token = default) => WindowsRz090528CpuQueryAdapter.ObservePowerWithPlatform(
             approval, readFreshLifetime, metadataReader, platform, token);
+
+    // The attended child owns this already-armed scope through its complete
+    // experiment. Borrowing never registers or disposes its notifications.
+    internal CpuLivePowerNativeObservationResult ObservePower(CpuPmAttendedApproval? approval,
+        Func<CpuPmRunOwnedDriverLifetime?> readFreshLifetime, IRz090528CpuLivePowerRangeMetadataReader? metadataReader,
+        ICpuPmContinuityScope borrowedContinuity, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(borrowedContinuity);
+        return WindowsRz090528CpuQueryAdapter.ObservePowerWithPlatform(
+            approval, readFreshLifetime, metadataReader, platform, token, borrowedContinuity);
+    }
 }
 
 internal sealed partial class WindowsRz090528CpuQueryAdapter
 {
     internal static CpuLivePowerNativeObservationResult ObservePowerWithPlatform(CpuPmAttendedApproval? approval,
         Func<CpuPmRunOwnedDriverLifetime?> lifetime, IRz090528CpuLivePowerRangeMetadataReader? metadataReader,
-        ICpuQueryWindowsPlatform platform, CancellationToken token)
+        ICpuQueryWindowsPlatform platform, CancellationToken token, ICpuPmContinuityScope? borrowedContinuity = null)
     {
         if (approval?.Profile != CpuPmObservationProfile.RangeSingleSample || metadataReader is null
             || platform is not ICpuPmWindowsPlatform pm)
         { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: CpuPmObservationProfile.RangeSingleSample), true, true); }
-        return ObservePmScope(approval, lifetime, pm, new PmClock(), token, metadataReader);
+        return ObservePmScope(approval, lifetime, pm, new PmClock(), token, metadataReader, borrowedContinuity);
     }
 }

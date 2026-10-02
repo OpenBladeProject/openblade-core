@@ -33,6 +33,72 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RangeFirmwareEvidenceSurvivesIncompleteMetadataAndCleanup(bool cleanupFails)
+    {
+        var fake = new Fake { CleanupFailure = cleanupFails };
+        var approval = CpuPmAttendedApproval.Acknowledge(true, true, fake.Lifetime, CpuPmObservationProfile.RangeSingleSample);
+        var result = WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(
+            approval, () => fake.FreshLifetime, fake, fake, metadataReader: new RejectedMetadata());
+        Assert.False(result.Complete);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 6 }, fake.Commands);
+        Assert.Equal(0x0B5D1600u, result.FirmwareVersion);
+        Assert.Single(result.CopySamples());
+        Assert.Equal(cleanupFails ? CpuPmObservationStage.Cleanup : CpuPmObservationStage.MetadataVersion, result.Diagnostic!.Stage);
+    }
+
+    private sealed class RejectedMetadata : IRz090528CpuLivePowerRangeMetadataReader
+    {
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeVersion> QueryVersion(Action checkpoint)
+        {
+            checkpoint();
+            return new(null, CpuLivePowerRangeMetadataStatus.InvalidData, CpuLivePowerRangeMetadataStages.Disposed, default, 0);
+        }
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeDValues> GetDValues(Action checkpoint) => throw new InvalidOperationException();
+        public CpuLivePowerRangeMetadataCall<CpuLivePowerRangeMinMax> GetMinMaxSteppingValues(Action checkpoint) => throw new InvalidOperationException();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BorrowedContinuityKeepsOwnerRegistrationAndSameCleanupLatch(bool cleanupFails)
+    {
+        var fake = new Fake();
+        var borrowed = fake.ArmContinuity(fake.Lifetime);
+        fake.Events.Clear();
+        if (cleanupFails) { fake.ThrowAt = "close"; }
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        var approval = CpuPmAttendedApproval.Acknowledge(true, true, fake.Lifetime, CpuPmObservationProfile.RangeSingleSample);
+        var result = session.ObservePower(approval, () => fake.FreshLifetime, new RejectedMetadata(), borrowed);
+        Assert.False(result.Batch.Complete); Assert.True(result.WorkerTerminal);
+        Assert.Equal(!cleanupFails, result.CleanupComplete);
+        Assert.Equal(0x0B5D1600u, result.Batch.FirmwareVersion);
+        Assert.DoesNotContain("continuity-arm", fake.Events); Assert.DoesNotContain("continuity-dispose", fake.Events);
+        Assert.Equal(CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime, borrowed.ReadFresh(fake.Lifetime).Continuity);
+        if (cleanupFails)
+        {
+            Assert.Equal(CpuLiveQueryStatus.Busy, session.Query(CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true), fake.ReadUsb).Status);
+        }
+        borrowed.Dispose();
+        Assert.Equal(1, fake.Events.Count(value => value == "continuity-dispose"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BorrowedScopeRequiresFreshParentAndContinuityBeforeAnyTraffic(bool parentRevoked)
+    {
+        var fake = new Fake(); var borrowed = fake.ArmContinuity(fake.Lifetime);
+        fake.Events.Clear(); fake.ContinuityFailure = !parentRevoked;
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        var approval = CpuPmAttendedApproval.Acknowledge(true, true, fake.Lifetime, CpuPmObservationProfile.RangeSingleSample);
+        var result = session.ObservePower(approval, () => parentRevoked ? null : fake.FreshLifetime, new RejectedMetadata(), borrowed);
+        Assert.False(result.Batch.Complete); Assert.Empty(fake.Commands); Assert.Equal(0, fake.Copies);
+        Assert.DoesNotContain("continuity-arm", fake.Events); Assert.DoesNotContain("continuity-dispose", fake.Events);
+    }
+
+    [Theory]
     [InlineData("2.02")]
     [InlineData("2.03")]
     [InlineData("Unknown")]
@@ -455,8 +521,9 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
                 input.CopyTo(reply, 0); uint d = Word(input, 4), f = Word(input, 8), offset = Word(input, 12);
                 uint value = offset == 0 ? d == 0 ? CpuQueryPciTopology.RootId : f == 0 ? CpuQueryPciTopology.NodeId : CpuQueryPciTopology.OrientationId
                     : offset == 0x140 ? 0xFF55u : selected == 0x03820AB0 ? ~0xFF55u << 5
-                    : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond : selected == 0x03B10A80 ? 1u
-                    : selected == 0x03B10A88 ? command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
+                    : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
+                    : selected is 0x03820A13 or 0x03820A90 or 0x03B10A80 ? 1u
+                    : selected == 0x03B10A88 ? command == 2 ? 0x0B5D1600u : command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
                 Put(reply, 20, value);
             }
             else if (code == 0x81112F08)

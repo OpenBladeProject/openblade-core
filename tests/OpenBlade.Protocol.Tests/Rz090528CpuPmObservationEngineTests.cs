@@ -308,7 +308,8 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.True(result.Complete);
         Assert.Equal(CpuPmObservationProfile.RangeSingleSample, result.Profile);
         Assert.Single(result.CopySamples());
-        Assert.Equal(new uint[] { 0x82, 6, 0x65, 6 }, fake.Commands);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 6 }, fake.Commands);
+        Assert.Equal(0x0B5D1600u, result.FirmwareVersion);
         Assert.Equal(new uint[] { 0x03820A0F, 0x03820A0B, 0x03820A13, 0x03820A90 }, fake.CapSelections);
         Assert.Equal(new[] { "version", "minmax" }, metadata.Calls);
         Assert.Equal(0, fake.IdleDelays);
@@ -319,6 +320,47 @@ public sealed class Rz090528CpuPmObservationEngineTests
         Assert.Null(result.RangeObservation.DValues);
         Assert.Equal(CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001, result.RangeObservation.MetadataApplicability);
         Assert.True(result.RangeObservation.MetadataComplete);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(0x005D000Bu)]
+    [InlineData(0x0B5D1700u)]
+    [InlineData(uint.MaxValue)]
+    public void WrongFirmwareStopsBeforeBaselineCopyOrMetadata(uint version)
+    {
+        var fake = new Fake { FirmwareVersion = version }; var metadata = new MetadataFake(fake);
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe();
+        Assert.False(result.Complete);
+        Assert.Equal(CpuPmObservationStage.FirmwareVersion, result.Diagnostic!.Stage);
+        Assert.Equal(CpuPmObservationFailure.UnsupportedVersion, result.Diagnostic.Failure);
+        Assert.Equal(new uint[] { 2 }, fake.Commands);
+        Assert.Equal(0, fake.Copies); Assert.Empty(metadata.Calls); Assert.Null(result.FirmwareVersion);
+        Assert.Equal(1, fake.Disposals);
+    }
+
+    [Theory]
+    [InlineData("firmware-ack")]
+    [InlineData("firmware-native")]
+    public void FirmwareRequiresAcknowledgementAndSuccessfulReturnedWord(string failure)
+    {
+        var fake = new Fake { WireFailure = failure }; var metadata = new MetadataFake(fake);
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe();
+        Assert.False(result.Complete);
+        Assert.Equal(CpuPmObservationStage.FirmwareVersion, result.Diagnostic!.Stage);
+        Assert.Equal(new uint[] { 2 }, fake.Commands);
+        Assert.Equal(0, fake.Copies); Assert.Empty(metadata.Calls); Assert.Null(result.FirmwareVersion);
+        Assert.Equal(1, fake.Disposals);
+    }
+
+    [Fact]
+    public void EachNewRangeLeaseRequiresFreshFirmware()
+    {
+        var fake = new Fake(); var metadata = new MetadataFake(fake);
+        Assert.True(fake.Engine(CpuPmObservationProfile.RangeSingleSample, metadata).Observe().Complete);
+        var next = new Fake { FirmwareVersion = 0x0B5D1700 };
+        Assert.False(next.Engine(CpuPmObservationProfile.RangeSingleSample, new MetadataFake(next)).Observe().Complete);
+        Assert.Equal(new uint[] { 2 }, next.Commands); Assert.Equal(0, next.Copies);
     }
 
     [Theory]
@@ -377,7 +419,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
     {
         var fake = new Fake(); var metadata = new MetadataFake(fake);
         Assert.True(fake.Engine(metadata: metadata).Observe().Complete);
-        Assert.Empty(metadata.Calls); Assert.DoesNotContain(0x82u, fake.Commands);
+        Assert.Empty(metadata.Calls); Assert.DoesNotContain(0x82u, fake.Commands); Assert.DoesNotContain(2u, fake.Commands);
         Assert.DoesNotContain(0x03820A13u, fake.CapSelections); Assert.DoesNotContain(0x03820A90u, fake.CapSelections);
         fake = new Fake();
         Assert.False(fake.Engine(CpuPmObservationProfile.RangeSingleSample).Observe().Complete);
@@ -425,6 +467,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
         internal int ProbesAfterIdle;
         internal int FailFrame;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
+        internal uint FirmwareVersion = 0x0B5D1600;
         internal List<uint> CapSelections { get; } = [];
         internal Action<int>? OnInvoke;
         internal List<uint> Codes { get; } = [];
@@ -523,9 +566,10 @@ public sealed class Rz090528CpuPmObservationEngineTests
                     : selected == 0x03820AB0 ? (WireFailure == "fuse" ? ~0xFFFFu : ~0xFF55u) << 5
                     : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
                     : selected == 0x03820A13 ? 1u : selected == 0x03820A90 ? 4u
-                    : selected == 0x03B10A80 ? 1u
-                    : selected == 0x03B10A88 ? command == 6 ? WireFailure == "version" || WireFailure == "post-version" && Copies > 0 ? 0x005D000Cu : 0x005D000Bu : 0x12345678u
+                    : selected == 0x03B10A80 ? command == 2 && WireFailure == "firmware-ack" ? 2u : 1u
+                    : selected == 0x03B10A88 ? command == 2 ? FirmwareVersion : command == 6 ? WireFailure == "version" || WireFailure == "post-version" && Copies > 0 ? 0x005D000Cu : 0x005D000Bu : 0x12345678u
                     : throw new InvalidOperationException("stale index selection");
+                if (selected == 0x03B10A88 && command == 2 && WireFailure == "firmware-native") { return new(false, reply); }
                 if (WireFailure == "root" && offset == 0 && d == 0) { value = CpuQueryPciTopology.NodeId; }
                 Put(reply, 20, value);
             }

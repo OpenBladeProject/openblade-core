@@ -9,7 +9,8 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
 {
     private int CapOperations => profile == CpuPmObservationProfile.RangeSingleSample ? 8 : 4;
     private int MaximumCopies => profile == CpuPmObservationProfile.RangeSingleSample ? 1 : 3;
-    private bool capabilityConfirmed;
+    private bool capabilityConfirmed, firmwareConfirmed;
+    internal const uint ExpectedFirmwareVersion = 0x0B5D1600;
     internal const uint Copy = 0x81112F08, Version = 0x005D000B;
     internal const int PayloadLength = 0xD50, ReplyLength = PayloadLength + 4;
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
@@ -100,7 +101,8 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             Response => value == 0 && ready && command == 0 && !copyPermit,
             Argument => cleared && !argumentWritten && value is 0 or 3,
             Message => cleared && argumentWritten && command == 0
-                && (value == 0x82 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && !capabilityConfirmed && copies == 0 && !versionConfirmed
+                && (value == 2 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && !firmwareConfirmed && copies == 0 && !capabilityConfirmed
+                    || value == 0x82 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && firmwareConfirmed && !capabilityConfirmed && copies == 0 && !versionConfirmed
                     || value == 6 && argument == 0 && !copyPermit && (profile == CpuPmObservationProfile.IdleThreeSamples || capabilityConfirmed && !versionConfirmed && (copies == 0 || postVersionRequired))
                     || value == 0x65 && argument == 3 && versionConfirmed && copies < MaximumCopies && !copyPermit),
             _ => false,
@@ -164,7 +166,12 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             }
             else if (Word(input, 12) == 0xC8 && selected == Argument)
             {
-                if (command == 6)
+                if (command == 2)
+                {
+                    if (value != ExpectedFirmwareVersion) { Abort(); return false; }
+                    firmwareConfirmed = true;
+                }
+                else if (command == 6)
                 {
                     if (value != Version) { Abort(); return false; }
                     versionConfirmed = !postVersionRequired;
