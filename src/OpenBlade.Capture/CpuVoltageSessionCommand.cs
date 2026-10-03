@@ -13,7 +13,7 @@ namespace OpenBlade.Capture;
 internal sealed class CpuVoltageSessionCommand
 {
     internal const string HostName = "cpu-voltage-session-host", ClientName = "cpu-voltage-session-client";
-    internal const string Confirmation = "RZ09-0528-CPU-SESSION-ONE-OBSERVATION-ONE-CYCLE";
+    internal const string Confirmation = "RZ09-0528-CPU-SESSION-THREE-OBSERVATIONS-ONE-CYCLE-READONLY-CLEANUP";
     private static CpuVoltageSessionCommand? retainedHost;
     private readonly object gate = new();
     private readonly WindowsCpuVoltageSessionPlatform platform;
@@ -24,7 +24,11 @@ internal sealed class CpuVoltageSessionCommand
     private Process? owner;
     private CpuPmRetainedLaunchProcess? retainedOwner;
     private Task? job;
+    private Task? ownerOutput;
     private string? ownerFailure;
+    private Guid currentRun;
+    private Guid completedCleanup;
+    private DateTimeOffset currentLaunched;
     private bool disposed;
     private CpuVoltageSessionCommand(CpuVoltageOwnedSmokeCommand.Options options)
     {
@@ -45,7 +49,7 @@ internal sealed class CpuVoltageSessionCommand
         if (args is ["--help"])
         {
             output.WriteLine($"{HostName} --payload <reviewed private closure> --source <40hex> --manifest-sha256 <64HEX> --expected-service-version <exact> --confirm-target {Confirmation}");
-            output.WriteLine("Start elevated once, attended. No automatic elevation. Eight-hour enrollment, at most one observation and one reversible cycle. Remain on AC with the same console unlocked.");
+            output.WriteLine("Start elevated once, attended. No automatic elevation. Eight-hour enrollment, at most three observations and one reversible cycle, with explicit readonly resource cleanup. Remain on AC with the same console unlocked.");
             return 0;
         }
         try
@@ -96,10 +100,22 @@ internal sealed class CpuVoltageSessionCommand
                     CpuVoltageSessionReply response;
                     lock (gate)
                     {
-                        if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle && !ContextCurrent())
+                        if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle or CpuVoltageSessionAction.CleanupReadOnly && !ContextCurrent())
                         { state.Block("Session/power continuity changed. No new job permitted."); }
-                        bool launch = state.Accept(request, value => platform.WriteNew("accepted-" + value.RequestId.ToString("N") + ".json", value));
-                        if (launch) { ownerFailure = null; job = Task.Run(() => RunJobAsync(request)); }
+                        if (request.Action == CpuVoltageSessionAction.Status && job?.IsCompleted == true && currentRun != Guid.Empty)
+                        {
+                            try
+                            {
+                                var records = platform.ReadEvidence(currentRun);
+                                if (completedCleanup != Guid.Empty) { records["control/session-readonly-cleanup.json"] = platform.ReadCleanupReceipt(completedCleanup); }
+                                state.UpdateEvidence(records);
+                            }
+                            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException) { }
+                        }
+                        bool launch = (request.Action != CpuVoltageSessionAction.CleanupReadOnly || job?.IsCompleted == true)
+                            && state.Accept(request, value => platform.WriteNew("accepted-" + value.RequestId.ToString("N") + ".json", value));
+                        if (launch && request.Action == CpuVoltageSessionAction.CleanupReadOnly) { job = Task.Run(() => RunReadOnlyCleanup(request)); }
+                        else if (launch) { ownerFailure = null; currentRun = Guid.Empty; completedCleanup = Guid.Empty; job = Task.Run(() => RunJobAsync(request)); }
                         response = WithOwnerFailure(state.Snapshot, ownerFailure) with { RequestAccepted = launch };
                     }
                     await CpuVoltageSessionProtocol.WriteAsync(pipe, response, CpuVoltageSessionProtocol.MaximumReply, timeout.Token).ConfigureAwait(false);
@@ -169,6 +185,7 @@ internal sealed class CpuVoltageSessionCommand
     {
         Guid run = Guid.Empty;
         DateTimeOffset launched = DateTimeOffset.UtcNow;
+        lock (gate) { currentLaunched = launched; }
         Dictionary<string, JsonElement>? records = null;
         try
         {
@@ -183,11 +200,17 @@ internal sealed class CpuVoltageSessionCommand
             retainedOwner = CpuPmRetainedLaunchProcess.RetainForCompletion(WindowsCpuPmProcessProbe.FromLaunchedHandle(owner.SafeHandle),
                 platform.Pins, platform.Image, image.Sha256, image);
             // Fixed short announcement comes from the retained actual owner, never a caller path.
-            Task read = ReadOwnerOutputAsync(owner.StandardOutput, value => run = value, line =>
+            Guid ownerRequest = request.RequestId;
+            Task read = ownerOutput = ReadOwnerOutputAsync(owner.StandardOutput, value =>
+            {
+                lock (gate) { run = value; currentRun = value; }
+            }, line =>
             {
                 lock (gate)
                 {
-                    ownerFailure = line;
+                    // An ended previous owner's buffered output cannot overwrite
+                    // diagnostics for a later explicit job.
+                    if (state.Snapshot.Job == ownerRequest) { ownerFailure = line; }
                 }
             });
             await owner.WaitForExitAsync(budget.Token).ConfigureAwait(false);
@@ -207,6 +230,31 @@ internal sealed class CpuVoltageSessionCommand
         {
             try { if (run != Guid.Empty) { records = platform.ReadEvidence(run); } } catch { }
             lock (gate) { state.Complete(false, false, records, "Stopped without retry: " + exception.Message + " Retained owner/resources require explicit reconciliation."); }
+        }
+    }
+    private void RunReadOnlyCleanup(CpuVoltageSessionRequest request)
+    {
+        Dictionary<string, JsonElement>? records = null;
+        try
+        {
+            if (owner is null || retainedOwner is null || ownerOutput is null || currentRun == Guid.Empty)
+            { throw new IOException("No exact retained readonly owner/run."); }
+            var cleanup = platform.BeginReadOnlyCleanup(request.RequestId, currentRun, currentLaunched, owner, retainedOwner, ownerOutput,
+                ContextCurrent, () => { lock (gate) { return ownerFailure; } });
+            CpuVoltageReadOnlyCleanup.Execute(cleanup);
+            records = platform.ReadEvidence(currentRun);
+            records["control/session-readonly-cleanup.json"] = platform.ReadCleanupReceipt(request.RequestId);
+            owner = null; retainedOwner = null; ownerOutput = null;
+            lock (gate)
+            {
+                completedCleanup = request.RequestId;
+                state.CompleteCleanup(true, records, "Readonly resources cleaned; no CPU restoration claim. A fresh observation requires a new explicit request.");
+            }
+        }
+        catch (Exception exception)
+        {
+            try { if (currentRun != Guid.Empty) { records = platform.ReadEvidence(currentRun); } } catch { }
+            lock (gate) { state.CompleteCleanup(false, records, "Readonly cleanup refused or uncertain: " + exception.Message + " Retained resources; no retry."); }
         }
     }
     // Retain late parked-owner output across subsequent monitor messages. This
@@ -264,7 +312,7 @@ internal sealed class CpuVoltageSessionCommand
     internal static async Task<int> RunClientAsync(string[] args, TextWriter output)
     {
         if (args is ["--help"])
-        { output.WriteLine($"{ClientName} --session <N-guid> --action ObserveOnly|VoltageCycle|Status|Close [--request-id <N-guid>]. No elevation, service start, polling or retry."); return 0; }
+        { output.WriteLine($"{ClientName} --session <N-guid> --action ObserveOnly|VoltageCycle|CleanupReadOnly|Status|Close [--request-id <N-guid>]. No elevation, service start, polling or retry."); return 0; }
         try
         {
             if (args.Length is not (4 or 6) || args[0] != "--session" || !Guid.TryParseExact(args[1], "N", out Guid session)
@@ -296,7 +344,7 @@ internal sealed class CpuVoltageSessionCommand
                 ?? throw new IOException("Missing response.");
             if (response.Session != session) { throw new IOException("Session response differs."); }
             output.WriteLine(System.Text.Encoding.UTF8.GetString(bytes));
-            return action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle
+            return action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle or CpuVoltageSessionAction.CleanupReadOnly
                 ? response.RequestAccepted ? 0 : 2 : action == CpuVoltageSessionAction.Close && response.State != "Closed" ? 2 : 0;
         }
         catch (Exception exception) { output.WriteLine("Session request unavailable; do not replay a job. Use Status: " + exception.Message); return 3; }

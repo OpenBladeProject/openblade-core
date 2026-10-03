@@ -9,7 +9,9 @@ namespace OpenBlade.Capture;
 
 // Narrow primitives only. No lifecycle platform composition, active-driver scan,
 // host/pin provider, journal, launcher or Program caller is supplied by this file.
-// Never reopen/adopt a service as the owned registration. Raw SCM handles have no
+// Normal launch never adopts a registration. The explicit readonly reconciliation
+// path may reopen only its separately proved exact owner tag, for stop/delete.
+// Raw SCM handles have no
 // finalizer: uncertain calls retain their object (and the external safety pins).
 internal sealed class WindowsCpuPmDriverRegistration : ICpuPmCreatedDriver
 {
@@ -25,6 +27,8 @@ internal sealed class WindowsCpuPmDriverRegistration : ICpuPmCreatedDriver
     private RegistryKey? ownerKey;
     private int tagAttempted, startAttempted, stopAttempted, deleteAttempted;
     private bool deleteReturned;
+    private bool cleanupOnly;
+    private static readonly List<WindowsCpuPmDriverRegistration> RecoveryRoots = [];
     private WindowsCpuPmDriverRegistration() { }
 
     // One allocation per process, rooted before the first possibly blocking call.
@@ -41,6 +45,26 @@ internal sealed class WindowsCpuPmDriverRegistration : ICpuPmCreatedDriver
         // No registry write has occurred yet; a missing key is an admission error.
         using var machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         value.ownerKey = machine.OpenSubKey(RegistryPath, writable: true);
+        return value;
+    }
+    // Cleanup-only handles: no CREATE, START, CHANGE_CONFIG or tag-write access.
+    // Caller retains signed image pins, journal proof and exact process identities.
+    internal static WindowsCpuPmDriverRegistration OpenExistingOwnedForCleanup(CpuPmDriverOwnerTag expected)
+    {
+        RequireWindowsX64(); ArgumentNullException.ThrowIfNull(expected);
+        var value = new WindowsCpuPmDriverRegistration { cleanupOnly = true };
+        lock (RecoveryRoots)
+        {
+            if (RecoveryRoots.Count >= 3) { throw new IOException("Readonly cleanup handle budget exhausted."); }
+            RecoveryRoots.Add(value); // Root before any native call, including failure.
+        }
+        value.manager = OpenSCManager(null, null, 1);
+        if (value.manager == 0) { throw new IOException("Cleanup SCM manager unavailable."); }
+        value.service = OpenService(value.manager, Name, 0x10025);
+        if (value.service == 0) { throw new IOException("Exact owned driver unavailable."); }
+        using var machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        value.ownerKey = machine.OpenSubKey(RegistryPath, writable: false);
+        if (!value.ReadFresh().Owned(expected.Value)) { throw new IOException("Existing driver ownership/configuration differs."); }
         return value;
     }
     internal static int ReadScmAbsenceError()
@@ -90,13 +114,13 @@ internal sealed class WindowsCpuPmDriverRegistration : ICpuPmCreatedDriver
     }
     public bool WriteNewOwnerTagAndFlush(CpuPmDriverOwnerTag tag)
     {
-        if (service == 0 || ownerKey is null || Interlocked.CompareExchange(ref tagAttempted, 1, 0) != 0) { return false; }
+        if (cleanupOnly || service == 0 || ownerKey is null || Interlocked.CompareExchange(ref tagAttempted, 1, 0) != 0) { return false; }
         if (ownerKey.GetValueNames().Contains(OwnerValueName, StringComparer.OrdinalIgnoreCase)) { return false; }
         ownerKey.SetValue(OwnerValueName, tag.Value, RegistryValueKind.String);
         ownerKey.Flush();
         return ReadTag(ownerKey) == tag.Value;
     }
-    public bool StartOnce() => service != 0 && Interlocked.CompareExchange(ref startAttempted, 1, 0) == 0 && StartService(service, 0, 0);
+    public bool StartOnce() => !cleanupOnly && service != 0 && Interlocked.CompareExchange(ref startAttempted, 1, 0) == 0 && StartService(service, 0, 0);
     public bool StopOnce() => service != 0 && Interlocked.CompareExchange(ref stopAttempted, 1, 0) == 0 && ControlService(service, 1, out _);
     public bool DeleteOnce()
     {

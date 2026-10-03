@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text.Json;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
@@ -20,6 +21,7 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
     private readonly CpuVoltageOwnedSmokeCommand.Options options;
     private readonly IReadOnlyList<CpuPmLaunchFile> manifest;
     private WindowsCpuVoltageServiceProcess? preparedService;
+    private WindowsCpuVoltageReadOnlyCleanup? retainedCleanup;
     private readonly FileStream hostLease;
     internal string Image => Path.Combine(options.Payload, "OpenBlade.Capture.exe");
     internal ICpuPmLaunchFiles Pins => pins;
@@ -144,7 +146,8 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
         CpuPmAuthenticatedChildRun.PinAncestors(pins, root); pins.PinDirectory(root, true, true);
         int bytes = 0;
         foreach (string name in new[] { "evidence/cpu-voltage-optimizer.json", "evidence/cpu-voltage-optimizer-baseline.json",
-            "control/voltage-owner-completed.json", "control/voltage-observation-recorded.json", "control/voltage-restoration-verified.json" })
+            "control/voltage-owner-completed.json", "control/voltage-observation-recorded.json", "control/voltage-restoration-verified.json",
+            "control/voltage-context.json", "control/voltage-child.json" })
         {
             string path = Path.Combine(root, name.Replace('/', '\\'));
             if (!File.Exists(path)) { continue; }
@@ -154,7 +157,65 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
             if (bytes > 192 * 1024) { throw new IOException("Evidence exceeds session export bound."); }
             using var json = JsonDocument.Parse(content); records.Add(name, json.RootElement.Clone());
         }
+        try { records.Add("control/lifecycle.jsonl", JsonSerializer.SerializeToElement(System.Text.Encoding.UTF8.GetString(ReadJournal(run)))); }
+        catch (IOException) { /* A live incomplete append is unavailable, never cleanup authority. */ }
         return records;
+    }
+    internal byte[] ReadJournal(Guid run)
+    {
+        string path = Path.Combine(WindowsCpuPmCaptureEvidenceFiles.FixedRoot, run.ToString("N"), "control", "lifecycle.jsonl");
+        CpuPmAuthenticatedChildRun.PinAncestors(pins, path);
+        using var handle = WindowsCpuPmCaptureEvidenceFiles.CreateFileW(path, 0x80020000, 3, 0, 3, 0x00200000, 0);
+        WindowsCpuPmCaptureEvidenceFiles.VerifyShape(handle, path, false);
+        WindowsCpuPmCaptureEvidenceFiles.VerifyPrivateAcl(handle);
+        using var stream = new FileStream(handle, FileAccess.Read);
+        byte[] bytes = ReadCoherentJournal(stream);
+        WindowsCpuPmCaptureEvidenceFiles.VerifyShape(handle, path, false);
+        WindowsCpuPmCaptureEvidenceFiles.VerifyPrivateAcl(handle);
+        return bytes;
+    }
+    internal static byte[] ReadCoherentJournal(Stream stream)
+    {
+        long length = stream.Length;
+        if (length is <= 0 or > CpuPmDurableDriverJournal.MaximumBytes) { throw new IOException("Lifecycle size unavailable."); }
+        byte[] first = new byte[(int)length], second = new byte[(int)length];
+        stream.Position = 0; stream.ReadExactly(first);
+        if (stream.Length != length || first[^1] != (byte)'\n') { throw new IOException("Lifecycle append in progress."); }
+        stream.Position = 0; stream.ReadExactly(second);
+        if (stream.Length != length || !first.AsSpan().SequenceEqual(second)) { throw new IOException("Lifecycle snapshot changed."); }
+        return first;
+    }
+    internal void PinTerminalJournal(Guid run, string expectedHash)
+    {
+        string path = Path.Combine(WindowsCpuPmCaptureEvidenceFiles.FixedRoot, run.ToString("N"), "control", "lifecycle.jsonl");
+        if (pins.PinFile(path, CpuPmDurableDriverJournal.MaximumBytes, true).Sha256 != expectedHash)
+        { throw new IOException("Terminal owner journal changed."); }
+    }
+    internal WindowsCpuVoltageReadOnlyCleanup BeginReadOnlyCleanup(Guid request, Guid run, DateTimeOffset launched,
+        Process owner, CpuPmRetainedLaunchProcess retainedOwner, Task ownerOutput, Func<bool> contextCurrent, Func<string?> ownerReason)
+    {
+        if (preparedService is null) { throw new IOException("Exact retained Service unavailable."); }
+        var records = ReadEvidence(run);
+        string childImage = Path.Combine(options.Payload, "firmware-smoke", "OpenBlade.FirmwareSmoke.exe");
+        string childHash = manifest.Single(file => file.Name == "firmware-smoke/OpenBlade.FirmwareSmoke.exe").Sha256;
+        if (pins.PinFile(childImage, CpuPmLaunchSchema.MaximumFileBytes, true).Sha256 != childHash)
+        { throw new IOException("Child image differs."); }
+        var proof = CpuVoltageReadOnlyCleanup.Verify(Enrollment, run, preparedService.Identity, childImage, childHash,
+            records, launched, DateTimeOffset.UtcNow);
+        retainedCleanup = new(this, preparedService, owner, retainedOwner, ownerOutput, proof, run, request, contextCurrent, ownerReason);
+        return retainedCleanup;
+    }
+    internal void VerifyCleanupVendorFiles()
+    {
+        foreach (var expected in Rz090528InstalledCpuBackendInspector.ExpectedHashes)
+        {
+            CpuPmAuthenticatedChildRun.PinAncestors(pins, expected.Key);
+            if (pins.PinFile(expected.Key, CpuPmLaunchSchema.MaximumFileBytes, false).Sha256 != expected.Value)
+            { throw new IOException("Cleanup vendor file hash differs."); }
+        }
+        if (!WindowsRz090528CpuQueryAdapter.FilesExact(WindowsInstalledCpuBackendSnapshotSource.ReadFileMetadata()))
+        { throw new IOException("Cleanup vendor signatures differ."); }
+        pins.AssertAllPins();
     }
     internal void WriteNew(string name, object value)
     {
@@ -162,6 +223,14 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
         using var stream = new FileStream(Path.Combine(DirectoryPath, name), FileMode.CreateNew, FileAccess.Write,
             FileShare.Read, 4096, FileOptions.WriteThrough);
         JsonSerializer.Serialize(stream, value, value.GetType(), CpuVoltageSessionProtocol.Json); stream.Flush(true);
+    }
+    internal JsonElement ReadCleanupReceipt(Guid request)
+    {
+        string path = Path.Combine(DirectoryPath, "cleanup-" + request.ToString("N") + ".json");
+        RequireProtected(path, false);
+        var pin = pins.PinFile(path, CpuPmLaunchSchema.ManifestLimit, false);
+        using var document = JsonDocument.Parse(pin.ReadBounded(CpuPmLaunchSchema.ManifestLimit));
+        return document.RootElement.Clone();
     }
     internal static CpuVoltageSessionEnrollment ReadEnrollment(Guid session)
     {

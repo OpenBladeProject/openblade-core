@@ -74,21 +74,28 @@ internal sealed class WindowsCpuVoltageServiceProcess
         }
         catch { pipe.Dispose(); throw; }
     }
-    private void VerifyVersion(CancellationToken token)
+    private void VerifyVersion(CancellationToken token, bool requireNoCpuRecovery = false)
     {
         var client = new ServiceClient(ConnectBound, TimeProvider.System);
         try
         {
             var status = client.GetStatusAsync(token).GetAwaiter().GetResult();
             if (status.ServiceVersion != version) { throw new IOException("Service version differs from reviewed package."); }
+            if (requireNoCpuRecovery) { RequireNoCpuRecovery(status.CpuTuning); }
             AssertState(CpuPmChildState.Running);
         }
         finally { client.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-    internal void ShutdownOnce(CancellationToken token)
+    internal static void RequireNoCpuRecovery(CpuTuningStatus? cpu)
+    {
+        if (cpu is not null && (cpu.RestorePending || cpu.LiveRecovery is { State: not CpuTuningRecoveryState.None }
+            || cpu.FirmwareRecovery is { State: not CpuTuningRecoveryState.None }))
+        { throw new IOException("Unrelated CPU recovery prevents resource-only cleanup."); }
+    }
+    internal void ShutdownOnce(CancellationToken token, bool requireNoCpuRecovery = false)
     {
         if (shutdownRequested) { throw new IOException("Shutdown already requested."); }
-        VerifyVersion(token); shutdownRequested = true;
+        VerifyVersion(token, requireNoCpuRecovery); shutdownRequested = true;
         var client = new ServiceClient(ConnectBound, TimeProvider.System);
         try
         {

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.Capture;
 
-internal enum CpuVoltageSessionAction { ObserveOnly, VoltageCycle, Status, Close }
+internal enum CpuVoltageSessionAction { ObserveOnly, VoltageCycle, Status, Close, CleanupReadOnly }
 internal sealed record CpuVoltageSessionRequest(int Version, Guid RequestId, CpuVoltageSessionAction Action);
 internal sealed record CpuVoltageSessionReply(Guid Session, string State, Guid? Job, bool ObservationAdmitted,
     string Message, IReadOnlyDictionary<string, JsonElement>? Evidence = null)
@@ -54,16 +54,19 @@ internal static class CpuVoltageSessionProtocol
 }
 
 // In-memory reducer is backed by a CreateNew durable acceptance record before launch.
-// One observation and one cycle are the entire authority of an enrollment.
+// At most three explicit observations and one cycle per enrollment. Cleanup
+// resolves resources only; it never grants cycle or renewed session authority.
 internal sealed class CpuVoltageSessionState(Guid session)
 {
     private readonly HashSet<Guid> accepted = [];
-    private bool observed, cycled, blocked, closed;
+    private int observations;
+    private bool cycled, blocked, closed, failed, cleaning, cleanupAttempted;
+    private CpuVoltageSessionAction activeAction;
     private Guid? active;
     private bool observationAdmitted;
-    private string message = "Ready for one observation.";
+    private string message = "Ready for an explicit observation (maximum three).";
     private IReadOnlyDictionary<string, JsonElement>? evidence;
-    internal CpuVoltageSessionReply Snapshot => new(session, closed ? "Closed" : blocked ? "Blocked"
+    internal CpuVoltageSessionReply Snapshot => new(session, closed ? "Closed" : cleaning ? "CleaningReadOnly" : blocked || failed ? "Blocked"
         : active is not null ? "Running" : "Ready", active, observationAdmitted, message, evidence);
     internal bool MustRetainHost => active is not null;
     internal bool Accept(CpuVoltageSessionRequest request, Action<CpuVoltageSessionRequest> persist)
@@ -74,24 +77,38 @@ internal sealed class CpuVoltageSessionState(Guid session)
             if (active is null) { closed = true; message = "Session closed."; }
             return false;
         }
-        if (blocked || closed || active is not null || accepted.Contains(request.RequestId)
-            || request.Action == CpuVoltageSessionAction.ObserveOnly && observed
-            || request.Action == CpuVoltageSessionAction.VoltageCycle && (cycled || !observationAdmitted))
+        bool cleanup = request.Action == CpuVoltageSessionAction.CleanupReadOnly;
+        if (closed || accepted.Contains(request.RequestId) || cleaning
+            || cleanup && (!failed || active is null || activeAction != CpuVoltageSessionAction.ObserveOnly || cleanupAttempted)
+            || !cleanup && (blocked || failed || active is not null
+                || request.Action == CpuVoltageSessionAction.ObserveOnly && (observations >= 3 || observationAdmitted || cycled)
+                || request.Action == CpuVoltageSessionAction.VoltageCycle && (cycled || !observationAdmitted)))
         { return false; }
         // A failed durable append closes admission; it never leaves a retryable launch.
         accepted.Add(request.RequestId);
+        if (cleanup) { cleanupAttempted = true; }
         try { persist(request); }
         catch { Block("Acceptance could not be durably recorded. No job launched."); throw; }
-        if (request.Action == CpuVoltageSessionAction.ObserveOnly) { observed = true; } else { cycled = true; }
+        if (cleanup) { cleaning = true; message = "Readonly resource cleanup accepted; do not resubmit."; return true; }
+        if (request.Action == CpuVoltageSessionAction.ObserveOnly) { observations++; } else { cycled = true; }
+        activeAction = request.Action; cleanupAttempted = false; observationAdmitted = false;
         active = request.RequestId; message = "Accepted; do not resubmit this job."; return true;
     }
     internal void Complete(bool success, bool admitCycle, IReadOnlyDictionary<string, JsonElement>? records, string detail)
     {
         evidence = records; message = detail;
-        if (!success) { blocked = true; return; }
+        if (!success) { failed = true; observationAdmitted = false; return; }
         active = null;
         observationAdmitted = admitCycle;
-        if (!admitCycle) { blocked = true; }
+        failed = false;
     }
+    internal void CompleteCleanup(bool success, IReadOnlyDictionary<string, JsonElement>? records, string detail)
+    {
+        if (!cleaning) { throw new InvalidOperationException("No accepted cleanup."); }
+        cleaning = false; evidence = records; message = detail; observationAdmitted = false;
+        if (!success) { failed = true; return; }
+        active = null; failed = false; // The sticky session/continuity block remains.
+    }
+    internal void UpdateEvidence(IReadOnlyDictionary<string, JsonElement> records) => evidence = records;
     internal void Block(string detail) { blocked = true; message = detail; }
 }

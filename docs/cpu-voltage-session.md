@@ -1,6 +1,6 @@
 # CPU voltage validation session
 
-The developer-only session host accepts one CPU observation and, only after a
+The developer-only session host accepts at most three explicit CPU observations and, only after a
 Stored response with a writable typed live backend, one reversible -1/0 cycle.
 It runs in the enrolled user's active local Windows session. Each job uses a
 fresh instance of the existing owned-driver supervisor, with its 600-second
@@ -24,7 +24,7 @@ console, using the reviewed values:
   --payload '<protected closure>' --source '<full revision>' `
   --manifest-sha256 '<uppercase SHA-256>' `
   --expected-service-version '<version+voltage-validation.8hex>' `
-  --confirm-target RZ09-0528-CPU-SESSION-ONE-OBSERVATION-ONE-CYCLE
+  --confirm-target RZ09-0528-CPU-SESSION-THREE-OBSERVATIONS-ONE-CYCLE-READONLY-CLEANUP
 ```
 
 The host prints `CpuVoltageSession=<32-character GUID>`. Enrollment lasts at
@@ -49,10 +49,12 @@ user read access and binds the pipe to the host process identity.
 ```
 
 Requests return promptly; `Status` returns the current job and fixed evidence
-records when available. Redirect client output to a user-owned file to retain a
+records when available, including the fixed owner context, child identity and a
+bounded coherent snapshot of its live lifecycle journal. Redirect client output to a user-owned file to retain a
 copy. The original private evidence is unchanged. After observation completes,
 `observationAdmitted: true` permits the `VoltageCycle` action. A refused
-observation blocks the cycle. The normal cycle runner still repeats all fresh
+observation blocks the cycle. A resolved readonly refusal permits a fresh explicitly
+requested observation within the three-observation limit. The normal cycle runner still repeats all fresh
 admission checks. Use `Close` when the host is idle and resolved.
 
 The host records request acceptance durably before launching. An optional
@@ -63,7 +65,37 @@ OpenBlade Service, after checking its configuration, protection and driver
 absence. It does not reinstall to start Service.
 
 An ambiguous operation stops new jobs and retains the owner, process handles and
-file pins for explicit reconciliation. `Close` cannot discard an unresolved
-owner. A fatal server failure during an unresolved job also retains the host.
-Do not terminate parked processes or infer restoration from a timeout. This
-initial host intentionally has no generic recovery, shell or cleanup command.
+file pins. For a failed `ObserveOnly` job, request the fixed `CleanupReadOnly`
+action once. It verifies the pinned no-Set/no-Restore result, enrolled Service
+identity, child provenance, complete ChildBound lifecycle and signed owned
+driver configuration. It refuses a live smoke child, missing or changing proof,
+known pending CPU recovery, and any failed voltage cycle.
+
+Cleanup follows the reviewed resource order: typed shutdown of the exact
+Service (including normal non-CPU shutdown cleanup), verified Service terminal,
+termination of only the exact retained parked owner, then owned driver stop,
+delete and independent full absence. It never issues CPU Observe/Set/Restore,
+terminates a smoke child, or guesses that CPU restoration occurred. A running
+owner must have emitted its final park reason; a timeout alone is insufficient.
+The existing shutdown path performs no CPU recovery; cached pending CPU recovery
+when present still causes refusal. Cleanup is not a claim about unrelated CPU state.
+
+```powershell
+& '<normal-user client>\OpenBlade.Capture.exe' cpu-voltage-session-client `
+  --session '<session GUID>' --action CleanupReadOnly
+```
+
+After a durable verified cleanup receipt, `Status` includes that receipt and a
+fresh `ObserveOnly` request may run under the same package and elevation. Cleanup
+does not clear a lock, sleep, power or session block. No retries are automatic;
+each observation and cleanup has a new durable request ID. Cleanup failure
+retains resources and refuses another cleanup attempt. Its 90-second cooperative
+budget never abandons a pending native call or starts a replacement worker.
+Evidence older than a complete ChildBound lifecycle or beyond its first cleanup
+intent requires explicit attended reconciliation. A package revision still
+requires new enrollment.
+
+`Close` cannot discard an unresolved owner. A fatal server failure during an
+unresolved job also retains the host. There is no generic recovery, shell,
+arbitrary path or process-selection command. This source-tested cleanup path
+still requires attended installed validation before relying on it unattended.
