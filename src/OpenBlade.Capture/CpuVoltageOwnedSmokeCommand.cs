@@ -30,6 +30,11 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     private int uncertain;
     private CpuVoltageOwnedSmokeCommand(Options options, TextWriter output) { this.options = options; this.output = output; }
     internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion, bool ObserveOnly = false);
+    internal sealed record CompletionReceipt(Guid Run, string Mode, string Source, string ManifestSha256,
+        string ExpectedServiceVersion, bool ServiceTerminal, bool OwnedDriverAbsent, bool OriginalVerified);
+    internal static CompletionReceipt CreateCompletionReceipt(Guid run, Options options) => new(run,
+        options.ObserveOnly ? "ObserveOnly" : "VoltageCycle", options.Source, options.Manifest, options.ServiceVersion,
+        true, true, !options.ObserveOnly);
     internal static Options Parse(string[] args)
     {
         string[] names = ["--payload", "--source", "--manifest-sha256", "--expected-service-version", "--confirm-target"];
@@ -89,6 +94,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
                 WindowsCpuPmDriverJournalStorage.CreateForFixedRun(tag), new CpuPmAuthorityClock());
             WriteContext(Path.Combine(runPath, "control", "voltage-context.json"), new
             { run, options.Source, options.Manifest, options.ServiceVersion, service.Identity, Mode = options.ObserveOnly ? "ObserveOnly" : "Cycle", BudgetSeconds = 600 });
+            output.WriteLine("CpuVoltageOwnerRun=" + run.ToString("N")); output.Flush();
             watchdog = new Timer(_ => MarkUncertain(), null, RemainingBudget(), Timeout.InfiniteTimeSpan);
             mutationPossible = true;
             if (!owner.PrepareAndStart(deadline.Token) || !owner.BeginChildLaunch(deadline.Token)) { return Park("DriverOrLaunchAdmissionUnknown"); }
@@ -138,7 +144,8 @@ internal sealed class CpuVoltageOwnedSmokeCommand
                     { deadline.Token.ThrowIfCancellationRequested(); pins.AssertAllPins(); Thread.Sleep(100); }
                     service.AssertState(CpuPmChildState.Terminal); serviceTerminal = true;
                 },
-                () => owner.Cleanup(deadline.Token), () => Thread.Sleep(100));
+                () => owner.Cleanup(deadline.Token), () => Thread.Sleep(100),
+                () => WriteContext(Path.Combine(runPath, "control", "voltage-owner-completed.json"), CreateCompletionReceipt(run, options)));
             if (!cleaned) { return Park("CompletionOrCleanupUnknown"); }
             watchdog.Dispose(); watchdog = null;
             child.ReleaseAfterTerminal(); service.ReleaseAfterTerminal(); pins.Dispose(); deadline.Dispose();
@@ -152,15 +159,24 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         finally { GC.KeepAlive(root); }
     }
     // Retains the existing terminal-child/cleanup reducer; the sole workload
-    // extension verifies immutable restoration evidence and drains Service first.
+    // extension verifies immutable workload evidence and drains Service first.
     internal static bool Complete(ICpuPmRetainedChild child, Func<bool> uncertain, Action context, Action revoke,
-        Func<int> exitCode, Action verifyRestoration, Action shutdown, Action waitServiceTerminal, Func<CpuPmDriverCleanup> cleanup, Action delay)
-        => CpuPmSupervisorCompletion.Finish(child, uncertain, context, revoke, () =>
+        Func<int> exitCode, Action verifyRestoration, Action shutdown, Action waitServiceTerminal, Func<CpuPmDriverCleanup> cleanup,
+        Action delay, Action? recordCompletion = null)
+    {
+        bool complete = CpuPmSupervisorCompletion.Finish(child, uncertain, context, revoke, () =>
         {
             if (exitCode() != 0) { throw new IOException("Smoke failed; no shutdown or driver cleanup."); }
             verifyRestoration(); context(); if (uncertain()) { throw new IOException("Deadline before shutdown."); }
             shutdown(); waitServiceTerminal(); context(); if (uncertain()) { throw new IOException("Deadline before cleanup."); }
         }, cleanup, delay);
+        if (complete && recordCompletion is not null)
+        {
+            context(); if (uncertain()) { throw new IOException("Deadline before completion receipt."); }
+            recordCompletion(); if (uncertain()) { throw new IOException("Deadline after completion receipt."); }
+        }
+        return complete;
+    }
     private readonly long started = Stopwatch.GetTimestamp();
     private TimeSpan RemainingBudget()
     { var remaining = Budget - Stopwatch.GetElapsedTime(started); return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero; }

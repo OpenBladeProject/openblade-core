@@ -17,6 +17,70 @@ public sealed class CpuVoltageOwnedSmokeTests
     private static string[] Args => ["--payload", @"C:\reviewed", "--source", Source, "--manifest-sha256", Hash,
         "--expected-service-version", Version, "--confirm-target", CpuVoltageOwnedSmokeCommand.Confirmation];
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void OwnerCompletionReceiptIsPublishedOnlyAfterVerifiedResourceCleanup(bool observeOnly)
+    {
+        Guid run = Guid.NewGuid();
+        var options = new CpuVoltageOwnedSmokeCommand.Options(@"C:\reviewed", Source, Hash, Version, observeOnly);
+        var events = new List<string>(); JsonElement? receipt = null;
+        Assert.True(CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal }, () => false,
+            () => { }, () => { }, () => 0, () => events.Add("evidence"), () => events.Add("shutdown"),
+            () => events.Add("service-terminal"), () => { Assert.Null(receipt); events.Add("driver-absent"); return CpuPmDriverCleanup.Complete; },
+            () => throw new InvalidOperationException(), () =>
+            {
+                receipt = JsonSerializer.SerializeToElement(CpuVoltageOwnedSmokeCommand.CreateCompletionReceipt(run, options));
+                events.Add("receipt");
+            }));
+        Assert.Equal(new[] { "evidence", "shutdown", "service-terminal", "driver-absent", "receipt" }, events);
+        var value = receipt!.Value;
+        Assert.Equal(run, value.GetProperty("Run").GetGuid());
+        Assert.Equal(observeOnly ? "ObserveOnly" : "VoltageCycle", value.GetProperty("Mode").GetString());
+        Assert.Equal(Source, value.GetProperty("Source").GetString()); Assert.Equal(Hash, value.GetProperty("ManifestSha256").GetString());
+        Assert.Equal(Version, value.GetProperty("ExpectedServiceVersion").GetString());
+        Assert.True(value.GetProperty("ServiceTerminal").GetBoolean()); Assert.True(value.GetProperty("OwnedDriverAbsent").GetBoolean());
+        Assert.Equal(!observeOnly, value.GetProperty("OriginalVerified").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("child")]
+    [InlineData("evidence")]
+    [InlineData("shutdown")]
+    [InlineData("service-terminal")]
+    [InlineData("cleanup")]
+    public void RetainedOrFailedCompletionCannotPublishOwnerReceipt(string failure)
+    {
+        bool receipt = false;
+        bool Run() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = failure == "child" ? CpuPmChildState.Unknown : CpuPmChildState.Terminal },
+            () => false, () => { }, () => { }, () => 0,
+            () => { if (failure == "evidence") { throw new IOException(); } },
+            () => { if (failure == "shutdown") { throw new IOException(); } },
+            () => { if (failure == "service-terminal") { throw new IOException(); } },
+            () => failure == "cleanup" ? CpuPmDriverCleanup.Refused : CpuPmDriverCleanup.Complete,
+            () => throw new InvalidOperationException(), () => receipt = true);
+        if (failure is "child" or "cleanup") { Assert.False(Run()); }
+        else { Assert.Throws<IOException>(() => Run()); }
+        Assert.False(receipt);
+    }
+
+    [Fact]
+    public void OwnerReceiptWriteFailureCannotReturnSuccessfulCompletion()
+    {
+        Assert.Throws<IOException>(() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal },
+            () => false, () => { }, () => { }, () => 0, () => { }, () => { }, () => { },
+            () => CpuPmDriverCleanup.Complete, () => { }, () => throw new IOException("Receipt publication failed")));
+    }
+
+    [Fact]
+    public void RevocationDuringReceiptCannotReturnSuccessfulCompletion()
+    {
+        bool uncertain = false;
+        Assert.Throws<IOException>(() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal },
+            () => uncertain, () => { }, () => { }, () => 0, () => { }, () => { }, () => { },
+            () => CpuPmDriverCleanup.Complete, () => { }, () => uncertain = true));
+    }
+
     [Fact]
     public void ObserveOnlyRequiresMatchingTokenAndPropagatesExactChildMode()
     {

@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add a developer voltage-validation session host that permits one diagnostic observation and one reversible test after a single attended elevation, with fixed build identity, bounded jobs, and retained evidence on uncertainty. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Add saved next-boot CPU Voltage Optimizer settings with paired firmware verification and exact original restoration on the supported Blade 16 (2025) RZ09-0528. Keep saved settings separate from measured running offsets through the optional already-running signed AMD backend; production live writes remain unavailable pending installed validation. Use an all-core On/Off control and remembered −30 to −1 value, with voltage-only requests and restoration. PPT feature work is deferred. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Enable HyperBoost on the supported Blade 16 (2025) RZ09-0528 with the supported cooling pad and full-power adapter, using verified Performance-mode entry and restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
 - Enable NVIDIA GPU clock tuning on the supported Blade 16 (2025) RZ09-0528, with model and driver limits and confirmed offset restoration. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))

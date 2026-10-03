@@ -4,6 +4,15 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.HostName)
+{
+    return await CpuVoltageSessionCommand.RunHostAsync(args.Skip(1).ToArray(), Console.Out);
+}
+if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.ClientName)
+{
+    return await CpuVoltageSessionCommand.RunClientAsync(args.Skip(1).ToArray(), Console.Out);
+}
+
 if (args.Length > 0 && args[0].Equals(CpuVoltageOwnedSmokeCommand.Name, StringComparison.OrdinalIgnoreCase))
 {
     return CpuVoltageOwnedSmokeCommand.Run(args.Skip(1).ToArray(), Console.Out);
