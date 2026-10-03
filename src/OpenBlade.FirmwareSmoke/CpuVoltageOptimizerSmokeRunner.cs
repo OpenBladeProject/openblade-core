@@ -47,6 +47,8 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         try
         {
             ServiceStatusSnapshot status = await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
+            var continuity = (Preset: status.ConfirmedState?.Performance,
+                AllowPerformanceDrift: status.ExternalChanges.Contains(DeviceSubsystem.Performance));
             CpuTuningStatus observed = await ObserveAsync(cancellationToken).ConfigureAwait(false);
             RequireUnowned(observed);
             int original = RequireVector(observed.LiveState);
@@ -74,7 +76,7 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
                 stream.Flush(flushToDisk: true);
             }
             phase = "Apply";
-            await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
+            await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
             CpuTuningStatus beforeApply = await ObserveAsync(cancellationToken).ConfigureAwait(false);
             RequireUnowned(beforeApply);
             RequireValue(beforeApply.LiveState, original);
@@ -85,13 +87,13 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
             RequireOwned(applied);
             RequireValue(applied.LiveState, target);
             phase = "ForwardReadback";
-            await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
+            await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
             CpuTuningStatus independentlyObserved = await ObserveAsync(cancellationToken).ConfigureAwait(false);
             RequireOwned(independentlyObserved);
             RequireValue(independentlyObserved.LiveState, target);
             forward = independentlyObserved.LiveState;
             phase = "Restore";
-            await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
+            await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             restoreAttempted = true;
             CpuTuningStatus restored = RequireObservation(await client.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow,
@@ -99,7 +101,7 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
             RequireUnowned(restored);
             RequireValue(restored.LiveState, original);
             phase = "OriginalReadback";
-            await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
+            await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
             CpuTuningStatus originalObserved = await ObserveAsync(cancellationToken).ConfigureAwait(false);
             RequireUnowned(originalObserved);
             RequireValue(originalObserved.LiveState, original);
@@ -117,7 +119,8 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         }
     }
 
-    private async Task<ServiceStatusSnapshot> GreenStatusAsync(string version, CancellationToken token)
+    private async Task<ServiceStatusSnapshot> GreenStatusAsync(string version, CancellationToken token,
+        (PerformancePreset? Preset, bool AllowPerformanceDrift)? continuity = null)
     {
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = await client.GetStatusAsync(token).ConfigureAwait(false);
@@ -141,8 +144,20 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         { failures.Add($"PotentialControllers: expected count 0, actual {status.PotentialControllers.Count}"); }
         if (!string.IsNullOrEmpty(status.ControllerDetectionWarning))
         { failures.Add("ControllerDetectionWarning: expected empty, actual present"); }
-        if (status.ExternalChanges.Any(subsystem => subsystem != DeviceSubsystem.Lighting))
-        { failures.Add($"ExternalChanges: expected none except Lighting, actual [{string.Join(", ", status.ExternalChanges)}]"); }
+        PerformancePreset? confirmedPreset = status.ConfirmedState?.Performance;
+        bool knownPreset = confirmedPreset.HasValue && Enum.IsDefined(confirmedPreset.Value);
+        bool requiresPreset = continuity?.AllowPerformanceDrift
+            ?? status.ExternalChanges.Contains(DeviceSubsystem.Performance);
+        if (requiresPreset && !knownPreset)
+        { failures.Add($"ConfirmedPerformance: expected a known preset, actual {confirmedPreset?.ToString() ?? "<missing>"}"); }
+        else if (continuity is { AllowPerformanceDrift: true } initial && confirmedPreset != initial.Preset)
+        { failures.Add($"ConfirmedPerformance continuity: expected {initial.Preset}, actual {confirmedPreset}"); }
+        // Only an initial, observed preset mismatch may explain Performance drift for this CO-only cycle.
+        bool allowPerformanceDrift = continuity?.AllowPerformanceDrift
+            ?? (knownPreset && confirmedPreset != status.DesiredState.Performance.Value);
+        if (status.ExternalChanges.Any(subsystem => subsystem != DeviceSubsystem.Lighting
+            && (subsystem != DeviceSubsystem.Performance || !allowPerformanceDrift)))
+        { failures.Add($"ExternalChanges: expected only Lighting or an admitted initial Performance preset mismatch, actual [{string.Join(", ", status.ExternalChanges)}] (confirmed preset {confirmedPreset?.ToString() ?? "<missing>"}, desired {status.DesiredState.Performance.Value}, initial Performance drift admitted {continuity?.AllowPerformanceDrift.ToString() ?? "not yet"})"); }
         if (status.UnconfirmedWrites.Count != 0)
         { failures.Add($"UnconfirmedWrites: expected none, actual [{string.Join(", ", status.UnconfirmedWrites)}]"); }
         var curve = status.Capabilities?.CpuVoltageOptimizer;

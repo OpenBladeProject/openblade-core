@@ -40,6 +40,27 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, false)]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    public async Task InitialConfirmedPresetMismatchAllowsOnlyCurveCycle(int original, bool lighting)
+    {
+        var client = new Client(original, directory)
+        {
+            ExternalChanges = lighting ? [DeviceSubsystem.Performance, DeviceSubsystem.Lighting] : [DeviceSubsystem.Performance],
+            StatusProjection = status => status with { ConfirmedState = new(PerformancePreset.Performance, null, null, null) },
+        };
+        var result = await Run(client);
+        Assert.Equal("Passed", result.Outcome); Assert.True(result.OriginalVerified);
+        Assert.Equal(new[] { "status", "observe", "status", "observe", "apply", "status", "observe", "status", "restore", "status", "observe" }, client.Calls);
+        Assert.Equal(1, client.ApplyCalls); Assert.Equal(1, client.RestoreCalls);
+        Assert.Null(client.Settings!.PowerLimitWatts);
+        Assert.Equal(original == -1 ? 0 : -1, client.Settings.CurveOptimizer!.EffectiveValue);
+        Assert.All(result.Final!.CoreValues, core => Assert.Equal(original, core.Value));
+    }
+
+    [Theory]
     [InlineData("wrong", Version)]
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, null)]
     [InlineData(CpuVoltageOptimizerSmokeRunner.Confirmation, "0.24.0")]
@@ -102,7 +123,12 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     [InlineData("capability", "CpuVoltageOptimizer.Access")]
     public async Task InitialAdmissionNamesFailedPredicateBeforeCpuCalls(string denial, string predicate)
     {
-        var client = new Client(-1, directory) { Denial = denial };
+        var client = new Client(-1, directory)
+        {
+            Denial = denial,
+            ExternalChanges = [DeviceSubsystem.Performance],
+            StatusProjection = status => status with { ConfirmedState = new(PerformancePreset.Performance, null, null, null) },
+        };
         var result = await Run(client);
         Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
         Assert.Contains(predicate, result.Message);
@@ -176,6 +202,123 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         Assert.Equal("Unknown", result.Outcome); Assert.True(result.ApplyAttempted);
         Assert.Equal(1, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
         Assert.Equal(2, client.ObserveCalls);
+    }
+
+    [Theory]
+    [InlineData("state-missing")]
+    [InlineData("preset-missing")]
+    [InlineData("invalid")]
+    public async Task UnknownInitialConfirmedPresetWithPerformanceDriftBlocksBeforeCpuCalls(string failure)
+    {
+        var client = new Client(-1, directory)
+        {
+            ExternalChanges = [DeviceSubsystem.Performance],
+            StatusProjection = status => status with
+            { ConfirmedState = failure == "state-missing" ? null : new(failure == "invalid" ? (PerformancePreset)255 : null, null, null, null) },
+        };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Contains("ConfirmedPerformance", result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+    }
+
+    [Theory]
+    [InlineData(-1, false, false)]
+    [InlineData(0, false, false)]
+    [InlineData(-1, true, false)]
+    [InlineData(0, true, false)]
+    [InlineData(-1, false, true)]
+    [InlineData(0, false, true)]
+    [InlineData(-1, true, true)]
+    [InlineData(0, true, true)]
+    public async Task LegacyCleanOrLightingOnlyCycleDoesNotRequireKnownPreset(int original, bool lighting, bool invalid)
+    {
+        var client = new Client(original, directory)
+        {
+            ExternalChanges = lighting ? [DeviceSubsystem.Lighting] : [],
+            StatusProjection = status => status with
+            { ConfirmedState = invalid ? new((PerformancePreset)255, null, null, null) : null },
+        };
+        var result = await Run(client);
+        Assert.Equal("Passed", result.Outcome); Assert.True(result.OriginalVerified);
+        Assert.Equal(1, client.ApplyCalls); Assert.Equal(1, client.RestoreCalls);
+        Assert.Null(client.Settings!.PowerLimitWatts);
+        Assert.All(result.Final!.CoreValues, core => Assert.Equal(original, core.Value));
+    }
+
+    [Fact]
+    public async Task PerformanceFlagWithoutConfirmedPresetMismatchBlocksBeforeCpuCalls()
+    {
+        var client = new Client(-1, directory)
+        {
+            ExternalChanges = [DeviceSubsystem.Performance],
+            StatusProjection = status => status with { ConfirmedState = new(PerformancePreset.Balanced, null, null, null) },
+        };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Contains("ExternalChanges", result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+    }
+
+    [Theory]
+    [InlineData(DeviceSubsystem.Fans)]
+    [InlineData(DeviceSubsystem.Battery)]
+    [InlineData((DeviceSubsystem)255)]
+    public async Task InitialPresetMismatchNeverAdmitsOtherExternalChanges(DeviceSubsystem unsafeSubsystem)
+    {
+        var client = new Client(-1, directory)
+        {
+            ExternalChanges = [DeviceSubsystem.Performance, DeviceSubsystem.Lighting, unsafeSubsystem],
+            StatusProjection = status => status with { ConfirmedState = new(PerformancePreset.Performance, null, null, null) },
+        };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Contains("ExternalChanges", result.Message);
+        Assert.Contains(unsafeSubsystem.ToString(), result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+    }
+
+    [Theory]
+    [InlineData(2, "new-drift", false)]
+    [InlineData(3, "new-drift", false)]
+    [InlineData(4, "new-drift", false)]
+    [InlineData(5, "new-drift", false)]
+    [InlineData(2, "changed", true)]
+    [InlineData(3, "changed", true)]
+    [InlineData(4, "changed", true)]
+    [InlineData(5, "changed", true)]
+    [InlineData(2, "missing", true)]
+    [InlineData(3, "missing", true)]
+    [InlineData(4, "missing", true)]
+    [InlineData(5, "missing", true)]
+    [InlineData(3, "changed", false)]
+    [InlineData(3, "missing", false)]
+    public async Task PresetContinuityFailureStopsAtEachStatusWithoutRetryOrGuessedRestore(int failAt, string failure, bool clearFlag)
+    {
+        int statusCalls = 0;
+        var client = new Client(-1, directory)
+        {
+            StatusProjection = status =>
+            {
+                bool failing = ++statusCalls == failAt;
+                bool drift = failure == "new-drift" ? failing : !(failing && clearFlag);
+                return status with
+                {
+                    ExternalChanges = drift ? [DeviceSubsystem.Performance] : [],
+                    ConfirmedState = failure == "new-drift" && !failing ? null : new(failing && failure == "missing" ? null : failing && failure == "changed" ? PerformancePreset.Balanced : PerformancePreset.Performance,
+                        null, null, null),
+                };
+            },
+        };
+        var result = await Run(client);
+        Assert.Equal(failAt == 2 ? "Blocked" : "Unknown", result.Outcome);
+        Assert.Equal(new[] { "Apply", "ForwardReadback", "Restore", "OriginalReadback" }[failAt - 2], result.Phase);
+        Assert.Contains(failure == "new-drift" ? "ExternalChanges" : "ConfirmedPerformance", result.Message);
+        Assert.Equal(failAt, statusCalls);
+        Assert.Equal(failAt == 2 ? 0 : 1, client.ApplyCalls);
+        Assert.Equal(failAt == 5 ? 1 : 0, client.RestoreCalls);
+        Assert.Equal(Math.Min(failAt - 1, 3), client.ObserveCalls);
+        Assert.False(result.OriginalVerified);
     }
 
     [Fact]
@@ -322,7 +465,8 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
             { CpuVoltageOptimizer = new(new(-30, -1, 1), Denial == "capability" ? DeviceFeatureAccess.ObservedOnly : DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true } };
             var status = new ServiceStatusSnapshot(1, Denial != "device", Denial == "blocked" || BlockRestore && statusCalls == 4,
                 Denial == "controller" ? ["external"] : [], Denial == "warning" ? "unknown controllers" : null,
-                ApplyCalls > 0 && DriftAfterApply is not null ? DriftAfterApply : ExternalChanges, "test", caps, null, profiles,
+                ApplyCalls > 0 && DriftAfterApply is not null ? DriftAfterApply : ExternalChanges, "test", caps,
+                null, profiles,
                 new(new(PerformancePreset.Balanced, SettingValueSource.PowerProfile), new(FanMode.Automatic, SettingValueSource.PowerProfile),
                     new(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile), new(profiles.BatteryPolicy, true, false)),
                 Denial == "power" ? PowerSource.Battery : PowerSource.PluggedIn, null, null, null, null, false,
