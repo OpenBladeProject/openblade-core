@@ -19,6 +19,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Report the first rejected CPU observation admission check and retain the validation owner's failure reason in blocked session status, without retrying or weakening safety guards. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Recheck both settings and required capabilities before submitting combined live CPU edits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Use fresh verified adapter readings for CPU full-power admission when Windows reports unknown external power. Battery, USB-C, unknown and canceled readings still deny commands. ([#642](https://github.com/OpenBladeProject/openblade-core/issues/642))

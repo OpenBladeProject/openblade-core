@@ -24,6 +24,7 @@ internal sealed class CpuVoltageSessionCommand
     private Process? owner;
     private CpuPmRetainedLaunchProcess? retainedOwner;
     private Task? job;
+    private string? ownerFailure;
     private bool disposed;
     private CpuVoltageSessionCommand(CpuVoltageOwnedSmokeCommand.Options options)
     {
@@ -98,8 +99,8 @@ internal sealed class CpuVoltageSessionCommand
                         if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle && !ContextCurrent())
                         { state.Block("Session/power continuity changed. No new job permitted."); }
                         bool launch = state.Accept(request, value => platform.WriteNew("accepted-" + value.RequestId.ToString("N") + ".json", value));
-                        if (launch) { job = Task.Run(() => RunJobAsync(request)); }
-                        response = state.Snapshot with { RequestAccepted = launch };
+                        if (launch) { ownerFailure = null; job = Task.Run(() => RunJobAsync(request)); }
+                        response = WithOwnerFailure(state.Snapshot, ownerFailure) with { RequestAccepted = launch };
                     }
                     await CpuVoltageSessionProtocol.WriteAsync(pipe, response, CpuVoltageSessionProtocol.MaximumReply, timeout.Token).ConfigureAwait(false);
                 }
@@ -182,7 +183,13 @@ internal sealed class CpuVoltageSessionCommand
             retainedOwner = CpuPmRetainedLaunchProcess.RetainForCompletion(WindowsCpuPmProcessProbe.FromLaunchedHandle(owner.SafeHandle),
                 platform.Pins, platform.Image, image.Sha256, image);
             // Fixed short announcement comes from the retained actual owner, never a caller path.
-            Task read = ReadOwnerOutputAsync(owner, value => run = value);
+            Task read = ReadOwnerOutputAsync(owner.StandardOutput, value => run = value, line =>
+            {
+                lock (gate)
+                {
+                    ownerFailure = line;
+                }
+            });
             await owner.WaitForExitAsync(budget.Token).ConfigureAwait(false);
             await read.WaitAsync(budget.Token).ConfigureAwait(false);
             if (retainedOwner.ReadState() != CpuPmChildState.Terminal || owner.ExitCode != 0 || run == Guid.Empty)
@@ -202,6 +209,10 @@ internal sealed class CpuVoltageSessionCommand
             lock (gate) { state.Complete(false, false, records, "Stopped without retry: " + exception.Message + " Retained owner/resources require explicit reconciliation."); }
         }
     }
+    // Retain late parked-owner output across subsequent monitor messages. This
+    // decorates diagnostics only and cannot change job or cleanup authority.
+    internal static CpuVoltageSessionReply WithOwnerFailure(CpuVoltageSessionReply reply, string? failure) =>
+        reply.State == "Blocked" && failure is not null ? reply with { Message = reply.Message + " Owner: " + failure } : reply;
     internal static bool VerifyCompletion(CpuVoltageSessionEnrollment enrollment, CpuVoltageSessionAction action, Guid run,
         IReadOnlyDictionary<string, JsonElement> records, DateTimeOffset launched, DateTimeOffset completed)
     {
@@ -226,18 +237,21 @@ internal sealed class CpuVoltageSessionCommand
         var response = result.GetProperty("controlResponse").Deserialize<ControlOperationResult>(CpuVoltageSessionProtocol.Json);
         return response is { Status: ControlOperationStatus.Stored, CpuTuning: { IsWellFormed: true, Live.CanWrite: true } };
     }
-    private static async Task ReadOwnerOutputAsync(Process process, Action<Guid> announce)
+    internal static async Task ReadOwnerOutputAsync(TextReader output, Action<Guid> announce, Action<string> failure)
     {
         int total = 0; bool announced = false;
         char[] buffer = new char[256]; var pending = new System.Text.StringBuilder();
         int count;
-        while ((count = await process.StandardOutput.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+        while ((count = await output.ReadAsync(buffer).ConfigureAwait(false)) != 0)
         {
             if ((total += count) > 16384) { throw new IOException("Owner output exceeded its bound."); }
             foreach (char character in buffer.AsSpan(0, count).ToArray())
             {
                 if (character != '\n') { pending.Append(character); continue; }
                 string line = pending.ToString().TrimEnd('\r'); pending.Clear();
+                if (line.StartsWith("CpuVoltageOwner=", StringComparison.Ordinal)
+                    && line.Length <= 256 && !line.Any(char.IsControl))
+                { failure(line); continue; }
                 const string prefix = "CpuVoltageOwnerRun=";
                 if (!line.StartsWith(prefix, StringComparison.Ordinal)) { continue; }
                 string text = line[prefix.Length..];

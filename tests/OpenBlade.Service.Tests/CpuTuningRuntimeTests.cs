@@ -173,6 +173,16 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(0, context.Source.Calls);
+        string stage = failure switch
+        {
+            "inactive" => "runtime controlling session",
+            "low-power" => "runtime active power lifecycle",
+            "unverified" => "runtime verified device status",
+            "unsupported" => "runtime supported CPU capability",
+            _ => "runtime recently verified device",
+        };
+        Assert.EndsWith($"Admission failed at: {stage}.", result.Message);
+        Assert.Null(result.CpuTuning);
         Assert.Equal(before, context.Runtime.GetStatus());
         Assert.Equal(publications, context.Hub.Published.Count);
         Assert.Empty(context.Device.BatterySetterCalls);
@@ -198,8 +208,63 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(3, context.Source.Calls);
+        Assert.EndsWith($"Admission failed at: runtime {(suspend ? "active power lifecycle" : "controlling session")}.", result.Message);
+        Assert.Null(result.CpuTuning);
         Assert.Equal(before, context.Runtime.GetStatus());
         Assert.Equal(publications, context.Hub.Published.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FinalLiveObservationAdmissionNamesFirstDenialWithoutAdditionalPowerReads(bool changeGeneration)
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        var context = await CreateContextAsync(live: live);
+        int freshPowerReads = 0;
+        context.Source.AfterInspection = () =>
+        {
+            if (changeGeneration) { context.Gate.Enter(); context.Gate.Exit(); }
+            else { context.Power.Power = PowerSource.Battery; }
+        };
+        context.Power.OnCapture = () => freshPowerReads++;
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        int publications = context.Hub.Published.Count;
+
+        var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.EndsWith($"Admission failed at: runtime {(changeGeneration ? "power generation before probes" : "fresh power source")}.", result.Message);
+        // The existing live observation and final runtime checks each classify;
+        // a generation mismatch still short-circuits both before power reads.
+        Assert.Equal(changeGeneration ? 0 : 2, freshPowerReads);
+        Assert.Null(result.CpuTuning);
+        Assert.Equal(before, context.Runtime.GetStatus());
+        Assert.Equal(publications, context.Hub.Published.Count);
+        Assert.Empty(live.Curve!.Sent);
+    }
+
+    [Fact]
+    public async Task OptionalReadOnlyCapabilityDoesNotMaskFinalObservationRejection()
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        var context = await CreateContextAsync(live: live, configureCapabilities: capabilities => capabilities with
+        { CpuVoltageOptimizer = capabilities.CpuVoltageOptimizer! with { Access = DeviceFeatureAccess.ObservedOnly } });
+        int reads = 0;
+        context.Power.OnCapture = () =>
+        {
+            if (++reads == 3) { context.Power.Power = PowerSource.Battery; }
+        };
+        var before = context.Runtime.GetStatus();
+
+        var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.EndsWith("Admission failed at: runtime fresh power source.", result.Message);
+        Assert.Equal(3, reads);
+        Assert.Null(result.CpuTuning);
+        Assert.Equal(before, context.Runtime.GetStatus());
+        Assert.Empty(live.Curve!.Sent);
     }
 
     [Fact]
@@ -900,7 +965,8 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     private sealed class FakePowerState : IPowerStateProvider
     {
         internal PowerSource Power = PowerSource.Battery;
-        public PowerSource CapturePowerSource() => Power;
+        internal Action? OnCapture;
+        public PowerSource CapturePowerSource() { OnCapture?.Invoke(); return Power; }
         public int? CaptureBatteryPowerFlowMilliwatts() => null;
     }
 

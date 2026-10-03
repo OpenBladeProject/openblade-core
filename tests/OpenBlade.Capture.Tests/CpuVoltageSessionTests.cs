@@ -8,6 +8,44 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class CpuVoltageSessionTests
 {
+    [Fact]
+    public async Task OwnerOutputRetainsBoundedFailureLinesWithoutChangingRunIdentity()
+    {
+        Guid run = Guid.NewGuid(), observed = Guid.Empty;
+        var failures = new List<string>();
+        using var output = new StringReader($"ignored\nCpuVoltageOwnerRun={run:N}\nCpuVoltageOwner=ResourcesRetained_NoRetry_NoCleanup\n"
+            + "CpuVoltageOwner=Unknown_IOException\nCpuVoltageOwner=" + new string('x', 256) + "\nCpuVoltageOwner=bad\tvalue\n");
+        await CpuVoltageSessionCommand.ReadOwnerOutputAsync(output, value => observed = value, failures.Add);
+        Assert.Equal(run, observed);
+        Assert.Equal(new[] { "CpuVoltageOwner=ResourcesRetained_NoRetry_NoCleanup", "CpuVoltageOwner=Unknown_IOException" }, failures);
+    }
+
+    [Fact]
+    public void LateOwnerFailureSurvivesLaterBlockMessagesWithoutChangingAdmission()
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        Assert.True(state.Accept(Request(CpuVoltageSessionAction.ObserveOnly), _ => { }));
+        const string failure = "CpuVoltageOwner=Unknown_IOException";
+        Assert.Equal(state.Snapshot, CpuVoltageSessionCommand.WithOwnerFailure(state.Snapshot, failure));
+        state.Complete(false, false, null, "Deadline.");
+        state.Block("Session continuity changed.");
+        var reply = CpuVoltageSessionCommand.WithOwnerFailure(state.Snapshot, failure);
+        Assert.Equal("Session continuity changed. Owner: " + failure, reply.Message);
+        Assert.Equal(state.Snapshot, reply with { Message = state.Snapshot.Message });
+        Assert.True(state.MustRetainHost);
+        Assert.False(state.Accept(Request(CpuVoltageSessionAction.VoltageCycle), _ => throw new Exception("retry")));
+    }
+
+    [Fact]
+    public async Task OwnerFailureLinesDoNotWeakenOutputOrAnnouncementBounds()
+    {
+        using var oversized = new StringReader(new string('x', 16385));
+        await Assert.ThrowsAsync<IOException>(() => CpuVoltageSessionCommand.ReadOwnerOutputAsync(oversized, _ => { }, _ => { }));
+        Guid run = Guid.NewGuid();
+        using var duplicate = new StringReader($"CpuVoltageOwnerRun={run:N}\nCpuVoltageOwner=Unknown_IOException\nCpuVoltageOwnerRun={run:N}\n");
+        await Assert.ThrowsAsync<IOException>(() => CpuVoltageSessionCommand.ReadOwnerOutputAsync(duplicate, _ => { }, _ => { }));
+    }
+
     [Theory]
     [InlineData("O:BAD:NO_ACCESS_CONTROL")]
     [InlineData("O:BAD:(A;;GW;;;WD)")]

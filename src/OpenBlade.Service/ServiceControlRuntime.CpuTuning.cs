@@ -55,13 +55,16 @@ public sealed partial class ServiceControlRuntime
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            var diagnostic = new CpuSavedAdmissionDiagnostic();
             ServiceStatusSnapshot current = GetStatus();
-            if (!stillControlsSession() || lowPowerGate.IsActive || !current.DeviceVerified
-                || current.Capabilities?.CpuPowerLimit is null
-                || !deviceProvider.TryGetRecentlyVerifiedReadOnlyDevice(out _))
+            if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
+                || !diagnostic.Check(!lowPowerGate.IsActive, "runtime active power lifecycle")
+                || !diagnostic.Check(current.DeviceVerified, "runtime verified device status")
+                || !diagnostic.Check(current.Capabilities?.CpuPowerLimit is not null, "runtime supported CPU capability")
+                || !diagnostic.Check(deviceProvider.TryGetRecentlyVerifiedReadOnlyDevice(out _), "runtime recently verified device"))
             {
                 return new(ControlOperationStatus.Blocked,
-                    "CPU observation requires the active session and verified supported laptop.");
+                    $"CPU observation requires the active session and verified supported laptop. Admission failed at: {diagnostic.FirstFailure}.");
             }
 
             long liveGeneration = lowPowerGate.Generation;
@@ -75,11 +78,13 @@ public sealed partial class ServiceControlRuntime
                     token, liveGeneration, livePowerSourceGeneration).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
-            if (!stillControlsSession() || lowPowerGate.IsActive
+            if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
+                || !diagnostic.Check(!lowPowerGate.IsActive, "runtime active power lifecycle")
                 || useInstalledBackend && cpuTuningController.HasLiveBackend
-                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, livePowerSourceGeneration, token))
+                    && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, livePowerSourceGeneration, token, diagnostic))
             {
-                return new(ControlOperationStatus.Blocked, "The CPU observation session changed.");
+                return new(ControlOperationStatus.Blocked,
+                    $"The CPU observation session changed. Admission failed at: {diagnostic.FirstFailure}.");
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return new(ControlOperationStatus.Stored,
@@ -216,24 +221,28 @@ public sealed partial class ServiceControlRuntime
     }
 
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
-        long sourceGeneration, CancellationToken token)
+        long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
+        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         ServiceStatusSnapshot current = GetStatus();
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        if ((features & ~CpuTuningFeatures.CurveOptimizer) != 0) { return false; }
+        if (!Check((features & ~CpuTuningFeatures.CurveOptimizer) == 0, "runtime voltage-only validation features")) { return false; }
 #endif
-        if (lowPowerGate.Generation != generation || powerSourceGeneration != sourceGeneration
-            || !CpuMutationSafetyAvailable(current, stillControlsSession)
+        if (!Check(lowPowerGate.Generation == generation, "runtime power generation before probes")
+            || !Check(powerSourceGeneration == sourceGeneration, "runtime power source generation before probes")
+            || !CpuMutationSafetyAvailable(current, stillControlsSession, diagnostic)
             || (features & CpuTuningFeatures.CurveOptimizer) != 0
-                && current.Capabilities?.CpuVoltageOptimizer?.Access != DeviceFeatureAccess.ReadWrite
+                && !Check(current.Capabilities?.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite, "runtime curve write capability")
             || (features & CpuTuningFeatures.PowerLimit) != 0
-                && current.Capabilities?.CpuPowerLimit?.Access != DeviceFeatureAccess.ReadWrite) { return false; }
+                && !Check(current.Capabilities?.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite, "runtime power write capability")) { return false; }
         ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
-        return presence.DetectionWarning is null && presence.PotentialControllers.Count == 0
-            && CpuFreshFullPower(token)
-            && deviceProvider.TryGetVerifiedDevice(out _)
-            && lowPowerGate.Generation == generation && powerSourceGeneration == sourceGeneration
-            && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession);
+        return Check(presence.DetectionWarning is null, "runtime fresh controller detection")
+            && Check(presence.PotentialControllers.Count == 0, "runtime fresh controller absence")
+            && Check(CpuFreshFullPower(token), "runtime fresh power source")
+            && Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
+            && Check(lowPowerGate.Generation == generation, "runtime power generation after probes")
+            && Check(powerSourceGeneration == sourceGeneration, "runtime power source generation after probes")
+            && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic);
     }
 
     private static CpuTuningStatus MergeLiveCpuStatus(CpuTuningStatus? previous, CpuTuningStatus live) => live with
