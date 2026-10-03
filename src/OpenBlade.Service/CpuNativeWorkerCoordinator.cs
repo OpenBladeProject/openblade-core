@@ -29,13 +29,14 @@ internal sealed class CpuNativeWorkerCoordinator
     internal void Record(CpuLivePowerNativeResult result) { lock (gate) { powerResult = result; } }
 
     internal Task<T> Start<T>(CpuNativeWorkerFamily family, CpuNativeWorkerKind nextKind,
-        Func<CancellationToken, T> work, T refused, CancellationToken token)
+        Func<CancellationToken, T> work, T refused, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         if (token.IsCancellationRequested) { return Task.FromCanceled<T>(token); }
         Task<T> worker; CancellationTokenSource linked;
         lock (gate)
         {
-            if (invalid || active is not null) { return Task.FromResult(refused); }
+            if (invalid || active is not null)
+            { diagnostic?.Check(false, invalid ? "native worker scope invalid" : "native worker outstanding"); return Task.FromResult(refused); }
             linked = CancellationTokenSource.CreateLinkedTokenSource(token); kind = nextKind;
             if (nextKind == CpuNativeWorkerKind.Submission)
             { if (family == CpuNativeWorkerFamily.Curve) { curveResult = null; } else { powerResult = null; } }
@@ -43,7 +44,14 @@ internal sealed class CpuNativeWorkerCoordinator
             worker = Task.Run(() =>
             {
                 try { linked.Token.ThrowIfCancellationRequested(); return work(linked.Token); }
-                catch (Exception) { Invalidate(); return refused; }
+                catch (Exception exception)
+                {
+                    // Cancellation belongs to the initiating transaction's timeout
+                    // classification; a late worker cannot replace its first failure.
+                    if (exception is not OperationCanceledException)
+                    { diagnostic?.Check(false, "native observation exception " + CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception).Failure); }
+                    Invalidate(); return refused;
+                }
             });
             active = worker;
         }

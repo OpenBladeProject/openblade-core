@@ -53,8 +53,10 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         get { var status = state.Status; return new(status.WorkerOutstanding, (CpuLiveCurveNativeWorkerKind)status.Kind, status.Invalid, status.CurveResult); }
     }
 
-    public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token) =>
-        Start(CpuLiveCurveNativeWorkerKind.Observation, Observe, new CpuLiveCurveBackendObservation(null, null), token);
+    public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
+    public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) =>
+        state.Start(CpuNativeWorkerFamily.Curve, CpuNativeWorkerKind.Observation,
+            workToken => Observe(workToken, diagnostic), new CpuLiveCurveBackendObservation(null, null), token, diagnostic);
 
     public Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token) => Start(CpuLiveCurveNativeWorkerKind.Admission, workToken =>
@@ -74,21 +76,26 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         Start(CpuLiveCurveNativeWorkerKind.Submission, workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
             CpuLiveCurveSubmission.Unknown, token);
 
-    private CpuLiveCurveBackendObservation Observe(CancellationToken token)
+    private CpuLiveCurveBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
+        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         var context = provider.ReadFreshContext(token);
-        if (context is not { IsWellFormed: true }) { return new(null, null); }
-        var installed = provider.CreateInstalledQueryApproval(context, token);
-        var approval = installed is null ? provider.CreateQueryApproval(context, token) : null;
-        if (installed is null && approval is null || !MatchesFresh(context, token)) { return new(null, null); }
+        if (!Check(context is { IsWellFormed: true }, "native curve context unavailable")) { return new(null, null); }
+        var installed = provider.CreateInstalledQueryApproval(context!, token);
+        var approval = installed is null ? provider.CreateQueryApproval(context!, token) : null;
+        if (!Check(installed is not null || approval is not null, "native curve query approval")
+            || !Check(MatchesFresh(context!, token), "native curve context before query")) { return new(null, null); }
         var result = installed is not null
-            ? session.QueryInstalled(installed, () => ReadBoundUsb(context, token), token)
-            : session.Query(approval, () => ReadBoundUsb(context, token), token);
+            ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token)
+            : session.Query(approval, () => ReadBoundUsb(context!, token), token);
+        if (result.Diagnostic is { } detail)
+        { diagnostic?.Check(false, $"native query {detail.Stage}/{detail.Failure}; native error {detail.NativeErrorCode}; operation {detail.Operation}"); }
         if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup) { Invalidate(); }
         token.ThrowIfCancellationRequested();
-        if (result.Status != CpuLiveQueryStatus.Observed || CpuLiveCurveSnapshot.TryCreate(result.Observation) is null)
+        if (!Check(result.Status == CpuLiveQueryStatus.Observed, "native curve query status " + result.Status)
+            || !Check(CpuLiveCurveSnapshot.TryCreate(result.Observation) is not null, "native curve snapshot invalid"))
         { return new(null, null); }
-        if (!MatchesFresh(context, token)) { Invalidate(); return new(null, null); }
+        if (!Check(MatchesFresh(context!, token), "native curve context after query")) { Invalidate(); return new(null, null); }
         return new(context, result.Observation);
     }
 

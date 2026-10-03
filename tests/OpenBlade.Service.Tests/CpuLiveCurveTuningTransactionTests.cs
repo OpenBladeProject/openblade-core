@@ -7,6 +7,24 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveTuningTransactionTests
 {
     [Fact]
+    public async Task ObservationTimeoutRetainsFirstFailureBeforeLateBackendCompletion()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var pending = new TaskCompletionSource<CpuLiveCurveBackendObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnObserve = _ => pending.Task;
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(20));
+        var result = await transaction.ObserveOwnershipAsync(default, diagnostic).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        Assert.Equal("curve observation operation timeout", diagnostic.FirstFailure);
+        Assert.False(pending.Task.IsCompleted); Assert.Equal(1, backend.Reads);
+        diagnostic.Check(false, "late native rejection");
+        pending.SetResult(new(null, null));
+        await pending.Task;
+        Assert.Equal("curve observation operation timeout", diagnostic.FirstFailure);
+        Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+    }
+    [Fact]
     public async Task MixedBaselineIsRestoredPerPhysicalCoreAfterRestart()
     {
         var store = new MemoryStore();
@@ -502,8 +520,9 @@ public sealed class CpuLiveCurveTuningTransactionTests
         internal Func<CpuLivePowerPeerState, bool>? CheckPeer;
         internal readonly List<CpuLivePowerPeerState> Peers = [];
         internal int Reads;
+        internal Func<CancellationToken, Task<CpuLiveCurveBackendObservation>>? OnObserve;
         public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token)
-        { Reads++; return Task.FromResult(new CpuLiveCurveBackendObservation(Context, new(0xFF55, 0x005D000B, 0xD50, Values.ToArray()))); }
+        { Reads++; return OnObserve?.Invoke(token) ?? Task.FromResult(new CpuLiveCurveBackendObservation(Context, new(0xFF55, 0x005D000B, 0xD50, Values.ToArray()))); }
         public Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CancellationToken token)
         { Admissions.Add((command, purpose)); return Task.FromResult(Context.MatchesHardwareContext(context) && Admit(command, purpose)); }

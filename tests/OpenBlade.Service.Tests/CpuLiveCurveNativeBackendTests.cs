@@ -6,6 +6,16 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveNativeBackendTests
 {
+    [Fact]
+    public async Task ExistingQueryDiagnosticPreservesStageAndNativeCodeWithoutExceptionText()
+    {
+        var platform = new Platform { OnWait = () => throw new System.ComponentModel.Win32Exception(5, "private path") };
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var result = await new CpuLiveCurveNativeBackend(platform, new Provider()).ObserveAsync(default, diagnostic);
+        Assert.Null(result.Observation);
+        Assert.Equal("native query MutexWait/Win32Error; native error 5; operation ", diagnostic.FirstFailure);
+        Assert.Equal(1, platform.MutexCreates); Assert.Equal(0, platform.Opens); Assert.Equal(0, platform.Setters);
+    }
     [Theory]
     [InlineData("2.03")]
     [InlineData("Unknown")]

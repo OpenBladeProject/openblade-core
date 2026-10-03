@@ -243,21 +243,29 @@ internal sealed class CpuTuningController
 
     internal CpuLiveRuntimeLifetime? CaptureLiveRuntimeLifetime() => liveAdmission.Value?.Lifetime;
     internal object? CaptureLiveRuntimeRequest() => liveAdmission.Value;
+    internal CpuSavedAdmissionDiagnostic? CaptureLiveObservationDiagnostic() => liveAdmission.Value?.Diagnostic;
 
     internal bool HasLiveBackend => liveCurve is not null || livePower is not null;
 
     internal async Task<CpuTuningStatus> ObserveLiveAsync(Func<CpuTuningFeatures, bool> freshAdmission,
-        CancellationToken token, long lowPowerGeneration = 0, long powerSourceGeneration = 0)
+        CancellationToken token, long lowPowerGeneration = 0, long powerSourceGeneration = 0,
+        CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         await liveGate.WaitAsync(token).ConfigureAwait(false);
-        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration));
+        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration), diagnostic);
         liveAdmission.Value = lease;
         try
         {
             var ownership = await ReadLiveOwnershipAsync(token).ConfigureAwait(false);
-            if (ownership.Blocked) { return LiveStatus(null, null, CpuTuningRecoveryState.Blocked, ownership.Features); }
+            if (ownership.Blocked)
+            {
+                if (diagnostic is not null) { diagnostic.LiveObservationReason = "ownership blocked: " + ownership.Features; }
+                return LiveStatus(null, null, CpuTuningRecoveryState.Blocked, ownership.Features);
+            }
             CpuLiveCurveTransactionResult? curve = liveCurve is null ? null
-                : await liveCurve.ObserveOwnershipAsync(token).ConfigureAwait(false);
+                : await liveCurve.ObserveOwnershipAsync(token, diagnostic).ConfigureAwait(false);
+            if (diagnostic is not null && curve?.Reason is { } curveReason && curveReason != CpuLiveCurveBlockReason.None)
+            { diagnostic.LiveObservationReason = "curve transaction " + curveReason; }
             RetainUncertainty(curve);
             // Do not start another family after uncertainty or failed admission.
             CpuLivePowerTransactionResult? power = livePower is null || liveUncertainty != CpuTuningFeatures.None
@@ -265,6 +273,9 @@ internal sealed class CpuTuningController
                 || !lease.Allows(CpuTuningFeatures.None) ? null
                 : await livePower.ObserveOwnershipAsync(token).ConfigureAwait(false);
             RetainUncertainty(power);
+            if (diagnostic is not null && diagnostic.LiveObservationReason is null && power?.Reason is { } powerReason
+                && powerReason != CpuLivePowerBlockReason.None)
+            { diagnostic.LiveObservationReason = "power transaction " + powerReason; }
             var recovery = liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power?.Recovery == CpuLivePowerRecovery.Blocked
                 ? CpuTuningRecoveryState.Blocked : ownership.Features == CpuTuningFeatures.None
@@ -484,9 +495,10 @@ internal sealed class CpuTuningController
     // exact lease for late continuations; a later request cannot renew it. Native
     // backends still own the actual worker and repeat their independent proofs.
     private sealed class LiveAdmission(Func<CpuTuningFeatures, bool> admit, CancellationToken token,
-        CpuLiveRuntimeLifetime lifetime) : IDisposable
+        CpuLiveRuntimeLifetime lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null) : IDisposable
     {
         internal CpuLiveRuntimeLifetime Lifetime { get; } = lifetime;
+        internal CpuSavedAdmissionDiagnostic? Diagnostic { get; } = diagnostic;
         private readonly CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         private int disposed;
         internal CancellationToken Token => cancellation.Token;
@@ -527,13 +539,16 @@ internal sealed class CpuTuningController
 
     private sealed class RuntimeCurveBackend(ICpuLiveCurveBackend backend, AsyncLocal<LiveAdmission?> current) : ICpuLiveCurveBackend
     {
-        public async Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token)
+        public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
+        public async Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
         {
             var lease = current.Value;
-            if (lease?.Allows(CpuTuningFeatures.None) != true) { return new(null, null); }
+            if (lease?.Allows(CpuTuningFeatures.None) != true)
+            { diagnostic?.Check(false, "runtime curve observation lease before query"); return new(null, null); }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            var result = await backend.ObserveAsync(cancellation.Token).ConfigureAwait(false);
-            return lease.Allows(CpuTuningFeatures.None) ? result : new(null, null);
+            var result = await backend.ObserveAsync(cancellation.Token, diagnostic).ConfigureAwait(false);
+            if (lease.Allows(CpuTuningFeatures.None)) { return result; }
+            diagnostic?.Check(false, "runtime curve observation lease after query"); return new(null, null);
         }
         public async Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CancellationToken token)

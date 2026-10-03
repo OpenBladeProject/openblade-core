@@ -69,13 +69,16 @@ public sealed partial class ServiceControlRuntime
 
             long liveGeneration = lowPowerGate.Generation;
             long livePowerSourceGeneration = powerSourceGeneration;
+            // Optional write-presentation refusal must not mask a later outer
+            // session rejection. Native workers retain only this inner record.
+            var liveDiagnostic = new CpuSavedAdmissionDiagnostic();
             CpuTuningStatus observation = await cpuTuningController.ObserveAsync(useInstalledBackend, token)
                 .ConfigureAwait(false);
             if (useInstalledBackend && cpuTuningController.HasLiveBackend)
             {
                 CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, token),
-                    token, liveGeneration, livePowerSourceGeneration).ConfigureAwait(false);
+                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, token, liveDiagnostic),
+                    token, liveGeneration, livePowerSourceGeneration, liveDiagnostic).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
             if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
@@ -89,6 +92,8 @@ public sealed partial class ServiceControlRuntime
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return new(ControlOperationStatus.Stored,
                 observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
+                    + (liveDiagnostic.LiveObservationReason is { } reason ? $" Live observation: {reason}." : string.Empty)
+                    + (liveDiagnostic.FirstFailure is { } failure ? $" First rejection: {failure}." : string.Empty)
                     : "Saved configuration and live CPU observations were inspected.")
             {
                 CpuTuning = observation,

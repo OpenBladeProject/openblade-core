@@ -42,22 +42,29 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         token.ThrowIfCancellationRequested();
         if (Volatile.Read(ref disposed) != 0) { return null; }
         var owner = controller();
+        // Read only the initiating lease's diagnostic; no extra provider probe.
+        var diagnostic = owner?.CaptureLiveObservationDiagnostic();
+        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         var current = owner?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None);
         var lifetime = owner?.CaptureLiveRuntimeLifetime();
-        if (current?.Invoke() != true || lifetime is not { ServiceInstance: var instance } || instance == Guid.Empty)
+        if (!Check(current?.Invoke() == true, "provider runtime admission")
+            || !Check(lifetime is { ServiceInstance: var instance } && instance != Guid.Empty, "provider runtime lifetime"))
         { return null; }
         var identity = source.ReadIdentity();
         var usb = readUsb();
         var boot = readBoot(token);
-        if (!CpuSavedTuningPlan.IsExactIdentity(identity) || !CpuHardwareIdentity.Same(identity, usb)
-            || boot is not { IsWellFormed: true } || !current())
+        if (!Check(CpuSavedTuningPlan.IsExactIdentity(identity), "provider exact host identity")
+            || !Check(CpuHardwareIdentity.Same(identity, usb), "provider matching USB identity")
+            || !Check(boot is { IsWellFormed: true }, "provider boot sequence")
+            || !Check(current!(), "provider runtime after identity probes"))
         { return null; }
         // Capture the initiating admission in this callback as well. A late
         // retention attempt cannot borrow a later request's session permission.
-        installed ??= session.TryRetainInstalledBackend(() => current() ? readUsb() : null, token);
-        if (installed?.IsCurrent != true || !current()) { return null; }
+        installed ??= session.TryRetainInstalledBackend(() => current!() ? readUsb() : null, token);
+        if (!Check(installed?.IsCurrent == true, "provider retained installed backend")
+            || !Check(current!(), "provider runtime after backend retention")) { return null; }
         return new(identity!, CpuLiveCurveSnapshot.SupportedMask, CpuLiveCurveSnapshot.SupportedPmVersion,
-            CpuLiveCurveSnapshot.SupportedPmLength, PinnedIdentity(), boot)
+            CpuLiveCurveSnapshot.SupportedPmLength, PinnedIdentity(), boot!)
         { RuntimeLifetime = lifetime };
     }
 
@@ -168,7 +175,10 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
     {
-        var admission = controller()?.CaptureLiveRuntimeAdmission(feature);
+        var owner = controller();
+        var admission = owner?.CaptureLiveRuntimeAdmission(feature);
+        var diagnostic = owner?.CaptureLiveObservationDiagnostic();
+        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         int revoked = 0;
         bool Current()
         {
@@ -176,9 +186,12 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             bool accepted;
             try
             {
-                accepted = !token.IsCancellationRequested && admission?.Invoke() == true
-                    && installed?.IsCurrent == true && context.RuntimeLifetime is not null
-                    && context.MatchesHardwareContext(ReadFreshContext(token)) && admission();
+                accepted = Check(!token.IsCancellationRequested, "provider query approval cancellation")
+                    && Check(admission?.Invoke() == true, "provider query approval runtime admission")
+                    && Check(installed?.IsCurrent == true, "provider query approval installed backend")
+                    && Check(context.RuntimeLifetime is not null, "provider query approval runtime lifetime")
+                    && Check(context.MatchesHardwareContext(ReadFreshContext(token)), "provider query approval hardware context")
+                    && Check(admission!(), "provider query approval final runtime admission");
             }
             catch { accepted = false; }
             if (!accepted) { Interlocked.Exchange(ref revoked, 1); }

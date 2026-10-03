@@ -9,6 +9,7 @@ internal sealed class CpuSavedAdmissionDiagnostic
 {
     private string? firstFailure;
     internal string? FirstFailure => Volatile.Read(ref firstFailure);
+    internal string? LiveObservationReason { get; set; }
 
     internal bool Check(bool allowed, string stage)
     {

@@ -7,6 +7,20 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Fact]
+    public async Task FirstRuntimeRejectionSurvivesTransactionFallbackAndLaterDiagnostic()
+    {
+        var fixture = new Fixture(); var diagnostic = new CpuSavedAdmissionDiagnostic();
+        int admissionCalls = 0;
+        var result = await fixture.Controller().ObserveLiveAsync(_ =>
+        { admissionCalls++; return diagnostic.Check(false, "runtime controlling session"); }, default, diagnostic: diagnostic);
+        Assert.Equal(1, admissionCalls); Assert.Equal(0, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads);
+        Assert.Equal("curve transaction ObservationUnavailable", diagnostic.LiveObservationReason);
+        Assert.Equal("runtime controlling session", diagnostic.FirstFailure);
+        diagnostic.Check(false, "late native failure");
+        Assert.Equal("runtime controlling session", diagnostic.FirstFailure);
+        Assert.Null(result.LiveState); Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+    }
+    [Fact]
     public async Task FullCurveObservationWithFreshAdmissionPresentsWritableWithoutAdmittingCommands()
     {
         var fixture = new Fixture();

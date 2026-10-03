@@ -6,6 +6,19 @@ namespace OpenBlade.Service.Tests;
 
 public sealed partial class CpuTuningRuntimeTests : IDisposable
 {
+    [Fact]
+    public async Task UnavailableLiveObservationRetainsTransactionReasonInTypedResponseWithoutExtraQueries()
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        live.Curve!.Values = live.Curve.Values[..^1];
+        var context = await CreateContextAsync(live: live);
+        var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Live observation: curve transaction ObservationUnavailable.", result.Message);
+        Assert.Null(result.CpuTuning!.LiveState); Assert.False(result.CpuTuning.Live.CanWrite);
+        Assert.Equal(1, live.Curve.Reads); Assert.Equal(0, live.Power!.Reads);
+        Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent); Assert.Equal(0, context.Source.Submissions);
+    }
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade.CpuTuning.Tests", Guid.NewGuid().ToString("N"));
 
     [Theory]

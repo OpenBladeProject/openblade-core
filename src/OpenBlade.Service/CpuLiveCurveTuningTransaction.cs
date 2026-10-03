@@ -9,6 +9,7 @@ internal interface ICpuLiveCurveBackend
 {
     // Always fresh, complete and from a trusted context/boot identity source.
     Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token);
+    Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) => ObserveAsync(token);
     Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token);
     // A future native implementation must recheck context, admission and the
@@ -220,22 +221,22 @@ internal sealed class CpuLiveCurveTuningTransaction
         finally { gate.Release(); }
     }
 
-    internal async Task<CpuLiveCurveTransactionResult> ObserveOwnershipAsync(CancellationToken token)
+    internal async Task<CpuLiveCurveTransactionResult> ObserveOwnershipAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
-        try { return await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token).ConfigureAwait(false); }
+        try { return await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token, diagnostic).ConfigureAwait(false); }
         finally { gate.Release(); }
     }
 
     private async Task<CpuLiveCurveTransactionResult> ObserveCoreAsync(CpuLiveCurveJournalLoadResult loaded,
-        CancellationToken token)
+        CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         if (loaded.Invalid) { return Blocked(CpuLiveCurveBlockReason.InvalidJournal); }
         // A pending sender might still run. Do not start another native getter
         // through this interface merely to make an uncertain result look fresh.
         if (loaded.Journal is { State: CpuLiveCurveOwnershipState.PossibleSubmission }) { return Uncertain(); }
         if (loaded.Journal is { State: CpuLiveCurveOwnershipState.Blocked }) { return Blocked(CpuLiveCurveBlockReason.StateChanged); }
-        var observed = await ObserveAsync(token).ConfigureAwait(false);
+        var observed = await ObserveAsync(token, diagnostic).ConfigureAwait(false);
         if (loaded.Journal is { State: not CpuLiveCurveOwnershipState.Restored } owned
             && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
         { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
@@ -437,10 +438,13 @@ internal sealed class CpuLiveCurveTuningTransaction
             journal.CompletedSteps, journal.Restoring), CancellationToken.None).ConfigureAwait(false);
         return Blocked(blockedHash is null ? CpuLiveCurveBlockReason.JournalUnavailable : reason, snapshot);
     }
-    private async Task<CpuLiveCurveBackendObservation?> ObserveAsync(CancellationToken token)
+    private async Task<CpuLiveCurveBackendObservation?> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
-        try { return await BoundedAsync(backend.ObserveAsync, token).ConfigureAwait(false); }
-        catch { return null; }
+        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic), token).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        { diagnostic?.Check(false, token.IsCancellationRequested ? "curve observation caller cancellation" : "curve observation operation timeout"); return null; }
+        catch (Exception exception)
+        { diagnostic?.Check(false, "curve observation exception " + CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception).Failure); return null; }
     }
     private async Task<bool> AdmitAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token)

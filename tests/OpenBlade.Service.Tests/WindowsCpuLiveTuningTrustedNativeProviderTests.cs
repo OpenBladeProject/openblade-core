@@ -7,6 +7,16 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Fact]
+    public async Task ProviderReportsFirstIdentityRejectionWithoutRetainingBackend()
+    {
+        using var fixture = new Fixture { Usb = null };
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        await fixture.RunRaw(context => Assert.Null(context), diagnostic);
+        Assert.Equal("provider matching USB identity", diagnostic.FirstFailure);
+        Assert.Equal("curve transaction ObservationUnavailable", diagnostic.LiveObservationReason);
+        Assert.Equal(0, fixture.Platform.Opens); Assert.Equal(0, fixture.Platform.Pins);
+    }
+    [Fact]
     public async Task PowerObservationSharesRetainedDriverWithCurveAndCannotManufactureAttendedAuthority()
     {
         using var fixture = new Fixture();
@@ -211,7 +221,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal async Task Run(Action<CpuLiveCurveContext> check)
             => await RunRaw(context => check(Assert.IsType<CpuLiveCurveContext>(context)));
 
-        internal async Task RunRaw(Action<CpuLiveCurveContext?> check)
+        internal async Task RunRaw(Action<CpuLiveCurveContext?> check, CpuSavedAdmissionDiagnostic? diagnostic = null)
         {
             backend.Check = token =>
             {
@@ -219,7 +229,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
                 check(context);
                 return new(context, new(0xFF55, 0x005D000B, 0xD50, CpuLiveCurveTuningTransactionTests.ValuesFixture()));
             };
-            await controller.ObserveLiveAsync(_ => Admitted, default, 2, 3);
+            await controller.ObserveLiveAsync(_ => Admitted, default, 2, 3, diagnostic);
         }
         public void Dispose() => Provider.Dispose();
     }
