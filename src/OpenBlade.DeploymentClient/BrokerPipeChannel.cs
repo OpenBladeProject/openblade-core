@@ -11,6 +11,10 @@ internal interface IBrokerChannel
     Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
         Guid requestId,
         CancellationToken cancellationToken);
+
+    Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(
+        Guid requestId,
+        CancellationToken cancellationToken);
 }
 
 internal interface IBrokerPipeConnection : IAsyncDisposable
@@ -84,8 +88,19 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
         this.deadlines = deadlines;
     }
 
-    public async Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
+    public Task<DeploymentBrokerResponse> ApplyFixedInboxAsync(
         Guid requestId,
+        CancellationToken cancellationToken) => ApplyAsync(
+            requestId, DeploymentBrokerAction.ApplyFixedInbox, cancellationToken);
+
+    public Task<DeploymentBrokerResponse> ApplyCpuVoltageInboxAsync(
+        Guid requestId,
+        CancellationToken cancellationToken) => ApplyAsync(
+            requestId, DeploymentBrokerAction.ApplyCpuVoltageInbox, cancellationToken);
+
+    private async Task<DeploymentBrokerResponse> ApplyAsync(
+        Guid requestId,
+        DeploymentBrokerAction action,
         CancellationToken cancellationToken)
     {
         if (requestId == Guid.Empty)
@@ -104,7 +119,7 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
                 DeploymentBrokerRequest request = new(
                     DeploymentBrokerProtocol.ProtocolVersion,
                     requestId,
-                    DeploymentBrokerAction.ApplyFixedInbox);
+                    action);
                 await WriteFrameAsync(
                     connection.Output,
                     DeploymentBrokerProtocol.SerializeRequest(request),

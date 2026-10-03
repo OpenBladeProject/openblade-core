@@ -7,6 +7,31 @@ namespace OpenBlade.LocalDevDeploymentTool.Tests;
 
 public sealed class LocalDevDeploymentToolTests : IDisposable
 {
+    [Fact]
+    public void CpuStageHasOneFixedClosureOptionAndCannotBroadenOrdinaryStage()
+    {
+        string[] options = ["--installer", "installer", "--version", "65535.1.2.3", "--source-revision", new string('a', 40), "--key-name", "key"];
+        var command = Assert.IsType<StageDeploymentCommand>(LocalDevDeploymentToolCommandParser.Parse(
+            ["stage-cpu-voltage", .. options, "--closure", "closure"]));
+        Assert.Equal("closure", command.CpuVoltageClosure);
+        Assert.Throws<LocalDevDeploymentToolException>(() => LocalDevDeploymentToolCommandParser.Parse(["stage-cpu-voltage", .. options]));
+        Assert.Throws<LocalDevDeploymentToolException>(() => LocalDevDeploymentToolCommandParser.Parse(["stage", .. options, "--closure", "closure"]));
+    }
+
+    [Fact]
+    public void CpuReceiptCapabilityIsOptionalButExplicit()
+    {
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        byte[] spki = key.ExportSubjectPublicKeyInfo();
+        var receipt = new LocalDevDeploymentReceipt(1, Guid.NewGuid(), "S-1-5-21-1-2-3-1001",
+            LocalDevDeploymentReceiptCodec.PolicyId, OpenBladeSignedReleaseVerifier.ComputeSigningKeyId(spki),
+            Convert.ToBase64String(spki), "1.0.0", DateTimeOffset.UnixEpoch);
+        byte[] original = LocalDevDeploymentReceiptCodec.SerializeCanonical(receipt);
+        Assert.DoesNotContain("cpuVoltageValidationEnabled", Encoding.UTF8.GetString(original));
+        Assert.False(LocalDevDeploymentReceiptCodec.ParseCanonical(original).CpuVoltageValidationEnabled);
+        Assert.True(LocalDevDeploymentReceiptCodec.ParseCanonical(LocalDevDeploymentReceiptCodec.SerializeCanonical(
+            receipt with { CpuVoltageValidationEnabled = true })).CpuVoltageValidationEnabled);
+    }
     private readonly string root = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.LocalDevDeployment.Tool.Tests",

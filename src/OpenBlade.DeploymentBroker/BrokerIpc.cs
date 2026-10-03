@@ -10,6 +10,7 @@ namespace OpenBlade.DeploymentBroker;
 public enum BrokerAction
 {
     ApplyFixedInbox,
+    ApplyCpuVoltageInbox,
 }
 
 public sealed record BrokerRequest(int ProtocolVersion, Guid RequestId, BrokerAction Action);
@@ -42,7 +43,7 @@ public static class BrokerRequestCodec
             writer.WriteStartObject();
             writer.WriteNumber("protocolVersion", request.ProtocolVersion);
             writer.WriteString("requestId", request.RequestId.ToString("D"));
-            writer.WriteString("action", nameof(BrokerAction.ApplyFixedInbox));
+            writer.WriteString("action", request.Action.ToString());
             writer.WriteEndObject();
         }
 
@@ -147,19 +148,19 @@ public static class BrokerRequestCodec
 
     private static BrokerAction ReadAction(
         IReadOnlyDictionary<string, JsonElement> values,
-        string name) => string.Equals(
-            ReadString(values, name),
-            nameof(BrokerAction.ApplyFixedInbox),
-            StringComparison.Ordinal)
-        ? BrokerAction.ApplyFixedInbox
-        : throw new InvalidDataException("The broker action is not recognized.");
+        string name) => ReadString(values, name) switch
+        {
+            nameof(BrokerAction.ApplyFixedInbox) => BrokerAction.ApplyFixedInbox,
+            nameof(BrokerAction.ApplyCpuVoltageInbox) => BrokerAction.ApplyCpuVoltageInbox,
+            _ => throw new InvalidDataException("The broker action is not recognized."),
+        };
 
     private static void Validate(BrokerRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.ProtocolVersion != ProtocolVersion
             || request.RequestId == Guid.Empty
-            || request.Action != BrokerAction.ApplyFixedInbox)
+            || request.Action is not (BrokerAction.ApplyFixedInbox or BrokerAction.ApplyCpuVoltageInbox))
         {
             throw new InvalidDataException("The broker request contract is invalid.");
         }

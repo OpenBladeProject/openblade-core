@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.DeploymentClient\OpenBlade.DeploymentClient.csproj" />
   </ItemGroup>
   <!-- The test SDK sets OutputType=Exe after project properties are evaluated.

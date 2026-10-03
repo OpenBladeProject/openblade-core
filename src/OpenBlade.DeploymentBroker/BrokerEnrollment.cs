@@ -13,7 +13,10 @@ public sealed record BrokerEnrollment(
     string BrokerVersion,
     string DevelopmentSigningKeyId,
     string DevelopmentSigningSubjectPublicKeyInfoBase64,
-    DateTimeOffset EnrolledAt);
+    DateTimeOffset EnrolledAt)
+{
+    public bool CpuVoltageValidationEnabled { get; init; }
+}
 
 public sealed class BrokerPaths
 {
@@ -197,6 +200,7 @@ public static partial class BrokerEnrollmentCodec
                 enrollment.EnrolledAt.UtcDateTime.ToString(
                     "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
                     System.Globalization.CultureInfo.InvariantCulture));
+            if (enrollment.CpuVoltageValidationEnabled) { writer.WriteBoolean("cpuVoltageValidationEnabled", true); }
             writer.WriteEndObject();
         }
 
@@ -245,7 +249,8 @@ public static partial class BrokerEnrollmentCodec
                 ReadString(properties, "brokerVersion"),
                 ReadString(properties, "developmentSigningKeyId"),
                 ReadString(properties, "developmentSigningSubjectPublicKeyInfoBase64"),
-                ReadTimestamp(properties, "enrolledAt"));
+                ReadTimestamp(properties, "enrolledAt"))
+            { CpuVoltageValidationEnabled = properties.TryGetValue("cpuVoltageValidationEnabled", out var enabled) && enabled.GetBoolean() };
             Validate(enrollment);
             if (!bytes.SequenceEqual(SerializeCanonical(enrollment)))
             {
@@ -287,6 +292,7 @@ public static partial class BrokerEnrollmentCodec
     private static Dictionary<string, JsonElement> ReadProperties(JsonElement root)
     {
         HashSet<string> allowed = new(PropertyNames, StringComparer.Ordinal);
+        allowed.Add("cpuVoltageValidationEnabled");
         HashSet<string> seen = new(StringComparer.Ordinal);
         HashSet<string> seenIgnoreCase = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, JsonElement> values = new(StringComparer.Ordinal);
@@ -302,7 +308,7 @@ public static partial class BrokerEnrollmentCodec
             values.Add(property.Name, property.Value);
         }
 
-        if (values.Count != PropertyNames.Length
+        if (values.Count != PropertyNames.Length + (values.ContainsKey("cpuVoltageValidationEnabled") ? 1 : 0)
             || PropertyNames.Any(name => !values.ContainsKey(name)))
         {
             throw new InvalidDataException("The enrollment record is missing a required property.");

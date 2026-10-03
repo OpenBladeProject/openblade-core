@@ -6,7 +6,10 @@ internal sealed record StageDeploymentCommand(
     string InstallerPath,
     string Version,
     string SourceRevision,
-    string KeyName) : LocalDevDeploymentToolCommand;
+    string KeyName) : LocalDevDeploymentToolCommand
+{
+    internal string? CpuVoltageClosure { get; init; }
+}
 
 internal sealed record InspectKeyCommand(string KeyName) : LocalDevDeploymentToolCommand;
 
@@ -34,20 +37,22 @@ internal static class LocalDevDeploymentToolCommandParser
         return args[0] switch
         {
             "stage" => ParseStage(args),
+            "stage-cpu-voltage" => ParseStage(args, true),
             "inspect-key" => ParseInspectKey(args),
             "create-key" => ParseCreateKey(args),
             _ => throw Usage(),
         };
     }
 
-    private static StageDeploymentCommand ParseStage(string[] args)
+    private static StageDeploymentCommand ParseStage(string[] args, bool cpuVoltage = false)
     {
-        IReadOnlyDictionary<string, string> values = ParseExactSwitches(args, StageSwitches);
+        IReadOnlyDictionary<string, string> values = ParseExactSwitches(args, cpuVoltage ? StageSwitches.Append("--closure").ToArray() : StageSwitches);
         return new StageDeploymentCommand(
             values["--installer"],
             values["--version"],
             values["--source-revision"],
-            values["--key-name"]);
+            values["--key-name"])
+        { CpuVoltageClosure = cpuVoltage ? values["--closure"] : null };
     }
 
     private static InspectKeyCommand ParseInspectKey(string[] args)
@@ -101,6 +106,7 @@ internal static class LocalDevDeploymentToolCommandParser
     private static LocalDevDeploymentToolException Usage() => new(
         "Usage: stage --installer <OpenBlade-Setup.exe> --version <x.y.z> "
         + "--source-revision <40-lower-hex> --key-name <TPM-CNG-name>; "
+        + "stage-cpu-voltage uses those same options plus --closure <reviewed-fixed-closure>; "
         + "inspect-key --key-name <TPM-CNG-name>; "
         + "or create-key --key-name <new-TPM-CNG-name>.");
 }

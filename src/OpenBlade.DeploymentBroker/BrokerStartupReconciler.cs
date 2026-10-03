@@ -126,7 +126,8 @@ public sealed class BrokerStartupReconciler(
     BrokerDurableRecordStore durableRecords,
     BrokerPaths paths,
     TimeProvider timeProvider,
-    ILogger<BrokerStartupReconciler> logger) : IBrokerStartupReconciler
+    ILogger<BrokerStartupReconciler> logger,
+    IBrokerCpuVoltageDeployment? cpuVoltage = null) : IBrokerStartupReconciler
 {
     public async Task<bool> TryReconcileAsync(
         BrokerEnrollment enrollment,
@@ -137,7 +138,7 @@ public sealed class BrokerStartupReconciler(
             .ConfigureAwait(false);
         if (state is null)
         {
-            return true;
+            return cpuVoltage?.TryReconcile() ?? true;
         }
 
         BrokerRecordedInstallerProcessStatus processStatus = await processInspector
@@ -163,17 +164,32 @@ public sealed class BrokerStartupReconciler(
             state.PreviousProductVersion,
             state.PreviousPayloadSha256);
         BrokerPostInstallVerification verification;
+        IDisposable? cpuLease = null;
+        using var reconciliationLifetime = new CpuReconciliationLifetime(() => cpuLease?.Dispose());
         try
         {
-            verification = await installedStateVerifier.VerifyCurrentStateAsync(
-                before,
-                state.TargetVersion,
-                state.TargetSourceRevision,
-                cancellationToken).ConfigureAwait(false);
+            if (state.CpuVoltageServiceVersion is not null)
+            {
+                if (cpuVoltage is null) { return false; }
+                OpenBladeVerifiedRelease release = ReadCpuRelease(state, enrollment);
+                cpuLease = cpuVoltage.AcquireClosedReconciliation(state, release.Manifest);
+                // Bound/Resumed is reachable only after the original installer health
+                // gate passed. A closed validation host may intentionally have stopped
+                // Service. The lease freshly proves exact installed Service bytes and
+                // resolved host ownership; this is prior installation health, not a
+                // claim that Service is currently running, and does not query or start it.
+                verification = new(true, true, false);
+            }
+            else
+            {
+                if (cpuVoltage is not null && !cpuVoltage.TryReconcile()) { return false; }
+                verification = await installedStateVerifier.VerifyCurrentStateAsync(
+                    before, state.TargetVersion, state.TargetSourceRevision, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException
-            or InvalidOperationException or OperationCanceledException)
+            or InvalidOperationException or OperationCanceledException or OpenBladeReleaseVerificationException)
         {
             logger.LogError(exception, "Startup deployment reconciliation was unavailable.");
             return false;
@@ -192,7 +208,7 @@ public sealed class BrokerStartupReconciler(
 
         try
         {
-            paths.DeleteRequestStagingDirectory(state.RequestId);
+            if (state.CpuVoltageServiceVersion is null) { paths.DeleteRequestStagingDirectory(state.RequestId); }
         }
         catch (Exception exception) when (exception is
             IOException or UnauthorizedAccessException or InvalidDataException)
@@ -240,10 +256,45 @@ public sealed class BrokerStartupReconciler(
                     : BrokerTransitionKind.RollbackVerified,
                 timeProvider.GetUtcNow(),
                 disposition == BrokerDeploymentDisposition.Succeeded
-                    ? "startup-target-reconciled"
+                    ? state.CpuVoltageServiceVersion is not null
+                        ? "startup-cpu-closed-prior-install-health-reconciled"
+                        : "startup-target-reconciled"
                     : "startup-rollback-reconciled"),
             cancellationToken).ConfigureAwait(false);
         inFlightStore.ClearResolved(state.RequestId);
+        if (state.CpuVoltageServiceVersion is not null) { cpuVoltage!.CompleteClosedReconciliation(state.RequestId); }
         return true;
+    }
+
+    private OpenBladeVerifiedRelease ReadCpuRelease(BrokerInFlightDeployment state, BrokerEnrollment enrollment)
+    {
+        string staging = Path.Combine(paths.StagingDirectory, state.RequestId.ToString("N"));
+        string manifestPath = Path.Combine(staging, FixedLocalDevInboxSource.ManifestFileName);
+        string signaturePath = Path.Combine(staging, FixedLocalDevInboxSource.SignatureFileName);
+        paths.VerifyDirectory(staging); paths.VerifyFile(manifestPath); paths.VerifyFile(signaturePath);
+        byte[] manifest = ReadBounded(manifestPath, OpenBladeReleaseManifestCodec.MaximumManifestBytes);
+        byte[] signature = ReadBounded(signaturePath, OpenBladeSignedReleaseVerifier.P1363SignatureBytes);
+        var release = OpenBladeSignedReleaseVerifier.Verify(manifest, signature, new(true,
+            [new(enrollment.DevelopmentSigningKeyId, enrollment.DevelopmentSigningSubjectPublicKeyInfoBase64)]));
+        if (release.Manifest.SchemaVersion != 2 || release.Manifest.InstallationId != enrollment.InstallationId
+            || release.Manifest.CpuVoltageServiceVersion != state.CpuVoltageServiceVersion
+            || release.Manifest.Version != state.TargetVersion || release.Manifest.SourceRevision != state.TargetSourceRevision
+            || release.Manifest.Sequence != state.TargetSequence || release.Manifest.InstallerSha256 != state.InstallerSha256
+            || BrokerDurableRecordStore.ComputeSha256(manifest) != state.ManifestSha256 || release.SigningKeyId != state.SigningKeyId)
+        { throw new InvalidDataException("The signed CPU release differs from the durable installer binding."); }
+        return release;
+    }
+
+    private static byte[] ReadBounded(string path, int maximum)
+    {
+        ProtectedBrokerStorage.RejectReparsePoint(path);
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length is <= 0 || stream.Length > maximum) { throw new InvalidDataException("Invalid retained CPU release size."); }
+        byte[] bytes = new byte[(int)stream.Length]; stream.ReadExactly(bytes); return bytes;
+    }
+
+    private sealed class CpuReconciliationLifetime(Action dispose) : IDisposable
+    {
+        public void Dispose() => dispose();
     }
 }

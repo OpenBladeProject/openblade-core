@@ -7,16 +7,18 @@ public sealed class BrokerPipeChannelTests
     private static readonly Guid RequestId = Guid.Parse(
         "22222222-2222-2222-2222-222222222222");
 
-    [Fact]
-    public async Task Channel_VerifiesPipeServerBeforeWritingFixedRequest()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Channel_VerifiesPipeServerBeforeWritingFixedRequest(bool cpuVoltage)
     {
         DuplexConnection connection = new(BrokerProtocolTests.Success());
         RecordingIdentityVerifier verifier = new();
         BrokerPipeChannel channel = new(new FixedConnector(connection), verifier);
 
-        DeploymentBrokerResponse response = await channel.ApplyFixedInboxAsync(
-            RequestId,
-            CancellationToken.None);
+        DeploymentBrokerResponse response = cpuVoltage
+            ? await channel.ApplyCpuVoltageInboxAsync(RequestId, CancellationToken.None)
+            : await channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None);
 
         Assert.Equal(BrokerProtocolTests.Success(), response);
         Assert.Equal(connection.ServerIdentity, verifier.VerifiedIdentity);
@@ -25,18 +27,21 @@ public sealed class BrokerPipeChannelTests
         Assert.Equal(frame.Length - sizeof(int), length);
         DeploymentBrokerRequest request = DeploymentBrokerProtocol.ParseRequest(frame.AsSpan(sizeof(int)));
         Assert.Equal(RequestId, request.RequestId);
-        Assert.Equal(DeploymentBrokerAction.ApplyFixedInbox, request.Action);
+        Assert.Equal(cpuVoltage ? DeploymentBrokerAction.ApplyCpuVoltageInbox : DeploymentBrokerAction.ApplyFixedInbox, request.Action);
     }
 
-    [Fact]
-    public async Task Channel_WritesNothingWhenServerIdentityFails()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Channel_WritesNothingWhenServerIdentityFails(bool cpuVoltage)
     {
         DuplexConnection connection = new(BrokerProtocolTests.Success());
         RecordingIdentityVerifier verifier = new() { Reject = true };
         BrokerPipeChannel channel = new(new FixedConnector(connection), verifier);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None));
+            () => cpuVoltage ? channel.ApplyCpuVoltageInboxAsync(RequestId, CancellationToken.None)
+                : channel.ApplyFixedInboxAsync(RequestId, CancellationToken.None));
 
         Assert.Empty(connection.Written.ToArray());
     }

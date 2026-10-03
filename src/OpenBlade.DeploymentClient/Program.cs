@@ -1,6 +1,6 @@
 using OpenBlade.DeploymentClient;
 
-if (args.Length != 0)
+if (!DeploymentClientArguments.TryParse(args, out bool cpuVoltage))
 {
     return 1;
 }
@@ -20,5 +20,8 @@ DeploymentClientCoordinator coordinator = new(
         inventory),
     new WindowsDeploymentProcessLauncher(),
     new CryptographicRequestIdSource(),
-    Console.Error.WriteLine);
-return await coordinator.ApplyFixedInboxAsync(CancellationToken.None) ? 0 : 1;
+    Console.Error.WriteLine,
+    cpuVoltageHost: new WindowsCpuVoltageHostStatusVerifier(Console.Out.WriteLine));
+return (cpuVoltage
+    ? await coordinator.ApplyCpuVoltageInboxAsync(CancellationToken.None)
+    : await coordinator.ApplyFixedInboxAsync(CancellationToken.None)) ? 0 : 1;
