@@ -92,6 +92,79 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     }
 
     [Theory]
+    [InlineData("version", "ServiceVersion")]
+    [InlineData("device", "DeviceVerified")]
+    [InlineData("power", "ActivePowerSource")]
+    [InlineData("inactive", "ControlAccess")]
+    [InlineData("controller", "PotentialControllers")]
+    [InlineData("warning", "ControllerDetectionWarning")]
+    [InlineData("blocked", "WritesBlocked")]
+    [InlineData("capability", "CpuVoltageOptimizer.Access")]
+    public async Task InitialAdmissionNamesFailedPredicateBeforeCpuCalls(string denial, string predicate)
+    {
+        var client = new Client(-1, directory) { Denial = denial };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
+        Assert.Contains(predicate, result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task InitialAdmissionAggregatesFailedChecksAndPersistsActualContext()
+    {
+        var client = new Client(-1, directory)
+        {
+            Denial = "version",
+            ExternalChanges = [DeviceSubsystem.Lighting, DeviceSubsystem.Performance],
+            StatusProjection = status => status with
+            {
+                Firmware = status.Firmware! with { ModelNumber = "different-model" },
+                ControlAccess = SessionControlAccess.InactiveSession,
+                ActivePowerSource = PowerSource.Battery,
+                ObservationReason = DeviceObservationReason.CheckingConnection,
+                UnconfirmedWrites = [DeviceSubsystem.Fans],
+                Capabilities = status.Capabilities! with
+                { CpuVoltageOptimizer = new(new(-30, -2, 1), DeviceFeatureAccess.ObservedOnly) },
+            },
+        };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
+        foreach (string detail in new[] { "ModelNumber", "different-model", "RZ09-0528", "ServiceVersion", Version,
+            "0.24.0+deadbeef", "ControlAccess", "InactiveSession", "ActivePowerSource", "Battery", "ObservationReason",
+            "CheckingConnection", "UnconfirmedWrites", "Fans", "ExternalChanges", "Performance",
+            "CpuVoltageOptimizer.Access", "ObservedOnly", "SupportsEnableDisable", "Supports(-1)", "-30", "-2" })
+        { Assert.Contains(detail, result.Message); }
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+        Assert.False(result.ApplyAttempted); Assert.False(result.RestoreAttempted);
+        Assert.False(File.Exists(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.BaselineFile)));
+        using var persisted = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.ResultFile)));
+        Assert.Equal(result.Message, persisted.RootElement.GetProperty("message").GetString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MissingOptimizerOrRangeReportsAdmissionWithoutDereferencingMissingValue(bool missingRange)
+    {
+        var client = new Client(-1, directory)
+        {
+            StatusProjection = status => status with
+            {
+                Capabilities = status.Capabilities! with
+                { CpuVoltageOptimizer = missingRange ? new(null!, DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true } : null },
+            },
+        };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
+        Assert.Contains(missingRange ? "CpuVoltageOptimizer.IsWellFormed" : "CpuVoltageOptimizer missing", result.Message);
+        Assert.DoesNotContain("NullReferenceException", result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
+        Assert.Equal(0, client.ObserveCalls); Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+    }
+
+    [Theory]
     [InlineData("throw")]
     [InlineData("cancel")]
     [InlineData("failed")]
@@ -129,6 +202,8 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         var result = await Run(client);
         Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
         Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls); Assert.Equal(0, client.ObserveCalls);
+        Assert.Contains("ExternalChanges", result.Message); Assert.Contains(subsystem.ToString(), result.Message);
+        Assert.Equal(new[] { "status" }, client.Calls);
     }
 
     [Fact]
@@ -238,6 +313,7 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         public CpuTuningSettings? Settings;
         public IReadOnlyList<DeviceSubsystem> ExternalChanges = [];
         public IReadOnlyList<DeviceSubsystem>? DriftAfterApply;
+        public Func<ServiceStatusSnapshot, ServiceStatusSnapshot>? StatusProjection;
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             Calls.Add("status"); statusCalls++;
@@ -253,7 +329,7 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
                 Firmware: new("any", "any", "any", "any", "RZ09-0528"),
                 ServiceVersion: Denial == "version" || ChangeVersion && statusCalls == 4 ? "0.24.0+deadbeef" : Version,
                 ControlAccess: Denial == "inactive" ? SessionControlAccess.InactiveSession : SessionControlAccess.Active);
-            return Task.FromResult(status);
+            return Task.FromResult(StatusProjection?.Invoke(status) ?? status);
         }
         public Task<ControlOperationResult> ObserveCpuTuningAsync(bool installed, CancellationToken token)
         {

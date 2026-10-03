@@ -122,14 +122,45 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = await client.GetStatusAsync(token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        if (!status.DeviceVerified || status.Firmware?.ModelNumber != RazerBladeModelCatalog.Rz090528ModelNumber
-            || status.ServiceVersion != version || status.WritesBlocked || status.ControlAccess != SessionControlAccess.Active
-            || status.ActivePowerSource != PowerSource.PluggedIn || status.ObservationReason != DeviceObservationReason.None
-            || status.PotentialControllers.Count != 0 || !string.IsNullOrEmpty(status.ControllerDetectionWarning)
-            || status.ExternalChanges.Any(subsystem => subsystem != DeviceSubsystem.Lighting) || status.UnconfirmedWrites.Count != 0
-            || status.Capabilities?.CpuVoltageOptimizer is not { IsWellFormed: true, Access: DeviceFeatureAccess.ReadWrite, SupportsEnableDisable: true } curve
-            || !curve.Value.Supports(-1))
-        { throw new InvalidDataException("Exact model, version, full-power active control and optimizer safety/admission are required."); }
+        List<string> failures = [];
+        if (!status.DeviceVerified)
+        { failures.Add("DeviceVerified: expected True, actual False"); }
+        if (status.Firmware?.ModelNumber != RazerBladeModelCatalog.Rz090528ModelNumber)
+        { failures.Add($"ModelNumber: expected {RazerBladeModelCatalog.Rz090528ModelNumber}, actual {status.Firmware?.ModelNumber ?? "<missing>"}"); }
+        if (status.ServiceVersion != version)
+        { failures.Add($"ServiceVersion: expected {version}, actual {status.ServiceVersion}"); }
+        if (status.WritesBlocked)
+        { failures.Add("WritesBlocked: expected False, actual True"); }
+        if (status.ControlAccess != SessionControlAccess.Active)
+        { failures.Add($"ControlAccess: expected Active, actual {status.ControlAccess}"); }
+        if (status.ActivePowerSource != PowerSource.PluggedIn)
+        { failures.Add($"ActivePowerSource: expected PluggedIn, actual {status.ActivePowerSource}"); }
+        if (status.ObservationReason != DeviceObservationReason.None)
+        { failures.Add($"ObservationReason: expected None, actual {status.ObservationReason}"); }
+        if (status.PotentialControllers.Count != 0)
+        { failures.Add($"PotentialControllers: expected count 0, actual {status.PotentialControllers.Count}"); }
+        if (!string.IsNullOrEmpty(status.ControllerDetectionWarning))
+        { failures.Add("ControllerDetectionWarning: expected empty, actual present"); }
+        if (status.ExternalChanges.Any(subsystem => subsystem != DeviceSubsystem.Lighting))
+        { failures.Add($"ExternalChanges: expected none except Lighting, actual [{string.Join(", ", status.ExternalChanges)}]"); }
+        if (status.UnconfirmedWrites.Count != 0)
+        { failures.Add($"UnconfirmedWrites: expected none, actual [{string.Join(", ", status.UnconfirmedWrites)}]"); }
+        var curve = status.Capabilities?.CpuVoltageOptimizer;
+        if (curve is null)
+        { failures.Add("CpuVoltageOptimizer missing: expected a well-formed ReadWrite capability with enable/disable and support for -1"); }
+        else
+        {
+            if (!curve.IsWellFormed)
+            { failures.Add("CpuVoltageOptimizer.IsWellFormed: expected True, actual False"); }
+            if (curve.Access != DeviceFeatureAccess.ReadWrite)
+            { failures.Add($"CpuVoltageOptimizer.Access: expected ReadWrite, actual {curve.Access}"); }
+            if (!curve.SupportsEnableDisable)
+            { failures.Add("CpuVoltageOptimizer.SupportsEnableDisable: expected True, actual False"); }
+            if (curve.IsWellFormed && !curve.Value.Supports(-1))
+            { failures.Add($"CpuVoltageOptimizer.Value.Supports(-1): expected True, actual False (range {curve.Value.Minimum}..{curve.Value.Maximum}, step {curve.Value.Step?.ToString() ?? "<missing>"})"); }
+        }
+        if (failures.Count != 0)
+        { throw new InvalidDataException($"Admission failed: {string.Join("; ", failures)}."); }
         return status;
     }
 
