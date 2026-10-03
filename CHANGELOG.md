@@ -17,6 +17,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep the tray and Session Agent running during complete shutdown until the service is confirmed stopped. ([#663](https://github.com/OpenBladeProject/openblade-core/pull/663))
 - Show one-shot keyboard lighting as unconfirmed on the supported Blade 16 (2025) RZ09-0528 when firmware leaves Driver mode, and redraw automatically only with the lighting override setting enabled. ([#620](https://github.com/OpenBladeProject/openblade-core/pull/620))
 - Record the reason in the installer's package log when a quiet install fails, instead of only an exit code. ([#612](https://github.com/OpenBladeProject/openblade-core/pull/612))
 - Stop showing the HyperBoost unavailable warning while a performance mode change is still in progress. ([#596](https://github.com/OpenBladeProject/openblade-core/pull/596))
