@@ -5,23 +5,30 @@ namespace OpenBlade.FirmwareSmoke;
 
 internal sealed record CpuVoltageOptimizerSmokeResult(string Outcome, string Phase, bool ApplyAttempted,
     bool RestoreAttempted, bool OriginalVerified, string ExpectedServiceVersion, CpuLiveState? Baseline,
-    CpuLiveState? Forward, CpuLiveState? Final, string Message);
+    CpuLiveState? Forward, CpuLiveState? Final, string Message)
+{
+    public string Mode { get; init; } = "Cycle";
+    public ControlOperationResult? ControlResponse { get; init; }
+    public DateTimeOffset? ResponseReceivedAtUtc { get; init; }
+    public IReadOnlyList<string> FailedRequirements { get; init; } = [];
+}
 
 internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client)
 {
     internal const string Confirmation = "RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE";
+    internal const string ObserveConfirmation = "RZ09-0528-CPU-VOLTAGE-OBSERVE-ONLY";
     internal const string BaselineFile = "cpu-voltage-optimizer-baseline.json";
     internal const string ResultFile = "cpu-voltage-optimizer.json";
     private static readonly int[] CoreIndices = [0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15];
 
-    internal static void ValidateAuthorization(string? confirmation, string? expectedServiceVersion)
+    internal static void ValidateAuthorization(string? confirmation, string? expectedServiceVersion, bool observeOnly = false)
     {
         string[] parts = expectedServiceVersion?.Split('+') ?? [];
         string revision = parts.Length == 2 ? parts[1] : string.Empty;
         const string validationPrefix = "voltage-validation.";
         if (revision.StartsWith(validationPrefix, StringComparison.Ordinal))
         { revision = revision[validationPrefix.Length..]; }
-        if (confirmation != Confirmation || string.IsNullOrWhiteSpace(expectedServiceVersion)
+        if (confirmation != (observeOnly ? ObserveConfirmation : Confirmation) || string.IsNullOrWhiteSpace(expectedServiceVersion)
             || expectedServiceVersion.Any(char.IsWhiteSpace)
             || parts.Length != 2 || !Version.TryParse(parts[0], out Version? version) || version.Build < 0
             || revision.Length is not (8 or 40) || !revision.All(Uri.IsHexDigit))
@@ -31,9 +38,9 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
     }
 
     internal async Task<CpuVoltageOptimizerSmokeResult> RunAsync(string? confirmation, string? expectedServiceVersion,
-        string outputDirectory, CancellationToken cancellationToken)
+        string outputDirectory, CancellationToken cancellationToken, bool observeOnly = false)
     {
-        ValidateAuthorization(confirmation, expectedServiceVersion); // Before every client call.
+        ValidateAuthorization(confirmation, expectedServiceVersion, observeOnly); // Before every client call.
         foreach (string name in new[] { BaselineFile, ResultFile })
         {
             string path = Path.Combine(outputDirectory, name);
@@ -44,12 +51,37 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         bool applyAttempted = false, restoreAttempted = false;
         CpuLiveState? baseline = null, forward = null, final = null;
         string phase = "Admission";
+        ControlOperationResult? response = null;
+        DateTimeOffset? responseReceived = null;
+        IReadOnlyList<string> failedRequirements = [];
+        bool observeRequested = false;
+        ControlOperationResult Retain(ControlOperationResult value)
+        {
+            response = value; responseReceived = DateTimeOffset.UtcNow;
+            failedRequirements = ObservationFailures(value); return value;
+        }
+        CpuVoltageOptimizerSmokeResult WithResponse(CpuVoltageOptimizerSmokeResult result) => result with
+        { Mode = observeOnly ? "ObserveOnly" : "Cycle", ControlResponse = response, ResponseReceivedAtUtc = responseReceived, FailedRequirements = failedRequirements };
+        async Task<ControlOperationResult> ObserveResponseAsync()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            observeRequested = true;
+            ControlOperationResult value = Retain(await client.ObserveCpuTuningAsync(true, cancellationToken).ConfigureAwait(false));
+            cancellationToken.ThrowIfCancellationRequested(); return value;
+        }
         try
         {
             ServiceStatusSnapshot status = await GreenStatusAsync(version, cancellationToken).ConfigureAwait(false);
             var continuity = (Preset: status.ConfirmedState?.Performance,
                 AllowPerformanceDrift: status.ExternalChanges.Contains(DeviceSubsystem.Performance));
-            CpuTuningStatus observed = await ObserveAsync(cancellationToken).ConfigureAwait(false);
+            ControlOperationResult observedResponse = await ObserveResponseAsync().ConfigureAwait(false);
+            if (observeOnly)
+            {
+                return await PersistResultAsync(WithResponse(new("ObservationRecorded", "Observation", false, false, false,
+                    version, null, null, null, "One typed CPU observation response was recorded; no CPU Set or Restore was requested.")),
+                    outputDirectory, cancellationToken).ConfigureAwait(false);
+            }
+            CpuTuningStatus observed = RequireObservation(observedResponse);
             RequireUnowned(observed);
             int original = RequireVector(observed.LiveState);
             if (original is not (-1 or 0)) { throw new InvalidDataException("Baseline must be uniformly -1 or zero."); }
@@ -77,18 +109,18 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
             }
             phase = "Apply";
             await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
-            CpuTuningStatus beforeApply = await ObserveAsync(cancellationToken).ConfigureAwait(false);
+            CpuTuningStatus beforeApply = RequireObservation(await ObserveResponseAsync().ConfigureAwait(false));
             RequireUnowned(beforeApply);
             RequireValue(beforeApply.LiveState, original);
             cancellationToken.ThrowIfCancellationRequested();
             applyAttempted = true; // A response failure may follow actual submission.
-            CpuTuningStatus applied = RequireObservation(await client.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
-                settings, cancellationToken).ConfigureAwait(false));
+            CpuTuningStatus applied = RequireObservation(Retain(await client.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+                settings, cancellationToken).ConfigureAwait(false)));
             RequireOwned(applied);
             RequireValue(applied.LiveState, target);
             phase = "ForwardReadback";
             await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
-            CpuTuningStatus independentlyObserved = await ObserveAsync(cancellationToken).ConfigureAwait(false);
+            CpuTuningStatus independentlyObserved = RequireObservation(await ObserveResponseAsync().ConfigureAwait(false));
             RequireOwned(independentlyObserved);
             RequireValue(independentlyObserved.LiveState, target);
             forward = independentlyObserved.LiveState;
@@ -96,26 +128,27 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
             await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             restoreAttempted = true;
-            CpuTuningStatus restored = RequireObservation(await client.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow,
-                cancellationToken).ConfigureAwait(false));
+            CpuTuningStatus restored = RequireObservation(Retain(await client.RestoreCpuTuningAsync(CpuTuningTarget.LiveNow,
+                cancellationToken).ConfigureAwait(false)));
             RequireUnowned(restored);
             RequireValue(restored.LiveState, original);
             phase = "OriginalReadback";
             await GreenStatusAsync(version, cancellationToken, continuity).ConfigureAwait(false);
-            CpuTuningStatus originalObserved = await ObserveAsync(cancellationToken).ConfigureAwait(false);
+            CpuTuningStatus originalObserved = RequireObservation(await ObserveResponseAsync().ConfigureAwait(false));
             RequireUnowned(originalObserved);
             RequireValue(originalObserved.LiveState, original);
             final = originalObserved.LiveState;
             cancellationToken.ThrowIfCancellationRequested();
-            return await PersistResultAsync(new("Passed", phase, true, true, true, version, baseline, forward, final,
-                "One optimizer-only transition and exact original restoration were independently verified."), outputDirectory, cancellationToken).ConfigureAwait(false);
+            return await PersistResultAsync(WithResponse(new("Passed", phase, true, true, true, version, baseline, forward, final,
+                "One optimizer-only transition and exact original restoration were independently verified.")), outputDirectory, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
             // Never restore in finally, retry, or infer non-submission from a missing response.
-            return await PersistResultAsync(new(applyAttempted || exception is OperationCanceledException ? "Unknown" : "Blocked", phase, applyAttempted,
+            return await PersistResultAsync(WithResponse(new(applyAttempted || exception is OperationCanceledException
+                || observeOnly && (observeRequested || exception is not InvalidDataException) ? "Unknown" : "Blocked", phase, applyAttempted,
                 restoreAttempted, false, version, baseline, forward, final,
-                $"Stopped without retry or guessed restoration: {exception.GetType().Name}: {exception.Message}"), outputDirectory, CancellationToken.None).ConfigureAwait(false);
+                $"Stopped without retry or guessed restoration: {exception.GetType().Name}: {exception.Message}")), outputDirectory, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -179,19 +212,25 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
         return status;
     }
 
-    private async Task<CpuTuningStatus> ObserveAsync(CancellationToken token)
-    {
-        token.ThrowIfCancellationRequested();
-        ControlOperationResult result = await client.ObserveCpuTuningAsync(true, token).ConfigureAwait(false);
-        token.ThrowIfCancellationRequested();
-        return RequireObservation(result);
-    }
-
     private static CpuTuningStatus RequireObservation(ControlOperationResult result)
     {
-        if (result.Status != ControlOperationStatus.Stored || result.CpuTuning is not { IsWellFormed: true, Live.CanWrite: true } status)
-        { throw new InvalidDataException("An acknowledged typed CPU result and writable live backend are required."); }
-        return status;
+        var failures = ObservationFailures(result);
+        if (failures.Count != 0) { throw new InvalidDataException($"CPU response requirements failed: {string.Join("; ", failures)}."); }
+        return result.CpuTuning!;
+    }
+    private static IReadOnlyList<string> ObservationFailures(ControlOperationResult result)
+    {
+        List<string> failures = [];
+        if (result.Status != ControlOperationStatus.Stored)
+        { failures.Add($"ControlOperationResult.Status: expected Stored, actual {result.Status}"); }
+        if (result.CpuTuning is not { } status) { failures.Add("CpuTuning: expected present, actual missing"); }
+        else
+        {
+            if (!status.IsWellFormed) { failures.Add("CpuTuning.IsWellFormed: expected True, actual False"); }
+            if (status.Live is not { CanWrite: true })
+            { failures.Add($"CpuTuning.Live.CanWrite: expected True, actual False (backend {status.Live})"); }
+        }
+        return failures;
     }
     private static void RequireUnowned(CpuTuningStatus status)
     {

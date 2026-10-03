@@ -11,6 +11,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
 {
     internal const string Name = "cpu-voltage-owned-smoke";
     internal const string Confirmation = "RZ09-0528-OWNED-V31-CO-AND-OPENBLADE-SHUTDOWN";
+    internal const string ObserveConfirmation = "RZ09-0528-OWNED-V31-CO-OBSERVE-ONLY-AND-OPENBLADE-SHUTDOWN";
     internal static readonly TimeSpan Budget = TimeSpan.FromSeconds(600);
     private static CpuVoltageOwnedSmokeCommand? root;
     private static int claimed;
@@ -28,29 +29,36 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     private bool mutationPossible, serviceTerminal;
     private int uncertain;
     private CpuVoltageOwnedSmokeCommand(Options options, TextWriter output) { this.options = options; this.output = output; }
-    internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion);
+    internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion, bool ObserveOnly = false);
     internal static Options Parse(string[] args)
     {
         string[] names = ["--payload", "--source", "--manifest-sha256", "--expected-service-version", "--confirm-target"];
+        bool observeOnly = args.Count(value => value == "--observe-only") == 1;
+        if (observeOnly) { args = args.Where(value => value != "--observe-only").ToArray(); }
         if (args.Length != 10) { throw new ArgumentException("Five exact options required; use --help."); }
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         for (int i = 0; i < args.Length; i += 2)
         { if (!names.Contains(args[i], StringComparer.Ordinal) || !values.TryAdd(args[i], args[i + 1])) { throw new ArgumentException("Unknown or duplicate option."); } }
         string source = values["--source"], hash = values["--manifest-sha256"], version = values["--expected-service-version"], path = values["--payload"];
         string suffix = "+voltage-validation." + (source.Length == 40 ? source[..8] : string.Empty);
-        if (values["--confirm-target"] != Confirmation || !CpuPmLaunchSchema.IsHex(source, 40, true)
+        if (values["--confirm-target"] != (observeOnly ? ObserveConfirmation : Confirmation) || !CpuPmLaunchSchema.IsHex(source, 40, true)
             || !CpuPmLaunchSchema.IsHex(hash, 64, false) || version.Length > 64 || version.Any(char.IsWhiteSpace) || !version.EndsWith(suffix, StringComparison.Ordinal)
             || !Version.TryParse(version[..^suffix.Length], out var parsed) || parsed.Build < 0
             || path.Length > 350 || !path.StartsWith(@"C:\", StringComparison.Ordinal) || path.Contains('/') || path != Path.GetFullPath(path))
         { throw new ArgumentException("Exact reviewed package, full source, validation Service version and shutdown confirmation required."); }
-        return new(path, source, hash, version);
+        return new(path, source, hash, version, observeOnly);
     }
+    internal static string[] ChildArguments(Options options, string evidence) =>
+        ["cpu-voltage-optimizer", .. options.ObserveOnly ? new[] { "--observe-only" } : [], "--confirm-target",
+            options.ObserveOnly ? "RZ09-0528-CPU-VOLTAGE-OBSERVE-ONLY" : "RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE",
+            "--expected-service-version", options.ServiceVersion, "--output", evidence];
     internal static int Run(string[] args, TextWriter output)
     {
         if (args.Length == 1 && args[0] == "--help")
         {
             output.WriteLine($"{Name} --payload <private reviewed closure> --source <40hex> --manifest-sha256 <64HEX> --expected-service-version <version+voltage-validation.8hex> --confirm-target {Confirmation}");
             output.WriteLine("Attended only: temporary owned V31, one -1/0 cycle, exact original restoration, then typed OpenBlade shutdown (including normal shutdown cleanup), then verified owned V31 removal. Fixed 600-second budget; uncertainty retains resources. No automatic elevation.");
+            output.WriteLine($"Read-only diagnostic: add --observe-only and use --confirm-target {ObserveConfirmation}; one typed CPU observation response, no CPU Set/Restore, then the same shutdown and owned-resource cleanup after verified recording.");
             return 0;
         }
         Options options;
@@ -80,14 +88,13 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             owner = new(tag, new WindowsCpuPmDriverLifecyclePlatform(), safety,
                 WindowsCpuPmDriverJournalStorage.CreateForFixedRun(tag), new CpuPmAuthorityClock());
             WriteContext(Path.Combine(runPath, "control", "voltage-context.json"), new
-            { run, options.Source, options.Manifest, options.ServiceVersion, service.Identity, BudgetSeconds = 600 });
+            { run, options.Source, options.Manifest, options.ServiceVersion, service.Identity, Mode = options.ObserveOnly ? "ObserveOnly" : "Cycle", BudgetSeconds = 600 });
             watchdog = new Timer(_ => MarkUncertain(), null, RemainingBudget(), Timeout.InfiniteTimeSpan);
             mutationPossible = true;
             if (!owner.PrepareAndStart(deadline.Token) || !owner.BeginChildLaunch(deadline.Token)) { return Park("DriverOrLaunchAdmissionUnknown"); }
             var start = new ProcessStartInfo(Path.Combine(options.Payload, "firmware-smoke", "OpenBlade.FirmwareSmoke.exe"))
             { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.Combine(options.Payload, "firmware-smoke") };
-            foreach (string arg in new[] { "cpu-voltage-optimizer", "--confirm-target", "RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE",
-                "--expected-service-version", options.ServiceVersion, "--output", evidence }) { start.ArgumentList.Add(arg); }
+            foreach (string arg in ChildArguments(options, evidence)) { start.ArgumentList.Add(arg); }
             AssertContext();
             string childHash = manifest.Single(f => f.Name == "firmware-smoke/OpenBlade.FirmwareSmoke.exe").Sha256;
             var childImage = pins.PinFile(start.FileName, CpuPmLaunchSchema.MaximumFileBytes, true);
@@ -102,12 +109,22 @@ internal sealed class CpuVoltageOwnedSmokeCommand
                 AssertContext, owner.RevokeAuthority, () => actualChild.ExitCode,
                 () =>
                 {
-                    string[] expected = [CpuVoltageOwnedSmokeEvidence.BaselineFile, CpuVoltageOwnedSmokeEvidence.ResultFile];
+                    string[] expected = options.ObserveOnly ? [CpuVoltageOwnedSmokeEvidence.ResultFile]
+                        : [CpuVoltageOwnedSmokeEvidence.BaselineFile, CpuVoltageOwnedSmokeEvidence.ResultFile];
                     var entries = pins.Enumerate(evidence).ToArray();
-                    if (entries.Length != 2 || entries.Any(e => e.Directory || !expected.Contains(e.Name, StringComparer.Ordinal)))
+                    if (entries.Length != expected.Length || entries.Any(e => e.Directory || !expected.Contains(e.Name, StringComparer.Ordinal)))
                     { throw new IOException("Smoke evidence closure differs."); }
-                    var baseline = pins.PinFile(Path.Combine(evidence, expected[0]), CpuPmLaunchSchema.ManifestLimit, true);
-                    var result = pins.PinFile(Path.Combine(evidence, expected[1]), CpuPmLaunchSchema.ManifestLimit, true);
+                    var result = pins.PinFile(Path.Combine(evidence, CpuVoltageOwnedSmokeEvidence.ResultFile), CpuPmLaunchSchema.ManifestLimit, true);
+                    if (options.ObserveOnly)
+                    {
+                        CpuVoltageOwnedSmokeEvidence.VerifyObservation(result.ReadBounded(CpuPmLaunchSchema.ManifestLimit),
+                            options.ServiceVersion, launched, DateTimeOffset.UtcNow);
+                        pins.AssertAllPins();
+                        WriteContext(Path.Combine(runPath, "control", "voltage-observation-recorded.json"), new
+                        { ResultSha256 = result.Sha256, options.ServiceVersion, Mode = "ObserveOnly", ObservationRecorded = true });
+                        return;
+                    }
+                    var baseline = pins.PinFile(Path.Combine(evidence, CpuVoltageOwnedSmokeEvidence.BaselineFile), CpuPmLaunchSchema.ManifestLimit, true);
                     CpuVoltageOwnedSmokeEvidence.Verify(baseline.ReadBounded(CpuPmLaunchSchema.ManifestLimit),
                         result.ReadBounded(CpuPmLaunchSchema.ManifestLimit), options.ServiceVersion, launched, DateTimeOffset.UtcNow);
                     pins.AssertAllPins();
@@ -125,7 +142,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             if (!cleaned) { return Park("CompletionOrCleanupUnknown"); }
             watchdog.Dispose(); watchdog = null;
             child.ReleaseAfterTerminal(); service.ReleaseAfterTerminal(); pins.Dispose(); deadline.Dispose();
-            Log("OriginalVerified_ServiceTerminal_OwnedDriverAbsent"); return 0;
+            Log(options.ObserveOnly ? "ObservationRecorded_ServiceTerminal_OwnedDriverAbsent" : "OriginalVerified_ServiceTerminal_OwnedDriverAbsent"); return 0;
         }
         catch (Exception exception)
         {

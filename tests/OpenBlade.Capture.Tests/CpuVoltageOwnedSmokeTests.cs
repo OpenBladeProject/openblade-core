@@ -16,6 +16,103 @@ public sealed class CpuVoltageOwnedSmokeTests
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
     private static string[] Args => ["--payload", @"C:\reviewed", "--source", Source, "--manifest-sha256", Hash,
         "--expected-service-version", Version, "--confirm-target", CpuVoltageOwnedSmokeCommand.Confirmation];
+
+    [Fact]
+    public void ObserveOnlyRequiresMatchingTokenAndPropagatesExactChildMode()
+    {
+        var args = Args; args[9] = CpuVoltageOwnedSmokeCommand.ObserveConfirmation;
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(args));
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse([.. Args, "--observe-only"]));
+        var options = CpuVoltageOwnedSmokeCommand.Parse([.. args, "--observe-only"]);
+        Assert.True(options.ObserveOnly);
+        Assert.Equal(new[] { "cpu-voltage-optimizer", "--observe-only", "--confirm-target", "RZ09-0528-CPU-VOLTAGE-OBSERVE-ONLY",
+            "--expected-service-version", Version, "--output", "evidence" }, CpuVoltageOwnedSmokeCommand.ChildArguments(options, "evidence"));
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse([.. args, "--observe-only", "--observe-only"]));
+        Assert.DoesNotContain("--observe-only", CpuVoltageOwnedSmokeCommand.ChildArguments(CpuVoltageOwnedSmokeCommand.Parse(Args), "evidence"));
+    }
+
+    [Theory]
+    [InlineData(ControlOperationStatus.Stored)]
+    [InlineData(ControlOperationStatus.Blocked)]
+    [InlineData(ControlOperationStatus.Failed)]
+    public void RecordedReadOnlyResponsePermitsOnlyOrderedResourceCleanup(ControlOperationStatus status)
+    {
+        byte[] result = ObservationEvidence(status);
+        var events = new List<string>();
+        Assert.True(CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal }, () => false,
+            () => { }, () => events.Add("revoke"), () => 0,
+            () => { CpuVoltageOwnedSmokeEvidence.VerifyObservation(result, Version, Started, Started.AddMinutes(1)); events.Add("recorded"); },
+            () => events.Add("shutdown"), () => events.Add("service-terminal"),
+            () => { events.Add("cleanup"); return CpuPmDriverCleanup.Complete; }, () => throw new InvalidOperationException()));
+        Assert.Equal(new[] { "revoke", "recorded", "shutdown", "service-terminal", "cleanup" }, events);
+    }
+
+    [Theory]
+    [InlineData("mode")]
+    [InlineData("outcome")]
+    [InlineData("phase")]
+    [InlineData("apply")]
+    [InlineData("restore")]
+    [InlineData("verified")]
+    [InlineData("version")]
+    [InlineData("stale")]
+    [InlineData("future")]
+    [InlineData("response")]
+    [InlineData("status")]
+    [InlineData("message")]
+    [InlineData("baseline")]
+    [InlineData("duplicate")]
+    public void WrongReadOnlyEvidenceNeverPermitsShutdownOrCleanup(string failure)
+    {
+        var report = JsonNode.Parse(ObservationEvidence(ControlOperationStatus.Blocked))!;
+        switch (failure)
+        {
+            case "mode": report["mode"] = "Cycle"; break;
+            case "outcome": report["outcome"] = "Unknown"; break;
+            case "phase": report["phase"] = "Admission"; break;
+            case "apply": report["applyAttempted"] = true; break;
+            case "restore": report["restoreAttempted"] = true; break;
+            case "verified": report["originalVerified"] = true; break;
+            case "version": report["expectedServiceVersion"] = "wrong"; break;
+            case "stale": report["responseReceivedAtUtc"] = Started.AddSeconds(-1); break;
+            case "future": report["responseReceivedAtUtc"] = Started.AddMinutes(2); break;
+            case "response": report["controlResponse"] = null; break;
+            case "status": report["controlResponse"]!["status"] = "Unknown"; break;
+            case "message": report["controlResponse"]!.AsObject().Remove("message"); break;
+            case "baseline": report["baseline"] = new JsonObject(); break;
+        }
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(report);
+        if (failure == "duplicate") { bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Encoding.UTF8.GetString(bytes).Insert(1, "\"mode\":\"ObserveOnly\",")); }
+        bool shutdown = false, cleanup = false;
+        Assert.ThrowsAny<Exception>(() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal },
+            () => false, () => { }, () => { }, () => 0,
+            () => CpuVoltageOwnedSmokeEvidence.VerifyObservation(bytes, Version, Started, Started.AddMinutes(1)),
+            () => shutdown = true, () => { }, () => { cleanup = true; return CpuPmDriverCleanup.Complete; }, () => { }));
+        Assert.False(shutdown); Assert.False(cleanup);
+    }
+
+    [Fact]
+    public void CycleCompletionRejectsReadOnlyModeEvenWithRestoredVectors()
+    {
+        var data = Evidence(0); var result = JsonNode.Parse(data.Result)!; result["mode"] = "ObserveOnly";
+        Assert.Throws<InvalidDataException>(() => Verify((data.Baseline, JsonSerializer.SerializeToUtf8Bytes(result))));
+    }
+
+    private static byte[] ObservationEvidence(ControlOperationStatus status) => JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        Mode = "ObserveOnly",
+        Outcome = "ObservationRecorded",
+        Phase = "Observation",
+        ExpectedServiceVersion = Version,
+        ApplyAttempted = false,
+        RestoreAttempted = false,
+        OriginalVerified = false,
+        Baseline = (CpuLiveState?)null,
+        Forward = (CpuLiveState?)null,
+        Final = (CpuLiveState?)null,
+        ResponseReceivedAtUtc = Started.AddSeconds(1),
+        ControlResponse = new ControlOperationResult(status, "actual CPU diagnostic response"),
+    }, Json);
     [Theory]
     [InlineData(0, false)]
     [InlineData(3, false)]

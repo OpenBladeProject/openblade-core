@@ -11,6 +11,95 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade-co-smoke-" + Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData("blocked", "ControlOperationResult.Status")]
+    [InlineData("missing", "CpuTuning: expected present")]
+    [InlineData("malformed", "CpuTuning.IsWellFormed")]
+    [InlineData("readonly", "CpuTuning.Live.CanWrite")]
+    [InlineData("combined", "ControlOperationResult.Status")]
+    public async Task RejectedCpuResponseRetainsActualPayloadAndFailedRequirements(string failure, string requirement)
+    {
+        ControlOperationResult? actual = null;
+        var client = new Client(-1, directory)
+        { ObservationProjection = value => actual = RejectedResponse(value, failure) };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome);
+        Assert.Same(actual, result.ControlResponse); Assert.NotNull(result.ResponseReceivedAtUtc);
+        Assert.Contains(result.FailedRequirements, value => value.Contains(requirement, StringComparison.Ordinal));
+        Assert.Contains(requirement, result.Message);
+        if (failure == "combined")
+        { Assert.Equal(3, result.FailedRequirements.Count); }
+        Assert.Equal(new[] { "status", "observe" }, client.Calls);
+        Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+        using var saved = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.ResultFile)));
+        var response = saved.RootElement.GetProperty("controlResponse");
+        Assert.Equal(actual!.Status.ToString(), response.GetProperty("status").GetString());
+        Assert.Equal(actual.Message, response.GetProperty("message").GetString());
+        if (actual.CpuTuning is not null)
+        { Assert.Equal(actual.CpuTuning.Live.Access.ToString(), response.GetProperty("cpuTuning").GetProperty("live").GetProperty("access").GetString()); }
+    }
+
+    [Theory]
+    [InlineData("writable")]
+    [InlineData("blocked")]
+    [InlineData("failed")]
+    [InlineData("missing")]
+    [InlineData("malformed")]
+    [InlineData("readonly")]
+    public async Task ObserveOnlyRecordsOneActualResponseAndNeverWrites(string responseKind)
+    {
+        ControlOperationResult? actual = null;
+        var client = new Client(-1, directory)
+        { ObservationProjection = value => actual = RejectedResponse(value, responseKind) };
+        var result = await new CpuVoltageOptimizerSmokeRunner(client).RunAsync(CpuVoltageOptimizerSmokeRunner.ObserveConfirmation,
+            Version, directory, CancellationToken.None, observeOnly: true);
+        Assert.Equal("ObservationRecorded", result.Outcome); Assert.Equal("ObserveOnly", result.Mode);
+        Assert.Same(actual, result.ControlResponse); Assert.NotNull(result.ResponseReceivedAtUtc);
+        Assert.False(result.ApplyAttempted); Assert.False(result.RestoreAttempted); Assert.False(result.OriginalVerified);
+        Assert.Null(result.Baseline); Assert.Null(result.Forward); Assert.Null(result.Final);
+        Assert.Equal(new[] { "status", "observe" }, client.Calls);
+        Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
+        Assert.Equal(new[] { CpuVoltageOptimizerSmokeRunner.ResultFile }, Directory.GetFiles(directory).Select(Path.GetFileName));
+        using var saved = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.ResultFile)));
+        Assert.Equal(actual!.Message, saved.RootElement.GetProperty("controlResponse").GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task ObserveOnlyTransportFailureHasNoRecordedResponseAndRemainsUnknown()
+    {
+        var client = new Client(-1, directory) { ObservationTransportFailure = true };
+        var result = await new CpuVoltageOptimizerSmokeRunner(client).RunAsync(CpuVoltageOptimizerSmokeRunner.ObserveConfirmation,
+            Version, directory, CancellationToken.None, observeOnly: true);
+        Assert.Equal("Unknown", result.Outcome); Assert.Null(result.ControlResponse); Assert.Null(result.ResponseReceivedAtUtc);
+        Assert.False(result.OriginalVerified); Assert.False(result.ApplyAttempted); Assert.False(result.RestoreAttempted);
+        Assert.Equal(new[] { "status", "observe" }, client.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WrongModeConfirmationMakesNoClientCall(bool observeOnly)
+    {
+        var client = new Client(-1, directory);
+        await Assert.ThrowsAsync<ArgumentException>(() => new CpuVoltageOptimizerSmokeRunner(client).RunAsync(
+            observeOnly ? CpuVoltageOptimizerSmokeRunner.Confirmation : CpuVoltageOptimizerSmokeRunner.ObserveConfirmation,
+            Version, directory, CancellationToken.None, observeOnly));
+        Assert.Empty(client.Calls);
+    }
+
+    private static ControlOperationResult RejectedResponse(ControlOperationResult value, string failure) => value with
+    {
+        Status = failure is "blocked" or "combined" ? ControlOperationStatus.Blocked
+            : failure == "failed" ? ControlOperationStatus.Failed : value.Status,
+        Message = "exact diagnostic: " + failure,
+        CpuTuning = failure == "missing" ? null : value.CpuTuning! with
+        {
+            PendingBoot = failure is "malformed" or "combined" ? (CpuTuningPendingBoot)255 : CpuTuningPendingBoot.None,
+            Live = failure is "readonly" or "combined"
+                ? new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.MissingDependency) : value.CpuTuning!.Live,
+        },
+    };
+
+    [Theory]
     [InlineData(-1, false)]
     [InlineData(0, false)]
     [InlineData(-1, true)]
@@ -457,6 +546,8 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         public IReadOnlyList<DeviceSubsystem> ExternalChanges = [];
         public IReadOnlyList<DeviceSubsystem>? DriftAfterApply;
         public Func<ServiceStatusSnapshot, ServiceStatusSnapshot>? StatusProjection;
+        public Func<ControlOperationResult, ControlOperationResult>? ObservationProjection;
+        public bool ObservationTransportFailure;
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             Calls.Add("status"); statusCalls++;
@@ -478,13 +569,14 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         public Task<ControlOperationResult> ObserveCpuTuningAsync(bool installed, CancellationToken token)
         {
             Assert.True(installed); Calls.Add("observe"); ObserveCalls++;
+            if (ObservationTransportFailure) { throw new IOException("Actual response unavailable"); }
             bool forward = ApplyCalls > 0 && RestoreCalls == 0;
             var result = Result(forward && !ForwardDrift || ObserveCalls == 2 && PreApplyDrift ? (original == -1 ? 0 : -1) : original,
                 forward || ObserveCalls == 2 && PreApplyOwnership);
             if (ObserveCalls == 1 && BlockBaselinePersistence) { Directory.CreateDirectory(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.BaselineFile)); }
             if (ObserveCalls == 4) { FinalCancellation?.Cancel(); }
             if (ObserveCalls == 4 && FinalReportCollision) { File.WriteAllText(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.ResultFile), "prior-other-report"); }
-            return Task.FromResult(result);
+            return Task.FromResult(ObservationProjection?.Invoke(result) ?? result);
         }
         public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings, CancellationToken token)
         {

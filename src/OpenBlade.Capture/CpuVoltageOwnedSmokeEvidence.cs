@@ -24,6 +24,7 @@ internal static class CpuVoltageOwnedSmokeEvidence
             || b.GetProperty("capturedAtUtc").GetDateTimeOffset() < launched
             || b.GetProperty("capturedAtUtc").GetDateTimeOffset() > completed
             || r.GetProperty("expectedServiceVersion").GetString() != version
+            || r.TryGetProperty("mode", out var mode) && mode.GetString() != "Cycle"
             || r.GetProperty("outcome").GetString() != "Passed" || r.GetProperty("phase").GetString() != "OriginalReadback"
             || !r.GetProperty("applyAttempted").GetBoolean() || !r.GetProperty("restoreAttempted").GetBoolean()
             || !r.GetProperty("originalVerified").GetBoolean()) { throw new InvalidDataException("Smoke completion is not verified."); }
@@ -40,6 +41,25 @@ internal static class CpuVoltageOwnedSmokeEvidence
             || status.LiveRecovery is not { State: CpuTuningRecoveryState.None, Features: CpuTuningFeatures.None }
             || status.FirmwareRecovery is not { State: CpuTuningRecoveryState.None, Features: CpuTuningFeatures.None })
         { throw new InvalidDataException("Smoke baseline has unresolved ownership."); }
+    }
+    internal static void VerifyObservation(byte[] resultBytes, string version, DateTimeOffset launched, DateTimeOffset completed)
+    {
+        using var result = Parse(resultBytes);
+        var r = result.RootElement;
+        if (r.GetProperty("mode").GetString() != "ObserveOnly" || r.GetProperty("outcome").GetString() != "ObservationRecorded"
+            || r.GetProperty("phase").GetString() != "Observation" || r.GetProperty("expectedServiceVersion").GetString() != version
+            || r.GetProperty("applyAttempted").GetBoolean() || r.GetProperty("restoreAttempted").GetBoolean()
+            || r.GetProperty("originalVerified").GetBoolean()
+            || r.GetProperty("baseline").ValueKind != JsonValueKind.Null || r.GetProperty("forward").ValueKind != JsonValueKind.Null
+            || r.GetProperty("final").ValueKind != JsonValueKind.Null
+            || r.GetProperty("responseReceivedAtUtc").GetDateTimeOffset() < launched
+            || r.GetProperty("responseReceivedAtUtc").GetDateTimeOffset() > completed)
+        { throw new InvalidDataException("Read-only CPU observation recording is not verified."); }
+        var response = r.GetProperty("controlResponse");
+        if (response.ValueKind != JsonValueKind.Object || response.GetProperty("message").ValueKind != JsonValueKind.String
+            || !Enum.TryParse<ControlOperationStatus>(response.GetProperty("status").GetString(), out var status) || !Enum.IsDefined(status)
+            || response.Deserialize<ControlOperationResult>(Options) is null)
+        { throw new InvalidDataException("An actual typed CPU response is required; transport uncertainty cannot permit cleanup."); }
     }
     private static int Vector(JsonElement json)
     {
