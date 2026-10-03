@@ -126,7 +126,7 @@ internal sealed class CpuVoltageOptimizerSmokeRunner(IFirmwareSmokeClient client
             || status.ServiceVersion != version || status.WritesBlocked || status.ControlAccess != SessionControlAccess.Active
             || status.ActivePowerSource != PowerSource.PluggedIn || status.ObservationReason != DeviceObservationReason.None
             || status.PotentialControllers.Count != 0 || !string.IsNullOrEmpty(status.ControllerDetectionWarning)
-            || status.ExternalChanges.Count != 0 || status.UnconfirmedWrites.Count != 0
+            || status.ExternalChanges.Any(subsystem => subsystem != DeviceSubsystem.Lighting) || status.UnconfirmedWrites.Count != 0
             || status.Capabilities?.CpuVoltageOptimizer is not { IsWellFormed: true, Access: DeviceFeatureAccess.ReadWrite, SupportsEnableDisable: true } curve
             || !curve.Value.Supports(-1))
         { throw new InvalidDataException("Exact model, version, full-power active control and optimizer safety/admission are required."); }

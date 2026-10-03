@@ -11,17 +11,26 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade-co-smoke-" + Guid.NewGuid().ToString("N"));
 
     [Theory]
-    [InlineData(-1)]
-    [InlineData(0)]
-    public async Task OneCurveOnlyTransitionAndOwnedRestoreRequireIndependentReadbacks(int original)
+    [InlineData(-1, false)]
+    [InlineData(0, false)]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    public async Task OneCurveOnlyTransitionAndOwnedRestoreRequireIndependentReadbacks(int original, bool lightingOnly)
     {
-        var client = new Client(original, directory);
+        var client = new Client(original, directory) { ExternalChanges = lightingOnly ? [DeviceSubsystem.Lighting] : [] };
         var result = await Run(client);
         Assert.Equal("Passed", result.Outcome); Assert.True(result.OriginalVerified);
         Assert.Equal(new[] { "status", "observe", "status", "observe", "apply", "status", "observe", "status", "restore", "status", "observe" }, client.Calls);
         Assert.Equal(1, client.ApplyCalls); Assert.Equal(1, client.RestoreCalls);
         Assert.Null(client.Settings!.PowerLimitWatts);
         Assert.Equal(original == -1 ? 0 : -1, client.Settings.CurveOptimizer!.EffectiveValue);
+        Assert.All(new[] { result.Baseline!, result.Forward!, result.Final! }, state =>
+        {
+            Assert.Equal(Indices, state.CoreValues.Select(core => core.CoreIndex));
+            Assert.Equal(12, state.CoreValues.Count);
+        });
+        Assert.All(result.Baseline!.CoreValues, core => Assert.Equal(original, core.Value));
+        Assert.All(result.Forward!.CoreValues, core => Assert.Equal(original == -1 ? 0 : -1, core.Value));
         Assert.Equal(Indices, result.Final!.CoreValues.Select(core => core.CoreIndex));
         Assert.All(result.Final.CoreValues, core => Assert.Equal(original, core.Value));
         using var baseline = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, CpuVoltageOptimizerSmokeRunner.BaselineFile)));
@@ -94,6 +103,32 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         Assert.Equal("Unknown", result.Outcome); Assert.True(result.ApplyAttempted);
         Assert.Equal(1, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls);
         Assert.Equal(2, client.ObserveCalls);
+    }
+
+    [Fact]
+    public async Task NonLightingDriftAfterApplyStopsWithoutGuessedRestore()
+    {
+        var client = new Client(-1, directory)
+        { ExternalChanges = [DeviceSubsystem.Lighting], DriftAfterApply = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans] };
+        var result = await Run(client);
+        Assert.Equal("Unknown", result.Outcome); Assert.Equal("ForwardReadback", result.Phase);
+        Assert.True(result.ApplyAttempted); Assert.False(result.RestoreAttempted); Assert.False(result.OriginalVerified);
+        Assert.Equal(1, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls); Assert.Equal(2, client.ObserveCalls);
+    }
+
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance, false)]
+    [InlineData(DeviceSubsystem.Fans, false)]
+    [InlineData(DeviceSubsystem.Battery, false)]
+    [InlineData((DeviceSubsystem)255, false)]
+    [InlineData(DeviceSubsystem.Performance, true)]
+    public async Task NonLightingOrMixedExternalDriftBlocksBeforeApply(DeviceSubsystem subsystem, bool mixed)
+    {
+        var client = new Client(-1, directory)
+        { ExternalChanges = mixed ? [DeviceSubsystem.Lighting, subsystem] : [subsystem] };
+        var result = await Run(client);
+        Assert.Equal("Blocked", result.Outcome); Assert.Equal("Admission", result.Phase);
+        Assert.Equal(0, client.ApplyCalls); Assert.Equal(0, client.RestoreCalls); Assert.Equal(0, client.ObserveCalls);
     }
 
     [Fact]
@@ -201,6 +236,8 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
         public int ApplyCalls, RestoreCalls, ObserveCalls;
         private int statusCalls;
         public CpuTuningSettings? Settings;
+        public IReadOnlyList<DeviceSubsystem> ExternalChanges = [];
+        public IReadOnlyList<DeviceSubsystem>? DriftAfterApply;
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             Calls.Add("status"); statusCalls++;
@@ -208,7 +245,8 @@ public sealed class CpuVoltageOptimizerSmokeRunnerTests : IDisposable
             var caps = DeviceCapabilities.SafeTargetDefaults() with
             { CpuVoltageOptimizer = new(new(-30, -1, 1), Denial == "capability" ? DeviceFeatureAccess.ObservedOnly : DeviceFeatureAccess.ReadWrite) { SupportsEnableDisable = true } };
             var status = new ServiceStatusSnapshot(1, Denial != "device", Denial == "blocked" || BlockRestore && statusCalls == 4,
-                Denial == "controller" ? ["external"] : [], Denial == "warning" ? "unknown controllers" : null, [], "test", caps, null, profiles,
+                Denial == "controller" ? ["external"] : [], Denial == "warning" ? "unknown controllers" : null,
+                ApplyCalls > 0 && DriftAfterApply is not null ? DriftAfterApply : ExternalChanges, "test", caps, null, profiles,
                 new(new(PerformancePreset.Balanced, SettingValueSource.PowerProfile), new(FanMode.Automatic, SettingValueSource.PowerProfile),
                     new(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile), new(profiles.BatteryPolicy, true, false)),
                 Denial == "power" ? PowerSource.Battery : PowerSource.PluggedIn, null, null, null, null, false,
