@@ -168,13 +168,19 @@ internal sealed class CpuPmOwnedDriverLifecycle : ICpuPmOwnedDriverProofSource
         finally { Exit(); }
     }
     internal bool BindStartedChild(ICpuPmRetainedChild retainedChild, CancellationToken token)
+        => BindStartedChildCore(retainedChild, token, allowTerminal: false);
+    // The voltage workload may finish during the full safety guards. Bind its
+    // retained identity for completion without requesting a live authority proof.
+    internal bool BindStartedChildForCompletion(ICpuPmRetainedChild retainedChild, CancellationToken token)
+        => BindStartedChildCore(retainedChild, token, allowTerminal: true);
+    private bool BindStartedChildCore(ICpuPmRetainedChild retainedChild, CancellationToken token, bool allowTerminal)
     {
         if (!Enter()) { return false; }
         try
         {
             if (phase != CpuPmDriverPhase.LaunchPossible || !Owned(CpuPmDriverState.Running, owner.Value, token)) { return Fail(); }
             child = retainedChild; childIdentity = retainedChild.Identity;
-            if (!ChildIs(CpuPmChildState.Running) || !Guard(token) || !Persist(CpuPmDriverEvent.ChildBound, token)) { return Fail(); }
+            if (!BindingChildReady(allowTerminal) || !Guard(token) || !Persist(CpuPmDriverEvent.ChildBound, token)) { return Fail(); }
             phase = CpuPmDriverPhase.ChildBound; return true;
         }
         catch (Exception) { return Fail(); }
@@ -246,6 +252,9 @@ internal sealed class CpuPmOwnedDriverLifecycle : ICpuPmOwnedDriverProofSource
         finally { ReleaseMutex(mutex); cleanupMode = false; Exit(); }
     }
     private bool CleanupChildReady() => !launchPossible ? child is null : ChildIs(CpuPmChildState.Terminal);
+    private bool BindingChildReady(bool allowTerminal) => !allowTerminal ? ChildIs(CpuPmChildState.Running)
+        : childIdentity is { IsValid: true } && child is not null && child.ReadFreshIdentity() == childIdentity
+        && child.ReadState() is CpuPmChildState.Running or CpuPmChildState.Terminal && child.ReadFreshIdentity() == childIdentity;
     private bool ChildIs(CpuPmChildState state) => childIdentity is { IsValid: true } && child is not null
         && child.ReadFreshIdentity() == childIdentity && child.ReadState() == state && child.ReadFreshIdentity() == childIdentity;
     private bool Owned(CpuPmDriverState state, string? tag, CancellationToken token)

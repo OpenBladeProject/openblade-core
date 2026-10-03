@@ -10,6 +10,56 @@ public sealed class CpuPmOwnedDriverLifecycleTests
     private static CpuPmDriverOwnerTag Owner() => new(Run, Lifetime, new('A', 64), new('b', 64));
 
     [Fact]
+    public void VoltageChildCompletingDuringBindingGuardStillBinds()
+    {
+        var f = new Fixture(); Assert.True(f.Lifecycle.PrepareAndStart(CancellationToken.None));
+        Assert.True(f.Lifecycle.BeginChildLaunch(CancellationToken.None));
+        f.Safety.OnRead = () => f.Child.State = CpuPmChildState.Terminal;
+        Assert.True(f.Lifecycle.BindStartedChildForCompletion(f.Child, CancellationToken.None));
+        Assert.Equal(CpuPmDriverPhase.ChildBound, f.Lifecycle.Phase);
+        Assert.Contains(f.Journal.Records, r => r.Event == CpuPmDriverEvent.ChildBound);
+        Assert.Equal(CpuPmDriverCleanup.Complete, f.Lifecycle.Cleanup(CancellationToken.None));
+    }
+    [Fact]
+    public void TerminalChildCannotBindOrdinaryPmOrAcquireLiveProofThroughCompletion()
+    {
+        var pm = new Fixture(); Assert.True(pm.Lifecycle.PrepareAndStart(CancellationToken.None));
+        Assert.True(pm.Lifecycle.BeginChildLaunch(CancellationToken.None)); pm.Child.State = CpuPmChildState.Terminal;
+        Assert.False(pm.Lifecycle.BindStartedChild(pm.Child, CancellationToken.None));
+        Assert.Equal(0, pm.Driver.Stops); Assert.Equal(0, pm.Driver.Deletes);
+        var voltage = new Fixture(); Assert.True(voltage.Lifecycle.PrepareAndStart(CancellationToken.None));
+        Assert.True(voltage.Lifecycle.BeginChildLaunch(CancellationToken.None)); voltage.Child.State = CpuPmChildState.Terminal;
+        Assert.True(voltage.Lifecycle.BindStartedChildForCompletion(voltage.Child, CancellationToken.None));
+        Assert.Null(voltage.Lifecycle.ReadFresh(Run, Lifetime)); Assert.Equal(CpuPmDriverPhase.Blocked, voltage.Lifecycle.Phase);
+        Assert.Equal(CpuPmDriverCleanup.Refused, voltage.Lifecycle.Cleanup(CancellationToken.None));
+        Assert.Equal(0, voltage.Driver.Stops); Assert.Equal(0, voltage.Driver.Deletes);
+    }
+    [Theory]
+    [InlineData("birth")]
+    [InlineData("image")]
+    [InlineData("unknown")]
+    [InlineData("driver-owner")]
+    [InlineData("safety")]
+    [InlineData("cancel")]
+    [InlineData("journal")]
+    public void CompletionBindingRetainsAllIdentityOwnershipSafetyAndDurabilityGuards(string fault)
+    {
+        var f = new Fixture(); Assert.True(f.Lifecycle.PrepareAndStart(CancellationToken.None));
+        Assert.True(f.Lifecycle.BeginChildLaunch(CancellationToken.None)); f.Child.State = CpuPmChildState.Terminal;
+        using var cancel = new CancellationTokenSource();
+        if (fault == "birth") { f.Child.Current = f.Child.Identity with { CreationFileTimeUtc = 201 }; }
+        if (fault == "image") { f.Child.Current = f.Child.Identity with { ExecutablePath = @"C:\wrong.exe" }; }
+        if (fault == "unknown") { f.Child.State = CpuPmChildState.Unknown; }
+        if (fault == "driver-owner") { f.Driver.Tag = "wrong"; }
+        if (fault == "safety") { f.Safety.DenyFull = true; }
+        if (fault == "cancel") { cancel.Cancel(); }
+        if (fault == "journal") { f.Journal.Fail = CpuPmDriverEvent.ChildBound; }
+        Assert.False(f.Lifecycle.BindStartedChildForCompletion(f.Child, cancel.Token));
+        Assert.Equal(CpuPmDriverCleanup.Refused, f.Lifecycle.Cleanup(CancellationToken.None));
+        Assert.Equal(0, f.Driver.Stops); Assert.Equal(0, f.Driver.Deletes); Assert.Equal(0, f.Safety.Releases);
+    }
+
+    [Fact]
     public void OwnedCreateStartChildAndTerminalCleanupPreserveOrderedDurableEvidence()
     {
         var f = new Fixture(); f.Active();
@@ -313,8 +363,9 @@ public sealed class CpuPmOwnedDriverLifecycleTests
         internal bool Retained; internal int Releases;
         internal int FullReads, ProofReads;
         internal bool DenyFull, DenyProof;
+        internal Action? OnRead;
         public CpuPmDriverSafetySnapshot ReadFresh()
-        { FullReads++; return DenyFull ? new(false, false, false, false, false, false, false) : Current; }
+        { FullReads++; OnRead?.Invoke(); return DenyFull ? new(false, false, false, false, false, false, false) : Current; }
         public CpuPmDriverProofSafetySnapshot ReadFreshProof()
         { ProofReads++; return new(Current.Admits && !DenyProof, Current.VendorAndPayloadPinsHeld, Current.AcPower && Current.LocalActiveDefaultSession, Current.TrustedOperatorPremiseAccepted); }
         public void RetainUntilVerifiedCleanup(CpuPmOwnedDriverLifecycle owner) => Retained = true;

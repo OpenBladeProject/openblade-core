@@ -89,17 +89,19 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             foreach (string arg in new[] { "cpu-voltage-optimizer", "--confirm-target", "RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE",
                 "--expected-service-version", options.ServiceVersion, "--output", evidence }) { start.ArgumentList.Add(arg); }
             AssertContext();
+            string childHash = manifest.Single(f => f.Name == "firmware-smoke/OpenBlade.FirmwareSmoke.exe").Sha256;
+            var childImage = pins.PinFile(start.FileName, CpuPmLaunchSchema.MaximumFileBytes, true);
+            if (childImage.Sha256 != childHash) { throw new IOException("Reviewed smoke image differs."); }
             DateTimeOffset launched = DateTimeOffset.UtcNow;
             actualChild = Process.Start(start) ?? throw new IOException("Smoke launch unknown.");
-            child = CpuPmRetainedLaunchProcess.Retain(WindowsCpuPmProcessProbe.FromLaunchedHandle(actualChild.SafeHandle), pins,
-                start.FileName, manifest.Single(f => f.Name == "firmware-smoke/OpenBlade.FirmwareSmoke.exe").Sha256);
-            if (!owner.BindStartedChild(child, deadline.Token)) { return Park("ChildBindingUnknown"); }
+            child = CpuPmRetainedLaunchProcess.RetainForCompletion(WindowsCpuPmProcessProbe.FromLaunchedHandle(actualChild.SafeHandle), pins,
+                start.FileName, childHash, childImage);
+            if (!owner.BindStartedChildForCompletion(child, deadline.Token)) { return Park("ChildBindingUnknown"); }
             WriteContext(Path.Combine(runPath, "control", "voltage-child.json"), child.Identity);
             bool cleaned = Complete(child, () => Volatile.Read(ref uncertain) != 0 || deadline.IsCancellationRequested,
-                AssertContext, owner.RevokeAuthority,
+                AssertContext, owner.RevokeAuthority, () => actualChild.ExitCode,
                 () =>
                 {
-                    if (actualChild.ExitCode != 0) { throw new IOException("Smoke failed; no shutdown or driver cleanup."); }
                     string[] expected = [CpuVoltageOwnedSmokeEvidence.BaselineFile, CpuVoltageOwnedSmokeEvidence.ResultFile];
                     var entries = pins.Enumerate(evidence).ToArray();
                     if (entries.Length != 2 || entries.Any(e => e.Directory || !expected.Contains(e.Name, StringComparer.Ordinal)))
@@ -135,9 +137,10 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     // Retains the existing terminal-child/cleanup reducer; the sole workload
     // extension verifies immutable restoration evidence and drains Service first.
     internal static bool Complete(ICpuPmRetainedChild child, Func<bool> uncertain, Action context, Action revoke,
-        Action verifyRestoration, Action shutdown, Action waitServiceTerminal, Func<CpuPmDriverCleanup> cleanup, Action delay)
+        Func<int> exitCode, Action verifyRestoration, Action shutdown, Action waitServiceTerminal, Func<CpuPmDriverCleanup> cleanup, Action delay)
         => CpuPmSupervisorCompletion.Finish(child, uncertain, context, revoke, () =>
         {
+            if (exitCode() != 0) { throw new IOException("Smoke failed; no shutdown or driver cleanup."); }
             verifyRestoration(); context(); if (uncertain()) { throw new IOException("Deadline before shutdown."); }
             shutdown(); waitServiceTerminal(); context(); if (uncertain()) { throw new IOException("Deadline before cleanup."); }
         }, cleanup, delay);

@@ -10,8 +10,8 @@ internal interface ICpuPmRetainedProcessProbe : IDisposable { CpuPmProcessObserv
 
 // Shared reducer for retained process identity. The terminal path validates the
 // same retained kernel object/creation time and held executable pins, using the
-// path proven while alive. It does not require a dead process to answer a new
-// QueryFullProcessImageName request or confuse exit code 259 with liveness.
+// path proven while alive (or the voltage caller's pinned actual launch). It does
+// not require a new dead-process image query or use exit code 259 as liveness.
 internal sealed class CpuPmRetainedLaunchProcess : ICpuPmRetainedChild
 {
     private readonly ICpuPmRetainedProcessProbe probe;
@@ -21,14 +21,27 @@ internal sealed class CpuPmRetainedLaunchProcess : ICpuPmRetainedChild
     private CpuPmRetainedLaunchProcess(CpuPmAuthorityPeer identity, ICpuPmRetainedProcessProbe probe, ICpuPmLaunchFiles files)
     { Identity = identity; this.probe = probe; this.files = files; }
     internal static CpuPmRetainedLaunchProcess Retain(ICpuPmRetainedProcessProbe probe, ICpuPmLaunchFiles files, string expectedImage, string expectedHash)
+        => RetainCore(probe, files, expectedImage, expectedHash, null);
+    // Voltage completion only: the caller pins the reviewed fixed image BEFORE
+    // Process.Start and supplies a probe duplicated from that returned SafeHandle.
+    // A terminal first observation has launch provenance, never PM live authority.
+    internal static CpuPmRetainedLaunchProcess RetainForCompletion(ICpuPmRetainedProcessProbe actuallyLaunchedProbe,
+        ICpuPmLaunchFiles files, string expectedImage, string expectedHash, ICpuPmLaunchFilePin prelaunchImage)
+        => RetainCore(actuallyLaunchedProbe, files, expectedImage, expectedHash, prelaunchImage ?? throw new ArgumentNullException(nameof(prelaunchImage)));
+    private static CpuPmRetainedLaunchProcess RetainCore(ICpuPmRetainedProcessProbe probe, ICpuPmLaunchFiles files,
+        string expectedImage, string expectedHash, ICpuPmLaunchFilePin? prelaunchImage)
     {
         try
         {
             files.AssertAllPins(); var observed = probe.Read(true);
             var identity = new CpuPmAuthorityPeer(observed.Pid, observed.Created, expectedImage, expectedHash);
-            if (!identity.IsValid || observed.State != CpuPmChildState.Running || observed.Image != expectedImage) { throw new IOException("Launched process binding denied."); }
+            if (!identity.IsValid || observed.State is not (CpuPmChildState.Running or CpuPmChildState.Terminal)
+                || observed.State == CpuPmChildState.Terminal && prelaunchImage is null
+                || observed.State == CpuPmChildState.Running && observed.Image != expectedImage
+                || observed.Image is not null && observed.Image != expectedImage) { throw new IOException("Launched process binding denied."); }
             var image = files.PinFile(expectedImage, CpuPmLaunchSchema.MaximumFileBytes, true);
-            if (image.Sha256 != expectedHash) { throw new IOException("Launched image pin denied."); }
+            if (image.Sha256 != expectedHash || prelaunchImage is not null && (prelaunchImage.Sha256 != expectedHash || prelaunchImage.Length != image.Length))
+            { throw new IOException("Launched image pin denied."); }
             var value = new CpuPmRetainedLaunchProcess(identity, probe, files);
             if (value.ReadFreshIdentity() != identity) { throw new IOException("Launched process changed."); }
             return value;
@@ -44,7 +57,8 @@ internal sealed class CpuPmRetainedLaunchProcess : ICpuPmRetainedChild
             var observed = probe.Read(true);
             if (observed.Pid != Identity.ProcessId || observed.Created != Identity.CreationFileTimeUtc
                 || observed.State is not (CpuPmChildState.Running or CpuPmChildState.Terminal)
-                || observed.State == CpuPmChildState.Running && observed.Image != Identity.ExecutablePath) { return null; }
+                || observed.State == CpuPmChildState.Running && observed.Image != Identity.ExecutablePath
+                || observed.Image is not null && observed.Image != Identity.ExecutablePath) { return null; }
             files.AssertAllPins(); return Identity;
         }
         catch (Exception) { return null; }
@@ -150,9 +164,10 @@ internal sealed class WindowsCpuPmProcessProbe : ICpuPmRetainedProcessProbe
         if (includeLiveImage && state == CpuPmChildState.Running)
         {
             var path = new StringBuilder(512); uint size = 512;
-            if (!QueryFullProcessImageNameW(handle, 0, path, ref size) || size is 0 or >= 512) { throw new IOException("Process image unavailable."); }
-            image = path.ToString();
+            bool queried = QueryFullProcessImageNameW(handle, 0, path, ref size) && size is > 0 and < 512;
             uint after = WaitForSingleObject(handle, 0); state = after == 0 ? CpuPmChildState.Terminal : after == 258 ? CpuPmChildState.Running : CpuPmChildState.Unknown;
+            if (!queried && state != CpuPmChildState.Terminal) { throw new IOException("Process image unavailable."); }
+            if (queried) { image = path.ToString(); }
         }
         return new(checked((int)pid), created, state, image);
     }

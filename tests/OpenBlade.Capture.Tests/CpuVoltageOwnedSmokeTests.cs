@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -15,6 +16,43 @@ public sealed class CpuVoltageOwnedSmokeTests
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
     private static string[] Args => ["--payload", @"C:\reviewed", "--source", Source, "--manifest-sha256", Hash,
         "--expected-service-version", Version, "--confirm-target", CpuVoltageOwnedSmokeCommand.Confirmation];
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(3, false)]
+    [InlineData(0, true)]
+    public void ActualQuickExitRequiresZeroAndFullRestorationBeforeShutdownAndCleanup(int exit, bool blockedResult)
+    {
+        if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess) { return; }
+        string image = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+        using var files = new WindowsCpuPmRetainedLaunchProcessTests.NativeImageFiles(image);
+        var pin = files.PinFile(image, CpuPmLaunchSchema.MaximumFileBytes, true);
+        using var actual = Process.Start(new ProcessStartInfo(image, $"/d /c exit {exit}") { UseShellExecute = false, CreateNoWindow = true })!;
+        Assert.True(actual.WaitForExit(10000)); Assert.Equal(exit, actual.ExitCode);
+        var child = CpuPmRetainedLaunchProcess.RetainForCompletion(WindowsCpuPmProcessProbe.FromLaunchedHandle(actual.SafeHandle), files, image, pin.Sha256, pin);
+        var data = Evidence(-1);
+        if (blockedResult)
+        {
+            var result = JsonNode.Parse(data.Result)!; result["outcome"] = "Blocked"; result["originalVerified"] = false;
+            data = (data.Baseline, JsonSerializer.SerializeToUtf8Bytes(result));
+        }
+        var events = new List<string>();
+        bool Finish() => CpuVoltageOwnedSmokeCommand.Complete(child, () => false, files.AssertAllPins, () => events.Add("revoke"),
+            () => actual.ExitCode, () => { Verify(data); events.Add("restoration"); }, () => events.Add("shutdown"),
+            () => events.Add("service-terminal"), () => { events.Add("cleanup"); return CpuPmDriverCleanup.Complete; },
+            () => throw new InvalidOperationException("Quick child must already be terminal."));
+        if (exit == 0 && !blockedResult)
+        {
+            Assert.True(Finish());
+            Assert.Equal(new[] { "revoke", "restoration", "shutdown", "service-terminal", "cleanup" }, events);
+        }
+        else
+        {
+            Assert.ThrowsAny<Exception>(() => Finish()); Assert.Equal(new[] { "revoke" }, events);
+            Assert.Equal(child.Identity, child.ReadFreshIdentity()); files.AssertAllPins();
+        }
+        // Test-owned harmless process only; failed production completion parks.
+        child.ReleaseAfterTerminal();
+    }
     [Fact]
     public void HelpIsInertAndExactApprovalIsRequired()
     {
@@ -51,6 +89,7 @@ public sealed class CpuVoltageOwnedSmokeTests
         var evidence = Evidence(original); var child = new Child(); var events = new List<string>(); int polls = 0;
         bool terminal = false;
         Assert.True(CpuVoltageOwnedSmokeCommand.Complete(child, () => false, () => { }, () => events.Add("revoke"),
+            () => 0,
             () => { Verify(evidence); events.Add("verified"); }, () => events.Add("shutdown"),
             () => { terminal = true; events.Add("service-terminal"); },
             () => { Assert.True(terminal); events.Add("cleanup"); return CpuPmDriverCleanup.Complete; },
@@ -87,7 +126,7 @@ public sealed class CpuVoltageOwnedSmokeTests
         var changed = (JsonSerializer.SerializeToUtf8Bytes(b), JsonSerializer.SerializeToUtf8Bytes(r));
         bool shutdown = false, cleanup = false;
         Assert.ThrowsAny<Exception>(() => CpuVoltageOwnedSmokeCommand.Complete(new Child { State = CpuPmChildState.Terminal },
-            () => false, () => { }, () => { }, () => Verify(changed), () => shutdown = true, () => { },
+            () => false, () => { }, () => { }, () => 0, () => Verify(changed), () => shutdown = true, () => { },
             () => { cleanup = true; return CpuPmDriverCleanup.Complete; }, () => { }));
         Assert.False(shutdown); Assert.False(cleanup);
     }
@@ -105,6 +144,7 @@ public sealed class CpuVoltageOwnedSmokeTests
         int verified = 0, shutdown = 0, cleanup = 0;
         bool Run() => CpuVoltageOwnedSmokeCommand.Complete(child, () => failure == "deadline", () =>
             { if (failure == "pins-after-result" && verified != 0) { throw new IOException(); } }, () => { },
+            () => 0,
             () => verified++, () => { shutdown++; if (failure == "shutdown") { throw new IOException(); } },
             () => { if (failure == "service-terminal") { throw new IOException(); } },
             () => { cleanup++; return CpuPmDriverCleanup.Complete; }, () => throw new IOException());
