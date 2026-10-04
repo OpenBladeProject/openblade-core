@@ -37,6 +37,16 @@ public interface IServiceClientContextResolver
 
 public sealed class WindowsServiceClientContextResolver : IServiceClientContextResolver
 {
+    public WindowsServiceClientContextResolver()
+    {
+        // Initialize the identity-reading dependencies before entering an
+        // Identification token: a first bind there can poison later requests.
+        // Discard these startup values; every client is still read under its token.
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
+        _ = ReadSessionId(identity);
+        GC.KeepAlive(new WindowsPrincipal(identity));
+    }
+
     public ServiceClientContext Resolve(NamedPipeServerStream pipe)
     {
         ArgumentNullException.ThrowIfNull(pipe);
