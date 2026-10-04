@@ -8,13 +8,55 @@ namespace OpenBlade.Service;
 internal sealed class CpuSavedAdmissionDiagnostic
 {
     private string? firstFailure;
+    private ActiveStage? activeStage;
+    private string? liveObservationTimeoutContext;
     internal string? FirstFailure => Volatile.Read(ref firstFailure);
     internal string? LiveObservationReason { get; set; }
+    internal string? LiveObservationTimeoutContext => Volatile.Read(ref liveObservationTimeoutContext);
+
+    internal void RecordObservationCancellation(bool callerCancelled)
+    {
+        string detail = (callerCancelled ? "curve observation caller cancellation" : "curve observation operation timeout")
+            + ActiveStageDetail();
+        Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
+        Check(false, detail);
+    }
 
     internal bool Check(bool allowed, string stage)
     {
         if (!allowed) { Interlocked.CompareExchange(ref firstFailure, stage, null); }
         return allowed;
+    }
+
+    // Fixed code-owned stage names only. A timeout snapshots this context into
+    // the first failure; a late worker cannot rewrite the returned diagnostic.
+    internal IDisposable BeginStage(string name)
+    {
+        var stage = new ActiveStage(this, name, Volatile.Read(ref activeStage));
+        Volatile.Write(ref activeStage, stage);
+        return stage;
+    }
+
+    internal string ActiveStageDetail()
+    {
+        ActiveStage? stage = Volatile.Read(ref activeStage);
+        return stage is null ? string.Empty : $"; active stage {stage.Name}; elapsed {Math.Min(600000L,
+            (long)System.Diagnostics.Stopwatch.GetElapsedTime(stage.Started).TotalMilliseconds)} ms";
+    }
+
+    private sealed class ActiveStage(CpuSavedAdmissionDiagnostic owner, string name, ActiveStage? parent) : IDisposable
+    {
+        internal string Name { get; } = name;
+        internal long Started { get; } = System.Diagnostics.Stopwatch.GetTimestamp();
+        private int disposed;
+        private readonly ActiveStage? parent = parent;
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref disposed, 1);
+            ActiveStage? previous = parent;
+            while (previous is not null && Volatile.Read(ref previous.disposed) != 0) { previous = previous.parent; }
+            Interlocked.CompareExchange(ref owner.activeStage, previous, this);
+        }
     }
 }
 

@@ -7,6 +7,20 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Fact]
+    public async Task ProviderAdmissionUsesTheNativeObservationOperationToken()
+    {
+        using var fixture = new Fixture();
+        var tokens = new List<CancellationToken>();
+        fixture.ObserveAdmission = (_, token) => { tokens.Add(token); return true; };
+        fixture.BeforeProvider = token => { Assert.True(token.CanBeCanceled); tokens.Clear(); };
+        await fixture.Run(_ =>
+        {
+            Assert.NotEmpty(tokens);
+            Assert.All(tokens, token => Assert.Equal(fixture.OperationToken, token));
+        });
+    }
+
+    [Fact]
     public async Task ProviderReportsFirstIdentityRejectionWithoutRetainingBackend()
     {
         using var fixture = new Fixture { Usb = null };
@@ -209,6 +223,9 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal bool Admitted = true;
         internal DeviceIdentity? Usb = new("RZ09-0528", 0x1532, 0x02C6, "Unknown");
         internal Action? OnMinMax;
+        internal Func<CpuTuningFeatures, CancellationToken, bool>? ObserveAdmission;
+        internal Action<CancellationToken>? BeforeProvider;
+        internal CancellationToken OperationToken;
         internal Fixture()
         {
             CpuTuningController? captured = null;
@@ -225,11 +242,13 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         {
             backend.Check = token =>
             {
+                OperationToken = token;
+                BeforeProvider?.Invoke(token);
                 var context = Provider.ReadFreshContext(token);
                 check(context);
                 return new(context, new(0xFF55, 0x005D000B, 0xD50, CpuLiveCurveTuningTransactionTests.ValuesFixture()));
             };
-            await controller.ObserveLiveAsync(_ => Admitted, default, 2, 3, diagnostic);
+            await controller.ObserveLiveAsync((feature, token) => ObserveAdmission?.Invoke(feature, token) ?? Admitted, default, 2, 3, diagnostic);
         }
         public void Dispose() => Provider.Dispose();
     }

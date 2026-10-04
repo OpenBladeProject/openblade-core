@@ -15126,9 +15126,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IDis
 
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
-        bool allowCachedExternalClassification = false)
+        bool allowCachedExternalClassification = false,
+        CpuSavedAdmissionDiagnostic? cpuDiagnostic = null)
     {
-        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        PowerSource windowsSource;
+        using (cpuDiagnostic?.BeginStage("power Windows source capture"))
+        { windowsSource = powerStateProvider.CapturePowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -15154,9 +15157,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IDis
 
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            IBladeDevice device;
+            using (cpuDiagnostic?.BeginStage("power verified device probe"))
             {
-                return PowerSource.ExternalUnknown;
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                { return PowerSource.ExternalUnknown; }
             }
 
             AdapterPowerState classified = AdapterPowerState.Unknown;
@@ -15172,7 +15177,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IDis
                 AdapterPowerState sample;
                 try
                 {
-                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
+                    using (cpuDiagnostic?.BeginStage($"power adapter read sample {attempts + 1} of {MaximumAdapterPowerClassificationSamples} (open/exchange/dispose)"))
+                    { sample = await device.ReadAdapterPowerStateAsync(cancellationToken); }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)

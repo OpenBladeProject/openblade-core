@@ -7,21 +7,49 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveTuningTransactionTests
 {
     [Fact]
+    public async Task TimeoutCapturesSynchronousAdmissionBeforeItReturnsACompletedTask()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        backend.OnObserve = token =>
+        {
+            using var stage = diagnostic.BeginStage("power verified device probe");
+            Assert.True(token.WaitHandle.WaitOne(TimeSpan.FromSeconds(5)));
+            // Cancellation signals the token's wait handle before its callbacks.
+            // Keep this simulated synchronous probe active until the diagnostic
+            // callback has actually run, as an unfinished native probe would be.
+            Assert.True(SpinWait.SpinUntil(() => diagnostic.LiveObservationTimeoutContext is not null, TimeSpan.FromSeconds(5)));
+            return Task.FromResult(new CpuLiveCurveBackendObservation(null, null));
+        };
+        var result = await new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(20))
+            .ObserveOwnershipAsync(default, diagnostic);
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        Assert.StartsWith("; curve observation operation timeout; active stage power verified device probe; elapsed ",
+            diagnostic.LiveObservationTimeoutContext);
+        Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
     public async Task ObservationTimeoutRetainsFirstFailureBeforeLateBackendCompletion()
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
         var pending = new TaskCompletionSource<CpuLiveCurveBackendObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
-        backend.OnObserve = _ => pending.Task;
         var diagnostic = new CpuSavedAdmissionDiagnostic();
+        IDisposable? stage = null;
+        backend.OnObserve = _ => { stage = diagnostic.BeginStage("power adapter read sample 1 of 5 (open/exchange/dispose)"); return pending.Task; };
         var transaction = new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(20));
         var result = await transaction.ObserveOwnershipAsync(default, diagnostic).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
-        Assert.Equal("curve observation operation timeout", diagnostic.FirstFailure);
+        string first = Assert.IsType<string>(diagnostic.FirstFailure);
+        Assert.StartsWith("curve observation operation timeout; active stage power adapter read sample 1 of 5", first);
+        Assert.Matches(@"; elapsed \d+ ms$", first);
         Assert.False(pending.Task.IsCompleted); Assert.Equal(1, backend.Reads);
         diagnostic.Check(false, "late native rejection");
         pending.SetResult(new(null, null));
         await pending.Task;
-        Assert.Equal("curve observation operation timeout", diagnostic.FirstFailure);
+        stage!.Dispose();
+        Assert.Equal(first, diagnostic.FirstFailure);
+        Assert.Equal(string.Empty, diagnostic.ActiveStageDetail());
         Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
     }
     [Fact]

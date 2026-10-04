@@ -230,6 +230,54 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(0, context.Source.Submissions);
     }
 
+    [Fact]
+    public async Task CurveObservationDeadlineCancelsFreshPowerButRetainsAnUnfinishedRead()
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        CpuTuningController? controller = null;
+        var context = await CreateContextAsync(live: live, controllerFactory: source =>
+            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken classifierToken = default;
+        context.Device.ReadAdapterPower = async token =>
+        {
+            classifierToken = token; entered.TrySetResult();
+            await release.Task; // The actual read deliberately ignores cancellation.
+            return AdapterPowerState.FullPower330W;
+        };
+        live.Curve!.OnObserve = token => Task.Run(() =>
+        {
+            context.Power.Power = PowerSource.ExternalUnknown;
+            Assert.False(controller!.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None, token)());
+            return new CpuLiveCurveBackendObservation(null, null);
+        });
+        using var outer = new CancellationTokenSource();
+        Task<ControlOperationResult> observation = context.Runtime.ObserveCpuTuningAsync(true, () => true, outer.Token);
+        Task? worker = null;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            worker = Assert.IsAssignableFrom<Task>(typeof(ServiceControlRuntime).GetField("cpuPowerClassification",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
+            ControlOperationResult result = await observation.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.True(classifierToken.IsCancellationRequested);
+            Assert.False(outer.IsCancellationRequested);
+            Assert.False(worker.IsCompleted);
+            Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+            Assert.Null(result.CpuTuning);
+            Assert.Contains("prior classification still running", result.Message);
+            Assert.Contains("power adapter read sample 1 of 5 (open/exchange/dispose); elapsed ", result.Message);
+            Assert.Empty(live.Curve.Sent); Assert.Equal(0, live.CurveStore!.Writes);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await observation;
+            if (worker is not null) { await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker); }
+        }
+    }
+
     [Theory]
     [InlineData("inactive")]
     [InlineData("low-power")]

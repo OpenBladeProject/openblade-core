@@ -44,8 +44,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         var owner = controller();
         // Read only the initiating lease's diagnostic; no extra provider probe.
         var diagnostic = owner?.CaptureLiveObservationDiagnostic();
+        using var stage = diagnostic?.BeginStage("native provider fresh context");
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
-        var current = owner?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None);
+        var current = owner?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None, token);
         var lifetime = owner?.CaptureLiveRuntimeLifetime();
         if (!Check(current?.Invoke() == true, "provider runtime admission")
             || !Check(lifetime is { ServiceInstance: var instance } && instance != Guid.Empty, "provider runtime lifetime"))
@@ -176,7 +177,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
     {
         var owner = controller();
-        var admission = owner?.CaptureLiveRuntimeAdmission(feature);
+        var admission = owner?.CaptureLiveRuntimeAdmission(feature, token);
         var diagnostic = owner?.CaptureLiveObservationDiagnostic();
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         int revoked = 0;

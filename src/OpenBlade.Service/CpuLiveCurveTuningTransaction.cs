@@ -440,9 +440,10 @@ internal sealed class CpuLiveCurveTuningTransaction
     }
     private async Task<CpuLiveCurveBackendObservation?> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
-        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic), token).ConfigureAwait(false); }
+        using var stage = diagnostic?.BeginStage("curve backend observation");
+        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic), token, diagnostic).ConfigureAwait(false); }
         catch (OperationCanceledException)
-        { diagnostic?.Check(false, token.IsCancellationRequested ? "curve observation caller cancellation" : "curve observation operation timeout"); return null; }
+        { diagnostic?.RecordObservationCancellation(token.IsCancellationRequested); return null; }
         catch (Exception exception)
         { diagnostic?.Check(false, "curve observation exception " + CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception).Failure); return null; }
     }
@@ -452,9 +453,14 @@ internal sealed class CpuLiveCurveTuningTransaction
         try { return await BoundedAsync(t => backend.CheckWriteAdmissionAsync(context, command, purpose, t), token).ConfigureAwait(false); }
         catch { return false; }
     }
-    private async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token)
+    private async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token,
+        CpuSavedAdmissionDiagnostic? observationDiagnostic = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        // The observation's synchronous admission prefix can still be running
+        // when its deadline fires. Capture its stage then, before unwinding it.
+        using var registration = observationDiagnostic is null ? default : timeout.Token.Register(() =>
+            observationDiagnostic.RecordObservationCancellation(token.IsCancellationRequested));
         timeout.CancelAfter(operationTimeout);
         Task<T>? task = null;
         try

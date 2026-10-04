@@ -7,6 +7,28 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Fact]
+    public async Task CancelledObservationDoesNotReplaceIndependentRestorationAdmission()
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        var applied = await controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        using var observation = new CancellationTokenSource();
+        var unavailable = await controller.ObserveLiveAsync((_, operationToken) =>
+        {
+            Assert.True(operationToken.CanBeCanceled);
+            observation.Cancel();
+            return false;
+        }, observation.Token);
+        Assert.Null(unavailable.LiveState);
+        using var restoration = new CancellationTokenSource();
+        var restored = await controller.MutateLiveAsync(null, true, _ => true, restoration.Token);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.False(restoration.IsCancellationRequested);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, fixture.CurveStore.Journal!.State);
+        Assert.All(fixture.Curve.Values, core => Assert.Equal(-1, core.Offset));
+    }
+
+    [Fact]
     public async Task FirstRuntimeRejectionSurvivesTransactionFallbackAndLaterDiagnostic()
     {
         var fixture = new Fixture(); var diagnostic = new CpuSavedAdmissionDiagnostic();

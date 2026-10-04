@@ -85,9 +85,13 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         var approval = installed is null ? provider.CreateQueryApproval(context!, token) : null;
         if (!Check(installed is not null || approval is not null, "native curve query approval")
             || !Check(MatchesFresh(context!, token), "native curve context before query")) { return new(null, null); }
-        var result = installed is not null
-            ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token)
-            : session.Query(approval, () => ReadBoundUsb(context!, token), token);
+        Rz090528CpuLiveQueryResult result;
+        using (diagnostic?.BeginStage("native curve query (admission/mutex/mailbox)"))
+        {
+            result = installed is not null
+                ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token)
+                : session.Query(approval, () => ReadBoundUsb(context!, token), token);
+        }
         if (result.Diagnostic is { } detail)
         { diagnostic?.Check(false, $"native query {detail.Stage}/{detail.Failure}; native error {detail.NativeErrorCode}; operation {detail.Operation}"); }
         if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup) { Invalidate(); }

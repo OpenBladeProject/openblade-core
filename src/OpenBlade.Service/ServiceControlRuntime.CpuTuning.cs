@@ -14,6 +14,7 @@ public sealed partial class ServiceControlRuntime
     private bool CpuFreshFullPower(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         token.ThrowIfCancellationRequested();
+        using var stage = diagnostic?.BeginStage("fresh power classification wait");
         Task<PowerSource> worker;
         CancellationToken workerToken;
         lock (cpuPowerClassificationSync)
@@ -32,7 +33,7 @@ public sealed partial class ServiceControlRuntime
                 {
                     workerToken.ThrowIfCancellationRequested();
                     PowerSource result = await ResolveCurrentPowerSourceAsync(workerToken,
-                        allowCachedExternalClassification: false).ConfigureAwait(false);
+                        allowCachedExternalClassification: false, cpuDiagnostic: diagnostic).ConfigureAwait(false);
                     workerToken.ThrowIfCancellationRequested();
                     return result;
                 }
@@ -92,7 +93,7 @@ public sealed partial class ServiceControlRuntime
             if (useInstalledBackend && cpuTuningController.HasLiveBackend)
             {
                 CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
-                    feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, token, liveDiagnostic),
+                    (feature, operationToken) => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, operationToken, liveDiagnostic),
                     token, liveGeneration, livePowerSourceGeneration, liveDiagnostic).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
