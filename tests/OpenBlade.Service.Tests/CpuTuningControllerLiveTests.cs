@@ -6,6 +6,34 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuTuningControllerLiveTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LateNonSubmissionSettlesThroughRuntimeWrapperOnlyAfterSuccessfulCas(bool failSettlement)
+    {
+        var fixture = new Fixture(); var controller = fixture.Controller();
+        using var cancellation = new CancellationTokenSource();
+        // Complete off the test synchronization context so the runtime-wrapper
+        // continuation can run inline before the next explicit request.
+        var completion = new TaskCompletionSource<CpuLiveCurveSubmission>();
+        fixture.Curve.OnSend = _ => { cancellation.Cancel(); return completion.Task; };
+        var stopped = await controller.MutateLiveAsync(new(null, new(false, -1)), false, _ => true, cancellation.Token);
+        Assert.Equal(ControlOperationStatus.Failed, stopped.Status);
+        Assert.True(stopped.CpuTuning!.RestorePending);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, fixture.CurveStore.Journal!.State);
+        if (failSettlement) { fixture.CurveStore.FailWrite = fixture.CurveStore.Writes + 1; }
+        await Task.Run(() => completion.SetResult(CpuLiveCurveSubmission.NotSubmitted));
+        int reads = fixture.Curve.Reads;
+        var observed = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.Equal(failSettlement, observed.RestorePending);
+        Assert.Equal(failSettlement ? CpuTuningRecoveryState.Blocked : CpuTuningRecoveryState.None,
+            observed.LiveRecovery!.State);
+        Assert.Equal(failSettlement ? CpuLiveCurveOwnershipState.PossibleSubmission : CpuLiveCurveOwnershipState.Restored,
+            fixture.CurveStore.Journal.State);
+        if (failSettlement) { Assert.Equal(reads, fixture.Curve.Reads); }
+        Assert.Single(fixture.Curve.Sent); Assert.Empty(fixture.Power.Sent);
+    }
+
     [Fact]
     public async Task CancelledObservationDoesNotReplaceIndependentRestorationAdmission()
     {

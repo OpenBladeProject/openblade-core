@@ -224,10 +224,102 @@ public sealed class CpuLiveCurveTuningTransactionTests
         { OnSend = _ => Task.FromResult(CpuLiveCurveSubmission.NotSubmitted) };
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         await transaction.ApplySelectiveAsync([new(8, 0)], default);
-        Assert.Equal(CpuLiveCurveOwnershipState.Prepared, store.Journal!.State);
-        Assert.Equal(CpuLiveCurveRecovery.RestoreReady, (await transaction.ObserveOwnershipAsync(default)).Recovery);
-        Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
+        Assert.Equal(CpuLiveCurveRecovery.None, (await transaction.ObserveOwnershipAsync(default)).Recovery);
+        Assert.Equal(CpuLiveCurveOutcome.Unchanged, (await transaction.RestoreAsync(default)).Outcome);
         Assert.Single(backend.Sent); Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal.State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExactLateNonSubmissionSettlesWithoutReadsOrLosingPriorOwnership(bool priorOwned)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        if (priorOwned) { await transaction.ApplySelectiveAsync([new(0, 0)], default); }
+        using var cancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource<CpuLiveCurveSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnSend = _ => { cancellation.Cancel(); return completion.Task; };
+        var result = await transaction.ApplySelectiveAsync([new(8, 0)], cancellation.Token);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        int reads = backend.Reads, writes = store.Writes, sends = backend.Sent.Count;
+        var original = store.Journal!.OriginalBaseline;
+        var expected = store.Journal.Expected;
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        completion.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        Assert.Equal(writes, store.Writes); // Completion never starts a background writer.
+        Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.Equal(reads, backend.Reads); Assert.Equal(sends, backend.Sent.Count);
+        Assert.Equal(original, store.Journal!.OriginalBaseline); Assert.Equal(expected, store.Journal.Expected);
+        Assert.Equal(priorOwned ? CpuLiveCurveOwnershipState.Prepared : CpuLiveCurveOwnershipState.Restored, store.Journal.State);
+        if (!priorOwned)
+        {
+            backend.Context = backend.Context with { RuntimeLifetime = new(Guid.NewGuid(), 1, 1) };
+            var restarted = new CpuLiveCurveTuningTransaction(backend, store);
+            Assert.Equal(CpuLiveCurveRecovery.None, (await restarted.ObserveOwnershipAsync(default)).Recovery);
+        }
+    }
+
+    [Theory]
+    [InlineData("acknowledged")]
+    [InlineData("unknown")]
+    [InlineData("fault")]
+    [InlineData("cas-drift")]
+    [InlineData("write-failure")]
+    public async Task LateSettlementCannotClearUnprovenOrChangedOwnership(string failure)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        using var cancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource<CpuLiveCurveSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.OnSend = _ => { cancellation.Cancel(); return completion.Task; };
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain,
+            (await transaction.ApplySelectiveAsync([new(0, 0)], cancellation.Token)).Outcome);
+        if (failure == "fault") { completion.SetException(new IOException()); }
+        else
+        {
+            completion.SetResult(failure == "acknowledged" ? CpuLiveCurveSubmission.Acknowledged
+                : failure == "unknown" ? CpuLiveCurveSubmission.Unknown : CpuLiveCurveSubmission.NotSubmitted);
+        }
+        if (failure == "cas-drift") { store.Hash = "different"; }
+        if (failure == "write-failure") { store.FailWrite = store.Writes + 1; }
+        int reads = backend.Reads;
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+        Assert.Equal(reads, backend.Reads); Assert.Single(backend.Sent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LateNonSubmissionPreservesCompletedForwardAndRestoreSteps(bool restoring)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        if (restoring) { await transaction.ApplySelectiveAsync([new(0, 0), new(8, 0)], default); }
+        using var cancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource<CpuLiveCurveSubmission>();
+        int calls = 0;
+        backend.OnSend = command =>
+        {
+            if (++calls == 1) { return backend.Apply(command); }
+            cancellation.Cancel(); return completion.Task;
+        };
+        var result = restoring ? await transaction.RestoreAsync(cancellation.Token)
+            : await transaction.ApplySelectiveAsync([new(0, 0), new(8, 0)], cancellation.Token);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        var pending = store.Journal!;
+        Assert.Equal(1, pending.CompletedSteps);
+        completion.SetResult(CpuLiveCurveSubmission.NotSubmitted);
+        int reads = backend.Reads, sends = backend.Sent.Count;
+        Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.Equal(CpuLiveCurveOwnershipState.OwnedVerified, store.Journal!.State);
+        Assert.Equal(1, store.Journal.CompletedSteps); Assert.Equal(restoring, store.Journal.Restoring);
+        Assert.Equal(pending.Expected, store.Journal.Expected); Assert.Equal(pending.OriginalBaseline, store.Journal.OriginalBaseline);
+        Assert.Equal(reads, backend.Reads); Assert.Equal(sends, backend.Sent.Count);
     }
 
     [Fact]

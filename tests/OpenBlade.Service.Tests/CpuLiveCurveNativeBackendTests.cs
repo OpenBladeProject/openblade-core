@@ -194,7 +194,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     }
 
     [Theory]
-    [InlineData("before", "NotSubmitted", false)]
+    [InlineData("before", "NotSubmitted", true)]
     [InlineData("invoke", "Unknown", false)]
     [InlineData("malformed-ack", "Unknown", false)]
     [InlineData("drift", "Unknown", false)]
@@ -260,7 +260,7 @@ public sealed class CpuLiveCurveNativeBackendTests
             Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
             Task worker = Assert.IsAssignableFrom<Task>(backend.OutstandingWorker);
             if (interruption == "caller-cancel")
-            { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await caller); }
+            { cancellation.Cancel(); Assert.False(caller.IsCompleted); }
             else { await Assert.ThrowsAsync<TimeoutException>(async () => await caller.WaitAsync(TimeSpan.FromMilliseconds(1))); }
             Assert.False(worker.IsCompleted);
             Assert.Same(worker, backend.OutstandingWorker);
@@ -274,7 +274,58 @@ public sealed class CpuLiveCurveNativeBackendTests
         finally { finish.Set(); }
         await AwaitTerminal(backend);
         if (interruption == "awaiter-timeout") { Assert.Equal(CpuLiveCurveSubmission.Acknowledged, await caller); }
+        else { Assert.Equal(CpuLiveCurveSubmission.Unknown, await caller); }
         Assert.False(platform.Held); Assert.False(platform.Pinned);
+    }
+
+    [Fact]
+    public async Task CancelledPreSetterWorkerReturnsTerminalNonSubmissionWithoutFreshContext()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var finish = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform { OnWait = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
+        var provider = new Provider();
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        Task<CpuLiveCurveSubmission> caller = Send(backend, provider, token: cancellation.Token);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            cancellation.Cancel(); provider.Context = null;
+            Assert.False(caller.IsCompleted);
+            Assert.NotNull(backend.OutstandingWorker);
+        }
+        finally { finish.Set(); }
+        Assert.Equal(CpuLiveCurveSubmission.NotSubmitted, await caller.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Null(backend.OutstandingWorker); Assert.True(backend.Status.ScopeInvalid);
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, backend.Status.LastNativeResult!.Disposition);
+        Assert.True(backend.Status.LastNativeResult.WorkerTerminal); Assert.True(backend.Status.LastNativeResult.CleanupComplete);
+        Assert.Equal(0, platform.Setters); Assert.False(platform.Held); Assert.False(platform.Pinned);
+    }
+
+    [Fact]
+    public async Task LateProviderRefusalNeedsNoNativeResultToProveTerminalNonSubmission()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var finish = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform();
+        var provider = new Provider
+        {
+            AdmissionAllowed = false,
+            OnAdmission = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); },
+        };
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        var caller = Send(backend, provider, token: cancellation.Token);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            cancellation.Cancel(); Assert.False(caller.IsCompleted);
+        }
+        finally { finish.Set(); }
+        Assert.Equal(CpuLiveCurveSubmission.NotSubmitted, await caller.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Null(backend.OutstandingWorker); Assert.Null(backend.Status.LastNativeResult);
+        Assert.Equal(0, platform.Opens); Assert.Equal(0, platform.Setters);
     }
 
     [Fact]
@@ -381,6 +432,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     {
         internal volatile CpuLiveCurveContext? Context = CpuLiveCurveTuningTransactionTests.ContextFixture();
         internal bool QueryAllowed = true;
+        internal bool AdmissionAllowed = true;
         internal Func<CpuQueryInstalledApproval?>? InstalledApproval;
         internal bool ReuseProof;
         internal int QueryApprovals, Proofs;
@@ -394,7 +446,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         { QueryApprovals++; return QueryAllowed ? CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true) : null; }
         public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CancellationToken token)
-        { Admitted.Add((command, purpose)); OnAdmission?.Invoke(); return true; }
+        { Admitted.Add((command, purpose)); OnAdmission?.Invoke(); return AdmissionAllowed; }
         public CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext, CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
         {
             Proofs++; LastRequest = exactRequest;

@@ -440,6 +440,7 @@ internal sealed class CpuTuningController
                 completed = false;
             }
             var retained = await ReadLiveOwnershipAsync(CancellationToken.None).ConfigureAwait(false);
+            uncertain &= liveUncertainty != CpuTuningFeatures.None;
             completed &= !retained.Blocked && !token.IsCancellationRequested;
             var recovery = retained.Features == CpuTuningFeatures.None ? CpuTuningRecoveryState.None
                 : completed ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked;
@@ -462,6 +463,8 @@ internal sealed class CpuTuningController
 
     private async Task<(bool Blocked, CpuTuningFeatures Features)> ReadLiveOwnershipAsync(CancellationToken token)
     {
+        if (liveCurve is not null && await liveCurve.TrySettlePendingSubmissionAsync(token).ConfigureAwait(false))
+        { liveUncertainty &= ~CpuTuningFeatures.CurveOptimizer; }
         var curve = curveStore is null ? null : await curveStore.LoadAsync(token).ConfigureAwait(false);
         var power = powerStore is null ? null : await powerStore.LoadAsync(token).ConfigureAwait(false);
         CpuTuningFeatures features = CpuTuningFeatures.None;
@@ -598,6 +601,8 @@ internal sealed class CpuTuningController
             var lease = current.Value;
             if (lease?.Allows(CpuTuningFeatures.CurveOptimizer) != true) { return CpuLiveCurveSubmission.NotSubmitted; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
+            // Await the actual terminal task: the transaction bounds its wait.
+            // Keep this linked CTS alive until native cleanup has finished.
             var result = await backend.SendAsync(context, command, purpose, expectedBefore, peer, cancellation.Token).ConfigureAwait(false);
             return result == CpuLiveCurveSubmission.NotSubmitted || lease.Allows(CpuTuningFeatures.CurveOptimizer)
                 ? result : CpuLiveCurveSubmission.Unknown;

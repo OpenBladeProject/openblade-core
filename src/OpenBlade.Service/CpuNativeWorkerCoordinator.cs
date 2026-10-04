@@ -29,7 +29,8 @@ internal sealed class CpuNativeWorkerCoordinator
     internal void Record(CpuLivePowerNativeResult result) { lock (gate) { powerResult = result; } }
 
     internal Task<T> Start<T>(CpuNativeWorkerFamily family, CpuNativeWorkerKind nextKind,
-        Func<CancellationToken, T> work, T refused, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
+        Func<CancellationToken, T> work, T refused, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
+        bool returnTerminal = false)
     {
         if (token.IsCancellationRequested) { return Task.FromCanceled<T>(token); }
         Task<T> worker; CancellationTokenSource linked;
@@ -66,6 +67,8 @@ internal sealed class CpuNativeWorkerCoordinator
             return completed.Status == TaskStatus.RanToCompletion ? completed.Result : refused;
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         // Cancel only the caller wait; retain the original actual task and CTS.
-        return terminal.WaitAsync(token);
+        // A submission's owner applies its own deadline while retaining this
+        // exact terminal task to settle a late, proven non-submission.
+        return returnTerminal ? terminal : terminal.WaitAsync(token);
     }
 }

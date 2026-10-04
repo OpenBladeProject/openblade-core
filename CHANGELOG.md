@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserve exact terminal CPU non-submission after a caller deadline and settle only its matching ownership record, without claiming a fresh observation or restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Load Windows identity dependencies before pipe impersonation so the first Identification client can authenticate without a cached assembly-binding failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Complete CPU validation Service file and process checks before connecting, then verify the retained IPC peer immediately and revalidate full context before accepting responses, keeping the existing first-frame deadline. ([#685](https://github.com/OpenBladeProject/openblade-core/issues/685))

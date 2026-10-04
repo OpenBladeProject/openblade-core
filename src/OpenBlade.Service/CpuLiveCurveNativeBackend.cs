@@ -76,8 +76,9 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
 
     public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
-        Start(CpuLiveCurveNativeWorkerKind.Submission, workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
-            CpuLiveCurveSubmission.Unknown, token);
+        state.Start(CpuNativeWorkerFamily.Curve, CpuNativeWorkerKind.Submission,
+            workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
+            CpuLiveCurveSubmission.Unknown, token, returnTerminal: true);
 
     private CpuLiveCurveBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
@@ -125,6 +126,10 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         var result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token);
         state.Record(result);
         if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
+        // Terminal non-submission is historical evidence, not fresh write
+        // authority. Cancellation or context drift must not discard it.
+        if (result.Disposition == CpuLiveCurveNativeDisposition.NotSubmitted)
+        { Invalidate(); return CpuLiveCurveSubmission.NotSubmitted; }
         if (!MatchesFresh(context, token)) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
         token.ThrowIfCancellationRequested();
         return MapSubmission(request, result);

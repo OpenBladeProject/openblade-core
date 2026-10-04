@@ -16,6 +16,8 @@ internal interface ICpuLiveCurveBackend
     // entire expected-before vector under its same-thread shared mutex lease.
     // Acknowledged means firmware response 1, not merely IOCTL success.
     // NotSubmitted guarantees this call is terminal and never invoked a setter.
+    // Return the actual terminal task even after token cancellation. The owner
+    // bounds its wait separately and may settle only this exact call's journal.
     Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token);
     Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
@@ -44,6 +46,43 @@ internal sealed class CpuLiveCurveTuningTransaction
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly TimeSpan operationTimeout;
     private PreparedOperation? currentPrepared;
+    private PendingSubmission? pendingSubmission;
+
+    private sealed record PendingSubmission(Task<CpuLiveCurveSubmission> Completion,
+        CpuLiveCurveOwnershipJournal Prior, string PendingHash, PreparedOperation? Operation);
+
+    // Journal-only, called under the controller's live gate. Never wait for an
+    // unfinished sender, start a native read, or settle from global last-result
+    // state. A failed CAS is final and leaves the ownership record blocked.
+    internal async Task<bool> TrySettlePendingSubmissionAsync(CancellationToken token)
+    {
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (pendingSubmission is not { Completion.IsCompleted: true } pending) { return false; }
+            pendingSubmission = null;
+            if (pending.Completion.Status != TaskStatus.RanToCompletion
+                || pending.Completion.Result != CpuLiveCurveSubmission.NotSubmitted)
+            { _ = pending.Completion.Exception; return false; }
+            return await SettleNotSubmittedAsync(pending.Prior, pending.PendingHash, pending.Operation).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task<bool> SettleNotSubmittedAsync(CpuLiveCurveOwnershipJournal prior, string pendingHash,
+        PreparedOperation? operation)
+    {
+        // With no owned changes, this closes the obligation without claiming a
+        // fresh observation or a physical restore. Otherwise retain prior ownership.
+        var settled = prior.CompletedSteps == 0 && !prior.Restoring
+            && prior.Expected.SequenceEqual(prior.OriginalBaseline)
+            && prior.OperationBaseline.SequenceEqual(prior.OriginalBaseline)
+            ? prior.ArmRestoration() : prior;
+        string? hash = await WriteAsync(pendingHash, settled, CancellationToken.None).ConfigureAwait(false);
+        if (hash is null) { return false; }
+        operation?.Update(settled, hash);
+        return true;
+    }
 
     // A serial, single-use journal ticket, not native write authority.
     internal sealed class PreparedOperation(CpuLiveCurveContext context, CpuLiveCurveSnapshot expected,
@@ -377,18 +416,22 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (pendingHash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot); }
             operation?.Update(pending, pendingHash);
             CpuLiveCurveSubmission submission;
+            Task<CpuLiveCurveSubmission>? actualSubmission = null;
             try
             {
                 token.ThrowIfCancellationRequested();
-                submission = await BoundedAsync(t => backend.SendAsync(journal.Context, step.Command(restoring),
+                submission = await BoundedAsync(t => actualSubmission = backend.SendAsync(journal.Context, step.Command(restoring),
                     purpose, snapshot!, peer, t), token).ConfigureAwait(false);
             }
-            catch { return Uncertain(snapshot); }
+            catch
+            {
+                if (actualSubmission is not null)
+                { pendingSubmission = new(actualSubmission, journal, pendingHash, operation); }
+                return Uncertain(snapshot);
+            }
             if (submission == CpuLiveCurveSubmission.NotSubmitted)
             {
-                string? reverted = await WriteAsync(pendingHash, journal, CancellationToken.None).ConfigureAwait(false);
-                if (reverted is null) { return Uncertain(snapshot); }
-                operation?.Update(journal, reverted);
+                if (!await SettleNotSubmittedAsync(journal, pendingHash, operation).ConfigureAwait(false)) { return Uncertain(snapshot); }
                 return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot);
             }
             if (submission != CpuLiveCurveSubmission.Acknowledged || token.IsCancellationRequested) { return Uncertain(snapshot); }
