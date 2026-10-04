@@ -6,16 +6,42 @@ namespace OpenBlade.Service.Tests;
 
 public sealed partial class CpuTuningRuntimeTests : IDisposable
 {
-    [Fact]
-    public async Task UnavailableLiveObservationRetainsTransactionReasonInTypedResponseWithoutExtraQueries()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnavailableLiveObservationRetainsTransactionReasonInTypedResponseWithoutExtraQueries(bool outerRejected)
     {
         var live = new LiveFixture(curve: true, power: true);
         live.Curve!.Values = live.Curve.Values[..^1];
         var context = await CreateContextAsync(live: live);
+        int powerReads = 0;
+        if (outerRejected)
+        {
+            context.Power.OnCapture = () =>
+            {
+                // The runtime checks before and after the getter, then at the outer boundary.
+                if (++powerReads == 3) { context.Power.Power = PowerSource.Battery; }
+            };
+        }
+        var before = context.Runtime.GetStatus();
+        int publications = context.Hub.Published.Count;
         var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
-        Assert.Equal(ControlOperationStatus.Stored, result.Status);
-        Assert.Contains("Live observation: curve transaction ObservationUnavailable.", result.Message);
-        Assert.Null(result.CpuTuning!.LiveState); Assert.False(result.CpuTuning.Live.CanWrite);
+        if (outerRejected)
+        {
+            Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+            Assert.Contains("Inner live observation: curve transaction ObservationUnavailable.", result.Message);
+            Assert.EndsWith("Admission failed at: runtime fresh power source (resolved Battery; required PluggedIn).", result.Message);
+            Assert.Null(result.CpuTuning);
+            Assert.Equal(before, context.Runtime.GetStatus());
+            Assert.Equal(publications, context.Hub.Published.Count);
+            Assert.Equal(3, powerReads);
+        }
+        else
+        {
+            Assert.Equal(ControlOperationStatus.Stored, result.Status);
+            Assert.Contains("Live observation: curve transaction ObservationUnavailable.", result.Message);
+            Assert.Null(result.CpuTuning!.LiveState); Assert.False(result.CpuTuning.Live.CanWrite);
+        }
         Assert.Equal(1, live.Curve.Reads); Assert.Equal(0, live.Power!.Reads);
         Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent); Assert.Equal(0, context.Source.Submissions);
     }
@@ -70,6 +96,11 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             new(null, new(true, -2)), () => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(0, context.Source.Submissions);
+        if (!liveTarget)
+        {
+            string actual = failure == "battery" ? "Battery" : failure == "usb" ? "UsbC" : "ExternalUnknown";
+            Assert.EndsWith($"Admission failed at: runtime fresh power source (resolved {actual}; required PluggedIn).", result.Message);
+        }
         if (liveTarget) { Assert.Empty(live!.Curve!.Sent); }
         if (failure == "battery") { Assert.Equal(0, samples); }
         else { Assert.True(samples >= 2); }
@@ -112,14 +143,16 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
             new(null, new(true, -2)), () => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.EndsWith("Admission failed at: runtime fresh power source.", result.Message);
+        Assert.EndsWith("Admission failed at: runtime fresh power source (resolved UsbC; required PluggedIn).", result.Message);
         Assert.Equal(4, samples);
         Assert.Equal(0, context.Source.Submissions);
         Assert.False(result.CpuTuning!.RestorePending);
     }
 
-    [Fact]
-    public async Task CancelledClassificationRetainsActualReadAndDeniesOverlappingAdmission()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CancelledClassificationRetainsActualReadAndDeniesOverlappingAdmission(bool callerCancels)
     {
         var context = await CreateContextAsync(admittedSavedBackend: true);
         context.Power.Power = PowerSource.ExternalUnknown;
@@ -134,6 +167,7 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             return AdapterPowerState.FullPower330W;
         };
         using var cancellation = new CancellationTokenSource();
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         Task<ControlOperationResult> operation = Task.Run(() => context.Runtime.SetCpuTuningAsync(
             CpuTuningTarget.FirmwareNextBoot, new(null, new(true, -2)), () => true, cancellation.Token));
         Task? worker = null;
@@ -142,12 +176,24 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             worker = Assert.IsAssignableFrom<Task>(typeof(ServiceControlRuntime).GetField("cpuPowerClassification",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.Runtime));
-            cancellation.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+            if (callerCancels)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+            }
+            else
+            {
+                var timedOut = await operation.WaitAsync(TimeSpan.FromSeconds(15));
+                Assert.Equal(ControlOperationStatus.Blocked, timedOut.Status);
+                Assert.EndsWith("Admission failed at: runtime fresh power source (10-second classification deadline elapsed; caller not canceled).", timedOut.Message);
+                Assert.True(elapsed.Elapsed >= TimeSpan.FromSeconds(9));
+                Assert.False(cancellation.IsCancellationRequested);
+            }
             Assert.False(worker.IsCompleted);
             var next = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
                 new(null, new(true, -2)), () => true, default);
             Assert.Equal(ControlOperationStatus.Blocked, next.Status);
+            Assert.EndsWith("Admission failed at: runtime fresh power source (prior classification still running).", next.Message);
             Assert.Equal(1, samples);
             Assert.Equal(0, context.Source.Submissions);
         }
@@ -164,6 +210,24 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker);
             }
         }
+    }
+
+    [Fact]
+    public async Task IndependentlyCancelledClassificationIsNotReportedAsDeadlineOrCallerCancellation()
+    {
+        var context = await CreateContextAsync(admittedSavedBackend: true);
+        int reads = 0;
+        context.Power.OnCapture = () =>
+        {
+            reads++;
+            throw new OperationCanceledException("Independent classifier cancellation.");
+        };
+        var result = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.FirmwareNextBoot,
+            new(null, new(true, -2)), () => true, default);
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.EndsWith("Admission failed at: runtime fresh power source (classification canceled independently; caller and deadline not canceled).", result.Message);
+        Assert.Equal(1, reads);
+        Assert.Equal(0, context.Source.Submissions);
     }
 
     [Theory]
@@ -247,7 +311,10 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
 
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.EndsWith($"Admission failed at: runtime {(changeGeneration ? "power generation before probes" : "fresh power source")}.", result.Message);
+        string failure = changeGeneration ? "runtime power generation before probes"
+            : "runtime fresh power source (resolved Battery; required PluggedIn)";
+        Assert.EndsWith($"Admission failed at: {failure}.", result.Message);
+        Assert.Contains($"Inner first rejection: {failure}.", result.Message);
         // The existing live observation and final runtime checks each classify;
         // a generation mismatch still short-circuits both before power reads.
         Assert.Equal(changeGeneration ? 0 : 2, freshPowerReads);
@@ -273,7 +340,8 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
 
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.EndsWith("Admission failed at: runtime fresh power source.", result.Message);
+        Assert.EndsWith("Admission failed at: runtime fresh power source (resolved Battery; required PluggedIn).", result.Message);
+        Assert.Contains("Inner first rejection: runtime curve write capability.", result.Message);
         Assert.Equal(3, reads);
         Assert.Null(result.CpuTuning);
         Assert.Equal(before, context.Runtime.GetStatus());

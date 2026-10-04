@@ -11,14 +11,18 @@ public sealed partial class ServiceControlRuntime
     // Native admission callbacks are synchronous. Run the fresh classifier off
     // their context, retaining its actual task until terminal if a caller times
     // out. A late classification cannot authorize a write or overlap a retry.
-    private bool CpuFreshFullPower(CancellationToken token)
+    private bool CpuFreshFullPower(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         token.ThrowIfCancellationRequested();
         Task<PowerSource> worker;
         CancellationToken workerToken;
         lock (cpuPowerClassificationSync)
         {
-            if (cpuPowerClassification is { IsCompleted: false }) { return false; }
+            if (cpuPowerClassification is { IsCompleted: false })
+            {
+                diagnostic?.Check(false, "runtime fresh power source (prior classification still running)");
+                return false;
+            }
             var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
             workerToken = deadline.Token;
@@ -43,9 +47,20 @@ public sealed partial class ServiceControlRuntime
         {
             PowerSource result = worker.WaitAsync(workerToken).GetAwaiter().GetResult();
             token.ThrowIfCancellationRequested();
-            return result == PowerSource.PluggedIn;
+            bool fullPower = result == PowerSource.PluggedIn;
+            if (!fullPower)
+            {
+                diagnostic?.Check(false, $"runtime fresh power source (resolved {result}; required PluggedIn)");
+            }
+            return fullPower;
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return false; }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            diagnostic?.Check(false, workerToken.IsCancellationRequested
+                ? "runtime fresh power source (10-second classification deadline elapsed; caller not canceled)"
+                : "runtime fresh power source (classification canceled independently; caller and deadline not canceled)");
+            return false;
+        }
     }
 
     public async Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
@@ -87,7 +102,10 @@ public sealed partial class ServiceControlRuntime
                     && !CpuLiveRuntimeAdmission(CpuTuningFeatures.None, stillControlsSession, liveGeneration, livePowerSourceGeneration, token, diagnostic))
             {
                 return new(ControlOperationStatus.Blocked,
-                    $"The CPU observation session changed. Admission failed at: {diagnostic.FirstFailure}.");
+                    "The CPU observation session changed."
+                    + (liveDiagnostic.LiveObservationReason is { } innerReason ? $" Inner live observation: {innerReason}." : string.Empty)
+                    + (liveDiagnostic.FirstFailure is { } innerFailure ? $" Inner first rejection: {innerFailure}." : string.Empty)
+                    + $" Admission failed at: {diagnostic.FirstFailure}.");
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return new(ControlOperationStatus.Stored,
@@ -185,7 +203,7 @@ public sealed partial class ServiceControlRuntime
                 ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
                 return diagnostic.Check(presence.DetectionWarning is null, "runtime controller detection")
                     && diagnostic.Check(presence.PotentialControllers.Count == 0, "runtime controller absence")
-                    && diagnostic.Check(CpuFreshFullPower(token), "runtime fresh power source")
+                    && diagnostic.Check(CpuFreshFullPower(token, diagnostic), "runtime fresh power source")
                     && diagnostic.Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
                     && diagnostic.Check(lowPowerGate.Generation == savedGeneration, "runtime power generation after probes")
                     && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic)
@@ -243,7 +261,7 @@ public sealed partial class ServiceControlRuntime
         ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
         return Check(presence.DetectionWarning is null, "runtime fresh controller detection")
             && Check(presence.PotentialControllers.Count == 0, "runtime fresh controller absence")
-            && Check(CpuFreshFullPower(token), "runtime fresh power source")
+            && Check(CpuFreshFullPower(token, diagnostic), "runtime fresh power source")
             && Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
             && Check(lowPowerGate.Generation == generation, "runtime power generation after probes")
             && Check(powerSourceGeneration == sourceGeneration, "runtime power source generation after probes")
