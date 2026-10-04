@@ -315,6 +315,46 @@ public sealed class CpuVoltageOwnedSmokeTests
         if (failure is not ("shutdown" or "service-terminal")) { Assert.Equal(0, shutdown); }
     }
     [Fact]
+    public async Task BoundConnectionChecksFullContextBeforeConnectAndRetainedPeerBeforeReturning()
+    {
+        var calls = new List<string>();
+        var probe = new Probe { OnRead = () => calls.Add("retained") };
+        var pins = new Pins { OnAssert = () => calls.Add("pins") };
+        var service = new WindowsCpuVoltageServiceProcess(probe, probe.Value, pins, Version,
+            () => { calls.Add("inventory"); return [7]; });
+        using var pipe = new MemoryStream();
+        Assert.Same(pipe, await service.ConnectBoundCore(CancellationToken.None,
+            _ => { calls.Add("connect"); return pipe; }, _ => { calls.Add("peer"); return 7; }));
+        Assert.Equal(["pins", "retained", "inventory", "pins", "connect", "peer", "retained"], calls);
+        // Pin drift after connection still prevents accepting a shutdown response.
+        pins.Broken = true;
+        Assert.Throws<IOException>(service.AssertShutdownResponseState);
+    }
+    [Theory]
+    [InlineData("peer")]
+    [InlineData("birth")]
+    [InlineData("image")]
+    [InlineData("state")]
+    public void BoundConnectionRejectsChangedPeerBeforeReturningStream(string change)
+    {
+        var probe = new Probe();
+        var service = new WindowsCpuVoltageServiceProcess(probe, probe.Value, new Pins(), Version, () => [7]);
+        var pipe = new MemoryStream();
+        Assert.Throws<IOException>(() => service.ConnectBoundCore(CancellationToken.None, _ =>
+        {
+            probe.Value = change switch
+            {
+                "birth" => probe.Value with { Created = 9 },
+                "image" => probe.Value with { Image = "replacement.exe" },
+                "state" => probe.Value with { State = CpuPmChildState.Unknown },
+                _ => probe.Value,
+            };
+            return pipe;
+        }, _ => change == "peer" ? 9u : 7u));
+        Assert.False(pipe.CanRead);
+        Assert.False(probe.Disposed);
+    }
+    [Fact]
     public void RetainedServiceProofRejectsPidReuseReplacementPinsAndUnknownWait()
     {
         var probe = new Probe(); var pins = new Pins(); int[] inventory = [7];
@@ -491,13 +531,15 @@ public sealed class CpuVoltageOwnedSmokeTests
     {
         internal CpuPmProcessObservation Value = new(7, 8, CpuPmChildState.Running, WindowsCpuVoltageServiceProcess.Image);
         internal bool Disposed;
-        public CpuPmProcessObservation Read(bool includeLiveImage) => Value;
+        internal Action? OnRead;
+        public CpuPmProcessObservation Read(bool includeLiveImage) { OnRead?.Invoke(); return Value; }
         public void Dispose() => Disposed = true;
     }
     private sealed class Pins : ICpuPmLaunchFiles
     {
         internal bool Broken;
-        public void AssertAllPins() { if (Broken) { throw new IOException(); } }
+        internal Action? OnAssert;
+        public void AssertAllPins() { OnAssert?.Invoke(); if (Broken) { throw new IOException(); } }
         public void PinDirectory(string path, bool privateAcl, bool protectedAcl) => throw new NotSupportedException();
         public ICpuPmLaunchFilePin PinFile(string path, long maximumBytes, bool privateAcl) => throw new NotSupportedException();
         public IEnumerable<CpuPmLaunchEntry> Enumerate(string path) => throw new NotSupportedException();

@@ -43,15 +43,19 @@ internal sealed class WindowsCpuVoltageServiceProcess
     }
     internal void AssertState(CpuPmChildState expected)
     {
-        pins.AssertAllPins(); var value = process.Read(true);
-        if (value.Pid != initial.Pid || value.Created != initial.Created || value.State != expected
-            || expected == CpuPmChildState.Running && value.Image != Image)
-        { throw new IOException("Retained Service identity or state changed."); }
+        pins.AssertAllPins(); AssertRetainedState(expected);
         // A replacement instance cannot inherit the old process's terminal proof.
         int[] processes = processInventory is null ? ReadProcessIds() : processInventory();
         if (expected == CpuPmChildState.Running ? processes.Length != 1 || processes[0] != initial.Pid
             : processes.Length != 0) { throw new IOException("Service process inventory changed."); }
         pins.AssertAllPins();
+    }
+    private void AssertRetainedState(CpuPmChildState expected)
+    {
+        var value = process.Read(true);
+        if (value.Pid != initial.Pid || value.Created != initial.Created || value.State != expected
+            || expected == CpuPmChildState.Running && value.Image != Image)
+        { throw new IOException("Retained Service identity or state changed."); }
     }
     private static int[] ReadProcessIds()
     {
@@ -65,14 +69,26 @@ internal sealed class WindowsCpuVoltageServiceProcess
         return value.Pid == initial.Pid && value.Created == initial.Created ? value.State : CpuPmChildState.Unknown;
     }
     private ValueTask<Stream> ConnectBound(CancellationToken token)
+        => ConnectBoundCore(token, cancellation => Connect(cancellation), stream =>
+        {
+            if (!GetNamedPipeServerProcessId(((NamedPipeClientStream)stream).SafePipeHandle, out uint pid))
+            { throw new IOException("Service IPC peer unavailable."); }
+            return pid;
+        });
+    internal ValueTask<Stream> ConnectBoundCore(CancellationToken token, Func<CancellationToken, Stream> connect,
+        Func<Stream, uint> serverPid)
     {
         AssertState(CpuPmChildState.Running);
-        var pipe = Connect(token);
+        var pipe = connect(token);
         try
         {
-            if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint pid) || pid != initial.Pid)
+            if (serverPid(pipe) != initial.Pid)
             { throw new IOException("Shutdown IPC peer differs from retained Service."); }
-            AssertState(CpuPmChildState.Running); return ValueTask.FromResult<Stream>(pipe);
+            // The Service's first-frame deadline is already running. Only the
+            // exact retained kernel identity is checked here; full pins and
+            // process inventory were checked before connection and are checked
+            // again before accepting the typed response.
+            AssertRetainedState(CpuPmChildState.Running); return ValueTask.FromResult<Stream>(pipe);
         }
         catch { pipe.Dispose(); throw; }
     }
@@ -82,9 +98,9 @@ internal sealed class WindowsCpuVoltageServiceProcess
         try
         {
             var status = client.GetStatusAsync(token).GetAwaiter().GetResult();
+            AssertState(CpuPmChildState.Running);
             if (status.ServiceVersion != version) { throw new IOException("Service version differs from reviewed package."); }
             if (requireNoCpuRecovery) { RequireNoCpuRecovery(status.CpuTuning); }
-            AssertState(CpuPmChildState.Running);
         }
         finally { client.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
@@ -102,9 +118,19 @@ internal sealed class WindowsCpuVoltageServiceProcess
         try
         {
             var result = client.ShutdownOpenBladeAsync(token).GetAwaiter().GetResult();
+            AssertShutdownResponseState();
             if (result.Status != ControlOperationStatus.Stored) { throw new IOException("Typed Service shutdown unacknowledged."); }
         }
         finally { client.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+    }
+    internal void AssertShutdownResponseState()
+    {
+        // The same Service may exit after acknowledging shutdown. Both states
+        // retain full pin and replacement-process validation before acceptance.
+        CpuPmChildState state = ReadState();
+        if (state is not (CpuPmChildState.Running or CpuPmChildState.Terminal))
+        { throw new IOException("Shutdown Service state unavailable."); }
+        AssertState(state);
     }
     internal static Task WaitForStartupPipeAsync(Func<int, CancellationToken, Task> connect, CancellationToken token)
     {

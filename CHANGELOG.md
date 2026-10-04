@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Complete CPU validation Service file and process checks before connecting, then verify the retained IPC peer immediately and revalidate full context before accepting responses, keeping the existing first-frame deadline. ([#685](https://github.com/OpenBladeProject/openblade-core/issues/685))
+
 - Wait for the exact validation Service pipe before launching a CPU validation owner, retain explicit launch-phase evidence, and permit bounded resource-only closure after a proven unlaunched failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Match the exact AMD backend getter mailbox readiness semantics for a prior completed error while still requiring successful acknowledgement of each new command; setter admission remains unchanged. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
