@@ -185,27 +185,38 @@ public sealed class Rz090528CpuLiveQueryTests
         Assert.Equal(CpuLiveQueryStatus.Observed, new Rz090528CpuLiveQuery(wire, sync).Query(Exact).Status);
     }
 
-    [Theory]
-    [InlineData(0u, 4)]
-    [InlineData(2u, 3)]
-    public void IdleMailboxBusyOrErrorCannotBeOverwritten(uint response, int expected)
+    [Fact]
+    public void IdleMailboxBusyCannotBeOverwritten()
     {
         var sync = new FakeSynchronization();
-        var wire = new ScriptedIoctl(sync) { IdleResponse = response };
-        var progress = new CpuQueryProgress();
-        var result = new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact);
-        if (response != 0)
-        {
-            string frozen = progress.Snapshot();
-            Assert.Contains("current mailbox ReadinessWait", frozen);
-            Assert.Contains("clear attempted/completed False/False, submission attempted/completed False/False", frozen);
-            Assert.Contains("rejected mailbox response 0x00000002", frozen);
-            progress.Boundary(CpuQueryStage.Cleanup); progress.RejectMailboxResponse(0xFF);
-            Assert.Equal(frozen, progress.Snapshot());
-        }
-        Assert.Equal((CpuLiveQueryStatus)expected, result.Status);
+        var wire = new ScriptedIoctl(sync) { IdleResponse = 0 };
+        Assert.Equal(CpuLiveQueryStatus.Busy, new Rz090528CpuLiveQuery(wire, sync).Query(Exact).Status);
         Assert.Empty(wire.Messages);
         Assert.DoesNotContain(wire.Calls, call => call.Code == 0x81112FF8 && U32(call.Input, 0) == 1);
+    }
+
+    [Theory]
+    [InlineData(2u)]
+    [InlineData(0xFDu)]
+    public void PriorTerminalErrorAllowsGetterWithoutAdditionalTraffic(uint response)
+    {
+        var sync = new FakeSynchronization();
+        var baseline = new ScriptedIoctl(sync);
+        Assert.Equal(CpuLiveQueryStatus.Observed, new Rz090528CpuLiveQuery(baseline, sync).Query(Exact).Status);
+        var wire = new ScriptedIoctl(sync) { IdleResponse = response };
+        Assert.Equal(CpuLiveQueryStatus.Observed, new Rz090528CpuLiveQuery(wire, sync).Query(Exact).Status);
+        Assert.Equal(baseline.Calls.Count, wire.Calls.Count);
+        for (int i = 0; i < baseline.Calls.Count; i++)
+        {
+            Assert.Equal(baseline.Calls[i].Code, wire.Calls[i].Code);
+            Assert.Equal(baseline.Calls[i].Input, wire.Calls[i].Input);
+        }
+        var strict = new ScriptedIoctl(sync) { IdleResponse = response };
+        using var lease = sync.Acquire(TimeSpan.FromSeconds(20), default);
+        var failure = Assert.Throws<Rz090528CpuMailboxSession.QueryFailure>(() =>
+            new Rz090528CpuMailboxSession(strict, sync).Observe(default));
+        Assert.Equal(CpuLiveQueryStatus.InvalidData, failure.Status);
+        Assert.Empty(strict.Messages);
     }
 
     [Fact]

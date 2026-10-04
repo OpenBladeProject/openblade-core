@@ -561,7 +561,7 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
     private const uint Fuse = 0x03820AB0, Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private uint count, selected, argument;
     private uint? bus;
-    private bool enumerated, failed, responseReady, cleared, argumentWritten;
+    private bool enumerated, failed, responseReady, cleared, argumentWritten, awaitingResult;
     private bool rootConfirmed, nodeConfirmed, orientationConfirmed;
 
     bool ICpuNativeWireAdmission.Allows(uint code, byte[] input, int outputLength) => Allows(code, input, outputLength);
@@ -640,7 +640,9 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
                 { failed = true; return false; }
             }
             if (Word(input, 12) == 0xC8 && selected == Response)
-            { responseReady = Word(reply.Bytes, 20) == 1; }
+            { responseReady = awaitingResult ? Word(reply.Bytes, 20) == 1 : Word(reply.Bytes, 20) != 0; }
+            else if (Word(input, 12) == 0xC8 && selected == Argument && responseReady)
+            { awaitingResult = false; }
         }
         else if (code == Write)
         {
@@ -648,7 +650,7 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
             if (Word(input, 0) == 0) { selected = value; }
             else if (selected == Response) { cleared = true; responseReady = false; argumentWritten = false; }
             else if (selected == Argument) { argument = value; argumentWritten = true; }
-            else if (selected == Message) { cleared = false; argumentWritten = false; }
+            else if (selected == Message) { cleared = false; argumentWritten = false; awaitingResult = true; responseReady = false; }
         }
         return true;
     }

@@ -19,7 +19,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task InstalledMailboxRejectionReachesExistingDiagnosticWithFrozenPhase(bool afterSubmission)
+    public async Task InstalledMailboxDistinguishesPriorErrorFromCurrentRejection(bool afterSubmission)
     {
         var platform = new Platform { RetainDevice = true, MailboxError = 0xFE, ErrorAfterSubmission = afterSubmission };
         var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
@@ -29,6 +29,11 @@ public sealed class CpuLiveCurveNativeBackendTests
         provider.InstalledApproval = () => held.CreateQueryApproval(() => true);
         var diagnostic = new CpuSavedAdmissionDiagnostic();
         var result = await new CpuLiveCurveNativeBackend(session, provider).ObserveAsync(default, diagnostic);
+        if (!afterSubmission)
+        {
+            Assert.NotNull(result.Observation); Assert.Null(diagnostic.FirstFailure);
+            Assert.Equal(0, platform.Setters); return;
+        }
         Assert.Null(result.Observation);
         Assert.StartsWith("native query PmVersion/InvalidData;", diagnostic.FirstFailure);
         Assert.Contains("current mailbox " + (afterSubmission ? "ResponseWait" : "ReadinessWait"), diagnostic.FirstFailure);
@@ -464,7 +469,7 @@ public sealed class CpuLiveCurveNativeBackendTests
                     : offset == 0x140 ? 0xFF55u : selected switch
                     {
                         0x03820AB0 => (~0xFF55u & 0xFFFF) << 5,
-                        0x03B10A80 => MailboxError != 0 && (!ErrorAfterSubmission || lastCommand != 0) ? MailboxError : 1,
+                        0x03B10A80 => MailboxError != 0 && (ErrorAfterSubmission ? lastCommand != 0 : lastCommand == 0) ? MailboxError : 1,
                         0x03B10A88 => replyValue,
                         _ => throw new InvalidOperationException(),
                     };

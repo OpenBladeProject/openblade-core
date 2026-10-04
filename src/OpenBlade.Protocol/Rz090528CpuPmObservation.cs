@@ -161,8 +161,8 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             }
             else if (Word(input, 12) == 0xC8 && selected == Response)
             {
-                if (value > 1) { Abort(); return false; }
-                ready = value == 1;
+                if (command != 0 && value > 1) { Abort(); return false; }
+                ready = command == 0 ? value != 0 : value == 1;
             }
             else if (Word(input, 12) == 0xC8 && selected == Argument)
             {

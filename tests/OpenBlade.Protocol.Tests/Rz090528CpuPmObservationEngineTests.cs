@@ -5,6 +5,31 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528CpuPmObservationEngineTests
 {
+    [Fact]
+    public void PriorTerminalErrorAllowsRangeGetterWithIdenticalTraffic()
+    {
+        var baseline = new Fake();
+        Assert.True(baseline.Engine(CpuPmObservationProfile.RangeSingleSample, new MetadataFake(baseline)).Observe().Complete);
+        var fake = new Fake { IdleResponse = 0xFD };
+        Assert.True(fake.Engine(CpuPmObservationProfile.RangeSingleSample, new MetadataFake(fake)).Observe().Complete);
+        Assert.Equal(baseline.Codes, fake.Codes);
+        Assert.Equal(baseline.Commands, fake.Commands);
+        Assert.Equal(baseline.Copies, fake.Copies);
+    }
+
+    [Theory]
+    [InlineData(0u, 1u, 0)]
+    [InlineData(1u, 0xFDu, 1)]
+    public void BusyReadinessAndFailedCompletionCannotProducePowerData(uint prior, uint completion, int commands)
+    {
+        var fake = new Fake { IdleResponse = prior, CompletionResponse = completion };
+        var result = fake.Engine(CpuPmObservationProfile.RangeSingleSample, new MetadataFake(fake)).Observe();
+        Assert.False(result.Complete);
+        Assert.Equal(commands, fake.Commands.Count);
+        Assert.Equal(0, fake.Copies);
+        Assert.Empty(result.CopySamples());
+    }
+
     [Theory]
     [InlineData("2.02")]
     [InlineData("2.03")]
@@ -468,6 +493,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
         internal int FailFrame;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal uint FirmwareVersion = 0x0B5D1600;
+        internal uint IdleResponse = 1, CompletionResponse = 1;
         internal List<uint> CapSelections { get; } = [];
         internal Action<int>? OnInvoke;
         internal List<uint> Codes { get; } = [];
@@ -566,7 +592,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                     : selected == 0x03820AB0 ? (WireFailure == "fuse" ? ~0xFFFFu : ~0xFF55u) << 5
                     : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
                     : selected == 0x03820A13 ? 1u : selected == 0x03820A90 ? 4u
-                    : selected == 0x03B10A80 ? command == 2 && WireFailure == "firmware-ack" ? 2u : 1u
+                    : selected == 0x03B10A80 ? command == 0 ? IdleResponse : command == 2 && WireFailure == "firmware-ack" ? 2u : CompletionResponse
                     : selected == 0x03B10A88 ? command == 2 ? FirmwareVersion : command == 6 ? WireFailure == "version" || WireFailure == "post-version" && Copies > 0 ? 0x005D000Cu : 0x005D000Bu : 0x12345678u
                     : throw new InvalidOperationException("stale index selection");
                 if (selected == 0x03B10A88 && command == 2 && WireFailure == "firmware-native") { return new(false, reply); }

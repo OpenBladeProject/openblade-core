@@ -339,12 +339,12 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     private uint Mailbox(uint bus, uint command, uint argument, CancellationToken token)
     {
         WriteRegister(bus, 0, Response, token);
-        Poll(bus, token);
+        Poll(bus, requireSuccess: false, token);
         WriteSmn(bus, Response, 0, token);
         WriteSmn(bus, Argument, argument, token);
         WriteSmn(bus, Message, command, token);
         WriteRegister(bus, 0, Response, token);
-        Poll(bus, token);
+        Poll(bus, requireSuccess: true, token);
         readingVersionArgument = command is 2 or 6;
         readingFirmwareArgument = command == 2;
         readingCapabilityArgument = command == 0x82;
@@ -352,12 +352,12 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         try { return ReadSmn(bus, Argument, token); }
         finally { readingVersionArgument = readingFirmwareArgument = readingCapabilityArgument = false; }
     }
-    private void Poll(uint bus, CancellationToken token)
+    private void Poll(uint bus, bool requireSuccess, CancellationToken token)
     {
         for (int index = 0; index < 1000; index++)
         {
             uint response = ReadPci(bus, 0, 0, 0xC8, token);
-            if (response == 1) { return; }
+            if (response == 1 || !requireSuccess && response != 0) { return; }
             if (response != 0) { throw new Failure(CpuPmObservationFailure.InvalidData); }
             CheckBoundary(token);
             synchronization.Delay(TimeSpan.FromMilliseconds(1), token);

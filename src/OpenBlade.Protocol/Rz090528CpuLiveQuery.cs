@@ -134,7 +134,7 @@ internal sealed class Rz090528CpuLiveQuery(
                 new(CpuQueryStage.MutexWait, CpuQueryFailureCode.Timeout));
         }
 
-        var session = new Rz090528CpuMailboxSession(ioctl, synchronization, progress);
+        var session = new Rz090528CpuMailboxSession(ioctl, synchronization, progress, allowPriorTerminalResponse: true);
         try { return new(CpuLiveQueryStatus.Observed, session.Observe(cancellationToken)); }
         catch (Rz090528CpuMailboxSession.QueryFailure failure)
         {
@@ -153,7 +153,8 @@ internal sealed class Rz090528CpuLiveQuery(
 // One synchronous, lease-owned session shared by getter and exact per-core CO operations.
 // The raw PCI/SMN/mailbox helpers remain private.
 internal sealed class Rz090528CpuMailboxSession(
-    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null)
+    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null,
+    bool allowPriorTerminalResponse = false)
 {
     private const uint EnumeratePci = 0x81112F18;
     private const uint ReadPci = 0x81112F24;
@@ -298,7 +299,9 @@ internal sealed class Rz090528CpuMailboxSession(
             throw new QueryFailure(CpuLiveQueryStatus.Busy);
         }
 
-        if (previousResponse != 1)
+        // Exact vendor getter readiness accepts any completed response; this is not
+        // acknowledgement of the command about to be submitted. Setter sessions stay strict.
+        if (previousResponse != 1 && !allowPriorTerminalResponse)
         {
             progress?.RejectMailboxResponse(previousResponse);
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
