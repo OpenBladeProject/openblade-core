@@ -20,6 +20,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private CpuLiveCurveContext? rangeContext;
     private CpuLiveCurveTrustedRange? range;
     private int disposed;
+    private CpuLiveGetterAdmission? getterAdmission;
 
     internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source)
@@ -37,16 +38,41 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         worker = CpuNativeWorkerCoordinator.ForSession(session);
     }
 
+    public IDisposable? BeginGetter(CancellationToken token)
+    {
+        if (getterAdmission is not null) { throw new InvalidOperationException("A getter is already active."); }
+        var admission = controller()?.BeginLiveGetter(token);
+        if (admission is null) { return null; }
+        getterAdmission = admission;
+        return new GetterScope(this, admission);
+    }
+
     public CpuLiveCurveContext? ReadFreshContext(CancellationToken token)
     {
+        var getter = getterAdmission;
+        return ReadFreshContext(token, CaptureRuntimeAdmission(CpuTuningFeatures.None, token), getter);
+    }
+
+    private Func<bool>? CaptureRuntimeAdmission(CpuTuningFeatures feature, CancellationToken token)
+    {
+        var getter = getterAdmission;
+        return feature == CpuTuningFeatures.None && getter is not null
+            ? getter.Allows : controller()?.CaptureLiveRuntimeAdmission(feature, token);
+    }
+
+    private CpuLiveCurveContext? ReadFreshContext(CancellationToken token, Func<bool>? current, CpuLiveGetterAdmission? getter)
+    {
         token.ThrowIfCancellationRequested();
-        if (Volatile.Read(ref disposed) != 0) { return null; }
+        if (Volatile.Read(ref disposed) != 0) { getter?.Dispose(); return null; }
         var owner = controller();
         // Read only the initiating lease's diagnostic; no extra provider probe.
         var diagnostic = owner?.CaptureLiveObservationDiagnostic();
         using var stage = diagnostic?.BeginStage("native provider fresh context");
-        bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
-        var current = owner?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None, token);
+        bool Check(bool allowed, string stage)
+        {
+            if (!allowed) { getter?.Dispose(); }
+            return diagnostic?.Check(allowed, stage) ?? allowed;
+        }
         var lifetime = owner?.CaptureLiveRuntimeLifetime();
         if (!Check(current?.Invoke() == true, "provider runtime admission")
             || !Check(lifetime is { ServiceInstance: var instance } && instance != Guid.Empty, "provider runtime lifetime"))
@@ -138,6 +164,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token)
     {
+        if (getterAdmission is not null) { return false; }
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
         // The developer profile narrows every purpose, including first-original
         // restoration. Fresh firmware metadata remains an independent intersection.
@@ -163,6 +190,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
+        if (getterAdmission is not null) { return null; }
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
         if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
 #endif
@@ -177,7 +205,12 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
     {
         var owner = controller();
-        var admission = owner?.CaptureLiveRuntimeAdmission(feature, token);
+        var getter = feature == CpuTuningFeatures.None ? getterAdmission : null;
+        var admission = CaptureRuntimeAdmission(feature, token);
+        // Preserve the nested read-context feature checks for writes; only this
+        // getter's callback shares its power proof with the nested read checks.
+        var contextAdmission = getter is null
+            ? owner?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.None, token) : admission;
         var diagnostic = owner?.CaptureLiveObservationDiagnostic();
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         int revoked = 0;
@@ -191,11 +224,11 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                     && Check(admission?.Invoke() == true, "provider query approval runtime admission")
                     && Check(installed?.IsCurrent == true, "provider query approval installed backend")
                     && Check(context.RuntimeLifetime is not null, "provider query approval runtime lifetime")
-                    && Check(context.MatchesHardwareContext(ReadFreshContext(token)), "provider query approval hardware context")
+                    && Check(context.MatchesHardwareContext(ReadFreshContext(token, contextAdmission, getter)), "provider query approval hardware context")
                     && Check(admission!(), "provider query approval final runtime admission");
             }
             catch { accepted = false; }
-            if (!accepted) { Interlocked.Exchange(ref revoked, 1); }
+            if (!accepted) { getter?.Dispose(); Interlocked.Exchange(ref revoked, 1); }
             return accepted && Volatile.Read(ref revoked) == 0;
         }
         return Current() ? Current : null;
@@ -209,7 +242,18 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) { return; }
+        getterAdmission?.Dispose();
         installed?.Dispose();
+    }
+
+    private sealed class GetterScope(WindowsCpuLiveTuningTrustedNativeProvider owner,
+        CpuLiveGetterAdmission admission) : IDisposable
+    {
+        public void Dispose()
+        {
+            admission.Dispose();
+            if (ReferenceEquals(owner.getterAdmission, admission)) { owner.getterAdmission = null; }
+        }
     }
 
     private sealed class RangeScope(Func<bool> current) : CpuLiveCurveRangeTrustedScope

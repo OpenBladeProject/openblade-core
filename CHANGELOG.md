@@ -20,6 +20,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Classify adapter power once per bounded live CPU getter while continuously checking power and runtime continuity; retain fresh independent admission for every setter and restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Let the enrolled development user read retained installation diagnostics through the broker without another elevation prompt. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Preserve the first live CPU observation rejection, transaction reason and available native query diagnostic in the existing response, without adding probes or changing admission limits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 - Cancel live CPU observation admission with its initiating operation and report the active timeout stage while retaining unfinished reads and the existing safety limits. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

@@ -94,7 +94,9 @@ public sealed partial class ServiceControlRuntime
             {
                 CpuTuningStatus live = await cpuTuningController.ObserveLiveAsync(
                     (feature, operationToken) => CpuLiveRuntimeAdmission(feature, stillControlsSession, liveGeneration, livePowerSourceGeneration, operationToken, liveDiagnostic),
-                    token, liveGeneration, livePowerSourceGeneration, liveDiagnostic).ConfigureAwait(false);
+                    token, liveGeneration, livePowerSourceGeneration, liveDiagnostic,
+                    (features, operationToken, lifetime) => CreateCpuLiveGetterAdmission(features, stillControlsSession,
+                        liveGeneration, livePowerSourceGeneration, operationToken, lifetime, liveDiagnostic)).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
             if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
@@ -175,7 +177,9 @@ public sealed partial class ServiceControlRuntime
                 long sourceGeneration = powerSourceGeneration;
                 ControlOperationResult live = await cpuTuningController.MutateLiveAsync(settings, restoring,
                     feature => CpuLiveRuntimeAdmission(feature, stillControlsSession, generation, sourceGeneration, token),
-                    token, generation, sourceGeneration).ConfigureAwait(false);
+                    token, generation, sourceGeneration,
+                    (features, operationToken, lifetime) => CreateCpuLiveGetterAdmission(features, stillControlsSession,
+                        generation, sourceGeneration, operationToken, lifetime)).ConfigureAwait(false);
                 if (live.CpuTuning is { } liveStatus)
                 {
                     var merged = MergeLiveCpuStatus(GetStatus().CpuTuning, liveStatus);
@@ -244,8 +248,15 @@ public sealed partial class ServiceControlRuntime
         finally { operationGate.Release(); }
     }
 
+    private CpuLiveGetterAdmission CreateCpuLiveGetterAdmission(CpuTuningFeatures features,
+        Func<bool> stillControlsSession, long generation, long sourceGeneration, CancellationToken token,
+        Func<bool> lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null) =>
+        new(token, lifetime, proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
+            generation, sourceGeneration, token, diagnostic, proof));
+
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
-        long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
+        long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
+        CpuLiveGetterAdmission? getter = null)
     {
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         ServiceStatusSnapshot current = GetStatus();
@@ -262,7 +273,8 @@ public sealed partial class ServiceControlRuntime
         ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
         return Check(presence.DetectionWarning is null, "runtime fresh controller detection")
             && Check(presence.PotentialControllers.Count == 0, "runtime fresh controller absence")
-            && Check(CpuFreshFullPower(token, diagnostic), "runtime fresh power source")
+            && Check(getter is null ? CpuFreshFullPower(token, diagnostic)
+                : getter.FullPower(() => CpuFreshFullPower(token, diagnostic), powerStateProvider.CapturePowerSource), "runtime fresh power source")
             && Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
             && Check(lowPowerGate.Generation == generation, "runtime power generation after probes")
             && Check(powerSourceGeneration == sourceGeneration, "runtime power source generation after probes")

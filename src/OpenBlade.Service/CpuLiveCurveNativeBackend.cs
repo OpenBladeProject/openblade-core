@@ -9,6 +9,7 @@ namespace OpenBlade.Service;
 // proof must repeat those checks in its native-lease callbacks, including gaps.
 internal interface ICpuLiveCurveTrustedNativeProvider
 {
+    IDisposable? BeginGetter(CancellationToken token) => null;
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
     CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token);
     CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
@@ -79,6 +80,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private CpuLiveCurveBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
+        using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
         if (!Check(context is { IsWellFormed: true }, "native curve context unavailable")) { return new(null, null); }
         var installed = provider.CreateInstalledQueryApproval(context!, token);

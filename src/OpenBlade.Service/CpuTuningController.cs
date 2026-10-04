@@ -241,6 +241,8 @@ internal sealed class CpuTuningController
         return () => captured?.Allows(feature, operationToken) == true;
     }
 
+    internal CpuLiveGetterAdmission? BeginLiveGetter(CancellationToken token) => liveAdmission.Value?.BeginGetter(token);
+
     internal CpuLiveRuntimeLifetime? CaptureLiveRuntimeLifetime() => liveAdmission.Value?.Lifetime;
     internal object? CaptureLiveRuntimeRequest() => liveAdmission.Value;
     internal CpuSavedAdmissionDiagnostic? CaptureLiveObservationDiagnostic() => liveAdmission.Value?.Diagnostic;
@@ -254,11 +256,12 @@ internal sealed class CpuTuningController
 
     internal async Task<CpuTuningStatus> ObserveLiveAsync(Func<CpuTuningFeatures, CancellationToken, bool> freshAdmission,
         CancellationToken token, long lowPowerGeneration = 0, long powerSourceGeneration = 0,
-        CpuSavedAdmissionDiagnostic? diagnostic = null)
+        CpuSavedAdmissionDiagnostic? diagnostic = null,
+        Func<CpuTuningFeatures, CancellationToken, Func<bool>, CpuLiveGetterAdmission>? getterAdmission = null)
     {
         await liveGate.WaitAsync(token).ConfigureAwait(false);
         using var lease = new LiveAdmission(feature => freshAdmission(feature, token), token,
-            new(serviceInstance, lowPowerGeneration, powerSourceGeneration), diagnostic, freshAdmission);
+            new(serviceInstance, lowPowerGeneration, powerSourceGeneration), diagnostic, freshAdmission, getterAdmission);
         liveAdmission.Value = lease;
         try
         {
@@ -302,14 +305,15 @@ internal sealed class CpuTuningController
 
     internal async Task<ControlOperationResult> MutateLiveAsync(CpuTuningSettings? settings, bool restoring,
         Func<CpuTuningFeatures, bool> freshAdmission, CancellationToken token,
-        long lowPowerGeneration = 0, long powerSourceGeneration = 0)
+        long lowPowerGeneration = 0, long powerSourceGeneration = 0,
+        Func<CpuTuningFeatures, CancellationToken, Func<bool>, CpuLiveGetterAdmission>? getterAdmission = null)
     {
         CpuTuningFeatures requested = (settings?.CurveOptimizer is null ? CpuTuningFeatures.None : CpuTuningFeatures.CurveOptimizer)
             | (settings?.PowerLimitWatts is null ? CpuTuningFeatures.None : CpuTuningFeatures.PowerLimit);
         if (!HasLiveBackend || !restoring && settings is not { IsWellFormed: true, IsConfigured: true })
         { return new(ControlOperationStatus.Blocked, "Live CPU tuning requires supported settings and an admitted backend."); }
         await liveGate.WaitAsync(token).ConfigureAwait(false);
-        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration));
+        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration), getterAdmission: getterAdmission);
         liveAdmission.Value = lease;
         CpuLiveCurveTuningTransaction.PreparedOperation? curveOperation = null;
         CpuLivePowerTuningTransaction.PreparedOperation? powerOperation = null;
@@ -505,7 +509,8 @@ internal sealed class CpuTuningController
     // backends still own the actual worker and repeat their independent proofs.
     private sealed class LiveAdmission(Func<CpuTuningFeatures, bool> admit, CancellationToken token,
         CpuLiveRuntimeLifetime lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null,
-        Func<CpuTuningFeatures, CancellationToken, bool>? observationAdmission = null) : IDisposable
+        Func<CpuTuningFeatures, CancellationToken, bool>? observationAdmission = null,
+        Func<CpuTuningFeatures, CancellationToken, Func<bool>, CpuLiveGetterAdmission>? getterAdmission = null) : IDisposable
     {
         internal CpuLiveRuntimeLifetime Lifetime { get; } = lifetime;
         internal CpuSavedAdmissionDiagnostic? Diagnostic { get; } = diagnostic;
@@ -515,6 +520,12 @@ internal sealed class CpuTuningController
         private int revoked;
         private CpuTuningFeatures requiredFeatures;
         internal void Require(CpuTuningFeatures features) => requiredFeatures |= features;
+        internal CpuLiveGetterAdmission? BeginGetter(CancellationToken operationToken)
+        {
+            bool Current() => Volatile.Read(ref disposed) == 0 && Volatile.Read(ref revoked) == 0
+                && !token.IsCancellationRequested && !operationToken.IsCancellationRequested;
+            return !Current() ? null : getterAdmission?.Invoke(requiredFeatures, operationToken, Current);
+        }
         // Presentation is calculated only after query/transaction work is complete.
         // Feature-specific denial must not revoke a valid read-only query lease;
         // this flag grants no command, range, restoration, or native authority.

@@ -7,6 +7,55 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Fact]
+    public async Task IdentityDriftRevokesEntireGetterBeforeANewApprovalCanBeCreated()
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            proof => proof.FullPower(() => true, () => PowerSource.ExternalUnknown));
+        await fixture.Run(_ =>
+        {
+            using var getter = fixture.Provider.BeginGetter(fixture.OperationToken);
+            Assert.NotNull(getter);
+            var context = fixture.Provider.ReadFreshContext(fixture.OperationToken)!;
+            var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+            var usb = fixture.Usb; fixture.Usb = null;
+            Assert.False(approval.IsCurrent());
+            fixture.Usb = usb;
+            Assert.Null(fixture.Provider.ReadFreshContext(fixture.OperationToken));
+            Assert.Null(fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken));
+        });
+    }
+
+    [Fact]
+    public async Task GetterScopeSharesNestedAdmissionExpiresAndCannotIssueWriteProof()
+    {
+        using var fixture = new Fixture();
+        int classifications = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            proof => proof.FullPower(() => { classifications++; return true; }, () => PowerSource.ExternalUnknown));
+        CpuQueryInstalledApproval? previous = null;
+        await fixture.Run(_ =>
+        {
+            for (int query = 0; query < 2; query++)
+            {
+                using var getter = fixture.Provider.BeginGetter(fixture.OperationToken);
+                Assert.NotNull(getter);
+                var context = fixture.Provider.ReadFreshContext(fixture.OperationToken)!;
+                var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+                for (int i = 0; i < 164; i++) { Assert.True(approval.IsCurrent()); }
+                Assert.Equal(query + 1, classifications);
+                Assert.False(previous?.IsCurrent() ?? false);
+                var request = Request(-2);
+                Assert.False(fixture.Provider.CheckWriteAdmission(context, request.Command, request.Purpose, default));
+                Assert.Null(fixture.Provider.CreateWriteProof(context, request, default));
+                previous = approval;
+            }
+            Assert.False(previous!.IsCurrent());
+        });
+        Assert.Equal(2, classifications); Assert.False(previous!.IsCurrent());
+    }
+
+    [Fact]
     public async Task ProviderAdmissionUsesTheNativeObservationOperationToken()
     {
         using var fixture = new Fixture();
@@ -225,6 +274,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal Action? OnMinMax;
         internal Func<CpuTuningFeatures, CancellationToken, bool>? ObserveAdmission;
         internal Action<CancellationToken>? BeforeProvider;
+        internal Func<CpuTuningFeatures, CancellationToken, Func<bool>, CpuLiveGetterAdmission>? GetterAdmission;
         internal CancellationToken OperationToken;
         internal Fixture()
         {
@@ -248,7 +298,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
                 check(context);
                 return new(context, new(0xFF55, 0x005D000B, 0xD50, CpuLiveCurveTuningTransactionTests.ValuesFixture()));
             };
-            await controller.ObserveLiveAsync((feature, token) => ObserveAdmission?.Invoke(feature, token) ?? Admitted, default, 2, 3, diagnostic);
+            await controller.ObserveLiveAsync((feature, token) => ObserveAdmission?.Invoke(feature, token) ?? Admitted, default, 2, 3, diagnostic, GetterAdmission);
         }
         public void Dispose() => Provider.Dispose();
     }

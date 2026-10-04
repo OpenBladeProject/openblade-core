@@ -9,6 +9,84 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task NativeGetterPowerConsensusIsBoundedAndNeverSharedWithCommands(bool mutation)
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        CpuTuningController? controller = null;
+        var context = await CreateContextAsync(live: live, controllerFactory: source =>
+            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore));
+        context.Power.Power = PowerSource.ExternalUnknown;
+        int samples = 0, getters = 0;
+        context.Device.ReadAdapterPower = _ =>
+        { samples++; return Task.FromResult(AdapterPowerState.FullPower330W); };
+        CpuLiveGetterAdmission? previous = null;
+        live.Curve!.OnObserve = token =>
+        {
+            Assert.False(previous?.Allows() ?? false);
+            using var getter = controller!.BeginLiveGetter(token);
+            Assert.NotNull(getter);
+            int before = samples;
+            for (int i = 0; i < 820; i++) { Assert.True(getter.Allows()); }
+            Assert.Equal(2, samples - before);
+            // An actual command/restoration callback cannot use the getter proof.
+            before = samples;
+            Assert.True(controller.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer, token)());
+            Assert.Equal(2, samples - before);
+            previous = getter; getters++;
+            return Task.FromResult(new CpuLiveCurveBackendObservation(live.Curve.Context,
+                new(0xFF55, 0x005D000B, 0xD50, live.Curve.Values.ToArray())));
+        };
+        if (mutation)
+        {
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.SetCpuTuningAsync(
+                CpuTuningTarget.LiveNow, new(null, new(true, -2)), () => true, default)).Status);
+            int before = samples;
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.RestoreCpuTuningAsync(
+                CpuTuningTarget.LiveNow, () => true, default)).Status);
+            Assert.True(samples > before);
+            Assert.All(live.Curve.Values, core => Assert.Equal(-1, core.Offset));
+        }
+        else
+        {
+            for (int i = 0; i < 2; i++)
+            { Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.ObserveCpuTuningAsync(true, () => true, default)).Status); }
+        }
+        Assert.True(getters >= 2); Assert.False(previous!.Allows());
+    }
+
+    [Theory]
+    [InlineData("generation")]
+    [InlineData("device")]
+    [InlineData("session")]
+    [InlineData("battery")]
+    public async Task GetterRechecksRuntimeGuardsAndCannotRecoverAfterDrift(string drift)
+    {
+        var live = new LiveFixture(curve: true, power: false);
+        CpuTuningController? controller = null; bool controlsSession = true;
+        var context = await CreateContextAsync(live: live, controllerFactory: source =>
+            controller = new(source, curveBackend: live.Curve, curveStore: live.CurveStore));
+        context.Power.Power = PowerSource.ExternalUnknown;
+        context.Device.ReadAdapterPower = _ => Task.FromResult(AdapterPowerState.FullPower330W);
+        live.Curve!.OnObserve = token =>
+        {
+            using var getter = controller!.BeginLiveGetter(token);
+            Assert.NotNull(getter); Assert.True(getter.Allows());
+            if (drift == "generation") { context.Gate.Enter(); }
+            if (drift == "device") { context.Provider.Available = false; }
+            if (drift == "session") { controlsSession = false; }
+            if (drift == "battery") { context.Power.Power = PowerSource.Battery; }
+            Assert.False(getter.Allows());
+            context.Provider.Available = true; controlsSession = true; context.Power.Power = PowerSource.ExternalUnknown;
+            Assert.False(getter.Allows());
+            return Task.FromResult(new CpuLiveCurveBackendObservation(null, null));
+        };
+        await context.Runtime.ObserveCpuTuningAsync(true, () => controlsSession, default);
+        Assert.Empty(live.Curve.Sent);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task UnavailableLiveObservationRetainsTransactionReasonInTypedResponseWithoutExtraQueries(bool outerRejected)
     {
         var live = new LiveFixture(curve: true, power: true);
