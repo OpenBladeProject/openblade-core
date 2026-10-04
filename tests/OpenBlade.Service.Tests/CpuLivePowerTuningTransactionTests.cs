@@ -6,6 +6,39 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLivePowerTuningTransactionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ObservationCancellationReportsPowerAndRetainsFirstReasonAfterLateCompletion(bool callerCancelled)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<CpuLivePowerBackendObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken operationToken = default;
+        backend.ObserveResult = token => { operationToken = token; entered.SetResult(); return release.Task; };
+        using var caller = new CancellationTokenSource();
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        diagnostic.BeginNativeQuery(); // Prior CO progress must not be attributed to the power timeout.
+        var transaction = new CpuLivePowerTuningTransaction(backend, store,
+            operationTimeout: callerCancelled ? TimeSpan.FromSeconds(10) : TimeSpan.FromMilliseconds(100));
+        var pending = transaction.ObserveOwnershipAsync(caller.Token, diagnostic);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (callerCancelled) { caller.Cancel(); }
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLivePowerBlockReason.ObservationUnavailable, result.Reason);
+        Assert.Equal(CpuLivePowerRecovery.Blocked, result.Recovery);
+        Assert.True(operationToken.IsCancellationRequested); Assert.False(release.Task.IsCompleted);
+        string first = Assert.IsType<string>(diagnostic.FirstFailure);
+        Assert.StartsWith(callerCancelled ? "power observation caller cancellation" : "power observation operation timeout", first);
+        Assert.Contains("active stage power backend observation", first); Assert.DoesNotContain("IOCTL", first);
+        string? frozen = diagnostic.LiveObservationTimeoutContext;
+        release.SetResult(new(backend.Context, Raw(backend.Pair), backend.Cap, backend.Capability, backend.Range));
+        await release.Task;
+        diagnostic.Check(false, "late native rejection");
+        Assert.Equal(first, diagnostic.FirstFailure); Assert.Equal(frozen, diagnostic.LiveObservationTimeoutContext);
+        Assert.Equal(1, backend.Reads); Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+    }
+
     [Fact]
     public async Task RepeatedEditsAndRestartRestoreFirstExactFractionalUnequalOriginal()
     {
@@ -375,14 +408,21 @@ public sealed class CpuLivePowerTuningTransactionTests
         internal CpuLivePowerTrustedRange? Range = new(0x50001, 0, 125000, 1);
         internal int Reads;
         internal bool Unavailable;
+        internal string? ObservationFailure;
         internal Action? OnObserve, AfterSend;
+        internal Func<CancellationToken, Task<CpuLivePowerBackendObservation>>? ObserveResult;
         internal Func<CpuLiveCurvePeerState, bool>? CheckPeer;
         internal Func<CpuLivePowerCommand, CpuLivePowerCommandPurpose, bool> Admit = (_, _) => true;
         internal Func<CpuLivePowerNativeRequest, Task<CpuLivePowerSubmission>>? OnSend;
         internal readonly List<CpuLivePowerNativeRequest> Sent = [];
         internal readonly List<(CpuLivePowerCommand Command, CpuLivePowerCommandPurpose Purpose)> Admissions = [];
         public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token)
-        { Reads++; OnObserve?.Invoke(); return Task.FromResult(new CpuLivePowerBackendObservation(Context, Unavailable ? null : Raw(Pair), Cap, Capability, Range)); }
+        { Reads++; OnObserve?.Invoke(); return ObserveResult?.Invoke(token) ?? Task.FromResult(new CpuLivePowerBackendObservation(Context, Unavailable ? null : Raw(Pair), Cap, Capability, Range)); }
+        public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
+        {
+            if (ObservationFailure is { } failure) { diagnostic?.Check(false, failure); }
+            return ObserveAsync(token);
+        }
         public Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
             CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token)
         { Admissions.Add((command, purpose)); return Task.FromResult(Context.MatchesHardwareContext(context) && Admit(command, purpose)); }

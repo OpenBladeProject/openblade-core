@@ -123,6 +123,27 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         Assert.Equal(1, live.Curve.Reads); Assert.Equal(0, live.Power!.Reads);
         Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent); Assert.Equal(0, context.Source.Submissions);
     }
+    [Fact]
+    public async Task PartialLiveObservationRetainsPowerRejectionWithoutExtraQueriesOrSetters()
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        live.Power!.Unavailable = true;
+        live.Power.ObservationFailure = "power native observation MetadataVersion/InvalidData";
+        var context = await CreateContextAsync(live: live);
+        var result = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Live observation: power transaction ObservationUnavailable.", result.Message);
+        Assert.Contains("First rejection: power native observation MetadataVersion/InvalidData.", result.Message);
+        Assert.Equal(12, result.CpuTuning!.LiveState!.CoreValues.Count);
+        Assert.Null(result.CpuTuning.LiveState.PowerLimits);
+        Assert.Equal(CpuTuningRecoveryState.Blocked, result.CpuTuning.LiveRecovery!.State);
+        Assert.Equal(CpuTuningFeatures.None, result.CpuTuning.LiveRecovery.Features);
+        Assert.False(result.CpuTuning.Live.CanWrite);
+        Assert.Equal(1, live.Curve!.Reads); Assert.Equal(1, live.Power.Reads);
+        Assert.Empty(live.Curve.Sent); Assert.Empty(live.Power.Sent);
+        Assert.Equal(0, context.Source.Submissions);
+    }
+
     private readonly string directory = Path.Combine(Path.GetTempPath(), "OpenBlade.CpuTuning.Tests", Guid.NewGuid().ToString("N"));
 
     [Theory]

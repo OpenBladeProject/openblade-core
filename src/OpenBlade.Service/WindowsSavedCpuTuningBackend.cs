@@ -20,10 +20,11 @@ internal sealed class CpuSavedAdmissionDiagnostic
     internal string? LiveObservationReason { get; set; }
     internal string? LiveObservationTimeoutContext => Volatile.Read(ref liveObservationTimeoutContext);
 
-    internal void RecordObservationCancellation(bool callerCancelled)
+    internal void RecordObservationCancellation(bool callerCancelled, bool powerObservation = false)
     {
-        string detail = (callerCancelled ? "curve observation caller cancellation" : "curve observation operation timeout")
-            + ActiveStageDetail() + Volatile.Read(ref nativeQuery)?.Snapshot(freeze: true);
+        string family = powerObservation ? "power" : "curve";
+        string detail = family + (callerCancelled ? " observation caller cancellation" : " observation operation timeout")
+            + ActiveStageDetail() + (powerObservation ? null : Volatile.Read(ref nativeQuery)?.Snapshot(freeze: true));
         Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
         Check(false, detail);
     }

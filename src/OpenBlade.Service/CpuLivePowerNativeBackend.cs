@@ -50,8 +50,9 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     internal Task? OutstandingWorker => state.OutstandingWorker;
     internal CpuLivePowerNativeBackendStatus Status
     { get { var status = state.Status; return new(status.WorkerOutstanding, status.Kind, status.Invalid, status.PowerResult); } }
-    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token) =>
-        state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Observation, Observe, Empty(), token);
+    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
+    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) =>
+        state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Observation, workToken => Observe(workToken, diagnostic), Empty(), token);
     public Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
         CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Admission, workToken =>
@@ -64,14 +65,14 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     public Task<CpuLivePowerSubmission> SendAsync(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Submission, workToken => Send(context, request, workToken), CpuLivePowerSubmission.Unknown, token);
 
-    private CpuLivePowerBackendObservation Observe(CancellationToken token)
+    private CpuLivePowerBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
         using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
-        if (context is not { IsWellFormed: true }) { return Empty(); }
+        if (context is not { IsWellFormed: true }) { return Reject("power observation context"); }
         var installed = provider.CreateInstalledObservationApproval(context, token);
         var reader = provider.CreateObservationMetadata(context, token) ?? metadataReader;
-        if (reader is null || !MatchesFresh(context, token)) { return Empty(); }
+        if (reader is null || !MatchesFresh(context, token)) { return Reject("power observation metadata/context"); }
         CpuLivePowerNativeObservationResult observed;
         if (installed is not null)
         {
@@ -81,11 +82,13 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         else
         {
             var approval = provider.CreateObservationApproval(context, token);
-            if (approval?.Profile != CpuPmObservationProfile.RangeSingleSample || !MatchesFresh(context, token)) { return Empty(); }
+            if (approval?.Profile != CpuPmObservationProfile.RangeSingleSample || !MatchesFresh(context, token)) { return Reject("power observation approval"); }
             observed = session.ObservePower(approval, () => MatchesFresh(context, token)
                 ? provider.ReadFreshObservationLifetime(context, token) : null, reader, token);
         }
-        if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Empty(); }
+        if (observed.Batch.Diagnostic is { } nativeDiagnostic)
+        { diagnostic?.Check(false, "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure); }
+        if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Reject("power observation cleanup"); }
         token.ThrowIfCancellationRequested();
         var batch = observed.Batch; var samples = batch.CopySamples();
         if (!batch.Complete || batch.Profile != CpuPmObservationProfile.RangeSingleSample || samples.Length != 1
@@ -99,15 +102,18 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
                     PostReadAdmissionPassed: true, RawValue: uint rawCapability
                 }
             }
-            || CpuLivePowerCapability.TryDecode(rawCapability) is not { } capability) { return Empty(); }
-        if (!MatchesFresh(context, token)) { state.Invalidate(); return Empty(); }
+            || CpuLivePowerCapability.TryDecode(rawCapability) is not { } capability) { return Reject("power observation batch shape"); }
+        if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation post-batch context"); }
         var range = provider.AdmitRequestedStateAndRange(context, batch, token);
         token.ThrowIfCancellationRequested();
-        if (!MatchesFresh(context, token)) { state.Invalidate(); return Empty(); }
+        if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation post-range context"); }
         if (range is not { Selector: 0x50001, StepMilliwatts: 1 } || range.MinimumMilliwatts > range.MaximumMilliwatts
-            || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Empty(); }
-        if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Empty(); }
+            || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Reject("power observation trusted range"); }
+        if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Reject("power observation final context"); }
         return new(context, samples[0].Snapshot, cap, capability, range);
+
+        CpuLivePowerBackendObservation Reject(string reason)
+        { diagnostic?.Check(false, reason); return Empty(); }
     }
 
     private CpuLivePowerSubmission Send(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token)

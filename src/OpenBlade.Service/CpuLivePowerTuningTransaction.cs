@@ -10,6 +10,7 @@ internal interface ICpuLivePowerBackend
     // Independently fresh context/continuity and requested-state interpretation,
     // not raw PM shape or equality. A no-op setter is never an observation.
     Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token);
+    Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) => ObserveAsync(token);
     Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
         CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token);
     // Recheck fresh context, range, the entire before pair and independent write
@@ -197,21 +198,21 @@ internal sealed class CpuLivePowerTuningTransaction
         finally { gate.Release(); }
     }
 
-    internal async Task<CpuLivePowerTransactionResult> ObserveOwnershipAsync(CancellationToken token)
+    internal async Task<CpuLivePowerTransactionResult> ObserveOwnershipAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
-        try { return persistenceUncertain ? Uncertain() : await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token).ConfigureAwait(false); }
+        try { return persistenceUncertain ? Uncertain() : await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token, diagnostic).ConfigureAwait(false); }
         finally { gate.Release(); }
     }
 
-    private async Task<CpuLivePowerTransactionResult> ObserveCoreAsync(CpuLivePowerJournalLoadResult loaded, CancellationToken token)
+    private async Task<CpuLivePowerTransactionResult> ObserveCoreAsync(CpuLivePowerJournalLoadResult loaded, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
         if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
         // A late actual worker may still run: never use another getter or setter
         // to infer that an uncertain submission completed or can be replayed.
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission }) { return Uncertain(); }
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked }) { return Blocked(CpuLivePowerBlockReason.StateChanged); }
-        var observed = await ObserveAsync(token).ConfigureAwait(false);
+        var observed = await ObserveAsync(token, diagnostic).ConfigureAwait(false);
         if (loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
             && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
         { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
@@ -388,10 +389,14 @@ internal sealed class CpuLivePowerTuningTransaction
         try { return await BoundedAsync(t => backend.CheckWriteAdmissionAsync(context, command, purpose, request.Before, request.Original, t), token).ConfigureAwait(false); }
         catch { return false; }
     }
-    private async Task<CpuLivePowerBackendObservation?> ObserveAsync(CancellationToken token)
+    private async Task<CpuLivePowerBackendObservation?> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
     {
-        try { return await BoundedAsync(backend.ObserveAsync, token).ConfigureAwait(false); }
-        catch { return null; }
+        using var stage = diagnostic?.BeginStage("power backend observation");
+        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic), token, diagnostic).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        { diagnostic?.RecordObservationCancellation(token.IsCancellationRequested, powerObservation: true); return null; }
+        catch (Exception exception)
+        { diagnostic?.Check(false, "power observation exception " + CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception).Failure); return null; }
     }
     private async Task<CpuLivePowerJournalLoadResult> LoadAsync(CancellationToken token)
     {
@@ -420,9 +425,12 @@ internal sealed class CpuLivePowerTuningTransaction
         string? blocked = await WriteAsync(hash, journal.Progress(CpuLivePowerOwnershipState.Blocked, journal.CompletedSteps), CancellationToken.None).ConfigureAwait(false);
         return Blocked(blocked is null ? CpuLivePowerBlockReason.JournalUnavailable : reason, pair);
     }
-    private async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token)
+    private async Task<T> BoundedAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken token,
+        CpuSavedAdmissionDiagnostic? observationDiagnostic = null)
     {
         var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var registration = observationDiagnostic is null ? default : timeout.Token.Register(() =>
+            observationDiagnostic.RecordObservationCancellation(token.IsCancellationRequested, powerObservation: true));
         timeout.CancelAfter(operationTimeout); Task<T>? task = null;
         try
         {

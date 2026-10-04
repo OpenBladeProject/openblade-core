@@ -66,7 +66,9 @@ public sealed class CpuLivePowerNativeBackendTests
     {
         var platform = new Platform(); var provider = new Provider(platform); var metadata = new Metadata();
         var backend = new CpuLivePowerNativeBackend(platform, provider, metadata);
-        var result = await backend.ObserveAsync(default);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var result = await backend.ObserveAsync(default, diagnostic);
+        Assert.Null(diagnostic.FirstFailure);
         Assert.Equal(provider.Context, result.Context); Assert.Equal(platform.Pair, CpuLivePowerSnapshot.TryCreate(result.Observation)!.Pair);
         Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 6 }, platform.Commands); Assert.Equal(0, platform.Setters);
         Assert.Equal(1, provider.Interpretations); Assert.Equal(2, metadata.Calls);
@@ -75,6 +77,19 @@ public sealed class CpuLivePowerNativeBackendTests
         provider.InterpretationAllowed = false;
         Assert.Null((await backend.ObserveAsync(default)).Observation); Assert.Equal(0, platform.Setters);
         Assert.Equal(2, provider.Interpretations);
+    }
+
+    [Fact]
+    public async Task ExistingBatchDiagnosticSurvivesRejectedPowerObservation()
+    {
+        var platform = new Platform(); var provider = new Provider(platform);
+        var metadata = new Metadata { Fault = "invalid-clean" };
+        var backend = new CpuLivePowerNativeBackend(platform, provider, metadata);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        Assert.Null((await backend.ObserveAsync(default, diagnostic)).Observation);
+        Assert.Equal("power native observation MetadataVersion/InvalidData", diagnostic.FirstFailure);
+        Assert.Equal(1, metadata.Calls); Assert.Equal(0, platform.Setters);
+        Assert.False(backend.Status.ScopeInvalid); Assert.Null(backend.OutstandingWorker);
     }
 
     [Fact]

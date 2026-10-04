@@ -283,11 +283,11 @@ internal sealed class CpuTuningController
             CpuLivePowerTransactionResult? power = livePower is null || liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked
                 || !lease.Allows(CpuTuningFeatures.None) ? null
-                : await livePower.ObserveOwnershipAsync(token).ConfigureAwait(false);
+                : await livePower.ObserveOwnershipAsync(token, diagnostic).ConfigureAwait(false);
             RetainUncertainty(power);
             if (diagnostic is not null && diagnostic.LiveObservationReason is null && power?.Reason is { } powerReason
                 && powerReason != CpuLivePowerBlockReason.None)
-            { diagnostic.LiveObservationReason = "power transaction " + powerReason; }
+            { diagnostic.LiveObservationReason = "power transaction " + powerReason + diagnostic.LiveObservationTimeoutContext; }
             var recovery = liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked || power?.Recovery == CpuLivePowerRecovery.Blocked
                 ? CpuTuningRecoveryState.Blocked : ownership.Features == CpuTuningFeatures.None
@@ -605,13 +605,16 @@ internal sealed class CpuTuningController
     }
     private sealed class RuntimePowerBackend(ICpuLivePowerBackend backend, AsyncLocal<LiveAdmission?> current) : ICpuLivePowerBackend
     {
-        public async Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token)
+        public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
+        public async Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
         {
             var lease = current.Value;
-            if (lease?.Allows(CpuTuningFeatures.None, token) != true) { return new(null, null, null, null, null); }
+            if (lease?.Allows(CpuTuningFeatures.None, token) != true)
+            { diagnostic?.Check(false, "runtime power observation lease before query"); return new(null, null, null, null, null); }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            var result = await backend.ObserveAsync(cancellation.Token).ConfigureAwait(false);
-            return lease.Allows(CpuTuningFeatures.None, token) ? result : new(null, null, null, null, null);
+            var result = await backend.ObserveAsync(cancellation.Token, diagnostic).ConfigureAwait(false);
+            if (lease.Allows(CpuTuningFeatures.None, token)) { return result; }
+            diagnostic?.Check(false, "runtime power observation lease after query"); return new(null, null, null, null, null);
         }
         public async Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
             CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token)

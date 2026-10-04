@@ -112,10 +112,10 @@ public sealed partial class ServiceControlRuntime
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return new(ControlOperationStatus.Stored,
-                observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
-                    + (liveDiagnostic.LiveObservationReason is { } reason ? $" Live observation: {reason}." : string.Empty)
-                    + (liveDiagnostic.FirstFailure is { } failure ? $" First rejection: {failure}." : string.Empty)
+                (observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
                     : "Saved configuration and live CPU observations were inspected.")
+                    + (liveDiagnostic.LiveObservationReason is { } reason ? $" Live observation: {reason}." : string.Empty)
+                    + (liveDiagnostic.FirstFailure is { } failure ? $" First rejection: {failure}." : string.Empty))
             {
                 CpuTuning = observation,
             };
