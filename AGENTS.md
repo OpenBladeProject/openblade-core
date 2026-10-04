@@ -242,7 +242,8 @@ unrelated worktrees and checkout changes.
 4. Update the smallest authoritative layer. Do not duplicate state between the
    service, Session Agent, and tray.
 5. Add focused tests for parsing, normalization, failure handling, and shared UI
-   contracts. Run the affected project tests before the full solution.
+   contracts. Follow the development-build test scope under Verification
+   baseline; a full solution run is not automatic.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
@@ -374,14 +375,28 @@ Follow [VERSIONING.md](VERSIONING.md). The short form is:
 
 ## Verification baseline
 
-For a normal product change:
+For development builds, use the smallest useful verification scope: build the
+affected projects and run tests focused on the changed behavior. Expand to the
+affected project suite only when the change or a failure warrants it. Do not run
+the full solution suite for every edit, local package, or development install.
+Documentation-only changes need no build or test run.
+
+Run the full solution suite before marking a product PR ready or releasing it,
+or earlier when shared IPC/schema/build/deployment contracts change or observed
+failures indicate a wider regression. State the concrete reason before
+expanding verification; hypothetical risks alone do not justify a full run.
+Reuse passing results for unchanged source, and do not repeat focused, project,
+and full suites merely to generate more evidence. Preserve required hardware
+admission, restoration, and package-integrity checks.
+
+For final product PR readiness or release validation:
 
 ```powershell
 dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
 dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 ```
 
-On managed hosts, run the full solution test command above with approved host
+When a full run is warranted on managed hosts, use approved host
 access from the outset. The sandbox consistently denies the loopback client in
 `NamedPipeControlServerTests.ServeOnceAsync_ReadsRequestBeforeResolvingWindowsClientContext`
 with `UnauthorizedAccessException`; this is a sandbox permission failure, not a
