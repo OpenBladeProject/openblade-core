@@ -5,6 +5,38 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class WindowsRz090528CpuPmObservationAdapterTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ScopedInstalledGetterBoundsDiscoveryAndKeepsMutableRevocation(bool revoke)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        Assert.NotNull(held);
+        for (int run = 0; run < 2; run++)
+        {
+            int hosts = fake.HostReads, controllers = fake.ControllerReads, checkpoints = 0;
+            bool current = true;
+            var approval = held.CreateGetterPowerObservationApproval(() => { checkpoints++; return current; });
+            fake.AfterCopy = _ => { if (revoke) { current = false; } };
+            var result = session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata());
+            Assert.Equal(!revoke, result.Batch.Complete);
+            Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+            Assert.InRange(fake.HostReads - hosts, 1, 6);
+            Assert.InRange(fake.ControllerReads - controllers, 1, 6);
+            Assert.True(checkpoints > 77);
+            if (revoke)
+            {
+                current = true; Assert.False(approval.IsCurrent());
+                Assert.True(held.IsCurrent);
+                break;
+            }
+        }
+        Assert.All(fake.Commands, command => Assert.Contains(command, new uint[] { 2, 0x82, 6, 0x65 }));
+        Assert.DoesNotContain("continuity-arm", fake.Events);
+    }
+
     private static CpuPmAttendedApproval Approval(Fake fake) => CpuPmAttendedApproval.Acknowledge(true, true, fake.Lifetime);
     private static CpuPmObservationBatch Run(Fake fake, CpuPmAttendedApproval? approval = null) =>
         WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(approval ?? Approval(fake), () => fake.FreshLifetime, fake, fake);
@@ -570,7 +602,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal bool Pinned, Locked, ContinuityFailure, CleanupFailure, Installed;
         internal uint Firmware = 0x0B5D1600;
         internal CpuQueryMutexWait Wait = CpuQueryMutexWait.Acquired;
-        internal int FullBackendReads, ServiceReads, Copies, IdleDelays;
+        internal int FullBackendReads, ServiceReads, Copies, IdleDelays, HostReads, ControllerReads;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal Action<Fake>? AfterOpen, AfterCopy, DuringArm, DuringContinuityDispose;
         internal readonly List<string> Events = [];
@@ -580,12 +612,16 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         private uint selected, command;
         internal Fake() => FreshLifetime = Lifetime;
         private void Event(string value) { Events.Add(value); Threads.Add(Environment.CurrentManagedThreadId); }
-        public HostIdentityReadResult ReadHost() => ThrowAt == "host-unknown" ? throw new NotSupportedException()
-            : new(new(Failure == "manufacturer" ? "other" : "Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Bios), null);
+        public HostIdentityReadResult ReadHost()
+        {
+            HostReads++;
+            return ThrowAt == "host-unknown" ? throw new NotSupportedException()
+                : new(new(Failure == "manufacturer" ? "other" : "Razer", "Blade 16 - RZ09-0528", Failure == "sku" ? "unknown" : "RZ09-05289EN4", Bios), null);
+        }
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, Failure == "stepping" ? 1 : 0);
         public CpuPmProcessorPackage ReadPackage() => new(Failure == "leaf" ? 0x80000000 : 0x80000001, Failure == "package" ? 0 : 1);
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, Failure == "usb" ? (ushort)0x02E0 : (ushort)0x02C6, "2.02");
-        public bool ControllersAbsent() => Failure != "controller";
+        public bool ControllersAbsent() { ControllerReads++; return Failure != "controller"; }
         public InstalledCpuBackendSnapshot ReadBackend()
         {
             FullBackendReads++;

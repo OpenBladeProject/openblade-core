@@ -271,7 +271,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             CheckThread();
             if (installedApproval is { } installed)
             {
-                if (!installed.IsCurrent() || !installed.Lease.IsCurrent)
+                if (!installed.IsCurrent() || !(installed.GetterScoped
+                    ? installed.Lease.GetterContinuityCurrent : installed.Lease.IsCurrent))
                 { throw new IOException("Installed PM lifetime is unavailable."); }
                 return new(CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime, Guid.Empty, Guid.Empty, CpuPmContinuityFailure.None);
             }
@@ -284,6 +285,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         internal void FullAdmission()
         {
+            // A scoped production getter already retains exact immutable context
+            // and repeats full discovery before accepting its result. Snapshot
+            // checkpoints still refresh mutable continuity and driver state.
+            if (installedApproval?.GetterScoped == true && host is not null && usb is not null && files is not null)
+            { _ = ReadFresh(); return; }
             _ = ReadHost(); _ = ReadProcessor(); _ = ReadUsb();
             if (!ControllersAbsent()) { throw new IOException("PM controller admission denied."); }
             _ = ReadBackend(); _ = ReadFresh();
@@ -296,7 +302,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public CpuPmSessionEvidence ReadFresh()
         {
             var current = CheckContinuity();
-            if (installedApproval is not null) { _ = ReadUsb(); }
+            if (installedApproval is { GetterScoped: false }) { _ = ReadUsb(); }
             if (host is null || usb is null || files is null || leased && !pinned) { throw new IOException("PM provenance unavailable."); }
             InstalledCpuBackendSnapshot backend;
             if (installedApproval is not null) { backend = platform.ReadBackend(); }
@@ -308,8 +314,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             if ((installedApproval is null ? backend.Start != 3 : !installedApproval.Lease.RegistrationMatches(backend))
                 || Rz090528InstalledCpuBackendInspector.Evaluate(backend).Availability != CpuTuningBackendAvailability.Available)
             { installedApproval?.Lease.Dispose(); throw new IOException("PM driver state changed."); }
-            bool controllers = platform.ControllersAbsent();
-            current = CheckContinuity();
+            // Scoped approval just checked the retained controller inventory
+            // against fresh process/SCM activity. Other callers keep full discovery.
+            bool controllers = installedApproval?.GetterScoped == true || platform.ControllersAbsent();
+            if (installedApproval?.GetterScoped != true) { current = CheckContinuity(); }
             return new(usb, host.Value, processor, package.MaximumExtendedLeaf, package.Package, backend, controllers,
                 current.Continuity, current.SessionId, current.DriverLifetimeId)
             { RetainedInstalledLease = installedApproval?.Lease };

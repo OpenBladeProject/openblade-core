@@ -135,6 +135,11 @@ internal sealed class CpuInstalledBackendLease : IDisposable
         ArgumentNullException.ThrowIfNull(current);
         return new(this, current);
     }
+    internal CpuPmInstalledApproval CreateGetterPowerObservationApproval(Func<bool> current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        return new(this, current, getterScoped: true);
+    }
     internal ICpuQueryDevice Duplicate()
     {
         lock (gate)

@@ -8,6 +8,9 @@ namespace OpenBlade.Service;
 // and exact restoration ownership. Candidate bytes and equality only reject.
 internal interface ICpuLivePowerTrustedNativeProvider
 {
+    IDisposable? BeginGetter(CancellationToken token) => null;
+    bool CompleteGetter(CpuLivePowerContext expected, CancellationToken token) =>
+        expected.MatchesHardwareContext(ReadFreshContext(token));
     CpuLivePowerContext? ReadFreshContext(CancellationToken token);
     CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext exactContext, CancellationToken token);
     CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token) => null;
@@ -63,6 +66,7 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
 
     private CpuLivePowerBackendObservation Observe(CancellationToken token)
     {
+        using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
         if (context is not { IsWellFormed: true }) { return Empty(); }
         var installed = provider.CreateInstalledObservationApproval(context, token);
@@ -102,6 +106,7 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         if (!MatchesFresh(context, token)) { state.Invalidate(); return Empty(); }
         if (range is not { Selector: 0x50001, StepMilliwatts: 1 } || range.MinimumMilliwatts > range.MaximumMilliwatts
             || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Empty(); }
+        if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Empty(); }
         return new(context, samples[0].Snapshot, cap, capability, range);
     }
 

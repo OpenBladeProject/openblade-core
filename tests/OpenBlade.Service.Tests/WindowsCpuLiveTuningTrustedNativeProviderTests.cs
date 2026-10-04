@@ -6,6 +6,49 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerPeerGetterSharesContinuityAndRequiresIndependentFullCompletion(bool finalDrift)
+    {
+        using var fixture = new Fixture();
+        int full = 0, continuity = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => { continuity++; return fixture.Admitted; });
+        CpuPmInstalledApproval? previous = null;
+        await fixture.Run(_ =>
+        {
+            ICpuLivePowerTrustedNativeProvider provider = fixture.Provider;
+            for (int read = 0; read < 2; read++)
+            {
+                using var scope = provider.BeginGetter(fixture.OperationToken);
+                var context = provider.ReadFreshContext(fixture.OperationToken)!;
+                var approval = provider.CreateInstalledObservationApproval(context, fixture.OperationToken)!;
+                Assert.True(approval.GetterScoped);
+                int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads;
+                for (int checkpoint = 0; checkpoint < 250; checkpoint++)
+                {
+                    Assert.True(approval.IsCurrent());
+                    Assert.NotNull(provider.ReadFreshContext(fixture.OperationToken));
+                }
+                Assert.Equal(hosts, fixture.Platform.HostReads); Assert.Equal(usb, fixture.UsbReads);
+                Assert.True(continuity > 250);
+                Assert.Null(provider.CreateWriteProof(context, null!, fixture.OperationToken));
+                Assert.False(provider.CheckWriteAdmission(context, default, default, null!, null!, fixture.OperationToken));
+                if (previous is not null) { Assert.False(previous.IsCurrent()); }
+                if (finalDrift) { fixture.Platform.HostValid = false; }
+                Assert.Equal(!finalDrift, provider.CompleteGetter(context, fixture.OperationToken));
+                Assert.True(fixture.Platform.HostReads > hosts);
+                Assert.Equal((read + 1) * 2, full);
+                if (finalDrift)
+                {
+                    fixture.Platform.HostValid = true; Assert.False(approval.IsCurrent()); break;
+                }
+                previous = approval;
+            }
+        });
+    }
+
     [Fact]
     public async Task MetadataCheckpointsShareGetterContextButCannotAuthorizeAWrite()
     {

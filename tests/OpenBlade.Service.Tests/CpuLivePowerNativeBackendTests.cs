@@ -6,6 +6,26 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLivePowerNativeBackendTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerObservationEndsGetterAndRejectsFailedFinalAdmission(bool rejectFinal)
+    {
+        var platform = new Platform();
+        var provider = new Provider(platform) { InstalledMetadata = new Metadata(), FinalAllowed = !rejectFinal };
+        var backend = new CpuLivePowerNativeBackend(platform, provider);
+        try
+        {
+            var result = await backend.ObserveAsync(default);
+            Assert.Equal(!rejectFinal, result.Context is not null);
+            Assert.Equal(1, provider.GetterBegins); Assert.Equal(1, provider.GetterCompletions);
+            Assert.Equal(1, provider.GetterDisposals); Assert.False(provider.GetterActive);
+            Assert.Equal(rejectFinal, backend.Status.ScopeInvalid);
+            Assert.Equal(0, platform.Setters);
+        }
+        finally { provider.InstalledLease?.Dispose(); }
+    }
+
     [Fact]
     public async Task InstalledObservationUsesProviderMetadataAndRetainedDeviceWithoutAttendedContinuity()
     {
@@ -254,7 +274,19 @@ public sealed class CpuLivePowerNativeBackendTests
     private sealed class Provider(Platform platform) : ICpuLivePowerTrustedNativeProvider
     {
         internal CpuLivePowerContext Context = CpuLivePowerTuningTransactionTests.ContextFixture();
-        internal int ContextReads, Interpretations;
+        internal int ContextReads, Interpretations, GetterBegins, GetterCompletions, GetterDisposals;
+        internal bool GetterActive, FinalAllowed = true;
+        public IDisposable BeginGetter(CancellationToken token)
+        {
+            Assert.False(GetterActive); GetterActive = true; GetterBegins++;
+            return new GetterRelease(() => { GetterActive = false; GetterDisposals++; });
+        }
+        public bool CompleteGetter(CpuLivePowerContext expected, CancellationToken token)
+        {
+            Assert.True(GetterActive); GetterCompletions++;
+            return FinalAllowed && expected.MatchesHardwareContext(ReadFreshContext(token));
+        }
+        private sealed class GetterRelease(Action release) : IDisposable { public void Dispose() => release(); }
         internal bool InterpretationAllowed = true, WrongProfile, ReuseApproval, ReuseProof;
         internal Action? OnContext, OnRange;
         internal Metadata? InstalledMetadata;

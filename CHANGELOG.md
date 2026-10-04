@@ -20,6 +20,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep the mandatory live CPU power-peer observation inside a bounded getter with full entry/completion admission and continuous retained-device checks, without repeated full discovery at every read. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Validate full native CPU getter context at entry and completion, with retained identity and fresh bounded continuity checks between reads instead of repeated hardware discovery. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Classify adapter power once per bounded live CPU getter while continuously checking power and runtime continuity; retain fresh independent admission for every setter and restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

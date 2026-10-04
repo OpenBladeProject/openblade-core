@@ -131,7 +131,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext exactContext, CancellationToken token)
     {
         var admission = CapturePower(exactContext, token);
-        return admission is null ? null : installed?.CreatePowerObservationApproval(admission);
+        return admission is null ? null : getterScope is not null
+            ? installed?.CreateGetterPowerObservationApproval(admission)
+            : installed?.CreatePowerObservationApproval(admission);
     }
 
     public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext exactContext, CancellationToken token)
@@ -169,7 +171,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         var curve = new CpuLiveCurveContext(context.Identity, context.EnabledCoreMask, context.PmVersion,
             context.PmTableLength, context.Backend, context.BootSequence)
         { RuntimeLifetime = context.RuntimeLifetime };
-        return Capture(curve, CpuTuningFeatures.None, token);
+        return getterScope is { } getter ? () => getter.Current(curve) : Capture(curve, CpuTuningFeatures.None, token);
     }
 
     public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
@@ -256,6 +258,11 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         getterAdmission?.Dispose();
         installed?.Dispose();
     }
+
+    bool ICpuLivePowerTrustedNativeProvider.CompleteGetter(CpuLivePowerContext expected, CancellationToken token) =>
+        CompleteGetter(new CpuLiveCurveContext(expected.Identity, expected.EnabledCoreMask, expected.PmVersion,
+            expected.PmTableLength, expected.Backend, expected.BootSequence)
+        { RuntimeLifetime = expected.RuntimeLifetime }, token);
 
     public bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token)
     {

@@ -4,11 +4,14 @@ namespace OpenBlade.Protocol;
 
 // One initiating request, tied to the actual retained installed device lease.
 // A failed callback stays revoked even if a later callback recovers.
-internal sealed class CpuPmInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current)
+internal sealed class CpuPmInstalledApproval(CpuInstalledBackendLease lease, Func<bool> current, bool getterScoped = false)
 {
     private readonly long created = Stopwatch.GetTimestamp();
     private int consumed, revoked;
     internal CpuInstalledBackendLease Lease => lease;
+    // Issued only for a bounded getter whose callback retains exact USB,
+    // controller, runtime and backend continuity through final full admission.
+    internal bool GetterScoped => getterScoped;
     internal bool Consume(ICpuQueryWindowsPlatform platform) => Interlocked.Exchange(ref consumed, 1) == 0
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
         && lease.Matches(platform) && lease.IsCurrent && IsCurrent();
