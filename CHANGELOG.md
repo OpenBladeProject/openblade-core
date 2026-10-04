@@ -20,6 +20,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserve pending native CPU query stage, completed calls and cumulative timing in the first observation-timeout diagnostic without changing query admission or deadlines. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Keep the mandatory live CPU power-peer observation inside a bounded getter with full entry/completion admission and continuous retained-device checks, without repeated full discovery at every read. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Validate full native CPU getter context at entry and completion, with retained identity and fresh bounded continuity checks between reads instead of repeated hardware discovery. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

@@ -30,8 +30,8 @@ internal sealed partial class WindowsRz090528CpuNativeSession
         WindowsRz090528CpuQueryAdapter.TryRetainInstalledBackend(platform, readFreshUsbIdentity, token);
 
     internal Rz090528CpuLiveQueryResult QueryInstalled(CpuQueryInstalledApproval? approval,
-        Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>
-        WindowsRz090528CpuQueryAdapter.QueryInstalled(approval, readFreshUsbIdentity, platform, token);
+        Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default, CpuQueryProgress? progress = null) =>
+        WindowsRz090528CpuQueryAdapter.QueryInstalled(approval, readFreshUsbIdentity, platform, token, progress);
 
     internal CpuLiveCurveNativeResult ExecuteCurve(CpuLiveCurveNativeRequest request,
         CpuLiveCurveWriteProof? proof, Func<DeviceIdentity?> readFreshUsbIdentity, CancellationToken token = default) =>

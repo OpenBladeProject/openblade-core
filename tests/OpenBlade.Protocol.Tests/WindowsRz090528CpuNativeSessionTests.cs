@@ -7,6 +7,65 @@ public sealed class WindowsRz090528CpuNativeSessionTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Theory]
+    [InlineData("FullAdmission")]
+    [InlineData("MutexWait")]
+    [InlineData("Continuity")]
+    [InlineData("NativeInvocation")]
+    public async Task ProgressCanFreezeWhileInstalledBoundaryIsPending(string bucketName)
+    {
+        var bucket = Enum.Parse<CpuQueryBucket>(bucketName);
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var held = session.TryRetainInstalledBackend(() => Exact);
+        Assert.NotNull(held);
+        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        void Pending() { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(10))); }
+        if (bucket == CpuQueryBucket.FullAdmission) { platform.BeforeHost = Pending; }
+        if (bucket == CpuQueryBucket.MutexWait) { platform.BeforeWait = Pending; }
+        if (bucket == CpuQueryBucket.NativeInvocation) { platform.BeforeIoctl = Pending; }
+        int checks = 0;
+        var approval = held.CreateQueryApproval(() =>
+        {
+            if (++checks == 4 && bucket == CpuQueryBucket.Continuity) { Pending(); }
+            return true;
+        });
+        var progress = new CpuQueryProgress();
+        var worker = Task.Run(() => session.QueryInstalled(approval, () => Exact, progress: progress));
+        string frozen;
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            // Must complete while the native/guard/mutex fake remains blocked.
+            frozen = await Task.Run(() => progress.Snapshot(freeze: true)).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Contains("bucket " + bucket, frozen);
+            Assert.Contains("completed IOCTLs 0", frozen);
+            Assert.False(worker.IsCompleted);
+        }
+        finally { release.Set(); }
+        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker.WaitAsync(TimeSpan.FromSeconds(5))).Status);
+        Assert.Equal(frozen, progress.Snapshot());
+        Assert.Equal(164, platform.Invocations.Count);
+        Assert.Equal(new uint[] { 6 }.Concat(Enumerable.Repeat(0x5Eu, 12)), platform.Commands);
+    }
+
+    [Fact]
+    public void ProgressDoesNotChangeExactInstalledTrafficAndCountsReturnedCalls()
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var held = session.TryRetainInstalledBackend(() => Exact);
+        Assert.NotNull(held);
+        Assert.Equal(CpuLiveQueryStatus.Observed, session.QueryInstalled(held.CreateQueryApproval(() => true), () => Exact).Status);
+        var expected = platform.Invocations.ToArray(); platform.Invocations.Clear();
+        var progress = new CpuQueryProgress();
+        Assert.Equal(CpuLiveQueryStatus.Observed, session.QueryInstalled(held.CreateQueryApproval(() => true), () => Exact, progress: progress).Status);
+        Assert.Equal(expected, platform.Invocations);
+        Assert.Contains("completed IOCTLs 164", progress.Snapshot());
+        Assert.Contains("stage Cleanup", progress.Snapshot());
+        Assert.Contains("cumulative ms Other=", progress.Snapshot());
+    }
+
     [Fact]
     public void InstalledFactoryRetainsIdentityAndGrantsNoAuthority()
     {
@@ -281,15 +340,20 @@ public sealed class WindowsRz090528CpuNativeSessionTests
     private sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryDevice, ICpuQueryMutex
     {
         internal readonly List<uint> Commands = [];
+        internal readonly List<string> Invocations = [];
         internal int Opens, Pins, BackendReads, Releases, Duplicates, DuplicateCloses, AnchorCloses;
         internal int Start = 3;
         internal bool Pinned, Held, FailCleanup, Drift, FailDuplicateClose;
-        internal Action? BeforeIoctl;
+        internal Action? BeforeIoctl, BeforeHost, BeforeWait;
         internal Action? OnDuplicate;
         private uint selected, argument, result;
         private bool submitted;
 
-        public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
+        public HostIdentityReadResult ReadHost()
+        {
+            Interlocked.Exchange(ref BeforeHost, null)?.Invoke();
+            return new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
+        }
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
         public bool ControllersAbsent() => true;
         public IDisposable PinBackendFiles()
@@ -307,7 +371,7 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         public ICpuQueryDevice OpenExistingDevice() { Assert.True(Pinned); Assert.True(Held); Opens++; return new DeviceHandle(this, false); }
         public ICpuQueryMutex CreateSharedMutex() => this;
         public CpuQueryMutexWait Wait(TimeSpan timeout, CancellationToken cancellationToken)
-        { Assert.False(Held); Held = true; return CpuQueryMutexWait.Acquired; }
+        { Interlocked.Exchange(ref BeforeWait, null)?.Invoke(); Assert.False(Held); Held = true; return CpuQueryMutexWait.Acquired; }
         public void Release() { Assert.True(Held); Held = false; Releases++; }
         public void Dispose() { }
 
@@ -315,6 +379,7 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         {
             Assert.True(Pinned); Assert.True(Held);
             Interlocked.Exchange(ref BeforeIoctl, null)?.Invoke();
+            Invocations.Add($"{code:X8}:{Convert.ToHexString(input)}:{outputLength}");
             var output = new byte[outputLength];
             if (code == 0x81112F18)
             {

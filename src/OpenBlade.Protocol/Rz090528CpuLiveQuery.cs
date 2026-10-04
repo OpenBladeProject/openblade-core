@@ -115,7 +115,7 @@ internal static class CpuQueryPciTopology
 /// Saved configuration and PPT limits are deliberately absent from the result.
 /// </summary>
 internal sealed class Rz090528CpuLiveQuery(
-    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization)
+    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null)
 {
     internal Rz090528CpuLiveQueryResult Query(DeviceIdentity identity,
         CancellationToken cancellationToken = default)
@@ -134,7 +134,7 @@ internal sealed class Rz090528CpuLiveQuery(
                 new(CpuQueryStage.MutexWait, CpuQueryFailureCode.Timeout));
         }
 
-        var session = new Rz090528CpuMailboxSession(ioctl, synchronization);
+        var session = new Rz090528CpuMailboxSession(ioctl, synchronization, progress);
         try { return new(CpuLiveQueryStatus.Observed, session.Observe(cancellationToken)); }
         catch (Rz090528CpuMailboxSession.QueryFailure failure)
         {
@@ -153,7 +153,7 @@ internal sealed class Rz090528CpuLiveQuery(
 // One synchronous, lease-owned session shared by getter and exact per-core CO operations.
 // The raw PCI/SMN/mailbox helpers remain private.
 internal sealed class Rz090528CpuMailboxSession(
-    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization)
+    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null)
 {
     private const uint EnumeratePci = 0x81112F18;
     private const uint ReadPci = 0x81112F24;
@@ -288,7 +288,8 @@ internal sealed class Rz090528CpuMailboxSession(
         {
             previousResponse = ReadPciWord(bus, 0, 0, 0xC8, cancellationToken);
             if (previousResponse != 0) { break; }
-            synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
+            using (progress?.Enter(CpuQueryBucket.MailboxPolling))
+            { synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken); }
         }
         if (previousResponse == 0)
         {
@@ -319,7 +320,8 @@ internal sealed class Rz090528CpuMailboxSession(
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
 
-            synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
+            using (progress?.Enter(CpuQueryBucket.MailboxPolling))
+            { synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken); }
         }
         throw new QueryFailure(CpuLiveQueryStatus.Busy);
     }
@@ -327,6 +329,7 @@ internal sealed class Rz090528CpuMailboxSession(
     private byte[] Exchange(uint code, byte[] input, int outputLength, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        progress?.Boundary(stage, Operation(code));
         CpuQueryIoctlReply reply;
         try { reply = ioctl.Invoke(code, input, outputLength); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException

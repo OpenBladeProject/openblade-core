@@ -93,7 +93,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         using (diagnostic?.BeginStage("native curve query (admission/mutex/mailbox)"))
         {
             result = installed is not null
-                ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token)
+                ? session.QueryInstalled(installed, () => ReadBoundUsb(context!, token), token, diagnostic?.BeginNativeQuery())
                 : session.Query(approval, () => ReadBoundUsb(context!, token), token);
         }
         if (result.Diagnostic is { } detail)

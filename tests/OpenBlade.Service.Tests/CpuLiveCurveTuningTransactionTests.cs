@@ -7,6 +7,33 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveTuningTransactionTests
 {
     [Fact]
+    public async Task FirstTimeoutRetainsPendingNativeProgressAfterLateCompletion()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var pending = new TaskCompletionSource<CpuLiveCurveBackendObservation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var progress = diagnostic.BeginNativeQuery()!;
+        progress.Boundary(CpuQueryStage.CoreOffset, CpuQueryOperation.PciRead);
+        progress.CompletedIoctl();
+        using var native = progress.Enter(CpuQueryBucket.NativeInvocation);
+        backend.OnObserve = _ => pending.Task;
+        var result = await new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(20))
+            .ObserveOwnershipAsync(default, diagnostic).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        string frozen = Assert.IsType<string>(diagnostic.LiveObservationTimeoutContext);
+        Assert.Contains("bucket NativeInvocation, stage CoreOffset, operation PciRead, completed IOCTLs 1", frozen);
+        Assert.Contains("NativeInvocation=", frozen);
+        progress.CompletedIoctl(); native?.Dispose();
+        progress.Boundary(CpuQueryStage.Cleanup);
+        pending.SetResult(new(null, null)); await pending.Task;
+        diagnostic.RecordObservationCancellation(false);
+        Assert.Null(diagnostic.BeginNativeQuery());
+        Assert.Equal(frozen, diagnostic.LiveObservationTimeoutContext);
+        Assert.Equal(frozen[2..], diagnostic.FirstFailure);
+        Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
     public async Task TimeoutCapturesSynchronousAdmissionBeforeItReturnsACompletedTask()
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);

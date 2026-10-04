@@ -211,7 +211,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     private InstalledCpuBackendSnapshot? backendSnapshot;
     private int ownerThread, acquiring;
     private bool cleanupFailed;
-    private CpuQueryStage stage = CpuQueryStage.InitialUsbIdentity;
+    private CpuQueryProgress? progress;
+    private CpuQueryStage currentStage = CpuQueryStage.InitialUsbIdentity;
+    private CpuQueryStage stage
+    {
+        get => currentStage;
+        set { currentStage = value; progress?.Boundary(value); }
+    }
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity)
         : this(platform, readFreshUsbIdentity, new CpuQueryWireAdmission()) { }
@@ -252,15 +258,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     }
 
     internal static Rz090528CpuLiveQueryResult QueryInstalled(CpuQueryInstalledApproval? approval,
-        Func<DeviceIdentity?> readFreshUsbIdentity, ICpuQueryWindowsPlatform platform, CancellationToken token)
+        Func<DeviceIdentity?> readFreshUsbIdentity, ICpuQueryWindowsPlatform platform, CancellationToken token, CpuQueryProgress? progress = null)
     {
-        if (approval?.Consume(platform) != true)
-        { return new(CpuLiveQueryStatus.Unavailable, null, new(CpuQueryStage.Approval, CpuQueryFailureCode.AdmissionDenied)); }
-        return QueryWithPlatform(readFreshUsbIdentity, platform, token, approval.IsCurrent);
+        using (progress?.Enter(CpuQueryBucket.FullAdmission))
+        {
+            if (approval?.Consume(platform) != true)
+            { return new(CpuLiveQueryStatus.Unavailable, null, new(CpuQueryStage.Approval, CpuQueryFailureCode.AdmissionDenied)); }
+        }
+        return QueryWithPlatform(readFreshUsbIdentity, platform, token, approval.IsCurrent, progress);
     }
 
     private static Rz090528CpuLiveQueryResult QueryWithPlatform(Func<DeviceIdentity?> readFreshUsbIdentity,
-        ICpuQueryWindowsPlatform platform, CancellationToken cancellationToken, Func<bool>? current = null)
+        ICpuQueryWindowsPlatform platform, CancellationToken cancellationToken, Func<bool>? current = null, CpuQueryProgress? progress = null)
     {
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
@@ -268,16 +277,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveQueryStatus.Busy, null, new(CpuQueryStage.MutexWait, CpuQueryFailureCode.AdmissionDenied)); }
-        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity) { queryCurrent = current };
+        var adapter = new WindowsRz090528CpuQueryAdapter(platform, readFreshUsbIdentity) { queryCurrent = current, progress = progress };
         try
         {
-            var identity = readFreshUsbIdentity();
+            DeviceIdentity? identity;
+            progress?.Boundary(CpuQueryStage.InitialUsbIdentity);
+            using (progress?.Enter(CpuQueryBucket.Continuity)) { identity = readFreshUsbIdentity(); }
             if (!ExactUsb(identity))
             {
                 return new(CpuLiveQueryStatus.UnsupportedIdentity, null,
                     new(adapter.stage, CpuQueryFailureCode.AdmissionDenied));
             }
-            return new Rz090528CpuLiveQuery(adapter, adapter).Query(identity!, cancellationToken);
+            return new Rz090528CpuLiveQuery(adapter, adapter, progress).Query(identity!, cancellationToken);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or Win32Exception or InvalidOperationException or System.Security.SecurityException
@@ -301,6 +312,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 
     private bool FreshAdmission()
     {
+        using var measurement = progress?.Enter(CpuQueryBucket.FullAdmission);
         if (!(retained?.LifetimeCurrent ?? true) || !(queryCurrent?.Invoke() ?? true)) { return false; }
         try
         {
@@ -343,7 +355,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         {
             mutex = platform.CreateSharedMutex();
             stage = CpuQueryStage.MutexWait;
-            var wait = mutex.Wait(timeout, cancellationToken);
+            CpuQueryMutexWait wait;
+            using (progress?.Enter(CpuQueryBucket.MutexWait)) { wait = mutex.Wait(timeout, cancellationToken); }
             if (wait == CpuQueryMutexWait.Timeout) { return null; }
             acquired = true;
             // Pin directory names and all inspected files for the entire query.
@@ -406,6 +419,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 
     private void Cleanup(Action release)
     {
+        using var measurement = progress?.Enter(CpuQueryBucket.Cleanup);
         // Successful cleanup must preserve the admission stage that failed.
         // A cleanup exception has its own stage even before a lease exists.
         try { release(); }
@@ -433,11 +447,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         CpuQueryIoctlReply reply;
         try
         {
-            if (retained is not null && (!retained.LifetimeCurrent || !(queryCurrent?.Invoke() ?? true)))
-            { throw new QueryAdmissionDeniedException(); }
+            using (progress?.Enter(CpuQueryBucket.Continuity))
+            {
+                if (retained is not null && (!retained.LifetimeCurrent || !(queryCurrent?.Invoke() ?? true)))
+                { throw new QueryAdmissionDeniedException(); }
+            }
             if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
             else if (wire is CpuPowerNativeWire power) { power.BeforeNativeInvoke(code, input); }
-            reply = device.Invoke(code, input, outputLength);
+            using (progress?.Enter(CpuQueryBucket.NativeInvocation))
+            {
+                reply = device.Invoke(code, input, outputLength);
+                progress?.CompletedIoctl();
+            }
         }
         catch { wire.Abort(); throw; }
         if (wire.AcceptReply(code, input, outputLength, reply)) { return reply; }
@@ -483,6 +504,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             if (Environment.CurrentManagedThreadId != thread)
             { throw new InvalidOperationException("CPU query lease must be released on its owning thread."); }
             disposed = true;
+            using var measurement = adapter.progress?.Enter(CpuQueryBucket.Cleanup);
             adapter.stage = CpuQueryStage.Cleanup;
             try
             {
