@@ -59,6 +59,12 @@ public static class CpuVoltageHostState
         if (!GetProcessTimes(process, out long created, out _, out _, out _))
         { throw new Win32Exception(Marshal.GetLastWin32Error()); }
         if (created != enrollment.HostCreated) { return false; }
+        // A retained exited process can still supply its creation time while
+        // its live image query fails. Prove terminal state on this same handle
+        // before requesting information that is required only for a live host.
+        uint wait = WaitForSingleObject(process, 0);
+        if (wait == 0) { return false; }
+        if (wait != 258) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
         StringBuilder image = new(32768); int length = image.Capacity;
         if (!QueryFullProcessImageNameW(process, 0, image, ref length))
         { throw new Win32Exception(Marshal.GetLastWin32Error()); }
@@ -66,7 +72,7 @@ public static class CpuVoltageHostState
             || !ProcessIdToSessionId(enrollment.HostPid, out int session)
             || session != enrollment.WindowsSession)
         { throw new IOException("The CPU host process identity changed."); }
-        uint wait = WaitForSingleObject(process, 0);
+        wait = WaitForSingleObject(process, 0);
         return wait == 258 ? true : wait == 0 ? false
             : throw new Win32Exception(Marshal.GetLastWin32Error());
     }
