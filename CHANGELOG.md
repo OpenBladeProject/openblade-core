@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Preserve the rejected mailbox status and frozen readiness/submission evidence for returned CPU query errors, without changing native traffic or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Retain power-peer rejection and timeout details when live CPU curve observation succeeds, without changing observation or write admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Preserve pending native CPU query stage, mailbox wait phase, transport attempts/completions, zero-poll counts, completed calls and cumulative timing in the first observation-timeout diagnostic without changing query admission or deadlines. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

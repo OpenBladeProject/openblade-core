@@ -300,6 +300,7 @@ internal sealed class Rz090528CpuMailboxSession(
 
         if (previousResponse != 1)
         {
+            progress?.RejectMailboxResponse(previousResponse);
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
@@ -325,6 +326,7 @@ internal sealed class Rz090528CpuMailboxSession(
 
             if (response != 0)
             {
+                progress?.RejectMailboxResponse(response);
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
 

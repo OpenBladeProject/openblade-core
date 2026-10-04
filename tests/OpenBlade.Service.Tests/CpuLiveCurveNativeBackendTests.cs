@@ -17,6 +17,27 @@ public sealed class CpuLiveCurveNativeBackendTests
         Assert.Equal(1, platform.MutexCreates); Assert.Equal(0, platform.Opens); Assert.Equal(0, platform.Setters);
     }
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InstalledMailboxRejectionReachesExistingDiagnosticWithFrozenPhase(bool afterSubmission)
+    {
+        var platform = new Platform { RetainDevice = true, MailboxError = 0xFE, ErrorAfterSubmission = afterSubmission };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        var provider = new Provider();
+        using var held = session.TryRetainInstalledBackend(() => provider.Context!.Identity);
+        Assert.NotNull(held);
+        provider.InstalledApproval = () => held.CreateQueryApproval(() => true);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var result = await new CpuLiveCurveNativeBackend(session, provider).ObserveAsync(default, diagnostic);
+        Assert.Null(result.Observation);
+        Assert.StartsWith("native query PmVersion/InvalidData;", diagnostic.FirstFailure);
+        Assert.Contains("current mailbox " + (afterSubmission ? "ResponseWait" : "ReadinessWait"), diagnostic.FirstFailure);
+        Assert.Contains("rejected mailbox response 0x000000FE", diagnostic.FirstFailure);
+        Assert.Contains("submission attempted/completed " + (afterSubmission ? "True/True" : "False/False"), diagnostic.FirstFailure);
+        Assert.Equal(0, platform.Setters); Assert.Null(result.Context);
+    }
+
+    [Theory]
     [InlineData("2.03")]
     [InlineData("Unknown")]
     public async Task BiosProvenanceChangeDoesNotInvalidateTheOtherwiseExactFreshContext(string bios)
@@ -355,6 +376,7 @@ public sealed class CpuLiveCurveNativeBackendTests
     {
         internal volatile CpuLiveCurveContext? Context = CpuLiveCurveTuningTransactionTests.ContextFixture();
         internal bool QueryAllowed = true;
+        internal Func<CpuQueryInstalledApproval?>? InstalledApproval;
         internal bool ReuseProof;
         internal int QueryApprovals, Proofs;
         internal CpuLiveCurveNativeRequest? LastRequest;
@@ -362,6 +384,7 @@ public sealed class CpuLiveCurveNativeBackendTests
         internal readonly List<(CpuLiveCurveCommand, CpuLiveCurveCommandPurpose)> Admitted = [];
         private CpuLiveCurveWriteProof? cachedProof;
         public CpuLiveCurveContext? ReadFreshContext(CancellationToken token) => Context;
+        public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext context, CancellationToken token) => InstalledApproval?.Invoke();
         public CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token)
         { QueryApprovals++; return QueryAllowed ? CpuQueryAttendedApproval.AcknowledgePciTransportWrites(true) : null; }
         public bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
@@ -389,6 +412,8 @@ public sealed class CpuLiveCurveNativeBackendTests
         internal readonly List<List<int>> LeaseThreads = [];
         internal int Opens, MutexCreates, Setters, CoreReads;
         internal bool Held, Pinned;
+        internal uint MailboxError;
+        internal bool ErrorAfterSubmission, RetainDevice;
         internal string? Fault;
         internal Action? OnWait, BeforeSetterSelection, OnSetter;
         internal Action<int>? OnCoreRead;
@@ -405,7 +430,13 @@ public sealed class CpuLiveCurveNativeBackendTests
         public InstalledCpuBackendSnapshot ReadBackend() => new(Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair =>
             new CpuBackendFileMetadata(pair.Key, pair.Value, true, Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray(),
             true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, 3, true);
-        public ICpuQueryDevice OpenExistingDevice() { Assert.True(Held); Assert.True(Pinned); Opens++; capabilityRead = false; lastCommand = 0; return this; }
+        public ICpuQueryDevice OpenExistingDevice() { Assert.True(Held); Assert.True(Pinned); Opens++; capabilityRead = false; lastCommand = 0; return RetainDevice ? new RetainedDevice(this) : this; }
+        private sealed class RetainedDevice(Platform owner) : ICpuQueryRetainableDevice
+        {
+            public ICpuQueryDevice Duplicate() => new RetainedDevice(owner);
+            public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength) => owner.Invoke(code, input, outputLength);
+            public void Dispose() { }
+        }
         public ICpuQueryMutex CreateSharedMutex() { MutexCreates++; return this; }
         public CpuQueryMutexWait Wait(TimeSpan timeout, CancellationToken cancellationToken)
         { Assert.False(Held); Held = true; LeaseThreads.Add([Environment.CurrentManagedThreadId]); OnWait?.Invoke(); return CpuQueryMutexWait.Acquired; }
@@ -433,7 +464,7 @@ public sealed class CpuLiveCurveNativeBackendTests
                     : offset == 0x140 ? 0xFF55u : selected switch
                     {
                         0x03820AB0 => (~0xFF55u & 0xFFFF) << 5,
-                        0x03B10A80 => 1,
+                        0x03B10A80 => MailboxError != 0 && (!ErrorAfterSubmission || lastCommand != 0) ? MailboxError : 1,
                         0x03B10A88 => replyValue,
                         _ => throw new InvalidOperationException(),
                     };

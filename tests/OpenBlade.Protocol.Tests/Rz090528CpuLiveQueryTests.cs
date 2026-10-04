@@ -192,7 +192,17 @@ public sealed class Rz090528CpuLiveQueryTests
     {
         var sync = new FakeSynchronization();
         var wire = new ScriptedIoctl(sync) { IdleResponse = response };
-        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        var progress = new CpuQueryProgress();
+        var result = new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact);
+        if (response != 0)
+        {
+            string frozen = progress.Snapshot();
+            Assert.Contains("current mailbox ReadinessWait", frozen);
+            Assert.Contains("clear attempted/completed False/False, submission attempted/completed False/False", frozen);
+            Assert.Contains("rejected mailbox response 0x00000002", frozen);
+            progress.Boundary(CpuQueryStage.Cleanup); progress.RejectMailboxResponse(0xFF);
+            Assert.Equal(frozen, progress.Snapshot());
+        }
         Assert.Equal((CpuLiveQueryStatus)expected, result.Status);
         Assert.Empty(wire.Messages);
         Assert.DoesNotContain(wire.Calls, call => call.Code == 0x81112FF8 && U32(call.Input, 0) == 1);
@@ -203,7 +213,14 @@ public sealed class Rz090528CpuLiveQueryTests
     {
         var sync = new FakeSynchronization();
         var wire = new ScriptedIoctl(sync) { CompletionResponse = 0xFE };
-        var result = new Rz090528CpuLiveQuery(wire, sync).Query(Exact);
+        var progress = new CpuQueryProgress();
+        var result = new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact);
+        string frozen = progress.Snapshot();
+        Assert.Contains("current mailbox ResponseWait", frozen);
+        Assert.Contains("clear attempted/completed True/True, submission attempted/completed True/True", frozen);
+        Assert.Contains("rejected mailbox response 0x000000FE", frozen);
+        progress.MailboxPhase(CpuQueryMailboxPhase.ArgumentRead); progress.CompletedIoctl();
+        Assert.Equal(frozen, progress.Snapshot());
         Assert.Equal(CpuLiveQueryStatus.InvalidData, result.Status);
         Assert.Null(result.Observation);
         Assert.Single(wire.Messages);

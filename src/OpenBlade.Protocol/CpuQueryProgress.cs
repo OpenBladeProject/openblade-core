@@ -6,8 +6,9 @@ internal enum CpuQueryBucket { Other, FullAdmission, MutexWait, Continuity, Nati
 internal enum CpuQueryMailboxPhase { None, ReadinessWait, Preparation, Submission, ResponseWait, ArgumentRead }
 
 // Diagnostic-only state for one synchronous query. No callbacks, identifiers or
-// native data; sampling never waits for the native worker. Durations are exclusive
-// of nested buckets and include the currently pending operation at first timeout.
+// raw payloads; only a rejected mailbox status word is retained. Sampling never
+// waits for the native worker. Durations are exclusive of nested buckets and
+// include the current operation at the first timeout or mailbox rejection.
 internal sealed class CpuQueryProgress
 {
     private readonly object gate = new();
@@ -21,6 +22,7 @@ internal sealed class CpuQueryProgress
     private int readinessZeros, responseZeros;
     private bool clearAttempted, clearCompleted, submissionAttempted, submissionCompleted;
     private string? frozen;
+    private uint? rejectedMailboxResponse;
 
     internal IDisposable? Enter(CpuQueryBucket next)
     {
@@ -59,6 +61,7 @@ internal sealed class CpuQueryProgress
                 if (next == CpuQueryMailboxPhase.ReadinessWait)
                 {
                     readinessZeros = responseZeros = 0;
+                    rejectedMailboxResponse = null;
                     clearAttempted = clearCompleted = submissionAttempted = submissionCompleted = false;
                 }
                 if (next == CpuQueryMailboxPhase.Preparation) { clearAttempted = true; }
@@ -93,6 +96,19 @@ internal sealed class CpuQueryProgress
         }
         catch { }
     }
+    internal void RejectMailboxResponse(uint response)
+    {
+        try
+        {
+            lock (gate)
+            {
+                if (frozen is not null) { return; }
+                rejectedMailboxResponse = response;
+                Snapshot(freeze: true);
+            }
+        }
+        catch { } // Diagnostic failure cannot change the existing rejection.
+    }
     internal string Snapshot(bool freeze = false)
     {
         try
@@ -103,7 +119,8 @@ internal sealed class CpuQueryProgress
                 Accumulate();
                 string detail = $"; native progress bucket {bucket}, stage {stage}, operation {operation?.ToString() ?? "None"}, completed IOCTLs {completed}; cumulative ms "
                     + string.Join(",", Enum.GetValues<CpuQueryBucket>().Select(value => $"{value}={(long)milliseconds[(int)value]}"))
-                    + $"; current mailbox {mailboxPhase}, readiness zeros {readinessZeros}, response zeros {responseZeros}, clear attempted/completed {clearAttempted}/{clearCompleted}, submission attempted/completed {submissionAttempted}/{submissionCompleted}";
+                    + $"; current mailbox {mailboxPhase}, readiness zeros {readinessZeros}, response zeros {responseZeros}, clear attempted/completed {clearAttempted}/{clearCompleted}, submission attempted/completed {submissionAttempted}/{submissionCompleted}"
+                    + (rejectedMailboxResponse is { } response ? $"; rejected mailbox response 0x{response:X8}" : string.Empty);
                 if (freeze) { frozen = detail; }
                 return detail;
             }
