@@ -123,6 +123,8 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (proof is null || !proof.Consume(request) || !MatchesFresh(context, token))
         { return CpuLiveCurveSubmission.NotSubmitted; }
         var boundProof = new ContextBoundProof(request, proof, this, context, token);
+        // ReadFreshContext uses the provider's exact active getter continuity
+        // during preparation/readback, and full context outside that scope.
         var result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token);
         state.Record(result);
         if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
@@ -166,15 +168,20 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
+        internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => source.BeginRead(exactRequest);
+        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) =>
+            source.ReadCurrent(exactRequest) && owner.MatchesFresh(context, token);
+        internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) =>
+            source.CompleteRead(exactRequest) && owner.MatchesFresh(context, token);
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>
-            IsCurrent(exactRequest) && source.AdmitPowerPeer(exactRequest, capability, cap) && IsCurrent(exactRequest);
+            IsReadCurrent(exactRequest) && source.AdmitPowerPeer(exactRequest, capability, cap) && IsReadCurrent(exactRequest);
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.Current(exactRequest) && owner.MatchesFresh(context, token);
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
-            if (!IsCurrent(exactRequest)) { return null; }
+            if (!IsReadCurrent(exactRequest)) { return null; }
             var range = source.ReadFreshRange(exactRequest);
-            return IsCurrent(exactRequest) ? range : null;
+            return IsReadCurrent(exactRequest) ? range : null;
         }
     }
 }

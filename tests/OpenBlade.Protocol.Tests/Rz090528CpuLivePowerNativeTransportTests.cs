@@ -7,6 +7,55 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Fact]
+    public void CombinedReadContinuityKeepsExactTrafficAndIndependentRestoreBarrier()
+    {
+        var ordinary = new Platform { Capability = 6 };
+        var originalRequest = CurveRequest(ordinary);
+        Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(ordinary)
+            .ExecuteCurve(originalRequest, new CurveProof(originalRequest), () => Exact).Verified);
+        var platform = new Platform { Capability = 6 };
+        var request = CurveRequest(platform);
+        var proof = new CurveProof(request) { Scoped = true };
+        platform.AtSetter = () => { Assert.False(proof.Reading); Assert.Equal(1, proof.Ends); };
+        Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact).Verified);
+        Assert.Equal(ordinary.Calls, platform.Calls);
+        Assert.Equal(2, proof.Begins); Assert.Equal(2, proof.Ends); Assert.Equal(2, proof.Completions);
+        Assert.True(proof.ReadChecks > 100); Assert.True(proof.FullChecks > 0);
+        Assert.True(CpuLiveCurveCommand.TryCreate(0, -1, 0xFF55, out var command));
+        var restore = new CpuLiveCurveNativeRequest(new(), command, CpuLiveCurveCommandPurpose.Restore,
+            request.After, new(platform.Pair, null));
+        var restoreProof = new CurveProof(restore) { Scoped = true };
+        platform.AtSetter = () => { Assert.False(restoreProof.Reading); Assert.Equal(1, restoreProof.Ends); };
+        Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(restore, restoreProof, () => Exact).Verified);
+        Assert.Equal(2, restoreProof.Begins); Assert.Equal(2, restoreProof.Completions);
+        Assert.True(restoreProof.FullChecks > 0); Assert.Equal(2, platform.Setters);
+    }
+
+    [Theory]
+    [InlineData("read-drift")]
+    [InlineData("cancel")]
+    [InlineData("setter-barrier")]
+    [InlineData("after-setter")]
+    [InlineData("final-read")]
+    public void CombinedReadScopeCannotBypassDriftCancellationOrSetterAuthority(string fault)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var platform = new Platform { Capability = 6 };
+        var request = CurveRequest(platform);
+        var proof = new CurveProof(request) { Scoped = true };
+        if (fault == "read-drift") { platform.AtFirstCopy = () => proof.ReadAllowed = false; }
+        if (fault == "cancel") { platform.AtFirstCopy = cancellation.Cancel; }
+        if (fault == "setter-barrier") { proof.FullAllowed = () => proof.Ends == 0; }
+        if (fault == "after-setter") { platform.AtSetter = () => proof.ReadAllowed = false; }
+        if (fault == "final-read") { proof.CompletionAllowed = () => proof.Completions < 2; }
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact, cancellation.Token);
+        Assert.False(result.Verified); Assert.True(result.CleanupComplete); Assert.False(proof.Reading);
+        Assert.Equal(fault is "after-setter" or "final-read" ? 1 : 0, platform.Setters);
+        if (platform.Setters == 0) { Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition); }
+        else { Assert.NotEqual(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition); }
+    }
+
     [Theory]
     [InlineData(0, 0x32u)]
     [InlineData(1, 0x33u)]
@@ -429,15 +478,30 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     private sealed class CurveProof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
     {
         internal bool PeerAllowed = true;
+        internal bool Scoped, Reading, ReadAllowed = true;
+        internal int Begins, Ends, Completions, ReadChecks, FullChecks;
+        internal Func<bool>? FullAllowed, CompletionAllowed;
         internal Func<bool>? ReadRange;
         private bool rangeRead;
+        internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (!Scoped) { return null; }
+            Assert.False(Reading); Begins++; Reading = true;
+            return new ReadScope(() => { Reading = false; Ends++; });
+        }
+        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest)
+        { Assert.True(Reading); ReadChecks++; return ReadAllowed; }
+        internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest)
+        { Assert.True(Reading); Completions++; return ReadAllowed && (CompletionAllowed?.Invoke() ?? true); }
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => PeerAllowed;
-        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => true;
+        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)
+        { Assert.False(Reading); FullChecks++; return FullAllowed?.Invoke() ?? true; }
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
             if (!rangeRead) { rangeRead = true; if (ReadRange?.Invoke() == false) { return null; } }
             return new(0x5000A, 0, 50, 1, true);
         }
+        private sealed class ReadScope(Action end) : IDisposable { public void Dispose() => end(); }
     }
     private sealed class Proof(CpuLivePowerNativeRequest request, Platform platform) : CpuLivePowerWriteProof(request)
     {
@@ -460,6 +524,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         internal CpuLivePowerPair Pair = Rz090528CpuLivePowerNativeTransportTests.Pair(85000, 80000);
         internal readonly CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal readonly List<uint> Commands = [];
+        internal readonly List<string> Calls = [];
         internal readonly List<string> Cleanup = [];
         internal uint Capability = 2, SetterArgument, FirmwareVersion = 0x0B5D1600;
         internal int Copies, Setters, Opens, Releases, BackendReads;
@@ -502,6 +567,7 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
         }
         public CpuQueryIoctlReply Invoke(uint code, byte[] input, int length)
         {
+            Calls.Add($"{code:X8}/{length}/{Convert.ToHexString(input)}");
             Assert.True(Pinned); Assert.True(Held);
             var output = new byte[length];
             if (code == 0x81112F18)

@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reuse exact read continuity during a native CPU curve operation's preparation and readback while retaining independent full setter and restoration admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Preserve exact terminal CPU non-submission after a caller deadline and settle only its matching ownership record, without claiming a fresh observation or restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Load Windows identity dependencies before pipe impersonation so the first Identification client can authenticate without a cached assembly-binding failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

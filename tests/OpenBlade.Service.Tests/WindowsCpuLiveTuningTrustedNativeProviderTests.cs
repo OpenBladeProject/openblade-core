@@ -9,6 +9,48 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ConsumedOperationReadScopeBorrowsMetadataAndFullyRevalidates(bool finalDrift)
+    {
+        using var fixture = new Fixture();
+        int full = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            var proof = fixture.Provider.CreateWriteProof(context, request, fixture.OperationToken)!;
+            Assert.Throws<InvalidOperationException>(() => proof.BeginRead(request));
+            Assert.True(proof.Consume(request));
+            int initialFull = full;
+            using (var scope = proof.BeginRead(request))
+            {
+                Assert.NotNull(scope);
+                int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads;
+                var other = Request(-2);
+                Assert.False(proof.ReadCurrent(other));
+                Assert.Throws<InvalidOperationException>(() => proof.BeginRead(other));
+                for (int i = 0; i < 250; i++) { Assert.True(proof.ReadCurrent(request)); }
+                fixture.OnMinMax = () => Assert.Null(fixture.Provider.CreateWriteProof(context, other, default));
+                Assert.NotNull(proof.ReadFreshRange(request));
+                Assert.Equal(hosts, fixture.Platform.HostReads); Assert.Equal(usb, fixture.UsbReads);
+                Assert.Equal(initialFull + 1, full); // Metadata borrowed, never nested or disposed the caller.
+                Assert.True(proof.ReadCurrent(request));
+                if (finalDrift) { fixture.Platform.HostValid = false; }
+                Assert.Equal(!finalDrift, proof.CompleteRead(request));
+                Assert.True(fixture.Platform.HostReads > hosts);
+                Assert.Equal(initialFull + 2, full);
+                if (finalDrift)
+                { fixture.Platform.HostValid = true; Assert.False(proof.ReadCurrent(request)); }
+            }
+            // Read continuity never substitutes for fresh write authority.
+            fixture.Admitted = false;
+            Assert.False(proof.Current(request));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task PowerPeerGetterSharesContinuityAndRequiresIndependentFullCompletion(bool finalDrift)
     {
         using var fixture = new Fixture();

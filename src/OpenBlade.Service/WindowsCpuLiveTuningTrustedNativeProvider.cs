@@ -281,6 +281,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         private CpuGetterUsbContinuity? usb;
         private Func<bool>? controllers;
         private bool disposed;
+        internal bool IsDisposed => disposed;
         internal bool Bind(CpuLiveCurveContext context)
         {
             Context = context;
@@ -322,8 +323,18 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     }
 
     private CpuLiveCurveRangeResult ReadCurveMetadata(CpuLiveCurveContext expected, Func<bool> fullAdmission,
-        CancellationToken token)
+        CancellationToken token, GetterScope? borrowed = null)
     {
+        if (borrowed is not null)
+        {
+            // Only the exact write proof can pass its own active read scope.
+            // The enclosing scope owns final revalidation and disposal.
+            if (!ReferenceEquals(borrowed, getterScope) || !borrowed.Current(expected))
+            { return new(null, CpuLiveCurveRangeStatus.AdmissionDenied, true, new(), new()); }
+            var borrowedResult = metadata.Read(expected, new RangeScope(() => borrowed.Current(expected)), token);
+            return borrowed.Current(expected) ? borrowedResult
+                : borrowedResult with { Range = null, Status = CpuLiveCurveRangeStatus.AdmissionDenied };
+        }
         using var scope = BeginGetter(token);
         var getter = getterScope;
         if (getter is null) { return metadata.Read(expected, new RangeScope(fullAdmission), token); }
@@ -351,9 +362,31 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     {
         private bool read;
         private CpuLiveCurveTrustedRange? range;
+        private GetterScope? readScope;
+        private GetterScope? ActiveRead => readScope is { IsDisposed: false } ? readScope : null;
+        private bool CheckRead(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is null
+            ? Current(exactRequest) : ReadCurrent(exactRequest);
+        internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (ActiveRead is not null) { throw new InvalidOperationException("CPU operation read scope is already active."); }
+            var scope = owner.BeginGetter(token);
+            if (scope is null) { return null; } // Existing full checks remain the fallback.
+            try
+            {
+                readScope = owner.getterScope;
+                if (!context.MatchesHardwareContext(owner.ReadFreshContext(token)))
+                { throw new InvalidOperationException("CPU operation read context changed."); }
+                return scope;
+            }
+            catch { scope.Dispose(); throw; }
+        }
+        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is { } getter
+            ? ReferenceEquals(owner.getterScope, getter) && getter.Current(context) : current();
+        internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is { } getter
+            ? ReferenceEquals(owner.getterScope, getter) && owner.CompleteGetter(context, token) : current();
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)
         {
-            if (!Current(exactRequest) || exactRequest.PowerPeer is not { } peer
+            if (!CheckRead(exactRequest) || exactRequest.PowerPeer is not { } peer
                 || CpuLivePowerCapability.TryDecode(capability) is null) { return false; }
             // The unchanged, unowned peer requires observation authority only.
             // Any owned original still needs independent PPT restoration admission;
@@ -371,22 +404,22 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                             peer.Expected, original, token)) { return false; }
                 }
             }
-            return current();
+            return CheckRead(exactRequest);
         }
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => current();
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
-            if (!current()) { return null; }
+            if (!CheckRead(exactRequest)) { return null; }
             // One fresh, completely decoded getter pair under this exact native
             // lease. Repeated checks do not invoke the same WMI getter again.
             if (!read)
             {
                 read = true;
-                var result = owner.ReadCurveMetadata(context, current, token);
+                var result = owner.ReadCurveMetadata(context, current, token, ActiveRead);
                 if (!result.CleanupComplete) { worker.Invalidate(); }
                 if (result is { Status: CpuLiveCurveRangeStatus.Complete, CleanupComplete: true }) { range = result.Range; }
             }
-            return current() && range?.AllowsOperation(exactRequest) == true ? range : null;
+            return CheckRead(exactRequest) && range?.AllowsOperation(exactRequest) == true ? range : null;
         }
     }
 }

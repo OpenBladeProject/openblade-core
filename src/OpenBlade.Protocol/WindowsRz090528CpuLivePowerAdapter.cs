@@ -105,6 +105,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     private readonly CpuLivePowerNativeRequest? request;
     private readonly CpuLiveCurveNativeRequest? curveRequest;
     private readonly Action checkpoint, snapshotAdmission, finalAdmission;
+    private readonly Action? afterSetter;
     private readonly Queue<Step> steps = new();
     private Step? pending;
     private bool failed, scriptCreated, waiting;
@@ -121,8 +122,9 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
     internal CpuPowerNativeWire(CpuLivePowerNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission)
         : this(request, null, checkpoint, snapshotAdmission, finalAdmission) { }
 
-    internal CpuPowerNativeWire(CpuLiveCurveNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission)
-        : this(null, request, checkpoint, snapshotAdmission, finalAdmission) { }
+    internal CpuPowerNativeWire(CpuLiveCurveNativeRequest request, Action checkpoint, Action snapshotAdmission, Action finalAdmission,
+        Action? afterSetter = null)
+        : this(null, request, checkpoint, snapshotAdmission, finalAdmission) { this.afterSetter = afterSetter; }
 
     private CpuPowerNativeWire(CpuLivePowerNativeRequest? request, CpuLiveCurveNativeRequest? curveRequest,
         Action checkpoint, Action snapshotAdmission, Action finalAdmission)
@@ -191,6 +193,7 @@ internal sealed class CpuPowerNativeWire : ICpuNativeWireAdmission
         }
         steps.Dequeue();
         if (step.Accept?.Invoke(reply.Bytes) == false) { Abort(); return false; }
+        if (step.Setter) { afterSetter?.Invoke(); }
         return true;
     }
 

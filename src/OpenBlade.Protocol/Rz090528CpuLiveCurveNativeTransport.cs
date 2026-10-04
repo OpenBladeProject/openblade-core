@@ -66,10 +66,27 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
 {
     private readonly long created = Stopwatch.GetTimestamp();
     private int consumed;
-    internal bool Consume(CpuLiveCurveNativeRequest exactRequest) =>
-        Interlocked.Exchange(ref consumed, 1) == 0 && ReferenceEquals(request, exactRequest) && Current(exactRequest);
+    private bool admitted;
+    internal bool Consume(CpuLiveCurveNativeRequest exactRequest)
+    {
+        if (Interlocked.Exchange(ref consumed, 1) != 0 || !Current(exactRequest)) { return false; }
+        admitted = true;
+        return true;
+    }
     internal bool Current(CpuLiveCurveNativeRequest exactRequest) => ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsCurrent(exactRequest);
+    // Optional read continuity for this consumed operation only. Neither these
+    // checks nor their scope grant setter authority; Current remains independent.
+    internal IDisposable? BeginRead(CpuLiveCurveNativeRequest exactRequest) =>
+        admitted && ReferenceEquals(request, exactRequest) && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+            ? BeginReadCore(exactRequest) : throw new InvalidOperationException("Invalid consumed CPU read scope.");
+    internal bool ReadCurrent(CpuLiveCurveNativeRequest exactRequest) => admitted && ReferenceEquals(request, exactRequest)
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsReadCurrent(exactRequest);
+    internal bool CompleteRead(CpuLiveCurveNativeRequest exactRequest) => admitted && ReferenceEquals(request, exactRequest)
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && CompleteReadCore(exactRequest);
+    internal virtual IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => null;
+    internal virtual bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
+    internal virtual bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
     // Called under the initiating native lease, before the peer sample and at
     // the final setter boundary. Independently admit requested-state semantics
     // and every differing first-original restore against fresh range/caps.

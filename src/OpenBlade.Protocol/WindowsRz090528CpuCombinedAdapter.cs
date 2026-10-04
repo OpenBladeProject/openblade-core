@@ -15,6 +15,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         IDisposable? lease = null;
+        IDisposable? readScope = null;
         WindowsRz090528CpuQueryAdapter? adapter = null;
         CpuPowerNativeWire? wire = null;
         bool cleanup = true, verified = false;
@@ -25,13 +26,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             token.ThrowIfCancellationRequested();
             if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb()) || !ExactPlatform())
             { throw new CpuPowerAdmissionException(); }
-            wire = new(request, Check, CheckPeer, CheckFinal);
+            readScope = proof.BeginRead(request);
+            wire = new(request, Check, CheckPeer, BeforeSetter, BeginReadback);
             adapter = new(platform, readUsb, wire);
             lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
             if (lease is null || !ExactPlatform()) { throw new CpuPowerAdmissionException(); }
             Check();
             failure = CpuLiveCurveNativeFailure.Transport;
             wire.Run(adapter, token);
+            EndRead();
             CheckFinal();
             verified = wire.Complete && CpuLiveCurveNativeRequest.Equal(wire.CurveAfter, request.After);
             failure = verified ? CpuLiveCurveNativeFailure.None : CpuLiveCurveNativeFailure.ReadbackDrift;
@@ -42,6 +45,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         finally
         {
             wire?.Abort();
+            try { readScope?.Dispose(); }
+            catch { cleanup = false; }
             try { lease?.Dispose(); }
             catch { cleanup = false; }
             finally
@@ -57,9 +62,31 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         void Check()
         {
             token.ThrowIfCancellationRequested();
-            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90) || proof?.Current(request) != true)
+            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                || (readScope is null ? proof?.Current(request) : proof?.ReadCurrent(request)) != true)
             { throw new CpuPowerAdmissionException(); }
         }
+        void EndRead()
+        {
+            if (readScope is null) { return; }
+            try
+            {
+                if (proof?.CompleteRead(request) != true) { throw new CpuPowerAdmissionException(); }
+            }
+            finally
+            {
+                try { readScope.Dispose(); }
+                catch { cleanup = false; throw; }
+                finally { readScope = null; }
+            }
+        }
+        void BeforeSetter()
+        {
+            EndRead();
+            // The read proof is gone before all original fresh setter checks.
+            CheckFinal();
+        }
+        void BeginReadback() => readScope = proof!.BeginRead(request);
         bool ExactPlatform() => platform is ICpuPmWindowsPlatform pm
             && pm.ReadHost() is { Failure: null, Evidence: { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" } }
             && pm.ReadPackage() is { MaximumExtendedLeaf: >= 0x80000001, Package: 1 };
