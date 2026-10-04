@@ -42,7 +42,15 @@ internal sealed class CpuServiceInventory
         if (kind is not (CpuServiceInventoryKind.Drivers or CpuServiceInventoryKind.Win32)) { throw new ArgumentOutOfRangeException(nameof(kind)); }
         this.kind = kind; this.platform = platform ?? throw new ArgumentNullException(nameof(platform));
     }
-    public IReadOnlyList<CpuServiceInventoryEntry> ReadAll()
+    public IReadOnlyList<CpuServiceInventoryEntry> ReadAll() => Read(null);
+
+    // Getter-only activity check against a completed full inventory. Configuration
+    // is verified again before accepting the getter; names/types/display and live
+    // status stay fresh, including omitted registry-backed service templates.
+    internal IReadOnlyList<CpuServiceInventoryEntry> ReadGetterActivity(IReadOnlyList<CpuServiceInventoryEntry> baseline) =>
+        kind == CpuServiceInventoryKind.Win32 ? Read(baseline) : throw new InvalidOperationException();
+
+    private IReadOnlyList<CpuServiceInventoryEntry> Read(IReadOnlyList<CpuServiceInventoryEntry>? baseline)
     {
         nint buffer = Marshal.AllocHGlobal(BufferBytes);
         try
@@ -61,6 +69,34 @@ internal sealed class CpuServiceInventory
                 string display = ReadString(buffer, entry.DisplayName, checked((int)result.Count * stride));
                 if (!entries.TryAdd(name, (entry, display)) || !RuntimeBelongs(kind, entry.Type) || entry.State is < 1 or > 7)
                 { throw new IOException("Driver inventory record denied."); }
+            }
+            if (baseline is not null)
+            {
+                if (baseline.Count > MaximumEntries) { throw new IOException("Getter inventory bound."); }
+                var activity = new List<CpuServiceInventoryEntry>(baseline.Count);
+                var seenBaseline = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prior in baseline)
+                {
+                    if (!seenBaseline.Add(prior.Name)) { throw new IOException("Getter inventory duplicate."); }
+                    if (!entries.TryGetValue(prior.Name, out var current))
+                    {
+                        if (prior.ConfiguredType is not (0x50 or 0x60)) { throw new IOException("Getter service disappeared."); }
+                        var status = platform.ReadUnenumeratedTemplateStatus(prior.Name);
+                        if (status.Type != prior.Type || status.State != 1) { throw new IOException("Getter template changed."); }
+                        current = (new NativeEntry { Type = status.Type, State = status.State }, prior.DisplayName);
+                    }
+                    else { entries.Remove(prior.Name); }
+                    if (current.Native.Type != prior.Type || current.Display != prior.DisplayName
+                        || !TypesAgree(kind, prior.ConfiguredType, current.Native.Type))
+                    { throw new IOException("Getter service identity changed."); }
+                    if ((Rz090528CpuControllerPresence.IsGetterControllerName(prior.Name)
+                        || Rz090528CpuControllerPresence.IsGetterControllerName(prior.DisplayName))
+                        && platform.ReadConfiguredType(prior.Name) != prior.ConfiguredType)
+                    { throw new IOException("Getter controller configuration changed."); }
+                    activity.Add(prior with { State = current.Native.State });
+                }
+                if (entries.Count != 0) { throw new IOException("Getter service inventory changed."); }
+                return activity.AsReadOnly();
             }
             var registry = platform.ReadRegistryEntries();
             if (registry.Count < entries.Count || registry.Count > MaximumEntries)

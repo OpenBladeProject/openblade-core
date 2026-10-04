@@ -91,6 +91,25 @@ internal sealed class CpuInstalledBackendLease : IDisposable
         }
     }
     internal bool LifetimeCurrent { get { lock (gate) { return !revoked; } } }
+    internal bool GetterContinuityCurrent
+    {
+        get
+        {
+            lock (gate)
+            {
+                if (revoked || closed || uncertain) { return false; }
+                try
+                {
+                    var current = platform.ReadBackend();
+                    if (SameRegistration(baseline, current)
+                        && Rz090528InstalledCpuBackendInspector.Evaluate(current).Availability == CpuTuningBackendAvailability.Available)
+                    { return true; }
+                }
+                catch { }
+                Revoke(false); return false;
+            }
+        }
+    }
     internal bool Matches(ICpuQueryWindowsPlatform candidate) => ReferenceEquals(platform, candidate);
     internal bool RegistrationMatches(InstalledCpuBackendSnapshot snapshot) => SameRegistration(baseline, snapshot);
     internal static bool SameRegistration(InstalledCpuBackendSnapshot before, InstalledCpuBackendSnapshot after) =>

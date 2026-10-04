@@ -7,6 +7,89 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Fact]
+    public async Task MetadataCheckpointsShareGetterContextButCannotAuthorizeAWrite()
+    {
+        using var fixture = new Fixture();
+        int full = 0, continuity = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return true; }, continuity: _ => { continuity++; return true; });
+        await fixture.Run(context =>
+        {
+            fixture.OnMinMax = () =>
+            {
+                var nested = Request(-2);
+                Assert.Null(fixture.Provider.CreateWriteProof(context, nested, default));
+            };
+            var request = Request(-2);
+            Assert.True(fixture.Provider.CheckWriteAdmission(context, request.Command, request.Purpose, fixture.OperationToken));
+            Assert.Equal(2, full); Assert.True(continuity > 10);
+            // Scope has ended; actual command admission remains independent.
+            fixture.Admitted = false;
+            Assert.Null(fixture.Provider.CreateWriteProof(context, request, fixture.OperationToken));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetterReusesExactContextThenRequiresFullFinalRevalidation(bool finalDrift)
+    {
+        using var fixture = new Fixture();
+        int full = 0, continuous = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => { continuous++; return fixture.Admitted; });
+        await fixture.Run(_ =>
+        {
+            for (int query = 0; query < 2; query++)
+            {
+                using var scope = fixture.Provider.BeginGetter(fixture.OperationToken);
+                var context = fixture.Provider.ReadFreshContext(fixture.OperationToken)!;
+                var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+                int hosts = fixture.Platform.HostReads, usbReads = fixture.UsbReads;
+                for (int i = 0; i < 164; i++) { Assert.True(approval.IsCurrent()); }
+                Assert.Equal(hosts, fixture.Platform.HostReads);
+                Assert.Equal(usbReads, fixture.UsbReads);
+                Assert.True(continuous >= 164);
+                if (finalDrift) { fixture.Platform.HostValid = false; }
+                Assert.Equal(!finalDrift, fixture.Provider.CompleteGetter(context, fixture.OperationToken));
+                Assert.True(fixture.Platform.HostReads > hosts);
+                if (finalDrift)
+                {
+                    fixture.Platform.HostValid = true;
+                    Assert.False(approval.IsCurrent());
+                    break;
+                }
+                Assert.Equal((query + 1) * 2, full);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData("controller")]
+    [InlineData("driver")]
+    [InlineData("usb")]
+    public async Task GetterChecksMutableContinuityWithoutFullDiscovery(string drift)
+    {
+        using var fixture = new Fixture();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => true, continuity: _ => true);
+        await fixture.Run(_ =>
+        {
+            using var scope = fixture.Provider.BeginGetter(fixture.OperationToken);
+            var context = fixture.Provider.ReadFreshContext(fixture.OperationToken)!;
+            var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+            int hosts = fixture.Platform.HostReads;
+            if (drift == "controller") { fixture.ControllerCurrent = false; }
+            if (drift == "driver") { fixture.Platform.Running = false; }
+            if (drift == "usb") { fixture.Usb = null; }
+            Assert.False(approval.IsCurrent());
+            Assert.Equal(hosts, fixture.Platform.HostReads);
+            fixture.ControllerCurrent = true; fixture.Platform.Running = true;
+            fixture.Usb = context.Identity;
+            Assert.False(approval.IsCurrent());
+        });
+    }
+
+    [Fact]
     public async Task IdentityDriftRevokesEntireGetterBeforeANewApprovalCanBeCreated()
     {
         using var fixture = new Fixture();
@@ -267,7 +350,8 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal readonly WindowsCpuLiveTuningTrustedNativeProvider Provider;
         private readonly ProbeBackend backend = new();
         private readonly CpuTuningController controller;
-        internal int MetadataOpens;
+        internal int MetadataOpens, UsbReads;
+        internal bool ControllerCurrent = true;
         internal uint Minimum, Maximum = 50;
         internal bool Admitted = true;
         internal DeviceIdentity? Usb = new("RZ09-0528", 0x1532, 0x02C6, "Unknown");
@@ -279,9 +363,11 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         internal Fixture()
         {
             CpuTuningController? captured = null;
-            Provider = new(WindowsRz090528CpuNativeSession.ForPlatform(Platform), () => captured, new Source(), () => Usb,
+            Provider = new(WindowsRz090528CpuNativeSession.ForPlatform(Platform), () => captured, new Source(), () => { UsbReads++; return Usb; },
                 _ => new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42),
-                new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataOpens++; return new Metadata(this); }));
+                new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataOpens++; return new Metadata(this); }),
+                () => new CpuGetterUsbContinuity(() => new(Usb is null ? null : @"USB\VID_1532&PID_02C6\test", 8, 0),
+                    @"USB\VID_1532&PID_02C6\test", () => { }), () => () => ControllerCurrent);
             controller = captured = new(new Source(), curveBackend: backend,
                 curveStore: new CpuLiveCurveTuningTransactionTests.MemoryStore());
         }
@@ -322,9 +408,10 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 
     internal sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryRetainableDevice, ICpuQueryMutex
     {
-        internal int Opens, Pins;
-        internal bool Running = true;
-        public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "Unknown"), null);
+        internal int Opens, Pins, HostReads;
+        internal bool Running = true, HostValid = true;
+        public HostIdentityReadResult ReadHost()
+        { HostReads++; return new(new(HostValid ? "Razer" : "Other", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "Unknown"), null); }
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
         public bool ControllersAbsent() => true;
         public IDisposable PinBackendFiles() { Pins++; return new Cleanup(); }

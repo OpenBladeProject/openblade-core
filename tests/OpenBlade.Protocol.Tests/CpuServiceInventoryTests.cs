@@ -7,6 +7,37 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class CpuServiceInventoryTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("config-drift")]
+    [InlineData("partial")]
+    [InlineData("type-drift")]
+    public void GetterActivityUsesBoundedScmAndChecksRelevantConfiguration(string? drift)
+    {
+        var platform = new Fake { Type = 0x20 };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var baseline = inventory.ReadAll();
+        int registry = platform.RegistryReads;
+        platform.Fault = drift ?? string.Empty;
+        if (drift == "type-drift") { platform.RuntimeType = 0x10; }
+        if (drift is null) { Assert.Single(inventory.ReadGetterActivity(baseline)); }
+        else { Assert.Throws<IOException>(() => inventory.ReadGetterActivity(baseline)); }
+        Assert.Equal(registry, platform.RegistryReads);
+    }
+
+    [Fact]
+    public void GetterActivityStillChecksOmittedTemplateAndRejectsNewInventory()
+    {
+        var platform = new Fake { Type = 0x20, Fault = "unmatched-template" };
+        var inventory = new CpuServiceInventory(CpuServiceInventoryKind.Win32, platform);
+        var baseline = inventory.ReadAll();
+        Assert.Equal(2, inventory.ReadGetterActivity(baseline).Count);
+        platform.Fault = "template-active";
+        Assert.Throws<IOException>(() => inventory.ReadGetterActivity(baseline));
+        platform.Fault = string.Empty;
+        Assert.Throws<IOException>(() => inventory.ReadGetterActivity([]));
+    }
+
     [Fact]
     public void RegistryOnlyRecognizerRequiresAbsentImageAndExactScmAbsence()
     {
@@ -276,14 +307,19 @@ public sealed class CpuServiceInventoryTests
                 _ => new(true, 0, 0, 1, 0)
             };
         }
-        public IReadOnlyList<CpuServiceRegistryEntry> ReadRegistryEntries() => Fault switch
+        internal int RegistryReads;
+        public IReadOnlyList<CpuServiceRegistryEntry> ReadRegistryEntries()
         {
-            "registry-error" => throw new IOException(),
-            "missing-registry" => [],
-            "hidden-native" => [new("Other", Type, ""), new("Hidden", 0x10, "")],
-            "unmatched-template" or "template-error" or "template-type-drift" or "template-active" => [new("Other", Type, ""), new("Template", 0x50, "")],
-            "type-drift" => [new("Other", 0x20, "")],
-            _ => [new("Other", Type, "")]
-        };
+            RegistryReads++;
+            return Fault switch
+            {
+                "registry-error" => throw new IOException(),
+                "missing-registry" => [],
+                "hidden-native" => [new("Other", Type, ""), new("Hidden", 0x10, "")],
+                "unmatched-template" or "template-error" or "template-type-drift" or "template-active" => [new("Other", Type, ""), new("Template", 0x50, "")],
+                "type-drift" => [new("Other", 0x20, "")],
+                _ => [new("Other", Type, "")]
+            };
+        }
     }
 }

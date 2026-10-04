@@ -11,6 +11,8 @@ internal interface ICpuLiveCurveTrustedNativeProvider
 {
     IDisposable? BeginGetter(CancellationToken token) => null;
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
+    bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token) =>
+        ReadFreshContext(token) is { } actual && expected.MatchesHardwareContext(actual);
     CpuQueryAttendedApproval? CreateQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token);
     CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
     bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
@@ -101,7 +103,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (!Check(result.Status == CpuLiveQueryStatus.Observed, "native curve query status " + result.Status)
             || !Check(CpuLiveCurveSnapshot.TryCreate(result.Observation) is not null, "native curve snapshot invalid"))
         { return new(null, null); }
-        if (!Check(MatchesFresh(context!, token), "native curve context after query")) { Invalidate(); return new(null, null); }
+        if (!Check(provider.CompleteGetter(context!, token), "native curve context after query")) { Invalidate(); return new(null, null); }
         return new(context, result.Observation);
     }
 

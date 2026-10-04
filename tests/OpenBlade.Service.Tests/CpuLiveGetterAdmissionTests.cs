@@ -6,6 +6,20 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveGetterAdmissionTests
 {
     [Fact]
+    public void FullAdmissionRunsAtEntryAndEndWhileEveryBoundaryChecksContinuity()
+    {
+        int full = 0, continuity = 0;
+        bool valid = true;
+        using var proof = new CpuLiveGetterAdmission(default, () => true,
+            _ => { full++; return valid; }, continuity: _ => { continuity++; return true; });
+        for (int i = 0; i < 164; i++) { Assert.True(proof.Allows()); }
+        Assert.Equal(1, full); Assert.Equal(163, continuity);
+        valid = false;
+        Assert.False(proof.Revalidate()); Assert.Equal(2, full);
+        valid = true; Assert.False(proof.Allows()); Assert.False(proof.Revalidate());
+    }
+
+    [Fact]
     public void EachGetterClassifiesOnceButChecksWindowsAndLifetimeEveryTime()
     {
         int classifications = 0, captures = 0, checks = 0;

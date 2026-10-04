@@ -252,11 +252,13 @@ public sealed partial class ServiceControlRuntime
         Func<bool> stillControlsSession, long generation, long sourceGeneration, CancellationToken token,
         Func<bool> lifetime, CpuSavedAdmissionDiagnostic? diagnostic = null) =>
         new(token, lifetime, proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
-            generation, sourceGeneration, token, diagnostic, proof));
+            generation, sourceGeneration, token, diagnostic, proof),
+            continuity: proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
+                generation, sourceGeneration, token, diagnostic, proof, continuity: true));
 
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
         long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
-        CpuLiveGetterAdmission? getter = null)
+        CpuLiveGetterAdmission? getter = null, bool continuity = false)
     {
         bool Check(bool allowed, string stage) => diagnostic?.Check(allowed, stage) ?? allowed;
         ServiceStatusSnapshot current = GetStatus();
@@ -270,12 +272,26 @@ public sealed partial class ServiceControlRuntime
                 && !Check(current.Capabilities?.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite, "runtime curve write capability")
             || (features & CpuTuningFeatures.PowerLimit) != 0
                 && !Check(current.Capabilities?.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite, "runtime power write capability")) { return false; }
-        ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
-        return Check(presence.DetectionWarning is null, "runtime fresh controller detection")
-            && Check(presence.PotentialControllers.Count == 0, "runtime fresh controller absence")
+        bool ControllersAdmitted()
+        {
+            // The native getter checks fresh bounded process/SCM activity against
+            // its fully verified inventory. Other operations retain full discovery.
+            if (continuity) { return true; }
+            ControllerPresenceObservation presence = controllerPresenceMonitor.Observe();
+            return Check(presence.DetectionWarning is null, "runtime fresh controller detection")
+                && Check(presence.PotentialControllers.Count == 0, "runtime fresh controller absence");
+        }
+        bool DeviceAdmitted()
+        {
+            if (continuity && deviceProvider is WindowsVerifiedBladeDeviceProvider windows)
+            { return getter?.Device is { } retained && windows.IsCpuGetterDeviceCurrent(retained); }
+            return deviceProvider.TryGetVerifiedDevice(out var device)
+                && (getter is null || getter.BindDevice(device));
+        }
+        return ControllersAdmitted()
             && Check(getter is null ? CpuFreshFullPower(token, diagnostic)
                 : getter.FullPower(() => CpuFreshFullPower(token, diagnostic), powerStateProvider.CapturePowerSource), "runtime fresh power source")
-            && Check(deviceProvider.TryGetVerifiedDevice(out _), "runtime fresh verified device")
+            && Check(DeviceAdmitted(), "runtime fresh verified device")
             && Check(lowPowerGate.Generation == generation, "runtime power generation after probes")
             && Check(powerSourceGeneration == sourceGeneration, "runtime power source generation after probes")
             && CpuMutationSafetyAvailable(GetStatus(), stillControlsSession, diagnostic);

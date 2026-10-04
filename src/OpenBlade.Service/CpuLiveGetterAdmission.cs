@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -8,17 +9,33 @@ namespace OpenBlade.Service;
 internal sealed class CpuLiveGetterAdmission(
     CancellationToken token, Func<bool> lifetime,
     Func<CpuLiveGetterAdmission, bool> admit,
-    Func<TimeSpan>? elapsed = null) : IDisposable
+    Func<TimeSpan>? elapsed = null, Func<CpuLiveGetterAdmission, bool>? continuity = null) : IDisposable
 {
     private readonly long started = Stopwatch.GetTimestamp();
     private int revoked;
-    private bool classified;
+    private bool classified, admitted;
+    internal IBladeDevice? Device { get; private set; }
+    internal bool BindDevice(IBladeDevice device)
+    {
+        if (Device is null) { Device = device; }
+        return ReferenceEquals(Device, device);
+    }
+
+    internal bool Revalidate()
+    {
+        classified = false; admitted = false;
+        return Allows();
+    }
 
     internal bool Allows()
     {
         if (!Active()) { return false; }
         bool accepted;
-        try { accepted = admit(this) && Active(); }
+        try
+        {
+            accepted = (admitted && continuity is not null ? continuity(this) : admit(this)) && Active();
+            if (accepted) { admitted = true; }
+        }
         catch { accepted = false; }
         if (!accepted) { Dispose(); }
         return accepted && Volatile.Read(ref revoked) == 0;

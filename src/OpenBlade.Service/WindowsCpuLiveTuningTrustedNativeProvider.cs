@@ -21,21 +21,27 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private CpuLiveCurveTrustedRange? range;
     private int disposed;
     private CpuLiveGetterAdmission? getterAdmission;
+    private GetterScope? getterScope;
+    private readonly Func<CpuGetterUsbContinuity?>? captureGetterUsb;
+    private readonly Func<Func<bool>?>? captureGetterControllers;
 
     internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source)
         : this(session, controller, source, Rz090528CpuFreshUsbIdentity.Read, new WindowsCpuBootSequenceReader().Read,
-            new WindowsCpuLiveCurveRangeMetadata())
+            new WindowsCpuLiveCurveRangeMetadata(), Rz090528CpuFreshUsbIdentity.CaptureGetter,
+            Rz090528CpuControllerPresence.CaptureGetterContinuity)
     { }
 
     internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source,
         Func<DeviceIdentity?> readUsb, Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot,
-        WindowsCpuLiveCurveRangeMetadata metadata)
+        WindowsCpuLiveCurveRangeMetadata metadata, Func<CpuGetterUsbContinuity?>? captureGetterUsb = null,
+        Func<Func<bool>?>? captureGetterControllers = null)
     {
         this.session = session; this.controller = controller; this.source = source;
         this.readUsb = readUsb; this.readBoot = readBoot; this.metadata = metadata;
         worker = CpuNativeWorkerCoordinator.ForSession(session);
+        this.captureGetterUsb = captureGetterUsb; this.captureGetterControllers = captureGetterControllers;
     }
 
     public IDisposable? BeginGetter(CancellationToken token)
@@ -44,13 +50,16 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         var admission = controller()?.BeginLiveGetter(token);
         if (admission is null) { return null; }
         getterAdmission = admission;
-        return new GetterScope(this, admission);
+        return getterScope = new GetterScope(this, admission, token);
     }
 
     public CpuLiveCurveContext? ReadFreshContext(CancellationToken token)
     {
-        var getter = getterAdmission;
-        return ReadFreshContext(token, CaptureRuntimeAdmission(CpuTuningFeatures.None, token), getter);
+        var getter = getterScope;
+        if (getter?.Context is { } context) { return getter.Current(context) ? context : null; }
+        var current = ReadFreshContext(token, CaptureRuntimeAdmission(CpuTuningFeatures.None, token), getterAdmission);
+        if (getter is not null && current is not null && !getter.Bind(current)) { return null; }
+        return current;
     }
 
     private Func<bool>? CaptureRuntimeAdmission(CpuTuningFeatures feature, CancellationToken token)
@@ -100,8 +109,10 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token)
     {
-        var admission = Capture(exactContext, CpuTuningFeatures.None, token);
-        return admission is null ? null : installed?.CreateQueryApproval(admission);
+        var getter = getterScope;
+        Func<bool>? admission = getter is null ? Capture(exactContext, CpuTuningFeatures.None, token)
+            : () => getter.Current(exactContext);
+        return admission?.Invoke() != true ? null : installed?.CreateQueryApproval(admission);
     }
 
     CpuLivePowerContext? ICpuLivePowerTrustedNativeProvider.ReadFreshContext(CancellationToken token) => PowerContext(token);
@@ -179,7 +190,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         if (!ReferenceEquals(request, rangeRequest) || rangeContext?.MatchesHardwareContext(exactContext) != true)
         {
             range = null; rangeRequest = request; rangeContext = exactContext;
-            var result = metadata.Read(exactContext, new RangeScope(admission), token);
+            var result = ReadCurveMetadata(exactContext, admission, token);
             if (!result.CleanupComplete) { worker.Invalidate(); }
             if (result.Status == CpuLiveCurveRangeStatus.Complete && result.CleanupComplete && admission())
             { range = result.Range; }
@@ -199,7 +210,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
                 && !CheckWriteAdmission(exactContext, exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore, token)
             || !admission()) { return null; }
-        return new WriteProof(exactRequest, exactContext, admission, metadata, worker, this, token);
+        return new WriteProof(exactRequest, exactContext, admission, worker, this, token);
     }
 
     private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
@@ -246,14 +257,75 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         installed?.Dispose();
     }
 
-    private sealed class GetterScope(WindowsCpuLiveTuningTrustedNativeProvider owner,
-        CpuLiveGetterAdmission admission) : IDisposable
+    public bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token)
     {
+        var getter = getterScope;
+        if (getter is null) { return expected.MatchesHardwareContext(ReadFreshContext(token)); }
+        if (!getter.Current(expected) || !getter.Admission.Revalidate()) { return getter.Reject(); }
+        var fresh = ReadFreshContext(token, getter.Admission.Allows, getter.Admission);
+        return expected.MatchesHardwareContext(fresh) && getter.Current(expected) || getter.Reject();
+    }
+
+    private sealed class GetterScope(WindowsCpuLiveTuningTrustedNativeProvider owner,
+        CpuLiveGetterAdmission admission, CancellationToken token) : IDisposable
+    {
+        internal CpuLiveGetterAdmission Admission => admission;
+        internal CpuLiveCurveContext? Context { get; private set; }
+        private CpuGetterUsbContinuity? usb;
+        private Func<bool>? controllers;
+        private bool disposed;
+        internal bool Bind(CpuLiveCurveContext context)
+        {
+            Context = context;
+            usb = owner.captureGetterUsb?.Invoke();
+            controllers = owner.captureGetterControllers?.Invoke();
+            if (owner.captureGetterUsb is not null && usb is null
+                || owner.captureGetterControllers is not null && controllers is null) { return Reject(); }
+            return Current(context);
+        }
+        internal bool Current(CpuLiveCurveContext expected)
+        {
+            try
+            {
+                return !disposed && !token.IsCancellationRequested && admission.Allows()
+                    && Context is { } context && expected.MatchesHardwareContext(context)
+                    && owner.installed?.GetterContinuityCurrent == true
+                    && (usb is not null ? usb.IsCurrent() : CpuHardwareIdentity.Same(context.Identity, owner.readUsb()))
+                    && (controllers?.Invoke() ?? owner.captureGetterControllers is null)
+                    && context.BootSequence == owner.readBoot(token)
+                    && owner.controller()?.CaptureLiveRuntimeLifetime() == context.RuntimeLifetime
+                    && Volatile.Read(ref owner.disposed) == 0 && admission.Allows()
+                    || Reject();
+            }
+            catch { return Reject(); }
+        }
+        internal bool Reject() { admission.Dispose(); return false; }
         public void Dispose()
         {
-            admission.Dispose();
-            if (ReferenceEquals(owner.getterAdmission, admission)) { owner.getterAdmission = null; }
+            if (disposed) { return; }
+            disposed = true; admission.Dispose();
+            try { usb?.Dispose(); }
+            catch { owner.worker.Invalidate(); throw; }
+            finally
+            {
+                if (ReferenceEquals(owner.getterScope, this))
+                { owner.getterAdmission = null; owner.getterScope = null; }
+            }
         }
+    }
+
+    private CpuLiveCurveRangeResult ReadCurveMetadata(CpuLiveCurveContext expected, Func<bool> fullAdmission,
+        CancellationToken token)
+    {
+        using var scope = BeginGetter(token);
+        var getter = getterScope;
+        if (getter is null) { return metadata.Read(expected, new RangeScope(fullAdmission), token); }
+        if (!expected.MatchesHardwareContext(ReadFreshContext(token)))
+        { getter.Reject(); return new(null, CpuLiveCurveRangeStatus.AdmissionDenied, true, new(), new()); }
+        var result = metadata.Read(expected, new RangeScope(() => getter.Current(expected)), token);
+        if (result.Status != CpuLiveCurveRangeStatus.Complete || !result.CleanupComplete) { return result; }
+        return CompleteGetter(expected, token) ? result
+            : result with { Range = null, Status = CpuLiveCurveRangeStatus.AdmissionDenied };
     }
 
     private sealed class RangeScope(Func<bool> current) : CpuLiveCurveRangeTrustedScope
@@ -267,7 +339,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     }
 
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,
-        Func<bool> current, WindowsCpuLiveCurveRangeMetadata metadata, CpuNativeWorkerCoordinator worker,
+        Func<bool> current, CpuNativeWorkerCoordinator worker,
         WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
         private bool read;
@@ -303,7 +375,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             if (!read)
             {
                 read = true;
-                var result = metadata.Read(context, new RangeScope(current), token);
+                var result = owner.ReadCurveMetadata(context, current, token);
                 if (!result.CleanupComplete) { worker.Invalidate(); }
                 if (result is { Status: CpuLiveCurveRangeStatus.Complete, CleanupComplete: true }) { range = result.Range; }
             }

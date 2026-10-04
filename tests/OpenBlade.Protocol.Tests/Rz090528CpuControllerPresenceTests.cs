@@ -4,6 +4,32 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528CpuControllerPresenceTests
 {
+    [Theory]
+    [InlineData("Razer")]
+    [InlineData("Ryzen")]
+    [InlineData("RGS")]
+    public void GetterActivityRechecksBothPoliciesAndRevokesPermanently(string controller)
+    {
+        string[] processes = []; int full = 0, checks = 0;
+        var current = Rz090528CpuControllerPresence.CaptureGetterContinuity(() => processes,
+            () => { full++; return []; }, _ => { checks++; return []; });
+        Assert.NotNull(current);
+        for (int i = 0; i < 164; i++) { Assert.True(current()); }
+        Assert.Equal(1, full); Assert.Equal(164, checks);
+        processes = [controller]; Assert.False(current());
+        processes = []; Assert.False(current());
+    }
+
+    [Fact]
+    public void GetterRejectsControllerServiceAppearingWithoutAProcess()
+    {
+        var service = new CpuServiceInventoryEntry("RGS", "RGS", 0x10, 1, "");
+        var current = Rz090528CpuControllerPresence.CaptureGetterContinuity(() => [],
+            () => [service], _ => [service]);
+        Assert.NotNull(current); Assert.True(current());
+        service = service with { State = 4 }; Assert.False(current());
+    }
+
     [Fact]
     public void StoppedControllerAndUnrelatedRunningServicePermitBoundedAbsence()
     {
