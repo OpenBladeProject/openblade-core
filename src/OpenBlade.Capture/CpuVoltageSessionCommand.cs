@@ -99,6 +99,7 @@ internal sealed class CpuVoltageSessionCommand
                     var request = CpuVoltageSessionProtocol.Parse(await CpuVoltageSessionProtocol.ReadAsync(pipe,
                         CpuVoltageSessionProtocol.MaximumRequest, timeout.Token).ConfigureAwait(false));
                     CpuVoltageSessionReply response;
+                    Task? closeResolution = null;
                     lock (gate)
                     {
                         if (request.Action is CpuVoltageSessionAction.ObserveOnly or CpuVoltageSessionAction.VoltageCycle or CpuVoltageSessionAction.CleanupReadOnly && !ContextCurrent())
@@ -118,7 +119,7 @@ internal sealed class CpuVoltageSessionCommand
                         {
                             unlaunchedCloseAttempted = true;
                             platform.WriteNew("unlaunched-close-intent-" + request.RequestId.ToString("N") + ".json", request);
-                            job = Task.Run(() => ResolveBeforeOwnerClose(request));
+                            closeResolution = job = Task.Run(() => ResolveBeforeOwnerClose(request));
                         }
                         bool launch = (request.Action != CpuVoltageSessionAction.CleanupReadOnly || job?.IsCompleted == true)
                             && state.Accept(request, value => platform.WriteNew("accepted-" + value.RequestId.ToString("N") + ".json", value));
@@ -130,6 +131,13 @@ internal sealed class CpuVoltageSessionCommand
                             job = Task.Run(() => RunJobAsync(request));
                         }
                         response = WithOwnerFailure(state.Snapshot, ownerFailure) with { RequestAccepted = launch };
+                    }
+                    if (closeResolution is not null)
+                    {
+                        response = await AwaitCloseReplyAsync(closeResolution, () =>
+                        {
+                            lock (gate) { return WithOwnerFailure(state.Snapshot, ownerFailure); }
+                        }, timeout.Token).ConfigureAwait(false);
                     }
                     await CpuVoltageSessionProtocol.WriteAsync(pipe, response, CpuVoltageSessionProtocol.MaximumReply, timeout.Token).ConfigureAwait(false);
                 }
@@ -153,6 +161,14 @@ internal sealed class CpuVoltageSessionCommand
             monitoring.Cancel(); await monitor.ConfigureAwait(false); Console.CancelKeyPress -= cancel;
         }
         platform.Dispose(); disposed = true; return 0;
+    }
+    // Called outside the state lock: resolution needs that lock to publish its
+    // terminal result. A connection timeout never cancels or repeats resolution.
+    internal static async Task<CpuVoltageSessionReply> AwaitCloseReplyAsync(Task resolution,
+        Func<CpuVoltageSessionReply> snapshot, CancellationToken token)
+    {
+        await resolution.WaitAsync(token).ConfigureAwait(false);
+        return snapshot();
     }
     private void Authorize(NamedPipeServerStream pipe)
     {

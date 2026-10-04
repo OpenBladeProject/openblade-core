@@ -9,6 +9,64 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class CpuVoltageSessionTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CloseReplyWaitsOutsideStateLockForActualResolution(bool success)
+    {
+        var gate = new object();
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        state.Accept(Request(CpuVoltageSessionAction.ObserveOnly), _ => { });
+        state.Complete(false, false, null, "unlaunched");
+        var close = Request(CpuVoltageSessionAction.Close);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task resolution;
+        lock (gate)
+        {
+            resolution = Task.Run(async () =>
+            {
+                await release.Task;
+                lock (gate)
+                {
+                    if (success)
+                    {
+                        state.CompleteBeforeOwnerClose(false);
+                        state.Accept(close, _ => throw new Exception("Close cannot launch work"));
+                    }
+                    else { state.Block("Resource proof failed"); }
+                }
+            });
+        }
+        int snapshots = 0;
+        var reply = CpuVoltageSessionCommand.AwaitCloseReplyAsync(resolution, () =>
+        {
+            lock (gate) { snapshots++; return state.Snapshot; }
+        }, CancellationToken.None);
+        Assert.False(reply.IsCompleted); Assert.Equal(0, snapshots);
+        release.SetResult();
+        var result = await reply.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(success ? "Closed" : "Blocked", result.State);
+        Assert.Equal(success, result.Job is null);
+        Assert.False(result.RequestAccepted); Assert.False(result.ObservationAdmitted);
+        Assert.Equal(1, snapshots);
+    }
+
+    [Fact]
+    public async Task CloseReplyTimeoutDoesNotCancelResolutionOrPublishPrematureSnapshot()
+    {
+        var resolution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timeout = new CancellationTokenSource();
+        int snapshots = 0;
+        var reply = CpuVoltageSessionCommand.AwaitCloseReplyAsync(resolution.Task,
+            () => { snapshots++; throw new Exception("Premature snapshot"); }, timeout.Token);
+        timeout.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reply);
+        Assert.False(resolution.Task.IsCompleted); Assert.Equal(0, snapshots);
+        resolution.SetResult();
+        await resolution.Task;
+        Assert.Equal(0, snapshots);
+    }
+
     [Fact]
     public async Task StartupReadinessWaitsForListenerBeyondOrdinaryConnectionDeadline()
     {
