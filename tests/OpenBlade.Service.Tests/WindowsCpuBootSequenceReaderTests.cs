@@ -5,10 +5,12 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuBootSequenceReaderTests
 {
-    [Fact]
-    public void ExactVersionPolicyAcceptsOnlySuccessfulReviewedFiveFieldProfile()
+    [Theory]
+    [InlineData(26200u)]
+    [InlineData(26300u)]
+    public void ExactVersionPolicyAcceptsOnlySuccessfulReviewedFiveFieldProfiles(uint build)
     {
-        Assert.True(WindowsCpuBootSequenceReader.IsReviewedWindowsVersion(0, 10, 0, 26200, 0, 0));
+        Assert.True(WindowsCpuBootSequenceReader.IsReviewedWindowsVersion(0, 10, 0, build, 0, 0));
     }
 
     [Theory]
@@ -21,10 +23,17 @@ public sealed class WindowsCpuBootSequenceReaderTests
     [InlineData(0, 10u, 1u, 26200u, 0, 0)]
     [InlineData(0, 10u, 0u, 26199u, 0, 0)]
     [InlineData(0, 10u, 0u, 26201u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26299u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26301u, 0, 0)]
+    [InlineData(-1, 10u, 0u, 26300u, 0, 0)]
+    [InlineData(0, 11u, 0u, 26300u, 0, 0)]
+    [InlineData(0, 10u, 1u, 26300u, 0, 0)]
+    [InlineData(0, 10u, 0u, 26300u, 1, 0)]
+    [InlineData(0, 10u, 0u, 26300u, 0, 1)]
     [InlineData(0, 10u, 0u, 30000u, 0, 0)]
     [InlineData(0, 10u, 0u, 26200u, 1, 0)]
     [InlineData(0, 10u, 0u, 26200u, 0, 1)]
-    public void ExactVersionPolicyRejectsNonzeroStatusOrAnyDifferentField(int status, uint major, uint minor,
+    public void ExactVersionPolicyRejectsNonzeroStatusOrUnreviewedField(int status, uint major, uint minor,
         uint build, ushort servicePackMajor, ushort servicePackMinor)
     {
         Assert.False(WindowsCpuBootSequenceReader.IsReviewedWindowsVersion(status, major, minor, build,

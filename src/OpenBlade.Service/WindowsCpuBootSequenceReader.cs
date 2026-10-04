@@ -42,7 +42,7 @@ internal sealed class WindowsCpuBootSequenceReader
 
     internal static bool IsReviewedWindowsVersion(int status, uint major, uint minor, uint build,
         ushort servicePackMajor, ushort servicePackMinor) => status == 0
-        && major == 10 && minor == 0 && build == 26200 && servicePackMajor == 0 && servicePackMinor == 0;
+        && major == 10 && minor == 0 && build is 26200 or 26300 && servicePackMajor == 0 && servicePackMinor == 0;
 
     // Full RTL_OSVERSIONINFOEXW from SDK winnt.h, including the numeric service
     // pack fields. RtlGetVersion selects the EX contract from its 284-byte size.
@@ -60,7 +60,8 @@ internal sealed class WindowsCpuBootSequenceReader
         // SDK 10.0.26100.0 ntddk.h: compiled FIELD_OFFSET(BootId)=0x2C4,
         // sizeof(BootId)=4, sizeof(KUSER_SHARED_DATA)=0xA80. ksamd64.inc
         // supplies user mapping 0x7FFE0000. Reviewed read-only acquisition used
-        // this exact layout on native AMD64 with the 10.0.26200 predicate.
+        // this exact layout on native AMD64 with the 10.0.26200 and 10.0.26300
+        // predicates. The sequence is an observation, not CPU continuity proof.
         private const int BootSequenceAddress = 0x7FFE02C4;
         private const ushort MachineUnknown = 0;
         private const ushort MachineAmd64 = 0x8664;
@@ -78,8 +79,8 @@ internal sealed class WindowsCpuBootSequenceReader
                 ServicePack = string.Empty,
             };
             // The documented user-mode ntdll query does not depend on the host's
-            // supportedOS manifest. Keep the same five exact numeric conditions;
-            // no fallback or widening to adjacent/future builds is allowed.
+            // supportedOS manifest. Require an exact reviewed five-field profile;
+            // no fallback or widening to unreviewed builds is allowed.
             int status = RtlGetVersion(ref version);
             return IsReviewedWindowsVersion(status, version.Major, version.Minor, version.Build,
                 version.ServicePackMajor, version.ServicePackMinor);
