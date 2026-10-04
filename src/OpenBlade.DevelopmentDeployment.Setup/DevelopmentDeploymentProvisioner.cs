@@ -274,13 +274,39 @@ internal static class DevelopmentDeploymentProvisioner
     {
         RequireSafeAncestors(path);
         DirectorySecurity actual = new DirectoryInfo(Path.GetDirectoryName(path)!).GetAccessControl();
-        DirectorySecurity expected = CreateDirectorySecurity(readSid, FileSystemRights.ReadAndExecute);
-        if (actual.GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner)
-            != expected.GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner))
+        RequireUpgradeDirectorySecurity(actual, readSid);
+        VerifyUpgradeFileSecurity(path, readSid);
+    }
+
+    internal static void RequireUpgradeDirectorySecurity(DirectorySecurity security, string? readSid)
+    {
+        // Keep the existing DirectorySecurity read and its .NET normalization.
+        // Compare all distinctions that API returns, without further rule changes.
+        RequireUpgradeDirectorySecurity(new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0), readSid);
+    }
+
+    internal static void RequireUpgradeDirectorySecurity(RawSecurityDescriptor actual, string? readSid)
+    {
+        RawSecurityDescriptor expected = new(
+            CreateDirectorySecurity(readSid, FileSystemRights.ReadAndExecute).GetSecurityDescriptorBinaryForm(), 0);
+        // Windows may add AI when persisting this protected DACL. It records
+        // inheritance processing, not an extra ACE or permission. Compare every
+        // other returned control flag and ACL byte; do not normalize rules here.
+        const ControlFlags ignored = ControlFlags.DiscretionaryAclAutoInherited;
+        if (actual.Owner != expected.Owner
+            || (actual.ControlFlags & ~ignored) != (expected.ControlFlags & ~ignored)
+            || actual.DiscretionaryAcl is null || expected.DiscretionaryAcl is null)
         {
             throw new UnauthorizedAccessException("The installed broker/client directory ACL differs from enrollment.");
         }
-        VerifyUpgradeFileSecurity(path, readSid);
+        byte[] actualAcl = new byte[actual.DiscretionaryAcl.BinaryLength];
+        byte[] expectedAcl = new byte[expected.DiscretionaryAcl.BinaryLength];
+        actual.DiscretionaryAcl.GetBinaryForm(actualAcl, 0);
+        expected.DiscretionaryAcl.GetBinaryForm(expectedAcl, 0);
+        if (!actualAcl.AsSpan().SequenceEqual(expectedAcl))
+        {
+            throw new UnauthorizedAccessException("The installed broker/client directory ACL differs from enrollment.");
+        }
     }
 
     private static void VerifyUpgradeFileSecurity(string path, string? readSid)
