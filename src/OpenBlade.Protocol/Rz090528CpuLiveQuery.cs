@@ -282,12 +282,14 @@ internal sealed class Rz090528CpuMailboxSession(
     private uint QueryMailbox(uint bus, QueryCommand command, uint argument,
         CancellationToken cancellationToken)
     {
+        progress?.MailboxPhase(CpuQueryMailboxPhase.ReadinessWait);
         WriteRegister(bus, 0, ResponseAddress, cancellationToken);
         uint previousResponse = 0;
         for (var poll = 0; poll < MaximumPolls; poll++)
         {
             previousResponse = ReadPciWord(bus, 0, 0, 0xC8, cancellationToken);
             if (previousResponse != 0) { break; }
+            progress?.MailboxZero(afterSubmission: false);
             using (progress?.Enter(CpuQueryBucket.MailboxPolling))
             { synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken); }
         }
@@ -301,10 +303,15 @@ internal sealed class Rz090528CpuMailboxSession(
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
+        progress?.MailboxPhase(CpuQueryMailboxPhase.Preparation);
         WriteSmn(bus, ResponseAddress, 0, cancellationToken);
+        progress?.MailboxTransportCompleted(submission: false);
         // Vendor capability82 has no input argument; preserve that exact shape.
         if (command != QueryCommand.Capability) { WriteSmn(bus, ArgumentAddress, argument, cancellationToken); }
+        progress?.MailboxPhase(CpuQueryMailboxPhase.Submission);
         WriteSmn(bus, MessageAddress, (uint)command, cancellationToken);
+        progress?.MailboxTransportCompleted(submission: true);
+        progress?.MailboxPhase(CpuQueryMailboxPhase.ResponseWait);
         // Select once; all subsequent data reads are protected by the same lease.
         WriteRegister(bus, 0, ResponseAddress, cancellationToken);
         for (var poll = 0; poll < MaximumPolls; poll++)
@@ -312,6 +319,7 @@ internal sealed class Rz090528CpuMailboxSession(
             var response = ReadPciWord(bus, 0, 0, 0xC8, cancellationToken);
             if (response == 1)
             {
+                if (command != QueryCommand.SetCoreOffset) { progress?.MailboxPhase(CpuQueryMailboxPhase.ArgumentRead); }
                 return command == QueryCommand.SetCoreOffset ? 0 : ReadSmn(bus, ArgumentAddress, cancellationToken);
             }
 
@@ -320,6 +328,7 @@ internal sealed class Rz090528CpuMailboxSession(
                 throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
             }
 
+            progress?.MailboxZero(afterSubmission: true);
             using (progress?.Enter(CpuQueryBucket.MailboxPolling))
             { synchronization.Delay(TimeSpan.FromMilliseconds(1), cancellationToken); }
         }

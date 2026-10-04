@@ -7,6 +7,55 @@ public sealed class Rz090528CpuLiveQueryTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingMailboxWaitFreezesDistinctPhaseAndZeroCounts(bool afterSubmission)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { IdleResponse = afterSubmission ? 1u : 0u, PendingPolls = afterSubmission ? 1 : 0 };
+        var progress = new CpuQueryProgress();
+        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        sync.OnDelay = () =>
+        {
+            entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+            wire.IdleResponse = 1; sync.OnDelay = null;
+        };
+        var worker = Task.Run(() => new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact));
+        string frozen;
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            frozen = await Task.Run(() => progress.Snapshot(freeze: true)).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Contains("current mailbox " + (afterSubmission ? "ResponseWait" : "ReadinessWait"), frozen);
+            Assert.Contains(afterSubmission ? "readiness zeros 0, response zeros 1" : "readiness zeros 1, response zeros 0", frozen);
+            Assert.Contains("clear attempted/completed " + (afterSubmission ? "True/True" : "False/False"), frozen);
+            Assert.Contains("submission attempted/completed " + (afterSubmission ? "True/True" : "False/False"), frozen);
+            Assert.False(worker.IsCompleted);
+        }
+        finally { release.Set(); }
+        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker.WaitAsync(TimeSpan.FromSeconds(5))).Status);
+        Assert.Equal(frozen, progress.Snapshot());
+    }
+
+    [Theory]
+    [InlineData(12, "Preparation", "True/False", "False/False", false)]
+    [InlineData(14, "Preparation", "True/True", "False/False", false)]
+    [InlineData(16, "Submission", "True/True", "True/False", false)]
+    [InlineData(16, "Submission", "True/True", "True/False", true)]
+    public void TransportFailureNeverClaimsClearOrSubmissionCompleted(int failedCall, string phase, string clear, string submission, bool throws)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Fault = throws ? "entered-throw" : "ioctl-failure", FailureCall = failedCall };
+        var progress = new CpuQueryProgress();
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact).Status);
+        string snapshot = progress.Snapshot();
+        Assert.Contains("current mailbox " + phase, snapshot);
+        Assert.Contains("clear attempted/completed " + clear, snapshot);
+        Assert.Contains("submission attempted/completed " + submission, snapshot);
+        Assert.Equal(failedCall, wire.Calls.Count);
+    }
+
     [Fact]
     public void QueriesExactWireContractAndPreservesPhysicalCoreGaps()
     {
@@ -299,6 +348,7 @@ public sealed class Rz090528CpuLiveQueryTests
         {
             Assert.True(synchronization.Held);
             Calls.Add(new(code, input.ToArray(), outputLength));
+            if (Fault == "entered-throw" && FailureCall == Calls.Count) { throw new IOException("synthetic entered transport"); }
             if (Fault == "ioctl-failure" && (FailureCall is null || FailureCall == Calls.Count))
             {
                 return new(false, [], CpuQueryFailureCode.NativeIoctlFailed, 50);
