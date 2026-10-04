@@ -173,15 +173,18 @@ internal sealed class BrokerPipeChannel : IBrokerChannel
     }
 }
 
-internal sealed class WindowsBrokerPipeConnector : IBrokerPipeConnector
+internal sealed class WindowsBrokerPipeConnector(bool startService = true) : IBrokerPipeConnector
 {
     private const string PipeName = "OpenBlade.DeploymentBroker.v1";
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
 
     public async Task<IBrokerPipeConnection> ConnectAsync(CancellationToken cancellationToken)
     {
-        await WindowsBrokerServiceStarter.EnsureStartedAsync(cancellationToken)
-            .ConfigureAwait(false);
+        if (startService)
+        {
+            await WindowsBrokerServiceStarter.EnsureStartedAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
         NamedPipeClientStream pipe = new(
             ".",
             PipeName,

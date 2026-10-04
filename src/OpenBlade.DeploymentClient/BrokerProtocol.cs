@@ -6,6 +6,7 @@ internal enum DeploymentBrokerAction
 {
     ApplyFixedInbox,
     ApplyCpuVoltageInbox,
+    ReadDeploymentStatus,
 }
 
 internal sealed record DeploymentBrokerRequest(
@@ -85,6 +86,8 @@ internal static class DeploymentBrokerProtocol
                     ? DeploymentBrokerAction.ApplyFixedInbox
                     : action == nameof(DeploymentBrokerAction.ApplyCpuVoltageInbox)
                         ? DeploymentBrokerAction.ApplyCpuVoltageInbox
+                        : action == nameof(DeploymentBrokerAction.ReadDeploymentStatus)
+                            ? DeploymentBrokerAction.ReadDeploymentStatus
                         : throw new InvalidDataException("The broker request action is invalid."));
             ValidateRequest(request);
             if (!bytes.SequenceEqual(SerializeRequest(request)))
@@ -254,7 +257,7 @@ internal static class DeploymentBrokerProtocol
     {
         if (request.ProtocolVersion != ProtocolVersion
             || request.RequestId == Guid.Empty
-            || request.Action is not (DeploymentBrokerAction.ApplyFixedInbox or DeploymentBrokerAction.ApplyCpuVoltageInbox))
+            || request.Action is not (DeploymentBrokerAction.ApplyFixedInbox or DeploymentBrokerAction.ApplyCpuVoltageInbox or DeploymentBrokerAction.ReadDeploymentStatus))
         {
             throw new InvalidDataException("The broker request contract is invalid.");
         }

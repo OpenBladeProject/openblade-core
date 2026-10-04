@@ -227,3 +227,23 @@ do not redeploy over uncertain resources. Resolve the recorded state through
 the existing bounded session path before requesting another build. This
 developer workflow and its diagnostics do not establish successful physical
 CPU validation; that remains a separate result from an actual admitted run.
+
+## Read installation diagnostics
+
+The enrolled console user can read the current deployment's retained records
+and bounded installer log tails without elevation:
+
+```powershell
+& 'C:\Program Files\OpenBlade Local Dev Deployment Client\OpenBlade.DeploymentClient.exe' --deployment-status
+```
+
+This command connects to the running broker without starting it. It returns
+only the current deployment's records and fixed log files; unavailable or
+truncated files are marked in the response. New installs write their installer
+logs into protected request staging. Existing logs outside that staging are
+not included.
+
+A valid enrollment with an unresolved deployment can serve these diagnostics
+while installation remains blocked. Reading diagnostics does not reconcile
+the deployment, launch OpenBlade, or submit a CPU job. Updating the broker
+itself still requires attended administrative maintenance.

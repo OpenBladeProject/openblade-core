@@ -1,5 +1,10 @@
 using OpenBlade.DeploymentClient;
 
+if (args is ["--deployment-status"])
+{
+    return await DeploymentStatusCommand.RunAsync(Console.Out, Console.Error, CancellationToken.None);
+}
+
 if (!DeploymentClientArguments.TryParse(args, out bool cpuVoltage))
 {
     return 1;

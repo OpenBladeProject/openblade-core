@@ -181,6 +181,8 @@ public static class BrokerInstallerProcessPlan
         {
             startInfo.ArgumentList.Add(argument);
         }
+        startInfo.ArgumentList.Add("/log");
+        startInfo.ArgumentList.Add(Path.Combine(staging, "installer.log"));
 
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         if (string.IsNullOrWhiteSpace(windows))
