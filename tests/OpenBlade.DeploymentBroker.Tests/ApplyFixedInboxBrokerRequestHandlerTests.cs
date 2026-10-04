@@ -34,7 +34,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
                 fixture.Request.RequestId.ToString("N"),
                 OpenBladeReleaseManifestCodec.InstallerFileName),
             plan.FileName);
-        Assert.Equal(["/install", "/quiet", "/norestart"], plan.ArgumentList);
+        Assert.Equal(["/install", "/quiet", "/norestart", "/log",
+            Path.Combine(fixture.Paths.StagingDirectory, fixture.Request.RequestId.ToString("N"), "installer.log")],
+            plan.ArgumentList);
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         Assert.Equal(windows, plan.Environment["SystemRoot"]);
         Assert.Equal(windows, plan.Environment["WINDIR"]);
