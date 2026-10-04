@@ -29,7 +29,8 @@ internal sealed class CpuVoltageSessionCommand
     private Guid currentRun;
     private Guid completedCleanup;
     private DateTimeOffset currentLaunched;
-    private bool disposed;
+    private bool disposed, ownerLaunchAttempted, preparationAttempted, unlaunchedCloseAttempted;
+    private string jobPhase = "Accepted";
     private CpuVoltageSessionCommand(CpuVoltageOwnedSmokeCommand.Options options)
     {
         platform = new(options); state = new(platform.Enrollment.Session); initial = continuity.Read();
@@ -112,10 +113,22 @@ internal sealed class CpuVoltageSessionCommand
                             }
                             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException) { }
                         }
+                        if (request.Action == CpuVoltageSessionAction.Close && job?.IsCompleted == true
+                            && !unlaunchedCloseAttempted && state.CanResolveBeforeOwner(ownerLaunchAttempted))
+                        {
+                            unlaunchedCloseAttempted = true;
+                            platform.WriteNew("unlaunched-close-intent-" + request.RequestId.ToString("N") + ".json", request);
+                            job = Task.Run(() => ResolveBeforeOwnerClose(request));
+                        }
                         bool launch = (request.Action != CpuVoltageSessionAction.CleanupReadOnly || job?.IsCompleted == true)
                             && state.Accept(request, value => platform.WriteNew("accepted-" + value.RequestId.ToString("N") + ".json", value));
                         if (launch && request.Action == CpuVoltageSessionAction.CleanupReadOnly) { job = Task.Run(() => RunReadOnlyCleanup(request)); }
-                        else if (launch) { ownerFailure = null; currentRun = Guid.Empty; completedCleanup = Guid.Empty; job = Task.Run(() => RunJobAsync(request)); }
+                        else if (launch)
+                        {
+                            ownerFailure = null; currentRun = Guid.Empty; completedCleanup = Guid.Empty;
+                            ownerLaunchAttempted = preparationAttempted = unlaunchedCloseAttempted = false; jobPhase = "Accepted";
+                            job = Task.Run(() => RunJobAsync(request));
+                        }
                         response = WithOwnerFailure(state.Snapshot, ownerFailure) with { RequestAccepted = launch };
                     }
                     await CpuVoltageSessionProtocol.WriteAsync(pipe, response, CpuVoltageSessionProtocol.MaximumReply, timeout.Token).ConfigureAwait(false);
@@ -192,11 +205,17 @@ internal sealed class CpuVoltageSessionCommand
             using var budget = new CancellationTokenSource(CpuVoltageOwnedSmokeCommand.Budget);
             lock (gate) { if (state.Snapshot.State != "Running") { throw new IOException("Job admission closed before preparation."); } }
             if (!ContextCurrent()) { throw new IOException("Session admission changed before launch."); }
+            lock (gate) { preparationAttempted = true; jobPhase = "ServicePreparation"; }
             platform.PrepareService(budget.Token);
+            lock (gate) { jobPhase = "ServiceReady"; }
             lock (gate) { if (state.Snapshot.State != "Running") { throw new IOException("Job admission closed before owner launch."); } }
             if (!ContextCurrent()) { throw new IOException("Session admission changed after Service preparation."); }
             var image = platform.OwnerImage();
-            owner = Process.Start(platform.OwnerStart(request.Action)) ?? throw new IOException("Owner launch outcome unavailable.");
+            var ownerStart = platform.OwnerStart(request.Action);
+            lock (gate) { ownerLaunchAttempted = true; jobPhase = "OwnerLaunchAttempt"; }
+            platform.WriteNew("owner-launch-intent-" + request.RequestId.ToString("N") + ".json", request);
+            owner = Process.Start(ownerStart) ?? throw new IOException("Owner launch outcome unavailable.");
+            lock (gate) { jobPhase = "OwnerRunning"; }
             retainedOwner = CpuPmRetainedLaunchProcess.RetainForCompletion(WindowsCpuPmProcessProbe.FromLaunchedHandle(owner.SafeHandle),
                 platform.Pins, platform.Image, image.Sha256, image);
             // Fixed short announcement comes from the retained actual owner, never a caller path.
@@ -229,7 +248,39 @@ internal sealed class CpuVoltageSessionCommand
         catch (Exception exception)
         {
             try { if (run != Guid.Empty) { records = platform.ReadEvidence(run); } } catch { }
-            lock (gate) { state.Complete(false, false, records, "Stopped without retry: " + exception.Message + " Retained owner/resources require explicit reconciliation."); }
+            lock (gate)
+            {
+                string detail = $"Stopped without retry: {exception.Message} Phase: {jobPhase}; owner launch attempted: {ownerLaunchAttempted}. Retained resources require explicit reconciliation.";
+                try
+                {
+                    platform.WriteNew("failure-" + request.RequestId.ToString("N") + ".json", new
+                    { request.RequestId, Phase = jobPhase, OwnerLaunchAttempted = ownerLaunchAttempted, ServicePreparationAttempted = preparationAttempted, Failure = exception.GetType().Name });
+                }
+                catch { detail += " Failure record unavailable."; }
+                state.Complete(false, false, records, detail);
+            }
+        }
+    }
+    private void ResolveBeforeOwnerClose(CpuVoltageSessionRequest request)
+    {
+        try
+        {
+            lock (gate)
+            {
+                if (!state.CanResolveBeforeOwner(ownerLaunchAttempted) || owner is not null || retainedOwner is not null || currentRun != Guid.Empty)
+                { throw new IOException("Unlaunched resource cleanup lacks affirmative no-owner proof."); }
+            }
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            platform.ResolveBeforeOwner(request.RequestId, preparationAttempted, deadline.Token);
+            lock (gate)
+            {
+                state.CompleteBeforeOwnerClose(ownerLaunchAttempted);
+                state.Accept(request, _ => throw new InvalidOperationException("Close cannot launch work."));
+            }
+        }
+        catch (Exception exception)
+        {
+            lock (gate) { state.Block("Unlaunched resource cleanup refused or uncertain; no retry: " + exception.Message); }
         }
     }
     private void RunReadOnlyCleanup(CpuVoltageSessionRequest request)

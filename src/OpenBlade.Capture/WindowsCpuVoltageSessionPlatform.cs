@@ -111,7 +111,42 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
         }
         if (service.Status != ServiceControllerStatus.Running) { throw new IOException("Exact Service did not reach Running; no retry."); }
         RequireServiceConfiguration(service.ServiceHandle.DangerousGetHandle()); VerifyInstalled();
-        preparedService = WindowsCpuVoltageServiceProcess.Bind(pins, options.ServiceVersion, token);
+        preparedService = WindowsCpuVoltageServiceProcess.Bind(pins, options.ServiceVersion, token, value => preparedService = value);
+    }
+    internal void ResolveBeforeOwner(Guid request, bool preparationAttempted, CancellationToken token)
+    {
+        VerifyInstalled();
+        var drivers = new WindowsCpuPmDriverLifecyclePlatform();
+        if (!drivers.ReadIndependentAbsence().IsAbsent) { throw new IOException("Driver absence required before unlaunched cleanup."); }
+        if (preparationAttempted)
+        {
+            using var service = new ServiceController(OpenBladeWindowsService.Name);
+            RequireServiceConfiguration(service.ServiceHandle.DangerousGetHandle());
+            if (preparedService is null) { throw new IOException("No exact retained Service binding; unlaunched cleanup cannot adopt a process."); }
+            if (preparedService.ReadState() != CpuPmChildState.Terminal)
+            {
+                preparedService.AssertState(CpuPmChildState.Running);
+                preparedService.ShutdownOnce(token, requireNoCpuRecovery: true);
+            }
+            while (preparedService.ReadState() != CpuPmChildState.Terminal)
+            { token.ThrowIfCancellationRequested(); Thread.Sleep(50); }
+            preparedService.AssertState(CpuPmChildState.Terminal);
+        }
+        if (!drivers.ReadIndependentAbsence().IsAbsent) { throw new IOException("Driver absence changed during unlaunched cleanup."); }
+        token.ThrowIfCancellationRequested();
+        WriteNew("unlaunched-closed-" + request.ToString("N") + ".json", new
+        {
+            Request = request,
+            Enrollment.Source,
+            Enrollment.Manifest,
+            Enrollment.ServiceVersion,
+            OwnerLaunchAttempted = false,
+            ServicePreparationAttempted = preparationAttempted,
+            Service = preparedService?.Identity,
+            ServiceTerminal = preparationAttempted,
+            OwnedDriverAbsent = true,
+        });
+        if (preparationAttempted) { ReleaseVerifiedTerminalService(); }
     }
     internal void ReleaseVerifiedTerminalService()
     {

@@ -109,6 +109,14 @@ internal sealed class CpuVoltageSessionState(Guid session)
         if (!success) { failed = true; return; }
         active = null; failed = false; // The sticky session/continuity block remains.
     }
+    internal bool CanResolveBeforeOwner(bool ownerLaunchAttempted) => failed && active is not null
+        && !cleaning && !ownerLaunchAttempted;
+    internal void CompleteBeforeOwnerClose(bool ownerLaunchAttempted)
+    {
+        if (!CanResolveBeforeOwner(ownerLaunchAttempted)) { throw new IOException("No failed unlaunched job to resolve."); }
+        active = null; failed = false; blocked = true; observationAdmitted = false;
+        message = "Owner launch never attempted; exact prepared resources resolved. Close permitted; no job retry.";
+    }
     internal void UpdateEvidence(IReadOnlyDictionary<string, JsonElement> records) => evidence = records;
     internal void Block(string detail) { blocked = true; message = detail; }
 }

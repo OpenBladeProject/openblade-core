@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Security.AccessControl;
@@ -8,6 +9,72 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class CpuVoltageSessionTests
 {
+    [Fact]
+    public async Task StartupReadinessWaitsForListenerBeyondOrdinaryConnectionDeadline()
+    {
+        string name = "OpenBlade.Test.Readiness." + Guid.NewGuid().ToString("N");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        // Do not create the actual listener until after the ordinary two-second timeout.
+        string delayedName = name;
+        using var delayedClient = new NamedPipeClientStream(".", delayedName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        Task connection = WindowsCpuVoltageServiceProcess.WaitForStartupPipeAsync(delayedClient.ConnectAsync, deadline.Token);
+        await Task.Delay(2200, deadline.Token);
+        Assert.False(connection.IsCompleted);
+        using var delayedServer = new NamedPipeServerStream(delayedName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        await Task.WhenAll(connection, delayedServer.WaitForConnectionAsync(deadline.Token));
+        Assert.True(delayedClient.IsConnected);
+    }
+
+    [Fact]
+    public async Task StartupReadinessUsesOneBoundedConnectionAndHonorsExistingCancellation()
+    {
+        int calls = 0;
+        using var deadline = new CancellationTokenSource();
+        Task connection = WindowsCpuVoltageServiceProcess.WaitForStartupPipeAsync((milliseconds, token) =>
+        {
+            calls++; Assert.Equal(15_000, milliseconds); Assert.Equal(deadline.Token, token);
+            return Task.Delay(Timeout.Infinite, token);
+        }, deadline.Token);
+        deadline.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => connection);
+        Assert.Equal(1, calls);
+        await Assert.ThrowsAsync<OperationCanceledException>(() => WindowsCpuVoltageServiceProcess.WaitForStartupPipeAsync(
+            (_, _) => { calls++; return Task.CompletedTask; }, deadline.Token));
+        Assert.Equal(1, calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OnlyAffirmativelyUnlaunchedFailureCanResolveAndCloseWithoutReplay(bool launchAttempted)
+    {
+        var state = new CpuVoltageSessionState(Guid.NewGuid());
+        state.Accept(Request(CpuVoltageSessionAction.ObserveOnly), _ => { });
+        state.Complete(true, true, null, "green");
+        var cycle = Request(CpuVoltageSessionAction.VoltageCycle);
+        Assert.True(state.Accept(cycle, _ => { }));
+        Assert.False(state.CanResolveBeforeOwner(false));
+        state.Complete(false, false, null, "preparation failed");
+        Assert.Equal(!launchAttempted, state.CanResolveBeforeOwner(launchAttempted));
+        if (launchAttempted)
+        {
+            Assert.Throws<IOException>(() => state.CompleteBeforeOwnerClose(true));
+            state.Accept(Request(CpuVoltageSessionAction.Close), _ => { });
+            Assert.True(state.MustRetainHost); Assert.NotEqual("Closed", state.Snapshot.State);
+        }
+        else
+        {
+            state.Block("continuity revoked");
+            state.CompleteBeforeOwnerClose(false);
+            Assert.False(state.MustRetainHost); Assert.False(state.Snapshot.ObservationAdmitted);
+            Assert.Equal("Blocked", state.Snapshot.State);
+            Assert.False(state.Accept(cycle, _ => throw new Exception("replay")));
+            Assert.False(state.Accept(Request(CpuVoltageSessionAction.ObserveOnly), _ => throw new Exception("new authority")));
+            state.Accept(Request(CpuVoltageSessionAction.Close), _ => { });
+            Assert.Equal("Closed", state.Snapshot.State);
+        }
+    }
+
     [Fact]
     public async Task OwnerOutputRetainsBoundedFailureLinesWithoutChangingRunIdentity()
     {

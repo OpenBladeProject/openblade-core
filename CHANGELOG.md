@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Wait for the exact validation Service pipe before launching a CPU validation owner, retain explicit launch-phase evidence, and permit bounded resource-only closure after a proven unlaunched failure. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Match the exact AMD backend getter mailbox readiness semantics for a prior completed error while still requiring successful acknowledgement of each new command; setter admission remains unchanged. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Preserve the rejected mailbox status and frozen readiness/submission evidence for returned CPU query errors, without changing native traffic or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

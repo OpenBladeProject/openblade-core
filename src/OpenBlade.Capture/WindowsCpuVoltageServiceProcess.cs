@@ -24,9 +24,10 @@ internal sealed class WindowsCpuVoltageServiceProcess
     internal WindowsCpuVoltageServiceProcess(ICpuPmRetainedProcessProbe process, CpuPmProcessObservation initial,
         ICpuPmLaunchFiles pins, string version, Func<int[]>? processInventory = null)
     { this.process = process; this.initial = initial; this.pins = pins; this.version = version; this.processInventory = processInventory; }
-    internal static WindowsCpuVoltageServiceProcess Bind(ICpuPmLaunchFiles pins, string version, CancellationToken token)
+    internal static WindowsCpuVoltageServiceProcess Bind(ICpuPmLaunchFiles pins, string version, CancellationToken token,
+        Action<WindowsCpuVoltageServiceProcess>? retainBeforeVersion = null)
     {
-        using var pipe = Connect(token);
+        using var pipe = Connect(token, startup: retainBeforeVersion is not null);
         if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint pid) || pid is 0 or > int.MaxValue)
         { throw new IOException("Service pipe identity unavailable."); }
         using var source = Process.GetProcessById(checked((int)pid));
@@ -35,6 +36,7 @@ internal sealed class WindowsCpuVoltageServiceProcess
         if (observed.Pid != pid || observed.State != CpuPmChildState.Running || observed.Image != Image)
         { throw new IOException("Exact installed Service process required."); }
         var value = new WindowsCpuVoltageServiceProcess(retained, observed, pins, version);
+        retainBeforeVersion?.Invoke(value);
         value.AssertState(CpuPmChildState.Running);
         value.VerifyVersion(token);
         return value;
@@ -104,11 +106,20 @@ internal sealed class WindowsCpuVoltageServiceProcess
         }
         finally { client.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-    private static NamedPipeClientStream Connect(CancellationToken token)
+    internal static Task WaitForStartupPipeAsync(Func<int, CancellationToken, Task> connect, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        return connect(15_000, token); // One bounded connection, inside the existing job deadline.
+    }
+    private static NamedPipeClientStream Connect(CancellationToken token, bool startup = false)
     {
         var pipe = new NamedPipeClientStream(".", OpenBladeIpc.PipeName, PipeDirection.InOut,
             PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
-        try { pipe.ConnectAsync(2000, token).GetAwaiter().GetResult(); return pipe; }
+        try
+        {
+            (startup ? WaitForStartupPipeAsync(pipe.ConnectAsync, token) : pipe.ConnectAsync(2000, token)).GetAwaiter().GetResult();
+            return pipe;
+        }
         catch { pipe.Dispose(); throw; }
     }
     // Same Win32 peer API as WindowsCpuPmAuthorityChannel.
