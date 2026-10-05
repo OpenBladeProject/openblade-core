@@ -218,7 +218,8 @@ internal sealed class CpuVoltageSessionCommand
         Dictionary<string, JsonElement>? records = null;
         try
         {
-            using var budget = new CancellationTokenSource(CpuVoltageOwnedSmokeCommand.Budget);
+            var jobDeadline = platform.WriteJobDeadline(request.RequestId, Environment.TickCount64);
+            using var budget = new CancellationTokenSource(TimeSpan.FromMilliseconds(jobDeadline.ExpiresTick - Environment.TickCount64));
             lock (gate) { if (state.Snapshot.State != "Running") { throw new IOException("Job admission closed before preparation."); } }
             if (!ContextCurrent()) { throw new IOException("Session admission changed before launch."); }
             lock (gate) { preparationAttempted = true; jobPhase = "ServicePreparation"; }
@@ -227,7 +228,7 @@ internal sealed class CpuVoltageSessionCommand
             lock (gate) { if (state.Snapshot.State != "Running") { throw new IOException("Job admission closed before owner launch."); } }
             if (!ContextCurrent()) { throw new IOException("Session admission changed after Service preparation."); }
             var image = platform.OwnerImage();
-            var ownerStart = platform.OwnerStart(request.Action);
+            var ownerStart = platform.OwnerStart(request.Action, request.RequestId);
             lock (gate) { ownerLaunchAttempted = true; jobPhase = "OwnerLaunchAttempt"; }
             platform.WriteNew("owner-launch-intent-" + request.RequestId.ToString("N") + ".json", request);
             owner = Process.Start(ownerStart) ?? throw new IOException("Owner launch outcome unavailable.");

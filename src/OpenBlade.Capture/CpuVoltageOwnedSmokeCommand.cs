@@ -19,6 +19,8 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     private readonly TextWriter output;
     private readonly WindowsCpuPmLaunchFiles pins = new(voltageValidation: true);
     private readonly CancellationTokenSource deadline = new(Budget);
+    private long expiresTick = checked(Environment.TickCount64 + CpuVoltageJobDeadline.BudgetMilliseconds);
+    private CpuVoltageJobDeadline? hostedDeadline;
     private readonly Guid run = Guid.NewGuid();
     private IReadOnlyList<CpuPmLaunchFile> manifest = [];
     private CpuPmOwnedDriverLifecycle? owner;
@@ -29,7 +31,8 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     private bool mutationPossible, serviceTerminal;
     private int uncertain;
     private CpuVoltageOwnedSmokeCommand(Options options, TextWriter output) { this.options = options; this.output = output; }
-    internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion, bool ObserveOnly = false);
+    internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion, bool ObserveOnly = false,
+        string? SessionJob = null);
     internal sealed record CompletionReceipt(Guid Run, string Mode, string Source, string ManifestSha256,
         string ExpectedServiceVersion, bool ServiceTerminal, bool OwnedDriverAbsent, bool OriginalVerified);
     internal static CompletionReceipt CreateCompletionReceipt(Guid run, Options options) => new(run,
@@ -37,6 +40,19 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         true, true, !options.ObserveOnly);
     internal static Options Parse(string[] args)
     {
+        string? sessionJob = null;
+        int jobOption = Array.IndexOf(args, "--session-job");
+        if (jobOption >= 0)
+        {
+            if (jobOption + 1 >= args.Length) { throw new ArgumentException("Missing fixed session job."); }
+            sessionJob = args[jobOption + 1];
+            string[] ids = sessionJob.Split(':');
+            if (ids.Length != 2 || !Guid.TryParseExact(ids[0], "N", out var session) || session == Guid.Empty
+                || !Guid.TryParseExact(ids[1], "N", out var job) || job == Guid.Empty
+                || sessionJob != session.ToString("N") + ":" + job.ToString("N"))
+            { throw new ArgumentException("Canonical session and job IDs required."); }
+            args = args.Take(jobOption).Concat(args.Skip(jobOption + 2)).ToArray();
+        }
         string[] names = ["--payload", "--source", "--manifest-sha256", "--expected-service-version", "--confirm-target"];
         bool observeOnly = args.Count(value => value == "--observe-only") == 1;
         if (observeOnly) { args = args.Where(value => value != "--observe-only").ToArray(); }
@@ -51,7 +67,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             || !Version.TryParse(version[..^suffix.Length], out var parsed) || parsed.Build < 0
             || path.Length > 350 || !path.StartsWith(@"C:\", StringComparison.Ordinal) || path.Contains('/') || path != Path.GetFullPath(path))
         { throw new ArgumentException("Exact reviewed package, full source, validation Service version and shutdown confirmation required."); }
-        return new(path, source, hash, version, observeOnly);
+        return new(path, source, hash, version, observeOnly, sessionJob);
     }
     internal static string[] ChildArguments(Options options, string evidence) =>
         ["cpu-voltage-optimizer", .. options.ObserveOnly ? new[] { "--observe-only" } : [], "--confirm-target",
@@ -79,6 +95,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         try
         {
             PinPackage();
+            AdoptHostedDeadline();
             WindowsCpuPmFreshRunTree.Create(run);
             string runPath = Path.Combine(WindowsCpuPmCaptureEvidenceFiles.FixedRoot, run.ToString("N"));
             CpuPmAuthenticatedChildRun.PinAncestors(pins, runPath); pins.PinDirectory(runPath, true, true);
@@ -90,6 +107,20 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             { CpuPmAuthenticatedChildRun.ValidatePayload(pins, options.Payload, manifest, deadline.Token, voltageValidation: true); AssertContext(); }, deadline.Token)
                 ?? throw new IOException("Passive owner safety unavailable.");
             var tag = new CpuPmDriverOwnerTag(run, Guid.NewGuid(), options.Manifest, Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)));
+            if (hostedDeadline is { } jobDeadline)
+            {
+                using var self = WindowsCpuPmProcessProbe.Current();
+                var identity = self.Read(true);
+                string ownerImage = identity.Image ?? throw new IOException("Validation owner image unavailable.");
+                if (identity.State != CpuPmChildState.Running || ownerImage != jobDeadline.HostImage)
+                { throw new IOException("Validation owner image differs from the protected job."); }
+                var authority = new CpuVoltageRunDeadline(jobDeadline, run, identity.Pid, identity.Created, ownerImage,
+                    service.Identity.Pid, service.Identity.Created, tag.Value);
+                string authorityPath = Path.Combine(CpuVoltageJobDeadline.Root, authority.FileName);
+                using (var stream = new FileStream(authorityPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, FileOptions.WriteThrough))
+                { JsonSerializer.Serialize(stream, authority, CpuVoltageSessionProtocol.Json); stream.Flush(true); }
+                pins.PinFile(authorityPath, 8192, false);
+            }
             owner = new(tag, new WindowsCpuPmDriverLifecyclePlatform(), safety,
                 WindowsCpuPmDriverJournalStorage.CreateForFixedRun(tag), new CpuPmAuthorityClock());
             WriteContext(Path.Combine(runPath, "control", "voltage-context.json"), new
@@ -177,9 +208,37 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         }
         return complete;
     }
-    private readonly long started = Stopwatch.GetTimestamp();
     private TimeSpan RemainingBudget()
-    { var remaining = Budget - Stopwatch.GetElapsedTime(started); return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero; }
+        => TimeSpan.FromMilliseconds(Math.Max(0, expiresTick - Environment.TickCount64));
+    private void AdoptHostedDeadline()
+    {
+        if (options.SessionJob is null)
+        {
+            if (!options.ObserveOnly) { throw new IOException("A protected host job is required for a voltage cycle."); }
+            return; // Standalone observation never creates write authority.
+        }
+        string[] ids = options.SessionJob.Split(':');
+        Guid session = Guid.ParseExact(ids[0], "N"), job = Guid.ParseExact(ids[1], "N");
+        var enrollment = WindowsCpuVoltageSessionPlatform.ReadEnrollment(session);
+        string directory = Path.Combine(CpuVoltageJobDeadline.Root, session.ToString("N"));
+        pins.PinDirectory(CpuVoltageJobDeadline.Root, false, true); pins.PinDirectory(directory, false, true);
+        var file = pins.PinFile(Path.Combine(directory, "job-deadline-" + job.ToString("N") + ".json"), 8192, false);
+        var value = JsonSerializer.Deserialize<CpuVoltageJobDeadline>(file.ReadBounded(8192), CpuVoltageSessionProtocol.Json)
+            ?? throw new IOException("Missing protected validation deadline.");
+        if (value.Session != session || value.Job != job || !value.IsCurrent(Environment.TickCount64)
+            || value.HostPid != enrollment.HostPid || value.HostCreated != enrollment.HostCreated || value.HostImage != enrollment.HostImage
+            || value.HostImage != Path.Combine(options.Payload, "OpenBlade.Capture.exe")
+            || value.Source != options.Source || value.Manifest != options.Manifest || value.ServiceVersion != options.ServiceVersion)
+        { throw new IOException("Protected validation deadline binding differs."); }
+        using var host = Process.GetProcessById(value.HostPid);
+        using var probe = WindowsCpuPmProcessProbe.FromLaunchedHandle(host.SafeHandle);
+        var actual = probe.Read(true);
+        if (actual.Pid != value.HostPid || actual.Created != value.HostCreated || actual.Image != value.HostImage
+            || actual.State != CpuPmChildState.Running) { throw new IOException("Validation host identity changed."); }
+        hostedDeadline = value; expiresTick = value.ExpiresTick;
+        deadline.CancelAfter(RemainingBudget());
+        deadline.Token.ThrowIfCancellationRequested();
+    }
     private void AssertContext()
     {
         deadline.Token.ThrowIfCancellationRequested(); pins.AssertAllPins();

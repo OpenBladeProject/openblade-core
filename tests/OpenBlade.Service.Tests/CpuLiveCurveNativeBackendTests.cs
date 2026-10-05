@@ -7,6 +7,37 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveNativeBackendTests
 {
     [Fact]
+    public async Task ValidationExpiryRetainsPendingActualWorkerAndItsDeadlineResources()
+    {
+        using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
+        long now = 100; var resources = new DeadlineResources(); CpuLiveCurveWriteDeadline? deadline = null;
+        var provider = new Provider
+        {
+            Deadline = token => deadline = new(100, 600_100, () => now, () => true, token, resources),
+        };
+        var platform = new Platform { OnSetter = () => { entered.Set(); Assert.True(finish.Wait(TimeSpan.FromSeconds(10))); } };
+        var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        var before = CpuLiveCurveSnapshot.TryCreate((await backend.ObserveAsync(default)).Observation)!;
+        var work = backend.SendAsync(provider.Context!, Command(0), CpuLiveCurveCommandPurpose.Forward, before, default);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            now = 600_100; Assert.False(deadline!.IsCurrent());
+            Assert.True(deadline.Token.IsCancellationRequested);
+            Assert.False(work.IsCompleted); Assert.NotNull(backend.OutstandingWorker);
+            Assert.False(resources.Disposed); Assert.True(platform.Pinned);
+        }
+        finally { finish.Set(); }
+        Assert.Equal(CpuLiveCurveSubmission.Unknown, await work.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True(resources.Disposed); Assert.Null(backend.OutstandingWorker);
+        Assert.Equal(1, platform.Setters);
+    }
+    private sealed class DeadlineResources : IDisposable
+    {
+        internal bool Disposed;
+        public void Dispose() => Disposed = true;
+    }
+    [Fact]
     public async Task PreparedProofRemainsOwnedUntilActualWorkerExitsBeforeNativeAdoption()
     {
         var provider = new Provider(); var context = provider.Context!;
@@ -487,6 +518,8 @@ public sealed class CpuLiveCurveNativeBackendTests
 
     private sealed class Provider : ICpuLiveCurveTrustedNativeProvider
     {
+        internal Func<CancellationToken, CpuLiveCurveWriteDeadline>? Deadline;
+        public CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token) => Deadline?.Invoke(token);
         internal Func<CpuLiveCurveNativeRequest, CpuLiveCurveWriteProof?>? Prepare;
         public bool SupportsReadPreparation => Prepare is not null;
         public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext context,

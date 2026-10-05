@@ -153,7 +153,7 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
         if (preparedService is null) { throw new IOException("No retained Service identity."); }
         preparedService.ReleaseAfterTerminal(); preparedService = null;
     }
-    internal ProcessStartInfo OwnerStart(CpuVoltageSessionAction action)
+    internal ProcessStartInfo OwnerStart(CpuVoltageSessionAction action, Guid request)
     {
         var start = new ProcessStartInfo(Image)
         { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = options.Payload, RedirectStandardOutput = true };
@@ -162,7 +162,18 @@ internal sealed class WindowsCpuVoltageSessionPlatform : IDisposable
             || key.StartsWith("COMPLUS_", StringComparison.OrdinalIgnoreCase) || key == "__COMPAT_LAYER").ToArray())
         { start.Environment.Remove(key); }
         foreach (string arg in OwnerArguments(options, action)) { start.ArgumentList.Add(arg); }
+        start.ArgumentList.Add("--session-job");
+        start.ArgumentList.Add(Enrollment.Session.ToString("N") + ":" + request.ToString("N"));
         return start;
+    }
+    internal CpuVoltageJobDeadline WriteJobDeadline(Guid request, long started)
+    {
+        var value = new CpuVoltageJobDeadline(Enrollment.Session, request, Enrollment.HostPid, Enrollment.HostCreated,
+            Enrollment.HostImage, started, checked(started + CpuVoltageJobDeadline.BudgetMilliseconds),
+            Enrollment.Source, Enrollment.Manifest, Enrollment.ServiceVersion);
+        if (!value.IsCurrent(Environment.TickCount64)) { throw new IOException("Validation job deadline is unavailable."); }
+        WriteNew(value.FileName, value);
+        return value;
     }
     internal static string[] OwnerArguments(CpuVoltageOwnedSmokeCommand.Options options, CpuVoltageSessionAction action)
     {

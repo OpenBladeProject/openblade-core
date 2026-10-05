@@ -7,6 +7,21 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Fact]
+    public void CombinedCurveExpiryAfterFullSetterProofCannotReachNativeSetter()
+    {
+        var platform = new Platform { Capability = 6 }; var request = CurveRequest(platform);
+        long now = 100;
+        using var deadline = new CpuLiveCurveWriteDeadline(100, 600_100, () => now, () => true, default);
+        using var proof = new CurveProof(request) { Scoped = true, Prepared = true, Reading = true };
+        proof.FullAllowed = () => { if (proof.Ends == 1) { now = 600_100; } return true; };
+        proof.SubmissionAllowed = deadline.IsCurrent;
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.Equal(0, platform.Setters); Assert.True(proof.FullChecks > 0);
+        Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -506,6 +521,8 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     }
     private sealed class CurveProof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
     {
+        internal Func<bool>? SubmissionAllowed;
+        internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) => SubmissionAllowed?.Invoke() ?? true;
         internal bool PeerAllowed = true;
         internal bool Scoped, Reading, ReadAllowed = true;
         internal bool Prepared;

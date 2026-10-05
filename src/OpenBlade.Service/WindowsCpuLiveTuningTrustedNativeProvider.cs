@@ -55,6 +55,14 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     public CpuSavedAdmissionDiagnostic? Diagnostic => controller()?.CaptureLiveObservationDiagnostic();
     public bool SupportsReadPreparation => true;
+    public CpuLiveCurveWriteDeadline? BeginSubmission(CancellationToken token)
+    {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        return WindowsCpuVoltageWriteDeadline.Open(token);
+#else
+        return null;
+#endif
+    }
 
     public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)

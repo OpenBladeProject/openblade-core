@@ -82,6 +82,10 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
         && ReferenceEquals(request, exactRequest) && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
         && IsPreparationCurrent(exactRequest);
     internal virtual bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
+    // Cheap final lifetime/deadline check AFTER the full fresh setter proof.
+    internal bool SubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0
+        && admitted && ReferenceEquals(request, exactRequest) && IsSubmissionCurrent(exactRequest);
+    internal virtual bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) => true;
     // Optional read continuity for this consumed operation only. Neither these
     // checks nor their scope grant setter authority; Current remains independent.
     internal IDisposable? BeginRead(CpuLiveCurveNativeRequest exactRequest) =>

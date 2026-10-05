@@ -17,6 +17,18 @@ public sealed class CpuVoltageOwnedSmokeTests
     private static string[] Args => ["--payload", @"C:\reviewed", "--source", Source, "--manifest-sha256", Hash,
         "--expected-service-version", Version, "--confirm-target", CpuVoltageOwnedSmokeCommand.Confirmation];
 
+    [Fact]
+    public void HostedDeadlineOptionIsFixedCanonicalIdsAndNeverPassedToSmoke()
+    {
+        string job = Guid.NewGuid().ToString("N") + ":" + Guid.NewGuid().ToString("N");
+        var options = CpuVoltageOwnedSmokeCommand.Parse([.. Args, "--session-job", job]);
+        Assert.Equal(job, options.SessionJob);
+        Assert.DoesNotContain("--session-job", CpuVoltageOwnedSmokeCommand.ChildArguments(options, @"C:\private\evidence"));
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse([.. Args, "--session-job", @"C:\caller-path"]));
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse([.. Args, "--session-job", job, "--session-job", job]));
+        Assert.Null(CpuVoltageOwnedSmokeCommand.Parse(Args).SessionJob);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

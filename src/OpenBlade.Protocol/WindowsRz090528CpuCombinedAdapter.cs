@@ -85,6 +85,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             EndRead();
             // The read proof is gone before all original fresh setter checks.
             CheckFinal();
+            if (proof?.SubmissionCurrent(request) != true) { throw new CpuPowerAdmissionException(); }
         }
         void BeginReadback() => readScope = proof!.BeginRead(request);
         bool ExactPlatform() => platform is ICpuPmWindowsPlatform pm

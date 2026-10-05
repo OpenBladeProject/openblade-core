@@ -90,6 +90,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                     || proof.ReadFreshRange(request)?.AllowsOperation(request) != true || !proof.Current(request))
                 { throw new CurveAdmissionException(); }
                 token.ThrowIfCancellationRequested();
+                if (!proof.SubmissionCurrent(request)) { throw new CurveAdmissionException(); }
             });
             failure = CpuLiveCurveNativeFailure.Transport;
             session.SubmitCurve(request.Command, token);

@@ -10,6 +10,30 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void ExpiryDuringFreshSetterProofBlocksForwardAndRestoreBeforeNativeInvocation(bool restoring)
+    {
+        var platform = new Platform();
+        if (restoring) { platform.Offsets[0] = 0; }
+        var request = Request(platform);
+        if (restoring)
+        {
+            Assert.True(CpuLiveCurveCommand.TryCreate(0, -1, 0xFF55, out var command));
+            request = new(request.Scope, command, CpuLiveCurveCommandPurpose.Restore, request.Before);
+        }
+        long now = 100;
+        using var deadline = new CpuLiveCurveWriteDeadline(100, 600_100, () => now, () => true, default);
+        var proof = new Proof(request, platform) { SubmissionAllowed = deadline.IsCurrent };
+        proof.ReadRange = count => { if (count == 2) { now = 600_100; } return new(0x5000A, 0, 50, 1, true); };
+        var result = Run(platform, request, proof);
+        Assert.Equal(2, proof.RangeReads);
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.Equal(0, platform.Setters);
+        Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void PreparedNonPeerReadEndsBeforeFreshSetterAndIndependentRestoration(bool rejectSetter)
     {
         var platform = new Platform();
@@ -362,6 +386,8 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
         internal int RangeReads;
         internal CpuLiveCurveTrustedRange? Range = new(0x5000A, 0, 50, 1, true);
         internal Func<int, CpuLiveCurveTrustedRange?>? ReadRange;
+        internal Func<bool>? SubmissionAllowed;
+        internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) => SubmissionAllowed?.Invoke() ?? true;
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)
         {
             FreshChecks++;

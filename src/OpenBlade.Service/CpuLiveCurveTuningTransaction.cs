@@ -347,10 +347,12 @@ internal sealed class CpuLiveCurveTuningTransaction
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (!ReferenceEquals(currentPrepared, operation) || operation.Closed)
+            { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied); }
             if (operation.Started) { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied); }
             operation.Started = true;
-            var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
-            if (validation.Outcome != CpuLiveCurveOutcome.Unchanged || !operation.NeedsExecution) { return validation; }
+            if (!operation.NeedsExecution)
+            { return await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false); }
             return await ExecuteAsync(operation.Journal!, operation.Hash!, operation.Journal!.Restoring,
                 token, operation, beforeStep, peer).ConfigureAwait(false);
         }
@@ -414,21 +416,28 @@ internal sealed class CpuLiveCurveTuningTransaction
             {
                 var validation = await ValidatePreparedCoreAsync(operation, token).ConfigureAwait(false);
                 if (validation.Outcome != CpuLiveCurveOutcome.Unchanged) { return validation; }
+                // This same-step validation already observed the exact expected
+                // vector and admitted the complete ordered remaining plan.
+                snapshot = validation.Observation;
             }
             int index = restoring ? journal.CompletedSteps - 1 : journal.CompletedSteps;
             var step = journal.Steps[index];
             var purpose = restoring ? CpuLiveCurveCommandPurpose.Restore : CpuLiveCurveCommandPurpose.Forward;
-            var observed = await ObserveAsync(token).ConfigureAwait(false);
-            if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
-            { return await BlockJournalAsync(journal, hash, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
-            if (!Valid(observed, out snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
-            if (!Matches(journal, observed, journal.Expected, out snapshot))
-            { return await BlockJournalAsync(journal, hash, MismatchReason(journal, observed), snapshot).ConfigureAwait(false); }
-            if (!await AdmitAsync(journal.Context, step.Command(restoring), purpose, token).ConfigureAwait(false)
-                || !restoring && !await AdmitAsync(journal.Context, step.Command(true), CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
-            { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
-            if (!await AdmitRemainingAsync(journal, execute: true, token).ConfigureAwait(false))
-            { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
+            CpuLiveCurveBackendObservation? observed;
+            if (operation is null)
+            {
+                observed = await ObserveAsync(token).ConfigureAwait(false);
+                if (observed?.Context is { } currentContext && !journal.Context.MatchesHardwareContext(currentContext))
+                { return await BlockJournalAsync(journal, hash, CpuLiveCurveBlockReason.ContextMismatch, null).ConfigureAwait(false); }
+                if (!Valid(observed, out snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
+                if (!Matches(journal, observed, journal.Expected, out snapshot))
+                { return await BlockJournalAsync(journal, hash, MismatchReason(journal, observed), snapshot).ConfigureAwait(false); }
+                if (!await AdmitAsync(journal.Context, step.Command(restoring), purpose, token).ConfigureAwait(false)
+                    || !restoring && !await AdmitAsync(journal.Context, step.Command(true), CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
+                { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
+                if (!await AdmitRemainingAsync(journal, execute: true, token).ConfigureAwait(false))
+                { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
+            }
             var pending = journal.Progress(CpuLiveCurveOwnershipState.PossibleSubmission, journal.CompletedSteps, restoring);
             string? pendingHash = await WriteAsync(hash, pending, token).ConfigureAwait(false);
             if (pendingHash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot); }

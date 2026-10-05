@@ -7,6 +7,48 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveTuningTransactionTests
 {
     [Fact]
+    public async Task PreparedStepsReuseOneExactObservationAndCompletePlanThenReadBackIndependently()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        var prepared = await transaction.PrepareApplyAsync(new(true, -2), default);
+        int reads = backend.Reads, admissions = backend.Admissions.Count;
+        Assert.NotNull(prepared.Operation);
+        Assert.Equal(CpuLiveCurveOutcome.Verified,
+            (await transaction.ExecutePreparedAsync(prepared.Operation!, null, default)).Outcome);
+        Assert.Equal(24, backend.Reads - reads); // one expected vector plus one independent readback per setter
+        // Remaining forward/reverse pairs (156), then all twelve original restores per step (144).
+        Assert.Equal(300, backend.Admissions.Count - admissions);
+        Assert.Equal(12, backend.Sent.Count);
+        var restore = await transaction.PrepareRestoreAsync(default);
+        reads = backend.Reads;
+        Assert.Equal(CpuLiveCurveOutcome.Verified,
+            (await transaction.ExecutePreparedAsync(restore.Operation!, null, default)).Outcome);
+        Assert.Equal(24, backend.Reads - reads);
+        Assert.Equal(backend.Sent.Take(12).Select(c => c.PhysicalCoreId).Reverse(),
+            backend.Sent.Skip(12).Select(c => c.PhysicalCoreId));
+        Assert.All(backend.Values, c => Assert.Equal((short)-1, c.Offset));
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreparedSameStepRejectsDriftOrCancellationBeforeIntent(bool cancel)
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        var prepared = await transaction.PrepareApplyAsync(new(true, -2), default);
+        using var cancellation = new CancellationTokenSource();
+        if (!cancel) { backend.Values[0] = new(backend.Values[0].PhysicalCoreId, -3); }
+        else { backend.Admit = (_, _) => { cancellation.Cancel(); return true; }; }
+        var result = await transaction.ExecutePreparedAsync(prepared.Operation!, null, cancellation.Token);
+        Assert.Equal(CpuLiveCurveOutcome.Blocked, result.Outcome);
+        Assert.Empty(backend.Sent);
+        Assert.NotEqual(CpuLiveCurveOwnershipState.PossibleSubmission, store.Journal!.State);
+    }
+
+    [Fact]
     public async Task PlanFallbackPreservesOrderedForwardReverseAndOriginalChecks()
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
