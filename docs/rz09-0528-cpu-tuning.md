@@ -7,18 +7,18 @@ saved firmware, next-boot intent and measured running offsets separate.
 
 The driverless path saves firmware settings for the next boot. The optional live
 path uses the exact signed AMD stack when it is already installed and running;
-reads never start or provision a driver. Native live CO support is wired in source,
-but production live writes remain observed-only until the all-core installed path
-has attended readback and restoration evidence. A saved value does not prove
-running state or activation after restart.
+reads never start or provision a driver. Production composition admits live CO
+on the exact model/SKU after complete observation, fresh safety checks and
+resolved ownership. A saved value does not prove running state or activation
+after restart; boot and lifecycle validation remain pending.
 
-The draft service admits saved next-boot commands for the exact RZ09-0528/SKU
+The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
 plan pass. Attended installed-service IPC tests passed CO disabled-zero and PPT
-45 W, each followed by exact original restoration. The draft source now wires
-optional live CO and read-only PPT through a shared retained device lifetime and fresh metadata proofs;
-this integration has not yet been installed or physically validated. Live PPT
-mutation remains unavailable in default composition.
+45 W, each followed by exact original restoration. The installed combined build
+wires optional live CO and read-only PPT through a shared retained device
+lifetime and fresh metadata proofs. Live PPT mutation remains unavailable in
+default composition.
 Further PPT feature development and power-limit experiments are deferred. The
 Voltage Optimizer card has no PPT controls or requests. Existing power-limit code
 and the historical validation notes below are retained as experimental work;
@@ -280,8 +280,8 @@ observation to its initiating request, fresh USB identity and runtime lifetime.
 It checks firmware `0B5D1600` before copying the PM table, then obtains the fixed
 version-7/`50001` metadata pair. It never creates temporary driver authority or
 starts a driver. Default composition now includes PPT observation and its
-durable ownership store; production PPT write proofs remain disabled pending
-the reviewed physical setter fixture. This source change has not been installed.
+durable ownership store in the installed combined build. Production PPT write
+proofs remain disabled; further PPT feature development is deferred.
 
 The service runtime now dispatches injected live backends through retained CO
 and PPT transactions. Each operation has admission tied to its initiating
@@ -364,7 +364,9 @@ synthetic results do not admit installed live writes or prove boot activation.
 The live backend reports write availability only after complete CO observation,
 resolved ownership and fresh CO runtime admission. This is presentation eligibility;
 each command and its reverse still require their own native proof. The production
-model capability remains observed-only.
+model capability now permits CO reads and writes within the captured −30 to −1
+range, with zero for Off. This capability does not bypass native admission or
+establish stability at every offset.
 
 The existing FirmwareSmoke tool has a dedicated `cpu-voltage-optimizer` command.
 An attended run requires `--confirm-target RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE`,
@@ -375,8 +377,8 @@ The command sends one voltage-only change to the opposite On/Off state, checks
 all twelve offsets independently, restores through Service ownership, and checks
 the exact original vector and resolved recovery. Uncertainty stops the run without
 retry or guessed restoration. Existing baseline/result evidence is preserved.
-The command does not bypass admission; the current production model gate rejects
-live validation before mutation. Installation, driver provisioning, restart and
+The command does not bypass admission; production CO requests require the same
+fresh safety and ownership checks. Installation, driver provisioning, restart and
 sleep validation remain separately authorized actions.
 
 The CPU feature branch uses IPC 60. The installed combined CPU/cooling build uses
@@ -400,7 +402,8 @@ identity, active-session, full-power, continuity, ownership and readback checks
 remain required. The profile uses the existing transaction and FirmwareSmoke
 command. It neither starts nor provisions the optional AMD driver.
 
-Normal builds retain `ObservedOnly` live admission and the existing saved path.
+Normal builds admit the captured CO range and retain the existing saved path;
+live PPT remains `ObservedOnly`.
 The validation profile does not add saved write authority; its shared advertised
 −1-only capability also narrows saved requests that consume that range. The
 attended cycle uses `LiveNow` only and submits no saved or PPT command.
@@ -448,8 +451,9 @@ may be present before the existing owned-driver cleanup runs.
 The operation has one fixed 600-second deadline, covering admission through
 shutdown and driver cleanup. Ordinary PM owner continuity remains 120 seconds.
 The Service client retains its existing two-second connection bound; requests
-use the remaining operation token. The unchanged Smoke child has no separate
-owner-imposed RPC timeout. Deadline, Ctrl+C, unknown child/result/shutdown,
+use the remaining operation token. Hosted voltage cycles propagate the original
+host deadline through the native worker to the immediate setter boundary.
+Deadline, Ctrl+C, unknown child/result/shutdown,
 Service replacement, or lost file/power/session/ownership evidence parks the
 owner and retains resources. It does not kill the child, guess restoration,
 retry shutdown, or stop/delete the driver on uncertainty. A parked run needs
@@ -460,10 +464,11 @@ from one committed combined IPC 61 source. Run Capture from that exact private
 package root. The existing strict manifest format (`version: 1`, `source`, and
 `files` entries containing `name`, `length`, `sha256`) covers the complete
 Capture payload at root, complete Smoke payload under `firmware-smoke/`, and
-matching installed Service payload under `service/`. All OpenBlade assemblies
-must be source-qualified to the same full commit; the Service must carry the
-exact `+voltage-validation.<8hex>` version matching the full source prefix. The full manifest hash, source and
-Service version are explicit reviewed command arguments. The command pins all
+matching installed Service payload under `service/`. For live validation cycles,
+all OpenBlade assemblies must be source-qualified to the same full commit;
+the Service must carry the exact `+voltage-validation.<8hex>` version matching
+the full source prefix. The full manifest hash, source and Service version are
+explicit reviewed command arguments. The command pins all
 manifest files, validates the complete package inventory, compares and pins the
 installed Service files, and uses the existing administrator/SYSTEM-only fresh
 run tree. It durably records package/Service/child context and validated result
@@ -471,6 +476,14 @@ hashes; result handles deny subsequent writes/deletion through cleanup. This
 trusts the expressly attending administrator and SYSTEM, as the existing owner
 does; JSON cannot grant approval by itself. No new launcher or deployment path
 is supplied, and previously packaged source artifacts remain historical.
+
+Ordinary builds also support standalone `--observe-only` with the exact
+observe-only confirmation and a separate `--owner-source` identifying the
+Capture helper. The manifest pins the helper's full source and the target
+Service/Smoke source independently; installed Service files must match the
+target payload. Ordinary cycles and session jobs are rejected before driver
+provisioning. This developer observation performs no CO or PPT setter and
+retains the existing owned-driver cleanup and ambiguity rules.
 
 The voltage package uses fixed bounds of 1,536 manifest files, a 512 KiB
 manifest, 1 GiB aggregate payload, 4,096 retained pins and 2,048 inventory
