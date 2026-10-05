@@ -279,7 +279,7 @@ internal sealed partial class LocalDevDeploymentToolApplication
             .Order(StringComparer.Ordinal)
             .ToArray();
         string cpuDirectory = Path.Combine(inbox, CpuVoltageDeploymentClosure.DirectoryName);
-        if (closure is not null && Directory.Exists(cpuDirectory))
+        if (Directory.Exists(cpuDirectory))
         {
             // Only this fixed normal-user inbox directory is eligible for removal.
             // Refuse redirected entries before walking/deleting the prior request.

@@ -37,12 +37,30 @@ public sealed class LocalDevDeploymentToolTests : IDisposable
         "OpenBlade.LocalDevDeployment.Tool.Tests",
         Guid.NewGuid().ToString("N"));
 
-    [Fact]
-    public async Task Stage_WritesOnlyFixedEnrollmentBoundSignedInboxFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Stage_WritesOnlyFixedEnrollmentBoundSignedInboxFiles(bool priorCpuRequest)
     {
         Directory.CreateDirectory(root);
         string inbox = Path.Combine(root, "inbox");
         Directory.CreateDirectory(inbox);
+        if (priorCpuRequest)
+        {
+            foreach (string name in new[]
+            {
+                LocalDevDeploymentToolApplication.ManifestFileName,
+                LocalDevDeploymentToolApplication.SignatureFileName,
+                LocalDevDeploymentToolApplication.InstallerFileName,
+            })
+            {
+                await File.WriteAllBytesAsync(Path.Combine(inbox, name), [9]);
+            }
+            string previousClosure = Path.Combine(inbox, CpuVoltageDeploymentClosure.DirectoryName);
+            Directory.CreateDirectory(Path.Combine(previousClosure, "service"));
+            await File.WriteAllBytesAsync(Path.Combine(previousClosure, "manifest.json"), [9]);
+            await File.WriteAllBytesAsync(Path.Combine(previousClosure, "service", "OpenBlade.Service.dll"), [9]);
+        }
         string installer = Path.Combine(root, LocalDevDeploymentToolApplication.InstallerFileName);
         await File.WriteAllBytesAsync(installer, [1, 2, 3, 4]);
         using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -92,7 +110,7 @@ public sealed class LocalDevDeploymentToolTests : IDisposable
                 LocalDevDeploymentToolApplication.SignatureFileName,
                 LocalDevDeploymentToolApplication.InstallerFileName,
             }.Order(StringComparer.Ordinal),
-            Directory.GetFiles(inbox)
+            Directory.GetFileSystemEntries(inbox)
                 .Select(path => Path.GetFileName(path)!)
                 .Order(StringComparer.Ordinal));
         byte[] manifest = await File.ReadAllBytesAsync(Path.Combine(
