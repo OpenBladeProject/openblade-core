@@ -11,8 +11,10 @@ reads never start or provision a driver. Production composition admits live CO
 on the exact model/SKU after complete observation, fresh safety checks and
 resolved ownership. A saved value does not prove running state or activation
 after restart. Installed tests have verified saved Off activation and restored −1
-activation across two restarts. Power/session and sleep/resume validation remain
-pending.
+activation across two restarts. AC/battery/AC admission and lock/unlock recovery
+passed. The final attended sleep/wake check failed to resume and required a forced
+shutdown and restart. Its cause remains unresolved; sleep/resume validation is
+incomplete.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
