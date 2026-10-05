@@ -608,6 +608,30 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         Assert.Single(fake.Events, value => value == "continuity-arm");
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void RefreshReplyRejectionRetainsFirstWireReasonEvenWhenCleanupFails(bool corruptEcho, bool cleanupFails)
+    {
+        var fake = new Fake { RefreshResponse = 2, CorruptRefreshEcho = corruptEcho, CleanupFailure = cleanupFails };
+        var result = Run(fake);
+        Assert.False(result.Complete);
+        Assert.Equal(CpuPmObservationStage.Refresh, result.Diagnostic!.Stage);
+        Assert.Equal(CpuQueryFailureCode.WireReplyRejected, result.Diagnostic.NativeFailure);
+        Assert.Equal(0x81112F24u, result.Diagnostic.Operation);
+        Assert.Equal(corruptEcho ? CpuPmWireRejection.PciReadEchoMismatch : CpuPmWireRejection.MailboxResponseNotSuccessful,
+            result.Diagnostic.WireRejection);
+        Assert.Equal(corruptEcho ? (uint?)null : 2u, result.Diagnostic.MailboxStatus);
+        Assert.Equal(new uint[] { 6, 0x65 }, fake.Commands);
+        Assert.Equal(0, fake.Copies); Assert.Empty(result.CopySamples());
+        Assert.Equal(0x81112F24u, fake.Codes[^1]);
+        Assert.Equal(95u, result.FusedCap!.Candidate!.Watts);
+        Assert.True(result.FusedCap.A0F!.PostReadAdmissionPassed); Assert.True(result.FusedCap.A0B!.PostReadAdmissionPassed);
+        if (cleanupFails) { AssertAllPathsParked(fake); }
+    }
+
     private static void AssertAllPathsParked(Fake fake)
     {
         fake.ThrowAt = null; fake.Failure = null; fake.AfterOpen = null;
@@ -649,7 +673,8 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays, HostReads, ControllerReads;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal Action<Fake>? AfterOpen, AfterCopy, DuringArm, DuringContinuityDispose;
-        internal bool RefreshFails;
+        internal bool RefreshFails, CorruptRefreshEcho;
+        internal uint RefreshResponse = 1;
         internal readonly List<string> Events = [];
         internal readonly List<uint> Codes = [], Commands = [];
         internal readonly List<int> Threads = [];
@@ -763,6 +788,11 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
                     : selected == 0x03820A0F ? CapFirst : selected == 0x03820A0B ? CapSecond
                     : selected is 0x03820A13 or 0x03820A90 or 0x03B10A80 ? 1u
                     : selected == 0x03B10A88 ? command == 2 ? Firmware : command == 6 ? 0x005D000Bu : 0x12345678u : throw new IOException("Unexpected selection.");
+                if (selected == 0x03B10A80 && command == 0x65)
+                {
+                    value = RefreshResponse;
+                    if (CorruptRefreshEcho) { reply[0] ^= 1; }
+                }
                 Put(reply, 20, value);
             }
             else if (code == 0x81112F08)

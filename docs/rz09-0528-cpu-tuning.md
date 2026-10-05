@@ -22,6 +22,11 @@ same boot, with saved −1 intact and no recovery pending. A read-only post-wake
 observation confirmed all twelve running offsets at −1 and verified cleanup of
 its owned temporary driver. The power-peer query was unavailable, so live-write
 admission remained blocked; this read did not change CPU settings.
+Power-peer diagnostics now retain the first rejected PM wire condition and the
+already-read mailbox response status. This distinguishes request-state and PCI
+echo failures from a rejected refresh response without adding native traffic or
+relaxing the power-peer gate. The underlying hardware rejection remains under
+investigation.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original

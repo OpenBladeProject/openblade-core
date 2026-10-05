@@ -33,7 +33,7 @@ internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, Budget
 // Bounded categories and operation codes only; never retain exception messages or payloads.
 internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure,
     CpuQueryFailureCode? NativeFailure = null, int? NativeErrorCode = null, uint? Operation = null,
-    CpuPmAdmissionFailure? AdmissionFailure = null);
+    CpuPmAdmissionFailure? AdmissionFailure = null, CpuPmWireRejection? WireRejection = null, uint? MailboxStatus = null);
 internal enum CpuPmAdmissionFailure { InstalledRequestAdmission, InstalledBackendContinuity, OwnedLifetimeContinuity }
 internal sealed class CpuPmAdmissionException(CpuPmAdmissionFailure failure) : IOException
 {
@@ -228,6 +228,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
 
     private CpuPmObservationBatch Batch(CpuPmObservationDiagnostic? diagnostic)
     {
+        if (diagnostic is not null && wire.FirstRejection is { } rejection)
+        { diagnostic = diagnostic with { WireRejection = rejection, MailboxStatus = wire.RejectedMailboxStatus }; }
         CpuLivePowerRangeObservation? range = profile == CpuPmObservationProfile.RangeSingleSample
             ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, null, metadataMinMax, metadataApplicability) : null;
         return new(diagnostic is null && samples.Count == SampleCount && (range is null || range.MetadataComplete),

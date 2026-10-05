@@ -130,6 +130,11 @@ public sealed class Rz090528CpuPmObservationTests
         Assert.True(guard.Allows(Write, request, 0));
         request[4] ^= 1;
         Assert.False(guard.AcceptReply(Write, request, 0, new(true, [])));
+        Assert.Equal(CpuPmWireRejection.PendingRequestMismatch, guard.FirstRejection);
+        Assert.Null(guard.RejectedMailboxStatus);
+        guard.Abort();
+        Assert.False(guard.AcceptReply(Write, Words(0, Response, 0), 0, new(true, [])));
+        Assert.Equal(CpuPmWireRejection.PendingRequestMismatch, guard.FirstRejection);
         guard = Discover();
         Assert.True(guard.Allows(Write, Words(0, Response, 0), 0));
         Assert.False(guard.Allows(Read, Pci(0, 0, 0), 24));
@@ -151,6 +156,31 @@ public sealed class Rz090528CpuPmObservationTests
         Select(guard, Response);
         for (int i = 0; i < 1000; i++) { ReadWord(guard, request, 0); }
         Assert.False(guard.Allows(Read, request, 24));
+    }
+
+    [Theory]
+    [InlineData(2u)]
+    [InlineData(uint.MaxValue)]
+    public void IdleReadinessAcceptsNonzeroButOutstandingRefreshRetainsNonSuccessStatus(uint status)
+    {
+        var guard = Discover();
+        Poll(guard, status);
+        Assert.Null(guard.FirstRejection);
+        Transaction(guard, 6, 0, CpuPmObservationWireAdmission.Version);
+        BeginTransaction(guard, 0x65, 3);
+        Poll(guard, 0); // Busy remains valid until an acknowledgement or rejection.
+        Select(guard, Response);
+        byte[] request = Pci(0, 0, 0xC8);
+        Assert.True(guard.Allows(Read, request, 24));
+        Assert.False(guard.AcceptReply(Read, request, 24, new(true, ReadReply(request, status))));
+        Assert.Equal(CpuPmWireRejection.MailboxResponseNotSuccessful, guard.FirstRejection);
+        Assert.Equal(status, guard.RejectedMailboxStatus);
+        guard.Abort();
+        Assert.False(guard.Allows(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54));
+        Assert.False(guard.AcceptReply(Read, request, 24, new(true, ReadReply(request, 1))));
+        Assert.Equal(CpuPmWireRejection.MailboxResponseNotSuccessful, guard.FirstRejection);
+        Assert.Equal(status, guard.RejectedMailboxStatus);
+        Assert.Equal(0, guard.CopiesInvoked);
     }
 
     [Fact]

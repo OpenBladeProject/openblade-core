@@ -190,7 +190,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage,
         CpuPmObservationFailure failure, CpuPmObservationDiagnostic? diagnostic = null) =>
         new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
-            result.Diagnostic is { } first && (first.NativeFailure.HasValue || first.Operation.HasValue)
+            result.Diagnostic is { } first && (first.NativeFailure.HasValue || first.Operation.HasValue || first.WireRejection.HasValue)
                 ? first : diagnostic ?? new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation)
         {
             FirmwareVersion = result.FirmwareVersion
@@ -214,6 +214,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         private IReadOnlyList<CpuBackendFileMetadata>? files;
         private bool pinned, leased, abandoned;
         private CpuPmCapRegisterRead? rejectedCap;
+        private CpuPmWireRejection? wireRejection;
+        private uint? mailboxStatus;
+        private void RetainWireRejection(CpuPmWireRejection reason, uint? status)
+        {
+            if (!wireRejection.HasValue) { wireRejection = reason; mailboxStatus = status; }
+        }
         internal WindowsRz090528CpuQueryAdapter Transport { get; }
         internal PmAdapter(ICpuPmWindowsPlatform platform, ICpuPmContinuityScope continuity,
             CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime, ICpuPmObservationClock clock, CpuPmObservationProfile profile)
@@ -221,7 +227,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             this.platform = platform; this.continuity = continuity; this.lifetime = lifetime; this.readLifetime = readLifetime;
             Transport = new(this, ReadUsb, new PmNativeWire(profile, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
-                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)));
+                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false), RetainWireRejection));
         }
         internal PmAdapter(ICpuPmWindowsPlatform platform, CpuPmInstalledApproval approval,
             Func<DeviceIdentity?> readUsb, ICpuPmObservationClock clock)
@@ -232,11 +238,18 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             pinned = true;
             Transport = new(this, ReadUsb, new PmNativeWire(CpuPmObservationProfile.RangeSingleSample, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
-                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false)), platform)
+                    clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false), RetainWireRejection), platform)
             { queryCurrent = approval.IsCurrent };
         }
         internal CpuPmObservationBatch PreserveRejectedCap(CpuPmObservationBatch result)
         {
+            if (wireRejection is { } rejection && result.Diagnostic is { } diagnostic)
+            {
+                result = new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
+                    diagnostic with { WireRejection = rejection, MailboxStatus = mailboxStatus },
+                    result.FusedCap, result.Profile, result.RangeObservation)
+                { FirmwareVersion = result.FirmwareVersion };
+            }
             // The shared query adapter intentionally strips rejected reply bytes.
             // Retain that one cap word as evidence only; its native guard stays
             // poisoned and grants no following request.
@@ -397,7 +410,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             public void Dispose() { if (disposed) { return; } release(); disposed = true; }
         }
     }
-    private sealed class PmNativeWire(CpuPmObservationProfile profile, Action<uint, CpuQueryIoctlReply> retainRejectedCap) : ICpuNativeWireAdmission
+    private sealed class PmNativeWire(CpuPmObservationProfile profile, Action<uint, CpuQueryIoctlReply> retainRejectedCap,
+        Action<CpuPmWireRejection, uint?> retainWireRejection) : ICpuNativeWireAdmission
     {
         private readonly CpuPmObservationWireAdmission wire = new(profile);
         private uint selectedCap, selectedAddress, currentCommand;
@@ -418,6 +432,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply)
         {
             bool accepted = wire.AcceptReply(code, input, outputLength, reply);
+            if (!accepted && wire.FirstRejection is { } rejection)
+            { retainWireRejection(rejection, wire.RejectedMailboxStatus); }
             if (!accepted && selectedCap != 0 && code == 0x81112F24 && input.Length == 20
                 && outputLength == 24 && reply.Bytes.Length == 24 && reply.Bytes.AsSpan(0, 20).SequenceEqual(input))
             { retainRejectedCap(selectedCap, reply); }

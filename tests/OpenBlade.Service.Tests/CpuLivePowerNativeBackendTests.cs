@@ -24,6 +24,32 @@ public sealed class CpuLivePowerNativeBackendTests
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task RefreshReplyRejectionSurfacesBoundedWireReasonAndPreservesItAcrossCleanupFailure(bool corruptEcho, bool cleanupFails)
+    {
+        var platform = new Platform { RefreshResponse = 2, CorruptRefreshEcho = corruptEcho, CleanupFault = cleanupFails ? "continuity" : null };
+        var provider = new Provider(platform);
+        var backend = new CpuLivePowerNativeBackend(platform, provider, new Metadata());
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        Assert.Null((await backend.ObserveAsync(default, diagnostic)).Observation);
+        string detail = corruptEcho ? "PciReadEchoMismatch" : "MailboxResponseNotSuccessful; mailbox status 0x00000002";
+        Assert.Equal("power native observation Refresh/NativeFailure; native failure WireReplyRejected; operation 0x81112F24; wire rejection " + detail,
+            diagnostic.FirstFailure);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65 }, platform.Commands);
+        Assert.Equal(0, platform.Copies); Assert.Equal(0, platform.Setters); Assert.Equal(0, provider.Interpretations);
+        Assert.Equal(cleanupFails, backend.Status.ScopeInvalid); Assert.Null(backend.OutstandingWorker);
+        int calls = platform.Calls;
+        if (cleanupFails)
+        {
+            Assert.Null((await backend.ObserveAsync(default)).Observation);
+            Assert.Equal(calls, platform.Calls);
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task PowerObservationEndsGetterAndRejectsFailedFinalAdmission(bool rejectFinal)
@@ -395,6 +421,10 @@ public sealed class CpuLivePowerNativeBackendTests
         internal int Opens, Setters, Duplicates, Arms; internal bool Held, Pinned, InvalidVersion; internal string? CleanupFault; internal Action? BeforeSetter, AtSetter;
         private uint selected, argument, command; private int copies;
         internal CpuQueryFailureCode? RefreshFailure;
+        internal uint RefreshResponse = 1;
+        internal bool CorruptRefreshEcho;
+        internal int Calls;
+        internal int Copies => copies;
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, 0x02C6, "2.02");
         public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
@@ -429,7 +459,7 @@ public sealed class CpuLivePowerNativeBackendTests
         private sealed class ReleaseAction(Action action) : IDisposable { public void Dispose() => action(); }
         private CpuQueryIoctlReply Invoke(uint code, byte[] input, int length)
         {
-            Assert.True(Held); Assert.True(Pinned); var output = new byte[length];
+            Assert.True(Held); Assert.True(Pinned); Calls++; var output = new byte[length];
             if (code == 0x81112F18)
             {
                 Put(output, 24, 3);
@@ -466,6 +496,11 @@ public sealed class CpuLivePowerNativeBackendTests
                             : command == 6 ? InvalidVersion ? 0u : 0x005D000Bu : command == 0x82 ? 2u : 1u,
                         _ => throw new InvalidOperationException(),
                     };
+                if (selected == 0x03B10A80 && command == 0x65)
+                {
+                    value = RefreshResponse;
+                    if (CorruptRefreshEcho) { output[0] ^= 1; }
+                }
                 Put(output, 20, value);
             }
             else if (code == 0x81112F08)

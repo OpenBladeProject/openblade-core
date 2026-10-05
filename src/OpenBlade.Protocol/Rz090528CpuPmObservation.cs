@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 
 namespace OpenBlade.Protocol;
 
+internal enum CpuPmWireRejection { PendingRequestMismatch, PciReadEchoMismatch, MailboxResponseNotSuccessful }
+
 // Separate admission capability: never attach this guard to the 06/5E query path.
 // Its caller must establish the exact attended identity and a single mutex lease.
 internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
@@ -25,6 +27,13 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
     private int copies, polls, operations;
     private (uint Code, byte[] Input, int Output)? pending;
 
+    internal CpuPmWireRejection? FirstRejection { get; private set; }
+    internal uint? RejectedMailboxStatus { get; private set; }
+    private bool Reject(CpuPmWireRejection reason, uint? mailboxStatus = null)
+    {
+        if (!FirstRejection.HasValue) { FirstRejection = reason; RejectedMailboxStatus = mailboxStatus; }
+        Abort(); return false;
+    }
     internal bool IsPoisoned => failed;
     internal int CopiesInvoked => copies;
     internal void Abort() { failed = true; pending = null; copyPermit = false; }
@@ -111,9 +120,11 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
 
     internal bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply)
     {
-        if (failed || pending is not { } request || request.Code != code || request.Output != outputLength
-            || !request.Input.AsSpan().SequenceEqual(input) || !reply.Success || reply.Bytes.Length != outputLength)
-        { Abort(); return false; }
+        if (failed) { return false; }
+        if (pending is not { } request || request.Code != code || request.Output != outputLength
+            || !request.Input.AsSpan().SequenceEqual(input))
+        { return Reject(CpuPmWireRejection.PendingRequestMismatch); }
+        if (!reply.Success || reply.Bytes.Length != outputLength) { Abort(); return false; }
         pending = null;
         if (code == Copy)
         {
@@ -132,7 +143,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
         }
         else if (code == Read)
         {
-            if (!reply.Bytes.AsSpan(0, 20).SequenceEqual(input)) { Abort(); return false; }
+            if (!reply.Bytes.AsSpan(0, 20).SequenceEqual(input)) { return Reject(CpuPmWireRejection.PciReadEchoMismatch); }
             uint value = Word(reply.Bytes, 20);
             if (fuseMaskConfirmed && capProgress < CapOperations && capProgress % 2 == 1)
             {
@@ -161,7 +172,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             }
             else if (Word(input, 12) == 0xC8 && selected == Response)
             {
-                if (command != 0 && value > 1) { Abort(); return false; }
+                if (command != 0 && value > 1) { return Reject(CpuPmWireRejection.MailboxResponseNotSuccessful, value); }
                 ready = command == 0 ? value != 0 : value == 1;
             }
             else if (Word(input, 12) == 0xC8 && selected == Argument)

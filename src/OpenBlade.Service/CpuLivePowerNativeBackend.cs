@@ -92,7 +92,9 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
                 + (nativeDiagnostic.NativeFailure is { } failure ? "; native failure " + failure : string.Empty)
                 + (nativeDiagnostic.NativeErrorCode is { } error ? "; native error " + error : string.Empty)
                 + (nativeDiagnostic.Operation is { } operation ? $"; operation 0x{operation:X8}" : string.Empty)
-                + (nativeDiagnostic.AdmissionFailure is { } admission ? "; admission " + admission : string.Empty));
+                + (nativeDiagnostic.AdmissionFailure is { } admission ? "; admission " + admission : string.Empty)
+                + (nativeDiagnostic.WireRejection is { } rejection ? "; wire rejection " + rejection : string.Empty)
+                + (nativeDiagnostic.MailboxStatus is { } status ? $"; mailbox status 0x{status:X8}" : string.Empty));
         }
         if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Reject("power observation cleanup"); }
         token.ThrowIfCancellationRequested();
