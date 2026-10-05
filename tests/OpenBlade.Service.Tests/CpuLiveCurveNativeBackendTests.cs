@@ -7,6 +7,42 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveNativeBackendTests
 {
     [Fact]
+    public async Task PreparedProofRemainsOwnedUntilActualWorkerExitsBeforeNativeAdoption()
+    {
+        var provider = new Provider(); var context = provider.Context!;
+        var platform = new Platform(); var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        using var entered = new ManualResetEventSlim(); using var finish = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        PreparationProof? proof = null;
+        provider.Prepare = request =>
+        {
+            proof = new(request); entered.Set();
+            Assert.True(finish.Wait(TimeSpan.FromSeconds(5)));
+            provider.Context = null; return proof;
+        };
+        var task = backend.SendAsync(context, Command(0), CpuLiveCurveCommandPurpose.Forward, Snapshot(), cancellation.Token);
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        try
+        {
+            cancellation.Cancel();
+            Assert.False(task.IsCompleted); Assert.False(proof!.Disposed);
+            Assert.True(backend.Status.WorkerOutstanding); Assert.Equal(0, platform.Opens);
+        }
+        finally { finish.Set(); }
+        await task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(proof!.Disposed); Assert.False(backend.Status.WorkerOutstanding);
+        Assert.Equal(0, platform.Setters); Assert.Equal(0, platform.Opens);
+    }
+
+    private sealed class PreparationProof(CpuLiveCurveNativeRequest request) : CpuLiveCurveWriteProof(request)
+    {
+        internal bool Disposed;
+        internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => !Disposed;
+        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => false;
+        internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest) => null;
+        internal override void DisposeCore() => Disposed = true;
+    }
+    [Fact]
     public async Task ExistingQueryDiagnosticPreservesStageAndNativeCodeWithoutExceptionText()
     {
         var platform = new Platform { OnWait = () => throw new System.ComponentModel.Win32Exception(5, "private path") };
@@ -451,6 +487,10 @@ public sealed class CpuLiveCurveNativeBackendTests
 
     private sealed class Provider : ICpuLiveCurveTrustedNativeProvider
     {
+        internal Func<CpuLiveCurveNativeRequest, CpuLiveCurveWriteProof?>? Prepare;
+        public bool SupportsReadPreparation => Prepare is not null;
+        public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext context,
+            CpuLiveCurveNativeRequest request, CancellationToken token) => Prepare?.Invoke(request);
         internal volatile CpuLiveCurveContext? Context = CpuLiveCurveTuningTransactionTests.ContextFixture();
         internal bool QueryAllowed = true;
         internal bool AdmissionAllowed = true;

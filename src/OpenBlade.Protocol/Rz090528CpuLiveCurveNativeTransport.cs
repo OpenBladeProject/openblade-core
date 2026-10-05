@@ -62,27 +62,34 @@ internal sealed record CpuLiveCurveTrustedRange(uint Selector, int MinimumMagnit
 // A getter approval, historical metadata or caller-supplied bool cannot implement
 // that trust. The installed provider supplies CO authority from reviewed evidence;
 // peer PPT restoration remains independently gated.
-internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request)
+internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request) : IDisposable
 {
     private readonly long created = Stopwatch.GetTimestamp();
     private int consumed;
+    private int disposed;
     private bool admitted;
     internal bool Consume(CpuLiveCurveNativeRequest exactRequest)
     {
-        if (Interlocked.Exchange(ref consumed, 1) != 0 || !Current(exactRequest)) { return false; }
+        if (Interlocked.Exchange(ref consumed, 1) != 0 || !PreparationCurrent(exactRequest)) { return false; }
         admitted = true;
         return true;
     }
-    internal bool Current(CpuLiveCurveNativeRequest exactRequest) => ReferenceEquals(request, exactRequest)
+    internal bool Current(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsCurrent(exactRequest);
+    // Consumption only binds a single exact operation. Production may retain
+    // non-authorizing read preparation here; the setter still requires Current.
+    internal bool PreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0
+        && ReferenceEquals(request, exactRequest) && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+        && IsPreparationCurrent(exactRequest);
+    internal virtual bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
     // Optional read continuity for this consumed operation only. Neither these
     // checks nor their scope grant setter authority; Current remains independent.
     internal IDisposable? BeginRead(CpuLiveCurveNativeRequest exactRequest) =>
-        admitted && ReferenceEquals(request, exactRequest) && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+        Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest) && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
             ? BeginReadCore(exactRequest) : throw new InvalidOperationException("Invalid consumed CPU read scope.");
-    internal bool ReadCurrent(CpuLiveCurveNativeRequest exactRequest) => admitted && ReferenceEquals(request, exactRequest)
+    internal bool ReadCurrent(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && IsReadCurrent(exactRequest);
-    internal bool CompleteRead(CpuLiveCurveNativeRequest exactRequest) => admitted && ReferenceEquals(request, exactRequest)
+    internal bool CompleteRead(CpuLiveCurveNativeRequest exactRequest) => Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
         && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2) && CompleteReadCore(exactRequest);
     internal virtual IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => null;
     internal virtual bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => IsCurrent(exactRequest);
@@ -94,6 +101,11 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
     internal virtual bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => false;
     internal abstract bool IsCurrent(CpuLiveCurveNativeRequest exactRequest);
     internal abstract CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest);
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) == 0) { DisposeCore(); }
+    }
+    internal virtual void DisposeCore() { }
 }
 
 internal enum CpuLiveCurveNativeDisposition { NotSubmitted, PossibleSubmission, Acknowledged }

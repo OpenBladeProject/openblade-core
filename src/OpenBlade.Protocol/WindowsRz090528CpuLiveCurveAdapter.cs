@@ -61,6 +61,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         var wire = new CpuCurveNativeWire(request);
         IDisposable? lease = null;
+        IDisposable? readScope = null;
         WindowsRz090528CpuQueryAdapter? adapter = null;
         CpuLiveCurveSnapshot? after = null;
         bool verified = false, cleanup = true;
@@ -69,18 +70,22 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             token.ThrowIfCancellationRequested();
             if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb())) { throw new CurveAdmissionException(); }
+            readScope = proof.BeginRead(request);
             adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb, wire);
             lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
-            if (lease is null || !proof.Current(request)) { throw new CurveAdmissionException(); }
+            if (lease is null || !ReadCurrent()) { throw new CurveAdmissionException(); }
             var session = new Rz090528CpuMailboxSession(adapter, adapter);
             var before = CpuLiveCurveSnapshot.TryCreate(session.Observe(token));
             if (!CpuLiveCurveNativeRequest.Equal(before, request.Before)) { throw new CurveAdmissionException(); }
             uint capability = session.ReadCurveCapability(token);
             if ((capability & 4) == 0 || proof.ReadFreshRange(request)?.AllowsOperation(request) != true
-                || !proof.Current(request)) { throw new CurveAdmissionException(); }
+                || !ReadCurrent()) { throw new CurveAdmissionException(); }
             wire.Arm(() =>
             {
                 token.ThrowIfCancellationRequested();
+                EndRead();
+                // A read scope never authorizes the actual setter. All original
+                // fresh checks below run after its completion and disposal.
                 if (!adapter.FreshAdmission() || !proof.Current(request)
                     || proof.ReadFreshRange(request)?.AllowsOperation(request) != true || !proof.Current(request))
                 { throw new CurveAdmissionException(); }
@@ -88,8 +93,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             });
             failure = CpuLiveCurveNativeFailure.Transport;
             session.SubmitCurve(request.Command, token);
+            readScope = proof.BeginRead(request);
             after = CpuLiveCurveSnapshot.TryCreate(session.Observe(token));
             token.ThrowIfCancellationRequested();
+            EndRead();
             verified = CpuLiveCurveNativeRequest.Equal(after, request.After) && wire.Complete && proof.Current(request);
             failure = verified ? CpuLiveCurveNativeFailure.None : CpuLiveCurveNativeFailure.ReadbackDrift;
         }
@@ -97,12 +104,14 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         catch (OperationCanceledException) { failure = CpuLiveCurveNativeFailure.Cancelled; }
         catch (Exception)
         {
-            cleanup = adapter?.cleanupFailed != true;
+            cleanup &= adapter?.cleanupFailed != true;
             failure = cleanup ? CpuLiveCurveNativeFailure.Transport : CpuLiveCurveNativeFailure.Cleanup;
         }
         finally
         {
             wire.Abort();
+            try { readScope?.Dispose(); }
+            catch (Exception) { cleanup = false; }
             try { lease?.Dispose(); }
             catch (Exception) { cleanup = false; verified = false; failure = CpuLiveCurveNativeFailure.Cleanup; }
             finally
@@ -110,7 +119,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 // Acquire can throw cancellation from its own cleanup before it
                 // returns a lease. Cleanup truth is sticky and independent of
                 // whichever exception (including cancellation) escaped last.
-                if (adapter?.cleanupFailed == true)
+                if (!cleanup || adapter?.cleanupFailed == true)
                 { cleanup = false; verified = false; failure = CpuLiveCurveNativeFailure.Cleanup; }
                 // A cleanup failure parks this platform scope. A new request or
                 // awaiter timeout cannot authorize reuse of uncertain resources.
@@ -118,6 +127,22 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             }
         }
         return Result();
+
+        bool ReadCurrent() => (readScope is null ? proof?.Current(request) : proof?.ReadCurrent(request)) == true;
+        void EndRead()
+        {
+            if (readScope is null) { return; }
+            try
+            {
+                if (proof?.CompleteRead(request) != true) { throw new CurveAdmissionException(); }
+            }
+            finally
+            {
+                try { readScope.Dispose(); }
+                catch { cleanup = false; throw; }
+                finally { readScope = null; }
+            }
+        }
 
         // Returned only on this executing worker; no background work is queued.
         CpuLiveCurveNativeResult Result() => new(wire.Disposition, true, cleanup, verified, after, failure);

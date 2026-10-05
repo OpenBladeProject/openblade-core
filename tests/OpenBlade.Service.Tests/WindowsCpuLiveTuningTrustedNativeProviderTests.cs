@@ -7,6 +7,69 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
     [Fact]
+    public async Task PreparedProofSharesOnlyExactReadPrefixAndRequiresFreshSetterAuthority()
+    {
+        using var fixture = new Fixture();
+        int full = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => fixture.Admitted);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            using var proof = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.NotNull(proof); Assert.Equal(1, full);
+            int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads;
+            Assert.False(proof.PreparationCurrent(Request(-2)));
+            Assert.False(proof.Current(request)); // A read prefix is never setter authority.
+            Assert.True(proof.Consume(request)); Assert.False(proof.Consume(request));
+            for (int i = 0; i < 25; i++)
+            {
+                Assert.True(proof.PreparationCurrent(request));
+                Assert.True(context.MatchesHardwareContext(fixture.Provider.ReadFreshContext(fixture.OperationToken)));
+            }
+            Assert.Equal(hosts, fixture.Platform.HostReads); Assert.Equal(usb, fixture.UsbReads);
+            using (var adopted = proof.BeginRead(request))
+            {
+                Assert.NotNull(adopted); Assert.Equal(1, full);
+                Assert.False(proof.PreparationCurrent(request));
+                Assert.Throws<InvalidOperationException>(() => proof.BeginRead(request));
+                Assert.False(proof.Current(request));
+                Assert.NotNull(proof.ReadFreshRange(request));
+                Assert.True(proof.CompleteRead(request));
+            }
+            Assert.Equal(2, full);
+            Assert.True(proof.Current(request));
+            fixture.Admitted = false;
+            Assert.False(proof.Current(request));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnadoptedPreparationIsRevokedAndDisposedBeforeNextRequest(bool cancel)
+    {
+        using var fixture = new Fixture(); using var cancellation = new CancellationTokenSource();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => true, continuity: _ => true);
+        await fixture.Run(context =>
+        {
+            var request = Request(-2);
+            var proof = fixture.Provider.CreatePreparedWriteProof(context, request, cancellation.Token)!;
+            Assert.NotNull(proof);
+            if (cancel) { cancellation.Cancel(); }
+            else { fixture.ControllerCurrent = false; }
+            Assert.False(proof.Consume(request));
+            fixture.ControllerCurrent = true;
+            Assert.False(proof.PreparationCurrent(request));
+            proof.Dispose(); proof.Dispose();
+            Assert.False(proof.Current(request));
+            Assert.Throws<InvalidOperationException>(() => proof.BeginRead(request));
+            using var next = fixture.Provider.CreatePreparedWriteProof(context, Request(-2), fixture.OperationToken);
+            Assert.NotNull(next);
+        });
+    }
+
+    [Fact]
     public async Task CompletePlanPreflightHasConstantDiscoveryAndNoWriteAuthority()
     {
         using var fixture = new Fixture();

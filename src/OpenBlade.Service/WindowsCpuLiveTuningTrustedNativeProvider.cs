@@ -54,6 +54,49 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     }
 
     public CpuSavedAdmissionDiagnostic? Diagnostic => controller()?.CaptureLiveObservationDiagnostic();
+    public bool SupportsReadPreparation => true;
+
+    public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
+        CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
+    {
+        if (getterAdmission is not null || !ValidCurveCommand(exactRequest.Command, exactRequest.Purpose)
+            || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
+                && !ValidCurveCommand(exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore)) { return null; }
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
+#endif
+        if (controller()?.CaptureLiveRuntimeAdmission(CpuTuningFeatures.CurveOptimizer, token)() != true) { return null; }
+        var scope = BeginGetter(token);
+        if (scope is null)
+        {
+            // Existing providers/fixtures without retained getter continuity keep
+            // the full path; failure never falls back after a scope was created.
+            if (!exactContext.MatchesHardwareContext(ReadFreshContext(token))
+                || !CheckWriteAdmission(exactContext, exactRequest.Command, exactRequest.Purpose, token)
+                || !exactContext.MatchesHardwareContext(ReadFreshContext(token))) { return null; }
+            return CreateWriteProof(exactContext, exactRequest, token);
+        }
+        bool transferred = false;
+        try
+        {
+            var getter = getterScope!;
+            if (!exactContext.MatchesHardwareContext(ReadFreshContext(token))) { return null; }
+            var current = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token, validateNow: false)!;
+            var liveRequest = controller()?.CaptureLiveRuntimeRequest();
+            if (!ReferenceEquals(liveRequest, rangeRequest) || rangeContext?.MatchesHardwareContext(exactContext) != true)
+            {
+                range = null; rangeRequest = liveRequest; rangeContext = exactContext;
+                var result = ReadCurveMetadata(exactContext, current, token, getter);
+                if (!result.CleanupComplete) { worker.Invalidate(); }
+                if (result is { Status: CpuLiveCurveRangeStatus.Complete, CleanupComplete: true }) { range = result.Range; }
+            }
+            if (!getter.Current(exactContext) || range?.AllowsOperation(exactRequest) != true) { return null; }
+            var proof = new WriteProof(exactRequest, exactContext, current, worker, this, token, getter);
+            transferred = true;
+            return proof;
+        }
+        finally { if (!transferred) { scope.Dispose(); } }
+    }
 
     // A complete ordered preflight is read-only. Its result cannot be consumed
     // as a write proof; Send and the native setter retain independent admission.
@@ -264,7 +307,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         return new WriteProof(exactRequest, exactContext, admission, worker, this, token);
     }
 
-    private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token)
+    private Func<bool>? Capture(CpuLiveCurveContext context, CpuTuningFeatures feature, CancellationToken token, bool validateNow = true)
     {
         var owner = controller();
         var getter = feature == CpuTuningFeatures.None ? getterAdmission : null;
@@ -293,7 +336,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             if (!accepted) { getter?.Dispose(); Interlocked.Exchange(ref revoked, 1); }
             return accepted && Volatile.Read(ref revoked) == 0;
         }
-        return Current() ? Current : null;
+        return !validateNow || Current() ? Current : null;
     }
 
     private static CpuLiveCurveBackendIdentity PinnedIdentity() => new(
@@ -407,17 +450,32 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     private sealed class WriteProof(CpuLiveCurveNativeRequest request, CpuLiveCurveContext context,
         Func<bool> current, CpuNativeWorkerCoordinator worker,
-        WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token) : CpuLiveCurveWriteProof(request)
+        WindowsCpuLiveTuningTrustedNativeProvider owner, CancellationToken token,
+        GetterScope? preparation = null) : CpuLiveCurveWriteProof(request)
     {
         private bool read;
         private CpuLiveCurveTrustedRange? range;
-        private GetterScope? readScope;
+        private readonly GetterScope? initialPreparation = preparation;
+        private GetterScope? readScope = preparation;
+        private bool preparationAdopted;
         private int readScopesStarted;
         private GetterScope? ActiveRead => readScope is { IsDisposed: false } ? readScope : null;
         private bool CheckRead(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is null
             ? Current(exactRequest) : ReadCurrent(exactRequest);
+        internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (initialPreparation is null) { return IsCurrent(exactRequest); }
+            using var stage = owner.Diagnostic?.BeginStage("curve native retained read preparation");
+            return !preparationAdopted && ReferenceEquals(owner.getterScope, initialPreparation) && initialPreparation.Current(context);
+        }
         internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest)
         {
+            if (initialPreparation is not null && !preparationAdopted)
+            {
+                if (!IsPreparationCurrent(exactRequest)) { throw new InvalidOperationException("CPU read preparation was revoked."); }
+                preparationAdopted = true; readScopesStarted++;
+                return initialPreparation;
+            }
             if (ActiveRead is not null) { throw new InvalidOperationException("CPU operation read scope is already active."); }
             var scope = owner.BeginGetter(token);
             if (scope is null) { return null; } // Existing full checks remain the fallback.
@@ -459,6 +517,8 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         }
         internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)
         {
+            // Preparation can be consumed for reads, never as setter authority.
+            if (ActiveRead is not null) { return false; }
             using var stage = owner.Diagnostic?.BeginStage(readScopesStarted switch
             {
                 0 => "curve native initial full proof",
@@ -467,6 +527,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             });
             return current();
         }
+        internal override void DisposeCore() => readScope?.Dispose();
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
             if (!CheckRead(exactRequest)) { return null; }

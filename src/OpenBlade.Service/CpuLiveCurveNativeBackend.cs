@@ -10,6 +10,9 @@ namespace OpenBlade.Service;
 internal interface ICpuLiveCurveTrustedNativeProvider
 {
     CpuSavedAdmissionDiagnostic? Diagnostic => null;
+    bool SupportsReadPreparation => false;
+    CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
+        CpuLiveCurveNativeRequest exactRequest, CancellationToken token) => null;
     IDisposable? BeginGetter(CancellationToken token) => null;
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
     bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token) =>
@@ -142,13 +145,19 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         var diagnostic = Diagnostic;
         bool Check(bool allowed, string name) => diagnostic?.Check(allowed, name) ?? allowed;
         using var preparation = diagnostic?.BeginStage("curve send proof preparation");
-        if (!Check(ValidCommand(command, purpose), "curve send command shape")
-            || !Check(MatchesFresh(context, token), "curve send initial context")) { return CpuLiveCurveSubmission.NotSubmitted; }
+        if (!Check(ValidCommand(command, purpose), "curve send command shape")) { return CpuLiveCurveSubmission.NotSubmitted; }
         var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
-        if (!Check(provider.CheckWriteAdmission(context, command, purpose, token), "curve send write admission")
-            || !Check(MatchesFresh(context, token), "curve send admitted context"))
-        { return CpuLiveCurveSubmission.NotSubmitted; }
-        var proof = provider.CreateWriteProof(context, request, token);
+        CpuLiveCurveWriteProof? CreateProof()
+        {
+            if (provider.SupportsReadPreparation) { return provider.CreatePreparedWriteProof(context, request, token); }
+            if (!Check(MatchesFresh(context, token), "curve send initial context")
+                || !Check(provider.CheckWriteAdmission(context, command, purpose, token), "curve send write admission")
+                || !Check(MatchesFresh(context, token), "curve send admitted context")) { return null; }
+            return provider.CreateWriteProof(context, request, token);
+        }
+        // Keep preparation rooted in the actual worker, including failures before
+        // Protocol adopts it. A timed-out caller must not dispose this resource.
+        using var proof = CreateProof();
         if (!Check(proof is not null, "curve send proof creation")
             || !Check(proof!.Consume(request), "curve send proof consumption")
             || !Check(MatchesFresh(context, token), "curve send proof context"))
@@ -203,6 +212,8 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {
+        internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>
+            source.PreparationCurrent(exactRequest) && owner.MatchesFresh(context, token);
         internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest) => source.BeginRead(exactRequest);
         internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.ReadCurrent(exactRequest) && owner.MatchesFresh(context, token);

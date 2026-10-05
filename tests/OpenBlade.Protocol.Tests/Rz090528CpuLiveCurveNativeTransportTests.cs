@@ -7,6 +7,62 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PreparedNonPeerReadEndsBeforeFreshSetterAndIndependentRestoration(bool rejectSetter)
+    {
+        var platform = new Platform();
+        var request = Request(platform);
+        var proof = new Proof(request, platform) { Prepared = true, Reading = true };
+        platform.OnStage = stage =>
+        {
+            if (stage == "select-message" && rejectSetter) { proof.RejectSetter = true; }
+            if (stage == "invoke")
+            {
+                Assert.False(proof.Reading);
+                Assert.Equal(1, proof.ReadsCompleted);
+                Assert.True(proof.FreshChecks > 0);
+            }
+        };
+        var result = Run(platform, request, proof);
+        Assert.True(result.CleanupComplete);
+        Assert.False(proof.Reading);
+        if (rejectSetter)
+        {
+            Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
+            Assert.Equal(CpuLiveCurveNativeFailure.AdmissionDenied, result.Failure);
+            Assert.Equal(0, platform.Setters);
+            Assert.Equal(1, proof.ReadsCompleted);
+            return;
+        }
+        Assert.True(result.Verified);
+        Assert.Equal(2, proof.ReadsCompleted);
+        Assert.Equal(2, proof.ReadsBegun);
+        var ordinary = new Platform();
+        var ordinaryRequest = Request(ordinary);
+        Assert.True(Run(ordinary, ordinaryRequest, new Proof(ordinaryRequest, ordinary)).Verified);
+        Assert.Equal(ordinary.Commands, platform.Commands);
+        Assert.Equal(ordinary.Threads.Count, platform.Threads.Count);
+        var reverse = new CpuLiveCurveNativeRequest(request.Scope, request.ImmediateReverse,
+            CpuLiveCurveCommandPurpose.Restore, result.After!);
+        var reverseProof = new Proof(reverse, platform) { Prepared = true, Reading = true };
+        platform.OnStage = stage =>
+        {
+            if (stage == "invoke")
+            {
+                Assert.False(reverseProof.Reading);
+                Assert.Equal(1, reverseProof.ReadsCompleted);
+                Assert.True(reverseProof.FreshChecks > 0);
+            }
+        };
+        var restored = Run(platform, reverse, reverseProof);
+        Assert.True(restored.Verified);
+        Assert.True(CpuLiveCurveNativeRequest.Equal(request.Before, restored.After));
+        Assert.Equal(2, reverseProof.ReadsCompleted);
+        Assert.False(reverseProof.Reading);
+    }
+
     [Fact]
     public void ExactNativeWireReadsWholeBeforeAndAfterUnderOneLeaseAndCanRestore()
     {
@@ -301,10 +357,33 @@ public sealed class Rz090528CpuLiveCurveNativeTransportTests
     private sealed class Proof(CpuLiveCurveNativeRequest request, Platform platform) : CpuLiveCurveWriteProof(request)
     {
         internal bool Revoked;
+        internal bool Prepared, Reading, RejectSetter;
+        internal int ReadsBegun, ReadsCompleted, FreshChecks;
         internal int RangeReads;
         internal CpuLiveCurveTrustedRange? Range = new(0x5000A, 0, 50, 1, true);
         internal Func<int, CpuLiveCurveTrustedRange?>? ReadRange;
-        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => !Revoked;
+        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            FreshChecks++;
+            return !Reading && !RejectSetter && !Revoked;
+        }
+        internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>
+            Prepared ? Reading && ReadsBegun == 0 && !Revoked : IsCurrent(exactRequest);
+        internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest)
+        {
+            if (!Prepared) { return null; }
+            if (ReadsBegun == 0) { Assert.True(Reading); }
+            else { Assert.False(Reading); }
+            ReadsBegun++;
+            Reading = true;
+            return new Cleanup(() => Reading = false);
+        }
+        internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest) => Reading && !Revoked;
+        internal override bool CompleteReadCore(CpuLiveCurveNativeRequest exactRequest)
+        {
+            ReadsCompleted++;
+            return IsReadCurrent(exactRequest);
+        }
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
             Assert.True(platform.Held); Assert.True(platform.Pinned); Assert.True(platform.Opens > 0);

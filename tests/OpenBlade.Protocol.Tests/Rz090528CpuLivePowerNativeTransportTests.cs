@@ -7,6 +7,35 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
 {
     private static readonly DeviceIdentity Exact = new("RZ09-0528", 0x1532, 0x02C6, "2.02");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PreparedReadPrefixCannotSkipIndependentSetterBarrier(bool rejectSetter)
+    {
+        var ordinary = new Platform { Capability = 6 };
+        var ordinaryRequest = CurveRequest(ordinary);
+        Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(ordinary)
+            .ExecuteCurve(ordinaryRequest, new CurveProof(ordinaryRequest), () => Exact).Verified);
+        var platform = new Platform { Capability = 6 }; var request = CurveRequest(platform);
+        using var proof = new CurveProof(request) { Scoped = true, Prepared = true, Reading = true };
+        proof.FullAllowed = () => !rejectSetter;
+        platform.AtSetter = () => { Assert.False(proof.Reading); Assert.Equal(1, proof.Ends); Assert.True(proof.FullChecks > 0); };
+        var result = WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(request, proof, () => Exact);
+        Assert.Equal(!rejectSetter, result.Verified); Assert.False(proof.Reading);
+        Assert.Equal(rejectSetter ? 0 : 1, platform.Setters);
+        if (rejectSetter) { Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition); }
+        else
+        {
+            Assert.Equal(ordinary.Calls, platform.Calls);
+            Assert.True(CpuLiveCurveCommand.TryCreate(0, -1, 0xFF55, out var command));
+            var restore = new CpuLiveCurveNativeRequest(new(), command, CpuLiveCurveCommandPurpose.Restore, request.After, new(platform.Pair, null));
+            using var reverse = new CurveProof(restore) { Scoped = true, Prepared = true, Reading = true };
+            platform.AtSetter = () => { Assert.False(reverse.Reading); Assert.True(reverse.FullChecks > 0); };
+            Assert.True(WindowsRz090528CpuNativeSession.ForPlatform(platform).ExecuteCurve(restore, reverse, () => Exact).Verified);
+            Assert.Equal(2, platform.Setters);
+        }
+    }
+
     [Fact]
     public void CombinedReadContinuityKeepsExactTrafficAndIndependentRestoreBarrier()
     {
@@ -479,14 +508,20 @@ public sealed class Rz090528CpuLivePowerNativeTransportTests
     {
         internal bool PeerAllowed = true;
         internal bool Scoped, Reading, ReadAllowed = true;
+        internal bool Prepared;
+        private bool adopted;
         internal int Begins, Ends, Completions, ReadChecks, FullChecks;
         internal Func<bool>? FullAllowed, CompletionAllowed;
         internal Func<bool>? ReadRange;
         private bool rangeRead;
+        internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) => Prepared
+            ? !adopted && Reading && ReadAllowed : IsCurrent(exactRequest);
         internal override IDisposable? BeginReadCore(CpuLiveCurveNativeRequest exactRequest)
         {
             if (!Scoped) { return null; }
-            Assert.False(Reading); Begins++; Reading = true;
+            if (Prepared && !adopted) { Assert.True(Reading); adopted = true; }
+            else { Assert.False(Reading); }
+            Begins++; Reading = true;
             return new ReadScope(() => { Reading = false; Ends++; });
         }
         internal override bool IsReadCurrent(CpuLiveCurveNativeRequest exactRequest)
