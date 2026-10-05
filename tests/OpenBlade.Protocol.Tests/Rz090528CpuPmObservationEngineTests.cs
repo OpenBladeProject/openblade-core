@@ -5,6 +5,49 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class Rz090528CpuPmObservationEngineTests
 {
+    [Theory]
+    [InlineData((int)CpuQueryFailureCode.NativeIoctlFailed, (int)CpuPmObservationFailure.NativeFailure)]
+    [InlineData((int)CpuQueryFailureCode.AdmissionDenied, (int)CpuPmObservationFailure.AdmissionDenied)]
+    public void FirstFailedRefreshRetainsNativeReplyEvenWhenCleanupFails(int failureCode, int expectedCode)
+    {
+        var failure = (CpuQueryFailureCode)failureCode; var expected = (CpuPmObservationFailure)expectedCode;
+        var fake = new Fake { WireFailure = "refresh-failure", ReplyFailure = failure, NativeError = 5, CleanupThrows = true };
+        var result = fake.Engine().Observe();
+        Assert.False(result.Complete); Assert.Empty(result.CopySamples()); Assert.Equal(0, fake.Copies);
+        Assert.Equal(CpuPmObservationStage.Refresh, result.Diagnostic!.Stage);
+        Assert.Equal(expected, result.Diagnostic.Failure);
+        Assert.Equal(failure, result.Diagnostic.NativeFailure); Assert.Equal(5, result.Diagnostic.NativeErrorCode);
+        Assert.Equal(0x81112FF8u, result.Diagnostic.Operation);
+        Assert.Equal(new uint[] { 6, 0x65 }, fake.Commands); Assert.Equal(1, fake.Disposals);
+    }
+
+    [Theory]
+    [InlineData(false, (int)CpuQueryFailureCode.IoError, null)]
+    [InlineData(true, (int)CpuQueryFailureCode.Win32Error, 123)]
+    public void BoundedCopyExceptionRetainsCategoryAndOperationWithoutPrivateMessage(bool native, int failureCode, int? error)
+    {
+        var fake = new Fake { WireFailure = "copy-throw", NativeException = native };
+        var result = fake.Engine().Observe();
+        Assert.Equal(CpuPmObservationStage.Copy, result.Diagnostic!.Stage);
+        Assert.Equal(CpuPmObservationFailure.NativeFailure, result.Diagnostic.Failure);
+        Assert.Equal((CpuQueryFailureCode)failureCode, result.Diagnostic.NativeFailure); Assert.Equal(error, result.Diagnostic.NativeErrorCode);
+        Assert.Equal(0x81112F08u, result.Diagnostic.Operation);
+        Assert.DoesNotContain("private", result.Diagnostic.ToString(), StringComparison.Ordinal);
+        Assert.Equal(1, fake.Copies); Assert.Empty(result.CopySamples()); Assert.Equal(1, fake.Disposals);
+    }
+
+    [Fact]
+    public void BoundedAdmissionReadExceptionRetainsCategoryWithoutInventingOperation()
+    {
+        var fake = new Fake { OnReadFresh = () => throw new UnauthorizedAccessException("private host path") };
+        var result = fake.Engine().Observe();
+        Assert.Equal(CpuPmObservationStage.Admission, result.Diagnostic!.Stage);
+        Assert.Equal(CpuQueryFailureCode.AccessDenied, result.Diagnostic.NativeFailure);
+        Assert.Null(result.Diagnostic.Operation); Assert.Null(result.Diagnostic.NativeErrorCode);
+        Assert.DoesNotContain("private", result.Diagnostic.ToString(), StringComparison.Ordinal);
+        Assert.Empty(fake.Codes); Assert.Equal(0, fake.Acquires);
+    }
+
     [Fact]
     public void PriorTerminalErrorAllowsRangeGetterWithIdenticalTraffic()
     {
@@ -481,6 +524,9 @@ public sealed class Rz090528CpuPmObservationEngineTests
         private bool leased, awaitingPostCopySelection;
         private readonly Guid session = Guid.NewGuid(), lifetime = Guid.NewGuid();
         internal string? AdmissionFailure, WireFailure;
+        internal CpuQueryFailureCode? ReplyFailure;
+        internal int? NativeError;
+        internal bool NativeException;
         internal string Bios = "2.02";
         internal int FailCopyNumber, Copies, Acquires, Disposals, IdleDelays, PostCopyResponseSelections;
         internal bool MutexBusy, SkipIdleDelay, CleanupThrows;
@@ -580,7 +626,7 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 {
                     command = Word(input, 4);
                     Commands.Add(command);
-                    if (WireFailure == "refresh-failure" && command == 0x65) { return new(false, []); }
+                    if (WireFailure == "refresh-failure" && command == 0x65) { return new(false, [], ReplyFailure, NativeError); }
                 }
             }
             else if (code == 0x81112F24)
@@ -608,7 +654,11 @@ public sealed class Rz090528CpuPmObservationEngineTests
                 selected = 0;
                 awaitingPostCopySelection = true;
                 AfterCopy?.Invoke();
-                if (WireFailure == "copy-throw") { throw new IOException("private native evidence"); }
+                if (WireFailure == "copy-throw")
+                {
+                    if (NativeException) { throw new System.ComponentModel.Win32Exception(123, "private native evidence"); }
+                    throw new IOException("private native evidence");
+                }
                 if (WireFailure == "copy-failure" || Copies == FailCopyNumber) { return new(false, reply); }
                 Put(reply, 0, WireFailure == "prefix" ? 0u : 0xD50u);
                 for (int i = 0; i < 6; i++) { Put(reply, 4 + i * 4, 0x3F800000); }

@@ -126,6 +126,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         }
         catch (OperationCanceledException) { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.Cancelled); }
+        catch (CpuPmAdmissionException e)
+        {
+            result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied,
+                new(CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied,
+                    CpuQueryFailureCode.AdmissionDenied, AdmissionFailure: e.Failure));
+        }
         catch (Exception e) when (PmBoundedFailure(e))
         { result = Incomplete(result, CpuPmObservationStage.Admission, CpuPmObservationFailure.AdmissionDenied); }
         catch { unknownFailure = true; throw; }
@@ -181,8 +187,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             return result;
         }
     }
-    private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage, CpuPmObservationFailure failure) =>
-        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask, new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation)
+    private static CpuPmObservationBatch Incomplete(CpuPmObservationBatch result, CpuPmObservationStage stage,
+        CpuPmObservationFailure failure, CpuPmObservationDiagnostic? diagnostic = null) =>
+        new(false, result.CopySamples(), result.CopyPciRecords(), result.OrientationMask, result.FuseMask,
+            result.Diagnostic is { } first && (first.NativeFailure.HasValue || first.Operation.HasValue)
+                ? first : diagnostic ?? new(stage, failure), result.FusedCap, result.Profile, result.RangeObservation)
         {
             FirmwareVersion = result.FirmwareVersion
         };
@@ -271,16 +280,17 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             CheckThread();
             if (installedApproval is { } installed)
             {
-                if (!installed.IsCurrent() || !(installed.GetterScoped
-                    ? installed.Lease.GetterContinuityCurrent : installed.Lease.IsCurrent))
-                { throw new IOException("Installed PM lifetime is unavailable."); }
+                if (!installed.IsCurrent())
+                { throw new CpuPmAdmissionException(CpuPmAdmissionFailure.InstalledRequestAdmission); }
+                if (!(installed.GetterScoped ? installed.Lease.GetterContinuityCurrent : installed.Lease.IsCurrent))
+                { throw new CpuPmAdmissionException(CpuPmAdmissionFailure.InstalledBackendContinuity); }
                 return new(CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime, Guid.Empty, Guid.Empty, CpuPmContinuityFailure.None);
             }
             CpuPmRunOwnedDriverLifetime? fresh = readLifetime!();
             var evidence = continuity!.ReadFresh(fresh);
             if (fresh != lifetime || evidence.Continuity != CpuPmSessionContinuity.ConfirmedFreshRunOwnedLifetime
                 || evidence.SessionId == Guid.Empty || evidence.DriverLifetimeId != lifetime!.DriverLifetimeId)
-            { throw new IOException("PM lifetime continuity is unavailable."); }
+            { throw new CpuPmAdmissionException(CpuPmAdmissionFailure.OwnedLifetimeContinuity); }
             return evidence;
         }
         internal void FullAdmission()

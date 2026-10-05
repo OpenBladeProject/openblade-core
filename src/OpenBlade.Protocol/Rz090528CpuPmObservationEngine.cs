@@ -30,7 +30,15 @@ internal interface ICpuPmObservationClock
 }
 internal enum CpuPmObservationStage { Admission, Mutex, PciCount, PciRecords, PciIdentity, Mask, Version, Refresh, Copy, PostVersion, Interval, Cleanup, SnapshotAdmission, FusedCap, Capability, MetadataVersion, MetadataDValues, MetadataMinMax, FirmwareVersion }
 internal enum CpuPmObservationFailure { AdmissionDenied, Busy, Cancelled, BudgetExpired, InvalidData, UnsupportedVersion, RequestRejected, ReplyRejected, NativeFailure, CleanupFailed }
-internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure);
+// Bounded categories and operation codes only; never retain exception messages or payloads.
+internal sealed record CpuPmObservationDiagnostic(CpuPmObservationStage Stage, CpuPmObservationFailure Failure,
+    CpuQueryFailureCode? NativeFailure = null, int? NativeErrorCode = null, uint? Operation = null,
+    CpuPmAdmissionFailure? AdmissionFailure = null);
+internal enum CpuPmAdmissionFailure { InstalledRequestAdmission, InstalledBackendContinuity, OwnedLifetimeContinuity }
+internal sealed class CpuPmAdmissionException(CpuPmAdmissionFailure failure) : IOException
+{
+    internal CpuPmAdmissionFailure Failure { get; } = failure;
+}
 internal sealed record CpuPmCompletedSample(CpuPmRawSnapshot Snapshot, uint RefreshReturnedWord);
 
 // Returned transport evidence only: a candidate is never fresh write authority.
@@ -183,10 +191,17 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             }
             if (profile == CpuPmObservationProfile.RangeSingleSample) { ReadMetadata(cancellationToken); }
         }
-        catch (Failure failure) { wire.Abort(); diagnostic = new(stage, failure.Code); }
+        catch (Failure failure)
+        { wire.Abort(); diagnostic = new(stage, failure.Code, failure.NativeFailure, failure.NativeErrorCode, failure.Operation, failure.AdmissionFailure); }
+        catch (CpuPmAdmissionException exception)
+        { wire.Abort(); diagnostic = new(stage, CpuPmObservationFailure.AdmissionDenied, CpuQueryFailureCode.AdmissionDenied, AdmissionFailure: exception.Failure); }
         catch (OperationCanceledException) { wire.Abort(); diagnostic = new(stage, CpuPmObservationFailure.Cancelled); }
         catch (Exception exception) when (IsBoundedFailure(exception))
-        { wire.Abort(); diagnostic = new(stage, CpuPmObservationFailure.NativeFailure); }
+        {
+            wire.Abort();
+            var detail = CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception);
+            diagnostic = new(stage, CpuPmObservationFailure.NativeFailure, detail.Failure, detail.NativeErrorCode);
+        }
         finally
         {
             try
@@ -200,9 +215,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 }
             }
             catch (OperationCanceledException)
-            { wire.Abort(); diagnostic = new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.Cancelled); }
+            { wire.Abort(); diagnostic ??= new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.Cancelled); }
             catch (Exception exception) when (IsBoundedFailure(exception))
-            { wire.Abort(); diagnostic = new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed); }
+            {
+                wire.Abort();
+                var detail = CpuQueryDiagnostic.FromException(CpuQueryStage.Cleanup, exception);
+                diagnostic ??= new(CpuPmObservationStage.Cleanup, CpuPmObservationFailure.CleanupFailed, detail.Failure, detail.NativeErrorCode);
+            }
         }
         return Batch(diagnostic);
     }
@@ -375,6 +394,18 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             { capability = capability with { InvocationEntered = true }; }
             reply = ioctl.Invoke(code, input, outputLength);
         }
+        catch (CpuPmAdmissionException exception)
+        {
+            wire.Abort();
+            throw new Failure(CpuPmObservationFailure.AdmissionDenied, CpuQueryFailureCode.AdmissionDenied,
+                operation: code, admissionFailure: exception.Failure);
+        }
+        catch (Exception exception) when (IsBoundedFailure(exception))
+        {
+            wire.Abort();
+            var detail = CpuQueryDiagnostic.FromException(CpuQueryStage.Approval, exception);
+            throw new Failure(CpuPmObservationFailure.NativeFailure, detail.Failure, detail.NativeErrorCode, code);
+        }
         catch { wire.Abort(); throw; }
         CpuPmCapRegisterRead? capRead = null;
         if (readingCapAddress != 0 && code == Read && reply.Bytes.Length == 24
@@ -388,11 +419,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         { capability = capability with { RawValue = Word(reply.Bytes, 20), CapturedUtc = clock.UtcNow, MonotonicTimestamp = clock.MonotonicTimestamp, ReturnedWordTransportSucceeded = reply.Success }; }
         if (!wire.AcceptReply(code, input, outputLength, reply))
         {
-            throw new Failure(!reply.Success ? CpuPmObservationFailure.NativeFailure
+            throw new Failure(!reply.Success ? reply.Failure == CpuQueryFailureCode.AdmissionDenied
+                    ? CpuPmObservationFailure.AdmissionDenied : CpuPmObservationFailure.NativeFailure
                 : readingVersionArgument && code == Read && reply.Bytes.Length == 24 && Word(input, 12) == 0xC8
                     && Word(reply.Bytes, 20) != (readingFirmwareArgument
                         ? CpuPmObservationWireAdmission.ExpectedFirmwareVersion : CpuPmObservationWireAdmission.Version)
-                    ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected);
+                    ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected,
+                reply.Failure, reply.NativeErrorCode, code);
         }
         CheckBoundary(token);
         if (capRead is not null) { RetainCap(capRead with { PostReadAdmissionPassed = true }); }
@@ -406,7 +439,15 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         else if (read.Address == CpuLivePowerRangeObservation.RegisterA13) { capA13 = read; }
         else if (read.Address == CpuLivePowerRangeObservation.RegisterA90) { capA90 = read; }
     }
-    private sealed class Failure(CpuPmObservationFailure code) : Exception { internal CpuPmObservationFailure Code { get; } = code; }
+    private sealed class Failure(CpuPmObservationFailure code, CpuQueryFailureCode? nativeFailure = null,
+        int? nativeErrorCode = null, uint? operation = null, CpuPmAdmissionFailure? admissionFailure = null) : Exception
+    {
+        internal CpuPmObservationFailure Code { get; } = code;
+        internal CpuQueryFailureCode? NativeFailure { get; } = nativeFailure;
+        internal int? NativeErrorCode { get; } = nativeErrorCode;
+        internal uint? Operation { get; } = operation;
+        internal CpuPmAdmissionFailure? AdmissionFailure { get; } = admissionFailure;
+    }
     private static bool IsBoundedFailure(Exception exception) => exception is IOException or UnauthorizedAccessException
         or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException
         or System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException;

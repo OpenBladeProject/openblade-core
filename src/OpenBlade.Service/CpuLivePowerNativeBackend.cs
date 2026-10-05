@@ -87,7 +87,13 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
                 ? provider.ReadFreshObservationLifetime(context, token) : null, reader, token);
         }
         if (observed.Batch.Diagnostic is { } nativeDiagnostic)
-        { diagnostic?.Check(false, "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure); }
+        {
+            diagnostic?.Check(false, "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure
+                + (nativeDiagnostic.NativeFailure is { } failure ? "; native failure " + failure : string.Empty)
+                + (nativeDiagnostic.NativeErrorCode is { } error ? "; native error " + error : string.Empty)
+                + (nativeDiagnostic.Operation is { } operation ? $"; operation 0x{operation:X8}" : string.Empty)
+                + (nativeDiagnostic.AdmissionFailure is { } admission ? "; admission " + admission : string.Empty));
+        }
         if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Reject("power observation cleanup"); }
         token.ThrowIfCancellationRequested();
         var batch = observed.Batch; var samples = batch.CopySamples();

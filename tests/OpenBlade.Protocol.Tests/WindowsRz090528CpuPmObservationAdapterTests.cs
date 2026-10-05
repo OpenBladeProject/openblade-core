@@ -8,6 +8,43 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void InstalledBackendContinuityRejectionRetainsItsOwnCause(bool beforeEngine)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        int checkpoints = 0;
+        var approval = held!.CreateGetterPowerObservationApproval(() =>
+        {
+            if (beforeEngine && ++checkpoints == 2) { fake.Failure = "service"; }
+            return true;
+        });
+        fake.AfterCopy = value => value.Failure = "service";
+        var result = session.ObservePowerInstalled(approval, fake.ReadUsb, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.True(result.CleanupComplete);
+        Assert.Equal(CpuPmObservationFailure.AdmissionDenied, result.Batch.Diagnostic!.Failure);
+        Assert.Equal(CpuPmAdmissionFailure.InstalledBackendContinuity, result.Batch.Diagnostic.AdmissionFailure);
+        if (beforeEngine) { Assert.Empty(fake.Codes); Assert.Equal(0, fake.Copies); }
+        else { Assert.Equal(0x81112F08u, fake.Codes.Last()); Assert.Equal(1, fake.Copies); }
+    }
+
+    [Fact]
+    public void NativeRefreshFailureSurvivesAdapterCleanupFailureWithoutClaimingCleanup()
+    {
+        var fake = new Fake { RefreshFails = true, ThrowAt = "close" };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        var approval = CpuPmAttendedApproval.Acknowledge(true, true, fake.Lifetime, CpuPmObservationProfile.RangeSingleSample);
+        var result = session.ObservePower(approval, () => fake.FreshLifetime, new CompleteMetadata());
+        Assert.False(result.Batch.Complete); Assert.False(result.CleanupComplete); Assert.True(result.WorkerTerminal);
+        Assert.Equal(CpuPmObservationStage.Refresh, result.Batch.Diagnostic!.Stage);
+        Assert.Equal(CpuQueryFailureCode.NativeIoctlFailed, result.Batch.Diagnostic.NativeFailure);
+        Assert.Equal(5, result.Batch.Diagnostic.NativeErrorCode); Assert.Equal(0x81112FF8u, result.Batch.Diagnostic.Operation);
+        Assert.Equal(0, fake.Copies);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void ScopedInstalledGetterBoundsDiscoveryAndKeepsMutableRevocation(bool revoke)
     {
         var fake = new Fake { Installed = true };
@@ -28,6 +65,8 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             Assert.True(checkpoints > 77);
             if (revoke)
             {
+                Assert.Equal(CpuPmObservationFailure.AdmissionDenied, result.Batch.Diagnostic!.Failure);
+                Assert.Equal(CpuPmAdmissionFailure.InstalledRequestAdmission, result.Batch.Diagnostic.AdmissionFailure);
                 current = true; Assert.False(approval.IsCurrent());
                 Assert.True(held.IsCurrent);
                 break;
@@ -366,6 +405,11 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         var result = Run(fake); Assert.False(result.Complete); Assert.Empty(result.CopySamples());
         Assert.Equal(new uint[] { 6, 0x65 }, fake.Commands); Assert.Equal(1, fake.Copies);
         Assert.Equal(0x81112F08u, fake.Codes.Last());
+        if (failure is "continuity" or "lifetime")
+        {
+            Assert.Equal(CpuPmObservationFailure.AdmissionDenied, result.Diagnostic!.Failure);
+            Assert.Equal(CpuPmAdmissionFailure.OwnedLifetimeContinuity, result.Diagnostic.AdmissionFailure);
+        }
     }
 
     [Fact]
@@ -605,6 +649,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         internal int FullBackendReads, ServiceReads, Copies, IdleDelays, HostReads, ControllerReads;
         internal uint CapFirst = 5, CapSecond = 0xF0000000;
         internal Action<Fake>? AfterOpen, AfterCopy, DuringArm, DuringContinuityDispose;
+        internal bool RefreshFails;
         internal readonly List<string> Events = [];
         internal readonly List<uint> Codes = [], Commands = [];
         internal readonly List<int> Threads = [];
@@ -704,7 +749,11 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
             else if (code == 0x81112FF8)
             {
                 if (Word(input, 0) == 0) { selected = Word(input, 4); }
-                else if (selected == 0x03B10A20) { command = Word(input, 4); Commands.Add(command); }
+                else if (selected == 0x03B10A20)
+                {
+                    command = Word(input, 4); Commands.Add(command);
+                    if (command == 0x65 && RefreshFails) { return new(false, [], CpuQueryFailureCode.NativeIoctlFailed, 5); }
+                }
             }
             else if (code == 0x81112F24)
             {

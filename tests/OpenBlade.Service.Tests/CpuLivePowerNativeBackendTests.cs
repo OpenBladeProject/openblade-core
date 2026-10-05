@@ -7,6 +7,23 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLivePowerNativeBackendTests
 {
     [Theory]
+    [InlineData(false, "NativeFailure")]
+    [InlineData(true, "AdmissionDenied")]
+    public async Task RefreshFailureSurfacesRawNativeDetailsAndStopsBeforeCopy(bool admission, string expected)
+    {
+        var platform = new Platform { RefreshFailure = admission ? CpuQueryFailureCode.AdmissionDenied : CpuQueryFailureCode.NativeIoctlFailed };
+        var provider = new Provider(platform);
+        var backend = new CpuLivePowerNativeBackend(platform, provider, new Metadata());
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        var result = await backend.ObserveAsync(default, diagnostic);
+        Assert.Null(result.Observation);
+        Assert.Equal($"power native observation Refresh/{expected}; native failure {platform.RefreshFailure}; native error 5; operation 0x81112FF8", diagnostic.FirstFailure);
+        Assert.Equal(new uint[] { 2, 0x82, 6, 0x65 }, platform.Commands);
+        Assert.Equal(0, platform.Setters); Assert.Equal(0, provider.Interpretations);
+        Assert.False(backend.Status.ScopeInvalid); Assert.Null(backend.OutstandingWorker);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task PowerObservationEndsGetterAndRejectsFailedFinalAdmission(bool rejectFinal)
@@ -377,6 +394,7 @@ public sealed class CpuLivePowerNativeBackendTests
         internal readonly List<uint> Commands = [];
         internal int Opens, Setters, Duplicates, Arms; internal bool Held, Pinned, InvalidVersion; internal string? CleanupFault; internal Action? BeforeSetter, AtSetter;
         private uint selected, argument, command; private int copies;
+        internal CpuQueryFailureCode? RefreshFailure;
         public DeviceIdentity ReadUsb() => new("RZ09-0528", 0x1532, 0x02C6, "2.02");
         public HostIdentityReadResult ReadHost() => new(new("Razer", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
         public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
@@ -429,6 +447,7 @@ public sealed class CpuLivePowerNativeBackendTests
                 else if (selected == 0x03B10A20)
                 {
                     command = value; Commands.Add(value);
+                    if (value == 0x65 && RefreshFailure is { } failure) { return new(false, [], failure, 5); }
                     if (value is 0x32 or 0x33) { Setters++; AtSetter?.Invoke(); Assert.True(CpuLivePowerCommand.TryDecode(value, argument, out var typed)); Pair = Pair.With(typed); }
                 }
             }
