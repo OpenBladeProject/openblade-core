@@ -27,6 +27,10 @@ already-read mailbox response status. This distinguishes request-state and PCI
 echo failures from a rejected refresh response without adding native traffic or
 relaxing the power-peer gate. The underlying hardware rejection remains under
 investigation.
+A subsequent read-only observation on the ordinary diagnostic build succeeded:
+all twelve offsets remained at −1, power peers read 80/75 W, live admission was
+available, and owned-resource cleanup and an unchanged saved journal were proved.
+That confirms the failure is intermittent; it does not identify its cause.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
