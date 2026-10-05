@@ -444,10 +444,14 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(29, animated.Length);
         XElement cpuCard = Assert.Single(animated, element =>
             Attribute(element, "DataContext") == "{Binding CpuTuning}");
         Assert.Equal("{Binding IsVisible}", Attribute(cpuCard, "AnimatedVisibility.IsVisible"));
+        Assert.Equal(
+            new[] { "{Binding ShowPendingBootSummary}", "{Binding ShowAvailabilitySummary}", "{Binding LiveNow}", "{Binding CanRestore}" },
+            cpuCard.Descendants()
+                .Select(element => Attribute(element, "AnimatedVisibility.IsVisible"))
+                .Where(binding => binding is not null));
         XElement cpuRestore = Assert.Single(cpuCard.Descendants(), element =>
             Attribute(element, "Command") == "{Binding RestoreCommand}");
         Assert.Contains(cpuRestore, animated);

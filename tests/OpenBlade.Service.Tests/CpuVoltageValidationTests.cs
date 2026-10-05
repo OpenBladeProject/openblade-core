@@ -13,11 +13,11 @@ public sealed partial class CpuTuningRuntimeTests
         var capabilities = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.CpuPowerLimit!.Access);
         Assert.True(capabilities.CpuVoltageOptimizer!.SupportsEnableDisable);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.CpuVoltageOptimizer.Access);
         string version = OpenBladeProductVersion.Read(typeof(ServiceControlRuntime).Assembly);
         var metadata = typeof(ServiceControlRuntime).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .Single(value => value.Key == "OpenBladeCpuVoltageValidation").Value;
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        Assert.Equal(DeviceFeatureAccess.ReadWrite, capabilities.CpuVoltageOptimizer.Access);
         Assert.Equal(new DeviceNumericRange(-1, -1, 1), capabilities.CpuVoltageOptimizer.Value);
         Assert.Equal("true", metadata);
         string? fullSource = typeof(ServiceControlRuntime).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -27,7 +27,6 @@ public sealed partial class CpuTuningRuntimeTests
         Assert.True(version.Length <= 64);
         Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?\+voltage-validation\.[0-9a-f]{8}$", version);
 #else
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, capabilities.CpuVoltageOptimizer.Access);
         Assert.Equal(new DeviceNumericRange(-30, -1, 1), capabilities.CpuVoltageOptimizer.Value);
         Assert.Equal("false", metadata);
         Assert.DoesNotContain("voltage-validation", version);
@@ -73,7 +72,8 @@ public sealed partial class CpuTuningRuntimeTests
         short target = original == -1 ? (short)0 : (short)-1;
         var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
             new(null, new(target != 0, -1)), () => true, default);
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        // Both builds expose CO writes. The real trusted provider must still
+        // admit every addressed core and its exact reverse before submission.
         Assert.Equal(ControlOperationStatus.Stored, applied.Status);
         Assert.Equal(12, backend.Sends);
         Assert.All(backend.Values, core => Assert.Equal(target, core.Offset));
@@ -83,11 +83,8 @@ public sealed partial class CpuTuningRuntimeTests
         Assert.Equal(24, backend.Sends);
         Assert.All(backend.Values, core => Assert.Equal(original, core.Offset));
         Assert.Equal(CpuTuningRecoveryState.None, restored.CpuTuning!.LiveRecovery!.State);
-#else
-        Assert.Equal(ControlOperationStatus.Blocked, applied.Status);
-        Assert.Equal(0, backend.Sends);
-        Assert.Equal(0, backend.MetadataReads);
-#endif
+        Assert.True(backend.MetadataReads > 0);
+        Assert.Equal(0, context.Source.Submissions);
     }
 
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION

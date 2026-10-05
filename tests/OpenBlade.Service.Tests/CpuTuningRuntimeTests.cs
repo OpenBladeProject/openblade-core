@@ -906,19 +906,23 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ProductionObservedOnlyCurveCapabilityKeepsFullLiveReadbackReadOnlyAndSubmitsNothing()
+    public async Task ObservedOnlyCurveCapabilityKeepsFullLiveReadbackReadOnlyAndSubmitsNothing()
     {
         var production = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery().Capabilities;
-        Assert.Equal(DeviceFeatureAccess.ObservedOnly, production.CpuVoltageOptimizer!.Access);
+        Assert.Equal(DeviceFeatureAccess.ReadWrite, production.CpuVoltageOptimizer!.Access);
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, production.CpuPowerLimit!.Access);
+        // Production CO is promoted; an explicitly read-only capability must
+        // still deny submission even when the installed backend can write.
+        var observedOnlyCurve = production.CpuVoltageOptimizer with { Access = DeviceFeatureAccess.ObservedOnly };
         var live = new LiveFixture(curve: true, power: true);
         var context = await CreateContextAsync(live: live, configureCapabilities: capabilities => capabilities with
-        { CpuVoltageOptimizer = production.CpuVoltageOptimizer, CpuPowerLimit = production.CpuPowerLimit });
+        { CpuVoltageOptimizer = observedOnlyCurve, CpuPowerLimit = production.CpuPowerLimit });
         var observed = await context.Runtime.ObserveCpuTuningAsync(true, () => true, default);
         Assert.Equal(-1, observed.CpuTuning!.LiveState!.UniformCurveOptimizerValue);
         Assert.NotNull(observed.CpuTuning.LiveState.PowerLimits);
         Assert.False(observed.CpuTuning.Live.CanWrite);
         var denied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
-            new(null, new(true, -2)), () => true, default);
+            new(null, new(false, -1)), () => true, default);
         Assert.Equal(ControlOperationStatus.Blocked, denied.Status);
         Assert.Empty(live.Curve!.Sent); Assert.Empty(live.Power!.Sent);
         Assert.Equal(0, context.Source.Submissions);
