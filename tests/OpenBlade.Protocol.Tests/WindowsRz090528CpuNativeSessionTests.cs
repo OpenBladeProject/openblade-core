@@ -217,6 +217,25 @@ public sealed class WindowsRz090528CpuNativeSessionTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void RevocationBetweenNativeCallsReportsAdmissionInsteadOfIoError(bool revokeAnchor)
+    {
+        var platform = new Platform();
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        using var lease = session.TryRetainInstalledBackend(() => Exact)!;
+        bool current = true;
+        platform.BeforeIoctl = () => { if (revokeAnchor) { lease.Dispose(); } else { current = false; } };
+        var result = session.QueryInstalled(lease.CreateQueryApproval(() => current), () => Exact);
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(CpuQueryFailureCode.AdmissionDenied, result.Diagnostic!.Failure);
+        Assert.Null(result.Diagnostic.NativeErrorCode);
+        Assert.Single(platform.Invocations);
+        Assert.Equal(1, platform.DuplicateCloses);
+        Assert.False(platform.Held);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void InstalledServiceDriftRevokesPermanentlyBeforeAnyTraffic(bool configurationOnly)
     {
         var platform = new Platform();

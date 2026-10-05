@@ -254,7 +254,7 @@ public sealed partial class ServiceControlRuntime
         new(token, lifetime, proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
             generation, sourceGeneration, token, diagnostic, proof),
             continuity: proof => CpuLiveRuntimeAdmission(features, stillControlsSession,
-                generation, sourceGeneration, token, diagnostic, proof, continuity: true));
+                generation, sourceGeneration, token, diagnostic, proof, continuity: true), diagnostic: diagnostic);
 
     private bool CpuLiveRuntimeAdmission(CpuTuningFeatures features, Func<bool> stillControlsSession, long generation,
         long sourceGeneration, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,

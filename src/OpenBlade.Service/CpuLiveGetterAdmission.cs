@@ -9,7 +9,8 @@ namespace OpenBlade.Service;
 internal sealed class CpuLiveGetterAdmission(
     CancellationToken token, Func<bool> lifetime,
     Func<CpuLiveGetterAdmission, bool> admit,
-    Func<TimeSpan>? elapsed = null, Func<CpuLiveGetterAdmission, bool>? continuity = null) : IDisposable
+    Func<TimeSpan>? elapsed = null, Func<CpuLiveGetterAdmission, bool>? continuity = null,
+    CpuSavedAdmissionDiagnostic? diagnostic = null) : IDisposable
 {
     private readonly long started = Stopwatch.GetTimestamp();
     private int revoked;
@@ -31,12 +32,14 @@ internal sealed class CpuLiveGetterAdmission(
     {
         if (!Active()) { return false; }
         bool accepted;
+        string stage = admitted && continuity is not null ? "getter continuity admission" : "getter full admission";
         try
         {
             accepted = (admitted && continuity is not null ? continuity(this) : admit(this)) && Active();
             if (accepted) { admitted = true; }
         }
-        catch { accepted = false; }
+        catch { diagnostic?.Check(false, stage + " exception"); accepted = false; }
+        diagnostic?.Check(accepted, stage);
         if (!accepted) { Dispose(); }
         return accepted && Volatile.Read(ref revoked) == 0;
     }
@@ -58,11 +61,26 @@ internal sealed class CpuLiveGetterAdmission(
 
     private bool Active()
     {
-        if (Volatile.Read(ref revoked) != 0) { return false; }
-        if (token.IsCancellationRequested || !lifetime()
-            || (elapsed?.Invoke() ?? Stopwatch.GetElapsedTime(started)) >= TimeSpan.FromSeconds(10))
-        { Dispose(); return false; }
-        return true;
+        string stage = "getter revoked";
+        bool Check(bool allowed, string name) => diagnostic?.Check(allowed, name) ?? allowed;
+        try
+        {
+            if (!Check(Volatile.Read(ref revoked) == 0, stage)) { return false; }
+            stage = "getter cancellation";
+            if (!Check(!token.IsCancellationRequested, stage)) { Dispose(); return false; }
+            stage = "getter lifetime";
+            if (!Check(lifetime(), stage)) { Dispose(); return false; }
+            stage = "getter deadline";
+            TimeSpan measured = elapsed?.Invoke() ?? Stopwatch.GetElapsedTime(started);
+            if (!Check(measured < TimeSpan.FromSeconds(10),
+                $"{stage}; elapsed {measured.TotalMilliseconds:F0} ms")) { Dispose(); return false; }
+            return true;
+        }
+        catch
+        {
+            diagnostic?.Check(false, stage + " exception");
+            Dispose(); return false;
+        }
     }
 
     public void Dispose() => Interlocked.Exchange(ref revoked, 1);

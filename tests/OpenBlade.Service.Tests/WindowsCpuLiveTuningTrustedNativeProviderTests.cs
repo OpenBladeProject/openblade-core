@@ -6,6 +6,58 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
+    [Theory]
+    [InlineData("scope", "provider getter scope active")]
+    [InlineData("cancel", "provider getter cancellation")]
+    [InlineData("admission", "provider getter admission before continuity")]
+    [InlineData("context", "provider getter matching context")]
+    [InlineData("installed", "provider getter installed backend continuity")]
+    [InlineData("usb", "provider getter USB continuity")]
+    [InlineData("controllers", "provider getter controller continuity")]
+    [InlineData("controllers-exception", "provider getter controller continuity exception")]
+    [InlineData("boot", "provider getter boot continuity")]
+    [InlineData("boot-exception", "provider getter boot continuity exception")]
+    [InlineData("after", "provider getter admission after continuity")]
+    public async Task GetterContinuityNamesFirstFailureWithoutRepeatingLaterPredicates(string failure, string expected)
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted);
+        await fixture.RunRaw(initial =>
+        {
+            Assert.NotNull(initial);
+            using var getter = fixture.Provider.BeginGetter(cancellation.Token)!;
+            var context = Assert.IsType<CpuLiveCurveContext>(fixture.Provider.ReadFreshContext(fixture.OperationToken));
+            var approval = fixture.Provider.CreateInstalledQueryApproval(context, fixture.OperationToken)!;
+            int controllers = fixture.ControllerReads, boots = fixture.BootReads;
+            switch (failure)
+            {
+                case "scope": getter.Dispose(); break;
+                case "cancel": cancellation.Cancel(); break;
+                case "admission": fixture.Admitted = false; break;
+                case "context":
+                    Assert.False(fixture.Provider.CompleteGetter(context with { EnabledCoreMask = 1 }, fixture.OperationToken));
+                    break;
+                case "installed": fixture.Platform.Running = false; fixture.ControllerCurrent = false; break;
+                case "usb": fixture.Usb = null; fixture.ControllerCurrent = false; break;
+                case "controllers": fixture.ControllerCurrent = false; break;
+                case "controllers-exception": fixture.ThrowControllers = true; break;
+                case "boot": fixture.Boot = fixture.Boot with { Sequence = 43 }; break;
+                case "boot-exception": fixture.ThrowBoot = true; break;
+                case "after": fixture.OnBoot = () => fixture.Admitted = false; break;
+            }
+            if (failure != "context") { Assert.False(approval.IsCurrent()); }
+            Assert.Equal(expected, diagnostic.FirstFailure);
+            if (failure is "scope" or "cancel" or "admission" or "context" or "installed" or "usb")
+            { Assert.Equal(controllers, fixture.ControllerReads); }
+            if (failure is not ("boot" or "boot-exception" or "after")) { Assert.Equal(boots, fixture.BootReads); }
+            fixture.ControllerCurrent = false;
+            Assert.False(approval.IsCurrent());
+            Assert.Equal(expected, diagnostic.FirstFailure);
+        }, diagnostic);
+    }
+
     [Fact]
     public async Task PreparedProofSharesOnlyExactReadPrefixAndRequiresFreshSetterAuthority()
     {
@@ -570,6 +622,10 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         private readonly CpuTuningController controller;
         internal int MetadataOpens, UsbReads;
         internal bool ControllerCurrent = true;
+        internal bool ThrowControllers, ThrowBoot;
+        internal int ControllerReads, BootReads;
+        internal Action? OnBoot;
+        internal CpuLiveCurveBootSequence Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42);
         internal uint Minimum, Maximum = 50;
         internal bool Admitted = true;
         internal DeviceIdentity? Usb = new("RZ09-0528", 0x1532, 0x02C6, "Unknown");
@@ -582,10 +638,11 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
         {
             CpuTuningController? captured = null;
             Provider = new(WindowsRz090528CpuNativeSession.ForPlatform(Platform), () => captured, new Source(), () => { UsbReads++; return Usb; },
-                _ => new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42),
+                _ => { BootReads++; OnBoot?.Invoke(); if (ThrowBoot) { throw new IOException("private"); } return Boot; },
                 new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataOpens++; return new Metadata(this); }),
                 () => new CpuGetterUsbContinuity(() => new(Usb is null ? null : @"USB\VID_1532&PID_02C6\test", 8, 0),
-                    @"USB\VID_1532&PID_02C6\test", () => { }), () => () => ControllerCurrent);
+                    @"USB\VID_1532&PID_02C6\test", () => { }), () => () =>
+                    { ControllerReads++; if (ThrowControllers) { throw new IOException("private"); } return ControllerCurrent; });
             controller = captured = new(new Source(), curveBackend: backend,
                 curveStore: new CpuLiveCurveTuningTransactionTests.MemoryStore());
         }

@@ -393,16 +393,30 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         }
         internal bool Current(CpuLiveCurveContext expected)
         {
+            var diagnostic = owner.Diagnostic;
+            bool Check(Func<bool> predicate, string name)
+            {
+                using var stage = diagnostic?.BeginStage(name);
+                try
+                {
+                    bool allowed = predicate();
+                    return diagnostic?.Check(allowed, name) ?? allowed;
+                }
+                catch { diagnostic?.Check(false, name + " exception"); return false; }
+            }
             try
             {
-                return !disposed && !token.IsCancellationRequested && admission.Allows()
-                    && Context is { } context && expected.MatchesHardwareContext(context)
-                    && owner.installed?.GetterContinuityCurrent == true
-                    && (usb is not null ? usb.IsCurrent() : CpuHardwareIdentity.Same(context.Identity, owner.readUsb()))
-                    && (controllers?.Invoke() ?? owner.captureGetterControllers is null)
-                    && context.BootSequence == owner.readBoot(token)
-                    && owner.controller()?.CaptureLiveRuntimeLifetime() == context.RuntimeLifetime
-                    && Volatile.Read(ref owner.disposed) == 0 && admission.Allows()
+                return Check(() => !disposed, "provider getter scope active")
+                    && Check(() => !token.IsCancellationRequested, "provider getter cancellation")
+                    && Check(admission.Allows, "provider getter admission before continuity")
+                    && Check(() => Context is { } value && expected.MatchesHardwareContext(value), "provider getter matching context")
+                    && Check(() => owner.installed?.GetterContinuityCurrent == true, "provider getter installed backend continuity")
+                    && Check(() => usb is not null ? usb.IsCurrent() : CpuHardwareIdentity.Same(Context!.Identity, owner.readUsb()), "provider getter USB continuity")
+                    && Check(() => controllers?.Invoke() ?? owner.captureGetterControllers is null, "provider getter controller continuity")
+                    && Check(() => Context!.BootSequence == owner.readBoot(token), "provider getter boot continuity")
+                    && Check(() => owner.controller()?.CaptureLiveRuntimeLifetime() == Context!.RuntimeLifetime, "provider getter runtime lifetime")
+                    && Check(() => Volatile.Read(ref owner.disposed) == 0, "provider getter owner active")
+                    && Check(admission.Allows, "provider getter admission after continuity")
                     || Reject();
             }
             catch { return Reject(); }

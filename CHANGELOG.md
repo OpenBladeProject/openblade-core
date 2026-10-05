@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Report the first rejected live CPU getter guard and distinguish admission denial from native I/O failure without repeating safety checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Enforce the developer voltage job's protected deadline at the native setter boundary and reuse each prepared step's complete read-only preflight before independently verified application and restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Retain exact-request read continuity through CO proof preparation and initial native admission, disposing it before independent fresh setter validation. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

@@ -5,6 +5,35 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveGetterAdmissionTests
 {
+    [Theory]
+    [InlineData("revoked", "getter revoked")]
+    [InlineData("cancel", "getter cancellation")]
+    [InlineData("lifetime", "getter lifetime")]
+    [InlineData("deadline", "getter deadline; elapsed 10025 ms")]
+    [InlineData("lifetime-exception", "getter lifetime exception")]
+    [InlineData("clock-exception", "getter deadline exception")]
+    public void ActiveFailureNamesFirstGuardAndNeverResamplesAfterRevocation(string failure, string expected)
+    {
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        using var cancellation = new CancellationTokenSource();
+        int lifetimes = 0, clocks = 0, admissions = 0;
+        using var proof = new CpuLiveGetterAdmission(cancellation.Token,
+            () => { lifetimes++; if (failure == "lifetime-exception") { throw new IOException("private"); } return failure != "lifetime"; },
+            _ => { admissions++; return true; },
+            () => { clocks++; if (failure == "clock-exception") { throw new IOException("private"); } return TimeSpan.FromMilliseconds(10025); },
+            diagnostic: diagnostic);
+        if (failure == "revoked") { proof.Dispose(); }
+        if (failure == "cancel") { cancellation.Cancel(); }
+        Assert.False(proof.Allows());
+        Assert.Equal(expected, diagnostic.FirstFailure);
+        Assert.Equal(failure is "revoked" or "cancel" ? 0 : 1, lifetimes);
+        Assert.Equal(failure is "deadline" or "clock-exception" ? 1 : 0, clocks);
+        Assert.Equal(0, admissions);
+        Assert.False(proof.Allows());
+        Assert.Equal(expected, diagnostic.FirstFailure);
+        Assert.Equal(failure is "deadline" or "clock-exception" ? 1 : 0, clocks);
+    }
+
     [Fact]
     public void FullAdmissionRunsAtEntryAndEndWhileEveryBoundaryChecksContinuity()
     {

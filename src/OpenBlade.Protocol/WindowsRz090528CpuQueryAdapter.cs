@@ -460,6 +460,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
                 progress?.CompletedIoctl();
             }
         }
+        catch (QueryAdmissionDeniedException)
+        {
+            wire.Abort();
+            return new(false, [], CpuQueryFailureCode.AdmissionDenied);
+        }
         catch { wire.Abort(); throw; }
         if (wire.AcceptReply(code, input, outputLength, reply)) { return reply; }
         return !reply.Success ? reply
