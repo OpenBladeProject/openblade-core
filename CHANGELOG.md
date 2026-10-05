@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Accept the admitted CPU Voltage Optimizer ReadWrite capability in firmware smoke baselines while retaining its exact range and enable/disable checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Retain the first failed live CPU power query's operation, native failure and error code, or bounded exception category, in observation diagnostics. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Report the first rejected live CPU getter guard and distinguish admission denial from native I/O failure without repeating safety checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))

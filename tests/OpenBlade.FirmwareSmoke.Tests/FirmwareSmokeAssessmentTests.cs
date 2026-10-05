@@ -231,6 +231,43 @@ public sealed class FirmwareSmokeAssessmentTests
                 check => check.Id == "capabilities.hyper-boost-base-modes").Outcome);
     }
 
+    [Theory]
+    [InlineData(-30, -1, 1, DeviceFeatureAccess.ObservedOnly, true, true, true)]
+    [InlineData(-30, -1, 1, DeviceFeatureAccess.ReadWrite, true, true, true)]
+    [InlineData(-30, -1, 1, DeviceFeatureAccess.ReadOnly, true, true, false)]
+    [InlineData(-30, -1, 1, (DeviceFeatureAccess)99, true, true, false)]
+    [InlineData(-29, -1, 1, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-30, 0, 1, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-30, -1, 2, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-30, -1, 0, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-30, -1, null, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-1, -30, 1, DeviceFeatureAccess.ReadWrite, true, true, false)]
+    [InlineData(-30, -1, 1, DeviceFeatureAccess.ReadWrite, false, true, false)]
+    [InlineData(-30, -1, 1, DeviceFeatureAccess.ReadWrite, true, false, false)]
+    public void Rz090528CpuVoltageOptimizerRequiresExactRangeAndSupportedAccess(
+        int minimum, int maximum, int? step, DeviceFeatureAccess access,
+        bool supportsEnableDisable, bool capabilityPresent, bool accepted)
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("1.9.0.0");
+        FirmwareSmokeSnapshot snapshot = baseline with
+        {
+            TargetModel = RazerBladeModelCatalog.Rz090528ModelNumber,
+            Capabilities = baseline.Capabilities with
+            {
+                CpuVoltageOptimizer = capabilityPresent
+                    ? new CpuVoltageOptimizerCapabilities(new DeviceNumericRange(minimum, maximum, step), access)
+                    { SupportsEnableDisable = supportsEnableDisable }
+                    : null,
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+
+        Assert.Equal(
+            accepted ? FirmwareSmokeOutcome.Passed : FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.cpu-voltage-optimizer").Outcome);
+    }
+
     [Fact]
     public async Task HealthyRz090528BaselineRoundTripsAndUsesItsExactCapabilityGate()
     {
