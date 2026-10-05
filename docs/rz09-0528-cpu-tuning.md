@@ -10,7 +10,9 @@ path uses the exact signed AMD stack when it is already installed and running;
 reads never start or provision a driver. Production composition admits live CO
 on the exact model/SKU after complete observation, fresh safety checks and
 resolved ownership. A saved value does not prove running state or activation
-after restart; boot and lifecycle validation remain pending.
+after restart. Installed tests have verified saved Off activation and restored −1
+activation across two restarts. Power/session and sleep/resume validation remain
+pending.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
