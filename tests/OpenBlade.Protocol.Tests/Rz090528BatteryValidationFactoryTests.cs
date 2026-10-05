@@ -123,7 +123,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 DeviceFeatureAccess.ReadWrite)
 #else
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
 #endif
             {
                 SupportsEnableDisable = true,

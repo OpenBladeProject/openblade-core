@@ -595,7 +595,7 @@ public static class BatteryValidationFactory
                 DeviceFeatureAccess.ReadWrite)
 #else
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
 #endif
             {
                 SupportsEnableDisable = true,
