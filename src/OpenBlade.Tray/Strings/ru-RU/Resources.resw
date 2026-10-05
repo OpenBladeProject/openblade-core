@@ -2017,9 +2017,9 @@
   <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
   <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve"><value>Цель применения</value></data>
   <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>Использовать установленный драйвер для текущих значений</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Необязательно. Обновите для проверки доступности.</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Необязательно. Обновите, чтобы проверить текущие значения через установленный драйвер CPU.</value></data>
   <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение применяет ноль и сохраняет выбранное смещение. Изменения вступают в силу после сохранения или применения.</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Для изменений выберите сохранение или применение.</value></data>
   <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
   <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
   <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Цель оптимизатора</value></data>

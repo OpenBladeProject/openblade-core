@@ -1392,7 +1392,7 @@
   <data name="Next boot" xml:space="preserve"><value>下次启动</value></data>
   <data name="Apply now" xml:space="preserve"><value>立即应用</value></data>
   <data name="Save for next boot" xml:space="preserve"><value>保存并在下次启动时应用</value></data>
-  <data name="Next boot: change requested; running values are separate." xml:space="preserve"><value>下次启动：已请求更改；当前运行值与此独立。</value></data>
+  <data name="Saved change takes effect next boot." xml:space="preserve"><value>已保存的更改将在下次启动时生效。</value></data>
   <data name="Next boot: no change pending." xml:space="preserve"><value>下次启动：无待应用的更改。</value></data>
   <data name="Next boot: pending state unknown." xml:space="preserve"><value>下次启动：待应用状态未知。</value></data>
   <data name="CPU tuning backend available." xml:space="preserve"><value>CPU 调节后端可用。</value></data>

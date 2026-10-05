@@ -79,9 +79,11 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public string TargetLabel => TrayText.Get(LiveNow ? "Live now" : "Next boot");
     public string ApplyLabel => TrayText.Get(LiveNow ? "Apply now" : "Save for next boot");
     public string OperationMessage => operationMessage;
+    public bool ShowPendingBootSummary => status?.PendingBoot == CpuTuningPendingBoot.Requested;
+    public bool ShowAvailabilitySummary => !(BackendReadWriteAvailable && CurveAdmitted(Target) && OptimizerConfirmed(Target));
     public string PendingBootSummary => TrayText.Get(status?.PendingBoot switch
     {
-        CpuTuningPendingBoot.Requested => "Next boot: change requested; running values are separate.",
+        CpuTuningPendingBoot.Requested => "Saved change takes effect next boot.",
         CpuTuningPendingBoot.None => "Next boot: no change pending.",
         _ => "Next boot: pending state unknown.",
     });
@@ -111,7 +113,7 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
         foreach (string property in new[] { nameof(IsVisible), nameof(Target), nameof(Settings), nameof(BackendReadWriteAvailable),
             nameof(CanEdit), nameof(CanEditCurve), nameof(CanEditCurveValue), nameof(CurveEnabled), nameof(CurveValue),
             nameof(TargetLabel), nameof(CanApply), nameof(CanRestore), nameof(CanRefresh), nameof(ApplyLabel), nameof(SavedSummary), nameof(LiveSummary),
-            nameof(PendingBootSummary), nameof(AvailabilitySummary) })
+            nameof(PendingBootSummary), nameof(AvailabilitySummary), nameof(ShowPendingBootSummary), nameof(ShowAvailabilitySummary) })
         {
             Notify(property);
         }

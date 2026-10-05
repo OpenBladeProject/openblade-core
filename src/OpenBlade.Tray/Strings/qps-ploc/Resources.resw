@@ -2019,9 +2019,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Tárgét ~~~ !!]</value>
   </data>
   <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>[Üšë ţħë îñšţåľľëð ðŕîvëŕ ƒôŕ ŕüññîñĝ våľüëš]</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>[Öþţîôñåľ. Ŕëƒŕëšħ ţô çħëçķ åvåîľåbîľîţý.]</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>[Öþţîôñåľ. Ŕëƒŕëšħ ţô çħëçķ ŕüññîñĝ våľüëš ŵîţħ ţħë îñšţåľľëð ÇPÜ ðŕîvëŕ.]</value></data>
   <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>[Åľľ-çôŕë ôþţîɱîžëŕ ôƒƒšëţ]</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>[Öƒƒ åþþľîëš žëŕô åñð ŕëɱëɱbëŕš ýöüŕ ôƒƒšëţ. Çħåñĝëš ţåķë ëƒƒëçţ ŵħëñ ýöü çħôôšë Šåvë ôŕ Åþþľý.]</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>[Öƒƒ üšëš žëŕô åñð ķëëþš ýöüŕ ôƒƒšëţ. Çħôôšë Šåvë ôŕ Åþþľý ţô ɱåķë çħåñĝëš.]</value></data>
   <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
     <value>[!! Réfrésh ~~~ !!]</value>
   </data>

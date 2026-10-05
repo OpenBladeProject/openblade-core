@@ -1392,7 +1392,7 @@
   <data name="Next boot" xml:space="preserve"><value>Next boot</value></data>
   <data name="Apply now" xml:space="preserve"><value>Apply now</value></data>
   <data name="Save for next boot" xml:space="preserve"><value>Save for next boot</value></data>
-  <data name="Next boot: change requested; running values are separate." xml:space="preserve"><value>Next boot: change requested; running values are separate.</value></data>
+  <data name="Saved change takes effect next boot." xml:space="preserve"><value>Saved change takes effect next boot.</value></data>
   <data name="Next boot: no change pending." xml:space="preserve"><value>Next boot: no change pending.</value></data>
   <data name="Next boot: pending state unknown." xml:space="preserve"><value>Next boot: pending state unknown.</value></data>
   <data name="CPU tuning backend available." xml:space="preserve"><value>CPU tuning backend available.</value></data>

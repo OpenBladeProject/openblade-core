@@ -1494,8 +1494,8 @@
   <data name="Save for next boot" xml:space="preserve">
     <value>[!! Sávé fór néxt bóót ~~~~~~ !!]</value>
   </data>
-  <data name="Next boot: change requested; running values are separate." xml:space="preserve">
-    <value>[!! Néxt bóót: chángé réqúéstéd; rúnníng válúés áré sépáráté. ~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Saved change takes effect next boot." xml:space="preserve">
+    <value>[Šåvëð çħåñĝë ţåķëš ëƒƒëçţ ñëẋţ bôôţ.]</value>
   </data>
   <data name="Next boot: no change pending." xml:space="preserve">
     <value>[!! Néxt bóót: nó chángé péndíng. ~~~~~~~~~ !!]</value>

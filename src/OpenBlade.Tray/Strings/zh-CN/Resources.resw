@@ -1996,9 +1996,9 @@
   <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 电压优化器</value></data>
   <data name="MainWindow_CpuTuningTargetLabel.Text" xml:space="preserve"><value>应用目标</value></data>
   <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>使用已安装的驱动读取运行值</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>可选。刷新以检查是否可用。</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>可选。刷新以通过已安装的 CPU 驱动程序检查当前运行值。</value></data>
   <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>全核心优化偏移</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭会应用零并记住偏移值。选择保存或应用后，更改才会生效。</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭时使用零并保留偏移值。选择保存或应用以进行更改。</value></data>
   <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>刷新</value></data>
   <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
   <data name="MainWindow_CpuTuningTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>优化器目标</value></data>

@@ -2019,9 +2019,9 @@ OpenBlade did not retry any stop request.</value>
     <value>Target</value>
   </data>
   <data name="MainWindow_CpuTuningInstalledBackend.Content" xml:space="preserve"><value>Use the installed driver for running values</value></data>
-  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Optional. Refresh to check availability.</value></data>
+  <data name="MainWindow_CpuTuningInstalledHint.Text" xml:space="preserve"><value>Optional. Refresh to check running values with the installed CPU driver.</value></data>
   <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>All-core optimizer offset</value></data>
-  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Off applies zero and remembers your offset. Changes take effect when you choose Save or Apply.</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Off uses zero and keeps your offset. Choose Save or Apply to make changes.</value></data>
   <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
     <value>Refresh</value>
   </data>

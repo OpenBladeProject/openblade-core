@@ -1392,7 +1392,7 @@
   <data name="Next boot" xml:space="preserve"><value>При следующей загрузке</value></data>
   <data name="Apply now" xml:space="preserve"><value>Применить сейчас</value></data>
   <data name="Save for next boot" xml:space="preserve"><value>Сохранить для следующей загрузки</value></data>
-  <data name="Next boot: change requested; running values are separate." xml:space="preserve"><value>Следующая загрузка: изменение запрошено; текущие значения учитываются отдельно.</value></data>
+  <data name="Saved change takes effect next boot." xml:space="preserve"><value>Сохранённое изменение вступит в силу при следующей загрузке.</value></data>
   <data name="Next boot: no change pending." xml:space="preserve"><value>Следующая загрузка: ожидающих изменений нет.</value></data>
   <data name="Next boot: pending state unknown." xml:space="preserve"><value>Следующая загрузка: состояние ожидающих изменений неизвестно.</value></data>
   <data name="CPU tuning backend available." xml:space="preserve"><value>Модуль настройки CPU доступен.</value></data>

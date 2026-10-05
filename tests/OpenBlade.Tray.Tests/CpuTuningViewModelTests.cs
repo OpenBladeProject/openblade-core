@@ -14,6 +14,25 @@ public sealed class CpuTuningViewModelTests
         new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, false);
 
     [Fact]
+    public void PendingAndUnavailableDetailsFollowConfirmedStatusAndSelectedTarget()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+        vm.UpdateStatus(Status() with { PendingBoot = CpuTuningPendingBoot.None }, Caps());
+        Assert.False(vm.ShowPendingBootSummary);
+        Assert.False(vm.ShowAvailabilitySummary);
+        vm.LiveNow = true;
+        Assert.True(vm.ShowAvailabilitySummary);
+        vm.UpdateStatus(Status(live: -7) with { PendingBoot = CpuTuningPendingBoot.Requested }, Caps());
+        Assert.True(vm.ShowPendingBootSummary);
+        Assert.False(vm.ShowAvailabilitySummary);
+        Assert.Contains(nameof(vm.ShowPendingBootSummary), changed);
+        Assert.Contains(nameof(vm.ShowAvailabilitySummary), changed);
+        vm.UpdateStatus(Status(live: -7), Caps());
+        Assert.False(vm.ShowPendingBootSummary);
+    }
+    [Fact]
     public void ConfirmedTargetsInitializeOnceAndRefreshPreservesEdits()
     {
         var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
