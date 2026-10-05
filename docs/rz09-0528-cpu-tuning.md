@@ -18,8 +18,10 @@ with the cooling pad connected and successful Off sleep/wake when disconnected.
 This is a user-observed association; its exact mechanism remains unresolved.
 The captured saved −1 configuration was restored and verified. With the pad
 disconnected, the final enabled-optimizer sleep/wake resumed normally on the
-same boot, with saved −1 intact and no recovery pending. The final post-wake
-live-offset read remains pending.
+same boot, with saved −1 intact and no recovery pending. A read-only post-wake
+observation confirmed all twelve running offsets at −1 and verified cleanup of
+its owned temporary driver. The power-peer query was unavailable, so live-write
+admission remained blocked; this read did not change CPU settings.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
