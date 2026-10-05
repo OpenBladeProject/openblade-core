@@ -25,12 +25,20 @@ admission remained blocked; this read did not change CPU settings.
 Power-peer diagnostics now retain the first rejected PM wire condition and the
 already-read mailbox response status. This distinguishes request-state and PCI
 echo failures from a rejected refresh response without adding native traffic or
-relaxing the power-peer gate. The underlying hardware rejection remains under
-investigation.
+relaxing the power-peer gate.
 A subsequent read-only observation on the ordinary diagnostic build succeeded:
 all twelve offsets remained at −1, power peers read 80/75 W, live admission was
 available, and owned-resource cleanup and an unchanged saved journal were proved.
-That confirms the failure is intermittent; it does not identify its cause.
+A fresh-boot observation then reproduced mailbox status `0xFD` during PM
+refresh; one later observation succeeded at 80/75 W. In the compatibility-matched
+firmware handler, an empty sampling window returns `0xFD` and registers the
+collector. OpenBlade currently ends the read on that prerequisite response.
+This establishes the rejection mechanism and supports missing first-read
+priming; the collector's timing and the actor that emptied the window remain
+unproved. Both observations retained all twelve offsets at −1, made no setting
+changes, preserved the saved journal and verified owned-resource cleanup. No
+automatic prerequisite recovery is implemented, and a failed peer read still
+blocks live writes.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
