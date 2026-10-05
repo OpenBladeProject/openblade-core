@@ -313,7 +313,9 @@ internal sealed class CpuTuningController
         if (!HasLiveBackend || !restoring && settings is not { IsWellFormed: true, IsConfigured: true })
         { return new(ControlOperationStatus.Blocked, "Live CPU tuning requires supported settings and an admitted backend."); }
         await liveGate.WaitAsync(token).ConfigureAwait(false);
-        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration), getterAdmission: getterAdmission);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        using var lease = new LiveAdmission(freshAdmission, token, new(serviceInstance, lowPowerGeneration, powerSourceGeneration),
+            diagnostic: diagnostic, getterAdmission: getterAdmission);
         liveAdmission.Value = lease;
         CpuLiveCurveTuningTransaction.PreparedOperation? curveOperation = null;
         CpuLivePowerTuningTransaction.PreparedOperation? powerOperation = null;
@@ -444,11 +446,13 @@ internal sealed class CpuTuningController
             completed &= !retained.Blocked && !token.IsCancellationRequested;
             var recovery = retained.Features == CpuTuningFeatures.None ? CpuTuningRecoveryState.None
                 : completed ? CpuTuningRecoveryState.RestoreReady : CpuTuningRecoveryState.Blocked;
-            return new(completed ? ControlOperationStatus.Stored : uncertain ? ControlOperationStatus.Failed : ControlOperationStatus.Blocked,
-                completed ? restoring ? "The original live CPU settings were restored and verified." : "The requested live CPU settings were verified."
+            string message = completed ? restoring ? "The original live CPU settings were restored and verified." : "The requested live CPU settings were verified."
                     : uncertain ? "Live CPU submission or readback is uncertain. Further live commands are blocked."
                     : confirmedPeerLoss ? "Confirmed live CPU state changed outside this operation. Ownership is blocked for both participating families."
-                    : "The live CPU operation stopped before completion; verified changes and recovery data were retained.")
+                    : "The live CPU operation stopped before completion; verified changes and recovery data were retained.";
+            if (!completed && diagnostic.FirstFailure is { } rejection) { message += " First rejection: " + rejection + "."; }
+            if (!completed) { message += diagnostic.LiveObservationTimeoutContext; }
+            return new(completed ? ControlOperationStatus.Stored : uncertain ? ControlOperationStatus.Failed : ControlOperationStatus.Blocked, message)
             {
                 CpuTuning = LiveStatus(curve, power, recovery, retained.Features,
                     completed && liveCurve is not null && curve is not null && lease.CanPresentCurveWrite()),
@@ -572,6 +576,7 @@ internal sealed class CpuTuningController
 
     private sealed class RuntimeCurveBackend(ICpuLiveCurveBackend backend, AsyncLocal<LiveAdmission?> current) : ICpuLiveCurveBackend
     {
+        public CpuSavedAdmissionDiagnostic? Diagnostic => current.Value?.Diagnostic;
         public Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
         public async Task<CpuLiveCurveBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
         {
@@ -591,6 +596,15 @@ internal sealed class CpuTuningController
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
             return await backend.CheckWriteAdmissionAsync(context, command, purpose, cancellation.Token).ConfigureAwait(false)
                 && lease.Allows(CpuTuningFeatures.CurveOptimizer);
+        }
+        public async Task<bool> CheckPlanAdmissionAsync(CpuLiveCurveContext context,
+            IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
+        {
+            var lease = current.Value;
+            if (lease?.Allows(CpuTuningFeatures.CurveOptimizer, token) != true) { return false; }
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
+            return await backend.CheckPlanAdmissionAsync(context, checks, cancellation.Token).ConfigureAwait(false)
+                && lease.Allows(CpuTuningFeatures.CurveOptimizer, token);
         }
         public async Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
             CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>

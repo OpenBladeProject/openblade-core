@@ -194,6 +194,27 @@ public sealed class CpuLiveCurveNativeBackendTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompletePlanFallbackPreservesChecksAndRejectsFinalContextDrift(bool drift)
+    {
+        var provider = new Provider(); var context = provider.Context!;
+        var checks = new CpuLiveCurveAdmissionCheck[]
+        {
+            new(Command(0), CpuLiveCurveCommandPurpose.Forward),
+            new(Command(-1), CpuLiveCurveCommandPurpose.Restore),
+            new(Command(-1), CpuLiveCurveCommandPurpose.Restore),
+        };
+        if (drift) { provider.OnAdmission = () => provider.Context = Change(context, "counter"); }
+        var platform = new Platform(); var backend = new CpuLiveCurveNativeBackend(platform, provider);
+        Assert.Equal(!drift, await backend.CheckPlanAdmissionAsync(context, checks, default));
+        Assert.Equal(checks.Select(check => (check.Command, check.Purpose)), provider.Admitted);
+        Assert.Equal(0, provider.Proofs); Assert.Equal(0, platform.Opens);
+        // Preflight creates neither a query approval nor a native setter proof.
+        Assert.Equal(0, provider.QueryApprovals);
+    }
+
+    [Theory]
     [InlineData("before", "NotSubmitted", true)]
     [InlineData("invoke", "Unknown", false)]
     [InlineData("malformed-ack", "Unknown", false)]

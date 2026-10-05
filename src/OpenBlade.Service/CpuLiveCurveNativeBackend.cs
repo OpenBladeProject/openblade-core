@@ -9,6 +9,7 @@ namespace OpenBlade.Service;
 // proof must repeat those checks in its native-lease callbacks, including gaps.
 internal interface ICpuLiveCurveTrustedNativeProvider
 {
+    CpuSavedAdmissionDiagnostic? Diagnostic => null;
     IDisposable? BeginGetter(CancellationToken token) => null;
     CpuLiveCurveContext? ReadFreshContext(CancellationToken token);
     bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token) =>
@@ -17,6 +18,15 @@ internal interface ICpuLiveCurveTrustedNativeProvider
     CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token) => null;
     bool CheckWriteAdmission(CpuLiveCurveContext exactContext, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token);
+    bool CheckPlanAdmission(CpuLiveCurveContext exactContext, IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
+    {
+        foreach (var check in checks)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!CheckWriteAdmission(exactContext, check.Command, check.Purpose, token)) { return false; }
+        }
+        return !token.IsCancellationRequested;
+    }
     CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token);
 }
@@ -51,6 +61,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     // Read-only lifecycle evidence, not journal/restore authority. The task is
     // the actual worker, not the cancellation-sensitive task returned to callers.
     internal Task? OutstandingWorker => state.OutstandingWorker;
+    public CpuSavedAdmissionDiagnostic? Diagnostic => provider.Diagnostic;
     internal CpuLiveCurveNativeBackendStatus Status
     {
         get { var status = state.Status; return new(status.WorkerOutstanding, (CpuLiveCurveNativeWorkerKind)status.Kind, status.Invalid, status.CurveResult); }
@@ -70,6 +81,19 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             return admitted && MatchesFresh(context, workToken);
         }, false, token);
 
+    public Task<bool> CheckPlanAdmissionAsync(CpuLiveCurveContext context,
+        IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
+    {
+        if (checks.Count is < 1 or > 36) { return Task.FromResult(false); }
+        var exact = checks.ToArray();
+        return Start(CpuLiveCurveNativeWorkerKind.Admission, workToken =>
+        {
+            using var stage = Diagnostic?.BeginStage("curve complete-plan preflight");
+            if (exact.Any(check => !ValidCommand(check.Command, check.Purpose)) || !MatchesFresh(context, workToken)) { return false; }
+            return provider.CheckPlanAdmission(context, exact, workToken) && MatchesFresh(context, workToken);
+        }, false, token);
+    }
+
     public Task<CpuLiveCurveSubmission> SendAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) =>
         SendAsync(context, command, purpose, expectedBefore, null, token);
@@ -78,7 +102,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token) =>
         state.Start(CpuNativeWorkerFamily.Curve, CpuNativeWorkerKind.Submission,
             workToken => Send(context, command, purpose, expectedBefore, peer, workToken),
-            CpuLiveCurveSubmission.Unknown, token, returnTerminal: true);
+            CpuLiveCurveSubmission.Unknown, token, Diagnostic, returnTerminal: true);
 
     private CpuLiveCurveBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
@@ -115,18 +139,29 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private CpuLiveCurveSubmission Send(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CpuLivePowerPeerState? peer, CancellationToken token)
     {
-        if (!ValidCommand(command, purpose) || !MatchesFresh(context, token)) { return CpuLiveCurveSubmission.NotSubmitted; }
+        var diagnostic = Diagnostic;
+        bool Check(bool allowed, string name) => diagnostic?.Check(allowed, name) ?? allowed;
+        using var preparation = diagnostic?.BeginStage("curve send proof preparation");
+        if (!Check(ValidCommand(command, purpose), "curve send command shape")
+            || !Check(MatchesFresh(context, token), "curve send initial context")) { return CpuLiveCurveSubmission.NotSubmitted; }
         var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
-        if (!provider.CheckWriteAdmission(context, command, purpose, token) || !MatchesFresh(context, token))
+        if (!Check(provider.CheckWriteAdmission(context, command, purpose, token), "curve send write admission")
+            || !Check(MatchesFresh(context, token), "curve send admitted context"))
         { return CpuLiveCurveSubmission.NotSubmitted; }
         var proof = provider.CreateWriteProof(context, request, token);
-        if (proof is null || !proof.Consume(request) || !MatchesFresh(context, token))
+        if (!Check(proof is not null, "curve send proof creation")
+            || !Check(proof!.Consume(request), "curve send proof consumption")
+            || !Check(MatchesFresh(context, token), "curve send proof context"))
         { return CpuLiveCurveSubmission.NotSubmitted; }
-        var boundProof = new ContextBoundProof(request, proof, this, context, token);
+        var boundProof = new ContextBoundProof(request, proof!, this, context, token);
         // ReadFreshContext uses the provider's exact active getter continuity
         // during preparation/readback, and full context outside that scope.
-        var result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token);
+        CpuLiveCurveNativeResult result;
+        using (diagnostic?.BeginStage("curve native execution (preparation/setter/readback)"))
+        { result = session.ExecuteCurve(request, boundProof, () => ReadBoundUsb(context, token), token); }
         state.Record(result);
+        if (result.Failure != CpuLiveCurveNativeFailure.None)
+        { diagnostic?.Check(false, "curve native result " + result.Disposition + "/" + result.Failure); }
         if (!result.WorkerTerminal || !result.CleanupComplete) { Invalidate(); return CpuLiveCurveSubmission.Unknown; }
         // Terminal non-submission is historical evidence, not fresh write
         // authority. Cancellation or context drift must not discard it.
@@ -164,7 +199,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private void Invalidate() => state.Invalidate();
 
     private Task<T> Start<T>(CpuLiveCurveNativeWorkerKind kind, Func<CancellationToken, T> work, T refused, CancellationToken token) =>
-        state.Start(CpuNativeWorkerFamily.Curve, (CpuNativeWorkerKind)kind, work, refused, token);
+        state.Start(CpuNativeWorkerFamily.Curve, (CpuNativeWorkerKind)kind, work, refused, token, Diagnostic);
     private sealed class ContextBoundProof(CpuLiveCurveNativeRequest request, CpuLiveCurveWriteProof source,
         CpuLiveCurveNativeBackend owner, CpuLiveCurveContext context, CancellationToken token) : CpuLiveCurveWriteProof(request)
     {

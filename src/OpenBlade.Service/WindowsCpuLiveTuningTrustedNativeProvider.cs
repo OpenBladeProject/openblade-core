@@ -53,6 +53,49 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         return getterScope = new GetterScope(this, admission, token);
     }
 
+    public CpuSavedAdmissionDiagnostic? Diagnostic => controller()?.CaptureLiveObservationDiagnostic();
+
+    // A complete ordered preflight is read-only. Its result cannot be consumed
+    // as a write proof; Send and the native setter retain independent admission.
+    public bool CheckPlanAdmission(CpuLiveCurveContext exactContext,
+        IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
+    {
+        if (checks.Count is < 1 or > 36 || getterAdmission is not null) { return false; }
+        var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
+        if (admission is null) { return false; }
+        using (var scope = BeginGetter(token))
+        {
+            var getter = getterScope;
+            if (getter is null)
+            {
+                foreach (var check in checks)
+                {
+                    if (!CheckWriteAdmission(exactContext, check.Command, check.Purpose, token)) { return false; }
+                }
+            }
+            else
+            {
+                if (!exactContext.MatchesHardwareContext(ReadFreshContext(token))) { return false; }
+                var request = controller()?.CaptureLiveRuntimeRequest();
+                if (!ReferenceEquals(request, rangeRequest) || rangeContext?.MatchesHardwareContext(exactContext) != true)
+                {
+                    range = null; rangeRequest = request; rangeContext = exactContext;
+                    var result = ReadCurveMetadata(exactContext, admission, token, getter);
+                    if (!result.CleanupComplete) { worker.Invalidate(); }
+                    if (result is { Status: CpuLiveCurveRangeStatus.Complete, CleanupComplete: true }) { range = result.Range; }
+                }
+                if (range is not { } freshRange) { return false; }
+                foreach (var check in checks)
+                {
+                    if (!getter.Current(exactContext) || !ValidCurveCommand(check.Command, check.Purpose)
+                        || !freshRange.Allows(check.Command)) { return false; }
+                }
+                if (!CompleteGetter(exactContext, token)) { return false; }
+            }
+        }
+        return !token.IsCancellationRequested && admission();
+    }
+
     public CpuLiveCurveContext? ReadFreshContext(CancellationToken token)
     {
         var getter = getterScope;
@@ -178,14 +221,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         CpuLiveCurveCommandPurpose purpose, CancellationToken token)
     {
         if (getterAdmission is not null) { return false; }
-#if OPENBLADE_CPU_VOLTAGE_VALIDATION
-        // The developer profile narrows every purpose, including first-original
-        // restoration. Fresh firmware metadata remains an independent intersection.
-        if (command.Offset is not (-1 or 0)) { return false; }
-#endif
-        if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
-            || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
-                CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
+        if (!ValidCurveCommand(command, purpose)) { return false; }
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null) { return false; }
         var request = controller()?.CaptureLiveRuntimeRequest();
@@ -198,6 +234,19 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             { range = result.Range; }
         }
         return range?.Allows(command) == true && admission();
+    }
+
+    private static bool ValidCurveCommand(CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose)
+    {
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+        // The developer profile narrows every purpose, including first-original
+        // restoration. Fresh firmware metadata remains an independent intersection.
+        if (command.Offset is not (-1 or 0)) { return false; }
+#endif
+        if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
+            || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
+                CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
+        return true;
     }
 
     public CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
@@ -363,6 +412,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         private bool read;
         private CpuLiveCurveTrustedRange? range;
         private GetterScope? readScope;
+        private int readScopesStarted;
         private GetterScope? ActiveRead => readScope is { IsDisposed: false } ? readScope : null;
         private bool CheckRead(CpuLiveCurveNativeRequest exactRequest) => ActiveRead is null
             ? Current(exactRequest) : ReadCurrent(exactRequest);
@@ -376,6 +426,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                 readScope = owner.getterScope;
                 if (!context.MatchesHardwareContext(owner.ReadFreshContext(token)))
                 { throw new InvalidOperationException("CPU operation read context changed."); }
+                readScopesStarted++;
                 return scope;
             }
             catch { scope.Dispose(); throw; }
@@ -406,7 +457,16 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             }
             return CheckRead(exactRequest);
         }
-        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest) => current();
+        internal override bool IsCurrent(CpuLiveCurveNativeRequest exactRequest)
+        {
+            using var stage = owner.Diagnostic?.BeginStage(readScopesStarted switch
+            {
+                0 => "curve native initial full proof",
+                1 => "curve setter barrier full proof",
+                _ => "curve final readback full proof",
+            });
+            return current();
+        }
         internal override CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest)
         {
             if (!CheckRead(exactRequest)) { return null; }

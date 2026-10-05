@@ -29,6 +29,13 @@ internal sealed class CpuSavedAdmissionDiagnostic
         Check(false, detail);
     }
 
+    internal void RecordCurveOperationCancellation(bool callerCancelled, string operation)
+    {
+        string detail = "curve " + operation + (callerCancelled ? " caller cancellation" : " operation timeout") + ActiveStageDetail();
+        Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
+        Check(false, detail);
+    }
+
     internal bool Check(bool allowed, string stage)
     {
         if (!allowed) { Interlocked.CompareExchange(ref firstFailure, stage, null); }
@@ -47,7 +54,17 @@ internal sealed class CpuSavedAdmissionDiagnostic
     internal string ActiveStageDetail()
     {
         ActiveStage? stage = Volatile.Read(ref activeStage);
-        return stage is null ? string.Empty : $"; active stage {stage.Name}; elapsed {Math.Min(600000L,
+        if (stage is null) { return string.Empty; }
+        string enclosing = string.Empty;
+        for (ActiveStage? parent = stage.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent.Name.StartsWith("curve send ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve native ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve setter ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve final ", StringComparison.Ordinal))
+            { enclosing = "; enclosing stage " + parent.Name; break; }
+        }
+        return $"; active stage {stage.Name}{enclosing}; elapsed {Math.Min(600000L,
             (long)System.Diagnostics.Stopwatch.GetElapsedTime(stage.Started).TotalMilliseconds)} ms";
     }
 
@@ -57,6 +74,7 @@ internal sealed class CpuSavedAdmissionDiagnostic
         internal long Started { get; } = System.Diagnostics.Stopwatch.GetTimestamp();
         private int disposed;
         private readonly ActiveStage? parent = parent;
+        internal ActiveStage? Parent => parent;
         public void Dispose()
         {
             Interlocked.Exchange(ref disposed, 1);

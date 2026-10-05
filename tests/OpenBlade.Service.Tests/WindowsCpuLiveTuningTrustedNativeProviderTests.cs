@@ -6,6 +6,76 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests
 {
+    [Fact]
+    public async Task CompletePlanPreflightHasConstantDiscoveryAndNoWriteAuthority()
+    {
+        using var fixture = new Fixture();
+        int full = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime,
+            _ => { full++; return fixture.Admitted; }, continuity: _ => fixture.Admitted);
+        int? expectedHosts = null, expectedUsb = null;
+        foreach (int count in new[] { 1, 36 })
+        {
+            await fixture.Run(context =>
+            {
+                int hosts = fixture.Platform.HostReads, usb = fixture.UsbReads, initialFull = full;
+                fixture.OnMinMax = () => Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
+                Assert.True(fixture.Provider.CheckPlanAdmission(context, PlanChecks().Take(count).ToArray(), fixture.OperationToken));
+                int hostReads = fixture.Platform.HostReads - hosts, usbReads = fixture.UsbReads - usb;
+                Assert.Equal(2, full - initialFull);
+                if (expectedHosts is null) { expectedHosts = hostReads; expectedUsb = usbReads; }
+                else { Assert.Equal(expectedHosts, hostReads); Assert.Equal(expectedUsb, usbReads); }
+                fixture.Admitted = false;
+                Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
+            });
+            fixture.Admitted = true;
+        }
+        Assert.Equal(2, fixture.MetadataOpens); // A later request gets its own range and scope.
+    }
+
+    [Theory]
+    [InlineData("controller")]
+    [InlineData("cancel")]
+    [InlineData("disposed")]
+    [InlineData("final-context")]
+    public async Task CompletePlanPreflightRejectsContinuityLossAndAlwaysDisposes(string failure)
+    {
+        using var fixture = new Fixture(); using var cancellation = new CancellationTokenSource();
+        CpuLiveGetterAdmission? active = null;
+        int full = 0;
+        fixture.GetterAdmission = (_, token, lifetime) => active = new(token, lifetime,
+            _ => { if (++full == 2 && failure == "final-context") { fixture.Platform.HostValid = false; } return true; },
+            continuity: _ => true);
+        await fixture.Run(context =>
+        {
+            fixture.OnMinMax = () =>
+            {
+                if (failure == "controller") { fixture.ControllerCurrent = false; }
+                if (failure == "cancel") { cancellation.Cancel(); }
+                if (failure == "disposed") { active!.Dispose(); }
+            };
+            Assert.False(fixture.Provider.CheckPlanAdmission(context, PlanChecks(), cancellation.Token));
+            Assert.False(active!.Allows());
+            // The failed preflight did not leave a nested scope or grant a proof.
+            fixture.Admitted = false;
+            Assert.Null(fixture.Provider.CreateWriteProof(context, Request(-2), fixture.OperationToken));
+        });
+    }
+
+    private static CpuLiveCurveAdmissionCheck[] PlanChecks()
+    {
+        var checks = new List<CpuLiveCurveAdmissionCheck>();
+        foreach (var core in CpuLiveCurveTuningTransactionTests.ValuesFixture())
+        {
+            Assert.True(CpuLiveCurveCommand.TryCreate(core.PhysicalCoreId, -2, 0xFF55, out var forward));
+            Assert.True(CpuLiveCurveCommand.TryCreate(core.PhysicalCoreId, -1, 0xFF55, out var reverse));
+            checks.Add(new(forward, CpuLiveCurveCommandPurpose.Forward));
+            checks.Add(new(reverse, CpuLiveCurveCommandPurpose.Restore));
+        }
+        checks.AddRange(checks.Where(check => check.Purpose == CpuLiveCurveCommandPurpose.Restore).ToArray());
+        return checks.ToArray();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

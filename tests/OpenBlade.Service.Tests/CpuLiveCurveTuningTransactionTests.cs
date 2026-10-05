@@ -7,6 +7,49 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLiveCurveTuningTransactionTests
 {
     [Fact]
+    public async Task PlanFallbackPreservesOrderedForwardReverseAndOriginalChecks()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        var prepared = await transaction.PrepareApplyAsync(new(true, -2), default);
+        Assert.NotNull(prepared.Operation); Assert.Empty(backend.Sent);
+        Assert.Equal(36, backend.Admissions.Count);
+        for (int i = 0; i < 12; i++)
+        {
+            int core = backend.Values[i].PhysicalCoreId;
+            Assert.Equal((core, (short)-2, CpuLiveCurveCommandPurpose.Forward),
+                (backend.Admissions[i * 2].Item1.PhysicalCoreId, backend.Admissions[i * 2].Item1.Offset, backend.Admissions[i * 2].Item2));
+            Assert.Equal((core, (short)-1, CpuLiveCurveCommandPurpose.Restore),
+                (backend.Admissions[i * 2 + 1].Item1.PhysicalCoreId, backend.Admissions[i * 2 + 1].Item1.Offset, backend.Admissions[i * 2 + 1].Item2));
+            Assert.Equal(backend.Admissions[i * 2 + 1], backend.Admissions[24 + i]);
+        }
+    }
+
+    [Fact]
+    public async Task SubmissionTimeoutFreezesProofStageWithoutDiscardingExactLateTask()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store) { Diagnostic = new() };
+        var pending = new TaskCompletionSource<CpuLiveCurveSubmission>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IDisposable? stage = null, inner = null;
+        backend.OnSend = _ =>
+        {
+            stage = backend.Diagnostic.BeginStage("curve send proof preparation");
+            inner = backend.Diagnostic.BeginStage("native provider fresh context");
+            return pending.Task;
+        };
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(50));
+        var result = await transaction.ApplySelectiveAsync([new(0, 0)], default).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        string frozen = Assert.IsType<string>(backend.Diagnostic.LiveObservationTimeoutContext);
+        Assert.StartsWith("; curve submission operation timeout; active stage native provider fresh context; enclosing stage curve send proof preparation", frozen);
+        Assert.False(await transaction.TrySettlePendingSubmissionAsync(default));
+        pending.SetResult(CpuLiveCurveSubmission.NotSubmitted); await pending.Task; inner!.Dispose(); stage!.Dispose();
+        backend.Diagnostic.Check(false, "late rejection");
+        Assert.Equal(frozen, backend.Diagnostic.LiveObservationTimeoutContext);
+        Assert.True(await transaction.TrySettlePendingSubmissionAsync(default));
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
+    }
+    [Fact]
     public async Task FirstTimeoutRetainsPendingNativeProgressAfterLateCompletion()
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
@@ -657,6 +700,7 @@ public sealed class CpuLiveCurveTuningTransactionTests
 
     internal sealed class FakeBackend(MemoryStore store) : ICpuLiveCurveBackend
     {
+        public CpuSavedAdmissionDiagnostic? Diagnostic { get; set; }
         internal CpuLiveCurveContext Context = ContextFixture();
         internal CpuLiveCoreOffset[] Values = ValuesFixture();
         internal readonly List<CpuLiveCurveCommand> Sent = [];

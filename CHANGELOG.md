@@ -21,6 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Evaluate each complete CO preflight plan within bounded read continuity while preserving fresh native setter and restoration authority; retain submission timeout stage diagnostics. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+
 - Reuse exact read continuity during a native CPU curve operation's preparation and readback while retaining independent full setter and restoration admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Preserve exact terminal CPU non-submission after a caller deadline and settle only its matching ownership record, without claiming a fresh observation or restoration. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
