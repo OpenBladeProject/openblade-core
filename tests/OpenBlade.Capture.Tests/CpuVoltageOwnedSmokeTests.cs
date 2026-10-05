@@ -107,6 +107,99 @@ public sealed class CpuVoltageOwnedSmokeTests
         Assert.DoesNotContain("--observe-only", CpuVoltageOwnedSmokeCommand.ChildArguments(CpuVoltageOwnedSmokeCommand.Parse(Args), "evidence"));
     }
 
+    private static string[] OrdinaryObservationArgs
+    {
+        get
+        {
+            var args = Args;
+            args[7] = "0.24.0+" + Source[..8];
+            args[9] = CpuVoltageOwnedSmokeCommand.ObserveConfirmation;
+            return [.. args, "--observe-only", "--owner-source", new string('b', 40)];
+        }
+    }
+
+    [Fact]
+    public void OrdinaryObservationSeparatesOwnerFileAndIpcVersionsWithoutWriteAuthority()
+    {
+        var options = CpuVoltageOwnedSmokeCommand.Parse(OrdinaryObservationArgs);
+        Assert.Equal(Source, options.Source);
+        Assert.Equal(new string('b', 40), options.OwnerSource);
+        Assert.Equal("0.24.0+" + Source, options.ServiceFileVersion);
+        Assert.Equal("0.24.0+" + Source[..8], options.ServiceVersion);
+        Assert.True(options.ObserveOnly);
+        Assert.Null(options.SessionJob);
+        Assert.Equal(new[] { "cpu-voltage-optimizer", "--observe-only", "--confirm-target",
+            "RZ09-0528-CPU-VOLTAGE-OBSERVE-ONLY", "--expected-service-version", options.ServiceVersion,
+            "--output", "evidence" }, CpuVoltageOwnedSmokeCommand.ChildArguments(options, "evidence"));
+        Assert.False(CpuVoltageOwnedSmokeCommand.CreateCompletionReceipt(Guid.NewGuid(), options).OriginalVerified);
+    }
+
+    [Theory]
+    [InlineData("cycle")]
+    [InlineData("session")]
+    [InlineData("missing-owner")]
+    [InlineData("duplicate-owner")]
+    [InlineData("short-owner")]
+    [InlineData("wrong-source")]
+    [InlineData("full-ipc")]
+    [InlineData("validation-ipc")]
+    public void OrdinaryInvalidOrWriteCapableModesAreRejectedBeforeExecution(string failure)
+    {
+        string[] args = OrdinaryObservationArgs;
+        switch (failure)
+        {
+            case "cycle":
+                args = args.Where(value => value != "--observe-only").ToArray();
+                args[9] = CpuVoltageOwnedSmokeCommand.Confirmation;
+                break;
+            case "session": args = [.. args, "--session-job", Guid.NewGuid().ToString("N") + ":" + Guid.NewGuid().ToString("N")]; break;
+            case "missing-owner": args = args[..^2]; break;
+            case "duplicate-owner": args = [.. args, "--owner-source", new string('b', 40)]; break;
+            case "short-owner": args[^1] = new string('b', 8); break;
+            case "wrong-source": args[7] = "0.24.0+cccccccc"; break;
+            case "full-ipc": args[7] = "0.24.0+" + Source; break;
+            case "validation-ipc": args[7] = Version; break;
+        }
+        Assert.Throws<ArgumentException>(() => CpuVoltageOwnedSmokeCommand.Parse(args));
+        using var output = new StringWriter();
+        // Run returns at its parse failure, before platform checks, the static
+        // one-run claim, package pinning or driver lifecycle construction.
+        Assert.Equal(2, CpuVoltageOwnedSmokeCommand.Run(args, output));
+    }
+
+    [Theory]
+    [InlineData("OpenBlade.Capture.dll", "0.24.0+{owner}", true)]
+    [InlineData("OpenBlade.Capture.exe", "0.24.0+{owner}", true)]
+    [InlineData("OpenBlade.Contracts.dll", "0.24.0+{owner}", true)]
+    [InlineData("OpenBlade.Capture.dll", "0.24.0+{target}", false)]
+    [InlineData("OpenBlade.Capture.exe", "0.24.0+voltage-validation.bbbbbbbb", false)]
+    [InlineData("firmware-smoke/OpenBlade.FirmwareSmoke.dll", "0.24.0+{target}", true)]
+    [InlineData("firmware-smoke/OpenBlade.FirmwareSmoke.exe", "0.24.0+{owner}", false)]
+    [InlineData("service/OpenBlade.Service.dll", "0.24.0+{target}", true)]
+    [InlineData("service/OpenBlade.Service.exe", "0.24.0+{target}", true)]
+    [InlineData("service/OpenBlade.Service.dll", "0.24.0+aaaaaaaa", false)]
+    [InlineData("service/OpenBlade.Service.exe", "0.24.1+{target}", false)]
+    [InlineData("service/OpenBlade.Service.dll", "0.24.0+{owner}", false)]
+    [InlineData("service/OpenBlade.Service.dll", "0.24.0+voltage-validation.aaaaaaaa", false)]
+    public void OrdinaryClosureRequiresFullRoleSpecificSourceAndExactServiceFileVersion(string file, string version, bool accepted)
+    {
+        var options = CpuVoltageOwnedSmokeCommand.Parse(OrdinaryObservationArgs);
+        version = version.Replace("{owner}", options.OwnerSource, StringComparison.Ordinal)
+            .Replace("{target}", options.Source, StringComparison.Ordinal);
+        Assert.Equal(accepted, CpuVoltageOwnedSmokeCommand.PackageFileVersion(options, file, version));
+    }
+
+    [Fact]
+    public void ValidationClosureRetainsItsExistingVersionContract()
+    {
+        var options = CpuVoltageOwnedSmokeCommand.Parse(Args);
+        Assert.Null(options.OwnerSource);
+        Assert.Equal(options.ServiceVersion, options.ServiceFileVersion);
+        Assert.True(CpuVoltageOwnedSmokeCommand.PackageFileVersion(options, "service/OpenBlade.Service.dll", Version));
+        Assert.False(CpuVoltageOwnedSmokeCommand.PackageFileVersion(options, "service/OpenBlade.Service.dll", "0.24.0+" + Source));
+        Assert.True(CpuVoltageOwnedSmokeCommand.PackageFileVersion(options, "OpenBlade.Capture.dll", "0.24.0+" + Source));
+    }
+
     [Theory]
     [InlineData(ControlOperationStatus.Stored)]
     [InlineData(ControlOperationStatus.Blocked)]

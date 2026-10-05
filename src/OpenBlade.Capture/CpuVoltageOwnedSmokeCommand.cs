@@ -32,7 +32,11 @@ internal sealed class CpuVoltageOwnedSmokeCommand
     private int uncertain;
     private CpuVoltageOwnedSmokeCommand(Options options, TextWriter output) { this.options = options; this.output = output; }
     internal sealed record Options(string Payload, string Source, string Manifest, string ServiceVersion, bool ObserveOnly = false,
-        string? SessionJob = null);
+        string? SessionJob = null, string? OwnerSource = null)
+    {
+        internal string ServiceFileVersion => OwnerSource is null ? ServiceVersion
+            : ServiceVersion[..ServiceVersion.IndexOf('+')] + "+" + Source;
+    }
     internal sealed record CompletionReceipt(Guid Run, string Mode, string Source, string ManifestSha256,
         string ExpectedServiceVersion, bool ServiceTerminal, bool OwnedDriverAbsent, bool OriginalVerified);
     internal static CompletionReceipt CreateCompletionReceipt(Guid run, Options options) => new(run,
@@ -40,6 +44,15 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         true, true, !options.ObserveOnly);
     internal static Options Parse(string[] args)
     {
+        string? ownerSource = null;
+        int ownerOption = Array.IndexOf(args, "--owner-source");
+        if (ownerOption >= 0)
+        {
+            if (ownerOption + 1 >= args.Length || !CpuPmLaunchSchema.IsHex(args[ownerOption + 1], 40, true))
+            { throw new ArgumentException("Exact ordinary observation owner source required."); }
+            ownerSource = args[ownerOption + 1];
+            args = args.Take(ownerOption).Concat(args.Skip(ownerOption + 2)).ToArray();
+        }
         string? sessionJob = null;
         int jobOption = Array.IndexOf(args, "--session-job");
         if (jobOption >= 0)
@@ -61,13 +74,14 @@ internal sealed class CpuVoltageOwnedSmokeCommand
         for (int i = 0; i < args.Length; i += 2)
         { if (!names.Contains(args[i], StringComparer.Ordinal) || !values.TryAdd(args[i], args[i + 1])) { throw new ArgumentException("Unknown or duplicate option."); } }
         string source = values["--source"], hash = values["--manifest-sha256"], version = values["--expected-service-version"], path = values["--payload"];
-        string suffix = "+voltage-validation." + (source.Length == 40 ? source[..8] : string.Empty);
+        string suffix = (ownerSource is null ? "+voltage-validation." : "+") + (source.Length == 40 ? source[..8] : string.Empty);
         if (values["--confirm-target"] != (observeOnly ? ObserveConfirmation : Confirmation) || !CpuPmLaunchSchema.IsHex(source, 40, true)
+            || ownerSource is not null && (!observeOnly || sessionJob is not null)
             || !CpuPmLaunchSchema.IsHex(hash, 64, false) || version.Length > 64 || version.Any(char.IsWhiteSpace) || !version.EndsWith(suffix, StringComparison.Ordinal)
             || !Version.TryParse(version[..^suffix.Length], out var parsed) || parsed.Build < 0
             || path.Length > 350 || !path.StartsWith(@"C:\", StringComparison.Ordinal) || path.Contains('/') || path != Path.GetFullPath(path))
-        { throw new ArgumentException("Exact reviewed package, full source, validation Service version and shutdown confirmation required."); }
-        return new(path, source, hash, version, observeOnly, sessionJob);
+        { throw new ArgumentException("Exact reviewed package, full source, Service version and shutdown confirmation required; ordinary builds require standalone observation and --owner-source."); }
+        return new(path, source, hash, version, observeOnly, sessionJob, ownerSource);
     }
     internal static string[] ChildArguments(Options options, string evidence) =>
         ["cpu-voltage-optimizer", .. options.ObserveOnly ? new[] { "--observe-only" } : [], "--confirm-target",
@@ -80,6 +94,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             output.WriteLine($"{Name} --payload <private reviewed closure> --source <40hex> --manifest-sha256 <64HEX> --expected-service-version <version+voltage-validation.8hex> --confirm-target {Confirmation}");
             output.WriteLine("Attended only: temporary owned V31, one -1/0 cycle, exact original restoration, then typed OpenBlade shutdown (including normal shutdown cleanup), then verified owned V31 removal. Fixed 600-second budget; uncertainty retains resources. No automatic elevation.");
             output.WriteLine($"Read-only diagnostic: add --observe-only and use --confirm-target {ObserveConfirmation}; one typed CPU observation response, no CPU Set/Restore, then the same shutdown and owned-resource cleanup after verified recording.");
+            output.WriteLine("Ordinary installed Service: observation only, add --owner-source <40hex helper revision>, use --source <40hex installed revision> and --expected-service-version <version+8hex installed revision>; no --session-job.");
             return 0;
         }
         Options options;
@@ -124,7 +139,7 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             owner = new(tag, new WindowsCpuPmDriverLifecyclePlatform(), safety,
                 WindowsCpuPmDriverJournalStorage.CreateForFixedRun(tag), new CpuPmAuthorityClock());
             WriteContext(Path.Combine(runPath, "control", "voltage-context.json"), new
-            { run, options.Source, options.Manifest, options.ServiceVersion, service.Identity, Mode = options.ObserveOnly ? "ObserveOnly" : "Cycle", BudgetSeconds = 600 });
+            { run, options.Source, options.OwnerSource, options.Manifest, options.ServiceVersion, options.ServiceFileVersion, service.Identity, Mode = options.ObserveOnly ? "ObserveOnly" : "Cycle", BudgetSeconds = 600 });
             output.WriteLine("CpuVoltageOwnerRun=" + run.ToString("N")); output.Flush();
             watchdog = new Timer(_ => MarkUncertain(), null, RemainingBudget(), Timeout.InfiniteTimeSpan);
             mutationPossible = true;
@@ -269,14 +284,27 @@ internal sealed class CpuVoltageOwnedSmokeCommand
             if (pin.Length != file.Length || pin.Sha256 != file.Sha256) { throw new IOException("Installed Service closure differs from reviewed package."); }
         }
         foreach (string file in manifest.Select(entry => entry.Name).Where(name =>
-            Path.GetFileName(name).StartsWith("OpenBlade.", StringComparison.Ordinal) && name.EndsWith(".dll", StringComparison.Ordinal)))
+            Path.GetFileName(name).StartsWith("OpenBlade.", StringComparison.Ordinal)
+            && (name.EndsWith(".dll", StringComparison.Ordinal)
+                || options.OwnerSource is not null && name.EndsWith(".exe", StringComparison.Ordinal))))
         {
             string version = FileVersionInfo.GetVersionInfo(Path.Combine(options.Payload, file.Replace('/', '\\'))).ProductVersion ?? "";
-            if (!SourceVersion(version, options.Source)
-                || file == "service/OpenBlade.Service.dll" && version != options.ServiceVersion)
+            if (!PackageFileVersion(options, file, version))
             { throw new IOException("Reviewed source-qualified assembly version mismatch."); }
         }
         pins.AssertAllPins();
+    }
+    internal static bool PackageFileVersion(Options options, string file, string version)
+    {
+        bool installedService = file is "service/OpenBlade.Service.dll" or "service/OpenBlade.Service.exe";
+        if (options.OwnerSource is null)
+        { return SourceVersion(version, options.Source) && (!installedService || version == options.ServiceFileVersion); }
+        // The closure hashes bind each file. Keep the rebuilt helper's provenance
+        // separate from the unchanged ordinary Service and observation child.
+        string source = file.StartsWith("service/", StringComparison.Ordinal)
+            || file.StartsWith("firmware-smoke/", StringComparison.Ordinal) ? options.Source : options.OwnerSource;
+        return SourceVersion(version, source) && version.EndsWith("+" + source, StringComparison.Ordinal)
+            && (!installedService || version == options.ServiceFileVersion);
     }
     internal static bool SourceVersion(string value, string source)
     {
