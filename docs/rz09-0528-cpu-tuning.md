@@ -12,9 +12,14 @@ on the exact model/SKU after complete observation, fresh safety checks and
 resolved ownership. A saved value does not prove running state or activation
 after restart. Installed tests have verified saved Off activation and restored −1
 activation across two restarts. AC/battery/AC admission and lock/unlock recovery
-passed. The final attended sleep/wake check failed to resume and required a forced
-shutdown and restart. Its cause remains unresolved; sleep/resume validation is
-incomplete.
+passed. A sleep/wake failure was followed by a comparison with all twelve running
+offsets independently measured at zero. The user reports repeated wake failures
+with the cooling pad connected and successful Off sleep/wake when disconnected.
+This is a user-observed association; its exact mechanism remains unresolved.
+The captured saved −1 configuration was restored and verified. With the pad
+disconnected, the final enabled-optimizer sleep/wake resumed normally on the
+same boot, with saved −1 intact and no recovery pending. The final post-wake
+live-offset read remains pending.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original
