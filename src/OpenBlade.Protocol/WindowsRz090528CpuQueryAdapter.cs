@@ -91,23 +91,23 @@ internal sealed class CpuInstalledBackendLease : IDisposable
         }
     }
     internal bool LifetimeCurrent { get { lock (gate) { return !revoked; } } }
-    internal bool GetterContinuityCurrent
+    internal bool GetterContinuityCurrent => ReadGetterBackend() is not null;
+    // Return only this checkpoint's freshly validated registration. Callers may
+    // use it as evidence within that checkpoint, never cache it for a later one.
+    internal InstalledCpuBackendSnapshot? ReadGetterBackend()
     {
-        get
+        lock (gate)
         {
-            lock (gate)
+            if (revoked || closed || uncertain) { return null; }
+            try
             {
-                if (revoked || closed || uncertain) { return false; }
-                try
-                {
-                    var current = platform.ReadBackend();
-                    if (SameRegistration(baseline, current)
-                        && Rz090528InstalledCpuBackendInspector.Evaluate(current).Availability == CpuTuningBackendAvailability.Available)
-                    { return true; }
-                }
-                catch { }
-                Revoke(false); return false;
+                var current = platform.ReadBackend();
+                if (SameRegistration(baseline, current)
+                    && Rz090528InstalledCpuBackendInspector.Evaluate(current).Availability == CpuTuningBackendAvailability.Available)
+                { return current; }
             }
+            catch { }
+            Revoke(false); return null;
         }
     }
     internal bool Matches(ICpuQueryWindowsPlatform candidate) => ReferenceEquals(platform, candidate);

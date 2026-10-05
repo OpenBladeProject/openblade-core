@@ -6,6 +6,69 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class WindowsRz090528CpuPmObservationAdapterTests
 {
     [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 3)]
+    public void InstalledMetadataBoundaryUsesOneFreshScopedBackendSnapshot(bool scoped, int readsPerBoundary)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        int boundaries = 0;
+        var metadata = new CompleteMetadata
+        {
+            Checkpoint = checkpoint =>
+            {
+                int before = fake.FullBackendReads;
+                checkpoint();
+                Assert.Equal(readsPerBoundary, fake.FullBackendReads - before);
+                boundaries++;
+            }
+        };
+        var approval = scoped ? held!.CreateGetterPowerObservationApproval(() => true)
+            : held!.CreatePowerObservationApproval(() => true);
+        var result = session.ObservePowerInstalled(approval, fake.ReadUsb, metadata);
+        Assert.True(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(2, boundaries); Assert.Single(result.Batch.CopySamples());
+    }
+
+    [Theory]
+    [InlineData("registration")]
+    [InlineData("exception")]
+    [InlineData("dispose")]
+    [InlineData("cancellation")]
+    public void ScopedBackendSnapshotCannotAuthorizeTheNextBoundaryAfterDrift(string drift)
+    {
+        var fake = new Fake { Installed = true };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(fake);
+        using var held = session.TryRetainInstalledBackend(fake.ReadUsb);
+        using var cancellation = new CancellationTokenSource();
+        int boundaries = 0;
+        var metadata = new CompleteMetadata
+        {
+            Checkpoint = checkpoint =>
+            {
+                checkpoint(); boundaries++;
+                switch (drift)
+                {
+                    case "registration": fake.Failure = "start"; break;
+                    case "exception": fake.ThrowAt = "backend"; break;
+                    case "dispose": held!.Dispose(); break;
+                    case "cancellation": cancellation.Cancel(); break;
+                }
+            }
+        };
+        var result = session.ObservePowerInstalled(held!.CreateGetterPowerObservationApproval(() => true),
+            fake.ReadUsb, metadata, cancellation.Token);
+        Assert.False(result.Batch.Complete); Assert.True(result.WorkerTerminal); Assert.True(result.CleanupComplete);
+        Assert.Equal(1, boundaries);
+        if (drift != "cancellation")
+        {
+            fake.Failure = null; fake.ThrowAt = null;
+            Assert.False(held.GetterContinuityCurrent); Assert.False(held.IsCurrent);
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void InstalledBackendContinuityRejectionRetainsItsOwnCause(bool beforeEngine)
@@ -218,9 +281,11 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
     private sealed class CompleteMetadata : IRz090528CpuLivePowerRangeMetadataReader
     {
         internal bool CleanupFails;
+        internal Action<Action>? Checkpoint;
         private CpuLivePowerRangeMetadataCall<T> Call<T>(T value, Action checkpoint) where T : class
         {
-            checkpoint();
+            if (Checkpoint is { } check) { check(checkpoint); }
+            else { checkpoint(); }
             return new(value, CpuLivePowerRangeMetadataStatus.Complete,
                 CpuLivePowerRangeMetadataStages.InvocationEntered | CpuLivePowerRangeMetadataStages.InvocationReturned
                     | CpuLivePowerRangeMetadataStages.OutputEnumerated | CpuLivePowerRangeMetadataStages.PropertiesRead
@@ -695,6 +760,7 @@ public sealed class WindowsRz090528CpuPmObservationAdapterTests
         public InstalledCpuBackendSnapshot ReadBackend()
         {
             FullBackendReads++;
+            if (ThrowAt == "backend") { throw new IOException(); }
             if (FullBackendReads > 1) { Assert.True(Pinned); if (!Installed) { Assert.True(Locked); } }
             var files = Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair => new CpuBackendFileMetadata(pair.Key,
                 Failure == "hash" ? "bad" : pair.Value, Failure != "signature", Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray();

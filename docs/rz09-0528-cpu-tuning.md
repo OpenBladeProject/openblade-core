@@ -42,6 +42,16 @@ prerequisite, only after terminal cleanup and fresh context checks. It keeps the
 original getter deadline, waits boundedly and obtains new approval and metadata.
 Other failures and a failed second attempt still block live writes; the rejected
 wire transaction is never resumed.
+A fresh-boot read exercised this recovery, but the final context check reached
+its existing operation timeout. Power peers remained unavailable and live writes
+remained blocked. All twelve offsets remained at −1, the saved journal was
+unchanged, and owned-resource cleanup completed. Physical recovery within one
+retained lease is not yet proved; the timeout remains under investigation.
+The installed PM getter now reuses the backend snapshot validated by the same
+boundary's continuity check, removing an adjacent duplicate backend read. Each
+later boundary still reads and validates a new snapshot. This preserves the
+original deadline and final context admission; its physical timing benefit is
+not yet measured.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original

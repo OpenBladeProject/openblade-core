@@ -288,14 +288,16 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         private void CheckThread()
         { if (Environment.CurrentManagedThreadId != thread) { throw new IOException("PM scope thread changed."); } }
-        private CpuPmContinuityEvidence CheckContinuity()
+        private CpuPmContinuityEvidence CheckContinuity() => CheckContinuity(out _);
+        private CpuPmContinuityEvidence CheckContinuity(out InstalledCpuBackendSnapshot? getterBackend)
         {
+            getterBackend = null;
             CheckThread();
             if (installedApproval is { } installed)
             {
                 if (!installed.IsCurrent())
                 { throw new CpuPmAdmissionException(CpuPmAdmissionFailure.InstalledRequestAdmission); }
-                if (!(installed.GetterScoped ? installed.Lease.GetterContinuityCurrent : installed.Lease.IsCurrent))
+                if (!(installed.GetterScoped ? (getterBackend = installed.Lease.ReadGetterBackend()) is not null : installed.Lease.IsCurrent))
                 { throw new CpuPmAdmissionException(CpuPmAdmissionFailure.InstalledBackendContinuity); }
                 return new(CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime, Guid.Empty, Guid.Empty, CpuPmContinuityFailure.None);
             }
@@ -324,11 +326,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         public CpuPmSessionEvidence ReadFresh()
         {
-            var current = CheckContinuity();
+            var current = CheckContinuity(out var getterBackend);
             if (installedApproval is { GetterScoped: false }) { _ = ReadUsb(); }
             if (host is null || usb is null || files is null || leased && !pinned) { throw new IOException("PM provenance unavailable."); }
             InstalledCpuBackendSnapshot backend;
-            if (installedApproval is not null) { backend = platform.ReadBackend(); }
+            // The scoped continuity check just read and validated this backend.
+            // Reuse only that local snapshot; every later boundary reads again.
+            if (installedApproval is not null) { backend = getterBackend ?? platform.ReadBackend(); }
             else
             {
                 CpuPmServiceSnapshot service = platform.ReadService();
