@@ -67,6 +67,8 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
 
     private CpuLivePowerBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
     {
+        string? recoveryFailure = null;
+        string? recoveryOutcome = null;
         using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
         if (context is not { IsWellFormed: true }) { return Reject("power observation context"); }
@@ -78,6 +80,33 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         {
             observed = session.ObservePowerInstalled(installed, () => MatchesFresh(context, token)
                 ? context.Identity : null, reader, token);
+            // A rejected wire remains poisoned. Only this exact empty-window
+            // response permits one new complete observation, after proven cleanup,
+            // under the same getter deadline and retained installed lease.
+            if (observed.WorkerTerminal && observed.CleanupComplete && !observed.Batch.Complete
+                && observed.Batch.Profile == CpuPmObservationProfile.RangeSingleSample
+                && observed.Batch.FirmwareVersion == CpuPmObservationWireAdmission.ExpectedFirmwareVersion
+                && observed.Batch.Diagnostic is
+                {
+                    Stage: CpuPmObservationStage.Refresh, Failure: CpuPmObservationFailure.NativeFailure,
+                    NativeFailure: CpuQueryFailureCode.WireReplyRejected, Operation: 0x81112F24,
+                    WireRejection: CpuPmWireRejection.MailboxResponseNotSuccessful, MailboxStatus: 0xFD
+                }
+                && observed.Batch.CopySamples().Length == 0)
+            {
+                recoveryFailure = NativeDetail(observed.Batch.Diagnostic!);
+                if (diagnostic is not null) { diagnostic.LiveObservationReason = recoveryFailure + "; recovery incomplete"; }
+                if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation recovery context"); }
+                if (token.WaitHandle.WaitOne(TimeSpan.FromSeconds(1))) { token.ThrowIfCancellationRequested(); }
+                if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation recovery context"); }
+                var nextApproval = provider.CreateInstalledObservationApproval(context, token);
+                var nextReader = provider.CreateObservationMetadata(context, token);
+                if (nextApproval is null || ReferenceEquals(nextApproval, installed)
+                    || !ReferenceEquals(nextApproval.Lease, installed.Lease) || nextReader is null || ReferenceEquals(nextReader, reader)
+                    || !MatchesFresh(context, token)) { return Reject("power observation recovery approval/metadata"); }
+                observed = session.ObservePowerInstalled(nextApproval, () => MatchesFresh(context, token)
+                    ? context.Identity : null, nextReader, token);
+            }
         }
         else
         {
@@ -88,14 +117,17 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         }
         if (observed.Batch.Diagnostic is { } nativeDiagnostic)
         {
-            diagnostic?.Check(false, "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure
+            if (recoveryFailure is not null) { recoveryOutcome = NativeDetail(nativeDiagnostic); }
+            diagnostic?.Check(false, recoveryFailure ?? NativeDetail(nativeDiagnostic));
+        }
+        static string NativeDetail(CpuPmObservationDiagnostic nativeDiagnostic) =>
+            "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure
                 + (nativeDiagnostic.NativeFailure is { } failure ? "; native failure " + failure : string.Empty)
                 + (nativeDiagnostic.NativeErrorCode is { } error ? "; native error " + error : string.Empty)
                 + (nativeDiagnostic.Operation is { } operation ? $"; operation 0x{operation:X8}" : string.Empty)
                 + (nativeDiagnostic.AdmissionFailure is { } admission ? "; admission " + admission : string.Empty)
                 + (nativeDiagnostic.WireRejection is { } rejection ? "; wire rejection " + rejection : string.Empty)
-                + (nativeDiagnostic.MailboxStatus is { } status ? $"; mailbox status 0x{status:X8}" : string.Empty));
-        }
+                + (nativeDiagnostic.MailboxStatus is { } status ? $"; mailbox status 0x{status:X8}" : string.Empty);
         if (!observed.WorkerTerminal || !observed.CleanupComplete) { state.Invalidate(); return Reject("power observation cleanup"); }
         token.ThrowIfCancellationRequested();
         var batch = observed.Batch; var samples = batch.CopySamples();
@@ -118,10 +150,16 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         if (range is not { Selector: 0x50001, StepMilliwatts: 1 } || range.MinimumMilliwatts > range.MaximumMilliwatts
             || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Reject("power observation trusted range"); }
         if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Reject("power observation final context"); }
+        if (recoveryFailure is not null && diagnostic is not null)
+        { diagnostic.LiveObservationReason = recoveryFailure + "; recovery succeeded"; }
         return new(context, samples[0].Snapshot, cap, capability, range);
 
         CpuLivePowerBackendObservation Reject(string reason)
-        { diagnostic?.Check(false, reason); return Empty(); }
+        {
+            if (recoveryFailure is not null && diagnostic is not null)
+            { diagnostic.LiveObservationReason = recoveryFailure + "; recovery rejected: " + (recoveryOutcome ?? reason); }
+            diagnostic?.Check(false, recoveryFailure ?? reason); return Empty();
+        }
     }
 
     private CpuLivePowerSubmission Send(CpuLivePowerContext context, CpuLivePowerNativeRequest request, CancellationToken token)

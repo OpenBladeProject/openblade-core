@@ -7,6 +7,133 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuLivePowerNativeBackendTests
 {
     [Theory]
+    [InlineData(1u)]
+    [InlineData(0xFDu)]
+    [InlineData(2u)]
+    public async Task InstalledEmptyWindowGetsOneFreshCompleteObservation(uint secondResponse)
+    {
+        var platform = new Platform { RefreshResponse = 0xFD, NextRefreshResponse = secondResponse };
+        var provider = new Provider(platform) { InstalledMetadata = new Metadata(), FreshMetadata = true };
+        var backend = new CpuLivePowerNativeBackend(platform, provider);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        try
+        {
+            var result = await backend.ObserveAsync(default, diagnostic);
+            bool recovered = secondResponse == 1;
+            Assert.Equal(recovered, result.Observation is not null);
+            Assert.Equal(recovered ? null : EmptyWindowFailure, diagnostic.FirstFailure);
+            Assert.Contains(EmptyWindowFailure, diagnostic.LiveObservationReason!);
+            Assert.Contains(recovered ? "recovery succeeded" : "recovery rejected", diagnostic.LiveObservationReason!);
+            if (secondResponse == 2) { Assert.Contains("recovery rejected: power native observation Refresh/NativeFailure; native failure WireReplyRejected; operation 0x81112F24; wire rejection MailboxResponseNotSuccessful; mailbox status 0x00000002", diagnostic.LiveObservationReason!); }
+            Assert.Equal(new uint[] { 2, 0x82, 6, 0x65, 2, 0x82, 6, 0x65 }.Concat(recovered ? new uint[] { 6 } : []), platform.Commands);
+            Assert.Equal(1, platform.Opens); Assert.Equal(2, platform.Duplicates); Assert.Equal(0, platform.Arms);
+            Assert.Equal(1, platform.PriorRejectedRefreshReadiness);
+            Assert.Equal(2, provider.InstalledApprovals.Count);
+            Assert.NotSame(provider.InstalledApprovals[0], provider.InstalledApprovals[1]);
+            Assert.Same(provider.InstalledApprovals[0]!.Lease, provider.InstalledApprovals[1]!.Lease);
+            Assert.Equal(2, provider.MetadataReaders.Count); Assert.NotSame(provider.MetadataReaders[0], provider.MetadataReaders[1]);
+            Assert.Equal(0, provider.MetadataReaders[0].Calls);
+            Assert.Equal(recovered ? 2 : 0, provider.MetadataReaders[1].Calls);
+            Assert.Equal(1, provider.GetterBegins); Assert.Equal(1, provider.GetterDisposals);
+            Assert.Equal(recovered ? 1 : 0, provider.GetterCompletions);
+            Assert.Equal(recovered ? 1 : 0, provider.Interpretations); Assert.Equal(0, platform.Setters);
+            Assert.False(backend.Status.ScopeInvalid); Assert.Null(backend.OutstandingWorker);
+        }
+        finally { provider.InstalledLease?.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData(false, false, 0xFDu)]
+    [InlineData(true, true, 0xFDu)]
+    [InlineData(true, false, 2u)]
+    public async Task EmptyWindowRecoveryRequiresExactInstalledWireFailure(bool installed, bool corruptEcho, uint response)
+    {
+        var platform = new Platform { RefreshResponse = response, CorruptRefreshEcho = corruptEcho };
+        var provider = new Provider(platform) { InstalledMetadata = installed ? new Metadata() : null };
+        var backend = new CpuLivePowerNativeBackend(platform, provider, new Metadata());
+        try
+        {
+            Assert.Null((await backend.ObserveAsync(default)).Observation);
+            Assert.Equal(1, platform.Commands.Count(command => command == 0x65));
+            Assert.Equal(installed ? 1 : 0, platform.Duplicates); Assert.Equal(0, platform.Setters);
+        }
+        finally { provider.InstalledLease?.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData("cleanup")]
+    [InlineData("before-wait")]
+    [InlineData("after-wait")]
+    [InlineData("deadline")]
+    [InlineData("approval")]
+    [InlineData("metadata")]
+    [InlineData("cancel")]
+    public async Task EmptyWindowRecoveryStopsOnUncertainCleanupStaleContextOrCancellation(string fault)
+    {
+        var platform = new Platform
+        {
+            RefreshResponse = 0xFD,
+            NextRefreshResponse = 1,
+            CleanupFault = fault == "cleanup" ? "device" : null
+        };
+        var provider = new Provider(platform)
+        {
+            InstalledMetadata = new Metadata(),
+            FreshMetadata = true,
+            DenyRecoveryApproval = fault == "approval",
+            DenyRecoveryMetadata = fault == "metadata"
+        };
+        var backend = new CpuLivePowerNativeBackend(platform, provider);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        using var cancellation = new CancellationTokenSource();
+        using var rejected = new ManualResetEventSlim();
+        long failedAt = 0;
+        platform.OnRejectedRefresh = () => { failedAt = System.Diagnostics.Stopwatch.GetTimestamp(); rejected.Set(); };
+        if (fault == "deadline")
+        {
+            provider.GetterElapsed = () => failedAt != 0
+                && System.Diagnostics.Stopwatch.GetElapsedTime(failedAt) >= TimeSpan.FromMilliseconds(500)
+                ? TimeSpan.FromSeconds(10) : TimeSpan.Zero;
+        }
+        provider.OnContext = () =>
+        {
+            if (failedAt == 0) { return; }
+            var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(failedAt);
+            if (fault == "before-wait" || fault == "after-wait" && elapsed >= TimeSpan.FromMilliseconds(500))
+            { provider.Context = provider.Context with { BootSequence = provider.Context.BootSequence with { Sequence = 43 } }; }
+        };
+        try
+        {
+            var caller = backend.ObserveAsync(cancellation.Token, diagnostic);
+            if (fault == "cancel")
+            {
+                Assert.True(rejected.Wait(TimeSpan.FromSeconds(5)));
+                cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+            }
+            if (fault == "cancel")
+            { await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await caller); }
+            else { Assert.Null((await caller).Observation); }
+            var worker = backend.OutstandingWorker;
+            if (worker is not null) { await worker.WaitAsync(TimeSpan.FromSeconds(5)); }
+            Assert.True(SpinWait.SpinUntil(() => !backend.Status.WorkerOutstanding, TimeSpan.FromSeconds(5)));
+            Assert.Equal(1, platform.Commands.Count(command => command == 0x65));
+            Assert.Equal(1, platform.Duplicates); Assert.Equal(0, platform.Setters); Assert.Equal(0, provider.Interpretations);
+            Assert.Equal(1, provider.GetterBegins); Assert.Equal(1, provider.GetterDisposals);
+            Assert.Equal(0, provider.GetterCompletions);
+            Assert.Equal(fault is "cleanup" or "before-wait" or "after-wait" or "cancel" or "deadline", backend.Status.ScopeInvalid);
+            if (fault != "cancel") { Assert.Equal(EmptyWindowFailure, diagnostic.FirstFailure); }
+            if (fault == "deadline") { Assert.False(cancellation.IsCancellationRequested); }
+        }
+        finally
+        {
+            platform.CleanupFault = null;
+            provider.InstalledLease?.Dispose();
+        }
+    }
+
+    private const string EmptyWindowFailure = "power native observation Refresh/NativeFailure; native failure WireReplyRejected; operation 0x81112F24; wire rejection MailboxResponseNotSuccessful; mailbox status 0x000000FD";
+
+    [Theory]
     [InlineData(false, "NativeFailure")]
     [InlineData(true, "AdmissionDenied")]
     public async Task RefreshFailureSurfacesRawNativeDetailsAndStopsBeforeCopy(bool admission, string expected)
@@ -334,10 +461,13 @@ public sealed class CpuLivePowerNativeBackendTests
         internal CpuLivePowerContext Context = CpuLivePowerTuningTransactionTests.ContextFixture();
         internal int ContextReads, Interpretations, GetterBegins, GetterCompletions, GetterDisposals;
         internal bool GetterActive, FinalAllowed = true;
+        internal Func<TimeSpan>? GetterElapsed;
+        private CpuLiveGetterAdmission? getterProof;
         public IDisposable BeginGetter(CancellationToken token)
         {
             Assert.False(GetterActive); GetterActive = true; GetterBegins++;
-            return new GetterRelease(() => { GetterActive = false; GetterDisposals++; });
+            if (GetterElapsed is not null) { getterProof = new(token, () => true, _ => true, GetterElapsed); }
+            return new GetterRelease(() => { getterProof?.Dispose(); GetterActive = false; GetterDisposals++; });
         }
         public bool CompleteGetter(CpuLivePowerContext expected, CancellationToken token)
         {
@@ -348,18 +478,29 @@ public sealed class CpuLivePowerNativeBackendTests
         internal bool InterpretationAllowed = true, WrongProfile, ReuseApproval, ReuseProof;
         internal Action? OnContext, OnRange;
         internal Metadata? InstalledMetadata;
+        internal bool FreshMetadata, DenyRecoveryApproval, DenyRecoveryMetadata;
+        internal readonly List<CpuPmInstalledApproval?> InstalledApprovals = [];
+        internal readonly List<Metadata> MetadataReaders = [];
         internal CpuInstalledBackendLease? InstalledLease;
         internal CpuLivePowerNativeRequest? LastRequest;
         internal readonly List<(CpuLivePowerCommand Command, CpuLivePowerCommandPurpose Purpose, CpuLivePowerPair Before, CpuLivePowerPair Original)> Admissions = [];
         private CpuPmAttendedApproval? approval; private CpuLivePowerWriteProof? proof;
-        public CpuLivePowerContext? ReadFreshContext(CancellationToken token) { ContextReads++; OnContext?.Invoke(); return Context; }
+        public CpuLivePowerContext? ReadFreshContext(CancellationToken token)
+        { ContextReads++; OnContext?.Invoke(); return getterProof?.Allows() != false ? Context : null; }
         public CpuPmInstalledApproval? CreateInstalledObservationApproval(CpuLivePowerContext context, CancellationToken token)
         {
             if (InstalledMetadata is null) { return null; }
             InstalledLease ??= WindowsRz090528CpuNativeSession.ForPlatform(platform).TryRetainInstalledBackend(platform.ReadUsb, token);
-            return InstalledLease?.CreatePowerObservationApproval(() => context.MatchesHardwareContext(Context));
+            var created = DenyRecoveryApproval && InstalledApprovals.Count != 0 ? null
+                : InstalledLease?.CreatePowerObservationApproval(() => context.MatchesHardwareContext(Context));
+            InstalledApprovals.Add(created); return created;
         }
-        public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext context, CancellationToken token) => InstalledMetadata;
+        public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext context, CancellationToken token)
+        {
+            if (InstalledMetadata is null || DenyRecoveryMetadata && MetadataReaders.Count != 0) { return null; }
+            var created = FreshMetadata ? new Metadata() : InstalledMetadata;
+            MetadataReaders.Add(created); return created;
+        }
         public CpuPmAttendedApproval? CreateObservationApproval(CpuLivePowerContext context, CancellationToken token)
         {
             Assert.Null(InstalledMetadata);
@@ -419,9 +560,12 @@ public sealed class CpuLivePowerNativeBackendTests
         internal readonly CpuPmRunOwnedDriverLifetime Lifetime = new(Guid.NewGuid(), Guid.NewGuid(), true);
         internal readonly List<uint> Commands = [];
         internal int Opens, Setters, Duplicates, Arms; internal bool Held, Pinned, InvalidVersion; internal string? CleanupFault; internal Action? BeforeSetter, AtSetter;
-        private uint selected, argument, command; private int copies;
+        private uint selected, argument, command, refreshReply = 1; private int copies;
+        internal int PriorRejectedRefreshReadiness;
         internal CpuQueryFailureCode? RefreshFailure;
         internal uint RefreshResponse = 1;
+        internal uint? NextRefreshResponse;
+        internal Action? OnRejectedRefresh;
         internal bool CorruptRefreshEcho;
         internal int Calls;
         internal int Copies => copies;
@@ -450,11 +594,11 @@ public sealed class CpuLivePowerNativeBackendTests
                     ? CpuPmContinuityFailure.UnregisterFailed : CpuPmContinuityFailure.Disposed : CpuPmContinuityFailure.None);
             public void Dispose() { disposed = true; }
         }
-        private sealed class Device(Platform platform) : ICpuQueryRetainableDevice
+        private sealed class Device(Platform platform, bool duplicated = false) : ICpuQueryRetainableDevice
         {
-            public ICpuQueryDevice Duplicate() { platform.Duplicates++; return new Device(platform); }
+            public ICpuQueryDevice Duplicate() { platform.Duplicates++; return new Device(platform, true); }
             public CpuQueryIoctlReply Invoke(uint code, byte[] input, int length) => platform.Invoke(code, input, length);
-            public void Dispose() { }
+            public void Dispose() { if (duplicated && platform.CleanupFault == "device") { throw new IOException("Duplicate cleanup failed."); } }
         }
         private sealed class ReleaseAction(Action action) : IDisposable { public void Dispose() => action(); }
         private CpuQueryIoctlReply Invoke(uint code, byte[] input, int length)
@@ -474,9 +618,11 @@ public sealed class CpuLivePowerNativeBackendTests
                 uint value = Word(input, 4);
                 if (Word(input, 0) == 0) { selected = value; if (selected == 0x03B10A20 && copies == 1 && command == 0x82) { BeforeSetter?.Invoke(); } }
                 else if (selected == 0x03B10A88) { argument = value; }
+                else if (selected == 0x03B10A80) { refreshReply = value; }
                 else if (selected == 0x03B10A20)
                 {
                     command = value; Commands.Add(value);
+                    if (value == 0x65) { refreshReply = RefreshResponse; }
                     if (value == 0x65 && RefreshFailure is { } failure) { return new(false, [], failure, 5); }
                     if (value is 0x32 or 0x33) { Setters++; AtSetter?.Invoke(); Assert.True(CpuLivePowerCommand.TryDecode(value, argument, out var typed)); Pair = Pair.With(typed); }
                 }
@@ -496,10 +642,17 @@ public sealed class CpuLivePowerNativeBackendTests
                             : command == 6 ? InvalidVersion ? 0u : 0x005D000Bu : command == 0x82 ? 2u : 1u,
                         _ => throw new InvalidOperationException(),
                     };
-                if (selected == 0x03B10A80 && command == 0x65)
+                if (offset == 0xC8 && selected == 0x03B10A80 && command == 0x65)
                 {
-                    value = RefreshResponse;
+                    value = refreshReply;
+                    if (Duplicates == 2 && value == 0xFD && Commands.Count(message => message == 0x65) == 1)
+                    { PriorRejectedRefreshReadiness++; }
                     if (CorruptRefreshEcho) { output[0] ^= 1; }
+                    if (value == 0xFD)
+                    {
+                        OnRejectedRefresh?.Invoke();
+                        if (NextRefreshResponse is { } next) { RefreshResponse = next; }
+                    }
                 }
                 Put(output, 20, value);
             }
