@@ -67,6 +67,64 @@ public sealed class CpuLivePowerNativeBackendTests
     }
 
     [Theory]
+    [InlineData(0xFDu, 1u, false)]
+    [InlineData(0xFDu, 0xFDu, false)]
+    [InlineData(2u, 1u, false)]
+    [InlineData(0xFDu, 1u, true)]
+    public async Task PostBootObservationReusesOnlyExactTerminalEmptyWindowRecovery(uint firstResponse, uint secondResponse, bool cleanupFails)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "OpenBladePostBootPowerTests", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "curve.json");
+        var platform = new Platform { RefreshResponse = firstResponse, NextRefreshResponse = secondResponse, CleanupFault = cleanupFails ? "device" : null };
+        var provider = new Provider(platform) { InstalledMetadata = new Metadata(), FreshMetadata = true, GetterElapsed = () => TimeSpan.Zero };
+        var backend = new CpuLivePowerNativeBackend(platform, provider);
+        var powerStore = new CpuPowerTestData.MemoryStore();
+        var curve = new CpuLiveCurveTuningTransactionTests.FakeBackend(new());
+        var store = new CpuLiveCurveOwnershipJournalStore(path);
+        var oldContext = curve.Context with { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) };
+        var plan = Rz090528CpuLiveCurvePlan.CreateAllCore(new(0xFF55, 0x005D000B, 0xD50, curve.Values), new(true, -2), (_, _) => true).Plan!;
+        var pending = CpuLiveCurveOwnershipJournal.Prepare(oldContext, plan).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+        var boot = new CpuLiveCurveBootSequence(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43);
+        var controller = new CpuTuningController(new UnusedSource(), curveBackend: curve, curveStore: store, powerBackend: backend, powerStore: powerStore,
+            readRecoveryBoot: _ => boot, recoveryWorkerIdle: () => !backend.Status.WorkerOutstanding && !backend.Status.ScopeInvalid);
+        provider.OnContext = () => provider.Context = provider.Context with { BootSequence = boot, RuntimeLifetime = controller.CaptureLiveRuntimeLifetime() };
+        curve.OnObserve = _ => Task.FromResult(new CpuLiveCurveBackendObservation(
+            curve.Context with { BootSequence = boot, RuntimeLifetime = controller.CaptureLiveRuntimeLifetime() },
+            new(0xFF55, 0x005D000B, 0xD50, curve.Values.ToArray())));
+        try
+        {
+            Assert.NotNull(await store.TryWriteAsync(null, pending, default));
+            byte[] previous = await File.ReadAllBytesAsync(path);
+            var result = await controller.ObserveLiveAsync(_ => true, default, diagnostic: new());
+            bool recovered = firstResponse == 0xFD && secondResponse == 1 && !cleanupFails;
+            Assert.Equal(!recovered, result.RestorePending);
+            Assert.Equal(recovered ? CpuTuningRecoveryState.None : CpuTuningRecoveryState.Blocked, result.LiveRecovery!.State);
+            Assert.Equal(recovered ? CpuLiveCurveOwnershipState.Restored : CpuLiveCurveOwnershipState.PossibleSubmission, (await store.LoadAsync(default)).Journal!.State);
+            if (recovered)
+            {
+                string archive = Assert.Single(Directory.GetDirectories(directory, "curve.json.post-boot-*"));
+                Assert.Equal(previous, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+                Assert.Equal(1, platform.PriorRejectedRefreshReadiness);
+                Assert.NotSame(provider.InstalledApprovals[0], provider.InstalledApprovals[1]);
+                Assert.Same(provider.InstalledApprovals[0]!.Lease, provider.InstalledApprovals[1]!.Lease);
+            }
+            else
+            {
+                Assert.Equal(previous, await File.ReadAllBytesAsync(path));
+                Assert.Empty(Directory.GetDirectories(directory, "curve.json.post-boot-*"));
+            }
+            Assert.Equal(recovered ? 2 : 0, curve.Reads);
+            Assert.Equal(recovered ? 3 : firstResponse == 0xFD && !cleanupFails ? 2 : 1, platform.Commands.Count(command => command == 0x65));
+            Assert.Equal(0, platform.Setters); Assert.Empty(curve.Sent); Assert.Empty(curve.Admissions); Assert.Null(powerStore.Journal);
+        }
+        finally
+        {
+            platform.CleanupFault = null; provider.InstalledLease?.Dispose();
+            if (Directory.Exists(directory)) { Directory.Delete(directory, recursive: true); }
+        }
+    }
+
+    [Theory]
     [InlineData("cleanup")]
     [InlineData("final-context")]
     [InlineData("dispose")]
@@ -157,6 +215,7 @@ public sealed class CpuLivePowerNativeBackendTests
             var result = await new CpuLivePowerObserver(new CpuLivePowerNativeBackend(platform, provider), store)
                 .PreparePeerAsync(default);
             Assert.Null(result.Peer); Assert.Equal(1, provider.GetterBegins);
+            Assert.NotNull(result.Result.RecoveryTicket);
             Assert.Equal(1, platform.Commands.Count(command => command == 0x65)); Assert.Equal(0, platform.Setters); Assert.Null(store.Journal);
         }
         finally { provider.InstalledLease?.Dispose(); }
