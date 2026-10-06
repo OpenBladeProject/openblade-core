@@ -24,7 +24,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Accept the admitted CPU Voltage Optimizer ReadWrite capability in firmware smoke baselines while retaining its exact range and enable/disable checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Retain the first failed live CPU power query and distinguish rejected request state, PCI echo or mailbox response, including its status, without changing native commands or admission. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
-- Recover an installed CPU power-peer read once when firmware sampling is not ready, avoiding duplicate backend reads within each boundary and reporting bounded phase timings while retaining the original read deadline and fresh safety checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
+- Recover an installed CPU power-peer read once when firmware sampling is not ready, closing the failed getter before a fresh ten-second read under a bounded recovery sequence. Preserve fresh safety checks and phase timings while avoiding duplicate backend reads within each boundary. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 
 - Report the first rejected live CPU getter guard and distinguish admission denial from native I/O failure without repeating safety checks. ([#623](https://github.com/OpenBladeProject/openblade-core/pull/623))
 

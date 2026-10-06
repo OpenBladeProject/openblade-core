@@ -28,6 +28,25 @@ internal interface ICpuLivePowerTrustedNativeProvider
 internal sealed record CpuLivePowerNativeBackendStatus(bool WorkerOutstanding, CpuNativeWorkerKind WorkerKind,
     bool ScopeInvalid, CpuLivePowerNativeResult? LastNativeResult);
 
+// A terminal empty-window observation can propose one new getter. The anchor
+// is immutable; separate one-use gates bind consumption to the controller and
+// dispatch to the exact native backend. It grants no setter or reusable proof.
+internal sealed class CpuLivePowerRecoveryTicket(CpuLivePowerNativeBackend owner, CpuLivePowerContext context,
+    IDisposable getter, CpuPmInstalledApproval approval, IRz090528CpuLivePowerRangeMetadataReader metadata,
+    CancellationToken token, string detail)
+{
+    private int consumed, dispatched;
+    internal string Detail { get; } = detail;
+    internal bool TryConsume() => Interlocked.CompareExchange(ref consumed, 1, 0) == 0;
+    internal bool TryDispatch(CpuLivePowerNativeBackend candidate) => ReferenceEquals(owner, candidate)
+        && Volatile.Read(ref consumed) == 1 && Interlocked.CompareExchange(ref dispatched, 1, 0) == 0;
+    internal bool Matches(CpuLivePowerContext candidate, IDisposable? nextGetter, CpuPmInstalledApproval? nextApproval,
+        IRz090528CpuLivePowerRangeMetadataReader? nextMetadata, CancellationToken nextToken) =>
+        context.MatchesHardwareContext(candidate) && nextGetter is not null && !ReferenceEquals(getter, nextGetter)
+        && nextApproval is not null && !ReferenceEquals(approval, nextApproval) && ReferenceEquals(approval.Lease, nextApproval.Lease)
+        && nextMetadata is not null && !ReferenceEquals(metadata, nextMetadata) && token != nextToken;
+}
+
 // Production observation uses a typed retained-installed approval. The separate
 // attended path remains available to developer validation providers.
 internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
@@ -51,14 +70,17 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     internal CpuLivePowerNativeBackendStatus Status
     { get { var status = state.Status; return new(status.WorkerOutstanding, status.Kind, status.Invalid, status.PowerResult); } }
     public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
-    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
+    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) => ObserveAsync(token, diagnostic, null);
+    public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic,
+        CpuLivePowerRecoveryTicket? recovery)
     {
+        if (recovery is not null && !recovery.TryDispatch(this)) { return Task.FromResult(Empty()); }
         var timing = diagnostic?.BeginPowerObservation();
         return state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Observation, workToken =>
         {
-            try { return Observe(workToken, diagnostic, timing); }
+            try { return Observe(workToken, diagnostic, timing, recovery); }
             finally { diagnostic?.CompletePowerObservation(timing); }
-        }, Empty(), token);
+        }, Empty(), token, diagnostic);
     }
     public Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
         CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token) =>
@@ -73,26 +95,26 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         state.Start(CpuNativeWorkerFamily.Power, CpuNativeWorkerKind.Submission, workToken => Send(context, request, workToken), CpuLivePowerSubmission.Unknown, token);
 
     private CpuLivePowerBackendObservation Observe(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic,
-        CpuPowerObservationTiming? timing)
+        CpuPowerObservationTiming? timing, CpuLivePowerRecoveryTicket? recovery)
     {
-        string? recoveryFailure = null;
-        string? recoveryOutcome = null;
         using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
         if (context is not { IsWellFormed: true }) { return Reject("power observation context"); }
         var installed = provider.CreateInstalledObservationApproval(context, token);
         var reader = provider.CreateObservationMetadata(context, token) ?? metadataReader;
         if (reader is null || !MatchesFresh(context, token)) { return Reject("power observation metadata/context"); }
+        if (recovery is not null && !recovery.Matches(context, getter, installed, reader, token))
+        { return Reject("power observation recovery anchor"); }
         CpuLivePowerNativeObservationResult observed;
         if (installed is not null)
         {
-            timing?.MoveTo(CpuPowerObservationPhase.FirstNative);
+            timing?.MoveTo(recovery is null ? CpuPowerObservationPhase.FirstNative : CpuPowerObservationPhase.ReplacementNative);
             observed = session.ObservePowerInstalled(installed, () => MatchesFresh(context, token)
                 ? context.Identity : null, reader, token);
-            // A rejected wire remains poisoned. Only this exact empty-window
-            // response permits one new complete observation, after proven cleanup,
-            // under the same getter deadline and retained installed lease.
-            if (observed.WorkerTerminal && observed.CleanupComplete && !observed.Batch.Complete
+            // Do not renew this getter or reuse its poisoned wire. A ticket only
+            // escapes after final admission, scope disposal, coordinator terminal
+            // cleanup and the caller's existing bounded/runtime checks.
+            if (recovery is null && getter is not null && observed.WorkerTerminal && observed.CleanupComplete && !observed.Batch.Complete
                 && observed.Batch.Profile == CpuPmObservationProfile.RangeSingleSample
                 && observed.Batch.FirmwareVersion == CpuPmObservationWireAdmission.ExpectedFirmwareVersion
                 && observed.Batch.Diagnostic is
@@ -103,20 +125,12 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
                 }
                 && observed.Batch.CopySamples().Length == 0)
             {
-                recoveryFailure = NativeDetail(observed.Batch.Diagnostic!);
-                if (diagnostic is not null) { diagnostic.LiveObservationReason = recoveryFailure + "; recovery incomplete"; }
-                timing?.MoveTo(CpuPowerObservationPhase.RecoveryAdmission);
-                if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation recovery context"); }
-                if (token.WaitHandle.WaitOne(TimeSpan.FromSeconds(1))) { token.ThrowIfCancellationRequested(); }
-                if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation recovery context"); }
-                var nextApproval = provider.CreateInstalledObservationApproval(context, token);
-                var nextReader = provider.CreateObservationMetadata(context, token);
-                if (nextApproval is null || ReferenceEquals(nextApproval, installed)
-                    || !ReferenceEquals(nextApproval.Lease, installed.Lease) || nextReader is null || ReferenceEquals(nextReader, reader)
-                    || !MatchesFresh(context, token)) { return Reject("power observation recovery approval/metadata"); }
-                timing?.MoveTo(CpuPowerObservationPhase.ReplacementNative);
-                observed = session.ObservePowerInstalled(nextApproval, () => MatchesFresh(context, token)
-                    ? context.Identity : null, nextReader, token);
+                if (diagnostic is not null) { diagnostic.PowerEmptyWindowDetail = NativeDetail(observed.Batch.Diagnostic!); }
+                token.ThrowIfCancellationRequested();
+                timing?.MoveTo(CpuPowerObservationPhase.CompleteGetter);
+                if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Reject("power observation final context"); }
+                token.ThrowIfCancellationRequested();
+                return Empty() with { RecoveryTicket = new(this, context, getter, installed, reader, token, NativeDetail(observed.Batch.Diagnostic!)) };
             }
         }
         else
@@ -130,8 +144,7 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         timing?.MoveTo(CpuPowerObservationPhase.PostRange);
         if (observed.Batch.Diagnostic is { } nativeDiagnostic)
         {
-            if (recoveryFailure is not null) { recoveryOutcome = NativeDetail(nativeDiagnostic); }
-            diagnostic?.Check(false, recoveryFailure ?? NativeDetail(nativeDiagnostic));
+            diagnostic?.Check(false, NativeDetail(nativeDiagnostic));
         }
         static string NativeDetail(CpuPmObservationDiagnostic nativeDiagnostic) =>
             "power native observation " + nativeDiagnostic.Stage + "/" + nativeDiagnostic.Failure
@@ -164,15 +177,11 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
             || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Reject("power observation trusted range"); }
         timing?.MoveTo(CpuPowerObservationPhase.CompleteGetter);
         if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Reject("power observation final context"); }
-        if (recoveryFailure is not null && diagnostic is not null)
-        { diagnostic.LiveObservationReason = recoveryFailure + "; recovery succeeded"; }
         return new(context, samples[0].Snapshot, cap, capability, range);
 
         CpuLivePowerBackendObservation Reject(string reason)
         {
-            if (recoveryFailure is not null && diagnostic is not null)
-            { diagnostic.LiveObservationReason = recoveryFailure + "; recovery rejected: " + (recoveryOutcome ?? reason); }
-            diagnostic?.Check(false, recoveryFailure ?? reason); return Empty();
+            diagnostic?.Check(false, reason); return Empty();
         }
     }
 

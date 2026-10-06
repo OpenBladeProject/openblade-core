@@ -26,6 +26,7 @@ internal sealed class CpuTuningController
     private readonly SemaphoreSlim liveGate = new(1, 1);
     private readonly AsyncLocal<LiveAdmission?> liveAdmission = new();
     private readonly Guid serviceInstance = Guid.NewGuid();
+    private readonly TimeSpan powerObservationTimeout;
     // A failed CAS may leave no readable marker. Retain that uncertainty across
     // both families for this controller lifetime; disk absence cannot clear it.
     private CpuTuningFeatures liveUncertainty;
@@ -37,8 +38,12 @@ internal sealed class CpuTuningController
         ICpuTuningOwnershipJournalStore? journalStore = null,
         Func<Func<DeviceIdentity, CpuSavedTuningCommand, bool>, ICpuSavedTuningBackend>? backendFactory = null,
         ICpuLiveCurveBackend? curveBackend = null, ICpuLiveCurveOwnershipJournalStore? curveStore = null,
-        ICpuLivePowerBackend? powerBackend = null, ICpuLivePowerOwnershipJournalStore? powerStore = null)
+        ICpuLivePowerBackend? powerBackend = null, ICpuLivePowerOwnershipJournalStore? powerStore = null,
+        TimeSpan? powerObservationTimeout = null)
     {
+        this.powerObservationTimeout = powerObservationTimeout ?? TimeSpan.FromSeconds(21);
+        if (this.powerObservationTimeout <= TimeSpan.Zero || this.powerObservationTimeout > TimeSpan.FromSeconds(21))
+        { throw new ArgumentOutOfRangeException(nameof(powerObservationTimeout)); }
         if ((curveBackend is null) != (curveStore is null) || (powerBackend is null) != (powerStore is null))
         { throw new ArgumentException("Each live backend requires its durable ownership store."); }
         this.source = source; this.journalStore = journalStore; this.backendFactory = backendFactory;
@@ -283,11 +288,13 @@ internal sealed class CpuTuningController
             CpuLivePowerTransactionResult? power = livePower is null || liveUncertainty != CpuTuningFeatures.None
                 || curve?.Recovery == CpuLiveCurveRecovery.Blocked
                 || !lease.Allows(CpuTuningFeatures.None) ? null
-                : await livePower.ObserveOwnershipAsync(token, diagnostic).ConfigureAwait(false);
+                : await ObservePowerSequenceAsync(token, diagnostic).ConfigureAwait(false);
             RetainUncertainty(power);
             if (diagnostic is not null && diagnostic.LiveObservationReason is null && power?.Reason is { } powerReason
                 && powerReason != CpuLivePowerBlockReason.None)
             { diagnostic.LiveObservationReason = "power transaction " + powerReason + diagnostic.LiveObservationTimeoutContext; }
+            if (diagnostic?.TakePowerEmptyWindowDetail() is { } emptyWindow)
+            { diagnostic.LiveObservationReason = (diagnostic.LiveObservationReason ?? "power observation") + "; " + emptyWindow; }
             if (diagnostic?.TakePowerTimingSummary() is { } timings)
             { diagnostic.LiveObservationReason = (diagnostic.LiveObservationReason ?? "power observation") + timings; }
             var recovery = liveUncertainty != CpuTuningFeatures.None
@@ -302,6 +309,64 @@ internal sealed class CpuTuningController
         {
             try { lease.Dispose(); }
             finally { liveAdmission.Value = null; liveGate.Release(); }
+        }
+    }
+
+    // Only explicit live observation consumes an empty-window ticket. Each
+    // transaction call retains its original ten-second deadline; this envelope
+    // also includes the gap, admission, queueing and terminal scope cleanup.
+    private async Task<CpuLivePowerTransactionResult> ObservePowerSequenceAsync(CancellationToken caller,
+        CpuSavedAdmissionDiagnostic? diagnostic)
+    {
+        using var sequence = CancellationTokenSource.CreateLinkedTokenSource(caller);
+        diagnostic?.SetPowerSequenceCaller(caller);
+        using var registration = sequence.Token.Register(() => diagnostic?.RecordObservationCancellation(caller.IsCancellationRequested, powerObservation: true));
+        sequence.CancelAfter(powerObservationTimeout);
+        CpuLivePowerRecoveryTicket? ticket = null;
+        string? firstTiming = null;
+        long gapStarted = 0, gapMilliseconds = 0;
+        bool gapComplete = false;
+        try
+        {
+            var first = await livePower!.ObserveOwnershipAsync(sequence.Token, diagnostic).ConfigureAwait(false);
+            RetainUncertainty(first);
+            sequence.Token.ThrowIfCancellationRequested();
+            if (first.Reason != CpuLivePowerBlockReason.ObservationUnavailable || first.RecoveryTicket is not { } candidate
+                || liveUncertainty != CpuTuningFeatures.None || diagnostic?.FirstFailure is not null
+                || sequence.IsCancellationRequested || !candidate.TryConsume()) { return first with { RecoveryTicket = null }; }
+            ticket = candidate;
+            if (diagnostic is not null) { diagnostic.TakePowerEmptyWindowDetail(); }
+            firstTiming = diagnostic?.TakePowerTimingSummary();
+            gapStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            using (diagnostic?.BeginStage("power recovery wait"))
+            { await Task.Delay(TimeSpan.FromSeconds(1), sequence.Token).ConfigureAwait(false); }
+            gapMilliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds;
+            gapComplete = true;
+            sequence.Token.ThrowIfCancellationRequested();
+            var second = await livePower.ObserveOwnershipAsync(sequence.Token, diagnostic, ticket).ConfigureAwait(false);
+            RetainUncertainty(second);
+            sequence.Token.ThrowIfCancellationRequested();
+            bool recovered = second.Reason == CpuLivePowerBlockReason.None && second.Observation is not null
+                && second.Recovery != CpuLivePowerRecovery.Blocked && !sequence.IsCancellationRequested;
+            if (diagnostic is not null)
+            {
+                diagnostic.LiveObservationReason = ticket.Detail + (recovered ? "; recovery succeeded" : "; recovery rejected: power transaction " + second.Reason)
+                    + (diagnostic.FirstFailure is { } failure ? "; " + failure : string.Empty)
+                    + "; first getter" + firstTiming + $"; recovery wait {gapMilliseconds} ms"
+                    + (diagnostic.TakePowerTimingSummary() is { } next ? "; replacement getter" + next : string.Empty);
+            }
+            return second with { RecoveryTicket = null };
+        }
+        catch (OperationCanceledException)
+        {
+            diagnostic?.RecordObservationCancellation(caller.IsCancellationRequested, powerObservation: true);
+            if (ticket is not null && diagnostic is not null)
+            {
+                diagnostic.LiveObservationReason = ticket.Detail + "; recovery stopped" + diagnostic.LiveObservationTimeoutContext
+                    + "; first getter" + firstTiming
+                    + $"; recovery wait {(gapComplete ? gapMilliseconds : (long)System.Diagnostics.Stopwatch.GetElapsedTime(gapStarted).TotalMilliseconds)} ms";
+            }
+            return new(CpuLivePowerOutcome.Blocked, CpuLivePowerRecovery.Blocked, CpuLivePowerBlockReason.ObservationUnavailable, null);
         }
     }
 
@@ -627,13 +692,15 @@ internal sealed class CpuTuningController
     private sealed class RuntimePowerBackend(ICpuLivePowerBackend backend, AsyncLocal<LiveAdmission?> current) : ICpuLivePowerBackend
     {
         public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token) => ObserveAsync(token, null);
-        public async Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic)
+        public Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) => ObserveAsync(token, diagnostic, null);
+        public async Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic,
+            CpuLivePowerRecoveryTicket? recovery)
         {
             var lease = current.Value;
             if (lease?.Allows(CpuTuningFeatures.None, token) != true)
             { diagnostic?.Check(false, "runtime power observation lease before query"); return new(null, null, null, null, null); }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lease.Token);
-            var result = await backend.ObserveAsync(cancellation.Token, diagnostic).ConfigureAwait(false);
+            var result = await backend.ObserveAsync(cancellation.Token, diagnostic, recovery).ConfigureAwait(false);
             if (lease.Allows(CpuTuningFeatures.None, token)) { return result; }
             diagnostic?.Check(false, "runtime power observation lease after query"); return new(null, null, null, null, null);
         }

@@ -3,7 +3,10 @@ using OpenBlade.Protocol;
 namespace OpenBlade.Service;
 
 internal sealed record CpuLivePowerBackendObservation(CpuLivePowerContext? Context, CpuPmRawSnapshot? Observation,
-    CpuLivePowerFusedCap? FusedCap, CpuLivePowerCapability? Capability, CpuLivePowerTrustedRange? Range);
+    CpuLivePowerFusedCap? FusedCap, CpuLivePowerCapability? Capability, CpuLivePowerTrustedRange? Range)
+{
+    internal CpuLivePowerRecoveryTicket? RecoveryTicket { get; init; }
+}
 internal enum CpuLivePowerSubmission { Unknown, NotSubmitted, Acknowledged }
 internal interface ICpuLivePowerBackend
 {
@@ -11,6 +14,9 @@ internal interface ICpuLivePowerBackend
     // not raw PM shape or equality. A no-op setter is never an observation.
     Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token);
     Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic) => ObserveAsync(token);
+    Task<CpuLivePowerBackendObservation> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic,
+        CpuLivePowerRecoveryTicket? recovery) => recovery is null ? ObserveAsync(token, diagnostic)
+            : Task.FromResult(new CpuLivePowerBackendObservation(null, null, null, null, null));
     Task<bool> CheckWriteAdmissionAsync(CpuLivePowerContext context, CpuLivePowerCommand command,
         CpuLivePowerCommandPurpose purpose, CpuLivePowerPair expectedBefore, CpuLivePowerPair original, CancellationToken token);
     // Recheck fresh context, range, the entire before pair and independent write
@@ -29,7 +35,10 @@ internal enum CpuLivePowerBlockReason
     StateChanged, InvalidTarget, AdmissionDenied, JournalUnavailable,
 }
 internal sealed record CpuLivePowerTransactionResult(CpuLivePowerOutcome Outcome, CpuLivePowerRecovery Recovery,
-    CpuLivePowerBlockReason Reason, CpuLivePowerPair? Observation);
+    CpuLivePowerBlockReason Reason, CpuLivePowerPair? Observation)
+{
+    internal CpuLivePowerRecoveryTicket? RecoveryTicket { get; init; }
+}
 
 // Default composition supplies no concrete native provider. This transaction
 // consumes independently trusted admission; metadata, equality and planning grant no proof.
@@ -198,21 +207,28 @@ internal sealed class CpuLivePowerTuningTransaction
         finally { gate.Release(); }
     }
 
-    internal async Task<CpuLivePowerTransactionResult> ObserveOwnershipAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
+    internal async Task<CpuLivePowerTransactionResult> ObserveOwnershipAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
+        CpuLivePowerRecoveryTicket? recovery = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
-        try { return persistenceUncertain ? Uncertain() : await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token, diagnostic).ConfigureAwait(false); }
+        try { return persistenceUncertain ? Uncertain() : await ObserveCoreAsync(await LoadAsync(token).ConfigureAwait(false), token, diagnostic, recovery).ConfigureAwait(false); }
         finally { gate.Release(); }
     }
 
-    private async Task<CpuLivePowerTransactionResult> ObserveCoreAsync(CpuLivePowerJournalLoadResult loaded, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
+    private async Task<CpuLivePowerTransactionResult> ObserveCoreAsync(CpuLivePowerJournalLoadResult loaded, CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
+        CpuLivePowerRecoveryTicket? recovery = null)
     {
         if (loaded.Invalid) { return Blocked(CpuLivePowerBlockReason.InvalidJournal); }
         // A late actual worker may still run: never use another getter or setter
         // to infer that an uncertain submission completed or can be replayed.
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.PossibleSubmission }) { return Uncertain(); }
         if (loaded.Journal is { State: CpuLivePowerOwnershipState.Blocked }) { return Blocked(CpuLivePowerBlockReason.StateChanged); }
-        var observed = await ObserveAsync(token, diagnostic).ConfigureAwait(false);
+        var observed = await ObserveAsync(token, diagnostic, recovery).ConfigureAwait(false);
+        // An empty FD window is not an observed hardware context or state.
+        // Forward its terminal ticket only on this observation path; no journal
+        // progress or mutation preparation can consume it.
+        if (recovery is null && observed is { Context: null, Observation: null, RecoveryTicket: { } ticket })
+        { return Blocked(CpuLivePowerBlockReason.ObservationUnavailable) with { RecoveryTicket = ticket }; }
         if (loaded.Journal is { State: not CpuLivePowerOwnershipState.Restored } owned
             && observed?.Context is { } currentContext && !owned.Context.MatchesHardwareContext(currentContext))
         { return await BlockJournalAsync(owned, loaded.Sha256!, CpuLivePowerBlockReason.ContextMismatch, null).ConfigureAwait(false); }
@@ -389,10 +405,11 @@ internal sealed class CpuLivePowerTuningTransaction
         try { return await BoundedAsync(t => backend.CheckWriteAdmissionAsync(context, command, purpose, request.Before, request.Original, t), token).ConfigureAwait(false); }
         catch { return false; }
     }
-    private async Task<CpuLivePowerBackendObservation?> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null)
+    private async Task<CpuLivePowerBackendObservation?> ObserveAsync(CancellationToken token, CpuSavedAdmissionDiagnostic? diagnostic = null,
+        CpuLivePowerRecoveryTicket? recovery = null)
     {
         using var stage = diagnostic?.BeginStage("power backend observation");
-        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic), token, diagnostic).ConfigureAwait(false); }
+        try { return await BoundedAsync(t => backend.ObserveAsync(t, diagnostic, recovery), token, diagnostic).ConfigureAwait(false); }
         catch (OperationCanceledException)
         { diagnostic?.RecordObservationCancellation(token.IsCancellationRequested, powerObservation: true); return null; }
         catch (Exception exception)

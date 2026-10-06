@@ -37,9 +37,9 @@ This establishes the rejection mechanism and supports missing first-read
 priming; the collector's timing and the actor that emptied the window remain
 unproved. Both observations retained all twelve offsets at −1, made no setting
 changes, preserved the saved journal and verified owned-resource cleanup.
-The installed reader allows one fresh typed observation after this exact
-prerequisite, only after terminal cleanup and fresh context checks. It keeps the
-original getter deadline, waits boundedly and obtains new approval and metadata.
+The first recovery implementation allowed one fresh typed observation after
+this exact prerequisite within the original getter deadline, after native cleanup
+and fresh context checks. It waited boundedly and obtained new approval and metadata.
 Other failures and a failed second attempt still block live writes; the rejected
 wire transaction is never resumed.
 A fresh-boot read exercised this recovery, but the final context check reached
@@ -65,6 +65,15 @@ all twelve offsets at −1 and available live admission, preserved the saved
 journal, and completed cleanup. No `0xFD` occurred, so this measures baseline
 cost without proving prerequisite recovery or isolating the native cost.
 Successful first-read recovery remains unproved.
+The revised source closes the failed getter completely before one separately
+admitted getter. Each retains its ten-second deadline; the read-only power
+sequence has a 21-second cancellation budget including the one-second wait.
+The replacement requires unchanged hardware, boot and runtime context, the
+same retained installed lease, and distinct getter, approval and metadata.
+Ownership is reloaded normally; the empty first response writes no journal.
+Only explicit observation can consume this one-use recovery. Mutation and
+preparation paths cannot retry. First-failure evidence and both getter timings
+remain available. Physical verification of this revision is pending.
 
 The service admits saved next-boot commands for the exact RZ09-0528/SKU
 when fresh safety checks, paired readback and a reversible original

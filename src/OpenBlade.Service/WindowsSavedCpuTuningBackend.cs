@@ -15,6 +15,11 @@ internal sealed class CpuSavedAdmissionDiagnostic
     private CpuPowerObservationTiming? powerObservation;
     private bool powerObservationReported;
     private string? powerTimingSummary;
+    private CancellationToken? powerSequenceCaller;
+    internal string? PowerEmptyWindowDetail;
+    internal string? TakePowerEmptyWindowDetail() => Interlocked.Exchange(ref PowerEmptyWindowDetail, null);
+    internal void SetPowerSequenceCaller(CancellationToken caller)
+    { lock (observationSync) { powerSequenceCaller = caller; } }
     internal string? PowerTimingSummary => Volatile.Read(ref powerTimingSummary);
     internal string? TakePowerTimingSummary()
     {
@@ -55,6 +60,7 @@ internal sealed class CpuSavedAdmissionDiagnostic
         lock (observationSync)
         {
             if (liveObservationTimeoutContext is not null) { return; }
+            if (powerObservation && powerSequenceCaller is { } caller) { callerCancelled = caller.IsCancellationRequested; }
             string family = powerObservation ? "power" : "curve";
             string detail = family + (callerCancelled ? " observation caller cancellation" : " observation operation timeout")
                 + ActiveStageDetail() + (powerObservation ? this.powerObservation?.Snapshot(freeze: true)
